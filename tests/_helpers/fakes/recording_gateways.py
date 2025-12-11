@@ -89,6 +89,7 @@ class ConnectionRecordingGateway:
         self.datasets = gateway.datasets
         self.docs = gateway.docs
         self.graph = gateway.graph
+        self.ibis = gateway.ibis
         self.runs = gateway.runs
         self._recording_con = RecordingConnection(gateway.con, self.executions)
 
@@ -174,6 +175,7 @@ class FailingGateway:
         self.datasets = gateway.datasets
         self.docs = gateway.docs
         self.graph = gateway.graph
+        self.ibis = gateway.ibis
         self.runs = gateway.runs
 
     @property

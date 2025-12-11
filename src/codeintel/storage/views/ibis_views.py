@@ -8,6 +8,7 @@ import ibis
 import ibis.expr.types as it
 
 from codeintel.storage.gateway.protocol import StorageGateway
+from codeintel.storage.ibis_types import ne, or_predicates
 
 __all__ = [
     "create_all_ibis_views",
@@ -250,9 +251,11 @@ def create_goid_crosswalk_views(gateway: StorageGateway) -> None:
     con.create_view("core.v_goid_crosswalk_join", joined_view, overwrite=True)
 
     mismatches = joined.filter(
-        (goids.language != crosswalk.lang)
-        | (goids.rel_path != crosswalk.file_path)
-        | (goids.qualname != crosswalk.ast_qualname)
+        or_predicates(
+            ne(goids.language, crosswalk.lang),
+            ne(goids.rel_path, crosswalk.file_path),
+            ne(goids.qualname, crosswalk.ast_qualname),
+        )
     ).select(
         goids.repo.name("repo"),
         goids.commit.name("commit"),
@@ -584,23 +587,20 @@ def create_docs_subsystem_profile_view(gateway: StorageGateway) -> None:
     profile: it.Table = con.table("analytics.subsystem_profile_cache")
     graph_metrics: it.Table = con.table("analytics.subsystem_graph_metrics")
 
-    joined = (
-        subsystems.left_join(
-            profile,
-            [
-                subsystems.repo == profile.repo,
-                subsystems.commit == profile.commit,
-                subsystems.subsystem_id == profile.subsystem_id,
-            ],
-        )
-        .left_join(
-            graph_metrics,
-            [
-                subsystems.repo == graph_metrics.repo,
-                subsystems.commit == graph_metrics.commit,
-                subsystems.subsystem_id == graph_metrics.subsystem_id,
-            ],
-        )
+    joined = subsystems.left_join(
+        profile,
+        [
+            subsystems.repo == profile.repo,
+            subsystems.commit == profile.commit,
+            subsystems.subsystem_id == profile.subsystem_id,
+        ],
+    ).left_join(
+        graph_metrics,
+        [
+            subsystems.repo == graph_metrics.repo,
+            subsystems.commit == graph_metrics.commit,
+            subsystems.subsystem_id == graph_metrics.subsystem_id,
+        ],
     )
 
     profile_view = joined.select(
@@ -643,23 +643,20 @@ def create_docs_subsystem_coverage_view(gateway: StorageGateway) -> None:
     profile: it.Table = con.table("analytics.subsystem_profile_cache")
     coverage: it.Table = con.table("analytics.subsystem_coverage_cache")
 
-    joined = (
-        subsystems.left_join(
-            profile,
-            [
-                subsystems.repo == profile.repo,
-                subsystems.commit == profile.commit,
-                subsystems.subsystem_id == profile.subsystem_id,
-            ],
-        )
-        .left_join(
-            coverage,
-            [
-                subsystems.repo == coverage.repo,
-                subsystems.commit == coverage.commit,
-                subsystems.subsystem_id == coverage.subsystem_id,
-            ],
-        )
+    joined = subsystems.left_join(
+        profile,
+        [
+            subsystems.repo == profile.repo,
+            subsystems.commit == profile.commit,
+            subsystems.subsystem_id == profile.subsystem_id,
+        ],
+    ).left_join(
+        coverage,
+        [
+            subsystems.repo == coverage.repo,
+            subsystems.commit == coverage.commit,
+            subsystems.subsystem_id == coverage.subsystem_id,
+        ],
     )
 
     coverage_view = joined.select(

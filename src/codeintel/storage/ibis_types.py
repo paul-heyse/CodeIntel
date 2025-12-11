@@ -217,8 +217,8 @@ def and_predicates(*predicates: object) -> BooleanValue:
     ValueError
         If no predicates are provided.
 
-    Example
-    -------
+    Examples
+    --------
     >>> combined = and_predicates(
     ...     table.repo == "my-repo",
     ...     table.commit == "abc123",
@@ -231,7 +231,7 @@ def and_predicates(*predicates: object) -> BooleanValue:
     result = ibis_bool(predicates[0])
     for pred in predicates[1:]:
         # The & operator on BooleanValue returns BooleanValue
-        result = result & ibis_bool(pred)  # type: ignore[assignment]
+        result &= ibis_bool(pred)  # type: ignore[assignment]
     return result
 
 
@@ -252,6 +252,13 @@ def or_predicates(*predicates: object) -> BooleanValue:
     ------
     ValueError
         If no predicates are provided.
+
+    Examples
+    --------
+    >>> combined = or_predicates(
+    ...     table.repo == "my-repo",
+    ...     table.commit == "abc123",
+    ... )
     """
     if not predicates:
         message = "At least one predicate is required"
@@ -260,7 +267,7 @@ def or_predicates(*predicates: object) -> BooleanValue:
     result = ibis_bool(predicates[0])
     for pred in predicates[1:]:
         # The | operator on BooleanValue returns BooleanValue
-        result = result | ibis_bool(pred)  # type: ignore[assignment]
+        result |= ibis_bool(pred)  # type: ignore[assignment]
     return result
 
 
@@ -279,7 +286,7 @@ def filter_by(table: TableT, *predicates: object) -> TableT:
 
     Returns
     -------
-    T
+    Table
         Filtered table (same type as input).
 
     Example

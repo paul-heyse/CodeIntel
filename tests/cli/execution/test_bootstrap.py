@@ -51,6 +51,9 @@ def mock_config() -> CliConfig:
     """
     config = MagicMock(spec=CliConfig)
     config.log_level = "WARNING"
+    # Mock the telemetry attribute accessed by bootstrap_cli
+    config.telemetry = MagicMock()
+    config.telemetry.enabled = False
     return cast("CliConfig", config)
 
 
@@ -69,7 +72,10 @@ class TestBootstrapCli:
         with patch(
             "codeintel.cli.execution.bootstrap.load_cli_config",
         ) as mock_load:
-            mock_load.return_value = MagicMock(log_level="INFO")
+            mock_config = MagicMock(log_level="INFO")
+            mock_config.telemetry = MagicMock()
+            mock_config.telemetry.enabled = False
+            mock_load.return_value = mock_config
             result = bootstrap_cli()
             mock_load.assert_called_once_with(validate=False)
             expect_true(result is mock_load.return_value)
@@ -83,6 +89,8 @@ class TestBootstrapCli:
 
         # Create different config for second call
         other_config = MagicMock(log_level="DEBUG")
+        other_config.telemetry = MagicMock()
+        other_config.telemetry.enabled = False
         second = bootstrap_cli(config=other_config)
 
         # Should return first config, not second
@@ -118,6 +126,8 @@ class TestResetBootstrap:
         reset_bootstrap()
 
         other_config = MagicMock(log_level="DEBUG")
+        other_config.telemetry = MagicMock()
+        other_config.telemetry.enabled = False
         second = bootstrap_cli(config=other_config)
 
         # After reset, should use new config

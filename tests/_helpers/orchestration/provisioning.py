@@ -75,7 +75,6 @@ from tests._helpers.orchestration.tooling import make_tools_config
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.storage.gateway import DuckDBConnection
-    from tests._helpers.context import TestContext
 
 
 def _assert_ingest_macros_present(con: DuckDBConnection) -> None:
@@ -1098,7 +1097,8 @@ class ProvisioningBuilder:
         TestContext
             Configured test context with provisioned gateway.
         """
-        from tests._helpers.context import TestContext
+        # Lazy import to avoid circular dependency with tests._helpers.context
+        from tests._helpers.context import TestContext as TestContextImpl  # noqa: PLC0415
 
         provisioned = provision_ingested_repo(
             self._repo_root,
@@ -1106,7 +1106,7 @@ class ProvisioningBuilder:
             commit=self._commit,
             options=self._options,
         )
-        return TestContext.from_provisioned(provisioned)
+        return TestContextImpl.from_provisioned(provisioned)
 
 
 __all__ = [

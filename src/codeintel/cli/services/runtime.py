@@ -191,9 +191,12 @@ class RuntimeService:
         ResolvedRuntime
             Resolved runtime.
         """
-        LOG.debug("Resolving runtime with params: %s", list(self._params.keys()))
-        from codeintel.cli.resolution.runtime import resolve_from_params
+        # Lazy import to avoid circular dependency with cli.resolution.runtime
+        from codeintel.cli.resolution.runtime import (  # noqa: PLC0415
+            resolve_from_params,
+        )
 
+        LOG.debug("Resolving runtime with params: %s", list(self._params.keys()))
         return resolve_from_params(self._params, allow_fallback=self._allow_fallback)
 
 

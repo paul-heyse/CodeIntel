@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/scip_options.py
+# hypothesis_version: 6.148.7
+
+[300, 1024, 'ScipIngestOptions']

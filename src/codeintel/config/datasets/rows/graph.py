@@ -106,7 +106,7 @@ def dict_to_call_graph_node(row: Mapping[str, object]) -> CallGraphNodeRow:
     CallGraphNodeRow
         Typed row suitable for serialization.
     """
-    return cast(CallGraphNodeRow, dict(row))
+    return cast("CallGraphNodeRow", dict(row))
 
 
 class CallGraphEdgeRow(TypedDict):
@@ -199,7 +199,7 @@ def dict_to_call_graph_edge(row: Mapping[str, object]) -> CallGraphEdgeRow:
     CallGraphEdgeRow
         Typed row suitable for serialization.
     """
-    return cast(CallGraphEdgeRow, dict(row))
+    return cast("CallGraphEdgeRow", dict(row))
 
 
 __all__ = [

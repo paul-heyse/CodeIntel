@@ -200,5 +200,5 @@ def _build_test_context(
     )
     stack = ExitStack()
     ctx = stack.enter_context(builder.build())
-    setattr(ctx, "_close_stack", stack)
+    ctx._close_stack = stack
     return ctx

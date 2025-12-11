@@ -44,9 +44,7 @@ class SubsystemRepository(BaseRepository):
             Subsystem summary rows ordered by module count.
         """
         table = self.gateway.ibis.table("docs.v_subsystem_summary")
-        expr = table.filter(
-            and_predicates(table.repo == self.repo, table.commit == self.commit)
-        )
+        expr = table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
         if role:
             modules = self.gateway.ibis.table("analytics.subsystem_modules")
             exists_expr = modules.filter(
@@ -109,16 +107,13 @@ class SubsystemRepository(BaseRepository):
             Subsystem summary row when present.
         """
         table = self.gateway.ibis.table("docs.v_subsystem_summary")
-        expr = (
-            table.filter(
-                and_predicates(
-                    table.repo == self.repo,
-                    table.commit == self.commit,
-                    table.subsystem_id == subsystem_id,
-                )
+        expr = table.filter(
+            and_predicates(
+                table.repo == self.repo,
+                table.commit == self.commit,
+                table.subsystem_id == subsystem_id,
             )
-            .limit(1)
-        )
+        ).limit(1)
         try:
             rows = self._validated_records("docs.v_subsystem_summary", expr)
             return rows[0] if rows else None
@@ -160,16 +155,13 @@ class SubsystemRepository(BaseRepository):
             Module membership rows ordered by module.
         """
         table = self.gateway.ibis.table("docs.v_module_with_subsystem")
-        expr = (
-            table.filter(
-                and_predicates(
-                    table.repo == self.repo,
-                    table.commit == self.commit,
-                    table.subsystem_id == subsystem_id,
-                )
+        expr = table.filter(
+            and_predicates(
+                table.repo == self.repo,
+                table.commit == self.commit,
+                table.subsystem_id == subsystem_id,
             )
-            .order_by(table.module)
-        )
+        ).order_by(table.module)
         try:
             return self._validated_records("docs.v_module_with_subsystem", expr)
         except IbisError:
@@ -247,9 +239,7 @@ class SubsystemRepository(BaseRepository):
         if has_cache:
             table = self.gateway.ibis.table("analytics.subsystem_profile_cache")
             expr = (
-                table.filter(
-                    and_predicates(table.repo == self.repo, table.commit == self.commit)
-                )
+                table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
                 .order_by([table.module_count.desc(), table.subsystem_id])
                 .limit(limit)
             )
@@ -270,9 +260,7 @@ class SubsystemRepository(BaseRepository):
                 )
         table = self.gateway.ibis.table("docs.v_subsystem_profile")
         expr = (
-            table.filter(
-                and_predicates(table.repo == self.repo, table.commit == self.commit)
-            )
+            table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
             .order_by([table.module_count.desc(), table.subsystem_id])
             .limit(limit)
         )
@@ -312,9 +300,7 @@ class SubsystemRepository(BaseRepository):
         if has_cache:
             table = self.gateway.ibis.table("analytics.subsystem_coverage_cache")
             expr = (
-                table.filter(
-                    and_predicates(table.repo == self.repo, table.commit == self.commit)
-                )
+                table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
                 .order_by(
                     [
                         table.test_count.desc(nulls_last=True),  # type: ignore[call-arg]
@@ -340,9 +326,7 @@ class SubsystemRepository(BaseRepository):
                 )
         table = self.gateway.ibis.table("docs.v_subsystem_coverage")
         expr = (
-            table.filter(
-                and_predicates(table.repo == self.repo, table.commit == self.commit)
-            )
+            table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
             .order_by(
                 [
                     table.test_count.desc(nulls_last=True),  # type: ignore[call-arg]

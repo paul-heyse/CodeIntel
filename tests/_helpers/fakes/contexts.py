@@ -70,6 +70,7 @@ from codeintel.core.plugins.execution.context import (
 )
 from codeintel.core.resources import ResourceRegistry
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from tests._helpers.context import create_test_context
 from tests._helpers.defaults import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
 from tests._helpers.env_options import EnvOptions
 
@@ -297,7 +298,10 @@ class ExecutionContextBuilder:
         snapshot = None
         build_paths = None
         if gateway is None:
-            from tests._helpers.context import create_test_context
+            # Lazy import to avoid circular dependency with tests._helpers.context
+            from tests._helpers.context import (  # noqa: PLC0415
+                create_test_context,
+            )
 
             env_ctx = create_test_context(
                 base_path,

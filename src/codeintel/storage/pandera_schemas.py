@@ -657,6 +657,7 @@ _COLUMN_CHECKS: dict[str, dict[str, list[Check]]] = {
     },
 }
 
+
 def _dtype_for_column_type(col_type: ColumnType) -> PanderaDtype:
     """Map a DuckDB column type to a Pandera-compatible dtype.
 
@@ -740,9 +741,7 @@ def _analytics_view_schemas() -> dict[str, DataFrameSchema]:
 
     view_schemas["analytics.v_function_summary"] = DataFrameSchema(
         {
-            "function_goid_h128": Column(
-                _dtype_for_column_type("DECIMAL(38,0)"), nullable=True
-            ),
+            "function_goid_h128": Column(_dtype_for_column_type("DECIMAL(38,0)"), nullable=True),
             "repo": Column(_dtype_for_column_type("VARCHAR")),
             "commit": Column(_dtype_for_column_type("VARCHAR")),
             "rel_path": Column(_dtype_for_column_type("VARCHAR")),
@@ -761,9 +760,7 @@ def _analytics_view_schemas() -> dict[str, DataFrameSchema]:
             "return_count": Column(_dtype_for_column_type("INTEGER"), nullable=True),
             "yield_count": Column(_dtype_for_column_type("INTEGER"), nullable=True),
             "raise_count": Column(_dtype_for_column_type("INTEGER"), nullable=True),
-            "cyclomatic_complexity": Column(
-                _dtype_for_column_type("INTEGER"), nullable=True
-            ),
+            "cyclomatic_complexity": Column(_dtype_for_column_type("INTEGER"), nullable=True),
             "complexity_bucket": Column(_dtype_for_column_type("VARCHAR"), nullable=True),
             "complexity_band": Column(_dtype_for_column_type("VARCHAR"), nullable=True),
             "max_nesting_depth": Column(_dtype_for_column_type("INTEGER"), nullable=True),
@@ -785,9 +782,7 @@ def _analytics_view_schemas() -> dict[str, DataFrameSchema]:
 
     view_schemas["analytics.v_function_hotspots"] = DataFrameSchema(
         {
-            "function_goid_h128": Column(
-                _dtype_for_column_type("DECIMAL(38,0)"), nullable=True
-            ),
+            "function_goid_h128": Column(_dtype_for_column_type("DECIMAL(38,0)"), nullable=True),
             "repo": Column(_dtype_for_column_type("VARCHAR")),
             "commit": Column(_dtype_for_column_type("VARCHAR")),
             "rel_path": Column(_dtype_for_column_type("VARCHAR")),
@@ -828,9 +823,7 @@ def _graph_view_schemas() -> dict[str, DataFrameSchema]:
         {
             "repo": Column(_dtype_for_column_type("VARCHAR")),
             "commit": Column(_dtype_for_column_type("VARCHAR")),
-            "function_goid_h128": Column(
-                _dtype_for_column_type("DECIMAL(38,0)"), nullable=True
-            ),
+            "function_goid_h128": Column(_dtype_for_column_type("DECIMAL(38,0)"), nullable=True),
             "call_out_degree": Column(_dtype_for_column_type("INTEGER"), nullable=True),
             "call_in_degree": Column(_dtype_for_column_type("INTEGER"), nullable=True),
         },
@@ -925,9 +918,7 @@ def _docs_view_schemas() -> dict[str, DataFrameSchema]:
     view_schemas: dict[str, DataFrameSchema] = {}
     view_schemas["docs.v_function_summary"] = DataFrameSchema(
         {
-            "function_goid_h128": Column(
-                _dtype_for_column_type("DECIMAL(38,0)"), nullable=True
-            ),
+            "function_goid_h128": Column(_dtype_for_column_type("DECIMAL(38,0)"), nullable=True),
             "urn": Column(_dtype_for_column_type("VARCHAR")),
             "repo": Column(_dtype_for_column_type("VARCHAR")),
             "commit": Column(_dtype_for_column_type("VARCHAR")),
@@ -937,9 +928,7 @@ def _docs_view_schemas() -> dict[str, DataFrameSchema]:
             "qualname": Column(_dtype_for_column_type("VARCHAR")),
             "loc": Column(_dtype_for_column_type("INTEGER"), nullable=True),
             "logical_loc": Column(_dtype_for_column_type("INTEGER"), nullable=True),
-            "cyclomatic_complexity": Column(
-                _dtype_for_column_type("INTEGER"), nullable=True
-            ),
+            "cyclomatic_complexity": Column(_dtype_for_column_type("INTEGER"), nullable=True),
             "complexity_bucket": Column(_dtype_for_column_type("VARCHAR")),
             "param_count": Column(_dtype_for_column_type("INTEGER"), nullable=True),
             "positional_params": Column(_dtype_for_column_type("INTEGER"), nullable=True),
@@ -1272,9 +1261,7 @@ class ValidationResult:
         )
 
     @classmethod
-    def failed(
-        cls, table_key: str, errors: list[str], error_count: int
-    ) -> ValidationResult:
+    def failed(cls, table_key: str, errors: list[str], error_count: int) -> ValidationResult:
         """
         Create a failed validation result.
 
@@ -1499,6 +1486,5 @@ def dataset_json_schemas() -> dict[str, dict[str, Any]]:
         Mapping from dataset table key to JSON Schema.
     """
     return {
-        table_key: pandera_to_json_schema(schema)
-        for table_key, schema in DATASET_SCHEMAS.items()
+        table_key: pandera_to_json_schema(schema) for table_key, schema in DATASET_SCHEMAS.items()
     }

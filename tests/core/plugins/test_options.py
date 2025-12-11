@@ -102,7 +102,9 @@ class TestPluginOptionsResolver:
     @staticmethod
     def test_with_config_overrides_defaults(sample_metadata: CorePluginMetadata) -> None:
         """Verify config values override defaults."""
-        source = DictConfigSource({"test.plugin": {"threshold": CUSTOM_THRESHOLD, "name": "custom"}})
+        source = DictConfigSource(
+            {"test.plugin": {"threshold": CUSTOM_THRESHOLD, "name": "custom"}}
+        )
         resolver = PluginOptionsResolver(source)
         opts = resolver.get_options(sample_metadata, SampleOptions)
         expect_equal(opts.threshold, CUSTOM_THRESHOLD)

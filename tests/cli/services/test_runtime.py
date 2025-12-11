@@ -60,7 +60,7 @@ def test_is_resolved_initially_false() -> None:
 def test_invalidate_clears_cache() -> None:
     """Invalidate clears cached runtime."""
     service = RuntimeService({})
-    setattr(service, "_resolved", MagicMock())
+    service._resolved = MagicMock()
     expect_true(service.is_resolved)
 
     service.invalidate()

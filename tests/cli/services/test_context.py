@@ -107,32 +107,29 @@ def test_has_serving_without_config() -> None:
 
 def test_runtime_raises_without_config() -> None:
     """Runtime raises error without configuration."""
-    with patch("codeintel.cli.context.load_config") as mock_config, pytest.raises(
-        RuntimeError, match="Runtime not available"
-    ):
+    with patch("codeintel.cli.context.load_config") as mock_config:
         mock_config.return_value = MagicMock()
         with CommandContextBuilder().build() as ctx:
-            _ = ctx.runtime
+            with pytest.raises(RuntimeError, match="Runtime not available"):
+                _ = ctx.runtime
 
 
 def test_storage_raises_without_config() -> None:
     """Storage raises error without configuration."""
-    with patch("codeintel.cli.context.load_config") as mock_config, pytest.raises(
-        RuntimeError, match="Storage not available"
-    ):
+    with patch("codeintel.cli.context.load_config") as mock_config:
         mock_config.return_value = MagicMock()
         with CommandContextBuilder().build() as ctx:
-            _ = ctx.storage
+            with pytest.raises(RuntimeError, match="Storage not available"):
+                _ = ctx.storage
 
 
 def test_serving_raises_without_config() -> None:
     """Serving raises error without configuration."""
-    with patch("codeintel.cli.context.load_config") as mock_config, pytest.raises(
-        RuntimeError, match="Serving not available"
-    ):
+    with patch("codeintel.cli.context.load_config") as mock_config:
         mock_config.return_value = MagicMock()
         with CommandContextBuilder().build() as ctx:
-            _ = ctx.serving
+            with pytest.raises(RuntimeError, match="Serving not available"):
+                _ = ctx.serving
 
 
 # ---------------------------------------------------------------------------

@@ -302,7 +302,9 @@ def _compute_module_graph_metrics(
     graph = filters.filter_import_graph(runtime.ensure_import_graph())
     symbol_edges = load_symbol_module_edges(gateway, options.module_by_path)
     modules = set(graph.nodes) | symbol_edges[0]
-    modules.update(ModuleRepository(gateway=gateway, repo=cfg.repo, commit=cfg.commit).list_modules())
+    modules.update(
+        ModuleRepository(gateway=gateway, repo=cfg.repo, commit=cfg.commit).list_modules()
+    )
     if filters.modules is not None:
         modules = modules.intersection(filters.modules)
     if modules:
