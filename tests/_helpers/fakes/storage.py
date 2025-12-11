@@ -6,13 +6,16 @@ that need deterministic storage behavior without a real database.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from tests._helpers.records import CallRecorder, StorageOpCall
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @dataclass

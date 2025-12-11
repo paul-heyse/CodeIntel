@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.serving.backend.profile_backend import ProfileQueryLayer
 from codeintel.serving.mcp import errors
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_true
 from tests._helpers.backend_components import build_backend_components
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _expect(*, condition: bool, message: str) -> None:

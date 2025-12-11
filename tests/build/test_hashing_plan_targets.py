@@ -5,8 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
@@ -30,6 +29,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.operations_registry import OperationRegistryBuilder
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass

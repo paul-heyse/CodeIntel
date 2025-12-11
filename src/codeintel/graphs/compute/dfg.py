@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from codeintel.core.data_models.rows import DFGEdgeRow
-from codeintel.graphs.compute.cfg import BasicBlock, CFGEdge
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from codeintel.graphs.compute.cfg import BasicBlock, CFGEdge
 
 
 @dataclass(frozen=True)

@@ -12,7 +12,7 @@ import networkx as nx
 from networkx.exception import NetworkXError
 
 from codeintel.analytics.compute.graphs.centrality import centrality_directed
-from codeintel.analytics.compute.graphs.types import CentralityBundle, DominanceMetrics
+from codeintel.analytics.compute.graphs.types import DominanceMetrics
 from codeintel.graphs.compute.metrics.cfg import (
     compute_cfg_longest_path,
     compute_dominance_frontier,
@@ -25,6 +25,7 @@ from codeintel.graphs.compute.metrics.paths import (
 )
 
 if TYPE_CHECKING:
+    from codeintel.analytics.compute.graphs.types import CentralityBundle
     from codeintel.analytics.runtime.context import GraphContext
 
 

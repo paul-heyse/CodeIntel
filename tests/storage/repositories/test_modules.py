@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from codeintel.storage.repositories.modules import ModuleRepository
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_none,
 )
 from tests._helpers.builders import ModuleRow, insert_rows
-from tests._helpers.context import TestContext
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 
 def _repo(ctx: TestContext) -> ModuleRepository:

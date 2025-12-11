@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from codeintel.storage.gateway import StorageGateway
+from typing import TYPE_CHECKING
+
 from tests._helpers.sql import count_nulls, count_table_rows
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def assert_table_has_rows(

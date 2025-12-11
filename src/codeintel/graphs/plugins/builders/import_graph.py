@@ -16,17 +16,14 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import ImportGraphStepConfig
-from codeintel.core.data_models import ImportEdgeRow, ImportModuleRow
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import imports as imports_compute
 from codeintel.graphs.plugins.builders.import_graph_options import ImportGraphOptions
 from codeintel.ingestion.adapters import IngestStorageService
@@ -34,7 +31,12 @@ from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.data_models import ImportEdgeRow, ImportModuleRow
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

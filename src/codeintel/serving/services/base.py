@@ -69,11 +69,13 @@ See Also
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
-from codeintel.serving import domain_models as dm
-from codeintel.serving.mcp.models import GraphScopePayload
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving import domain_models as dm
+    from codeintel.serving.mcp.models import GraphScopePayload
 
 T = TypeVar("T")
 

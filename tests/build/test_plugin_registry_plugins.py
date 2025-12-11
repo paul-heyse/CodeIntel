@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import pytest
 
 from codeintel.build import plugin_registry
 from codeintel.build.plugin_registry import (
-    PluginRegistryStore,
     get_all_plugins,
     get_plugin_for_target,
     register_plugin,
@@ -24,6 +23,11 @@ from codeintel.build.plugins import (
 )
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.build import RecordingPlugin, make_plugin_registry_store
+
+if TYPE_CHECKING:
+    from codeintel.build.plugin_registry import (
+        PluginRegistryStore,
+    )
 
 
 @pytest.fixture

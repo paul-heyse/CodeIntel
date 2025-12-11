@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.storage.datasets.scaffold import ScaffoldOptions, scaffold_dataset
 from tests._helpers.dataset_factories import sample_dataset_registry
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _base_opts(tmp_path: Path) -> ScaffoldOptions:

@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
-from tests._helpers.configs.history_config import SnapshotSpec
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.configs.history_config import SnapshotSpec
 
 _FP_CONTRACT = get_dataset_contracts_by_table_key()["analytics.function_profile"]
 _MP_CONTRACT = get_dataset_contracts_by_table_key()["analytics.module_profile"]

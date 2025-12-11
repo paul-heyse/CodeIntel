@@ -10,11 +10,11 @@ import json
 import logging
 import sys
 import types
-from collections.abc import Callable, Iterable
 from dataclasses import MISSING, dataclass, field, make_dataclass
 from enum import Enum
 from pathlib import Path
 from typing import (
+    TYPE_CHECKING,
     Annotated,
     Any,
     Literal,
@@ -37,7 +37,6 @@ from codeintel.cli.commands._common import (
     get_verbose,
     runtime_field,
 )
-from codeintel.cli.commands._help import _AppCallKwargs
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.core import OutputEnvelope, iter_stdin_records
 from codeintel.cli.core.output import merge_stdin_with_args
@@ -49,7 +48,6 @@ from codeintel.cli.handlers.ops import (
 )
 from codeintel.cli.introspection import (
     CliParamSpec,
-    OperationCliMetadata,
     build_operation_cli_metadata,
     get_operations_with_cli_support,
 )
@@ -60,7 +58,6 @@ from codeintel.cli.project import (
 )
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution import ResolutionError, resolve_from_params
-from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.serving.auto_pipeline import run_operation_prereqs
 from codeintel.serving.bootstrap import build_service_stack
 from codeintel.serving.operations.catalog import (
@@ -68,6 +65,15 @@ from codeintel.serving.operations.catalog import (
     register_test_operation,
     unregister_test_operation,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from codeintel.cli.commands._help import _AppCallKwargs
+    from codeintel.cli.introspection import (
+        OperationCliMetadata,
+    )
+    from codeintel.cli.resolution.types import ResolvedRuntime
 
 op_app = App(
     name="op",

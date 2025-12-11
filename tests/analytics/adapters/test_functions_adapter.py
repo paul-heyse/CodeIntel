@@ -6,8 +6,8 @@ function metrics and types using real DuckDB instances.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -16,7 +16,6 @@ from codeintel.analytics.adapters.functions import (
     FunctionGoidLoader,
     FunctionMetricsAdapter,
     FunctionTypesAdapter,
-    GoidRow,
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.catalog import FunctionCatalog
@@ -29,9 +28,17 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.catalogs import ensure_catalog_with_goids
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import function_meta
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from codeintel.analytics.adapters.functions import (
+        GoidRow,
+    )
+    from tests._helpers.context import TestContext
 
 # =============================================================================
 # Constants

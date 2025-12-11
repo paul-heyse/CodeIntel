@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import ibis
-import ibis.expr.types as it
-from ibis import BaseBackend
 
 from codeintel.analytics.compute.ibis_utils import safe_ratio, zero_if_null
 from codeintel.analytics.profiles.types import ModuleProfileInputs
@@ -21,17 +18,15 @@ from codeintel.analytics.profiles.utils import (
     optional_str,
 )
 from codeintel.analytics.profiles.writer_guard import (
-    SerializeRow,
     WriterContext,
     write_rows_with_registry_guard,
 )
-from codeintel.config import ProfilesAnalyticsStepConfig
 from codeintel.config.datasets import (
     MODULE_PROFILE_COLUMNS,
     ModuleProfileRowModel,
     module_profile_row_to_tuple,
 )
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import (
     bool_not,
     col_count,
@@ -41,6 +36,18 @@ from codeintel.storage.ibis_types import (
     filter_by,
     ibis_bool,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    import ibis.expr.types as it
+    from ibis import BaseBackend
+
+    from codeintel.analytics.profiles.writer_guard import (
+        SerializeRow,
+    )
+    from codeintel.config import ProfilesAnalyticsStepConfig
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

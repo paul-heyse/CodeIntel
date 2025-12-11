@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, is_dataclass, replace
-from typing import Any, Protocol, Self, TypeVar, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, Self, TypeVar, cast, runtime_checkable
 
-from codeintel.core.plugins.types.metadata import CorePluginMetadata
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.core.plugins.types.metadata import CorePluginMetadata
 
 T = TypeVar("T")
 

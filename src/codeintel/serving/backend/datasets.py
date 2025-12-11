@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.config.datasets import get_dataset_contracts, get_dataset_contracts_by_table_key
 from codeintel.serving.backend.pagination import BackendLimits
-from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 DOCS_VIEWS = {
     name: contract.table_key

@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -28,6 +27,8 @@ from codeintel.core.plugins.execution.manifest import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.config.steps_graphs import GraphRunScope
     from codeintel.graphs.core.protocol import GraphPluginProtocol
     from codeintel.storage.gateway import StorageGateway

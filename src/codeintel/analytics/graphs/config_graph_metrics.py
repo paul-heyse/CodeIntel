@@ -5,11 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-
-import networkx as nx
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.graphs import (
-    ProjectionMetrics,
     build_projection_graph,
     log_empty_graph,
     log_projection_skipped,
@@ -21,15 +19,24 @@ from codeintel.analytics.runtime import (
     resolve_graph_runtime,
 )
 from codeintel.analytics.runtime.context import (
-    GraphContext,
     GraphContextSpec,
     resolve_graph_context,
 )
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    import networkx as nx
+
+    from codeintel.analytics.compute.graphs import (
+        ProjectionMetrics,
+    )
+    from codeintel.analytics.runtime.context import (
+        GraphContext,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 MAX_BETWEENNESS_NODES = 1000
 NODE_ID_INDEX = 2

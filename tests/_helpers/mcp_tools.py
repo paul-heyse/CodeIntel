@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.mcp.tool_context import McpToolContext, ModelResolver
-from codeintel.serving.mcp.tool_utils import QueryBackendOrService
-from codeintel.serving.operations import Operation
+from codeintel.serving.mcp.tool_context import McpToolContext
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.tool_builder import McpToolRegistrar
+    from codeintel.serving.mcp.tool_context import ModelResolver
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
+    from codeintel.serving.operations import Operation
 
 
 @dataclass

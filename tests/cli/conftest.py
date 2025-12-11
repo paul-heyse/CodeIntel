@@ -8,23 +8,30 @@ fixtures for charter-compliant testing.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.cli.introspection import get_registry
 from codeintel.storage.gateway_cache import close_gateways
-from tests._helpers.cli import CLIContext, CliResult, run_cli, temp_repo_context
-from tests._helpers.cli_project import (
-    CLIProjectContext,
-    CLIProjectHarness,
-    create_cli_project,
-)
+from tests._helpers.cli import run_cli, temp_repo_context
 from tests._helpers.cli_project import (
     cli_project_harness as cli_project_harness_ctx,
 )
+from tests._helpers.cli_project import (
+    create_cli_project,
+)
 from tests.cli._harness import CliTestHarness, GoldenFileAssertion, OperationTestHarness
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from pathlib import Path
+
+    from tests._helpers.cli import CLIContext, CliResult
+    from tests._helpers.cli_project import (
+        CLIProjectContext,
+        CLIProjectHarness,
+    )
 
 
 @pytest.fixture

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import pytest
 
@@ -15,7 +15,9 @@ from codeintel.serving.backend.datasets import (
     validate_dataset_registry,
 )
 from codeintel.serving.backend.pagination import BackendLimits
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 # Test constants
 PREVIEW_LIMIT: Final = 5

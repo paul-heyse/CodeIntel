@@ -8,11 +8,15 @@ consistent backend wiring across all accessor types.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
 from codeintel.storage.helpers.db import macro_insert_rows
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
 
 __all__ = ["BaseTableAccessor"]
 

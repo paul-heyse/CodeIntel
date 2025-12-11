@@ -13,16 +13,19 @@ from __future__ import annotations
 import importlib.metadata
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, TypeGuard, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, TypeGuard, TypeVar, runtime_checkable
 
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.plugins.registry.sorting import (
     build_provider_index_from_metadata,
     topological_sort,
 )
-from codeintel.core.plugins.types.protocol import PluginMetadata
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 log = logging.getLogger(__name__)
 

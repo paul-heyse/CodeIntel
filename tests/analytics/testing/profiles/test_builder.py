@@ -13,6 +13,8 @@ and related dataclasses.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.analytics.testing.profiles.builder import (
@@ -21,12 +23,14 @@ from codeintel.analytics.testing.profiles.builder import (
 )
 from codeintel.analytics.testing.profiles.types import IoFlags, TestAstInfo
 from codeintel.config import ConfigBuilder, SnapshotInit
-from tests._helpers import TestContext
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from tests._helpers import TestContext
 
 # =============================================================================
 # Test Constants

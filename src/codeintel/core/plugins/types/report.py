@@ -7,10 +7,11 @@ common fields and metrics used by all domain-specific execution reports.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from codeintel.core.plugins.types.result import PluginExecutionRecord
 
 ExecutionStatus = Literal["succeeded", "failed", "partial"]

@@ -21,7 +21,6 @@ See `codeintel.config.builder` for the ConfigBuilder API.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -36,6 +35,8 @@ from codeintel.config.primitives import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from codeintel.ingestion.engine.infrastructure import ToolName
 
 

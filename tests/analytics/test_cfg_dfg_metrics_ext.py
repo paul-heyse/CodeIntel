@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
-from tests._helpers import TestContext
 from tests._helpers.builders import (
     CFGBlockRow,
     CFGEdgeRow,
@@ -16,6 +16,9 @@ from tests._helpers.builders import (
     ModuleRow,
     insert_rows,
 )
+
+if TYPE_CHECKING:
+    from tests._helpers import TestContext
 
 # Test constants
 REL_PATH = "pkg/mod.py"

@@ -7,8 +7,6 @@ edges from Python source files.
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable, Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import libcst as cst
@@ -26,14 +24,17 @@ from codeintel.graphs.compute.callgraph.resolution import (
 )
 from codeintel.graphs.compute.callgraph.types import (
     CallEdge,
-    EdgeResolutionContext,
-    ResolutionContext,
     ResolutionResult,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping, Sequence
+    from pathlib import Path
 
+    from codeintel.graphs.compute.callgraph.types import (
+        EdgeResolutionContext,
+        ResolutionContext,
+    )
     from codeintel.graphs.ports.parsing import ParsedModule
 
 

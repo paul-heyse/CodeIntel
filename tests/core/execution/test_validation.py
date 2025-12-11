@@ -12,10 +12,10 @@ This module tests:
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from codeintel.core.execution.validation import (
     BaseValidationOptions,
-    SeverityLevel,
     apply_severity_overrides,
     cap_findings,
     filter_by_severity,
@@ -29,6 +29,11 @@ from tests._helpers.assertions import (
     expect_in,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.core.execution.validation import (
+        SeverityLevel,
+    )
 
 # =============================================================================
 # Test Fixtures and Helpers

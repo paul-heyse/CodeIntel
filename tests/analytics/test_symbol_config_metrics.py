@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,7 +13,6 @@ from codeintel.analytics.graphs import (
     compute_symbol_graph_metrics_modules,
 )
 from codeintel.storage.views import create_all_views
-from tests._helpers import TestContext
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -22,6 +22,9 @@ from tests._helpers.builders import (
     SymbolUseEdgeRow,
     insert_rows,
 )
+
+if TYPE_CHECKING:
+    from tests._helpers import TestContext
 
 # Test constants
 EXPECTED_SYMBOL_ROW_COUNT = 2

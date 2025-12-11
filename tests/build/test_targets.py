@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule, TargetOptions
+from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -12,6 +14,9 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.build.targets import TargetModule
 
 
 def _make_target(

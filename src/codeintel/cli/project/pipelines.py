@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 import yaml
 
@@ -21,6 +19,10 @@ from codeintel.cli.execution.registry import execute_operation
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.rendering.service import UnifiedRenderer
 from codeintel.cli.rendering.types import OutputFormat, RenderContext
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
 
 
 @dataclass

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from codeintel.export.export_jsonl import ExportCallOptions
 from codeintel.export.runner import ExportOptions, run_validated_exports
-from codeintel.storage.gateway import StorageConfig, StorageGateway
 from tests._helpers import provision_docs_export_ready
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageConfig, StorageGateway
 
 
 class _StubGateway(Protocol):

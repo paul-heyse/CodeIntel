@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
@@ -15,6 +14,8 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from duckdb import DuckDBPyConnection
 
     from codeintel.config.primitives import SnapshotRef

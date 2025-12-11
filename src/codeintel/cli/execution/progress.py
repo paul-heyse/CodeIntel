@@ -11,7 +11,6 @@ import contextlib
 import json
 import logging
 import sys
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -21,7 +20,6 @@ from rich.progress import (
     BarColumn,
     Progress,
     SpinnerColumn,
-    TaskID,
     TaskProgressColumn,
     TextColumn,
     TimeRemainingColumn,
@@ -37,7 +35,11 @@ from codeintel.cli.execution.types import (
 from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Callable
+    from collections.abc import AsyncGenerator, Callable, Iterator
+
+    from rich.progress import (
+        TaskID,
+    )
 
 
 LOG = logging.getLogger(__name__)

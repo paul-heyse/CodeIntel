@@ -10,8 +10,6 @@ import configparser
 import json
 import logging
 import tomllib
-from collections.abc import Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -19,6 +17,9 @@ import yaml
 from codeintel.ingestion.compute.base import StepResult
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.ports.storage import IngestStoragePort
 

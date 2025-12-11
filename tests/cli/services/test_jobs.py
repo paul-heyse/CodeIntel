@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 from codeintel.cli.jobs import JobInfo, JobManager, JobStatus, JobStore
 from codeintel.cli.services.jobs import JobService
 from tests._helpers.assertions import expect_equal, expect_is_not_none, expect_true
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # JobService creation

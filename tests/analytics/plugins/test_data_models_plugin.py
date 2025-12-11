@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.plugins.data_models.build import DataModelsPlugin
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.plugin_harness import PluginHarnessFactory
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_data_models_plugin_extracts_models_and_usage(tmp_path: Path) -> None:

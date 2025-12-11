@@ -21,20 +21,12 @@ Layer Hierarchy
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
-from codeintel.config.steps_graphs import GraphRunScope
-from codeintel.graphs.engine import GraphEngine
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend.core import (
-    BackendContext,
-    DuckDBConnection,
-    DuckDBRepositories,
-    GraphEngineProvider,
-)
 from codeintel.serving.backend.domain_builders import (
     build_callgraph_neighbors,
     build_function_architecture,
@@ -48,7 +40,19 @@ from codeintel.serving.backend.domain_builders import (
 from codeintel.serving.backend.pagination import clamp_limit
 from codeintel.serving.backend.query_api import FunctionQueriesApi
 from codeintel.serving.mcp import errors
-from codeintel.storage.repositories import FunctionRepository, GraphRepository
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from codeintel.config.steps_graphs import GraphRunScope
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.serving.backend.core import (
+        BackendContext,
+        DuckDBConnection,
+        DuckDBRepositories,
+        GraphEngineProvider,
+    )
+    from codeintel.storage.repositories import FunctionRepository, GraphRepository
 
 Message = dm.Message
 ResponseMeta = dm.ResponseMeta

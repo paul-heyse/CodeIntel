@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.cli import run_cli
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_build_export_smoke(tmp_path: Path) -> None:

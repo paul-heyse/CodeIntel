@@ -9,9 +9,9 @@ from __future__ import annotations
 import contextlib
 import json
 import shlex
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import ModuleType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.cli.execution.registry import execute_operation
@@ -22,6 +22,7 @@ from codeintel.cli.introspection import (
 )
 
 if TYPE_CHECKING:
+    from types import ModuleType
     from typing import TextIO
 
 # Optional readline import for tab completion
@@ -163,10 +164,10 @@ class InteractiveShell:
                     if should_exit:
                         break
             except EOFError:
-                print()  # noqa: T201
+                self._print("")
                 break
             except KeyboardInterrupt:
-                print()  # noqa: T201
+                self._print("")
 
     def _setup_readline(self) -> None:
         """Set up readline for completion and history."""
@@ -181,12 +182,11 @@ class InteractiveShell:
         with contextlib.suppress(FileNotFoundError):
             _readline.read_history_file(history_file)
 
-    @staticmethod
-    def _print_banner() -> None:
+    def _print_banner(self) -> None:
         """Print welcome banner."""
-        print("CodeIntel Interactive Shell")  # noqa: T201
-        print("Type 'help' for commands, 'quit' to exit")  # noqa: T201
-        print()  # noqa: T201
+        self._print("CodeIntel Interactive Shell")
+        self._print("Type 'help' for commands, 'quit' to exit")
+        self._print("")
 
     def execute_command(self, line: str, output: TextIO | None = None) -> bool:
         """Execute shell command.
@@ -248,10 +248,8 @@ class InteractiveShell:
         output
             Optional output stream.
         """
-        if output is not None:
-            output.write(msg + "\n")
-        else:
-            print(msg)  # noqa: T201
+        target = output or sys.stdout
+        target.write(f"{msg}\n")
 
     def _cmd_call(self, args: list[str], output: TextIO | None = None) -> bool:
         """Execute operation.

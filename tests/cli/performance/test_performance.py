@@ -11,14 +11,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.cli.context import CommandContext, CommandContextBuilder
+from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.core import CliResult
-from codeintel.cli.execution.registry import OperationSpec
 from codeintel.cli.introspection import get_registry
 from tests._helpers.assertions import expect_true
 from tests._helpers.operations import make_operation_spec
 
 if TYPE_CHECKING:
+    from codeintel.cli.context import CommandContext
+    from codeintel.cli.execution.registry import OperationSpec
     from tests.cli._harness import CliTestHarness, OperationTestHarness
 
 # Performance budgets (in seconds)

@@ -6,10 +6,13 @@ and uses without any database or file I/O.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from codeintel.core.data_models.rows import SymbolUseRow
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 
 @dataclass(frozen=True)

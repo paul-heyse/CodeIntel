@@ -2,20 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar, cast
 
 import pandas as pd
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.analytics.adapters.base import DeleteScope
+    from codeintel.config.datasets import (
+        DatasetContract,
+        TableSchema,
+    )
+    from codeintel.storage.datasets import DatasetRegistry
+    from codeintel.storage.gateway import StorageGateway
 
 from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     DELETE_SQL_BY_TABLE,
     BehavioralCoverageRowModel,
-    DatasetContract,
     FunctionAstFeaturesRow,
     FunctionMetricsRow,
     FunctionProfileRowModel,
@@ -25,7 +32,6 @@ from codeintel.config.datasets import (
     GraphMetricsModulesExtRow,
     GraphMetricsModulesRow,
     ProfileRowModel,
-    TableSchema,
     behavioral_coverage_row_to_tuple,
     function_ast_features_row_to_tuple,
     function_metrics_row_to_tuple,
@@ -38,9 +44,8 @@ from codeintel.config.datasets import (
     serialize_test_profile_row,
 )
 from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
+from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.pandera_schemas import validate_dataset_df
 
 type RowType = Mapping[str, object]

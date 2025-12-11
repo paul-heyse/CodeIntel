@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from codeintel.storage.gateway.protocol import DuckDBConnection
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 __all__ = ["CapturedInsert", "capture_executor"]
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 import httpx
@@ -17,14 +16,12 @@ from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.mcp.models import (
-    DatasetSpecDescriptor,
     FunctionSummaryResponse,
     ResponseMeta,
 )
 from codeintel.serving.services.errors import DatasetNotFoundError, ProblemDetail, ProblemError
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
-from codeintel.storage.gateway import StorageGateway
-from tests._helpers.analytics_samples import AnalyticsSamples, architecture_seed_selector
+from tests._helpers.analytics_samples import architecture_seed_selector
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
@@ -36,11 +33,18 @@ from tests._helpers.dataset_factories import make_descriptor, sample_dataset_spe
 from tests._helpers.fakes.serving_backends import build_serving_backend
 from tests._helpers.http_backend import HttpBackendTestConfig, make_http_backend_with_responses
 from tests._helpers.http_payloads import make_problem_detail_payload, make_retry_sequence
-from tests._helpers.plugins.mcp import McpBackendComponents
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving.mcp.models import (
+        DatasetSpecDescriptor,
+    )
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.context import TestContext
+    from tests._helpers.plugins.mcp import McpBackendComponents
 
 # Test constants
 CUSTOM_DEFAULT_LIMIT = 25

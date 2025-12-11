@@ -16,16 +16,21 @@ from __future__ import annotations
 import os
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.config import ScanProfiles
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.ingestion.infrastructure.scanning import (
-    ScanProfile,
     default_code_profile,
     default_config_profile,
     profile_from_env,
 )
+
+if TYPE_CHECKING:
+    from codeintel.ingestion.infrastructure.scanning import (
+        ScanProfile,
+    )
 
 # Binary names that should be resolved to full paths
 _BINARY_FIELDS = (

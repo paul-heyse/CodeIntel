@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, ClassVar, SupportsInt, cast
 
 from codeintel.build.errors import ToolNotAvailableError
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.adapters import BuildToolAdapter, DuckDBStorageAdapter
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestStep
 from codeintel.ingestion.plugins.helpers import get_module_paths, paths_to_modules
@@ -19,7 +17,11 @@ from codeintel.ingestion.plugins.scip_options import ScipIngestOptions
 from codeintel.storage.ibis_types import filter_by, ibis_bool
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
 log = logging.getLogger(__name__)
 

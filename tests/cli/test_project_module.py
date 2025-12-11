@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -16,6 +16,9 @@ from codeintel.cli.project import (
     load_project_config,
 )
 from tests._helpers.assertions import expect_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_find_and_load_project_config(tmp_path: Path) -> None:

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.analytics.parsing.models import ParsedFunction, SourceSpan
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+    from pathlib import Path
+
+    from codeintel.analytics.parsing.models import ParsedFunction, SourceSpan
 
 
 @dataclass(frozen=True)

@@ -6,14 +6,11 @@ registry guards, and snapshot validation.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
-import duckdb
 import pytest
 
 from codeintel.analytics.profiles import writer_guard
@@ -32,7 +29,6 @@ from codeintel.analytics.testing.coverage.inputs import (
 )
 from codeintel.analytics.testing.profiles import rows
 from codeintel.analytics.testing.profiles.types import (
-    BehavioralLLMRequest,
     BehavioralLLMResult,
     ImportanceInputs,
     IoFlags,
@@ -54,6 +50,14 @@ from tests._helpers.factories import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
+    from pathlib import Path
+
+    import duckdb
+
+    from codeintel.analytics.testing.profiles.types import (
+        BehavioralLLMRequest,
+    )
     from codeintel.storage.gateway import StorageGateway
 
 

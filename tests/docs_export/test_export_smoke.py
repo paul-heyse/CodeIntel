@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -17,6 +16,10 @@ from codeintel.export.export_jsonl import (
 from codeintel.export.export_parquet import export_all_parquet, export_dataset_to_parquet
 from codeintel.storage.datasets import DatasetRegistry
 from tests._helpers import TestContext, provision_docs_export_ready
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
 
 
 @pytest.fixture

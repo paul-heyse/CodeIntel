@@ -6,15 +6,16 @@ This module provides a resource provider for storage operations.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.graphs.ports.storage import BatchResult, QueryResult
 from codeintel.ingestion.adapters import IngestStorageService
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

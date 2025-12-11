@@ -3,22 +3,26 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import ibis
-import pandas as pd
 from ibis.common.exceptions import IbisError
 
-from codeintel.analytics.compute.graphs import ComponentBundle, NeighborStats
-from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.datasets import (
     GraphMetricsFunctionsRow,
     GraphMetricsModulesRow,
 )
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from datetime import datetime
+
+    import pandas as pd
+
+    from codeintel.analytics.compute.graphs import ComponentBundle, NeighborStats
+    from codeintel.config import GraphMetricsStepConfig
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:

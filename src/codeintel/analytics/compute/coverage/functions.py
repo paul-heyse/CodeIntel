@@ -8,10 +8,9 @@ execution ratios, which downstream risk scoring relies on.
 from __future__ import annotations
 
 import logging
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import ibis
-import ibis.expr.types as it
 
 from codeintel.analytics.compute.ibis_utils import (
     bool_and,
@@ -19,9 +18,14 @@ from codeintel.analytics.compute.ibis_utils import (
     safe_ratio,
     zero_if_null,
 )
-from codeintel.config import CoverageAnalyticsStepConfig
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import gt, ibis_bool
+
+if TYPE_CHECKING:
+    import ibis.expr.types as it
+
+    from codeintel.config import CoverageAnalyticsStepConfig
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

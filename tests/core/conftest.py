@@ -6,22 +6,26 @@ including configuration registries, resource registries, and plugin metadata.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.core.config.registry import ConfigRegistry
 from codeintel.core.plugins.execution.context import ConfigProvider, PluginScratch
 from codeintel.core.plugins.types.protocol import (
     PluginMetadata,
 )
 from codeintel.core.resources.registry import ResourceRegistry
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.fakes.configs import create_test_snapshot
 from tests._helpers.fakes.graph_contexts import create_graph_gateway
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Sample Configuration Classes for Testing

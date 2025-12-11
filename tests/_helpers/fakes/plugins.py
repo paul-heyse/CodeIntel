@@ -10,16 +10,20 @@ import contextlib
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core import (
     GraphPluginExecutionContext,
     GraphPluginMetadata,
-    GraphPluginProtocol,
     register_graph_plugin,
 )
 from codeintel.graphs.core.registry import unregister_graph_plugin
+
+if TYPE_CHECKING:
+    from codeintel.graphs.core import (
+        GraphPluginProtocol,
+    )
 
 # Type alias for plugin execute functions
 ExecuteFn = Callable[[GraphPluginExecutionContext], PluginResult]

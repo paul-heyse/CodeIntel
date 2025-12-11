@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -20,11 +19,15 @@ from codeintel.build.providers import (
     SubprocessToolRunner,
 )
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.engine.infrastructure.runner import (
-    ToolRunResult as IngestionToolRunResult,
-)
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 from tests._helpers.fakes.tools import ToolRunOptions, make_tool_run_result
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, Sequence
+
+    from codeintel.ingestion.engine.infrastructure.runner import (
+        ToolRunResult as IngestionToolRunResult,
+    )
 
 pytestmark = pytest.mark.anyio
 

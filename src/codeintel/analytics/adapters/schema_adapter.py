@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
 import pandas as pd
@@ -28,6 +27,8 @@ from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.config.datasets.schema import DatasetSchema
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway

@@ -5,15 +5,18 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-import pandas as pd
-
-from codeintel.analytics.history.git_history import FileCommitDelta, iter_file_history
-from codeintel.config import FunctionHistoryStepConfig
-from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.storage.gateway import StorageGateway
+from codeintel.analytics.history.git_history import iter_file_history
 from codeintel.storage.ibis_types import and_predicates
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from codeintel.analytics.history.git_history import FileCommitDelta
+    from codeintel.config import FunctionHistoryStepConfig
+    from codeintel.ingestion.engine.infrastructure import ToolRunner
+    from codeintel.storage.gateway import StorageGateway
 
 FUNCTION_HISTORY_COLS = [
     "repo",

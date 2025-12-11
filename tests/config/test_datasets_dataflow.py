@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.config.datasets.dataflow import (
     DataflowEdge,
     DataflowNode,
-    EdgeType,
-    NodeKind,
     build_contract_dataflow_graph,
     iter_composite_edges,
     iter_dataset_nodes,
     iter_dependency_edges,
 )
+
+if TYPE_CHECKING:
+    from codeintel.config.datasets.dataflow import (
+        EdgeType,
+        NodeKind,
+    )
 
 
 def require(condition: object, message: str) -> None:

@@ -7,6 +7,8 @@ and gateway setup.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from tests._helpers.orchestration.coverage_orchestration import (
     compute_coverage_edges,
     create_coverage_edge_env,
@@ -38,18 +40,6 @@ from tests._helpers.orchestration.graph_orchestration import (
 from tests._helpers.orchestration.history import (
     create_snapshot_db,
     insert_function_history_row,
-)
-from tests._helpers.orchestration.provisioning import (
-    build_callgraph_fixture_repo,
-    docs_views_ready_gateway,
-    graph_metrics_ready_gateway,
-    make_repo_context,
-    provision_docs_export_ready,
-    provision_existing_repo,
-    provision_gateway_with_repo,
-    provision_graph_ready_repo,
-    provision_ingested_repo,
-    provisioned_gateway,
 )
 from tests._helpers.orchestration.repo_writers import (
     write_callgraph_alias_repo,
@@ -140,3 +130,53 @@ __all__ = [
     "write_graph_metrics_repo",
     "write_sample_repo",
 ]
+
+if TYPE_CHECKING:
+    from tests._helpers.orchestration.provisioning import (
+        build_callgraph_fixture_repo,
+        docs_views_ready_gateway,
+        graph_metrics_ready_gateway,
+        make_repo_context,
+        provision_docs_export_ready,
+        provision_existing_repo,
+        provision_gateway_with_repo,
+        provision_graph_ready_repo,
+        provision_ingested_repo,
+        provisioned_gateway,
+    )
+
+_LAZY_PROVISIONING = {
+    "build_callgraph_fixture_repo": "tests._helpers.orchestration.provisioning",
+    "docs_views_ready_gateway": "tests._helpers.orchestration.provisioning",
+    "graph_metrics_ready_gateway": "tests._helpers.orchestration.provisioning",
+    "make_repo_context": "tests._helpers.orchestration.provisioning",
+    "provision_docs_export_ready": "tests._helpers.orchestration.provisioning",
+    "provision_existing_repo": "tests._helpers.orchestration.provisioning",
+    "provision_gateway_with_repo": "tests._helpers.orchestration.provisioning",
+    "provision_graph_ready_repo": "tests._helpers.orchestration.provisioning",
+    "provision_ingested_repo": "tests._helpers.orchestration.provisioning",
+    "provisioned_gateway": "tests._helpers.orchestration.provisioning",
+}
+
+if TYPE_CHECKING:
+    from tests._helpers.orchestration import provisioning as _provisioning
+
+    build_callgraph_fixture_repo = _provisioning.build_callgraph_fixture_repo
+    docs_views_ready_gateway = _provisioning.docs_views_ready_gateway
+    graph_metrics_ready_gateway = _provisioning.graph_metrics_ready_gateway
+    make_repo_context = _provisioning.make_repo_context
+    provision_docs_export_ready = _provisioning.provision_docs_export_ready
+    provision_existing_repo = _provisioning.provision_existing_repo
+    provision_gateway_with_repo = _provisioning.provision_gateway_with_repo
+    provision_graph_ready_repo = _provisioning.provision_graph_ready_repo
+    provision_ingested_repo = _provisioning.provision_ingested_repo
+    provisioned_gateway = _provisioning.provisioned_gateway
+
+
+def __getattr__(name: str) -> object:
+    if name in _LAZY_PROVISIONING:
+        module_name = _LAZY_PROVISIONING[name]
+        module = __import__(module_name, fromlist=[name])
+        return getattr(module, name)
+    message = f"module {__name__} has no attribute {name}"
+    raise AttributeError(message)

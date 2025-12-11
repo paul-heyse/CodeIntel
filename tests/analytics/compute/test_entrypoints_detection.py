@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import textwrap
-from collections.abc import Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -30,7 +29,6 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.context import TestContext
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds.entrypoints import (
     ENTRYPOINTS_CLI_END,
@@ -42,6 +40,12 @@ from tests._helpers.seeds.entrypoints import (
     ENTRYPOINTS_PACK,
     write_entrypoints_source,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from tests._helpers.context import TestContext
 
 REL_PATH = ENTRYPOINTS_MOD_PATH
 MODULE = ENTRYPOINTS_MOD_FQN

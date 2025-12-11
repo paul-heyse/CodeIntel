@@ -8,12 +8,10 @@ from __future__ import annotations
 
 import ast
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Final, cast
+from typing import TYPE_CHECKING, Final, cast
 
 import libcst as cst
 
-from codeintel.config.datasets import CallGraphEdgeRow
 from codeintel.graphs.catalog import FunctionSpan, FunctionSpanIndex
 from codeintel.graphs.compute.callgraph import (
     CallEdge,
@@ -79,6 +77,11 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.config.datasets import CallGraphEdgeRow
 
 # ---------------------------------------------------------------------------
 # Constants

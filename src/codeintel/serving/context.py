@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from contextvars import ContextVar, Token
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from contextvars import Token
 
 
 @dataclass

@@ -7,13 +7,8 @@ function metrics and types to DuckDB.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, TypedDict, cast
-
-import pandas as pd
 
 from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.analytics.adapters.schema_adapter import SchemaValidationMixin
@@ -24,6 +19,12 @@ from codeintel.config.datasets import load_columns_by_table
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+    from datetime import datetime
+    from pathlib import Path
+
+    import pandas as pd
+
     from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway

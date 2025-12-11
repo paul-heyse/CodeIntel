@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,8 +12,10 @@ from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import build_duckdb_query_service
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_correlation_id_plumbed_into_problem_detail(

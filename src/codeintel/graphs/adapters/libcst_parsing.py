@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import libcst as cst
 
@@ -18,8 +18,14 @@ from codeintel.graphs.ports.parsing import (
     ParsedModule,
     ParseError,
     ParseResult,
-    ParsingPort,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from codeintel.graphs.ports.parsing import (
+        ParsingPort,
+    )
 
 log = logging.getLogger(__name__)
 

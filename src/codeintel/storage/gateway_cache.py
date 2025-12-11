@@ -12,8 +12,12 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import open_gateway
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageConfig, StorageGateway
 
 
 def _gateway_cache_key(config: StorageConfig) -> tuple[str, str, bool, bool, bool, bool, bool]:

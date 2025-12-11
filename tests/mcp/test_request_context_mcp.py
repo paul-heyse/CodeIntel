@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.context import RequestContext
 from codeintel.serving.mcp import registry as mcp_registry
 from codeintel.serving.services.observability import (
-    ServiceCallMetrics,
     ServiceObservability,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import BackendOptions, build_duckdb_backend
+
+if TYPE_CHECKING:
+    from codeintel.serving.context import RequestContext
+    from codeintel.serving.services.observability import (
+        ServiceCallMetrics,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 
 class CapturingObservability(ServiceObservability):

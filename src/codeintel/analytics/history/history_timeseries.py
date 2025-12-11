@@ -4,21 +4,27 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
-from typing import SupportsFloat, SupportsIndex
+from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
-from codeintel.config import HistoryTimeseriesStepConfig
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import (
     DuckDBConnection,
-    SnapshotGatewayResolver,
-    StorageGateway,
 )
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
+    from codeintel.config import HistoryTimeseriesStepConfig
+    from codeintel.storage.gateway import (
+        SnapshotGatewayResolver,
+        StorageGateway,
+    )
 
 HISTORY_TIMESERIES_COLS = [
     "repo",

@@ -7,9 +7,8 @@ test defaults for repo/commit/run identifiers.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.configs.provisioning_config import ProvisioningConfig
 from tests._helpers.context import (
     TestContext,
@@ -19,27 +18,28 @@ from tests._helpers.context import (
     build_test_gateway as _build_test_gateway,
 )
 from tests._helpers.defaults import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
-from tests._helpers.env_options import EnvOptions, GatewayOptions
 from tests._helpers.orchestration.provisioning import (
     provision_gateway_with_repo,
     provision_ingested_repo,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.env_options import EnvOptions, GatewayOptions
+
 
 def build_test_gateway(
     options: GatewayOptions | None = None,
 ) -> StorageGateway:
-    """Create a StorageGateway with schema/views ensured.
-
-    Parameters
-    ----------
-    options
-        Gateway configuration bundle.
+    """
+    Create a StorageGateway with schema/views ensured.
 
     Returns
     -------
     StorageGateway
-        Gateway ready for test use with schemas/views applied.
+        Gateway ready for test execution with schemas and views applied.
     """
     return _build_test_gateway(options)
 
@@ -50,7 +50,8 @@ def create_test_env(
     options: EnvOptions | None = None,
     gateway_options: GatewayOptions | None = None,
 ) -> TestContext:
-    """Build a TestContext with consistent defaults via GatewayFactory.
+    """
+    Build a TestContext with consistent defaults via GatewayFactory.
 
     Returns
     -------
@@ -64,14 +65,8 @@ def create_provisioned_test_env(
     repo_root: Path,
     config: ProvisioningConfig | None = None,
 ) -> TestContext:
-    """Build a TestContext using provisioning flows (ingested or schema-only).
-
-    Parameters
-    ----------
-    repo_root
-        Root path where the repo/build artifacts should live.
-    config
-        Provisioning configuration; defaults mirror ProvisioningConfig.
+    """
+    Build a TestContext using provisioning flows (ingested or schema-only).
 
     Returns
     -------

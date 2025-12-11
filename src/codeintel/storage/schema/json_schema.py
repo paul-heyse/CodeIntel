@@ -6,14 +6,18 @@ import json
 import types
 import typing
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import get_args, get_origin
 
 import jsonschema
-from jsonschema.protocols import Validator
 
 from codeintel.config.datasets import get_dataset_contracts
-from codeintel.storage.datasets.registry import DatasetRegistry
+
+if typing.TYPE_CHECKING:
+    from pathlib import Path
+
+    from jsonschema.protocols import Validator
+
+    from codeintel.storage.datasets.registry import DatasetRegistry
 
 TYPE_MAP: dict[type[object], dict[str, object]] = {
     str: {"type": "string"},

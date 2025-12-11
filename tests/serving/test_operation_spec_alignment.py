@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from fastapi.routing import APIRoute
@@ -18,10 +17,15 @@ from codeintel.serving.http.routes.health import build_health_router
 from codeintel.serving.http.routes.ide import build_ide_router
 from codeintel.serving.http.routes.profiles import build_profiles_router
 from codeintel.serving.http.routes.subsystems import build_subsystem_router
-from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.mcp.tools_base import register_tools
-from codeintel.serving.operations import Operation, get_operation
+from codeintel.serving.operations import get_operation
 from codeintel.serving.operations.catalog import iter_registry_operations
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
+    from codeintel.serving.operations import Operation
 
 
 class _DummyModel:

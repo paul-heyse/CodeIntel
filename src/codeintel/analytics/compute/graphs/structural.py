@@ -6,10 +6,7 @@ clustering, triangles, k-core, and structural holes on undirected graphs.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Any
-
-import networkx as nx
+from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.compute.graphs.projections import community_ids
 from codeintel.analytics.compute.graphs.types import StructuralMetrics
@@ -21,6 +18,11 @@ from codeintel.graphs.compute.metrics.structural import (
     compute_effective_size,
     compute_triangles,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    import networkx as nx
 
 
 def structural_metrics(

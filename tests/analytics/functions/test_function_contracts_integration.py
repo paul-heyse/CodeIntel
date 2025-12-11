@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import ast
 import json
-from collections.abc import Iterator
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -21,7 +19,6 @@ from codeintel.analytics.functions.function_contracts import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.graphs.catalog import FunctionCatalogProvider
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -30,7 +27,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes.function_catalogs import (
     MockFunctionCatalog,
@@ -38,7 +35,12 @@ from tests._helpers.fakes.function_catalogs import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.context import TestContext
 
 # Test constants (non-repo/commit)
 TEST_MAX_CONDITIONS = 10

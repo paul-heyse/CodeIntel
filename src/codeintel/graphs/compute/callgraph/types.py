@@ -6,11 +6,12 @@ construction and resolution.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.graphs.catalog import FunctionSpanIndex
 
 

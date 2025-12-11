@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/plugins/registry.py
+# hypothesis_version: 6.148.7
+
+['*.py', 'PluginInfo', 'PluginManager', '_', 'description', 'enabled', 'get_plugin_manager', 'initialize_plugins', 'name', 'operations', 'path', 'register', 'register_all_plugins', 'version']

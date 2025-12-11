@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -22,10 +21,12 @@ from tests._helpers.ingestion import (
     create_scan_step,
     make_scan_setup,
 )
-from tests._helpers.orchestration.tooling import ToolingOutputs
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.orchestration.tooling import ToolingOutputs
 
 
 def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:

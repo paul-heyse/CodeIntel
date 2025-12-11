@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.context import TargetExecutionContext
 from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
 from tests._helpers.assertions import (
     expect_equal,
@@ -22,6 +21,11 @@ from tests._helpers.ingestion import (
     repo_variants,
     run_ingestion_scenario,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.build.context import TargetExecutionContext
 
 # Minimum rows expected from flattening yaml + toml + ini config values
 MIN_CONFIG_ROWS_EXPECTED = 5

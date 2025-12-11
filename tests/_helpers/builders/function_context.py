@@ -6,11 +6,13 @@ instances with sensible defaults and a fluent interface.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from codeintel.analytics.compute.semantic_roles.classification import FunctionContext
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 @dataclass

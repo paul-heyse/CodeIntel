@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import yaml
 
@@ -20,8 +20,6 @@ from codeintel.cli.config.env import load_env_config
 from codeintel.cli.config.model import (
     CliConfig,
     ConfigLoadError,
-    LogLevel,
-    OutputFormat,
     PluginsConfigSection,
     ProgressConfig,
     ProjectConfigSection,
@@ -31,6 +29,12 @@ from codeintel.cli.config.model import (
 )
 from codeintel.cli.config.validation import validate_config
 from codeintel.cli.core.parsing import parse_bool
+
+if TYPE_CHECKING:
+    from codeintel.cli.config.model import (
+        LogLevel,
+        OutputFormat,
+    )
 
 LOG = logging.getLogger(__name__)
 
@@ -591,7 +595,7 @@ def apply_overrides(config: CliConfig, overrides: dict[str, object]) -> CliConfi
         else:
             data[key] = value
 
-    return dict_to_config(data, sources=config._sources)  # noqa: SLF001
+    return dict_to_config(data, sources=tuple(config.config_sources))
 
 
 def _load_config_file(

@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import networkx as nx
 
-from codeintel.config import ConfigBuilder
-from codeintel.storage.gateway import StorageGateway
+    from codeintel.config import ConfigBuilder
+    from codeintel.storage.gateway import StorageGateway
+
 
 # Default constants for graph tests
 REPO = "demo/repo"

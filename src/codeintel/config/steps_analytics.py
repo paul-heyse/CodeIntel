@@ -24,17 +24,17 @@ Example
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from codeintel.config.parser_types import FunctionParserKind
-from codeintel.config.primitives import ScanProfiles, SnapshotRef
-
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+    from pathlib import Path
+
     from coverage import Coverage
 
+    from codeintel.config.parser_types import FunctionParserKind
+    from codeintel.config.primitives import ScanProfiles, SnapshotRef
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
 
 

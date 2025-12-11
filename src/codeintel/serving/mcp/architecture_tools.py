@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -27,25 +27,33 @@ from codeintel.serving.mcp.models import (
     GraphPlanResponse,
     ModuleArchitectureResponse,
     ModuleSubsystemResponse,
-    ProblemDetail,
     SubsystemModulesResponse,
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
 )
 from codeintel.serving.mcp.serialization import (
     ResponseFactory,
-    SupportsFromDomain,
-    SupportsModelDump,
-    SupportsModelValidate,
 )
-from codeintel.serving.mcp.tool_builder import McpToolRegistrar
-from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
-from codeintel.serving.operations import Operation, get_operation
+from codeintel.serving.mcp.tool_utils import _wrap
+from codeintel.serving.operations import get_operation
 from codeintel.serving.services.errors import generate_correlation_id
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.backend import QueryBackend
+    from codeintel.serving.mcp.models import (
+        ProblemDetail,
+    )
+    from codeintel.serving.mcp.serialization import (
+        SupportsFromDomain,
+        SupportsModelDump,
+        SupportsModelValidate,
+    )
+    from codeintel.serving.mcp.tool_builder import McpToolRegistrar
+    from codeintel.serving.mcp.tool_utils import QueryBackendOrService
+    from codeintel.serving.operations import Operation
 
 
 ModelResolver = Callable[[str], ResponseFactory | None]

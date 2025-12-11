@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.adapters.graphs import (
     SymbolFunctionMetricInputs,
@@ -27,16 +28,18 @@ from codeintel.analytics.utilities.datasets import validate_tuple_rows
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 MAX_BETWEENNESS_NODES = 1000
 MAX_COMMUNITY_NODES = 5000
 
 
-def compute_symbol_graph_metrics_modules(  # noqa: PLR0914
+def compute_symbol_graph_metrics_modules(
     gateway: StorageGateway,
     *,
     repo: str,
@@ -86,7 +89,6 @@ def compute_symbol_graph_metrics_modules(  # noqa: PLR0914
         weight=ctx.pagerank_weight,
         community_limit=ctx.community_detection_limit,
     )
-    community_map = structure.community_id if graph.number_of_nodes() <= MAX_COMMUNITY_NODES else {}
     comp_id, comp_size = component_ids_undirected(graph)
 
     rows = build_symbol_module_rows(
@@ -103,7 +105,9 @@ def compute_symbol_graph_metrics_modules(  # noqa: PLR0914
                 "core_number": structure.core_number,
                 "constraint": structure.constraint,
                 "effective_size": structure.effective_size,
-                "community_id": community_map,
+                "community_id": (
+                    structure.community_id if graph.number_of_nodes() <= MAX_COMMUNITY_NODES else {}
+                ),
             },
             comp_id=comp_id,
             comp_size=comp_size,
@@ -141,7 +145,7 @@ def compute_symbol_graph_metrics_modules(  # noqa: PLR0914
         )
 
 
-def compute_symbol_graph_metrics_functions(  # noqa: PLR0914
+def compute_symbol_graph_metrics_functions(
     gateway: StorageGateway,
     *,
     repo: str,
@@ -191,7 +195,6 @@ def compute_symbol_graph_metrics_functions(  # noqa: PLR0914
         weight=ctx.pagerank_weight,
         community_limit=ctx.community_detection_limit,
     )
-    community_map = structure.community_id if graph.number_of_nodes() <= MAX_COMMUNITY_NODES else {}
     comp_id, comp_size = component_ids_undirected(graph)
 
     rows = build_symbol_function_rows(
@@ -208,7 +211,9 @@ def compute_symbol_graph_metrics_functions(  # noqa: PLR0914
                 "core_number": structure.core_number,
                 "constraint": structure.constraint,
                 "effective_size": structure.effective_size,
-                "community_id": community_map,
+                "community_id": (
+                    structure.community_id if graph.number_of_nodes() <= MAX_COMMUNITY_NODES else {}
+                ),
             },
             comp_id=comp_id,
             comp_size=comp_size,

@@ -9,8 +9,10 @@ This module defines the types for specifying table structure:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from codeintel.cli.rendering.types import JustifyMethod
+if TYPE_CHECKING:
+    from codeintel.cli.rendering.types import JustifyMethod
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,7 @@ results to DuckDB.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -16,6 +16,8 @@ from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 

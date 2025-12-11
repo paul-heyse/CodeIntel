@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 from codeintel.config.primitives import GraphFeatureFlags
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 ServingMode = Literal["local_db", "remote_api"]
 

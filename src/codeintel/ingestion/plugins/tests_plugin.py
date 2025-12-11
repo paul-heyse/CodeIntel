@@ -6,20 +6,22 @@ This module provides `TestsIngestPlugin` that ingests pytest JSON reports.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.adapters import DuckDBStorageAdapter
 from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
 from codeintel.ingestion.plugins.helpers import get_module_paths, paths_to_modules
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
 log = logging.getLogger(__name__)
 

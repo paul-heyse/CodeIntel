@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 import duckdb
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.storage.datasets import DatasetRegistry
     from codeintel.storage.gateway.accessors import (
         AnalyticsTables,

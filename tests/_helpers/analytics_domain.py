@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
-from codeintel.config.datasets.rows.analytics import CoverageLineRow
-from codeintel.config.datasets.rows.profiles import (
-    GraphMetricsFunctionsRow,
-    GraphMetricsModulesRow,
-)
-from codeintel.config.datasets.rows.test import ProfileRowModel
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+
+if TYPE_CHECKING:
+    from codeintel.config.datasets.rows.analytics import CoverageLineRow
+    from codeintel.config.datasets.rows.profiles import (
+        GraphMetricsFunctionsRow,
+        GraphMetricsModulesRow,
+    )
+    from codeintel.config.datasets.rows.test import ProfileRowModel
 
 __all__ = [
     "make_coverage_record",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING
 
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -12,6 +12,9 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
 )
 from codeintel.serving.services.errors import ProblemDetail, ProblemError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 
 def make_function_http_responses(meta: ResponseMeta | None = None) -> dict[str, object]:

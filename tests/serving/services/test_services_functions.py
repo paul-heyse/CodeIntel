@@ -6,7 +6,6 @@ through HTTP routes and direct LocalQueryService invocation, using real gateways
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar
 
 import pytest
@@ -31,6 +30,8 @@ from tests._helpers.serving_harnesses import RecordingObservability
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_apps import ServiceApp
 

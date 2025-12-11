@@ -28,7 +28,6 @@ For more control, use the component builders:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib import import_module
 from typing import TYPE_CHECKING
@@ -37,16 +36,13 @@ import anyio
 import httpx
 
 from codeintel.analytics.runtime import (
-    GraphRuntime,
     GraphRuntimeOptions,
-    GraphRuntimePool,
     build_graph_runtime,
 )
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
-from codeintel.config.serving_models import ServingConfig, verify_db_identity
+from codeintel.config.serving_models import verify_db_identity
 from codeintel.serving.backend import (
     BackendContext,
-    BackendLimits,
     DuckDBQueryService,
     DuckDBRepositories,
     GraphEngineProvider,
@@ -60,14 +56,26 @@ from codeintel.serving.services.observability import ServiceObservability
 from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,
-    QueryService,
 )
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.analytics.runtime import (
+        GraphRuntime,
+        GraphRuntimePool,
+    )
+    from codeintel.config.serving_models import ServingConfig
     from codeintel.graphs.engine import GraphEngine
+    from codeintel.serving.backend import (
+        BackendLimits,
+    )
     from codeintel.serving.mcp.backend import DuckDBBackend, HttpBackend, QueryBackend
+    from codeintel.serving.services.query_service import (
+        QueryService,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 
 # =============================================================================

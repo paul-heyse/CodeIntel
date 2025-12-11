@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -10,18 +9,22 @@ from typing import TYPE_CHECKING
 from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.services.observability import ServiceObservability
-from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.serving_apps import (
     DEFAULT_LIMIT,
     MAX_ROWS,
-    ServiceContext,
     build_service_context_from_components,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
+    from codeintel.serving.mcp.backend import DuckDBBackend
+    from codeintel.serving.services.observability import ServiceObservability
+    from codeintel.serving.services.query_service import LocalQueryService
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.serving_apps import (
+        ServiceContext,
+    )
     from tests.serving.mcp.conftest import McpBackendComponents
 
 

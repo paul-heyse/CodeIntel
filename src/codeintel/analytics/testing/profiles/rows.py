@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.profiles.utils import optional_int
 from codeintel.analytics.profiles.writer_guard import (
-    SerializeRow,
     WriterContext,
     write_rows_with_registry_guard,
 )
@@ -22,15 +20,10 @@ from codeintel.analytics.testing.coverage.inputs import (
     TestGraphMetrics,
 )
 from codeintel.analytics.testing.profiles.types import (
-    FunctionCoverageEntryProtocol,
     ImportanceInputs,
-    SubsystemCoverageEntryProtocol,
     TestAstInfo,
-    TestGraphMetricsProtocol,
     TestProfileContext,
-    TestRecord,
 )
-from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
@@ -39,8 +32,22 @@ from codeintel.config.datasets import (
     behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    from codeintel.analytics.profiles.writer_guard import (
+        SerializeRow,
+    )
+    from codeintel.analytics.testing.profiles.types import (
+        FunctionCoverageEntryProtocol,
+        SubsystemCoverageEntryProtocol,
+        TestGraphMetricsProtocol,
+        TestRecord,
+    )
+    from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
+    from codeintel.storage.gateway import StorageGateway
 
 
 def build_test_profile_context(

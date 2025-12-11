@@ -11,12 +11,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 import ibis
-import ibis.expr.types as it
 
 from codeintel.storage.ibis_types import ne, or_predicates
 from codeintel.storage.views.ibis_registry import register_view
 
 if TYPE_CHECKING:
+    import ibis.expr.types as it
     from ibis.backends.duckdb import Backend as DuckDBBackend
 
     from codeintel.storage.gateway.protocol import StorageGateway

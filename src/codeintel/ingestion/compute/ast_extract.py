@@ -9,7 +9,6 @@ from __future__ import annotations
 import ast
 import hashlib
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -17,6 +16,8 @@ from typing import TYPE_CHECKING
 from codeintel.ingestion.compute.base import StepResult
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.ports.storage import IngestStoragePort
 

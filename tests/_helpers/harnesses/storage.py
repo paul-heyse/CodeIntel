@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.cli.context import CommandContext
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.macros import ensure_ingest_macros
-from tests._helpers.cli_context import CliTestContext, create_cli_test_context
+from tests._helpers.cli_context import create_cli_test_context
 from tests._helpers.seeds import CORE_PACK
 from tests._helpers.seeds.cli import STORAGE_PROFILE_PACK
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.cli.context import CommandContext
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.cli_context import CliTestContext
 
 
 @dataclass

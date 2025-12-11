@@ -6,7 +6,6 @@ level anomalies in the codebase.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.graphs.validation.findings import (
@@ -17,6 +16,8 @@ from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import bool_not, filter_by, ibis_bool
 
 if TYPE_CHECKING:
+    import logging
+
     from codeintel.storage.gateway import StorageGateway
 
 

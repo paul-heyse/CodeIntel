@@ -8,11 +8,9 @@ in codeintel.graphs.compute.metrics.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import networkx as nx
 from networkx.algorithms import structuralholes
 from networkx.exception import NetworkXAlgorithmError
 
@@ -26,6 +24,10 @@ from codeintel.graphs.compute.metrics.centrality import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import networkx as nx
+
     from codeintel.analytics.runtime.context import GraphContext
 
 log = logging.getLogger(__name__)

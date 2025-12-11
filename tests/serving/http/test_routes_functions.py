@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fastapi import status
-from fastapi.testclient import TestClient
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.routes.functions import RouterOptions, build_functions_router
@@ -19,6 +18,8 @@ from tests._helpers.serving_routes import RouteAppOptions, service_app_factory_w
 from tests.serving.http.client_harness import adapt_route
 
 if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
+
     from tests._helpers.context import TestContext
 
 # =============================================================================

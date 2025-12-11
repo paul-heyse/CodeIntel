@@ -30,30 +30,32 @@ Example
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from pandera.errors import SchemaError, SchemaErrors
 
-from codeintel.build.contracts import OutputContract, TableSchema
 from codeintel.build.errors import ColumnCountMismatchError, SchemaNotFoundError
-from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
-from codeintel.build.protocols import (
-    CoverageCollector,
-    GitHistoryProvider,
-    ScipIndexer,
-    ToolRunner,
-    TypeChecker,
-)
+from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.result import TargetResult
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     import pandas as pd
 
     from codeintel.analytics.runtime import GraphRuntime
+    from codeintel.build.contracts import OutputContract, TableSchema
+    from codeintel.build.parameters import TargetParameters
+    from codeintel.build.protocols import (
+        CoverageCollector,
+        GitHistoryProvider,
+        ScipIndexer,
+        ToolRunner,
+        TypeChecker,
+    )
     from codeintel.build.providers import Providers, RealTestReporter
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import BuildPaths, SnapshotRef

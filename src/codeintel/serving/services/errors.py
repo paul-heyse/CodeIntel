@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from codeintel.serving.context import get_current_request_context
+
+if TYPE_CHECKING:
+    import logging
 
 
 def generate_correlation_id() -> str:

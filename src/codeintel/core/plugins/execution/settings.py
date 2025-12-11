@@ -10,10 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
-
 if TYPE_CHECKING:
     from codeintel.core.execution.retry import RetryPolicy
+    from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
     from codeintel.core.plugins.types.protocol import PluginProtocol
 
 PluginSeverity = Literal["fatal", "soft_fail", "skip_on_error"]

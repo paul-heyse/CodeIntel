@@ -11,13 +11,14 @@ queries to minimize database overhead.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
 from duckdb import DuckDBPyConnection
 from duckdb import Error as DuckDBError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
     from codeintel.config.datasets import DatasetContract
 
 # Type alias for DuckDB connection

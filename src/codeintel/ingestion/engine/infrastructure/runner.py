@@ -9,12 +9,15 @@ import logging
 import shutil
 import time
 from asyncio.subprocess import PIPE
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.config.models import ToolsConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 log = logging.getLogger(__name__)
 

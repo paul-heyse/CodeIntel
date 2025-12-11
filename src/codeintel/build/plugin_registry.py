@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.build.plugin import TargetPlugin
 
 log = logging.getLogger(__name__)

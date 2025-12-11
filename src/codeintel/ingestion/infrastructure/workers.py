@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Iterator, Mapping
-from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator, Mapping
+    from concurrent.futures import Executor
 
 log = logging.getLogger(__name__)
 

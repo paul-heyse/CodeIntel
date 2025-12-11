@@ -6,11 +6,10 @@ following the Testing Charter by using real DuckDB connections for validation.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.primitives import (
     InvalidIdentifierError,
     PreparedStatements,
@@ -39,6 +38,11 @@ from tests._helpers.assertions import (
     expect_true,
     require_row,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 def expect_query_contains(query: str, *parts: str) -> None:

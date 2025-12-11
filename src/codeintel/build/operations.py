@@ -32,11 +32,11 @@ import importlib
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
-from types import ModuleType
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from types import ModuleType
 
     from codeintel.build.targets import OutputTarget
     from codeintel.serving.operations.catalog import Operation

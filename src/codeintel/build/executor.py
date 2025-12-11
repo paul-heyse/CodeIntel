@@ -30,28 +30,32 @@ from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.plugins.registration import ALL_PLUGINS
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
-from codeintel.build.config import BuildConfig, load_build_config
+from codeintel.build.config import load_build_config
 from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.errors import BuildErrorCollection, PluginExecutionError
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.manifest import BuildRunRecord, BuildStatus, OutputManifest
-from codeintel.build.plan import BuildPlan, PlanStage
+from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.build.plugin_registry import get_plugin_for_target
-from codeintel.build.providers import Providers, create_default_providers
-from codeintel.build.targets import TargetGraph, TargetModule
+from codeintel.build.providers import create_default_providers
+from codeintel.build.targets import TargetGraph
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
-from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
+from codeintel.export.export_jsonl import export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
 from codeintel.graphs.catalog import FunctionCatalogService
 from codeintel.graphs.runtime.graph_executor import GraphExecutorContext, GraphPluginExecutor
 from codeintel.graphs.runtime.planning import GraphPlanContext, plan_graph_plugin_run
 
 if TYPE_CHECKING:
-    from codeintel.build.targets import TargetGraph
+    from codeintel.build.config import BuildConfig
+    from codeintel.build.manifest import BuildStatus
+    from codeintel.build.plan import BuildPlan, PlanStage
+    from codeintel.build.providers import Providers
+    from codeintel.build.targets import TargetGraph, TargetModule
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef
+    from codeintel.export.export_jsonl import ExportCallOptions
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

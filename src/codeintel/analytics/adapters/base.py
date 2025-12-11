@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -37,6 +36,8 @@ from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.protocol import DuckDBError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 

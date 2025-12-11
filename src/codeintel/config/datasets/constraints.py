@@ -13,12 +13,13 @@ Architecture Reference: Section 3 - Constraint Aggregation Layer
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pandera import DataFrameSchema
 
 __all__ = [

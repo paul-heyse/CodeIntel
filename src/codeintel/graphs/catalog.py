@@ -27,17 +27,20 @@ than direct imports, enabling dependency injection and testability.
 
 from __future__ import annotations
 
-from collections.abc import Callable as TypingCallable
-from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
-
-import pandas as pd
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.helpers.module_index import load_module_map
 from codeintel.storage.ibis_types import filter_by, ibis_bool
+
+if TYPE_CHECKING:
+    from collections.abc import Callable as TypingCallable
+    from collections.abc import Iterable
+
+    import pandas as pd
+
+    from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Function Span Types (from function_index.py)

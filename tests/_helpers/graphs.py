@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import networkx as nx
 
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.catalog import FunctionCatalog
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.builders import (
     ConfigValueRow,
@@ -61,6 +56,12 @@ from tests._helpers.rows import function_meta
 from tests._helpers.seeds import AST_METRICS_PACK, CORE_PACK
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from datetime import datetime
+    from pathlib import Path
+
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 
 

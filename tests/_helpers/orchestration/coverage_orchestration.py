@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-
-from coverage import Coverage
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.testing import compute_test_coverage_edges
-from codeintel.config import ConfigBuilder, SnapshotInit, TestCoverageStepConfig
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageEdgeEnv, CoverageSeedConfig
-from tests._helpers.orchestration.tooling import CoverageArtifact, generate_coverage_for_function
+from tests._helpers.orchestration.tooling import generate_coverage_for_function
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from coverage import Coverage
+
+    from codeintel.config import TestCoverageStepConfig
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.orchestration.tooling import CoverageArtifact
 
 
 def create_coverage_edge_env(

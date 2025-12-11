@@ -6,14 +6,16 @@ and orchestrating runs across multiple engines.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
-from codeintel.core.execution.context import RunContext, RunKind, TriggerKind
+from codeintel.core.execution.context import RunContext
 from codeintel.core.execution.ids import new_run_id
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.execution.context import RunKind, TriggerKind
 
 
 def new_run_context(

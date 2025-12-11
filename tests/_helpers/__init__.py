@@ -64,6 +64,8 @@ from tests._helpers.build import (
     write_build_config,
 )
 from tests._helpers.catalogs import ensure_catalog_with_goids, seed_goids_from_catalog
+from typing import TYPE_CHECKING, Any, cast
+
 from tests._helpers.cli_context import (
     CliTestContext,
     cli_test_context_with_seeds,
@@ -142,7 +144,6 @@ from tests._helpers.orchestration.seeding_docs import (
     seed_mcp_backend,
     seed_profile_data,
 )
-from tests._helpers.plugin_harness import PluginHarnessFactory
 from tests._helpers.rows import function_meta, function_metrics_row, module_row
 from tests._helpers.scenarios import (
     ScenarioConfig,
@@ -194,7 +195,6 @@ __all__ = [
     "GraphTestEnv",
     "ManifestParams",
     "ModelLike",
-    "PluginHarnessFactory",
     "ProvisionedGateway",
     "ProvisioningConfig",
     "QueryRow",
@@ -268,3 +268,23 @@ __all__ = [
     "star_graph",
     "write_build_config",
 ]
+
+# Avoid eager imports of heavy fixtures/modules; pytest/ruff TYPE_CHECKING covers annotation use.
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
+    from tests._helpers.plugin_harness import PluginHarnessFactory
+else:
+    TestContext = cast("Any", None)
+    PluginHarnessFactory = cast("Any", None)
+
+_LAZY_HELPERS = {
+    "PluginHarnessFactory": "tests._helpers.plugin_harness",
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_HELPERS:
+        module_name = _LAZY_HELPERS[name]
+        module = __import__(module_name, fromlist=[name])
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__} has no attribute {name}")

@@ -6,9 +6,7 @@ for schema validation integration.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
-from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import pandas as pd
 import pytest
@@ -39,8 +37,14 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.env_options import EnvOptions
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+    from pathlib import Path
+
+    from tests._helpers.context import TestContext
 
 # =============================================================================
 # Constants

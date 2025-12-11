@@ -6,19 +6,23 @@ import ast
 import json
 import logging
 from collections import defaultdict
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.compute.graphs import normalize_decimal_id
-from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.utilities.ast import safe_unparse
-from codeintel.config import SemanticRolesStepConfig
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.config import SemanticRolesStepConfig
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 

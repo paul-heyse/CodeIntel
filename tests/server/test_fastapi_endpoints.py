@@ -3,21 +3,27 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anyio
 import httpx
 import pytest
-from fastapi import FastAPI, status
+from fastapi import status
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp.backend import BackendLimits, HttpBackend
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import assert_mapping_list, assert_mapping_value
 from tests._helpers.gateway import build_duckdb_backend
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from fastapi import FastAPI
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _seed_db(db_path: Path, *, repo: str, commit: str) -> StorageGateway:

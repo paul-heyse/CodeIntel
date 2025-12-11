@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TypedDict, Unpack
+from typing import TYPE_CHECKING, TypedDict, Unpack
 
 from codeintel.analytics.runtime import GraphRuntimeOptions
-from codeintel.config import GraphBackendConfig
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
-from codeintel.graphs.engine import GraphEngine, GraphKind
+
+if TYPE_CHECKING:
+    from codeintel.config import GraphBackendConfig
+    from codeintel.graphs.engine import GraphEngine, GraphKind
 
 
 def make_snapshot(

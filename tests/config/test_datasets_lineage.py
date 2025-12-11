@@ -6,7 +6,7 @@ trace_column_lineage and trace_table_lineage functions.
 
 from __future__ import annotations
 
-from collections.abc import Container
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -19,6 +19,9 @@ from codeintel.config.datasets.lineage import (
     trace_table_lineage,
 )
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+
+if TYPE_CHECKING:
+    from collections.abc import Container
 
 
 def _require(*, condition: bool, message: str) -> None:

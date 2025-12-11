@@ -12,6 +12,16 @@ from codeintel.cli.completions import Shell, generate_completion, get_install_in
 completions_app = cyclopts.App(name="completions", help="Shell completion generation")
 
 
+def _write_stdout(message: str) -> None:
+    """Write a line to stdout."""
+    sys.stdout.write(f"{message}\n")
+
+
+def _write_stderr(message: str) -> None:
+    """Write a line to stderr."""
+    sys.stderr.write(f"{message}\n")
+
+
 @completions_app.command()
 def bash() -> None:
     """Generate bash completion script.
@@ -24,7 +34,7 @@ def bash() -> None:
     codeintel completions bash > ~/.local/share/bash-completion/completions/codeintel
     source <(codeintel completions bash)
     """
-    print(generate_completion(Shell.BASH))  # noqa: T201
+    _write_stdout(generate_completion(Shell.BASH))
 
 
 @completions_app.command()
@@ -38,7 +48,7 @@ def zsh() -> None:
     --------
     codeintel completions zsh > ~/.zsh/completions/_codeintel
     """
-    print(generate_completion(Shell.ZSH))  # noqa: T201
+    _write_stdout(generate_completion(Shell.ZSH))
 
 
 @completions_app.command()
@@ -52,7 +62,7 @@ def fish() -> None:
     --------
     codeintel completions fish > ~/.config/fish/completions/codeintel.fish
     """
-    print(generate_completion(Shell.FISH))  # noqa: T201
+    _write_stdout(generate_completion(Shell.FISH))
 
 
 @completions_app.command()
@@ -66,7 +76,7 @@ def powershell() -> None:
     --------
     codeintel completions powershell | Out-String | Invoke-Expression
     """
-    print(generate_completion(Shell.POWERSHELL))  # noqa: T201
+    _write_stdout(generate_completion(Shell.POWERSHELL))
 
 
 @completions_app.command()
@@ -97,12 +107,12 @@ def install(
     # Validate shell name
     valid_shells = {s.value for s in Shell}
     if shell_lower not in valid_shells:
-        print(f"Unknown shell: {shell}", file=sys.stderr)  # noqa: T201
-        print(f"Supported: {', '.join(sorted(valid_shells))}", file=sys.stderr)  # noqa: T201
+        _write_stderr(f"Unknown shell: {shell}")
+        _write_stderr(f"Supported: {', '.join(sorted(valid_shells))}")
         raise SystemExit(1)
 
     shell_enum = Shell(shell_lower)
-    print(get_install_instructions(shell_enum))  # noqa: T201
+    _write_stdout(get_install_instructions(shell_enum))
 
 
 __all__ = ["completions_app"]

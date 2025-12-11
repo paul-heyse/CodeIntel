@@ -7,28 +7,15 @@ following the Testing Charter by using real DuckDB connections.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway.accessors import (
     AnalyticsTables,
     CoreTables,
     DocsViews,
     GraphTables,
-)
-from codeintel.storage.gateway.rows.core import (
-    CoreFileStateRow,
-    CoreGoidsRow,
-    CoreModulesRow,
-    CoreRepoMapRow,
-    CoreScipOccurrencesRow,
-)
-from codeintel.storage.gateway.rows.graph import (
-    GraphCallGraphEdgesRow,
-    GraphCallGraphNodesRow,
-    GraphImportGraphEdgesRow,
-    GraphSymbolUseEdgesRow,
 )
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
@@ -48,7 +35,23 @@ from tests._helpers.builders import (
     TestCatalogRow,
     TypednessRow,
 )
-from tests._helpers.context import TestContext
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.gateway.rows.core import (
+        CoreFileStateRow,
+        CoreGoidsRow,
+        CoreModulesRow,
+        CoreRepoMapRow,
+        CoreScipOccurrencesRow,
+    )
+    from codeintel.storage.gateway.rows.graph import (
+        GraphCallGraphEdgesRow,
+        GraphCallGraphNodesRow,
+        GraphImportGraphEdgesRow,
+        GraphSymbolUseEdgesRow,
+    )
+    from tests._helpers.context import TestContext
 
 
 def _require_row(row: tuple[object, ...] | None, message: str) -> tuple[object, ...]:

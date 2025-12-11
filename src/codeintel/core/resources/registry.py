@@ -11,11 +11,13 @@ supports factory registration for lazy provider instantiation.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeGuard, TypeVar, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, TypeVar, cast, runtime_checkable
 
 from codeintel.core.resources.protocol import ResourceError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 

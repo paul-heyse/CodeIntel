@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.profiles.files import build_file_profile as _build_file_profile
 from codeintel.analytics.profiles.functions import (
@@ -11,12 +12,16 @@ from codeintel.analytics.profiles.functions import (
 )
 from codeintel.analytics.profiles.modules import build_module_profile as _build_module_profile
 from codeintel.analytics.profiles.utils import seed_catalog_modules
-from codeintel.config import ProfilesAnalyticsStepConfig
 from codeintel.graphs.catalog import (
-    FunctionCatalogProvider,
     FunctionCatalogService,
 )
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.config import ProfilesAnalyticsStepConfig
+    from codeintel.graphs.catalog import (
+        FunctionCatalogProvider,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

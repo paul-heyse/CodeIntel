@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -20,7 +19,11 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
-from tests._helpers.plugins.mcp import McpBackendComponents
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from tests._helpers.plugins.mcp import McpBackendComponents
 
 # =============================================================================
 # Constants

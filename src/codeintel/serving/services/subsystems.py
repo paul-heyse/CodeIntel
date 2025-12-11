@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import clamp_limit
-from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.models import (
     FileHintsResponse,
     Message,
@@ -21,6 +19,11 @@ from codeintel.serving.mcp.models import (
 )
 from codeintel.serving.services.errors import ProblemError
 from codeintel.serving.services.http_transport import _HttpTransportMixin
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving.backend.query_api import DuckDBQueryApi
 
 
 class _SubsystemQueryDelegates:

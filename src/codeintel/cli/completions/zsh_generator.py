@@ -5,9 +5,13 @@ Generate zsh completion scripts with rich descriptions and grouping.
 
 from __future__ import annotations
 
-from codeintel.cli.completions.completion_model import CommandSpec, CompletionModel
+from typing import TYPE_CHECKING
+
 from codeintel.cli.completions.escaping import escape_zsh
 from codeintel.cli.completions.generator import ShellBackend
+
+if TYPE_CHECKING:
+    from codeintel.cli.completions.completion_model import CommandSpec, CompletionModel
 
 
 class ZshBackend(ShellBackend):

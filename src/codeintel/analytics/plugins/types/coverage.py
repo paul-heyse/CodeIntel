@@ -7,14 +7,15 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from codeintel.analytics.plugins.types.options import TypeCoverageOptions
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
 
 TYPE_COVERAGE_METADATA = CorePluginMetadata(

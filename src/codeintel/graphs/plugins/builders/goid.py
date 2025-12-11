@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,9 +24,8 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import GoidBuilderStepConfig
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import goid as goid_compute
 from codeintel.graphs.plugins.builders.goid_options import GoidBuilderOptions
 from codeintel.ingestion.adapters import IngestStorageService
@@ -35,7 +33,11 @@ from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
     from codeintel.storage.gateway import StorageGateway
 

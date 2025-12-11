@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.plugins.entrypoints.build import EntrypointsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_false, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.plugin_harness import PluginHarnessFactory
-from tests.analytics.conftest import PluginTestHarness
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tests.analytics.conftest import PluginTestHarness
 
 
 def test_entrypoints_plugin_requires_catalog(plugin_harness: PluginTestHarness) -> None:

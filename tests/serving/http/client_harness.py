@@ -2,21 +2,26 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter
-from fastapi.testclient import TestClient
 
 from codeintel.serving.http.routes.functions import RouterOptions
 from tests._helpers.serving_routes import (
-    RouteAppOptions,
     service_app_factory_with_routes,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
+
+    from fastapi.testclient import TestClient
+
     from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.serving_routes import (
+        RouteAppOptions,
+    )
     from tests.serving.mcp.conftest import McpBackendComponents
 
 

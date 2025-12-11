@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from typing import Protocol, TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar
 
-from codeintel.serving.backend import BackendLimits
 from codeintel.serving.services.observability import (
-    RequestContext,
-    ServiceCallMetrics,
     ServiceObservability,
 )
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
+    from codeintel.serving.backend import BackendLimits
+    from codeintel.serving.services.observability import (
+        RequestContext,
+        ServiceCallMetrics,
+    )
 
 T = TypeVar("T")
 

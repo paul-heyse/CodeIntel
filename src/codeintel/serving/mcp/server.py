@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-import httpx
 from mcp.server.fastmcp import FastMCP
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import (
     BackendResource,
-    BackendResourceOptions,
     build_backend_resource,
 )
 from codeintel.serving.mcp.registry import register_tools
 from codeintel.serving.mcp.tools_base import as_registrar, expose_tools
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    import httpx
+
+    from codeintel.serving.bootstrap import (
+        BackendResourceOptions,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 BackendFactory = Callable[..., BackendResource]
 McpFactory = Callable[[str], object]

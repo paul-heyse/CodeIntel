@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import networkx as nx
 
@@ -15,21 +15,17 @@ from codeintel.analytics.adapters.graphs import (
     build_function_metric_ext_rows,
 )
 from codeintel.analytics.compute.graphs import (
-    CentralityBundle,
-    ComponentBundle,
-    StructuralMetrics,
     centrality_directed,
     component_metadata,
     structural_metrics,
 )
-from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
+from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
 from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     resolve_graph_runtime,
 )
 from codeintel.analytics.runtime.context import (
-    GraphContext,
     GraphContextSpec,
     resolve_graph_context,
 )
@@ -38,11 +34,22 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
     validate_contract_rows,
 )
-from codeintel.config.datasets import GraphMetricsFunctionsExtRow
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
-from codeintel.graphs.engine import GraphEngine
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.analytics.compute.graphs import (
+        CentralityBundle,
+        ComponentBundle,
+        StructuralMetrics,
+    )
+    from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters
+    from codeintel.analytics.runtime.context import (
+        GraphContext,
+    )
+    from codeintel.config.datasets import GraphMetricsFunctionsExtRow
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.storage.gateway import StorageGateway
 
 CENTRALITY_SAMPLE_LIMIT = 500
 EIGEN_MAX_ITER = 200

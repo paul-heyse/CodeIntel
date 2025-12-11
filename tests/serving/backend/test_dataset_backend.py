@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import pytest
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.dataset_backend import DatasetQueryLayer
 from codeintel.serving.mcp import errors
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.backend_components import build_backend_components
 from tests._helpers.datasets_assertions import (
     expect_spec_has_capabilities,
     expect_spec_has_columns,
 )
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 # Test constants
 SAMPLE_LIMIT_FIVE: Final = 5

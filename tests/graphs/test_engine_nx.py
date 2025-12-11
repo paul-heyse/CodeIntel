@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from decimal import Decimal
-from typing import Final
-
-import networkx as nx
+from typing import TYPE_CHECKING, Final
 
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.engine import views as nx_views
@@ -25,10 +22,16 @@ from tests._helpers.builders import (
     insert_rows,
     insert_symbol_use_edges,
 )
-from tests._helpers.context import TestContext
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.networkx_graphs import chain_graph, empty_digraph
 from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import networkx as nx
+
+    from tests._helpers.context import TestContext
 
 ISOLATED_NODE: Final[int] = 3
 

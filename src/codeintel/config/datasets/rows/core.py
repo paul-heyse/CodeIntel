@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
-from typing import Protocol, TypedDict
+from typing import TYPE_CHECKING, Protocol, TypedDict
 
 # Re-export canonical row types from data_models (single source of truth)
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class IngestRunStatus(StrEnum):

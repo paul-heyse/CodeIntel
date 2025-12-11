@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
@@ -18,15 +16,21 @@ from codeintel.serving.http.routes.functions import build_functions_router
 from codeintel.serving.http.routes.health import build_health_router
 from codeintel.serving.http.routes.meta import build_meta_router
 from codeintel.serving.http.routes.subsystems import build_subsystem_router
-from codeintel.storage.gateway import StorageGateway
-from tests._helpers.analytics_samples import AnalyticsSamples, load_analytics_samples
-from tests._helpers.serving_routes import RouteApp, service_app_factory_with_routes
+from tests._helpers.analytics_samples import load_analytics_samples
+from tests._helpers.serving_routes import service_app_factory_with_routes
 from tests.serving.http.client_harness import adapt_route
-from tests.serving.mcp.conftest import McpBackendComponents
 from tests.serving.mcp.conftest import mcp_backend_factory as _mcp_backend_factory
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
+    from fastapi import FastAPI
+
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.context import TestContext
+    from tests._helpers.serving_routes import RouteApp
+    from tests.serving.mcp.conftest import McpBackendComponents
 
 mcp_backend_factory = _mcp_backend_factory
 

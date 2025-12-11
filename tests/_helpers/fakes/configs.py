@@ -7,16 +7,17 @@ for tests that need deterministic config behavior.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.execution import RunContext
-from codeintel.ingestion.engine.service import ToolService
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.config.models import ToolsConfig
     from codeintel.core.execution.context import RunKind, TriggerKind
+    from codeintel.ingestion.engine.service import ToolService
 
 
 # Import constants from central module (use canonical names)

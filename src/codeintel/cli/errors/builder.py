@@ -13,7 +13,7 @@ The ProblemBuilder provides:
 from __future__ import annotations
 
 import traceback
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codeintel.cli.errors._cli_errors import ProblemDetail
 from codeintel.cli.errors.taxonomy import (
@@ -21,7 +21,6 @@ from codeintel.cli.errors.taxonomy import (
     NOT_FOUND,
     ConfigErrorCode,
     ErrorCategory,
-    ErrorCode,
     JobErrorCode,
     OperationErrorCode,
     ServiceErrorCode,
@@ -29,6 +28,11 @@ from codeintel.cli.errors.taxonomy import (
     ValidationErrorCode,
     make_error_type,
 )
+
+if TYPE_CHECKING:
+    from codeintel.cli.errors.taxonomy import (
+        ErrorCode,
+    )
 
 # HTTP status codes for each error code
 _STATUS_CODES: dict[str, int] = {

@@ -6,11 +6,11 @@ import ast
 import hashlib
 import json
 import logging
-from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import (
@@ -19,12 +19,16 @@ from codeintel.analytics.utilities.ast import (
     safe_unparse,
     snippet_from_lines,
 )
-from codeintel.config import DataModelsStepConfig
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
+    from codeintel.config import DataModelsStepConfig
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 # Column definitions for data model tables
 DATA_MODELS_COLS = [

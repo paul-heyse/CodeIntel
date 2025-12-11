@@ -7,12 +7,10 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetDiffResult,
@@ -26,8 +24,14 @@ from codeintel.cli.errors.results import (
     fail_project_error,
 )
 from codeintel.cli.resolution.errors import ResolutionError
-from codeintel.config.datasets import DatasetContract, get_dataset_contracts_by_table_key
+from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.validation import collect_contract_issues
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
+    from codeintel.cli.context import CommandContext
+    from codeintel.config.datasets import DatasetContract
 
 LOG = logging.getLogger(__name__)
 

@@ -14,8 +14,7 @@ from `codeintel.graphs.core.registry`, including:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import pytest
 
@@ -38,6 +37,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.graph_plugins import make_graph_plugin
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # Constants
 TEST_PLUGIN_PREFIX: Final = "_test_registry_"

@@ -8,7 +8,6 @@ to work with the new build system's tool abstractions.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.ports.tools import (
@@ -23,6 +22,8 @@ from codeintel.ingestion.ports.tools import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.build.protocols import (
         CoverageCollector,
         ScipIndexer,

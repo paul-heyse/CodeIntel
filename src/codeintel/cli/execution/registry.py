@@ -31,18 +31,16 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
-    from codeintel.cli.context import CommandContext
+    from codeintel.cli.context import CommandContext, CommandContextBuilder
     from codeintel.cli.core import CliResult
 
 LOG = logging.getLogger(__name__)
@@ -574,7 +572,6 @@ def execute_operation(
     >>> spec = get_registry().get("some.operation")  # doctest: +SKIP
     >>> result = execute_operation(spec, {"param": "value"})  # doctest: +SKIP
     """
-    # Build CommandContext
     builder = (
         CommandContextBuilder()
         .with_params(params)

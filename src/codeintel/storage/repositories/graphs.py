@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-import ibis.expr.types as it
 import pandas as pd
 
 from codeintel.storage.ibis_types import and_predicates
 from codeintel.storage.pandera_schemas import validate_dataset_df
-from codeintel.storage.repositories.base import BaseRepository, RowDict
+from codeintel.storage.repositories.base import BaseRepository
+
+if TYPE_CHECKING:
+    import ibis.expr.types as it
+
+    from codeintel.storage.repositories.base import RowDict
 
 
 @dataclass(frozen=True)

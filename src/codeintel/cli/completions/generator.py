@@ -6,9 +6,10 @@ allowing shell-specific rendering while sharing common traversal logic.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from codeintel.cli.completions.completion_model import CommandSpec, CompletionModel
+if TYPE_CHECKING:
+    from codeintel.cli.completions.completion_model import CommandSpec, CompletionModel
 
 
 class ShellBackend(Protocol):

@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
 import jsonschema
-from duckdb import DuckDBPyConnection
 
-from codeintel.storage.datasets.registry import DatasetRegistry, load_dataset_registry
+from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.validation.contract import (
     _schema_path,
     collect_contract_issues,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
+    from duckdb import DuckDBPyConnection
+
+    from codeintel.storage.datasets.registry import DatasetRegistry
 
 __all__ = [
     "ConformanceIssue",

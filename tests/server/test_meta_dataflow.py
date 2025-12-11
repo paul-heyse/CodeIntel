@@ -2,19 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from http import HTTPStatus
+from typing import TYPE_CHECKING
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.bootstrap import BackendResource, build_backend_resource
+from codeintel.serving.bootstrap import build_backend_resource
 from codeintel.serving.http.fastapi import create_app
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from tests._helpers.gateway import GatewayFactory
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from fastapi import FastAPI
+
+    from codeintel.serving.bootstrap import BackendResource
+    from codeintel.storage.gateway import StorageGateway
 
 
 @pytest.fixture

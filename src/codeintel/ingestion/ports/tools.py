@@ -23,13 +23,15 @@ codeintel.ingestion.adapters.tool_runner : Adapter that bridges the layers
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 # Import canonical ToolStatus from tools.plugins
 from codeintel.ingestion.engine.plugins import ToolStatus
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
 
 
 @dataclass(frozen=True)

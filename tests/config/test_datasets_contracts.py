@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,6 +15,9 @@ from codeintel.config.datasets.contracts import (
     get_row_bindings,
     get_table_schemas,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def require(*, condition: bool, message: str) -> None:

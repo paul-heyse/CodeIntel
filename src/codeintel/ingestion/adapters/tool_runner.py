@@ -32,8 +32,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.engine.service import ToolService
@@ -52,6 +50,9 @@ from codeintel.ingestion.ports.tools import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
     from codeintel.config.models import ToolsConfig
     from codeintel.ingestion.engine.infrastructure import ToolRunner
 

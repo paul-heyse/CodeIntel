@@ -24,10 +24,7 @@ from codeintel.config.primitives import BuildPaths
 from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.protocol import (
-    GraphPluginKind,
-    GraphPluginMetadata,
     GraphPluginMetadataConfig,
-    GraphPluginStage,
     create_graph_metadata,
 )
 from codeintel.graphs.engine import GraphKind
@@ -37,6 +34,11 @@ if TYPE_CHECKING:
     from codeintel.build.plugin import TargetPlugin
     from codeintel.build.targets import OutputTarget
     from codeintel.graphs.core.context import GraphPluginExecutionContext
+    from codeintel.graphs.core.protocol import (
+        GraphPluginKind,
+        GraphPluginMetadata,
+        GraphPluginStage,
+    )
 
 log = logging.getLogger(__name__)
 

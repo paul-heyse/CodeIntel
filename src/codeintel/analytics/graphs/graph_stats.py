@@ -9,8 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-
-import networkx as nx
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.graphs import (
     build_projection_graph,
@@ -24,7 +23,11 @@ from codeintel.analytics.runtime import (
 from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    import networkx as nx
+
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from coverage import Coverage
@@ -19,12 +20,17 @@ from codeintel.config import (
     BuildLayoutOptions,
     ConfigBuilder,
     SnapshotInit,
-    TestCoverageStepConfig,
 )
-from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.assertions import assert_single_edge
-from tests._helpers.configs import CoverageEdgeEnv, ProvisionOptions
+from tests._helpers.configs import ProvisionOptions
 from tests._helpers.orchestration import compute_coverage_edges, provision_graph_ready_repo
+
+if TYPE_CHECKING:
+    from codeintel.config import (
+        TestCoverageStepConfig,
+    )
+    from codeintel.storage.gateway import DuckDBConnection
+    from tests._helpers.configs import CoverageEdgeEnv
 
 
 def _insert_goids(con: DuckDBConnection, cfg: TestCoverageStepConfig) -> None:

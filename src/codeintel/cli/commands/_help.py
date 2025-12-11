@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from enum import Enum
 from functools import wraps
@@ -10,14 +9,17 @@ from typing import TYPE_CHECKING, ClassVar, Literal, TypedDict, cast
 
 import attrs
 import cyclopts.help.help as help_mod
-from cyclopts.argument import Argument, ArgumentCollection
-from cyclopts.core import App
-from cyclopts.group import Group
-from cyclopts.help.help import HelpPanel
-from rich.console import Console
+from cyclopts.argument import ArgumentCollection
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Iterator
+
     from cyclopts._result_action import ResultAction
+    from cyclopts.argument import Argument
+    from cyclopts.core import App
+    from cyclopts.group import Group
+    from cyclopts.help.help import HelpPanel
+    from rich.console import Console
 
 
 class _AppCallKwargs(TypedDict, total=False):

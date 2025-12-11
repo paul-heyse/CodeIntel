@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.helpers.profiling import (
     DOCS_VIEWS,
     explain,
@@ -22,6 +22,9 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 @pytest.fixture

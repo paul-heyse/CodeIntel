@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
-
-from duckdb import DuckDBPyConnection
+from typing import TYPE_CHECKING, cast
 
 from codeintel.config.datasets import DatasetContract, get_dataset_contracts_by_table_key
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from duckdb import DuckDBPyConnection
 
 __all__ = [
     "DatasetRegistry",

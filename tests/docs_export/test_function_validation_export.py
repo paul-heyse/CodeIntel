@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.export.export_jsonl import export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import FunctionValidationRow, insert_rows
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_function_validation_export(fresh_gateway: StorageGateway, tmp_path: Path) -> None:

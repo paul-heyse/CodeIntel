@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
-from codeintel.graphs.engine.backend import BackendEnablement, maybe_enable_nx_gpu
+from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
 from codeintel.graphs.engine.nx_engine import NxGraphEngine
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, MutableMapping
+
+    from codeintel.config.primitives import GraphBackendConfig
+    from codeintel.graphs.engine.backend import BackendEnablement
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)

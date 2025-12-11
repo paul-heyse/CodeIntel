@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import ast
-from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.utilities.ast import snippet_from_lines
+
+if TYPE_CHECKING:
+    import ast
+    from collections.abc import Iterable, Mapping, Sequence
 
 MAX_EVIDENCE_SAMPLES = 5
 

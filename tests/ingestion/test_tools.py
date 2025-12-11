@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -70,10 +71,14 @@ from tests._helpers.assertions import (
 from tests._helpers.fakes.tools import PresetRunner, ToolRunOptions, make_tool_run_result
 from tests._helpers.ingestion import write_pytest_report
 from tests._helpers.orchestration.tooling import (
-    ToolingArtifacts,
-    ToolingOutputs,
     build_tooling_artifacts,
 )
+
+if TYPE_CHECKING:
+    from tests._helpers.orchestration.tooling import (
+        ToolingArtifacts,
+        ToolingOutputs,
+    )
 
 
 @pytest.fixture

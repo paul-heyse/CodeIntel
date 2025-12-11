@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.config.datasets import FunctionAstFeaturesRow
+
+if TYPE_CHECKING:
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
 
 
 def features_to_row(

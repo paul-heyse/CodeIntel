@@ -23,9 +23,7 @@ import logging
 import re
 import shutil
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.protocols import (
@@ -42,6 +40,9 @@ from codeintel.build.protocols import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable, Mapping, Sequence
+    from pathlib import Path
+
     from codeintel.config.models import ToolsConfig
 
 log = logging.getLogger(__name__)

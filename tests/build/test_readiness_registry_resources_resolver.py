@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,7 +20,7 @@ from codeintel.build.registry import (
 )
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.resources import TargetExecution, TargetResources
-from codeintel.build.state import DatabaseState, StalenessReason, TargetState, TargetStatus
+from codeintel.build.state import DatabaseState, StalenessReason, TargetState
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from codeintel.config.datasets.primitives import Column, TableSchema
 from codeintel.config.primitives import SnapshotRef
@@ -36,6 +35,9 @@ from tests._helpers.assertions import (
 from tests._helpers.build import ManifestParams, sample_manifest
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from codeintel.build.state import TargetStatus
     from codeintel.storage.datasets import DatasetRegistry
     from codeintel.storage.gateway.accessors import (
         AnalyticsTables,

@@ -7,7 +7,6 @@ row counts, column presence, and foreign key relationships.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.infrastructure.db_queries import (
@@ -24,12 +23,16 @@ from codeintel.ingestion.validation.checks.constraints import (
 )
 from codeintel.ingestion.validation.findings import (
     ContractViolation,
-    ForeignKeyConstraint,
-    IngestContractSpec,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.ingestion.validation.findings import (
+        ForeignKeyConstraint,
+        IngestContractSpec,
+    )
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

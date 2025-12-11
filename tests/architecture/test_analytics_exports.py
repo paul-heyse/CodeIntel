@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import importlib
-from collections.abc import Iterable, Mapping
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
 
 EXPECTED_EXPORTS: Mapping[str, set[str]] = {
     "codeintel.analytics.functions": {

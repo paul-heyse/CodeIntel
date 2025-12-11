@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,8 +11,10 @@ from fastapi.testclient import TestClient
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.http.fastapi import create_app
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import RepoMapRow, insert_rows
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_fastapi_wiring_smoke(fresh_gateway: StorageGateway) -> None:

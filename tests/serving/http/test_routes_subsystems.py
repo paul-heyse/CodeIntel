@@ -5,17 +5,22 @@ This module tests the subsystem-related HTTP endpoints using real gateways.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from fastapi import status
-from fastapi.testclient import TestClient
 
 from codeintel.serving.http.routes.functions import RouterOptions
-from tests._helpers.analytics_samples import AnalyticsSamples
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 from tests._helpers.assertions.http_responses import (
     assert_ok_or_not_found,
     assert_problem_detail_response,
 )
+
+if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
+
+    from tests._helpers.analytics_samples import AnalyticsSamples
 
 
 @pytest.mark.parametrize(

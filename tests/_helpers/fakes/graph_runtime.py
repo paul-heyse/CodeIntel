@@ -7,7 +7,6 @@ methods record call names for assertions.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from importlib import import_module
 from typing import TYPE_CHECKING, Final, TypedDict, TypeVar, Unpack, cast
@@ -17,12 +16,13 @@ from duckdb import Error as DuckDBError
 
 from codeintel.analytics.resources.graphs import GraphRuntimeLike
 from codeintel.analytics.runtime import GraphRuntimeOptions
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine.protocol import GraphEngine, GraphKind
-from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
-    from codeintel.config.primitives import GraphBackendConfig
+    from collections.abc import Callable, Mapping
+
+    from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+    from codeintel.storage.gateway import StorageGateway
     from tests._helpers.graphs import GraphFixtures
 
 CALL_GRAPH_TABLE: Final[str] = "graph.call_graph_edges"

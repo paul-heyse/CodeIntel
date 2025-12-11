@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from codeintel.cli.errors import ValidationError
 from codeintel.cli.handlers.docs import (
     DocsDependencies,
@@ -16,7 +18,9 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests.cli.handlers.conftest import DocsHandlerHarness
+
+if TYPE_CHECKING:
+    from tests.cli.handlers.conftest import DocsHandlerHarness
 
 
 def test_docs_export_result_to_dict() -> None:

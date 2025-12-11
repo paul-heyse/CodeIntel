@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import cache
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.plugins.cfg_dfg.metrics import CFG_DFG_METRICS_METADATA
 from codeintel.analytics.plugins.config_data_flow.compute import CONFIG_DATA_FLOW_METADATA
@@ -39,10 +40,8 @@ from codeintel.analytics.plugins.tests.graph_metrics import TEST_GRAPH_METRICS_M
 from codeintel.analytics.plugins.tests.profile import TEST_PROFILE_METADATA
 from codeintel.analytics.plugins.types.coverage import TYPE_COVERAGE_METADATA
 from codeintel.core.plugins.registry.capability_index import (
-    PluginRegistryIndex,
     build_registry_index,
 )
-from codeintel.core.plugins.types.metadata import CorePluginMetadata
 from codeintel.graphs.plugins.builders.callgraph import CALLGRAPH_METADATA
 from codeintel.graphs.plugins.builders.cfg_dfg import CFG_DFG_METADATA as GRAPH_CFG_DFG_METADATA
 from codeintel.graphs.plugins.builders.goid import GOID_BUILDER_METADATA
@@ -58,6 +57,12 @@ from codeintel.ingestion.plugins.repo_scan import REPO_SCAN_METADATA
 from codeintel.ingestion.plugins.scip_plugin import SCIP_INGEST_METADATA
 from codeintel.ingestion.plugins.tests_plugin import TESTS_INGEST_METADATA
 from codeintel.ingestion.plugins.typing_plugin import TYPING_INGEST_METADATA
+
+if TYPE_CHECKING:
+    from codeintel.core.plugins.registry.capability_index import (
+        PluginRegistryIndex,
+    )
+    from codeintel.core.plugins.types.metadata import CorePluginMetadata
 
 ALL_PLUGIN_METADATA: tuple[CorePluginMetadata, ...] = (
     # Analytics
@@ -105,6 +110,7 @@ ALL_PLUGIN_METADATA: tuple[CorePluginMetadata, ...] = (
     TYPING_INGEST_METADATA,
     SCIP_INGEST_METADATA,
 )
+
 
 @cache
 def get_global_registry_index() -> PluginRegistryIndex:

@@ -22,7 +22,6 @@ from codeintel.serving.mcp.models import (
     ResponseMeta,
     TestsForFunctionResponse,
 )
-from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.http_payloads import (
     RequestRecorder,
     assert_scope_serialized,
@@ -35,6 +34,7 @@ from tests._helpers.serving_harnesses import (
 )
 
 if TYPE_CHECKING:
+    from codeintel.serving.services.query_service import LocalQueryService
     from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_contexts import ProvisionedServiceContext
 

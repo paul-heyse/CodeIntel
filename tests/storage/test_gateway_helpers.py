@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from tests._helpers.builders import (
     CoverageLineRow,
     insert_rows,
 )
-from tests._helpers.context import TestContext
 from tests._helpers.seeds import (
     CORE_PACK,
     COVERAGE_LINES_PACK,
@@ -17,6 +18,9 @@ from tests._helpers.seeds import (
     METRICS_PACK,
     SUBSYSTEM_ANALYTICS_PACK,
 )
+
+if TYPE_CHECKING:
+    from tests._helpers.context import TestContext
 
 
 def test_insert_helpers_write_expected_rows(test_ctx: TestContext) -> None:

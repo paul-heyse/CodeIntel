@@ -24,21 +24,23 @@ Example
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from codeintel.config.primitives import BuildPaths, ScanProfiles, SnapshotRef
+from codeintel.config.primitives import SnapshotRef
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from datetime import datetime
+
     from codeintel.config.datasets import (
         CallGraphEdgeRow,
         CFGBlockRow,
         CFGEdgeRow,
         DFGEdgeRow,
     )
+    from codeintel.config.primitives import BuildPaths, ScanProfiles
     from codeintel.core.execution.retry import RetryPolicy
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
 

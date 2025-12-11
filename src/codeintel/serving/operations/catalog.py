@@ -11,7 +11,6 @@ for the serving layer.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import chain
@@ -24,11 +23,15 @@ from codeintel.config.datasets import (
 from codeintel.config.datasets.dataflow import (
     DataflowEdge,
     DataflowNode,
-    NodeKind,
     build_contract_dataflow_graph,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from codeintel.config.datasets.dataflow import (
+        NodeKind,
+    )
     from codeintel.serving.backend import BackendLimits
     from codeintel.serving.mcp.models import DatasetSpecDescriptor
     from codeintel.serving.services.query_service import QueryService

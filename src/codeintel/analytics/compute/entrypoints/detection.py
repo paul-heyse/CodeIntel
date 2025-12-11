@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import (
@@ -17,6 +17,9 @@ from codeintel.analytics.utilities.ast import (
     safe_unparse,
     snippet_from_lines,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping, Sequence
 
 
 @dataclass(frozen=True)

@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
-from codeintel.build.context import TargetExecutionContext
 from codeintel.build.contracts import OutputContract
 from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget
-from codeintel.config.datasets.primitives import TableSchema
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion import (
@@ -31,7 +28,6 @@ from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_cod
 from codeintel.ingestion.plugins.helpers import get_module_paths, paths_to_modules
 from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.contexts import (
     EnvOverrides,
@@ -44,10 +40,16 @@ from tests._helpers.fakes.tools import write_dummy_scip_files
 from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Generator, Sequence
+    from pathlib import Path
+
+    from codeintel.build.context import TargetExecutionContext
     from codeintel.build.plugin import TargetPlugin
     from codeintel.build.providers import Providers
+    from codeintel.config.datasets.primitives import TableSchema
     from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.ports.discovery import ModuleRecord
+    from codeintel.storage.gateway import StorageGateway
 
 TResult_co = TypeVar("TResult_co", bound=TargetResult, covariant=True)
 

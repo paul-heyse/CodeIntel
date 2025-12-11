@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.subsystem_backend import SubsystemQueryLayer
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_true
 from tests._helpers.backend_components import build_backend_components
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _expect(*, condition: bool, message: str) -> None:

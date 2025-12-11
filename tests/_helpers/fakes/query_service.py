@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.domain_models import DatasetRows, DatasetSchema, ResponseMeta
 from codeintel.serving.services.errors import DatasetNotFoundError, ProblemDetail
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.serving_stubs import (
     HookedDatasetQueries,
@@ -18,6 +16,11 @@ from tests._helpers.serving_stubs import (
     HookedProfileQueries,
     HookedSubsystemQueries,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass

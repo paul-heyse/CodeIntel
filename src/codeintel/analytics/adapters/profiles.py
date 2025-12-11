@@ -9,8 +9,6 @@ All profile adapters include schema validation via SchemaValidationMixin.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Sequence
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.analytics.adapters.base import BatchAdapter
@@ -19,6 +17,9 @@ from codeintel.config.datasets import load_columns_by_table, serialize_row
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+    from datetime import datetime
+
     import pandas as pd
 
     from codeintel.config.primitives import SnapshotRef

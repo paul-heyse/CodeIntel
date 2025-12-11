@@ -15,6 +15,11 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 
 
+def _force_setattr(target: object, name: str, value: object) -> None:
+    """Attempt to set an attribute on a frozen dataclass for testing."""
+    setattr(target, name, value)
+
+
 def test_backend_flags_defaults() -> None:
     """Verify BackendFlags has expected defaults."""
     flags = BackendFlags()
@@ -104,4 +109,4 @@ def test_runtime_params_immutable() -> None:
     params = RuntimeParams(repo="org/repo")
 
     with pytest.raises(AttributeError):
-        params.repo = "other/repo"
+        _force_setattr(params, "repo", "other/repo")

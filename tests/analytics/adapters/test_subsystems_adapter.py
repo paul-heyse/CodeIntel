@@ -6,8 +6,7 @@ and module mapping data using real DuckDB instances.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,12 +14,11 @@ from codeintel.analytics.adapters.subsystems import (
     SubsystemModulesAdapter,
     SubsystemsAdapter,
 )
-from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import (
     expect_equal,
     require_row,
 )
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.contracts import count_rows
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.rows import (
@@ -29,6 +27,13 @@ from tests._helpers.rows import (
     subsystem_module_payload,
     subsystem_payload,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.config.primitives import SnapshotRef
+    from tests._helpers.context import TestContext
 
 # =============================================================================
 # Constants

@@ -10,14 +10,19 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from codeintel.config import HotspotsStepConfig
 from codeintel.config.datasets import HotspotRow, hotspot_row_to_tuple
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from codeintel.config import HotspotsStepConfig
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 MAX_STDERR_CHARS = 500

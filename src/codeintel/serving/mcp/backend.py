@@ -6,25 +6,20 @@ import logging
 import time
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import anyio
 import httpx
 
-from codeintel.graphs.engine import GraphEngine
-from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import (
     BackendLimits,
-    DuckDBQueryService,
 )
-from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
     DatasetSchemaResponse,
-    DatasetSpecDescriptor,
     FileHintsResponse,
     FileProfileResponse,
     FileSummaryResponse,
@@ -50,11 +45,24 @@ from codeintel.serving.services.errors import DatasetNotFoundError, ProblemError
 from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,
-    QueryService,
-    ServiceObservability,
 )
 from codeintel.serving.types import AggregatedBackendProtocol
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.serving import domain_models as dm
+    from codeintel.serving.backend import (
+        DuckDBQueryService,
+    )
+    from codeintel.serving.backend.query_api import DuckDBQueryApi
+    from codeintel.serving.mcp.models import (
+        DatasetSpecDescriptor,
+    )
+    from codeintel.serving.services.query_service import (
+        QueryService,
+        ServiceObservability,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 MAX_ROWS_LIMIT = BackendLimits().max_rows_per_call
 HTTP_ERROR_STATUS = 400

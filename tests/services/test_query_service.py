@@ -4,43 +4,50 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
 from functools import partial
 from http import HTTPStatus
-from pathlib import Path
 from types import SimpleNamespace
-from typing import NamedTuple, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, NamedTuple, Protocol, cast, runtime_checkable
 
 import pytest
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.datasets import build_registry_and_limits, validate_dataset_registry
-from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp import errors
-from codeintel.serving.mcp.backend import QueryBackend
 from codeintel.serving.mcp.models import (
-    GraphScopePayload,
     ResponseMeta,
     SubsystemCoverageResponse,
     SubsystemCoverageRow,
     SubsystemProfileResponse,
     SubsystemProfileRow,
 )
-from codeintel.serving.services.observability import RequestContext
 from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,
-    ServiceCallMetrics,
     ServiceObservability,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import build_duckdb_query_service
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from codeintel.serving import domain_models as dm
+    from codeintel.serving.backend.query_api import DuckDBQueryApi
+    from codeintel.serving.mcp.backend import QueryBackend
+    from codeintel.serving.mcp.models import (
+        GraphScopePayload,
+    )
+    from codeintel.serving.services.observability import RequestContext
+    from codeintel.serving.services.query_service import (
+        ServiceCallMetrics,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 
 @runtime_checkable

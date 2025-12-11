@@ -12,7 +12,6 @@ from codeintel.core.execution import RunContext, new_run_context
 from codeintel.storage.tracking import PipelineStepRecord
 from tests._helpers.run_tracking import (
     ExpectedRun,
-    RunTrackingHarness,
     expect_run,
     expect_step,
     expect_steps,
@@ -20,6 +19,9 @@ from tests._helpers.run_tracking import (
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.run_tracking import (
+        RunTrackingHarness,
+    )
 
 
 @pytest.fixture

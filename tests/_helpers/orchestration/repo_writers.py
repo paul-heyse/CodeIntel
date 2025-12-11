@@ -6,7 +6,10 @@ for test repository setup, including sample packages and coverage drivers.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def write_sample_repo(repo_root: Path) -> list[Path]:

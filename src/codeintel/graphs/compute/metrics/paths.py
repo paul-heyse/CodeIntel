@@ -6,9 +6,12 @@ including path counting, shortest path lengths, and reachability.
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterable
+from typing import TYPE_CHECKING
 
 import networkx as nx
+
+if TYPE_CHECKING:
+    from collections.abc import Hashable, Iterable
 
 
 def count_simple_paths(

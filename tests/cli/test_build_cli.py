@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.targets import TargetModule
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -14,6 +14,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.cli import run_cli
+
+if TYPE_CHECKING:
+    from codeintel.build.targets import TargetModule
 
 
 class TestBuildStatusHelp:

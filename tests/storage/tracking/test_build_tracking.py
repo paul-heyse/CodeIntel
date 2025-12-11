@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.tracking.build_tracking import BuildTracking
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_none,
@@ -16,6 +15,10 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.tracking.build_tracking import BuildTracking
 
 MANIFEST_COUNT = 3
 UPDATED_DURATION_MS = 2000.0

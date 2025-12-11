@@ -8,15 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar, SupportsInt, cast
 
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -32,9 +30,11 @@ from codeintel.storage.gateway.protocol import DuckDBCatalogException
 from codeintel.storage.ibis_types import filter_by, ibis_bool
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
 log = logging.getLogger(__name__)
 

@@ -10,9 +10,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.config import GraphMetricsStepConfig
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.config import GraphMetricsStepConfig
 
 DEFAULT_BETWEENNESS_SAMPLE = 500
 

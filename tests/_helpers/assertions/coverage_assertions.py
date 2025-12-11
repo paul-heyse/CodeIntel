@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_is_not_none
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
+
+    from codeintel.config.primitives import SnapshotRef
 
 
 @dataclass(frozen=True)

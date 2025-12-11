@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
 
@@ -15,10 +16,12 @@ from codeintel.storage.gateway.connection import (
     _ensure_macros_and_schema,
     connect,
 )
-from codeintel.storage.gateway.protocol import SnapshotGatewayResolver, StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.validation import validate_contract_or_raise
 from codeintel.storage.views.ibis_views import create_all_ibis_views
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway.protocol import SnapshotGatewayResolver, StorageGateway
 
 __all__ = [
     "build_snapshot_gateway_resolver",

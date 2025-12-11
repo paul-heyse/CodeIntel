@@ -17,22 +17,17 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import pandas as pd
 
 from codeintel.analytics.compute.functions import (
-    ComplexityMetrics,
     compute_complexity,
 )
 from codeintel.analytics.compute.functions.loc import compute_loc
 from codeintel.analytics.compute.functions.typedness import (
-    ParamStats,
-    TypednessFlags,
     compute_param_stats,
     compute_typedness_flags,
 )
@@ -42,17 +37,30 @@ from codeintel.analytics.functions.config import (
     ProcessState,
 )
 from codeintel.analytics.functions.parsing import parse_python_file
-from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
+from codeintel.analytics.parsing.models import SourceSpan
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.parsing.validation import FunctionValidationReporter
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
 )
-from codeintel.config import FunctionAnalyticsStepConfig
-from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.pandera_schemas import validate_dataset_df
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
+
+    from codeintel.analytics.compute.functions import (
+        ComplexityMetrics,
+    )
+    from codeintel.analytics.compute.functions.typedness import (
+        ParamStats,
+        TypednessFlags,
+    )
+    from codeintel.analytics.parsing.models import ParsedModule
+    from codeintel.config import FunctionAnalyticsStepConfig
+    from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

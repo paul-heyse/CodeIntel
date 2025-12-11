@@ -18,19 +18,23 @@ from __future__ import annotations
 import dataclasses
 import logging
 import sys
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, TypeGuard, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, TypeVar, cast
 
 from codeintel.cli.commands._common import SharedFlags
-from codeintel.cli.context import CommandContext, CommandContextBuilder
-from codeintel.cli.core import CliResult
+from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.core.command import Command
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.execution.registry import OperationSpec, register_operation
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.cli.context import CommandContext
+    from codeintel.cli.core import CliResult
 
 LOG = logging.getLogger(__name__)
 

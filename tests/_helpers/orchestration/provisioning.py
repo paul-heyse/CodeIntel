@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from coverage import Coverage
@@ -25,7 +23,6 @@ from codeintel.ingestion import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
-    ModuleRecord,
     RepoScanStep,
     ToolRunnerAdapter,
     TypingIngestStep,
@@ -34,7 +31,7 @@ from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner
 from codeintel.ingestion.engine.infrastructure.runner import ToolNotFoundError
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata import INGEST_MACROS
 from codeintel.storage.schema import apply_all_schemas
@@ -59,6 +56,7 @@ from tests._helpers.configs import (
     RepoContext,
     provisioning_gateway_options,
 )
+from tests._helpers.context import TestContext
 from tests._helpers.fakes import utcnow
 from tests._helpers.fakes.contexts import ExecutionContextBuilder
 from tests._helpers.gateway import GatewayFactory
@@ -73,9 +71,14 @@ from tests._helpers.orchestration.seeding_docs import seed_docs_export_minimal
 from tests._helpers.orchestration.tooling import make_tools_config
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
     from codeintel.config.models import ToolsConfig
-    from codeintel.storage.gateway import DuckDBConnection
-    from tests._helpers.context import TestContext
+    from codeintel.ingestion import (
+        ModuleRecord,
+    )
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
 def _assert_ingest_macros_present(con: DuckDBConnection) -> None:
@@ -1098,8 +1101,6 @@ class ProvisioningBuilder:
         TestContext
             Configured test context with provisioned gateway.
         """
-        from tests._helpers.context import TestContext  # noqa: PLC0415
-
         provisioned = provision_ingested_repo(
             self._repo_root,
             repo=self._repo,

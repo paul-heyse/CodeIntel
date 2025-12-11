@@ -6,7 +6,7 @@ Test REPL interactions, session management, and completion.
 from __future__ import annotations
 
 from io import StringIO
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.shell import (
@@ -23,6 +23,9 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Expected number of history entries for tests
 EXPECTED_HISTORY_ENTRIES = 2

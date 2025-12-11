@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Generator, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from uuid import uuid4
 
 import pytest
@@ -20,7 +19,7 @@ import pytest
 from codeintel.build.operations import get_targets_for_operation
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.serving_models import ServingConfig
-from codeintel.core.execution import RunContext, RunKind, TriggerKind
+from codeintel.core.execution import RunContext
 from codeintel.serving.auto_pipeline import (
     AUTO_PIPELINE_ENV,
     build_paths_for_serving,
@@ -36,10 +35,7 @@ from codeintel.serving.auto_pipeline import (
     should_run_auto_pipeline,
 )
 from codeintel.serving.mcp.auto_pipeline_wrapper import wrap_tool_with_prereqs
-from codeintel.serving.mcp.backend import DuckDBBackend, QueryBackend
 from codeintel.serving.operations.catalog import get_operation
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.tracking import PipelineRunTracking, PipelineStatus
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -51,6 +47,14 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import GatewayFactory, build_duckdb_backend
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Generator, Iterator
+
+    from codeintel.core.execution import RunKind, TriggerKind
+    from codeintel.serving.mcp.backend import DuckDBBackend, QueryBackend
+    from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.tracking import PipelineRunTracking, PipelineStatus
 
 # -----------------------------------------------------------------------------
 # is_auto_pipeline_enabled Tests

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.serving.mcp.backend import QueryBackend
 from codeintel.serving.mcp.tools_base import as_registrar
 from codeintel.serving.mcp.tools_base import register_tools as _register_tools
-from codeintel.serving.services.query_service import QueryService
 
 if TYPE_CHECKING:
     from codeintel.config.serving_models import ServingConfig
+    from codeintel.serving.mcp.backend import QueryBackend
+    from codeintel.serving.services.query_service import QueryService
 
 
 def register_tools(

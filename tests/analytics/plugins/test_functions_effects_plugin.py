@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
@@ -16,6 +16,9 @@ from tests._helpers.graphs import build_graph_engine_double
 from tests._helpers.harnesses import plugin_harness_with_packs
 from tests._helpers.rows import function_meta
 from tests._helpers.seeds import CORE_PACK
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _seed_effect_sources(repo_root: Path) -> None:

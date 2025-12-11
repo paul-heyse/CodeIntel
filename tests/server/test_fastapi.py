@@ -2,23 +2,30 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.http.fastapi import BackendResource, create_app
-from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT
+from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.views import create_all_views
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.gateway import build_duckdb_backend
 from tests._helpers.orchestration import seed_coverage_rows
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from fastapi import FastAPI
+
+    from codeintel.serving.mcp.backend import DuckDBBackend
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _seed_api_data(gateway: StorageGateway) -> None:

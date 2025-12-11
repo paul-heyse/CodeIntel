@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import pytest
 
@@ -17,10 +17,12 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
     SubsystemProfileRow,
 )
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.subsystems import SubsystemRepository
 from tests._helpers.gateway import GatewayFactory
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 class StubFunctionRow(TypedDict):

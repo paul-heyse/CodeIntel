@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -19,8 +18,11 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.storage.gateway.protocol import StorageGateway
 
 
@@ -69,8 +71,6 @@ def manifest_gateway(tmp_path: Path) -> StorageGateway:
     StorageGateway
         Gateway instance with core schema created.
     """
-    from tests._helpers.gateway import GatewayFactory  # noqa: PLC0415
-
     return (
         GatewayFactory()
         .file_backed(tmp_path / "manifest.duckdb")

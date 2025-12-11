@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -11,7 +11,6 @@ from codeintel.ingestion.plugins.tests_plugin import (
     get_module_paths,
     resolve_report_file,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.factories.row_factories import sample_pytest_summary, sample_pytest_tests
@@ -23,6 +22,11 @@ from tests._helpers.ingestion import (
     write_pytest_report,
 )
 from tests.ingestion.plugins._wiring import ModulePathCase, run_module_path_resolution_scenarios
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 EXPECTED_TEST_ROWS = 4
 TRUNCATED_LONGREPR_LENGTH = 1000

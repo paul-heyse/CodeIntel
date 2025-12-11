@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.storage import gateway as gateway_pkg
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway_cache import close_gateways
-from tests.cli._harness import CliInvocationResult, CliTestHarness
+from tests.cli._harness import CliTestHarness
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
+    from tests.cli._harness import CliInvocationResult
 
 PROJECT_FILENAME = "codeintel.yaml"
 

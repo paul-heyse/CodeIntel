@@ -20,12 +20,13 @@ from __future__ import annotations
 import io
 import re
 from time import perf_counter
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.export.export_jsonl import NORMALIZED_MACROS
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.macros.generation import render_macro
 from codeintel.storage.metadata import (
     METADATA_SCHEMA_DDL,
@@ -35,6 +36,9 @@ from codeintel.storage.metadata import (
 from codeintel.storage.metadata import NORMALIZED_MACROS as BOOTSTRAP_MACROS
 from codeintel.storage.sql import safe_macro_call
 from tests._helpers.assertions import expect_in, expect_true
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 pytestmark = pytest.mark.smoke
 

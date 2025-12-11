@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from codeintel.storage.gateway import StorageGateway
+from typing import TYPE_CHECKING
+
 from codeintel.storage.repositories.base import (
     BaseRepository,
     PaginatedRows,
@@ -21,6 +22,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.rows import module_row
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_fetch_one_dict_returns_mapping(fresh_gateway: StorageGateway) -> None:

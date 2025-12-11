@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.ingestion import DocstringsExtractStep
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
     build_repo_with_variants,
     build_scan_profile,
     create_scan_step,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 @contextmanager

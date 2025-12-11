@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.cli.handlers.storage import (
     GenerateMacrosResult,
@@ -19,7 +19,11 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests.cli.handlers.conftest import StorageHandlerHarness
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tests.cli.handlers.conftest import StorageHandlerHarness
 
 HTTP_BAD_REQUEST = 400
 

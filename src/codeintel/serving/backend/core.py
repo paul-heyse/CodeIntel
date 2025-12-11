@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from codeintel.graphs.engine import GraphEngine
-from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.serving.mcp import errors
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.repositories import (
@@ -16,6 +15,10 @@ from codeintel.storage.repositories import (
     SubsystemRepository,
     TestRepository,
 )
+
+if TYPE_CHECKING:
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.serving.backend.pagination import BackendLimits
 
 
 @dataclass(frozen=True)

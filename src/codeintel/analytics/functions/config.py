@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
     from codeintel.analytics.parsing.validation import FunctionValidationReporter

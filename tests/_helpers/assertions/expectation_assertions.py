@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
-from typing import cast
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, cast
 
-import duckdb
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    import duckdb
 
 
 def _prefix(label: str | None) -> str:

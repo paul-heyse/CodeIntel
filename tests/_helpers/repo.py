@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Module paths and FQNs
 MOD_A_PATH: Final[str] = "pkg/mod_a.py"

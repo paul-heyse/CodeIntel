@@ -8,11 +8,11 @@ with virtual file systems.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
 

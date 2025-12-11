@@ -22,7 +22,6 @@ from codeintel.serving.mcp.models import (
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
 )
-from tests._helpers.analytics_samples import AnalyticsSamples
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.http_payloads import (
     RequestRecorder,
@@ -31,6 +30,7 @@ from tests._helpers.http_payloads import (
 from tests._helpers.serving_harnesses import HttpSubsystemHarness, SubsystemDelegateHarness
 
 if TYPE_CHECKING:
+    from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_contexts import ProvisionedServiceContext
 
 # =============================================================================

@@ -22,9 +22,9 @@ Layer Hierarchy
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend.core import BackendContext, DuckDBRepositories
 from codeintel.serving.backend.domain_builders import (
     build_module_subsystems,
     build_subsystem_coverage,
@@ -35,7 +35,10 @@ from codeintel.serving.backend.domain_builders import (
 )
 from codeintel.serving.backend.pagination import clamp_limit
 from codeintel.serving.backend.query_api import SubsystemQueriesApi
-from codeintel.storage.repositories import SubsystemRepository
+
+if TYPE_CHECKING:
+    from codeintel.serving.backend.core import BackendContext, DuckDBRepositories
+    from codeintel.storage.repositories import SubsystemRepository
 
 ResponseMeta = dm.ResponseMeta
 

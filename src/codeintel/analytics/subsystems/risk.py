@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from codeintel.config import SubsystemsStepConfig
-from codeintel.storage.gateway import StorageGateway
+if TYPE_CHECKING:
+    from codeintel.config import SubsystemsStepConfig
+    from codeintel.storage.gateway import StorageGateway
 
 MEDIUM_RISK_THRESHOLD = 0.4
 

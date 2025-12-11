@@ -4,19 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from anyio import to_thread
 
-from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
-    ToolRunner,
 )
 from codeintel.ingestion.engine.plugins import (
     ToolPlugin,
@@ -25,6 +22,14 @@ from codeintel.ingestion.engine.plugins import (
     ToolStatus,
 )
 from codeintel.ingestion.engine.results import TestReport
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.config.models import ToolsConfig
+    from codeintel.ingestion.engine.infrastructure import (
+        ToolRunner,
+    )
 
 log = logging.getLogger(__name__)
 

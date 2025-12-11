@@ -7,13 +7,10 @@ and middleware using real gateways and TestClient - no mocking.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from fastapi import FastAPI, status
-from fastapi.testclient import TestClient
+from fastapi import status
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import build_backend_resource
@@ -28,6 +25,12 @@ from tests._helpers.assertions import (
 from tests._helpers.assertions.http_responses import assert_problem_detail_response
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
     from tests._helpers.context import TestContext
 # =============================================================================
 # load_api_config Tests (covers _ensure_readable_db via public interface)

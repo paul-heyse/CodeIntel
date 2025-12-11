@@ -8,10 +8,10 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from typing import TYPE_CHECKING
 
 import uvicorn
 
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult, parse_cli_value
 from codeintel.cli.core.result_types import (
     DatasetConstraintsResult,
@@ -30,7 +30,6 @@ from codeintel.cli.errors.results import (
     fail_unknown_operation,
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
-from codeintel.cli.resolution.types import ResolvedRuntime
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.config.datasets.constraints import extract_constraints_from_pandera
 from codeintel.config.datasets.schema import DatasetMetadata
@@ -42,6 +41,10 @@ from codeintel.serving.http.fastapi import create_app as create_http_app
 from codeintel.serving.mcp.server import main as run_mcp_server
 from codeintel.serving.operations.catalog import get_operation, iter_operations
 from codeintel.storage.validation import collect_contract_issues
+
+if TYPE_CHECKING:
+    from codeintel.cli.context import CommandContext
+    from codeintel.cli.resolution.types import ResolvedRuntime
 
 LOG = logging.getLogger(__name__)
 

@@ -7,7 +7,6 @@ graphs and computing metrics on those projections.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 import networkx as nx
@@ -22,6 +21,8 @@ from codeintel.graphs.compute.metrics.bipartite import (
 from codeintel.graphs.compute.metrics.community import detect_communities_greedy
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from codeintel.analytics.runtime.context import GraphContext
 
 log = logging.getLogger(__name__)

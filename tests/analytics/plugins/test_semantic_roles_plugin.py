@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,12 +12,16 @@ from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.builders import insert_rows
 from tests._helpers.catalogs import ensure_catalog_with_goids
-from tests._helpers.context import TestContext
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.graphs import canonical_ast_artifacts
 from tests._helpers.harnesses import plugin_harness_with_packs
 from tests._helpers.rows import function_meta, function_metrics_row, module_row
 from tests._helpers.seeds import CORE_PACK
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tests._helpers.context import TestContext
 
 MIN_ROLE_CONFIDENCE = 0.5
 

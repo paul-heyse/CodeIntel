@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from codeintel.analytics.testing import compute_test_coverage_edges
-from tests._helpers.configs import SpanTestEnv
 from tests._helpers.orchestration import build_span_graph_components, collect_span_snapshot
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tests._helpers.configs import SpanTestEnv
 
 REPO: Final = "demo/repo"
 COMMIT: Final = "deadbeef"

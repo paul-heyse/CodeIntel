@@ -18,7 +18,6 @@ from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult
 from codeintel.cli.errors.results import fail_history_error
@@ -37,6 +36,7 @@ from codeintel.storage.gateway import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from codeintel.cli.context import CommandContext
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)

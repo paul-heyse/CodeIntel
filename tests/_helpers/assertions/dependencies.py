@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 def build_dependency_graph(edges: Iterable[tuple[str, str]]) -> nx.DiGraph:

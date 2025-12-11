@@ -13,13 +13,11 @@ The module provides:
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from tenacity import (
     AsyncRetrying,
-    RetryCallState,
     RetryError,
     Retrying,
     before_sleep_log,
@@ -30,9 +28,16 @@ from tenacity import (
     wait_exponential,
     wait_random_exponential,
 )
-from tenacity.stop import stop_base
 
 from codeintel.core.execution.errors import PLUGIN_CATCHABLE_ERRORS
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from tenacity import (
+        RetryCallState,
+    )
+    from tenacity.stop import stop_base
 
 log = logging.getLogger(__name__)
 

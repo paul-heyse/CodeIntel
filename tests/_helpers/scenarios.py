@@ -7,10 +7,9 @@ aligned with production wiring. Seed packs remain composable and idempotent.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Self
 
-from tests._helpers.context import DEFAULT_COMMIT, DEFAULT_REPO, TestContext
+from tests._helpers.context import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.env import create_test_env
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.repo import write_canonical_repo
@@ -21,7 +20,9 @@ from tests._helpers.seeds.function_types import FunctionTypesPack
 from tests._helpers.seeds.profile import ProfilePack
 
 if TYPE_CHECKING:
-    from tests._helpers.context import SeedPack
+    from pathlib import Path
+
+    from tests._helpers.context import SeedPack, TestContext
 
 
 # =============================================================================

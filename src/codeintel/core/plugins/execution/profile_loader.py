@@ -5,10 +5,12 @@ from __future__ import annotations
 import importlib
 import logging
 import tomllib
-from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.core.plugins.execution.profiles import ExecutionProfile, register_profile
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class _YamlModule(Protocol):

@@ -11,16 +11,17 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
-from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
+    from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
 

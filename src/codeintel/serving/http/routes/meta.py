@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, HTTPException, Query
 
 from codeintel.serving.auto_pipeline import build_prereq_debug_info
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.dependencies import (
-    BackendDep,
-    ConfigDep,
-    ServiceDep,
-)
 from codeintel.serving.mcp.models import (
     DataflowEdgePayload,
     DataflowGraphResponse,
@@ -27,7 +24,14 @@ from codeintel.serving.operations.catalog import (
     get_operation,
     iter_registry_operations,
 )
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.serving.http.dependencies import (
+        BackendDep,
+        ConfigDep,
+        ServiceDep,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 LOG_ROUTE_PREFIX = "/meta"
 

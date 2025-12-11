@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 
 def _with_env(overrides: dict[str, str], func: Callable[[], None]) -> None:

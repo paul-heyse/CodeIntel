@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
@@ -34,7 +35,6 @@ from codeintel.analytics.runtime import (
     resolve_graph_runtime,
 )
 from codeintel.analytics.runtime.context import (
-    GraphContext,
     GraphContextSpec,
     resolve_graph_context,
 )
@@ -43,13 +43,18 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
     validate_contract_rows,
 )
-from codeintel.config import GraphMetricsStepConfig
-from codeintel.graphs.catalog import FunctionCatalogProvider
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
 from codeintel.storage.repositories.subsystems import SubsystemRepository
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from codeintel.analytics.runtime.context import (
+        GraphContext,
+    )
+    from codeintel.config import GraphMetricsStepConfig
+    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

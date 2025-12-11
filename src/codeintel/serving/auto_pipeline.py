@@ -15,11 +15,10 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.build.executor import BuildExecutor, BuildResult, ExecutorEnv
+from codeintel.build.executor import BuildExecutor, ExecutorEnv
 from codeintel.build.operations import get_targets_for_operation
 from codeintel.build.plan import PlanGenerator
 from codeintel.build.readiness import DatabaseReadinessView
@@ -28,17 +27,20 @@ from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import StateValidator
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.models import CliPathsInput, ToolsConfig
-from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.config.primitives import SnapshotRef
 from codeintel.serving.operations.catalog import get_operation
-from codeintel.storage.tracking import PipelineRunRecord
 from codeintel.storage.validation import table_has_rows_for_snapshot
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
+    from codeintel.build.executor import BuildResult
     from codeintel.config.datasets import DatasetContract
+    from codeintel.config.primitives import BuildPaths
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.backend import QueryBackend
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.tracking import PipelineRunTracking
+    from codeintel.storage.tracking import PipelineRunRecord, PipelineRunTracking
 
 LOG = logging.getLogger(__name__)
 

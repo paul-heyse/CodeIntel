@@ -9,12 +9,14 @@ This module provides:
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from functools import lru_cache
-from typing import Final, TypeVar
+from typing import TYPE_CHECKING, Final, TypeVar
 
 from codeintel.config.datasets.contracts import get_table_schemas
 from codeintel.storage.sql.primitives import QueryBuilder, SafeColumn, SafeTable
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 _Column = TypeVar("_Column", bound=str)
 

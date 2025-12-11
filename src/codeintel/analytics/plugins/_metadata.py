@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from codeintel.core.plugins.types.metadata import CorePluginMetadata
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
+from codeintel.core.plugins.types.protocol import PluginMetadata
+
+if TYPE_CHECKING:
+    from codeintel.core.plugins.types.metadata import CorePluginMetadata
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
 __all__ = [
     "to_plugin_metadata",

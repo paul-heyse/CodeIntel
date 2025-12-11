@@ -24,14 +24,15 @@ Integration Points
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.manifest import OutputManifest
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.build.manifest import OutputManifest
     from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway

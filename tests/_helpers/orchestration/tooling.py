@@ -9,10 +9,9 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import sys
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
+from typing import TYPE_CHECKING
 
 import pytest
 from coverage import Coverage
@@ -22,12 +21,19 @@ from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolRunner,
-    ToolRunResult,
 )
-from codeintel.ingestion.engine.results import CoverageFileSummary
 from codeintel.ingestion.engine.service import ToolService
 from tests._helpers.fakes.tools import write_dummy_scip_files
 from tests._helpers.ingestion import write_coverage_file, write_pytest_report
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from types import ModuleType
+
+    from codeintel.ingestion.engine.infrastructure import (
+        ToolRunResult,
+    )
+    from codeintel.ingestion.engine.results import CoverageFileSummary
 
 
 def _ensure_ok(result: ToolRunResult, *, action: str) -> None:

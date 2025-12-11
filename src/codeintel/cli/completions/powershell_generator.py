@@ -5,8 +5,12 @@ Generate PowerShell completion scripts for Windows.
 
 from __future__ import annotations
 
-from codeintel.cli.completions.completion_model import CommandSpec, CompletionModel
+from typing import TYPE_CHECKING
+
 from codeintel.cli.completions.generator import ShellBackend, generate_with_backend
+
+if TYPE_CHECKING:
+    from codeintel.cli.completions.completion_model import CommandSpec, CompletionModel
 
 
 class PowerShellBackend(ShellBackend):

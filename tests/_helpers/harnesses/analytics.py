@@ -7,18 +7,13 @@ manually constructing TestContext + ExecutionContextBuilder in each test.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.build.context import TargetResult
-from codeintel.build.parameters import TargetParameters
-from codeintel.build.plugin import TargetPlugin
-from tests._helpers.context import SeedPack, TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.fakes.contexts import (
     ExecutionContextBuilder,
-    TargetResourceOverrides,
 )
 from tests._helpers.seeds import (
     CORE_PACK,
@@ -28,6 +23,18 @@ from tests._helpers.seeds import (
     ENTRYPOINTS_PACK,
     GRAPH_PACK,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.build.context import TargetResult
+    from codeintel.build.parameters import TargetParameters
+    from codeintel.build.plugin import TargetPlugin
+    from tests._helpers.context import SeedPack, TestContext
+    from tests._helpers.fakes.contexts import (
+        TargetResourceOverrides,
+    )
 
 
 @dataclass

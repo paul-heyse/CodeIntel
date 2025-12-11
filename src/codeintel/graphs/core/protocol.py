@@ -10,9 +10,7 @@ like `GraphPluginMetadata` extend them with graph-related fields.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, runtime_checkable
-
-from pydantic import BaseModel
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from codeintel.core.plugins.types.protocol import (
     PluginCapability,
@@ -27,8 +25,12 @@ from codeintel.core.plugins.types.protocol import (
     ValidationResult,
 )
 from codeintel.core.plugins.types.result import PluginResult, PluginStatus
-from codeintel.graphs.core.context import GraphPluginExecutionContext
-from codeintel.graphs.engine import GraphKind
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+    from codeintel.graphs.core.context import GraphPluginExecutionContext
+    from codeintel.graphs.engine import GraphKind
 
 # Graph-specific plugin kinds and stages
 GraphPluginKind = Literal["builder", "metric", "validation"]

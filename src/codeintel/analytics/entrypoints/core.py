@@ -6,26 +6,19 @@ import hashlib
 import json
 import logging
 from collections import defaultdict
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.compute.entrypoints.detection import (
     DetectorSettings,
-    EntryPointCandidate,
     detect_entrypoints,
 )
 from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
-from codeintel.config import EntryPointsStepConfig
-from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 
 ENTRYPOINTS_COLS = [
@@ -73,7 +66,17 @@ ENTRYPOINT_TESTS_COLS = [
 ]
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
+
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
+    from codeintel.analytics.compute.entrypoints.detection import (
+        EntryPointCandidate,
+    )
+    from codeintel.config import EntryPointsStepConfig
+    from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 

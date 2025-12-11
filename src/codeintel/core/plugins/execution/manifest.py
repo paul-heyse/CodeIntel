@@ -13,12 +13,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.core.plugins.types.result import PluginExecutionRecord
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 log = logging.getLogger(__name__)
 

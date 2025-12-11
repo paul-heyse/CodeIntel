@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from codeintel.cli.errors import CLI_EXIT_VALIDATION
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_in
-from tests._helpers.cli import CLIContext, run_cli
+from tests._helpers.cli import run_cli
+
+if TYPE_CHECKING:
+    from tests._helpers.cli import CLIContext
 
 
 def test_docs_export_invalid_validation_mode(cli_ctx: CLIContext) -> None:

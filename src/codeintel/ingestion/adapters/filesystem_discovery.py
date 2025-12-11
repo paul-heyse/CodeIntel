@@ -9,7 +9,6 @@ from __future__ import annotations
 import fnmatch
 import logging
 import time
-from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,7 +17,7 @@ from codeintel.ingestion.infrastructure.scanning import SourceScanner
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
 

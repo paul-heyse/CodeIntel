@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
 from codeintel.storage.repositories.functions import FunctionRepository
 from tests._helpers.assertions import (
@@ -17,8 +17,11 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.builders import RiskFactorRow, insert_rows
-from tests._helpers.context import TestContext
 from tests._helpers.rows import function_metrics_row, function_profile_row
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.context import TestContext
 
 
 def test_resolve_function_goid_passthrough(fresh_gateway: StorageGateway) -> None:

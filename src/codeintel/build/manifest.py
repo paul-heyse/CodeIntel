@@ -8,8 +8,10 @@ in DuckDB via the ``BuildTracking`` accessor.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 BuildStatus = Literal["running", "succeeded", "failed"]
 """Status of a build run.

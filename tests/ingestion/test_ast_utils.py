@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -33,6 +33,9 @@ from tests._helpers.ingestion_samples import (
     SYNTAX_ERROR_CODE,
     UNICODE_MODULE,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 AST_NODES_COLUMNS = get_table_columns("core.ast_nodes")
 

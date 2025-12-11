@@ -6,20 +6,24 @@ import ast
 import hashlib
 import json
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
-from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.config import ConfigDataFlowStepConfig
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.config import ConfigDataFlowStepConfig
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 CONFIG_DATA_FLOW_COLS = [
     "repo",

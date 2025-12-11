@@ -6,6 +6,7 @@ import importlib.util
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
 
@@ -13,7 +14,6 @@ from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.plugins.builders import CallGraphPlugin, CfgDfgPlugin, SymbolUsesPlugin
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (
     GoidRow,
     ModuleRow,
@@ -24,12 +24,18 @@ from tests._helpers.builders import (
 from tests._helpers.configs.graph_config import (
     COMMIT,
     REPO,
-    GraphEngineSeed,
     SpanSnapshot,
     SpanTestEnv,
 )
 from tests._helpers.fakes.contexts import ExecutionContextBuilder
-from tests._helpers.orchestration.tooling import CoverageArtifact, generate_coverage_for_function
+from tests._helpers.orchestration.tooling import generate_coverage_for_function
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.configs.graph_config import (
+        GraphEngineSeed,
+    )
+    from tests._helpers.orchestration.tooling import CoverageArtifact
 
 
 def build_seeded_graph_engine(gateway: StorageGateway, seed: GraphEngineSeed) -> NxGraphEngine:

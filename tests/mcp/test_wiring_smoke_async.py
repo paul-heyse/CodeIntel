@@ -4,20 +4,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.bootstrap import BackendResource, build_backend_resource
+from codeintel.serving.bootstrap import build_backend_resource
 from codeintel.serving.mcp import server
 from tests._helpers.assertions import expect_true
 from tests._helpers.gateway import GatewayFactory, seed_repo_identity
 from tests._helpers.mcp_registrar import (
     AsyncRecordingMcpRegistrar as AsyncRecordingMcp,
 )
-from tests._helpers.mcp_registrar import (
-    ToolDescriptor,
-    ToolRegistrar,
-)
+
+if TYPE_CHECKING:
+    from codeintel.serving.bootstrap import BackendResource
+    from tests._helpers.mcp_registrar import (
+        ToolDescriptor,
+        ToolRegistrar,
+    )
 
 
 def test_mcp_wiring_smoke_async_registrar() -> None:

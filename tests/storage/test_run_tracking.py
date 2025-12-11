@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.tracking import (
     PipelineRunRecord,
     PipelineRunTracking,
@@ -19,7 +18,13 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_length,
 )
-from tests._helpers.run_tracking import RunTrackingHarness, make_run_context
+from tests._helpers.run_tracking import make_run_context
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.run_tracking import RunTrackingHarness
 
 
 def test_pipeline_run_record_stores_fields() -> None:

@@ -13,9 +13,7 @@ focusing on specific paths not covered by test_runtime.py:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import pytest
 
@@ -26,7 +24,6 @@ from codeintel.config.steps_graphs import (
 )
 from codeintel.core.execution.retry import RetryPolicy
 from codeintel.core.plugins.types.protocol import PluginResourceHints
-from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.core.registry import (
     PlanningOptions,
     SelectionPolicy,
@@ -49,6 +46,12 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.graph_plugins import make_graph_plugin, plugin_registrar
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
+
+    from codeintel.graphs.core.protocol import GraphPluginProtocol
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16

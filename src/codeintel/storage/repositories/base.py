@@ -24,16 +24,20 @@ Existence check:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from ibis.common.exceptions import IbisError
-from ibis.expr import types as it
 
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.pandera_schemas import validate_dataset_df
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from ibis.expr import types as it
+
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -333,7 +337,7 @@ class BaseRepository:
         """
         return self.gateway.ibis.table(table_key)
 
-    def _ibis_to_df(  # noqa: PLR6301
+    def _ibis_to_df(
         self,
         expr: it.Table,
         table_key: str | None = None,
@@ -353,6 +357,7 @@ class BaseRepository:
         pd.DataFrame
             Validated DataFrame.
         """
+        _ = self
         df = pd.DataFrame(expr.execute())
         if table_key:
             return validate_dataset_df(table_key, df)
@@ -478,7 +483,7 @@ class BaseRepository:
             log.debug("Falling back to SQL for single-row query")
             return self._fetch_one(sql_fallback, params)
 
-    def _ibis_exists(  # noqa: PLR6301
+    def _ibis_exists(
         self,
         expr: it.Table,
     ) -> bool:
@@ -498,12 +503,13 @@ class BaseRepository:
         bool
             True if at least one row matches the expression.
         """
+        _ = self
         # Limit to 1 row for efficiency and count
         limited = expr.limit(1)
         df = pd.DataFrame(limited.execute())
         return len(df) > 0
 
-    def _ibis_paginated(  # noqa: PLR6301
+    def _ibis_paginated(
         self,
         expr: it.Table,
         *,
@@ -530,6 +536,7 @@ class BaseRepository:
         PaginatedRows
             Paginated result with truncation metadata.
         """
+        _ = self
         # Fetch one extra row to detect truncation
         fetch_limit = limit + 1
         limited_expr = expr.limit(fetch_limit)

@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.build.resolver import BuildResolver
-from codeintel.build.state import DatabaseState, StalenessReason, TargetState, TargetStatus
+from codeintel.build.state import DatabaseState, StalenessReason, TargetState
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.build import sample_manifest
+
+if TYPE_CHECKING:
+    from codeintel.build.state import TargetStatus
 
 
 def _make_graph() -> TargetGraph:

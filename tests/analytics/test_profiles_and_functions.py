@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -66,11 +65,6 @@ from codeintel.config.datasets import (
     FUNCTION_PROFILE_COLUMNS,
     MODULE_PROFILE_COLUMNS,
     TEST_PROFILE_COLUMNS,
-    BehavioralCoverageRowModel,
-    FileProfileRowModel,
-    FunctionProfileRowModel,
-    ModuleProfileRowModel,
-    ProfileRowModel,
     behavioral_coverage_row_to_tuple,
     file_profile_row_to_tuple,
     function_profile_row_to_tuple,
@@ -78,7 +72,6 @@ from codeintel.config.datasets import (
     serialize_test_profile_row,
 )
 from codeintel.config.primitives import BuildLayoutOptions
-from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers import METRICS_PACK, assert_frozen
 from tests._helpers.assertions import (
     assert_coverage_lines,
@@ -93,7 +86,6 @@ from tests._helpers.assertions import (
     require_row,
 )
 from tests._helpers.config_factory import profiles_analytics_cfg
-from tests._helpers.context import TestContext
 from tests._helpers.factories.row_factories import (
     blank_behavioral_coverage_row,
     blank_file_profile_row,
@@ -116,6 +108,20 @@ from tests._helpers.seeds.core import (
     MOD_B_PATH,
     MOD_C_PATH,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.config.datasets import (
+        BehavioralCoverageRowModel,
+        FileProfileRowModel,
+        FunctionProfileRowModel,
+        ModuleProfileRowModel,
+        ProfileRowModel,
+    )
+    from codeintel.storage.gateway import DuckDBConnection
+    from tests._helpers.context import TestContext
 
 EPSILON = 1e-6
 REL_PATH = "pkg/mod.py"

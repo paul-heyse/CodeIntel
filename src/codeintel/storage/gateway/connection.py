@@ -1,16 +1,23 @@
-"""Connection management functions for DuckDB databases."""
+"""Connection management for DuckDB (macros removed).
+
+All ingestion/DDL is now policy-backend + ibis driven; ingest macros are retired and
+no longer applied here. This module remains for gateway wiring and schema/view setup.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 from warnings import warn
 
 import duckdb
 
-from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.gateway.protocol import DuckDBConnection
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.views import create_all_views
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway.config import StorageConfig
+    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 __all__ = [
     "connect",

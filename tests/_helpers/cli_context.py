@@ -10,18 +10,19 @@ plugin tests, ensuring consistent testing patterns across the codebase.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Self
-
-from codeintel.cli.context import CommandContext, CommandContextBuilder
-from tests._helpers.context import SeedPack, TestContext, create_test_context
+from tests._helpers.context import create_test_context
 from tests._helpers.repo import write_canonical_repo
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from codeintel.cli.context import CommandContext, CommandContextBuilder
     from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.context import SeedPack, TestContext
 
 
 @dataclass
@@ -153,6 +154,8 @@ class CliTestContext:
         >>> with ctx.command_context({"key": "value"}) as cmd_ctx:  # doctest: +SKIP
         ...     result = handler(cmd_ctx)
         """
+        from codeintel.cli.context import CommandContextBuilder
+
         builder = (
             CommandContextBuilder()
             .with_params(params or {})
@@ -185,6 +188,8 @@ class CliTestContext:
         CommandContext
             Configured command context for handler execution.
         """
+        from codeintel.cli.context import CommandContextBuilder
+
         builder = (
             CommandContextBuilder()
             .with_params(params or {})

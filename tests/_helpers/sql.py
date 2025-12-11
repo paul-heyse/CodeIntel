@@ -7,9 +7,12 @@ for DuckDB-based tests. Prefer using relation methods over raw SQL strings.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from codeintel.storage.gateway.protocol import DuckDBConnection, StorageGateway
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 GatewayLike = StorageGateway | DuckDBConnection

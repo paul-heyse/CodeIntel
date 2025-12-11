@@ -11,10 +11,13 @@ truncation detection and safe limit handling across all serving endpoints.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from codeintel.serving import domain_models as dm
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 Message = dm.Message
 ResponseMeta = dm.ResponseMeta

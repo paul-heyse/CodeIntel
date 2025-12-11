@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.export.export_jsonl import (
     ExportCallOptions,
@@ -13,7 +11,12 @@ from codeintel.export.export_jsonl import (
 )
 from codeintel.export.export_parquet import export_all_parquet
 from codeintel.serving.backend.datasets import validate_dataset_registry
-from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 class Exporter(Protocol):

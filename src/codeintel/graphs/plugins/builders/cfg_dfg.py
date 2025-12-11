@@ -20,18 +20,15 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import CFGBuilderStepConfig
-from codeintel.core.data_models import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
-from codeintel.core.plugins.execution.options import PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginKind, PluginMetadata, PluginStage
-from codeintel.graphs.catalog import FunctionSpanIndex, load_function_index
+from codeintel.core.plugins.types.protocol import PluginMetadata
+from codeintel.graphs.catalog import load_function_index
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
 from codeintel.graphs.plugins.builders.cfg_dfg_options import CfgDfgOptions
@@ -39,7 +36,13 @@ from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.data_models import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
+    from codeintel.graphs.catalog import FunctionSpanIndex
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

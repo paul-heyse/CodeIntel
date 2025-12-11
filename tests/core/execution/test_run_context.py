@@ -6,19 +6,23 @@ used for unified run identity across engines.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.execution import RunContext, new_run_context, new_run_id
-from codeintel.core.execution.context import RunKind, TriggerKind
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
     expect_in,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.core.execution.context import RunKind, TriggerKind
 
 # Constants for test assertions
 UNIQUENESS_SAMPLE_SIZE = 100

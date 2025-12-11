@@ -37,10 +37,11 @@ Example
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.build.context import TargetExecutionContext, TargetResult
 
 __all__ = [

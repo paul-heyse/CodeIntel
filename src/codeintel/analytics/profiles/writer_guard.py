@@ -6,7 +6,7 @@ and bulk insertion support.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -15,6 +15,8 @@ from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates, ibis_bool
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
     from codeintel.storage.gateway.protocol import StorageGateway
 
 SerializeRow = Callable[[Mapping[str, object]], tuple[object, ...]]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.cli.handlers.ide import IdeHintsResult, ide_hints_handler
@@ -12,8 +14,10 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.serving_contexts import ProvisionedServiceContext
-from tests.cli.handlers.conftest import CommandContextBuilder_
+
+if TYPE_CHECKING:
+    from tests._helpers.serving_contexts import ProvisionedServiceContext
+    from tests.cli.handlers.conftest import CommandContextBuilder_
 
 HTTP_NOT_FOUND = 404
 KNOWN_REL_PATH = "pkg/mod.py"

@@ -9,15 +9,17 @@ Note: Logging setup is handled by `execution/bootstrap.py:bootstrap_cli()`.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageConfig, open_gateway
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
     from codeintel.cli.resolution.types import ResolvedRuntime
+    from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
 

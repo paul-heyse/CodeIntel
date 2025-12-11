@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.core.plugins.registry.capability_index import (
-    PluginRegistryIndex,
     build_registry_index,
 )
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
+
+if TYPE_CHECKING:
+    from codeintel.core.plugins.registry.capability_index import (
+        PluginRegistryIndex,
+    )
 
 
 @pytest.fixture

@@ -22,16 +22,16 @@ Example
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
-
-from codeintel.config.datasets import TableSchema, get_dataset_contracts_by_table_key
 from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from codeintel.config.datasets import TableSchema, get_dataset_contracts_by_table_key
     from codeintel.storage.gateway.protocol import StorageGateway
 
 __all__ = [
@@ -657,6 +657,8 @@ class DuckDBPolicyBackend:
             self.create_schema_if_not_exists(schema_name)
 
         # Create all tables from dataset contracts
+        from codeintel.config.datasets import get_dataset_contracts_by_table_key
+
         contracts = get_dataset_contracts_by_table_key()
         for table_key, contract in contracts.items():
             if contract.schema is None:
@@ -770,6 +772,8 @@ class DuckDBPolicyBackend:
 
         # Determine columns
         if columns is None:
+            from codeintel.config.datasets import get_dataset_contracts_by_table_key
+
             contracts = get_dataset_contracts_by_table_key()
             contract = contracts.get(table_key)
             if contract is None or contract.schema is None:

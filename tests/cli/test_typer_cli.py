@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -21,6 +21,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.cli import run_cli
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # -----------------------------------------------------------------------------
 # Fixtures

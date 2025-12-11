@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
@@ -14,6 +13,8 @@ from tests._helpers.assertions import expect_equal, expect_in
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar as RecordingMcp
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 

@@ -2,32 +2,39 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.serving.backend import BackendLimits
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.analytics_samples import (
-    AnalyticsSamples,
     architecture_seed_selector,
     load_analytics_samples,
 )
 from tests._helpers.serving_apps import (
-    ServiceApp,
     build_service_app,
 )
 from tests._helpers.serving_contexts import (
-    ProvisionedServiceContext,
     build_provisioned_service_context,
 )
 from tests._helpers.serving_harnesses import RecordingObservability
-from tests.serving.mcp.conftest import McpBackendComponents
 from tests.serving.mcp.conftest import mcp_backend_factory as _mcp_backend_factory
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving.backend import BackendLimits
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.analytics_samples import (
+        AnalyticsSamples,
+    )
     from tests._helpers.context import TestContext
+    from tests._helpers.serving_apps import (
+        ServiceApp,
+    )
+    from tests._helpers.serving_contexts import (
+        ProvisionedServiceContext,
+    )
+    from tests.serving.mcp.conftest import McpBackendComponents
 
 mcp_backend_factory = _mcp_backend_factory
 

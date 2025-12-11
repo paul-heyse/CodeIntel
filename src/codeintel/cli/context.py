@@ -15,10 +15,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Self
 
 from codeintel.cli.config import load_config
@@ -30,6 +28,9 @@ from codeintel.cli.services.serving import ServingService
 from codeintel.cli.services.storage import StorageService
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
     from codeintel.cli.config.model import CliConfig
     from codeintel.cli.resolution.types import ResolvedRuntime
     from codeintel.storage.gateway import StorageGateway

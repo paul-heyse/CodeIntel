@@ -6,11 +6,12 @@ they need, and the execution infrastructure provides appropriate implementations
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from codeintel.cli.jobs import JobInfo, JobStatus
     from codeintel.storage.gateway import StorageGateway
 

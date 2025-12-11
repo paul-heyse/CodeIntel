@@ -7,17 +7,17 @@ uses DuckDB via the StorageGateway for database operations.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.graphs.ports.storage import BatchResult, QueryResult
 from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.storage.gateway import DuckDBConnection
 
 if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
+    from collections.abc import Sequence
+
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 

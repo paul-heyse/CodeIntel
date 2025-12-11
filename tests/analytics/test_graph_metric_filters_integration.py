@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
@@ -16,9 +16,15 @@ from tests._helpers.assertions import (
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.networkx_graphs import chain_graph, cyclic_graph, disconnected_graph
 from tests._helpers.graph_runtime_harness import (
-    GraphRuntimeHarness,
     run_graph_metrics_pipeline,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from tests._helpers.graph_runtime_harness import (
+        GraphRuntimeHarness,
+    )
 
 
 def test_filters_prune_metrics(graph_runtime_ctx: GraphRuntimeHarness) -> None:

@@ -9,8 +9,8 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import (
     fail_invalid_plugin_manifest,
@@ -24,6 +24,9 @@ from codeintel.cli.plugins import (
     create_plugin_scaffold,
     get_plugin_manager,
 )
+
+if TYPE_CHECKING:
+    from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)
 

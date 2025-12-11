@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Iterator
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -18,8 +17,7 @@ from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.architecture_tools import register_architecture_tools
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
-from codeintel.storage.gateway import StorageGateway
-from tests._helpers.analytics_samples import AnalyticsSamples, architecture_seed_selector
+from tests._helpers.analytics_samples import architecture_seed_selector
 from tests._helpers.assertions import (
     assert_logged,
     assert_problem_detail_response,
@@ -30,7 +28,13 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
-from tests._helpers.plugins.mcp import McpBackendComponents
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.analytics_samples import AnalyticsSamples
+    from tests._helpers.plugins.mcp import McpBackendComponents
 
 # =============================================================================
 # Helper Functions

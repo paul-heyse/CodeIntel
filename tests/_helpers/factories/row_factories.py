@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
@@ -10,12 +10,16 @@ from codeintel.config.datasets import (
     FUNCTION_PROFILE_COLUMNS,
     MODULE_PROFILE_COLUMNS,
     TEST_PROFILE_COLUMNS,
-    BehavioralCoverageRowModel,
-    FileProfileRowModel,
-    FunctionProfileRowModel,
-    ModuleProfileRowModel,
-    ProfileRowModel,
 )
+
+if TYPE_CHECKING:
+    from codeintel.config.datasets import (
+        BehavioralCoverageRowModel,
+        FileProfileRowModel,
+        FunctionProfileRowModel,
+        ModuleProfileRowModel,
+        ProfileRowModel,
+    )
 
 
 def blank_file_profile_row() -> FileProfileRowModel:

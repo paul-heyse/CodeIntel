@@ -15,7 +15,7 @@ import ibis
 from duckdb import DuckDBPyConnection
 
 # Import ibis_views to ensure view builders are registered
-import codeintel.storage.views.ibis_views as _ibis_views  # noqa: F401
+import codeintel.storage.views.ibis_views as _ibis_views
 from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.views.data_model_views import DATA_MODEL_VIEW_NAMES
 from codeintel.storage.views.function_views import FUNCTION_VIEW_NAMES
@@ -113,6 +113,7 @@ __all__ = [
     "DOCS_VIEWS",
     "VIEW_BUILDERS",
     "ViewBuilder",
+    "_ibis_views",
     "create_all_views",
     "get_registered_views",
 ]

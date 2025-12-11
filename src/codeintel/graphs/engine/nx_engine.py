@@ -9,15 +9,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
-import networkx as nx
-
 from codeintel.graphs.engine import views
-from codeintel.graphs.engine.backend import BackendEnablement
 from codeintel.graphs.engine.cache import GraphCache
 from codeintel.graphs.engine.protocol import GraphKind
 
 if TYPE_CHECKING:
+    import networkx as nx
+
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.graphs.engine.backend import BackendEnablement
     from codeintel.storage.gateway import StorageGateway
 
 

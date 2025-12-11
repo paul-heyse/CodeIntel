@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import ibis
-import ibis.expr.types as it
-from ibis import BaseBackend
 
 from codeintel.analytics.compute.ibis_utils import zero_if_null
 from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
@@ -20,7 +17,6 @@ from codeintel.analytics.profiles.types import (
     FunctionContractView,
     FunctionDocView,
     FunctionEffectsView,
-    FunctionGraphFeatures,
     FunctionHistoryView,
     FunctionProfileInputs,
     FunctionRiskView,
@@ -35,17 +31,14 @@ from codeintel.analytics.profiles.utils import (
     optional_str,
 )
 from codeintel.analytics.profiles.writer_guard import (
-    SerializeRow,
     WriterContext,
     write_rows_with_registry_guard,
 )
-from codeintel.config import ProfilesAnalyticsStepConfig
 from codeintel.config.datasets import (
     FUNCTION_PROFILE_COLUMNS,
-    FunctionProfileRowModel,
     function_profile_row_to_tuple,
 )
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import (
     and_predicates,
     col_count,
@@ -56,6 +49,24 @@ from codeintel.storage.ibis_types import (
     isin_values,
     window_over,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    import ibis.expr.types as it
+    from ibis import BaseBackend
+
+    from codeintel.analytics.profiles.types import (
+        FunctionGraphFeatures,
+    )
+    from codeintel.analytics.profiles.writer_guard import (
+        SerializeRow,
+    )
+    from codeintel.config import ProfilesAnalyticsStepConfig
+    from codeintel.config.datasets import (
+        FunctionProfileRowModel,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

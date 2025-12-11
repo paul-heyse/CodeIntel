@@ -3,25 +3,21 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.context import TargetExecutionContext
 from codeintel.build.protocols import CoverageData
-from codeintel.build.providers import Providers
 from codeintel.ingestion.plugins.coverage_plugin import (
     CoverageIngestPlugin,
     get_module_paths,
     paths_to_modules,
     resolve_coverage_file,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.factories.row_factories import sample_coverage_payload
 from tests._helpers.fakes.contexts import TargetResourceOverrides
-from tests._helpers.fakes.fake_providers import FakeCoverageCollector, FakeProviders
+from tests._helpers.fakes.fake_providers import FakeProviders
 from tests._helpers.ingestion import (
     TargetContextConfig,
     build_repo_tree,
@@ -31,6 +27,14 @@ from tests._helpers.ingestion import (
     write_coverage_file,
 )
 from tests.ingestion.plugins._wiring import ModulePathCase, run_module_path_resolution_scenarios
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.build.context import TargetExecutionContext
+    from codeintel.build.providers import Providers
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.fakes.fake_providers import FakeCoverageCollector
 
 
 def test_paths_to_modules_builds_metadata(tmp_path: Path) -> None:

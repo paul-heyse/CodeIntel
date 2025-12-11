@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Mapping
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -19,6 +18,9 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def test_evidence_sample_from_ast_and_to_dict() -> None:

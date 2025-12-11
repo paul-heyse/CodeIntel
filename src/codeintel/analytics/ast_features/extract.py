@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
-from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
-from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.analytics.utilities.ast import CallTarget, resolve_call_target, safe_unparse
+from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS
+from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
+
+    from codeintel.analytics.ast_features.patterns import AstFeaturePatterns
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.analytics.utilities.ast import CallTarget
 
 
 def build_import_map(tree: ast.AST) -> dict[str, str]:

@@ -4,29 +4,36 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
-from coverage import Coverage, CoverageData
+from coverage import Coverage
 from coverage.exceptions import CoverageException
 
-from codeintel.config import TestCoverageStepConfig
 from codeintel.config.datasets import (
     TEST_CATALOG_UPDATE_GOIDS,
     TestCoverageEdgeRow,
     serialize_test_coverage_edge,
 )
 from codeintel.graphs.catalog import (
-    FunctionCatalogProvider,
     FunctionCatalogService,
 )
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from coverage import CoverageData
+
+    from codeintel.config import TestCoverageStepConfig
+    from codeintel.graphs.catalog import (
+        FunctionCatalogProvider,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

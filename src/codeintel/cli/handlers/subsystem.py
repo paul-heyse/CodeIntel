@@ -17,10 +17,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_subsystem_not_found
 from codeintel.config.primitives import SnapshotRef
@@ -33,6 +32,9 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
     SubsystemProfileRow,
 )
+
+if TYPE_CHECKING:
+    from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -12,9 +12,11 @@ from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.engine.backend import BackendEnablement, maybe_enable_nx_gpu
 from tests._helpers.assertions import expect_true
 from tests._helpers.factories import make_graph_runtime_options
-from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_runtime import graph_engine_with_cache
 from tests._helpers.graphs import call_graph_fixture
+
+if TYPE_CHECKING:
+    from tests._helpers.fakes.graph_contexts import GraphTestEnv
 
 
 def test_maybe_enable_nx_gpu_success() -> None:

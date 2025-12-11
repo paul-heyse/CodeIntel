@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.core.execution import RunContext
 from codeintel.storage.tracking import (
     PipelineRunRecord,
     PipelineStepRecord,
@@ -16,10 +16,15 @@ from tests._helpers.assertions import assert_cannot_setattr, expect_equal, expec
 from tests._helpers.run_tracking import (
     ExpectedRun,
     RunContextOptions,
-    RunTrackingHarness,
     expect_run,
     expect_steps,
 )
+
+if TYPE_CHECKING:
+    from codeintel.core.execution import RunContext
+    from tests._helpers.run_tracking import (
+        RunTrackingHarness,
+    )
 
 
 @pytest.fixture

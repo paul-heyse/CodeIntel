@@ -1,11 +1,17 @@
-"""Deprecated ingest macro registration helpers (no-op stubs)."""
+"""Deprecated ingest macro registration helpers (no-op stubs).
+
+Macros are retired; this module remains only to surface deprecation warnings for any
+lingering imports during the transition to ibis/policy-backend.
+"""
 
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING
 from warnings import warn
 
-from duckdb import DuckDBPyConnection
+if TYPE_CHECKING:
+    from duckdb import DuckDBPyConnection
 
 _MACRO_CACHE: dict[int, set[str]] = {}
 _MACRO_LOCK = threading.RLock()

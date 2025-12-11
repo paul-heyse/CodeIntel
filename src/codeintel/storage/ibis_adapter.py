@@ -456,19 +456,21 @@ class IbisGateway:
             If data type is not supported.
         """
         schema, table = _split_table_key(table_key)  # Raises ValueError if invalid
+        write_ctx = _WriteContext(schema=schema, table=table, table_key=table_key)
 
         # Dispatch based on data type
         if isinstance(data, it.Table):
             return self._write_ibis_expression(
-                schema, table, table_key, expr=data, columns=columns, on_conflict=on_conflict
+                write_ctx, expr=data, columns=columns, on_conflict=on_conflict
             )
         if isinstance(data, pd.DataFrame):
-            return self._write_dataframe(
-                schema, table, table_key, df=data, columns=columns, on_conflict=on_conflict
-            )
+            return self._write_dataframe(write_ctx, df=data, columns=columns, on_conflict=on_conflict)
         if isinstance(data, Sequence) and not isinstance(data, (str, bytes)):
             return self._write_tuples(
-                schema, table, table_key, rows=data, columns=columns, on_conflict=on_conflict
+                write_ctx,
+                rows=data,
+                columns=columns,
+                on_conflict=on_conflict,
             )
 
         msg = f"Unsupported data type for write: {type(data).__name__}"
@@ -533,11 +535,9 @@ class IbisGateway:
         on_conflict = OnConflict(conflict_columns=conflict_columns, update_columns=update_columns)
         return self.write(table_key, data, columns=columns, on_conflict=on_conflict)
 
-    def _write_ibis_expression(  # noqa: PLR0913
+    def _write_ibis_expression(
         self,
-        schema: str,
-        table: str,
-        table_key: str,
+        write_ctx: _WriteContext,
         *,
         expr: it.Table,
         columns: Sequence[str] | None,
@@ -561,23 +561,21 @@ class IbisGateway:
             log.warning("UPSERT with Ibis expression not yet optimized; using temp table")
             df = expr.to_pandas()
             return self._write_dataframe(
-                schema, table, table_key, df=df, columns=resolved_columns, on_conflict=on_conflict
+                write_ctx, df=df, columns=resolved_columns, on_conflict=on_conflict
             )
 
         # Build INSERT...SELECT
-        insert_sql = _build_insert_select(schema, table, resolved_columns, select_sql)
+        insert_sql = _build_insert_select(write_ctx.schema, write_ctx.table, resolved_columns, select_sql)
         log.debug("write INSERT...SELECT: %s", insert_sql[:200])
 
         # Execute
         self._gateway.con.execute(insert_sql)
 
-        return WriteResult(table_key=table_key, rows_affected=-1, method="insert_select")
+        return WriteResult(table_key=write_ctx.table_key, rows_affected=-1, method="insert_select")
 
-    def _write_dataframe(  # noqa: PLR0913
+    def _write_dataframe(
         self,
-        schema: str,
-        table: str,
-        table_key: str,
+        write_ctx: _WriteContext,
         *,
         df: pd.DataFrame,
         columns: Sequence[str] | None,
@@ -593,14 +591,12 @@ class IbisGateway:
         resolved_columns = list(df.columns) if columns is None else list(columns)
         rows = list(df.itertuples(index=False, name=None))
         return self._write_tuples(
-            schema, table, table_key, rows=rows, columns=resolved_columns, on_conflict=on_conflict
+            write_ctx, rows=rows, columns=resolved_columns, on_conflict=on_conflict
         )
 
-    def _write_tuples(  # noqa: PLR0913
+    def _write_tuples(
         self,
-        schema: str,
-        table: str,
-        table_key: str,
+        write_ctx: _WriteContext,
         *,
         rows: Sequence[tuple[object, ...]],
         columns: Sequence[str] | None,
@@ -619,7 +615,7 @@ class IbisGateway:
             If columns is None when writing tuples.
         """
         if not rows:
-            return WriteResult(table_key=table_key, rows_affected=0, method="noop")
+            return WriteResult(table_key=write_ctx.table_key, rows_affected=0, method="noop")
 
         if columns is None:
             msg = "columns must be provided when writing tuples"
@@ -629,9 +625,7 @@ class IbisGateway:
 
         if on_conflict is not None:
             return self._upsert_tuples(
-                schema,
-                table,
-                table_key,
+                write_ctx,
                 rows=rows,
                 columns=resolved_columns,
                 on_conflict=on_conflict,
@@ -641,21 +635,19 @@ class IbisGateway:
         normalized_rows = [_normalize_row(row) for row in rows]
 
         # Build INSERT...VALUES
-        insert_sql = _build_insert_values(schema, table, resolved_columns)
+        insert_sql = _build_insert_values(write_ctx.schema, write_ctx.table, resolved_columns)
         log.debug("write INSERT...VALUES: %s (%d rows)", insert_sql[:100], len(normalized_rows))
 
         # Execute batch insert
         self._gateway.con.executemany(insert_sql, normalized_rows)
 
         return WriteResult(
-            table_key=table_key, rows_affected=len(normalized_rows), method="insert_values"
+            table_key=write_ctx.table_key, rows_affected=len(normalized_rows), method="insert_values"
         )
 
-    def _upsert_tuples(  # noqa: PLR0913
+    def _upsert_tuples(
         self,
-        schema: str,
-        table: str,
-        table_key: str,
+        write_ctx: _WriteContext,
         *,
         rows: Sequence[tuple[object, ...]],
         columns: Sequence[str],
@@ -689,14 +681,16 @@ class IbisGateway:
 
         # Build UPSERT SQL
         upsert_sql = _build_upsert(
-            schema, table, columns, on_conflict.conflict_columns, update_columns
+            write_ctx.schema, write_ctx.table, columns, on_conflict.conflict_columns, update_columns
         )
         log.debug("write UPSERT: %s (%d rows)", upsert_sql[:100], len(normalized_rows))
 
         # Execute batch upsert
         self._gateway.con.executemany(upsert_sql, normalized_rows)
 
-        return WriteResult(table_key=table_key, rows_affected=len(normalized_rows), method="upsert")
+        return WriteResult(
+            table_key=write_ctx.table_key, rows_affected=len(normalized_rows), method="upsert"
+        )
 
     def delete(
         self,

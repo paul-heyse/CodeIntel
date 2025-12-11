@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,11 +13,15 @@ from codeintel.config import BuildLayoutOptions, BuildPaths
 from codeintel.ingestion import ScipIngestStep
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestResult
 from tests._helpers.ingestion import (
-    ScipIngestContext,
     build_scip_ingest_context,
     closing_gateway,
 )
 from tests._helpers.sql import count_table_rows
+
+if TYPE_CHECKING:
+    from tests._helpers.ingestion import (
+        ScipIngestContext,
+    )
 
 
 @pytest.fixture

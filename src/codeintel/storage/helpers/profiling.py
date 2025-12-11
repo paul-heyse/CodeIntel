@@ -7,11 +7,15 @@ The standalone CLI has been replaced by ``codeintel storage profile-views``.
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
-from codeintel.storage.gateway import DuckDBConnection, open_gateway
+from codeintel.storage.gateway import open_gateway
 from codeintel.storage.gateway.config import StorageConfig
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import DuckDBConnection
 
 DOCS_VIEWS: Final[tuple[str, ...]] = (
     "docs.v_subsystem_profile",

@@ -6,13 +6,14 @@ supporting efficient reuse of computed graphs.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from codeintel.graphs.engine.protocol import GraphKind
-
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import networkx as nx
+
+    from codeintel.graphs.engine.protocol import GraphKind
 
 
 class GraphCache:

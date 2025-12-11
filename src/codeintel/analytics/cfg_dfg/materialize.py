@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.cfg_dfg.cfg_core import (
-    CfgFnRows,
     CfgInputs,
     cfg_rows_for_fn,
     load_cfg_blocks,
@@ -24,8 +24,13 @@ from codeintel.analytics.cfg_dfg.dfg_core import (
 )
 from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from codeintel.analytics.cfg_dfg.cfg_core import (
+        CfgFnRows,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 # Column definitions for CFG tables
 CFG_FUNCTION_METRICS_COLS = [

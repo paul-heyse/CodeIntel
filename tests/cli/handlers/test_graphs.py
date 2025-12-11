@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from codeintel.cli.handlers.graphs import (
     GraphPlanResult,
     GraphPlanStage,
@@ -13,10 +15,7 @@ from codeintel.cli.handlers.graphs import (
 )
 from codeintel.core.plugins.types.result import PluginResult
 from codeintel.graphs.core.protocol import (
-    GraphPluginExecutionContext,
     GraphPluginMetadata,
-    GraphPluginProtocol,
-    GraphPluginStage,
 )
 from codeintel.graphs.core.registry import reset_graph_registry
 from tests._helpers.assertions.expectation_assertions import (
@@ -26,6 +25,13 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 from tests._helpers.cli_context import make_command_context
 from tests._helpers.fakes.graph_plugins import plugin_registrar
+
+if TYPE_CHECKING:
+    from codeintel.graphs.core.protocol import (
+        GraphPluginExecutionContext,
+        GraphPluginProtocol,
+        GraphPluginStage,
+    )
 
 
 def test_graph_plugin_info_to_dict() -> None:

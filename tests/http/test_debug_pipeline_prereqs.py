@@ -7,6 +7,7 @@ correctly returns prerequisite checking information for operations.
 from __future__ import annotations
 
 from http import HTTPStatus
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,9 +17,11 @@ from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance
 from tests._helpers.gateway import build_duckdb_query_service
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _create_test_client(

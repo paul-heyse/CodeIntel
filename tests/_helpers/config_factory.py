@@ -6,24 +6,27 @@ typed ``analytics``/``graphs`` facets to avoid legacy delegation.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import replace
-from pathlib import Path
-from typing import TypedDict, Unpack
+from typing import TYPE_CHECKING, TypedDict, Unpack
 
 from codeintel.config import ConfigBuilder, SnapshotInit
-from codeintel.config.primitives import BuildLayoutOptions, SnapshotRef
-from codeintel.config.steps_analytics import (
-    CoverageAnalyticsStepConfig,
-    DataModelUsageStepConfig,
-    FunctionAnalyticsStepConfig,
-    FunctionHistoryStepConfig,
-    HistoryTimeseriesStepConfig,
-    ProfilesAnalyticsStepConfig,
-    SubsystemsStepConfig,
-    TestCoverageStepConfig,
-    TestProfileStepConfig,
-)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
+    from codeintel.config.primitives import BuildLayoutOptions, SnapshotRef
+    from codeintel.config.steps_analytics import (
+        CoverageAnalyticsStepConfig,
+        DataModelUsageStepConfig,
+        FunctionAnalyticsStepConfig,
+        FunctionHistoryStepConfig,
+        HistoryTimeseriesStepConfig,
+        ProfilesAnalyticsStepConfig,
+        SubsystemsStepConfig,
+        TestCoverageStepConfig,
+        TestProfileStepConfig,
+    )
 
 
 def _snapshot_init(snapshot: SnapshotRef | SnapshotInit) -> SnapshotInit:

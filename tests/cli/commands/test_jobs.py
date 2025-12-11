@@ -6,9 +6,8 @@ with fake dependencies.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codeintel.cli.commands.jobs import (
     CancelJob,
@@ -18,7 +17,6 @@ from codeintel.cli.commands.jobs import (
     JobInfo,
     ListJobs,
 )
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core.result_types import ActionResult, ListResult
 from codeintel.cli.deps.protocols import JobManagerProtocol
 from codeintel.cli.jobs import JobInfo as JobModel
@@ -32,6 +30,11 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 from tests._helpers.cli_context import make_command_context
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from codeintel.cli.context import CommandContext
 
 
 class FakeJobManager(JobManagerProtocol):

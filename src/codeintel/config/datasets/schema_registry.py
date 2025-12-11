@@ -18,13 +18,14 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-from collections.abc import ItemsView, Iterator, ValuesView
 from functools import cache
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.schema_builder import build_all_schemas
 
 if TYPE_CHECKING:
+    from collections.abc import ItemsView, Iterator, ValuesView
+
     from codeintel.config.datasets.schema import DatasetSchema
 
 __all__ = [

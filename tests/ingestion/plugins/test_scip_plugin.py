@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.context import TargetExecutionContext
 from codeintel.build.errors import ToolNotAvailableError
 from codeintel.build.protocols import ScipOccurrence, ScipSymbol
-from codeintel.build.providers import Providers
 from codeintel.ingestion.plugins.scip_plugin import (
     ScipIngestPlugin,
     get_module_paths,
     paths_to_modules,
 )
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import build_repo_tree
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.factories.row_factories import sample_scip_documents
@@ -30,6 +26,13 @@ from tests._helpers.ingestion import (
     write_scip_index,
 )
 from tests.ingestion.plugins._wiring import ModulePathCase, run_module_path_resolution_scenarios
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.build.context import TargetExecutionContext
+    from codeintel.build.providers import Providers
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_paths_to_modules_creates_records(tmp_path: Path) -> None:

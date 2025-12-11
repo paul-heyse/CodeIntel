@@ -10,8 +10,7 @@ import asyncio
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from contextvars import Token
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.serving.context import (
     RequestContext,
@@ -24,6 +23,9 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from contextvars import Token
 
 # =============================================================================
 # Basic Context Operations

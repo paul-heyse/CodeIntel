@@ -28,9 +28,12 @@ codeintel.ingestion.tool_service : Facade using these Report types internally
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
 
 MIN_SCIP_RANGE_FIELDS = 3
 FULL_SCIP_RANGE_FIELDS = 4

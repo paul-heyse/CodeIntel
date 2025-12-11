@@ -19,17 +19,18 @@ and scratch storage on top of the base run identity, gateway, and snapshot.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
-from codeintel.core.config.accessor import ConfigAccessor
 from codeintel.core.execution.base_context import BaseContext
 from codeintel.core.resources.registry import ResourceNotFoundError, ResourceRegistry
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, MutableMapping
+    from pathlib import Path
+
     from codeintel.config.primitives import BuildPaths, SnapshotRef
+    from codeintel.core.config.accessor import ConfigAccessor
     from codeintel.core.execution import RunContext
     from codeintel.storage.gateway import StorageGateway
 

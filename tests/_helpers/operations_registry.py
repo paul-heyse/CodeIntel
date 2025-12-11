@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from codeintel.build.operations import OperationTargets
-from codeintel.build.targets import OutputTarget
-from codeintel.serving.operations.catalog import Operation
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from codeintel.build.targets import OutputTarget
+    from codeintel.serving.operations.catalog import Operation
 
 
 @dataclass(frozen=True)

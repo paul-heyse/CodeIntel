@@ -7,20 +7,26 @@ call graph edges to the storage layer.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from codeintel.config.datasets import (
-    CallGraphEdgeRow,
     call_graph_edge_to_tuple,
     call_graph_node_to_tuple,
     dict_to_call_graph_edge,
     dict_to_call_graph_node,
 )
 from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.pandera_schemas import validate_dataset_df
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, Sequence
+
+    from codeintel.config.datasets import (
+        CallGraphEdgeRow,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

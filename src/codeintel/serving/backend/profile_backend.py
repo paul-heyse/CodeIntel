@@ -22,10 +22,9 @@ Layer Hierarchy
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend.core import BackendContext, DuckDBConnection, DuckDBRepositories
 from codeintel.serving.backend.domain_builders import (
     build_file_hints,
     build_file_profile,
@@ -35,7 +34,11 @@ from codeintel.serving.backend.domain_builders import (
 )
 from codeintel.serving.backend.query_api import ProfileQueriesApi
 from codeintel.serving.mcp import errors
-from codeintel.storage.repositories import ModuleRepository, SubsystemRepository
+
+if TYPE_CHECKING:
+    from codeintel.config.steps_graphs import GraphRunScope
+    from codeintel.serving.backend.core import BackendContext, DuckDBConnection, DuckDBRepositories
+    from codeintel.storage.repositories import ModuleRepository, SubsystemRepository
 
 Message = dm.Message
 ResponseMeta = dm.ResponseMeta

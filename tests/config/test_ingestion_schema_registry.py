@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.config.datasets import load_columns_by_table
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
 def _table_exists(con: DuckDBConnection, schema_name: str, table_name: str) -> bool:

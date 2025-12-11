@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from tests._helpers.context import QueryRow, SeedPack, TestContext
 from tests._helpers.seeds import ENTRYPOINTS_PACK
+
+if TYPE_CHECKING:
+    from tests._helpers.context import QueryRow, SeedPack, TestContext
 
 
 @dataclass(frozen=True)

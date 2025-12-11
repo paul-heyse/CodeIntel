@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
+from typing import TYPE_CHECKING
 
-from codeintel.config.datasets import DatasetContract
 from codeintel.export import default_validation_schemas
 from codeintel.export.export_jsonl import ExportCallOptions
 from codeintel.export.manifest import (
@@ -29,15 +28,22 @@ from codeintel.export.validate_exports import validate_files
 from codeintel.serving.backend.datasets import validate_dataset_registry
 from codeintel.serving.services.errors import ExportError, ProblemDetails, log_problem, problem
 from codeintel.storage.gateway import (
-    DuckDBConnection,
     DuckDBError,
-    DuckDBRelation,
-    StorageGateway,
 )
 from codeintel.storage.metadata import NORMALIZED_MACROS as BOOTSTRAP_MACROS
 from codeintel.storage.sql import macro_select_sql
 from codeintel.storage.sql.builder import prepared_statements_dynamic
 from codeintel.storage.validation import _schema_path
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.config.datasets import DatasetContract
+    from codeintel.storage.gateway import (
+        DuckDBConnection,
+        DuckDBRelation,
+        StorageGateway,
+    )
 
 log = logging.getLogger(__name__)
 

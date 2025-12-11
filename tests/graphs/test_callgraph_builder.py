@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import math
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
 from tests._helpers.assertions import expect_true
 from tests._helpers.builders import insert_symbol_use_edges
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _normalize_callee(value: object) -> int | None:

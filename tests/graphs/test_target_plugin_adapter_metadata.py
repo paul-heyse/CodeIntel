@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import pytest
 from pydantic import BaseModel
 
-from codeintel.build.context import TargetExecutionContext
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.protocol import PluginResourceHints
 from codeintel.graphs.core.adapters import TargetPluginAdapter
 from codeintel.graphs.engine import GraphKind
 from tests._helpers.assertions import expect_equal, expect_true
+
+if TYPE_CHECKING:
+    from codeintel.build.context import TargetExecutionContext
 
 
 class _StubCallGraphPlugin(TargetPlugin):

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 import pytest
 from pandera import Column, DataFrameSchema
@@ -16,6 +15,9 @@ from codeintel.config.datasets.schema_builder import (
     build_all_schemas,
     build_dataset_schema,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def _require(*, condition: bool, message: str) -> None:

@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import ast
 import json
-from collections.abc import Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.analytics.compute.data_models import compute_data_model_usage
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import SnapshotInit
-from tests._helpers import TestContext, create_test_context
+from tests._helpers import create_test_context
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.config_factory import data_model_usage_cfg
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from tests._helpers import TestContext
 
 
 def _function_ast(code: str, *, goid: int, rel_path: str, qualname: str) -> FunctionAst:

@@ -14,21 +14,14 @@ Example
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.build.protocols import (
-    CoverageData,
-    GitLogEntry,
     ScipIndexResult,
-    ScipOccurrence,
     ScipParseResult,
-    ScipSymbol,
-    TestResult,
     ToolRunResult,
     TypeCheckResult,
-    TypeDiagnostic,
 )
 from tests._helpers.records import (
     CallRecorder,
@@ -40,6 +33,19 @@ from tests._helpers.records import (
     ToolRunCall,
     TypeCheckCall,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
+
+    from codeintel.build.protocols import (
+        CoverageData,
+        GitLogEntry,
+        ScipOccurrence,
+        ScipSymbol,
+        TestResult,
+        TypeDiagnostic,
+    )
 
 __all__ = [
     "FakeCoverageCollector",

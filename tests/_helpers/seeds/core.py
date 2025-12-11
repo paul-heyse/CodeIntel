@@ -29,12 +29,14 @@ from tests._helpers.repo import (
     MOD_C_PATH,
     MOD_UTIL_FQN,
     MOD_UTIL_PATH,
-    CanonicalRepo,
     write_canonical_repo,
 )
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
+    from tests._helpers.repo import (
+        CanonicalRepo,
+    )
 
 
 # =============================================================================

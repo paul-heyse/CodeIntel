@@ -11,14 +11,15 @@ Provide caching to avoid repeated resolution within a command execution.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import codeintel.cli.resolution.runtime as resolution_runtime
 from codeintel.cli.services.params import ParamService
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
+
     from codeintel.cli.resolution.types import ResolvedRuntime
 
 LOG = logging.getLogger(__name__)

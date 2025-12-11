@@ -6,12 +6,11 @@ Handlers for documentation export and validation operations.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors._cli_errors import ValidationError
 from codeintel.cli.errors.results import fail_project_error
@@ -21,6 +20,11 @@ from codeintel.export.export_jsonl import ExportCallOptions
 from codeintel.export.runner import ExportOptions, run_validated_exports
 from codeintel.serving.backend.datasets import validate_dataset_registry
 from codeintel.serving.services.errors import ProblemError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)
 

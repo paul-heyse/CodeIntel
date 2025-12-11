@@ -5,9 +5,9 @@ Test the foundational adapter abstractions using real DuckDB instances.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,7 +18,6 @@ from codeintel.analytics.adapters.base import (
     SimpleBatchAdapter,
 )
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -27,6 +26,11 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
+    from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Constants

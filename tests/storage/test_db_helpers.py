@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.validation import (
     count_rows_for_tables,
     safe_count_rows,
@@ -17,6 +17,9 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_length,
 )
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_count_rows_for_tables_returns_dict(

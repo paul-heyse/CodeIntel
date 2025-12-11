@@ -8,8 +8,8 @@ tests/storage/repositories/test_base.py.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.base import BaseRepository
 from codeintel.storage.repositories.graphs import GraphRepository
 from tests._helpers import assert_frozen
@@ -20,6 +20,9 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 # Test constants
 EXPECTED_COUNT_1 = 1

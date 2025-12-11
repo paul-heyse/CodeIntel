@@ -7,7 +7,6 @@ LibCST concrete syntax trees, using ports for all I/O operations.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -21,6 +20,8 @@ from codeintel.ingestion.infrastructure.cst_utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.ports.storage import IngestStoragePort
 

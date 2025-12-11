@@ -7,16 +7,13 @@ exercise ibis/sqlglot paths and avoid DuckDB macros or legacy storage adapters.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from warnings import warn
 
 import duckdb
 
-from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.backend import (
     BackendContext,
     DuckDBQueryService,
@@ -24,14 +21,21 @@ from codeintel.serving.backend import (
     GraphEngineProvider,
 )
 from codeintel.serving.backend.pagination import BackendLimits
-from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.services.observability import ServiceObservability
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import DuckDBConnection, StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import DuckDBConnection, StorageConfig, open_gateway
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
-from tests._helpers.env_options import GatewayOptions
 from tests._helpers.fakes.serving import ScopeRecordingQuery
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from pathlib import Path
+
+    from codeintel.graphs.engine import GraphEngine
+    from codeintel.serving.backend.query_api import DuckDBQueryApi
+    from codeintel.serving.services.observability import ServiceObservability
+    from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.env_options import GatewayOptions
 
 # =============================================================================
 # Gateway Factory

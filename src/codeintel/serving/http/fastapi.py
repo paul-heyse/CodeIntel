@@ -6,18 +6,17 @@ import asyncio
 import inspect
 import logging
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from starlette.responses import Response
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.bootstrap import BackendResource, build_backend_resource
+from codeintel.serving.bootstrap import build_backend_resource
 from codeintel.serving.context import (
     RequestContext,
     reset_current_request_context,
@@ -35,7 +34,16 @@ from codeintel.serving.mcp import errors as mcp_errors
 from codeintel.serving.mcp.models import ProblemDetail as ProblemDetailModel
 from codeintel.serving.services.errors import ProblemDetail as DomainProblemDetail
 from codeintel.serving.services.errors import ProblemError, generate_correlation_id
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageConfig, open_gateway
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Awaitable, Callable
+
+    from fastapi import Request
+    from starlette.responses import Response
+
+    from codeintel.serving.bootstrap import BackendResource
+    from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger("codeintel.serving.http.fastapi")
 

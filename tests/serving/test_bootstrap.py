@@ -6,7 +6,6 @@ using real gateways and configurations.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -36,7 +35,6 @@ from codeintel.serving.bootstrap import (
 )
 from codeintel.serving.services.observability import ServiceObservability
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -47,6 +45,9 @@ from tests._helpers.assertions import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 
 # Constants for test values

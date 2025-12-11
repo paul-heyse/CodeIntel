@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-import networkx as nx
+if TYPE_CHECKING:
+    import networkx as nx
 
 log = logging.getLogger(__name__)
 

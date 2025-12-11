@@ -15,10 +15,12 @@ from typing import TYPE_CHECKING, Any, Literal, Union, get_args, get_origin, get
 
 from codeintel.cli.core.parsing import parse_bool
 from codeintel.serving.backend import query_api
-from codeintel.serving.operations.catalog import Operation, iter_operations
+from codeintel.serving.operations.catalog import iter_operations
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+
+    from codeintel.serving.operations.catalog import Operation
 
 LOG = logging.getLogger(__name__)
 

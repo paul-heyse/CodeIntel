@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.storage.datasets import load_dataset_registry
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema.json_schema import generate_export_schemas
 from codeintel.storage.validation.conformance import (
@@ -20,6 +20,9 @@ from tests._helpers.assertions import (
     expect_is_instance,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 # Constants
 SAMPLE_SIZE_5 = 5

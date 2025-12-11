@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import (
-    BackendResource,
     BackendResourceOptions,
     DatasetRegistryOptions,
     build_backend_resource,
@@ -19,10 +18,18 @@ from codeintel.serving.bootstrap import (
 from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp.backend import HttpBackend
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.views import create_all_views
 from tests._helpers import GatewayOptions, provision_gateway_with_repo
 from tests._helpers.builders import RepoMapRow, insert_rows
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+
+    from codeintel.serving.bootstrap import (
+        BackendResource,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _seed_repo_identity(repo_root: Path, db_path: Path, repo: str, commit: str) -> None:

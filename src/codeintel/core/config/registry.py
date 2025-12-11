@@ -34,9 +34,11 @@ Example
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator, Mapping
 
 T = TypeVar("T")
 

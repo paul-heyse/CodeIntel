@@ -6,7 +6,7 @@ import ast
 import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_features.extract import build_import_map, io_flags_from_call
 from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
@@ -28,17 +28,23 @@ from codeintel.analytics.testing.profiles.rows import (
     write_test_profile_rows,
 )
 from codeintel.analytics.testing.profiles.types import (
-    BehavioralLLMRunner,
     IoFlags,
     TestAstInfo,
     TestRecord,
 )
 from codeintel.analytics.utilities.ast import resolve_call_target
-from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.ingestion.infrastructure.paths import relpath_to_module
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.analytics.testing.profiles.types import (
+        BehavioralLLMRunner,
+    )
+    from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 

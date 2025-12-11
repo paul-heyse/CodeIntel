@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.mcp.server import create_mcp_server
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import RepoMapRow, insert_rows
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 
 def test_mcp_wiring_smoke(fresh_gateway: StorageGateway) -> None:

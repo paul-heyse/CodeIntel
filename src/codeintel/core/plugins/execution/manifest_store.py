@@ -13,11 +13,12 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.core.plugins.execution.manifest import ManifestStore
-from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginStatus
+from codeintel.core.plugins.types.result import PluginExecutionRecord
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates, ibis_bool
 
 if TYPE_CHECKING:
+    from codeintel.core.plugins.types.result import PluginStatus
     from codeintel.storage.gateway.protocol import StorageGateway
 
 log = logging.getLogger(__name__)

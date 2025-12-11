@@ -6,11 +6,9 @@ betweenness centrality on directed graphs using real NetworkX graphs.
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 import networkx as nx
-import pytest
 from networkx.exception import NetworkXAlgorithmError
 
 from codeintel.analytics.compute.graphs import centrality as centrality_module
@@ -30,6 +28,11 @@ from tests._helpers.assertions import (
     expect_not_equal,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    import pytest
 
 # =============================================================================
 # Constants

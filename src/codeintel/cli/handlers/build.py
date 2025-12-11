@@ -10,13 +10,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.executor import BuildExecutor, BuildResult, ExecutorEnv
-from codeintel.build.plan import BuildPlan, PlanGenerator
+from codeintel.build.executor import BuildExecutor, ExecutorEnv
+from codeintel.build.plan import PlanGenerator
 from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
-from codeintel.build.targets import TargetGraph, TargetModule
-from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import BuildHistoryResult, BuildRunResult, BuildStatusResult
 from codeintel.cli.errors import ValidationError
@@ -30,11 +28,15 @@ from codeintel.cli.errors.results import (
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.resolution.errors import ResolutionError
-from codeintel.cli.resolution.types import ResolvedRuntime
-from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
+    from codeintel.build.executor import BuildResult
     from codeintel.build.manifest import BuildRunRecord
+    from codeintel.build.plan import BuildPlan
+    from codeintel.build.targets import TargetGraph, TargetModule
+    from codeintel.cli.context import CommandContext
+    from codeintel.cli.resolution.types import ResolvedRuntime
+    from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
 

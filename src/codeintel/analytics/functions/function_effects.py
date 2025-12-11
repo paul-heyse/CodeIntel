@@ -8,34 +8,43 @@ import logging
 from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import ibis
-import networkx as nx
-import pandas as pd
 from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.compute.graphs import normalize_decimal_id
 from codeintel.analytics.parsing.ast_cache import (
-    FunctionAst,
     FunctionAstLoadRequest,
     load_function_asts,
 )
 from codeintel.analytics.runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
     resolve_graph_runtime,
 )
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
-from codeintel.config import FunctionEffectsStepConfig
 from codeintel.graphs.catalog import (
-    FunctionCatalogProvider,
     FunctionCatalogService,
 )
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.ibis_types import and_predicates
+
+if TYPE_CHECKING:
+    import networkx as nx
+    import pandas as pd
+
+    from codeintel.analytics.parsing.ast_cache import (
+        FunctionAst,
+    )
+    from codeintel.analytics.runtime import (
+        GraphRuntime,
+        GraphRuntimeOptions,
+    )
+    from codeintel.config import FunctionEffectsStepConfig
+    from codeintel.graphs.catalog import (
+        FunctionCatalogProvider,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

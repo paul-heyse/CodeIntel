@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
@@ -17,6 +16,8 @@ from typing import TYPE_CHECKING, Protocol
 from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from opentelemetry.trace import Span, Tracer
 
 # Try to import OpenTelemetry components (optional dependency)

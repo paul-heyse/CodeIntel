@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.errors import McpError
@@ -23,8 +21,13 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.mcp_registrar import RecordingMcpRegistrar, wrap_fastmcp
-from tests._helpers.plugins.mcp import McpBackendComponents
 from tests._helpers.serving_stubs import HookedDuckDBQueryApi
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.serving import domain_models as dm
+    from tests._helpers.plugins.mcp import McpBackendComponents
 
 # =============================================================================
 # Constants

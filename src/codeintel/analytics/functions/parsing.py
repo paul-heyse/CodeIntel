@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.parsing import (
     FunctionParserRegistry,
@@ -14,6 +13,10 @@ from codeintel.analytics.parsing import (
 )
 from codeintel.analytics.parsing.registry import get_parser
 from codeintel.config.parser_types import FunctionParserKind
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
 
 
 def parse_functions_in_module(

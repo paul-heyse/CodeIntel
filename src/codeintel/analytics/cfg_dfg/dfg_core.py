@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
@@ -17,8 +15,7 @@ from codeintel.analytics.compute.graphs import (
     dfg_path_lengths,
     normalize_decimal_id,
 )
-from codeintel.analytics.runtime.context import GraphContext
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
 
 MAX_CFG_EIGEN_SAMPLE = 200
 MAX_DFG_CENTRALITY_SAMPLE = 100
@@ -26,7 +23,13 @@ MAX_SIMPLE_PATHS = 1000
 MAX_PATH_CUTOFF = 50
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from datetime import datetime
+
     import networkx as nx
+
+    from codeintel.analytics.runtime.context import GraphContext
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _to_decimal(value: int) -> Decimal:

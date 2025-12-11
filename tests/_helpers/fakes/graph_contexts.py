@@ -27,13 +27,11 @@ Or use the context manager pattern:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.graphs.core.context import GraphPluginExecutionContext
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.env import (
     DEFAULT_COMMIT,
     DEFAULT_REPO,
@@ -42,6 +40,11 @@ from tests._helpers.env import (
     create_test_env,
 )
 from tests._helpers.env_options import EnvOptions, GatewayOptions
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.storage.gateway import StorageGateway
 
 # ---------------------------------------------------------------------------
 # Constants

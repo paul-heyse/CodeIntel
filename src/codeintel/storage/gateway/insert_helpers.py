@@ -8,12 +8,15 @@ keeping runtime behavior identical.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Final, TypedDict, cast
+from typing import TYPE_CHECKING, Final, TypedDict, cast
 
-from codeintel.storage.gateway.protocol import DuckDBConnection
 from codeintel.storage.gateway.registry_generated import TABLE_REGISTRY
 from codeintel.storage.helpers.db import macro_insert_rows
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping, Sequence
+
+    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 __all__ = ["insert_one", "insert_rows"]
 

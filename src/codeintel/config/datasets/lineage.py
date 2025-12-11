@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.constraints import (
-    Constraint,
     ConstraintKind,
     extract_constraints_from_pandera,
 )
@@ -21,6 +21,11 @@ from codeintel.config.datasets.plugin_constraints import (
     get_producer_plugins,
 )
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+
+if TYPE_CHECKING:
+    from codeintel.config.datasets.constraints import (
+        Constraint,
+    )
 
 __all__ = [
     "ColumnLineage",

@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from tests._helpers.cli import CliResult, assert_exit, assert_help
+from tests._helpers.cli import assert_exit, assert_help
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from tests._helpers.cli import CliResult
 
 
 def test_cli_help(cli_runner: Callable[[list[str]], CliResult]) -> None:

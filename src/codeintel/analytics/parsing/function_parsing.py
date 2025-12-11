@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.parsing.models import ParsedFunction, ParsedModule, SourceSpan
 from codeintel.analytics.parsing.registry import register_parser
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.ingestion.infrastructure.ast_utils import AstSpanIndex
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
 
 
 def _qualname(parts: list[str], name: str) -> str:

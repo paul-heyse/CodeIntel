@@ -6,12 +6,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import cast
-
-import networkx as nx
+from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.compute.graphs import (
-    BipartiteDegrees,
     bipartite_degrees,
     projection_metrics,
 )
@@ -21,14 +18,23 @@ from codeintel.analytics.runtime import (
     resolve_graph_runtime,
 )
 from codeintel.analytics.runtime.context import (
-    GraphContext,
     GraphContextSpec,
     resolve_graph_context,
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+if TYPE_CHECKING:
+    import networkx as nx
+
+    from codeintel.analytics.compute.graphs import (
+        BipartiteDegrees,
+    )
+    from codeintel.analytics.runtime.context import (
+        GraphContext,
+    )
+    from codeintel.storage.gateway import StorageGateway
 
 TEST_GRAPH_METRICS_TESTS_COLS = [
     "test_id",
