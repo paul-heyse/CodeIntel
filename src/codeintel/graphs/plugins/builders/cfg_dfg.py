@@ -385,8 +385,8 @@ def _process_all_files(
                 blocks.extend(b)
                 cfg_edges.extend(ce)
                 dfg_edges.extend(de)
-            except Exception as e:  # noqa: BLE001
-                log.debug("cfg_dfg: Failed to process function %d: %s", goid, e)
+            except (ValueError, RuntimeError) as exc:
+                log.debug("cfg_dfg: Failed to process function %d: %s", goid, exc)
 
     return blocks, cfg_edges, dfg_edges
 

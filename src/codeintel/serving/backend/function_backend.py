@@ -21,7 +21,7 @@ Layer Hierarchy
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import networkx as nx
@@ -285,7 +285,9 @@ class FunctionQueryLayer(FunctionQueriesApi):
             applied_limit=limit_clamp.applied,
             messages=limit_clamp.messages,
         )
-        return build_callgraph_neighbors(outgoing_rows, incoming_rows, meta=meta)
+        outgoing_dicts: Sequence[dict[str, object]] = [dict(row) for row in outgoing_rows]
+        incoming_dicts: Sequence[dict[str, object]] = [dict(row) for row in incoming_rows]
+        return build_callgraph_neighbors(outgoing_dicts, incoming_dicts, meta=meta)
 
     def get_tests_for_function(
         self,

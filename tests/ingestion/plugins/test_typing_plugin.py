@@ -8,7 +8,11 @@ from typing import cast
 import pytest
 
 from codeintel.ingestion.compute.base import StepResult
-from codeintel.ingestion.plugins.typing_plugin import StepFactory, TypingIngestPlugin
+from codeintel.ingestion.plugins.typing_plugin import (
+    StepFactory,
+    StorageFactory,
+    TypingIngestPlugin,
+)
 from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.ingestion_plugins import (
@@ -39,7 +43,7 @@ def _make_plugin(
         make_recording_async_step_factory(capture, result=result),
     )
     return TypingIngestPlugin(
-        storage_adapter_factory=storage_factory,
+        storage_adapter_factory=cast("StorageFactory", storage_factory),
         discovery_adapter_factory=discovery_factory,
         type_checker_factory=make_recording_type_checker_factory(checker),
         step_factory=step_factory,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import cache
+
 from codeintel.analytics.plugins.cfg_dfg.metrics import CFG_DFG_METRICS_METADATA
 from codeintel.analytics.plugins.config_data_flow.compute import CONFIG_DATA_FLOW_METADATA
 from codeintel.analytics.plugins.coverage.functions import FUNCTION_COVERAGE_METADATA
@@ -104,9 +106,7 @@ ALL_PLUGIN_METADATA: tuple[CorePluginMetadata, ...] = (
     SCIP_INGEST_METADATA,
 )
 
-_GLOBAL_INDEX: PluginRegistryIndex | None = None
-
-
+@cache
 def get_global_registry_index() -> PluginRegistryIndex:
     """Return the global plugin registry index.
 
@@ -115,10 +115,7 @@ def get_global_registry_index() -> PluginRegistryIndex:
     PluginRegistryIndex
         Registry index built from all plugin metadata.
     """
-    global _GLOBAL_INDEX  # noqa: PLW0603
-    if _GLOBAL_INDEX is None:
-        _GLOBAL_INDEX = build_registry_index(ALL_PLUGIN_METADATA)
-    return _GLOBAL_INDEX
+    return build_registry_index(ALL_PLUGIN_METADATA)
 
 
 def get_provider_lookup() -> dict[str, str]:

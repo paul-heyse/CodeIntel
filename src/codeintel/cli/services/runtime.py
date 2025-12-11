@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.cli.resolution.runtime import resolve_from_params
+import codeintel.cli.resolution.runtime as resolution_runtime
 from codeintel.cli.services.params import ParamService
 
 if TYPE_CHECKING:
@@ -193,7 +193,9 @@ class RuntimeService:
             Resolved runtime.
         """
         LOG.debug("Resolving runtime with params: %s", list(self._params.keys()))
-        return resolve_from_params(self._params, allow_fallback=self._allow_fallback)
+        return resolution_runtime.resolve_from_params(
+            self._params, allow_fallback=self._allow_fallback
+        )
 
 
 __all__ = [

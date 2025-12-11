@@ -140,10 +140,10 @@ def datasets_lint_handler(
     try:
         # Trigger runtime resolution for early error detection
         runtime = deps.runtime_builder(ctx)
-    except ResolutionError as e:
-        return fail_project_error("datasets", str(e))
-    except Exception as e:  # noqa: BLE001
-        return fail_project_error("datasets", str(e))
+    except ResolutionError as exc:
+        return fail_project_error("datasets", str(exc))
+    except (AttributeError, RuntimeError, ValueError) as exc:
+        return fail_project_error("datasets", str(exc))
 
     LOG.info("Linting datasets")
 

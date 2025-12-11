@@ -38,7 +38,7 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         message = f"YAML profile at {path} must be a mapping"
         raise TypeError(message)
-    return cast("dict[str, Any]", data)
+    return data
 
 
 def _load_toml(path: Path) -> dict[str, Any]:

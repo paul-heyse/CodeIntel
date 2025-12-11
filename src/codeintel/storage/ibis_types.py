@@ -241,9 +241,13 @@ def and_predicates(*predicates: object) -> it.BooleanValue:
 
     result = ibis_bool(predicates[0])
     for pred in predicates[1:]:
-        # The & operator on BooleanValue returns BooleanValue
-        result = cast("it.BooleanValue", result & ibis_bool(pred))
+        result &= ibis_bool(pred)
     return result
+
+
+def bool_and(*predicates: it.BooleanValue) -> it.BooleanValue:
+    """Alias for ``and_predicates`` for backward compatibility."""
+    return and_predicates(*predicates)
 
 
 def or_predicates(*predicates: object) -> it.BooleanValue:
@@ -277,8 +281,7 @@ def or_predicates(*predicates: object) -> it.BooleanValue:
 
     result = ibis_bool(predicates[0])
     for pred in predicates[1:]:
-        # The | operator on BooleanValue returns BooleanValue
-        result = cast("it.BooleanValue", result | ibis_bool(pred))
+        result |= ibis_bool(pred)
     return result
 
 
@@ -387,7 +390,7 @@ def bool_not(expr: object) -> it.BooleanValue:
     it.BooleanValue
         Negated boolean expression.
     """
-    return cast("it.BooleanValue", ~ibis_bool(expr))
+    return ~ibis_bool(expr)
 
 
 def isin_values(column: it.Value, values: Iterable[object]) -> it.BooleanValue:
@@ -418,6 +421,7 @@ def window_over(
 
 __all__ = [
     "and_predicates",
+    "bool_and",
     "bool_not",
     "col_count",
     "col_max",

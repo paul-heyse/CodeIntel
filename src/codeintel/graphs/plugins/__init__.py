@@ -27,8 +27,7 @@ from codeintel.graphs.plugins.validation import GraphValidationPlugin
 
 _log = logging.getLogger(__name__)
 
-# Flag to prevent double registration
-_plugins_registered = False
+_PLUGIN_STATE = {"registered": False}
 
 
 def load_builtin_plugins() -> None:
@@ -42,8 +41,7 @@ def load_builtin_plugins() -> None:
     This function is idempotent - calling it multiple times has no effect
     after the first successful registration.
     """
-    global _plugins_registered  # noqa: PLW0603
-    if _plugins_registered:
+    if _PLUGIN_STATE["registered"]:
         return
 
     registry = get_graph_registry()
@@ -72,7 +70,7 @@ def load_builtin_plugins() -> None:
             # Plugin already registered (e.g., from entry points)
             _log.debug("Plugin already registered: %s", plugin.plugin_name)
 
-    _plugins_registered = True
+    _PLUGIN_STATE["registered"] = True
 
 
 # Eagerly load built-in plugins so registry has them by default.

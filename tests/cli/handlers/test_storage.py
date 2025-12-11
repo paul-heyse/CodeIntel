@@ -87,7 +87,7 @@ def test_profile_storage_handler_returns_ok(
     output_dir = tmp_path / "profile"
     include_views = True
     output_dir.mkdir(parents=True, exist_ok=True)
-    params = {
+    params: dict[str, object] = {
         "output_dir": str(output_dir),
         "include_views": include_views,
         "db_path": str(storage_macro_harness_fixture.db_path),

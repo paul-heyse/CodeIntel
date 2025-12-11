@@ -1,20 +1,20 @@
-"""Ingest macro registration helpers (storage-only, no ingestion/runtime deps)."""
+"""Deprecated ingest macro registration helpers (no-op stubs)."""
 
 from __future__ import annotations
 
 import threading
-from contextlib import closing
+from warnings import warn
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.storage.metadata import (
-    INGEST_MACRO_DDLS,
-    INGEST_MACROS,
-    METADATA_SCHEMA_DDL_BASE,
-)
-
 _MACRO_CACHE: dict[int, set[str]] = {}
 _MACRO_LOCK = threading.RLock()
+
+warn(
+    "codeintel.storage.macros.registration is deprecated; ingest macros are retired.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 __all__ = [
     "assert_ingest_macros_present",
@@ -49,81 +49,48 @@ def _registered_macros(con: DuckDBPyConnection) -> set[str]:
 
 
 def ensure_ingest_macros(con: DuckDBPyConnection) -> None:
-    """Ensure all ingest macros are registered for the active connection.
-
-    Idempotent and cached per-connection to avoid redundant work.
-
-    Raises
-    ------
-    RuntimeError
-        If macros cannot be registered on the connection.
-    """
-    macro_set = {macro.lower() for macro in INGEST_MACROS.values()}
-    cache_key = id(con)
-
-    with _MACRO_LOCK:
-        cached = _MACRO_CACHE.get(cache_key, set())
-        if macro_set.issubset(cached) and macro_set.issubset(_registered_macros(con)):
-            return
-
-        # Avoid thrashing shared connections by using a dedicated cursor for macro setup.
-        with closing(con.cursor()) as setup_con:
-            setup_con.execute("\n".join(METADATA_SCHEMA_DDL_BASE))
-            for ddl in INGEST_MACRO_DDLS:
-                setup_con.execute(ddl)
-
-            registered = _registered_macros(setup_con)
-            if not macro_set.issubset(registered):
-                # Retry once to account for transient creation issues.
-                for ddl in INGEST_MACRO_DDLS:
-                    setup_con.execute(ddl)
-                registered = _registered_macros(setup_con)
-            if not macro_set.issubset(registered):
-                missing = sorted(macro_set.difference(registered))
-                message = f"Ingest macros missing after registration: {missing}"
-                raise RuntimeError(message)
-
-            # Update cache using visibility from the primary connection to detect drift.
-            primary_registered = _registered_macros(con)
-            updated = primary_registered if macro_set.issubset(primary_registered) else registered
-            _MACRO_CACHE[cache_key] = updated
+    """Deprecate ingest macro registration (no-op)."""
+    warn(
+        "ensure_ingest_macros is deprecated and now a no-op; macros are retired.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    _ = con
 
 
 def clear_macro_cache_for_connection(con_or_key: DuckDBPyConnection | int) -> None:
-    """Clear cached macro names for the given connection id or object."""
+    """Deprecate macro cache clearing (no-op)."""
+    warn(
+        "clear_macro_cache_for_connection is deprecated; macro caching is unused.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     cache_key = con_or_key if isinstance(con_or_key, int) else id(con_or_key)
     _MACRO_CACHE.pop(cache_key, None)
 
 
 def list_ingest_macros(con: DuckDBPyConnection) -> set[str]:
-    """Return registered ingest macro names (qualified and unqualified).
+    """Deprecate macro listing; always returns empty set.
 
     Returns
     -------
     set[str]
-        Macro names visible to the active connection.
+        Empty set (macros are retired).
     """
-    return _registered_macros(con)
+    warn(
+        "list_ingest_macros is deprecated; macros are retired.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    _ = con
+    return set()
 
 
 def assert_ingest_macros_present(con: DuckDBPyConnection) -> None:
-    """Raise RuntimeError if any ingest macros are missing on the connection.
-
-    Raises
-    ------
-    RuntimeError
-        When one or more ingest macros are not visible to the connection.
-    """
-    macros = list_ingest_macros(con)
-    macro_set = {macro.lower() for macro in INGEST_MACROS.values()}
-    if macro_set.issubset(macros):
-        return
-    # Retry a registration attempt before failing.
-    for ddl in INGEST_MACRO_DDLS:
-        con.execute(ddl)
-    macros = list_ingest_macros(con)
-    if macro_set.issubset(macros):
-        return
-    missing = sorted(macro_set.difference(macros))
-    message = f"Ingest macros missing on connection: {missing}"
-    raise RuntimeError(message)
+    """Deprecate macro validation (no-op)."""
+    warn(
+        "assert_ingest_macros_present is deprecated; macros are retired.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    _ = con

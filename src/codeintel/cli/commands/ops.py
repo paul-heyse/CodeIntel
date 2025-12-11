@@ -745,7 +745,7 @@ def _execute_from_stdin(
                 verbose=verbose,
             )
             results.append({"input": stdin_record, "result": result, "success": True})
-        except Exception as exc:  # noqa: BLE001
+        except (ValidationError, ResolutionError, RuntimeError, ValueError) as exc:
             results.append(
                 {
                     "input": stdin_record,

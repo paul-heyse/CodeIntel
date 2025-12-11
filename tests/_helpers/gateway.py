@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
+from warnings import warn
 
 import duckdb
 
@@ -27,10 +28,8 @@ from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.observability import ServiceObservability
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import DuckDBConnection, StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
-from codeintel.storage.macros import ensure_ingest_macros, list_ingest_macros
-from codeintel.storage.metadata import INGEST_MACROS
 from tests._helpers.env_options import GatewayOptions
 from tests._helpers.fakes.serving import ScopeRecordingQuery
 
@@ -87,6 +86,21 @@ class GatewayFactory:
         factory._repo = options.repo
         factory._commit = options.commit
         return factory
+
+    def with_macros(self) -> GatewayFactory:
+        """Deprecate legacy macro toggle (no-op).
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        warn(
+            "GatewayFactory.with_macros is deprecated and a no-op; macros are no longer used.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self
 
     def with_schema(self) -> GatewayFactory:
         """Enable schema application (default).
@@ -287,25 +301,34 @@ def analytics_gateway(options: GatewayOptions | None = None) -> Iterator[Storage
 
 
 def memory_con_with_macros() -> DuckDBConnection:
-    """
-    Create an in-memory DuckDB connection (no macros).
+    """Return an in-memory DuckDB connection (deprecated name).
 
     Returns
     -------
     DuckDBConnection
         Connection to an in-memory DuckDB instance.
     """
+    warn(
+        "memory_con_with_macros is deprecated; macros are not registered in tests.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return duckdb.connect(database=":memory:")
 
 
 def gateway_with_macros() -> StorageGateway:
-    """Open an in-memory gateway with schema/views ensured (no macros).
+    """Return an in-memory gateway with schema/views (deprecated name).
 
     Returns
     -------
     StorageGateway
         Gateway configured with schema/views.
     """
+    warn(
+        "gateway_with_macros is deprecated; use GatewayFactory().open() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return GatewayFactory().open()
 
 
@@ -499,7 +522,6 @@ def build_duckdb_query_service(
 
 
 __all__ = [
-    "MACROS_EXPECTED",
     "BackendOptions",
     "DuckDBConnection",
     "GatewayFactory",

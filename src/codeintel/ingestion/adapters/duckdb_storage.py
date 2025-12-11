@@ -20,6 +20,7 @@ from pandera.errors import SchemaErrors
 from codeintel.config.datasets import load_columns_by_table
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.ibis_types import and_predicates, ibis_bool, isin_values
 from codeintel.storage.pandera_schemas import get_dataset_schema
 from codeintel.storage.sql import render_sql
 from codeintel.storage.sql.primitives import quote_identifier, quote_table_key
@@ -273,9 +274,9 @@ class IngestStorageService:
 
 
 __all__ = [
+    "SNAPSHOT_PARAM_LEN",
     "DuckDBStorageAdapter",
     "IngestStorageService",
-    "SNAPSHOT_PARAM_LEN",
     "build_delete_in_query",
     "quote_identifier",
     "quote_table_key",

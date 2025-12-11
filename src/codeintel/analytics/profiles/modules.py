@@ -159,7 +159,7 @@ def build_module_profile_rows(
             func_stats.avg_risk_score.name("avg_risk_score"),
             safe_ratio(
                 tested_expr,
-                cast("it.NumericValue", tested_expr + untested_expr),
+                tested_expr + untested_expr,
             ).name("module_coverage_ratio"),
             tested_expr.name("tested_function_count"),
             untested_expr.name("untested_function_count"),
@@ -301,9 +301,7 @@ def _load_module_aggregates(
         medium_risk_function_count=col_sum(
             ibis_bool(func_profile.risk_level == "medium").cast("int64")
         ),
-        low_risk_function_count=col_sum(
-            ibis_bool(func_profile.risk_level == "low").cast("int64")
-        ),
+        low_risk_function_count=col_sum(ibis_bool(func_profile.risk_level == "low").cast("int64")),
         max_risk_score=col_max(func_profile.risk_score),
         avg_risk_score=col_mean(func_profile.risk_score),
         tested_function_count=col_sum(ibis_bool(func_profile.tested).cast("int64")),

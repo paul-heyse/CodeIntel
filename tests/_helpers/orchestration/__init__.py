@@ -19,7 +19,6 @@ from tests._helpers.orchestration.entrypoints_orchestration import (
     seed_app_modules_and_goids,
 )
 from tests._helpers.orchestration.gateway import (
-    MACROS_EXPECTED,
     DuckDBConnection,
     GatewayFactory,
     ScopeRecordingQuery,
@@ -85,7 +84,6 @@ from tests._helpers.orchestration.tooling import (
 )
 
 __all__ = [
-    "MACROS_EXPECTED",
     "AppSeeds",
     "CoverageArtifact",
     "DuckDBConnection",

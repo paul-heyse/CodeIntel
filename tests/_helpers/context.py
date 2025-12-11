@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.macros import ensure_ingest_macros
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.env_options import EnvOptions, GatewayOptions
@@ -582,7 +581,6 @@ def build_test_gateway(options: GatewayOptions | None = None) -> StorageGateway:
 
     gateway = factory.open()
     apply_all_schemas(gateway.con)
-    ensure_ingest_macros(gateway.con)
     return gateway
 
 

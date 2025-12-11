@@ -196,11 +196,7 @@ def _build_graph_to_target_index() -> dict[str, str]:
     }
 
 
-# Lazily computed indexes
-_TABLE_TO_TARGET: dict[str, str] | None = None
-_GRAPH_TO_TARGET: dict[str, str] | None = None
-
-
+@lru_cache(maxsize=1)
 def _get_table_index() -> dict[str, str]:
     """Get the table-to-target index, building if needed.
 
@@ -209,12 +205,10 @@ def _get_table_index() -> dict[str, str]:
     dict[str, str]
         Mapping from table_key to target name.
     """
-    global _TABLE_TO_TARGET  # noqa: PLW0603
-    if _TABLE_TO_TARGET is None:
-        _TABLE_TO_TARGET = _build_table_to_target_index()
-    return _TABLE_TO_TARGET
+    return _build_table_to_target_index()
 
 
+@lru_cache(maxsize=1)
 def _get_graph_index() -> dict[str, str]:
     """Get the graph-to-target index, building if needed.
 
@@ -223,10 +217,7 @@ def _get_graph_index() -> dict[str, str]:
     dict[str, str]
         Mapping from graph runtime name to target name.
     """
-    global _GRAPH_TO_TARGET  # noqa: PLW0603
-    if _GRAPH_TO_TARGET is None:
-        _GRAPH_TO_TARGET = _build_graph_to_target_index()
-    return _GRAPH_TO_TARGET
+    return _build_graph_to_target_index()
 
 
 # =============================================================================
