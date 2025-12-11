@@ -525,7 +525,7 @@ def safe_macro_exists(gateway: StorageGateway, macro_name: str) -> bool:
             "SELECT * FROM duckdb_functions() WHERE function_name = ?",
             parameters=[macro_name],
         ).fetchone()
-    except Exception:  # noqa: BLE001
+    except DUCKDB_QUERY_ERRORS:
         return False
     return result is not None
 

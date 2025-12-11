@@ -125,7 +125,7 @@ def compute_coverage_functions(
         return
 
     row_count_expr = result_expr.count()
-    row_count = cast("int", row_count_expr.execute())
+    row_count = cast("int", gateway.ibis.execute_scalar(row_count_expr))
     log.info(
         "coverage_functions populated: %d rows for %s@%s",
         row_count,
@@ -208,12 +208,10 @@ def _enrich_coverage_results(aggregated: it.Table) -> it.Table:
         covered_lines.name("covered_lines"),
         coverage_ratio.name("coverage_ratio"),
         gt(covered_lines, 0).name("tested"),
-        (
-            ibis.case()
-            .when(no_executable_code, "no_executable_code")
-            .when(no_tests, "no_tests")
-            .else_("")
-            .end()
+        ibis.cases(
+            (no_executable_code, "no_executable_code"),
+            (no_tests, "no_tests"),
+            else_="",
         ).name("untested_reason"),
         ibis.now().name("created_at"),
     )

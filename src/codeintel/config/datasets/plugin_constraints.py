@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.constraints import Constraint, ConstraintKind, ConstraintSet
+from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
     from codeintel.core.plugins.types.metadata import CorePluginMetadata
@@ -30,8 +31,9 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-# Lazy reference to avoid circular imports
-_PLUGIN_CATALOG: object | None = None
+
+class _PluginCatalogHolder(SingletonHolder[object]):
+    """Singleton holder for plugin catalog registry."""
 
 
 def _get_plugin_catalog() -> object | None:
@@ -42,20 +44,18 @@ def _get_plugin_catalog() -> object | None:
     object | None
         The plugin catalog if available.
     """
-    global _PLUGIN_CATALOG  # noqa: PLW0603
-
-    if _PLUGIN_CATALOG is not None:
-        return _PLUGIN_CATALOG
+    existing = _PluginCatalogHolder.get_or_none()
+    if existing is not None:
+        return existing
 
     try:
         # Use importlib to avoid circular dependency at module load time
         analytics_registry = importlib.import_module("codeintel.analytics.core.registry")
-        _PLUGIN_CATALOG = analytics_registry.ANALYTICS_REGISTRY
+        catalog = analytics_registry.ANALYTICS_REGISTRY
     except ImportError:
         log.debug("Analytics registry not available for plugin constraint extraction")
         return None
-    else:
-        return _PLUGIN_CATALOG
+    return _PluginCatalogHolder.get(lambda: catalog)
 
 
 @dataclass(frozen=True)

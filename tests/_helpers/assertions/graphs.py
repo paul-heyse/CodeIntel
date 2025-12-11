@@ -144,7 +144,9 @@ def assert_coverage_ratio_between(ctx: TestContext, goid: int, *, low: float, hi
 
 def _count_for_snapshot(con: DuckDBPyConnection, snapshot: SnapshotRef, query: str) -> int:
     result = con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
-    return int(result[0])  # type: ignore[index]
+    expect_is_not_none(result)
+    first = result[0] if result else 0
+    return int(first)
 
 
 def _expect_count_equal_if_present(

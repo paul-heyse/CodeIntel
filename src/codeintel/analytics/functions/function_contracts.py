@@ -8,15 +8,17 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+import pandas as pd
 
 from codeintel.analytics.compute.graphs import normalize_decimal_id
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
+from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalogProvider
@@ -36,6 +38,18 @@ class ConditionContext:
     rel_path: str
     line: int | None
     limit: int
+
+
+@dataclass(frozen=True)
+class _RowInputs:
+    """Inputs required to build contract rows."""
+
+    cfg: FunctionContractsStepConfig
+    goids: set[int]
+    ast_by_goid: dict[int, FunctionAst]
+    doc_map: dict[tuple[str, str], dict[str, object]]
+    type_map: dict[int, dict[str, object]]
+    now: datetime
 
 
 def compute_function_contracts(
@@ -59,9 +73,6 @@ def compute_function_contracts(
     catalog
         Function catalog provider (from CatalogProvider).
     """
-    con = gateway.con
-    ensure_schema(con, "analytics.function_contracts")
-
     ast_by_goid = function_ast_map or {}
 
     if catalog is not None:
@@ -69,32 +80,52 @@ def compute_function_contracts(
     else:
         all_goids = set()
 
-    doc_map = _load_docstrings(con, repo=cfg.repo, commit=cfg.commit)
-    type_map = _load_function_types(con, repo=cfg.repo, commit=cfg.commit)
+    doc_map = _load_docstrings(gateway, repo=cfg.repo, commit=cfg.commit)
+    type_map = _load_function_types(gateway, repo=cfg.repo, commit=cfg.commit)
 
-    now = datetime.now(tz=UTC)
-    rows: list[tuple[object, ...]] = []
+    rows = _build_rows(
+        _RowInputs(
+            cfg=cfg,
+            goids=all_goids,
+            ast_by_goid=ast_by_goid,
+            doc_map=doc_map,
+            type_map=type_map,
+            now=datetime.now(tz=UTC),
+        )
+    )
 
-    for goid in all_goids:
-        info = ast_by_goid.get(goid)
+    _persist_contract_rows(gateway, cfg, rows)
+
+
+def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
+    """Build contract rows from ASTs, docs, and types.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Contract rows ready for persistence.
+    """
+    rows: list[dict[str, object]] = []
+    for goid in inputs.goids:
+        info = inputs.ast_by_goid.get(goid)
         doc_key = (info.rel_path, info.qualname) if info is not None else None
-        doc = doc_map.get(doc_key) if doc_key is not None else None
-        type_info = type_map.get(goid)
+        doc = inputs.doc_map.get(doc_key) if doc_key is not None else None
+        type_info = inputs.type_map.get(goid)
 
         if info is None:
             rows.append(
-                (
-                    cfg.repo,
-                    cfg.commit,
-                    goid,
-                    [],
-                    [],
-                    [],
-                    {},
-                    None,
-                    0.0,
-                    now,
-                )
+                {
+                    "repo": inputs.cfg.repo,
+                    "commit": inputs.cfg.commit,
+                    "function_goid_h128": goid,
+                    "preconditions": [],
+                    "postconditions": [],
+                    "raises": [],
+                    "param_nullability": {},
+                    "return_nullability": None,
+                    "confidence": 0.0,
+                    "created_at": inputs.now,
+                }
             )
             continue
 
@@ -102,46 +133,60 @@ def compute_function_contracts(
             info,
             doc=doc,
             type_info=type_info,
-            max_conditions=cfg.max_conditions_per_func,
+            max_conditions=inputs.cfg.max_conditions_per_func,
         )
         rows.append(
-            (
-                cfg.repo,
-                cfg.commit,
-                goid,
-                contracts["preconditions"],
-                contracts["postconditions"],
-                contracts["raises"],
-                contracts["param_nullability"],
-                contracts["return_nullability"],
-                contracts["confidence"],
-                now,
-            )
+            {
+                "repo": inputs.cfg.repo,
+                "commit": inputs.cfg.commit,
+                "function_goid_h128": goid,
+                "preconditions": contracts["preconditions"],
+                "postconditions": contracts["postconditions"],
+                "raises": contracts["raises"],
+                "param_nullability": contracts["param_nullability"],
+                "return_nullability": contracts["return_nullability"],
+                "confidence": contracts["confidence"],
+                "created_at": inputs.now,
+            }
         )
+    return rows
 
-    storage_service = IngestStorageService.from_gateway(gateway)
-    storage_service.run_batch(
-        "analytics.function_contracts",
-        rows,
-        delete_params=[cfg.repo, cfg.commit],
-        scope=f"{cfg.repo}@{cfg.commit}",
-    )
+
+def _persist_contract_rows(
+    gateway: StorageGateway, cfg: FunctionContractsStepConfig, rows: list[dict[str, object]]
+) -> None:
+    """Persist contract rows using SQLGlot-backed Ibis writes."""
+    if not rows:
+        return
+
+    contract = get_analytics_dataset_contract(gateway, "analytics.function_contracts")
+    tuple_rows = [contract.to_tuple(row) for row in rows]
+    columns = contract.schema.column_names() if contract.schema is not None else ()
+
+    table = gateway.ibis.table(contract.table_key)
+    where = and_predicates(table.repo == cfg.repo, table.commit == cfg.commit)
+    gateway.ibis.delete(contract.table_key, where=where)
+    gateway.ibis.insert(contract.table_key, tuple_rows, columns=columns)
     log.info("function_contracts populated: %d rows for %s@%s", len(rows), cfg.repo, cfg.commit)
 
 
 def _load_docstrings(
-    con: DuckDBConnection, *, repo: str, commit: str
+    gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[tuple[str, str], dict[str, object]]:
-    rows: Iterable[tuple[str, str, str, str]] = con.execute(
-        """
-        SELECT rel_path, qualname, params, returns
-        FROM core.docstrings
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+    tbl = gateway.ibis.table("core.docstrings")
+    df = cast(
+        "pd.DataFrame",
+        tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
+        .select("rel_path", "qualname", "params", "returns")
+        .execute(),
+    )
+    rows: Iterable[dict[str, object]] = df.to_dict(orient="records")
     mapping: dict[tuple[str, str], dict[str, object]] = {}
-    for rel_path, qualname, params, returns in rows:
+    for row in rows:
+        rel_path = row["rel_path"]
+        qualname = row["qualname"]
+        params = row["params"]
+        returns = row["returns"]
         mapping[str(rel_path), str(qualname)] = {
             "params": _coerce_json(params) or [],
             "returns": _coerce_json(returns),
@@ -150,24 +195,24 @@ def _load_docstrings(
 
 
 def _load_function_types(
-    con: DuckDBConnection, *, repo: str, commit: str
+    gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    rows: Iterable[tuple[object, str | None, dict[str, object] | str | None]] = con.execute(
-        """
-        SELECT function_goid_h128, return_type, param_types
-        FROM analytics.function_types
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+    tbl = gateway.ibis.table("analytics.function_types")
+    df = cast(
+        "pd.DataFrame",
+        tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
+        .select("function_goid_h128", "return_type", "param_types")
+        .execute(),
+    )
+    rows: Iterable[dict[str, object]] = df.to_dict(orient="records")
     mapping: dict[int, dict[str, object]] = {}
-    for goid_raw, return_type, param_types in rows:
-        goid = normalize_decimal_id(goid_raw)
+    for row in rows:
+        goid = normalize_decimal_id(row["function_goid_h128"])
         if goid is None:
             continue
         mapping[goid] = {
-            "return_type": str(return_type) if return_type is not None else None,
-            "param_types": _coerce_json(param_types) or {},
+            "return_type": str(row["return_type"]) if row["return_type"] is not None else None,
+            "param_types": _coerce_json(row["param_types"]) or {},
         }
     return mapping
 

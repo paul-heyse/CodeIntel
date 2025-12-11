@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.cli.config import load_config as load_cli_config
+from codeintel.cli.observability._observability import configure_structured_logging
 
 if TYPE_CHECKING:
     from types import FrameType
@@ -146,11 +147,6 @@ def _configure_logging(
     level = _determine_log_level(verbosity, config)
 
     if structured:
-        # Use structured JSON formatter from observability
-        from codeintel.cli.observability._observability import (  # noqa: PLC0415
-            configure_structured_logging,
-        )
-
         configure_structured_logging(level=level, include_trace=True)
     else:
         logging.basicConfig(

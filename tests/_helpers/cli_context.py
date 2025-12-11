@@ -101,6 +101,11 @@ class CliTestContext:
         """
         return self.test_ctx.repo_root
 
+    @property
+    def build_dir(self) -> Path:
+        """Return build directory path."""
+        return self.test_ctx.build_dir
+
     def require(self, *seed_packs: SeedPack) -> Self:
         """Ensure seed packs are applied (idempotent).
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import importlib.metadata
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from typing import TypeGuard
 
 import pytest
@@ -89,55 +90,64 @@ class DummyRegistry(BasePluginRegistry[DummyPlugin]):
         return ()
 
 
-class DummyEntryPoint:
-    """Simple entrypoint stub."""
-
-    def __init__(self, name: str, value: object) -> None:
-        self.name = name
-        self._value = value
-
-    def load(self) -> object:
-        """Return stored entry point value.
-
-        Returns
-        -------
-        object
-            Entrypoint payload.
-        """
-        return self._value
+ENTRYPOINT_SENTINEL = "dummy"
 
 
-class DummyEntryPoints:
-    """Container emulating importlib.metadata entry_points()."""
+def _make_entry_point() -> importlib.metadata.EntryPoint:
+    """
+    Build a typed entry point pointing to the sentinel payload.
 
-    def __init__(self, entries: list[DummyEntryPoint]) -> None:
-        self._entries = entries
-
-    def select(self, group: str) -> list[DummyEntryPoint]:
-        """Return all entry points for the requested group.
-
-        Returns
-        -------
-        list[DummyEntryPoint]
-            Entrypoints matching the group.
-        """
-        _ = group
-        return self._entries
+    Returns
+    -------
+    importlib.metadata.EntryPoint
+        Entry point referencing the sentinel constant.
+    """
+    return importlib.metadata.EntryPoint(
+        name="ep",
+        value=f"{__name__}:ENTRYPOINT_SENTINEL",
+        group="tests.plugins",
+    )
 
 
-def test_hooks_load_builtins_and_entrypoints(monkeypatch: pytest.MonkeyPatch) -> None:
+@contextmanager
+def override_entry_points(
+    entries: list[importlib.metadata.EntryPoint],
+) -> Iterator[None]:
+    """
+    Temporarily override importlib metadata entry points.
+
+    Parameters
+    ----------
+    entries
+        Entry points to return from importlib.metadata.entry_points().
+
+    Yields
+    ------
+    Iterator[None]
+        Context with entry points patched to the provided entries.
+    """
+    original_entry_points = importlib.metadata.entry_points
+
+    def _entry_points(**kwargs: object) -> importlib.metadata.EntryPoints:
+        _ = kwargs
+        return importlib.metadata.EntryPoints(entries)
+
+    importlib.metadata.entry_points = _entry_points
+    try:
+        yield
+    finally:
+        importlib.metadata.entry_points = original_entry_points
+
+
+def test_hooks_load_builtins_and_entrypoints() -> None:
     """Hooks should load builtins and resolve entrypoints."""
     plugin = DummyPlugin("dummy_plugin")
     hooks = DummyHooks(plugin=plugin)
     registry = DummyRegistry(hooks=hooks)
 
-    monkeypatch.setattr(
-        importlib.metadata,
-        "entry_points",
-        lambda: DummyEntryPoints([DummyEntryPoint("ep", "dummy")]),
-    )
+    with override_entry_points([_make_entry_point()]):
+        discovered = registry.load_from_entrypoints(force=True)
 
-    discovered = registry.load_from_entrypoints(force=True)
     if discovered != (plugin,):
         pytest.fail("Entry point resolution did not return expected plugin")
     if not registry.contains("dummy_plugin"):

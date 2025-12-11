@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import cast
 
 from codeintel.config.serving_models import ServingConfig
@@ -36,14 +37,22 @@ def test_mcp_wiring_smoke_async_registrar() -> None:
 
     def _backend_factory(_: ServingConfig, **__: object) -> BackendResource:
         original_close = backend_resource.close
+        wrapped_resource = cast(
+            "BackendResource",
+            SimpleNamespace(
+                backend=backend_resource.backend,
+                service=backend_resource.service,
+                close=None,
+            ),
+        )
 
         def _close() -> None:
             nonlocal closed
             closed = True
             original_close()
 
-        backend_resource.close = _close  # type: ignore[assignment]
-        return backend_resource
+        wrapped_resource.close = _close
+        return wrapped_resource
 
     def _register_tools_fn(registrar: object, svc: object, cfg: ServingConfig | None) -> None:
         _ = svc

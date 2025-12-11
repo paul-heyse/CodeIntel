@@ -12,8 +12,7 @@ from codeintel.core.plugins.execution.profiles import ExecutionProfile, register
 
 
 class _YamlModule(Protocol):
-    def safe_load(self, stream: object) -> dict[str, Any] | list[Any] | None:
-        ...
+    def safe_load(self, stream: object) -> dict[str, Any] | list[Any] | None: ...
 
 
 yaml = cast("_YamlModule", importlib.import_module("yaml"))

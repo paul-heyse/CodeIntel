@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,7 @@ from codeintel.cli.project import (
 from tests._helpers.assertions import expect_equal
 
 
-def test_find_and_load_project_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_find_and_load_project_config(tmp_path: Path) -> None:
     """Project config should be discovered and parsed."""
     root = tmp_path / "repo"
     root.mkdir()
@@ -29,8 +30,15 @@ def test_find_and_load_project_config(tmp_path: Path, monkeypatch: pytest.Monkey
     cfg = load_project_config(root)
     expect_equal(cfg.repo, "github.com/demo/repo")
 
-    monkeypatch.setenv("CODEINTEL_COMMIT", "abc123")
-    expect_equal(detect_commit(root), "abc123")
+    prior = os.environ.get("CODEINTEL_COMMIT")
+    os.environ["CODEINTEL_COMMIT"] = "abc123"
+    try:
+        expect_equal(detect_commit(root), "abc123")
+    finally:
+        if prior is None:
+            os.environ.pop("CODEINTEL_COMMIT", None)
+        else:
+            os.environ["CODEINTEL_COMMIT"] = prior
 
 
 def test_missing_and_invalid_project_file(tmp_path: Path) -> None:

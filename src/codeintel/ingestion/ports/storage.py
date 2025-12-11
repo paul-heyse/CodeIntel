@@ -138,6 +138,8 @@ class IngestStoragePort(Protocol):
         paths: Sequence[str],
         *,
         path_column: str = "rel_path",
+        repo: str | None = None,
+        commit: str | None = None,
     ) -> int:
         """Delete rows where path_column matches any of the provided paths.
 
@@ -149,6 +151,10 @@ class IngestStoragePort(Protocol):
             List of path values to delete.
         path_column
             Name of the column containing paths (default: "rel_path").
+        repo
+            Optional repository filter when the table includes a repo column.
+        commit
+            Optional commit filter when the table includes a commit column.
 
         Returns
         -------

@@ -13,8 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.config.datasets import load_columns_by_table, serialize_row
-from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -82,18 +81,15 @@ class EntrypointsAdapter(BatchAdapter[dict[str, Any]]):
         if not rows:
             return 0
 
-        ensure_schema(self._gateway.con, self.table_name)
-        self._delete_existing()
-
         columns = load_columns_by_table().get(self.table_name, [])
         tuple_rows = [serialize_row(row, columns) for row in rows]
 
-        storage_service = IngestStorageService.from_gateway(self._gateway)
-        storage_service.run_batch(
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
+        backend.bulk_insert(
             self.table_name,
             tuple_rows,
-            delete_params=[self.repo, self.commit],
-            scope=f"{self.repo}@{self.commit}",
+            columns=columns,
         )
 
         log.info(
@@ -164,18 +160,15 @@ class EntrypointTestsAdapter(BatchAdapter[dict[str, Any]]):
         if not rows:
             return 0
 
-        ensure_schema(self._gateway.con, self.table_name)
-        self._delete_existing()
-
         columns = load_columns_by_table().get(self.table_name, [])
         tuple_rows = [serialize_row(row, columns) for row in rows]
 
-        storage_service = IngestStorageService.from_gateway(self._gateway)
-        storage_service.run_batch(
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
+        backend.bulk_insert(
             self.table_name,
             tuple_rows,
-            delete_params=[self.repo, self.commit],
-            scope=f"{self.repo}@{self.commit}",
+            columns=columns,
         )
 
         log.info(

@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from typing import Literal, Protocol, cast, runtime_checkable
 
 from codeintel.serving import domain_models as dm
+from codeintel.serving.mcp.view_utils import normalize_entrypoints_rows
 
 
 @runtime_checkable
@@ -289,10 +290,9 @@ def build_subsystem_summary(
         Domain subsystem summaries.
     """
     meta = _ensure_meta(meta)
-    return dm.SubsystemSummaryResult(
-        subsystems=[_to_dict(row) for row in rows],
-        meta=meta,
-    )
+    subsystems = [_to_dict(row) for row in rows]
+    normalize_entrypoints_rows(subsystems)
+    return dm.SubsystemSummaryResult(subsystems=subsystems, meta=meta)
 
 
 def build_module_subsystems(
@@ -395,7 +395,9 @@ def build_subsystem_profile(
         Domain subsystem profiles payload.
     """
     meta = _ensure_meta(meta)
-    return dm.SubsystemProfileResult(profiles=[_to_dict(row) for row in rows], meta=meta)
+    profiles: list[RowDict] = [_to_dict(row) for row in rows]
+    normalize_entrypoints_rows(profiles)
+    return dm.SubsystemProfileResult(profiles=cast("list[object]", profiles), meta=meta)
 
 
 def build_subsystem_coverage(

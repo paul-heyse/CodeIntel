@@ -12,8 +12,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import load_columns_by_table
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import DuckDBConnection
-from codeintel.storage.sql import PreparedStatements
+from codeintel.storage.ibis_types import and_predicates, ibis_bool
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
@@ -30,9 +29,7 @@ class WriterContext:
     serialize_row: SerializeRow
     repo: str
     commit: str
-    delete_sql: str
-    ensure_schema_fn: Callable[[DuckDBConnection, str], None]
-    prepared_statements_fn: Callable[[DuckDBConnection, str], PreparedStatements]
+    ensure_schema_fn: Callable[[StorageGateway, str], None]
 
 
 def write_rows_with_registry_guard(
@@ -58,17 +55,21 @@ def write_rows_with_registry_guard(
     if not rows_list and not delete_on_empty:
         return 0
 
-    con = gateway.con
     ensure_schema_fn = context.ensure_schema_fn
-    ensure_schema_fn(con, context.table_key)
+    ensure_schema_fn(gateway, context.table_key)
     registry_cols = load_columns_by_table().get(context.table_key)
     if registry_cols is None or tuple(registry_cols) != tuple(context.columns):
         message = f"Columns for {context.table_key} differ from serializer constants."
         raise RuntimeError(message)
 
-    # Delete existing data using policy backend
-    backend = DuckDBPolicyBackend(gateway)
-    backend.delete_for_snapshot(context.table_key, repo=context.repo, commit=context.commit)
+    # Delete existing data using Ibis
+    table = gateway.ibis.table(context.table_key)
+
+    where = and_predicates(
+        ibis_bool(table.repo == context.repo),
+        ibis_bool(table.commit == context.commit),
+    )
+    gateway.ibis.delete(context.table_key, where=where)
 
     if not rows_list:
         return 0
@@ -115,8 +116,6 @@ def write_rows_via_policy_backend(
     int
         Number of rows inserted.
     """
-    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
-
     rows_list = list(rows)
     if not rows_list:
         return 0

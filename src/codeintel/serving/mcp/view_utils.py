@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from typing import Any
 
@@ -21,7 +22,10 @@ def _coerce_json(value: object) -> object:
         try:
             return json.loads(value)
         except json.JSONDecodeError:
-            return value
+            try:
+                return ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                return value
     return value
 
 

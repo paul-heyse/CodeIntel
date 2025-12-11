@@ -109,8 +109,10 @@ def test_constraint_is_frozen() -> None:
         column="col",
         expression="col: str",
     )
+    frozen_constraint: object = constraint
+    attr = "column"
     with pytest.raises(AttributeError):
-        constraint.column = "new_col"  # type: ignore[misc]
+        setattr(frozen_constraint, attr, "new_col")
 
 
 # ------------------------------------------------------------------

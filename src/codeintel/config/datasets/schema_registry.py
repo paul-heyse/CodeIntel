@@ -16,7 +16,9 @@ True
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
+from collections.abc import ItemsView, Iterator, ValuesView
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.schema_builder import build_all_schemas
@@ -31,14 +33,28 @@ __all__ = [
 ]
 
 
-# Attempt to load the plugin catalog at module load time.
-# This is done at module level to avoid PLC0415 (import-outside-toplevel).
-_PLUGIN_CATALOG_SPEC = importlib.util.find_spec("codeintel.build.plugins")
 _PLUGIN_CATALOG: object | None = None
-if _PLUGIN_CATALOG_SPEC is not None:
-    import codeintel.build.plugins as _plugins_module
 
-    _PLUGIN_CATALOG = getattr(_plugins_module, "PLUGIN_CATALOG", None)
+
+def _load_plugin_catalog() -> object | None:
+    """Lazily load the plugin catalog to avoid import cycles.
+
+    Returns
+    -------
+    object | None
+        Plugin catalog if available, otherwise None.
+    """
+    global _PLUGIN_CATALOG  # noqa: PLW0603
+    if _PLUGIN_CATALOG is not None:
+        return _PLUGIN_CATALOG
+
+    spec = importlib.util.find_spec("codeintel.build.plugins")
+    if spec is None:
+        return None
+
+    plugins_module = importlib.import_module("codeintel.build.plugins")
+    _PLUGIN_CATALOG = getattr(plugins_module, "PLUGIN_CATALOG", None)
+    return _PLUGIN_CATALOG
 
 
 class DatasetSchemaRegistry:
@@ -167,6 +183,30 @@ class DatasetSchemaRegistry:
         self.initialize()
         return list(self._schemas.keys())
 
+    def items(self) -> ItemsView[str, DatasetSchema]:
+        """
+        Return items view for registered schemas.
+
+        Returns
+        -------
+        ItemsView[str, DatasetSchema]
+            Items view over table key and schema pairs.
+        """
+        self.initialize()
+        return self._schemas.items()
+
+    def values(self) -> ValuesView[DatasetSchema]:
+        """
+        Return values view for registered schemas.
+
+        Returns
+        -------
+        ValuesView[DatasetSchema]
+            View over registered DatasetSchema instances.
+        """
+        self.initialize()
+        return self._schemas.values()
+
     def __len__(self) -> int:
         """Return the number of registered schemas.
 
@@ -194,6 +234,18 @@ class DatasetSchemaRegistry:
         self.initialize()
         return table_key in self._schemas
 
+    def __iter__(self) -> Iterator[str]:
+        """
+        Iterate over registered table keys.
+
+        Returns
+        -------
+        Iterator[str]
+            Iterator over schema-qualified table keys.
+        """
+        self.initialize()
+        return iter(self._schemas.keys())
+
     @staticmethod
     def producers_of(table_key: str) -> list[str]:
         """Find plugins that produce the given dataset.
@@ -213,10 +265,11 @@ class DatasetSchemaRegistry:
         This method requires the plugin catalog to be available. If not,
         returns an empty list.
         """
-        if _PLUGIN_CATALOG is None:
+        catalog = _load_plugin_catalog()
+        if catalog is None:
             return []
 
-        catalog_all = getattr(_PLUGIN_CATALOG, "all", None)
+        catalog_all = getattr(catalog, "all", None)
         if catalog_all is None:
             return []
 
@@ -247,10 +300,11 @@ class DatasetSchemaRegistry:
         This method requires the plugin catalog to be available. If not,
         returns an empty list.
         """
-        if _PLUGIN_CATALOG is None:
+        catalog = _load_plugin_catalog()
+        if catalog is None:
             return []
 
-        catalog_all = getattr(_PLUGIN_CATALOG, "all", None)
+        catalog_all = getattr(catalog, "all", None)
         if catalog_all is None:
             return []
 

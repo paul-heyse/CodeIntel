@@ -15,13 +15,13 @@ from typing import TYPE_CHECKING, Any, ClassVar, TypedDict, cast
 
 import pandas as pd
 
-from codeintel.analytics.adapters.base import BatchAdapter, DeleteScope
+from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.analytics.adapters.schema_adapter import SchemaValidationMixin
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
-    insert_analytics_rows,
 )
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.config.datasets import load_columns_by_table
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
@@ -333,16 +333,20 @@ class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"], SchemaValidatio
         if not rows:
             return 0
 
-        ensure_schema(self._gateway.con, self.table_name)
         contract = get_analytics_dataset_contract(self._gateway, self.table_name)
-        scope = f"{self.repo}@{self.commit}"
+        columns = (
+            contract.schema.column_names()
+            if contract.schema is not None
+            else tuple(load_columns_by_table().get(self.table_name, []))
+        )
+        tuple_rows = [contract.to_tuple(row) for row in rows]
 
-        insert_analytics_rows(
-            self._gateway,
-            contract,
-            list(rows),
-            delete_scope=DeleteScope(repo=self.repo, commit=self.commit),
-            scope=scope,
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
+        backend.bulk_insert(
+            self.table_name,
+            tuple_rows,
+            columns=columns,
         )
 
         log.info(
@@ -441,16 +445,20 @@ class FunctionTypesAdapter(BatchAdapter["FunctionTypesRow"], SchemaValidationMix
         if not rows:
             return 0
 
-        ensure_schema(self._gateway.con, self.table_name)
         contract = get_analytics_dataset_contract(self._gateway, self.table_name)
-        scope = f"{self.repo}@{self.commit}"
+        columns = (
+            contract.schema.column_names()
+            if contract.schema is not None
+            else tuple(load_columns_by_table().get(self.table_name, []))
+        )
+        tuple_rows = [contract.to_tuple(row) for row in rows]
 
-        insert_analytics_rows(
-            self._gateway,
-            contract,
-            list(rows),
-            delete_scope=DeleteScope(repo=self.repo, commit=self.commit),
-            scope=scope,
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
+        backend.bulk_insert(
+            self.table_name,
+            tuple_rows,
+            columns=columns,
         )
 
         log.info(

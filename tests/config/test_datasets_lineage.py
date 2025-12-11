@@ -6,6 +6,8 @@ trace_column_lineage and trace_table_lineage functions.
 
 from __future__ import annotations
 
+from collections.abc import Container
+
 import pytest
 
 from codeintel.config.datasets.constraints import Constraint, ConstraintKind
@@ -31,9 +33,9 @@ def _expect_equal(actual: object, expected: object, label: str) -> None:
         pytest.fail(f"{label}: expected {expected!r}, got {actual!r}")
 
 
-def _expect_in(item: object, container: object, label: str) -> None:
+def _expect_in(item: object, container: Container[object], label: str) -> None:
     """Check item is in container with clear failure message."""
-    if item not in container:  # type: ignore[operator]
+    if item not in container:
         pytest.fail(f"{label}: {item!r} not in {container!r}")
 
 
@@ -208,7 +210,8 @@ def test_table_lineage_get_column() -> None:
     )
 
     result = lineage.get_column("loc")
-    _require(condition=result is not None, message="should find column")
+    if result is None:
+        pytest.fail("should find column")
     _expect_equal(result.column, "loc", "column name")
 
 

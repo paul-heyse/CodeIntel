@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
 from codeintel.cli.errors import ValidationError
 from codeintel.cli.handlers.docs import (
+    DocsDependencies,
     DocsExportResult,
     DocsValidateResult,
     ExportMode,
@@ -192,15 +191,19 @@ def test_docs_validate_handler_success(
         expect_equal(data.issues, [])
 
 
-@patch("codeintel.cli.handlers.docs._build_runtime_from_ctx")
 def test_docs_export_handler_project_error(
-    mock_build_runtime: MagicMock, docs_handler_harness_fixture: DocsHandlerHarness
+    docs_handler_harness_fixture: DocsHandlerHarness,
 ) -> None:
     """Verify docs_export_handler handles project errors."""
-    mock_build_runtime.side_effect = ValidationError("Project not found")
+    msg = "Project not found"
+
+    def _raise(_: object) -> object:
+        raise ValidationError(msg)
+
+    deps = DocsDependencies(runtime_builder=_raise)
 
     with docs_handler_harness_fixture.command_context({}) as ctx:
-        result = docs_export_handler(ctx)
+        result = docs_export_handler(ctx, deps=deps)
 
     expect_true(not result.success)
     error = result.error
@@ -208,15 +211,19 @@ def test_docs_export_handler_project_error(
         expect_equal(error.type, "urn:codeintel:docs:project-error")
 
 
-@patch("codeintel.cli.handlers.docs._build_runtime_from_ctx")
 def test_docs_validate_handler_project_error(
-    mock_build_runtime: MagicMock, docs_handler_harness_fixture: DocsHandlerHarness
+    docs_handler_harness_fixture: DocsHandlerHarness,
 ) -> None:
     """Verify docs_validate_handler handles project errors."""
-    mock_build_runtime.side_effect = ValidationError("Project not found")
+    msg = "Project not found"
+
+    def _raise(_: object) -> object:
+        raise ValidationError(msg)
+
+    deps = DocsDependencies(runtime_builder=_raise)
 
     with docs_handler_harness_fixture.command_context({}) as ctx:
-        result = docs_validate_handler(ctx)
+        result = docs_validate_handler(ctx, deps=deps)
 
     expect_true(not result.success)
     error = result.error

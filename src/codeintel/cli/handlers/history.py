@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
+from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
 from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult
@@ -22,6 +25,7 @@ from codeintel.cli.errors.results import fail_history_error
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import (
     DuckDBError,
     DuckDBInvalidInputException,
@@ -31,7 +35,7 @@ from codeintel.storage.gateway import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from codeintel.storage.gateway import StorageGateway
 
@@ -57,6 +61,84 @@ def _output_gateway(output_db: Path) -> Iterator[StorageGateway]:
         yield gw
     finally:
         gw.close()
+
+
+def _write_synthetic_history_rows(
+    *,
+    repo: str,
+    commits: list[str],
+    gateway: StorageGateway,
+    snapshot_resolver: Callable[[str], StorageGateway],
+) -> None:
+    """Backfill history_timeseries when no rows exist by projecting profiles."""
+    contract = get_analytics_dataset_contract(gateway, "analytics.history_timeseries")
+    columns = contract.schema.column_names() if contract.schema is not None else ()
+    backend = DuckDBPolicyBackend(gateway)
+    synthetic_rows: list[dict[str, object]] = []
+
+    for commit in commits:
+        commit_timestamp = datetime.now(UTC)
+        snapshot_gateway = snapshot_resolver(commit)
+        try:
+            profile = snapshot_gateway.ibis.table("analytics.function_profile")
+            df = profile.select("repo", "module", "rel_path", "qualname").execute()
+        except (DuckDBError, IbisError, RuntimeError, ValueError, TypeError) as load_exc:
+            LOG.warning(
+                "Failed to synthesize history rows from function_profile for %s@%s: %s",
+                repo,
+                commit,
+                load_exc,
+            )
+            df = None
+        finally:
+            if snapshot_gateway is not gateway:
+                snapshot_gateway.close()
+
+        if df is None:
+            continue
+
+        records = cast("list[dict[str, object]]", df.to_dict("records"))
+        for record in records:
+            rel_path = record["rel_path"]
+            qualname = record["qualname"]
+            synthetic_rows.append(
+                {
+                    "repo": record["repo"],
+                    "entity_kind": "function",
+                    "entity_stable_id": qualname or rel_path,
+                    "function_goid_h128": None,
+                    "module": record["module"],
+                    "rel_path": rel_path,
+                    "language": "python",
+                    "qualname": qualname,
+                    "commit": commit,
+                    "commit_ts": commit_timestamp,
+                    "loc": None,
+                    "cyclomatic_complexity": None,
+                    "coverage_ratio": None,
+                    "static_error_count": None,
+                    "typedness_bucket": None,
+                    "risk_score": None,
+                    "risk_level": None,
+                    "bucket_label": None,
+                    "created_at_row": commit_timestamp,
+                }
+            )
+
+    if not synthetic_rows:
+        return
+
+    for commit in commits:
+        backend.delete_for_snapshot(
+            contract.table_key,
+            repo=repo,
+            commit=commit,
+        )
+    backend.bulk_insert(
+        contract.table_key,
+        [contract.to_tuple(row) for row in synthetic_rows],
+        columns=columns,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -130,72 +212,12 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
             )
         except DuckDBInvalidInputException as exc:
             LOG.warning("No history rows to aggregate: %s", exc)
-            synthetic_rows: list[tuple[object, ...]] = []
-            for commit in commits:
-                commit_timestamp = datetime.now(datetime.UTC).isoformat()
-                snapshot_gateway = snapshot_resolver(commit)
-                try:
-                    results = snapshot_gateway.con.execute(
-                        "SELECT repo, module, rel_path, qualname FROM analytics.function_profile"
-                    ).fetchall()
-                finally:
-                    if snapshot_gateway is not gateway:
-                        snapshot_gateway.close()
-
-                for repo_val, module, rel_path, qualname in results:
-                    synthetic_rows.append(
-                        (
-                            repo_val,
-                            "function",
-                            qualname or rel_path,
-                            None,
-                            module,
-                            rel_path,
-                            "python",
-                            qualname,
-                            commit,
-                            commit_timestamp,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            commit_timestamp,
-                        )
-                    )
-
-            if synthetic_rows:
-                gateway.con.executemany(
-                    """
-                    INSERT INTO analytics.history_timeseries (
-                        repo,
-                        entity_kind,
-                        entity_stable_id,
-                        function_goid_h128,
-                        module,
-                        rel_path,
-                        language,
-                        qualname,
-                        commit,
-                        commit_ts,
-                        loc,
-                        cyclomatic_complexity,
-                        coverage_ratio,
-                        static_error_count,
-                        typedness_bucket,
-                        risk_score
-                        ,
-                        risk_level,
-                        bucket_label,
-                        created_at_row
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    synthetic_rows,
-                )
+            _write_synthetic_history_rows(
+                repo=repo,
+                commits=commits,
+                gateway=gateway,
+                snapshot_resolver=snapshot_resolver,
+            )
         except FileNotFoundError as exc:
             LOG.exception("Missing snapshot database for history_timeseries")
             return fail_history_error(

@@ -12,16 +12,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import ibis
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_adapter import IbisGateway
-
-if TYPE_CHECKING:
-    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 SCHEMAS = ("build", "core", "graph", "analytics", "docs")
 log = logging.getLogger(__name__)
@@ -51,7 +49,6 @@ def _get_policy_backend(con: DuckDBPyConnection) -> DuckDBPolicyBackend:
     DuckDBPolicyBackend
         Policy backend instance wrapping the connection.
     """
-    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
 
     # Create a minimal gateway-like wrapper
     class _MinimalGateway:
@@ -84,9 +81,7 @@ def _get_policy_backend(con: DuckDBPyConnection) -> DuckDBPolicyBackend:
         def close(self) -> None:
             self._con.close()
 
-        def execute(
-            self, sql: str, params: Sequence[object] | None = None
-        ) -> DuckDBPyConnection:
+        def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBPyConnection:
             return self._con.execute(sql, params)
 
         def table(self, name: str) -> DuckDBPyRelation:

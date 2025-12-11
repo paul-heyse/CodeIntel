@@ -23,6 +23,7 @@ from codeintel.analytics.runtime import (
 )
 from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -65,8 +66,6 @@ def compute_graph_stats(
     runtime : GraphRuntime | GraphRuntimeOptions | None
         Optional runtime supplying cached graphs and backend selection.
     """
-    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
-
     runtime_opts = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
     )

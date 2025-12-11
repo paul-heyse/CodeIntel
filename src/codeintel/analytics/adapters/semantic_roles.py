@@ -13,8 +13,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.adapters.base import BatchAdapter
-from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -348,15 +347,12 @@ class SemanticRolesFunctionsAdapter(BatchAdapter[tuple[object, ...]]):
             for row in rows
         ]
 
-        ensure_schema(self._gateway.con, self.table_name)
-        self._delete_existing()
-
-        storage_service = IngestStorageService.from_gateway(self._gateway)
-        storage_service.run_batch(
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
+        backend.bulk_insert(
             self.table_name,
             normalized_rows,
-            delete_params=[self.repo, self.commit],
-            scope=f"{self.repo}@{self.commit}",
+            columns=FUNCTION_COLUMNS,
         )
 
         log.info(
@@ -438,15 +434,12 @@ class SemanticRolesModulesAdapter(BatchAdapter[tuple[object, ...]]):
             for row in rows
         ]
 
-        ensure_schema(self._gateway.con, self.table_name)
-        self._delete_existing()
-
-        storage_service = IngestStorageService.from_gateway(self._gateway)
-        storage_service.run_batch(
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
+        backend.bulk_insert(
             self.table_name,
             normalized_rows,
-            delete_params=[self.repo, self.commit],
-            scope=f"{self.repo}@{self.commit}",
+            columns=MODULE_COLUMNS,
         )
 
         log.info(

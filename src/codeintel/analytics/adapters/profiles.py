@@ -16,8 +16,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.analytics.adapters.schema_adapter import SchemaValidationMixin
 from codeintel.config.datasets import load_columns_by_table, serialize_row
-from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -91,19 +90,12 @@ class FunctionProfileAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin
         if not rows:
             return 0
 
-        ensure_schema(self._gateway.con, self.table_name)
-        self._delete_existing()
-
         columns = load_columns_by_table().get(self.table_name, [])
         tuple_rows = [serialize_row(row, columns) for row in rows]
 
-        storage_service = IngestStorageService.from_gateway(self._gateway)
-        storage_service.run_batch(
-            self.table_name,
-            tuple_rows,
-            delete_params=[self.repo, self.commit],
-            scope=f"{self.repo}@{self.commit}",
-        )
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
+        backend.bulk_insert(self.table_name, tuple_rows, columns=columns)
 
         log.info(
             "Persisted %d function profile rows for %s@%s",
@@ -201,19 +193,12 @@ class FileProfileAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin):
         if not rows:
             return 0
 
-        ensure_schema(self._gateway.con, self.table_name)
-        self._delete_existing()
-
         columns = load_columns_by_table().get(self.table_name, [])
         tuple_rows = [serialize_row(row, columns) for row in rows]
 
-        storage_service = IngestStorageService.from_gateway(self._gateway)
-        storage_service.run_batch(
-            self.table_name,
-            tuple_rows,
-            delete_params=[self.repo, self.commit],
-            scope=f"{self.repo}@{self.commit}",
-        )
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
+        backend.bulk_insert(self.table_name, tuple_rows, columns=columns)
 
         log.info(
             "Persisted %d file profile rows for %s@%s",
@@ -311,19 +296,12 @@ class ModuleProfileAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin):
         if not rows:
             return 0
 
-        ensure_schema(self._gateway.con, self.table_name)
-        self._delete_existing()
-
         columns = load_columns_by_table().get(self.table_name, [])
         tuple_rows = [serialize_row(row, columns) for row in rows]
 
-        storage_service = IngestStorageService.from_gateway(self._gateway)
-        storage_service.run_batch(
-            self.table_name,
-            tuple_rows,
-            delete_params=[self.repo, self.commit],
-            scope=f"{self.repo}@{self.commit}",
-        )
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
+        backend.bulk_insert(self.table_name, tuple_rows, columns=columns)
 
         log.info(
             "Persisted %d module profile rows for %s@%s",

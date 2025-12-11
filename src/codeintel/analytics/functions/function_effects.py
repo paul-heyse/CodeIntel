@@ -6,11 +6,14 @@ import ast
 import json
 import logging
 from collections import deque
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
+import ibis
 import networkx as nx
+import pandas as pd
+from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.compute.graphs import normalize_decimal_id
@@ -25,14 +28,14 @@ from codeintel.analytics.runtime import (
     resolve_graph_runtime,
 )
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
 from codeintel.config import FunctionEffectsStepConfig
 from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
-from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.ibis_types import and_predicates
 
 log = logging.getLogger(__name__)
 
@@ -138,8 +141,6 @@ def compute_function_effects(
     inputs:
         Optional inputs containing catalog, runtime, AST map, and missing GOIDs.
     """
-    ensure_schema(gateway.con, "analytics.function_effects")
-
     opts = inputs or FunctionEffectsInputs()
     catalog = opts.catalog_provider or FunctionCatalogService.from_db(
         gateway, repo=cfg.repo, commit=cfg.commit
@@ -160,20 +161,22 @@ def compute_function_effects(
     )
     rows = _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
 
-    storage_service = IngestStorageService.from_gateway(gateway)
-    storage_service.run_batch(
-        "analytics.function_effects",
-        rows,
-        delete_params=[cfg.repo, cfg.commit],
-        scope=f"{cfg.repo}@{cfg.commit}",
-    )
+    contract = get_analytics_dataset_contract(gateway, "analytics.function_effects")
+    columns = contract.schema.column_names() if contract.schema is not None else ()
+    tuple_rows = [contract.to_tuple(row) for row in rows]
+
+    table = gateway.ibis.table(contract.table_key)
+    where = and_predicates(table.repo == cfg.repo, table.commit == cfg.commit)
+    gateway.ibis.delete(contract.table_key, where=where)
+    if tuple_rows:
+        gateway.ibis.insert(contract.table_key, tuple_rows, columns=columns)
     log.info("function_effects populated: %d rows for %s@%s", len(rows), cfg.repo, cfg.commit)
 
 
 def _build_effect_rows(
     inputs: _EffectInputs,
     now: datetime,
-) -> list[tuple[object, ...]]:
+) -> list[dict[str, object]]:
     if inputs.ast_map is not None:
         ast_by_goid = inputs.ast_map
         missing = inputs.missing_goids or set()
@@ -207,9 +210,7 @@ def _build_effect_rows(
         direct_flags,
         max_depth=inputs.cfg.max_call_depth,
     )
-    unresolved_calls = _unresolved_call_counts(
-        inputs.gateway.con, inputs.cfg.repo, inputs.cfg.commit
-    )
+    unresolved_calls = _unresolved_call_counts(inputs.gateway, inputs.cfg.repo, inputs.cfg.commit)
     if unresolved_calls:
         log.warning(
             "Unresolved call edges detected for %d functions while computing effects: %s",
@@ -217,7 +218,7 @@ def _build_effect_rows(
             sorted(unresolved_calls),
         )
 
-    rows: list[tuple[object, ...]] = []
+    rows: list[dict[str, object]] = []
     for goid in all_goids:
         analysis = analyses.get(
             goid,
@@ -253,23 +254,23 @@ def _build_effect_rows(
         )
 
         rows.append(
-            (
-                inputs.cfg.repo,
-                inputs.cfg.commit,
-                goid,
-                is_pure,
-                analysis.uses_io,
-                analysis.touches_db,
-                analysis.uses_time,
-                analysis.uses_randomness,
-                analysis.modifies_globals,
-                analysis.modifies_closure,
-                analysis.spawns_threads_or_tasks,
-                bool(transitive_targets),
-                purity_confidence,
-                json.dumps(_effects_payload(analysis, transitive_targets)),
-                now,
-            )
+            {
+                "repo": inputs.cfg.repo,
+                "commit": inputs.cfg.commit,
+                "function_goid_h128": goid,
+                "is_pure": is_pure,
+                "uses_io": analysis.uses_io,
+                "touches_db": analysis.touches_db,
+                "uses_time": analysis.uses_time,
+                "uses_randomness": analysis.uses_randomness,
+                "modifies_globals": analysis.modifies_globals,
+                "modifies_closure": analysis.modifies_closure,
+                "spawns_threads_or_tasks": analysis.spawns_threads_or_tasks,
+                "has_transitive_effects": bool(transitive_targets),
+                "purity_confidence": purity_confidence,
+                "effects_json": json.dumps(_effects_payload(analysis, transitive_targets)),
+                "created_at": now,
+            }
         )
     return rows
 
@@ -302,26 +303,30 @@ def _compute_transitive_effects(
     return transitive
 
 
-def _unresolved_call_counts(con: DuckDBConnection, repo: str, commit: str) -> dict[int, int]:
+def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> dict[int, int]:
     counts: dict[int, int] = {}
     try:
-        rows: Iterable[tuple[int, int]] = con.execute(
-            """
-            SELECT caller_goid_h128, COUNT(*) AS unresolved_count
-            FROM graph.call_graph_edges
-            WHERE repo = ? AND commit = ?
-              AND callee_goid_h128 IS NULL
-            GROUP BY caller_goid_h128
-            """,
-            [repo, commit],
-        ).fetchall()
-    except DuckDBError:
+        edges = gateway.ibis.table("graph.call_graph_edges")
+        expr = (
+            edges.filter(
+                and_predicates(
+                    edges.repo == repo,
+                    edges.commit == commit,
+                    ibis.isnull(edges.callee_goid_h128),
+                )
+            )
+            .group_by(edges.caller_goid_h128)
+            .aggregate(unresolved_count=edges.caller_goid_h128.count())
+        )
+        rows_df = cast("pd.DataFrame", expr.execute())
+        rows = rows_df.to_dict(orient="records")
+    except IbisError:
         return counts
-    for raw_goid, count in rows:
-        goid = normalize_decimal_id(raw_goid)
+    for row in rows:
+        goid = normalize_decimal_id(row["caller_goid_h128"])
         if goid is None:
             continue
-        counts[goid] = int(count)
+        counts[goid] = int(row["unresolved_count"])
     return counts
 
 

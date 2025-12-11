@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, SupportsInt, cast
 
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
@@ -22,6 +22,7 @@ from codeintel.ingestion.plugins.helpers import build_scan_profile, filter_modul
 from codeintel.ingestion.plugins.modules_options import ModuleIngestOptions
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 from codeintel.ingestion.tracker import ChangeTracker
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.protocol import DuckDBCatalogException
 
 if TYPE_CHECKING:
@@ -193,12 +194,13 @@ class ModuleIngestPlugin(TargetPlugin):
         row_counts: dict[str, int] = {}
         for table_key in ctx.contract.table_keys:
             try:
-                count = ctx.gateway.con.execute(
-                    f"SELECT COUNT(*) FROM {table_key} "  # noqa: S608
-                    f"WHERE repo = ? AND commit = ?",
-                    [ctx.repo, ctx.commit],
-                ).fetchone()
-                row_counts[table_key] = int(count[0]) if count else 0
+                table = ctx.gateway.ibis.table(table_key)
+                count = (
+                    table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
+                    .count()
+                    .execute()
+                )
+                row_counts[table_key] = int(cast("SupportsInt", count))
             except (RuntimeError, OSError, DuckDBCatalogException) as exc:
                 log.warning("Row count fallback for %s: %s", table_key, exc)
                 row_counts[table_key] = 0
@@ -218,10 +220,8 @@ class ModuleIngestPlugin(TargetPlugin):
         modules_json = json.dumps(sorted(module_names))
         overlays_json = json.dumps({})
 
-        ctx.gateway.con.execute(
-            "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
-            [ctx.repo, ctx.commit],
-        )
+        backend = DuckDBPolicyBackend(ctx.gateway)
+        backend.delete_for_snapshot("core.repo_map", repo=ctx.repo, commit=ctx.commit)
         ctx.gateway.core.insert_repo_map(
             [(ctx.repo, ctx.commit, modules_json, overlays_json, generated_at)]
         )

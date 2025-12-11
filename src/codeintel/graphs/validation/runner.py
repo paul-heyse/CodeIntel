@@ -16,8 +16,9 @@ import logging
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, SupportsInt, cast
 
+import ibis.expr.types as it
 from ibis.expr.types import Table
 
 from codeintel.analytics.runtime import (
@@ -43,6 +44,7 @@ from codeintel.graphs.validation.findings import (
     resolve_validation_options,
 )
 from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.ibis_types import ibis_bool
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalogProvider
@@ -176,10 +178,12 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
     log : logging.Logger
         Logger for output.
     """
-    def _count(table_expr: Table, *, filters: list | None = None) -> int:
+
+    def _count(table_expr: Table, *predicates: it.BooleanValue) -> int:
         try:
-            expr = table_expr if not filters else table_expr.filter(*filters)
-            return int(expr.count().execute())
+            expr = table_expr if not predicates else table_expr.filter(list(predicates))
+            result = expr.count().execute()
+            return int(cast("SupportsInt", result))
         except DuckDBError as exc:  # pragma: no cover - defensive logging
             log.warning("Validation snapshot count failed for %s: %s", table_expr, exc)
             return -1
@@ -192,35 +196,31 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
     counts = {
         "modules": _count(
             modules_tbl,
-            filters=[(modules_tbl.repo == repo) & (modules_tbl.commit == commit)],
+            ibis_bool(modules_tbl.repo == repo),
+            ibis_bool(modules_tbl.commit == commit),
         ),
         "goids": _count(
             goids_tbl,
-            filters=[(goids_tbl.repo == repo) & (goids_tbl.commit == commit)],
+            ibis_bool(goids_tbl.repo == repo),
+            ibis_bool(goids_tbl.commit == commit),
         ),
         "module_goids": _count(
             goids_tbl,
-            filters=[
-                (goids_tbl.repo == repo)
-                & (goids_tbl.commit == commit)
-                & (goids_tbl.kind == "module")
-            ],
+            ibis_bool(goids_tbl.repo == repo),
+            ibis_bool(goids_tbl.commit == commit),
+            ibis_bool(goids_tbl.kind == "module"),
         ),
         "class_goids": _count(
             goids_tbl,
-            filters=[
-                (goids_tbl.repo == repo)
-                & (goids_tbl.commit == commit)
-                & (goids_tbl.kind == "class")
-            ],
+            ibis_bool(goids_tbl.repo == repo),
+            ibis_bool(goids_tbl.commit == commit),
+            ibis_bool(goids_tbl.kind == "class"),
         ),
         "function_goids": _count(
             goids_tbl,
-            filters=[
-                (goids_tbl.repo == repo)
-                & (goids_tbl.commit == commit)
-                & goids_tbl.kind.isin(["function", "method"])
-            ],
+            ibis_bool(goids_tbl.repo == repo),
+            ibis_bool(goids_tbl.commit == commit),
+            isin_values(goids_tbl.kind, ["function", "method"]),
         ),
         "call_nodes": _count(call_nodes_tbl),
         "call_edges": _count(call_edges_tbl),

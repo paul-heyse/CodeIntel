@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 from codeintel.cli.handlers.storage import (
     GenerateMacrosResult,
@@ -87,15 +86,13 @@ def test_profile_storage_handler_returns_ok(
     """Handler returns success when output_dir is provided."""
     output_dir = tmp_path / "profile"
     include_views = True
-    with (
-        storage_macro_harness_fixture.command_context(
-            {
-                "output_dir": str(output_dir),
-                "include_views": include_views,
-            }
-        ) as ctx,
-        patch("codeintel.cli.handlers.storage.run_profile"),
-    ):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    params = {
+        "output_dir": str(output_dir),
+        "include_views": include_views,
+        "db_path": str(storage_macro_harness_fixture.db_path),
+    }
+    with storage_macro_harness_fixture.command_context(params) as ctx:
         result = profile_storage_handler(ctx)
 
     expect_true(result.success)

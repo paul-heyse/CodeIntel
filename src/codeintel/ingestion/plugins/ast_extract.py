@@ -217,11 +217,13 @@ def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
 
     # Otherwise query from database
     try:
-        rows = ctx.gateway.con.execute(
-            "SELECT path FROM core.modules WHERE repo = ? AND commit = ?",
-            [ctx.repo, ctx.commit],
-        ).fetchall()
-        return [str(row[0]) for row in rows]
+        table = ctx.gateway.ibis.table("core.modules")
+        df = (
+            table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
+            .select("path")
+            .execute()
+        )
+        return [str(path) for path in df["path"].tolist()]
     except (RuntimeError, OSError):
         return []
 

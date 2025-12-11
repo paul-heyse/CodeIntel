@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
 import pytest
@@ -126,7 +126,7 @@ def test_write_ibis_expression_basic(write_gateway: StorageGateway) -> None:
 
     # Create Ibis expression that transforms data
     source = write_gateway.ibis.table("analytics.write_test")
-    transformed = source.mutate(value=source.value * 2)
+    transformed = source.mutate(value=cast("Any", source.value) * 2)
 
     # Write to a new insert (same table for simplicity)
     result = write_gateway.ibis.write("analytics.write_test", transformed)
@@ -229,4 +229,7 @@ def test_write_tuples_without_columns_raises(write_gateway: StorageGateway) -> N
 def test_write_unsupported_type_raises(write_gateway: StorageGateway) -> None:
     """Verify unsupported data type raises TypeError."""
     with pytest.raises(TypeError, match="Unsupported data type"):
-        write_gateway.ibis.write("analytics.write_test", "not a valid data type")  # type: ignore[arg-type]
+        write_gateway.ibis.write(
+            "analytics.write_test",
+            cast("Any", "not a valid data type"),
+        )

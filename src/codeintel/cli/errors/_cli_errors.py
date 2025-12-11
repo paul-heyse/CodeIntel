@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TextIO
 
 from cyclopts.exceptions import UnknownCommandError, UnknownOptionError
 
+from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.storage.exceptions import (
     QueryError as StorageQueryError,
@@ -350,10 +351,6 @@ def run_structured_handler[ResultT](
     """
     try:
         result: CliResult[ResultT] = handler(*args, **kwargs)
-        # Use UnifiedRenderer instead of CliResult.render()
-        # Import here to avoid circular dependency
-        from codeintel.cli.rendering.service import get_renderer  # noqa: PLC0415
-
         renderer = get_renderer(output_format)
         exit_code = renderer.render_result(result)
         if exit_code != 0:

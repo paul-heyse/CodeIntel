@@ -61,11 +61,7 @@ def export_all_constraints_json() -> dict[str, Any]:
     """
     datasets: dict[str, Any] = {}
 
-    for table_key in SCHEMA_REGISTRY:
-        schema = SCHEMA_REGISTRY.get(table_key)
-        if schema is None:
-            continue
-
+    for table_key, schema in SCHEMA_REGISTRY.items():
         constraints = extract_constraints_from_pandera(table_key, schema.pandera_schema)
 
         # Group constraints by column

@@ -217,11 +217,7 @@ def build_hotspots(
     [('sample.py', 0.17328679513998632)]
     """
     try:
-        df_ast = (
-            gateway.ibis.table("core.ast_metrics")
-            .select("rel_path", "complexity")
-            .execute()
-        )
+        df_ast = gateway.ibis.table("core.ast_metrics").select("rel_path", "complexity").execute()
     except DuckDBError as exc:
         log.warning("Failed to read core.ast_metrics for hotspots: %s", exc)
         return

@@ -138,6 +138,7 @@ class JobManagerProtocol(Protocol):
     def submit(self, operation_id: str, params: dict[str, Any]) -> str:
         """Submit a background job."""
         ...
+        ...
 
 
 @runtime_checkable

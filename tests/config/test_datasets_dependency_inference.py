@@ -153,7 +153,9 @@ def test_dependency_graph_get() -> None:
     graph = DependencyGraph(nodes={"test.table": node})
 
     result = graph.get("test.table")
-    _require(condition=result is not None, message="should find node")
+    if result is None:
+        msg = "should find node"
+        pytest.fail(msg)
     _expect_equal(result.table_key, "test.table", "table_key")
 
 

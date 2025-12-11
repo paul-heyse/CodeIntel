@@ -170,11 +170,13 @@ def build_tool_from_operation(
     run_prereqs = prereq_runner or (
         lambda op_id, cfg, bkd: ensure_prereqs_for_mcp(op_id=op_id, config=cfg, backend=bkd)
     )
+    auto_pipeline_enabled = is_auto_pipeline_enabled()
+    has_gateway = getattr(backend, "gateway", None) is not None
 
     @_wrap
     def _tool(**kwargs: object) -> dict[str, object] | dict[str, ProblemDetail]:
         # Check for auto-pipeline prerequisites
-        if is_auto_pipeline_enabled() and config is not None and hasattr(backend, "gateway"):
+        if auto_pipeline_enabled and config is not None and has_gateway:
             run_prereqs(spec.id, config, cast("QueryBackend", backend))
 
         correlation_id = generate_correlation_id()

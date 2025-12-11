@@ -13,6 +13,7 @@ from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
+from typing import Protocol
 
 from codeintel.cli import app
 from codeintel.cli.errors import handle_cli_error
@@ -35,6 +36,17 @@ class CliResult:
     stdout: str
     stderr: str
     output: str
+
+
+class CliResultLike(Protocol):
+    """Protocol for CLI result assertions with minimal fields."""
+
+    exit_code: int
+    stdout: str
+    stderr: str
+
+
+CliResultType = CliResult | CliResultLike
 
 
 @contextmanager
@@ -125,7 +137,7 @@ def run_cli(
     return CliResult(exit_code=exit_code, stdout=stdout, stderr=stderr, output=stdout + stderr)
 
 
-def assert_success(result: CliResult) -> None:
+def assert_success(result: CliResultType) -> None:
     """Assert that a CLI invocation succeeded.
 
     Raises
@@ -138,7 +150,7 @@ def assert_success(result: CliResult) -> None:
         raise AssertionError(message)
 
 
-def assert_exit(result: CliResult, code: int) -> None:
+def assert_exit(result: CliResultType, code: int) -> None:
     """Assert that a CLI invocation exited with the expected code.
 
     Raises
@@ -151,7 +163,7 @@ def assert_exit(result: CliResult, code: int) -> None:
         raise AssertionError(message)
 
 
-def assert_help(result: CliResult) -> None:
+def assert_help(result: CliResultType) -> None:
     """Assert that a CLI help command succeeded and printed usage.
 
     Raises

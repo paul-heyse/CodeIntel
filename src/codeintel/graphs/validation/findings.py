@@ -21,6 +21,7 @@ from codeintel.core.validation import (
     has_error_findings,
 )
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.ibis_types import and_predicates, ibis_bool
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -133,7 +134,10 @@ def persist_findings(
         return
     try:
         table = gateway.ibis.table("analytics.graph_validation")
-        gateway.ibis.delete("analytics.graph_validation", where=(table.repo == repo) & (table.commit == commit))
+        gateway.ibis.delete(
+            "analytics.graph_validation",
+            where=and_predicates(table.repo == repo, table.commit == commit),
+        )
     except DuckDBError:
         return
     reporter = GraphValidationReporter(repo=repo, commit=commit)

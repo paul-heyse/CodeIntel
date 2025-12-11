@@ -25,7 +25,6 @@ from typing import Any, TypedDict, cast
 
 import pandas as pd
 
-from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.compute.functions import (
     ComplexityMetrics,
     compute_complexity,
@@ -48,13 +47,12 @@ from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resol
 from codeintel.analytics.parsing.validation import FunctionValidationReporter
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
-    insert_analytics_rows,
 )
 from codeintel.config import FunctionAnalyticsStepConfig
 from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.pandera_schemas import validate_dataset_df
-from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
 
@@ -607,12 +605,8 @@ def persist_function_analytics(
     dict[str, int]
         Summary counts of persisted rows and validation.
     """
-    con = gateway.con
-    ensure_schema(con, "analytics.function_validation")
-    scope = f"{cfg.repo}@{cfg.commit}"
     metrics_contract = get_analytics_dataset_contract(gateway, "analytics.function_metrics")
     types_contract = get_analytics_dataset_contract(gateway, "analytics.function_types")
-    delete_scope = DeleteScope(repo=cfg.repo, commit=cfg.commit)
     metrics_rows = result.metrics_rows
     types_rows = result.types_rows
 
@@ -627,19 +621,20 @@ def persist_function_analytics(
 
     validated_metrics = _validated_records(metrics_contract.table_key, list(metrics_rows))
     validated_types = _validated_records(types_contract.table_key, list(types_rows))
-    insert_analytics_rows(
-        gateway,
-        metrics_contract,
-        validated_metrics,
-        delete_scope=delete_scope,
-        scope=scope,
+    backend = DuckDBPolicyBackend(gateway)
+    metrics_columns = metrics_contract.schema.column_names() if metrics_contract.schema else ()
+    types_columns = types_contract.schema.column_names() if types_contract.schema else ()
+    backend.delete_for_snapshot(metrics_contract.table_key, repo=cfg.repo, commit=cfg.commit)
+    backend.bulk_insert(
+        metrics_contract.table_key,
+        [metrics_contract.to_tuple(row) for row in validated_metrics],
+        columns=metrics_columns,
     )
-    insert_analytics_rows(
-        gateway,
-        types_contract,
-        validated_types,
-        delete_scope=delete_scope,
-        scope=scope,
+    backend.delete_for_snapshot(types_contract.table_key, repo=cfg.repo, commit=cfg.commit)
+    backend.bulk_insert(
+        types_contract.table_key,
+        [types_contract.to_tuple(row) for row in validated_types],
+        columns=types_columns,
     )
     result.reporter.flush(gateway)
 
@@ -706,11 +701,6 @@ def compute_function_metrics_and_types(
     dict[str, int]
         Summary counts of emitted metrics/types and validation issues.
     """
-    con = gateway.con
-    ensure_schema(con, "analytics.function_metrics")
-    ensure_schema(con, "analytics.function_types")
-    ensure_schema(con, "analytics.function_validation")
-
     goids_by_file = _load_goids(gateway, cfg)
     if not goids_by_file:
         return {

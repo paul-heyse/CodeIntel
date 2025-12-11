@@ -15,6 +15,7 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.ibis_types import filter_by, ibis_bool
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -50,22 +51,29 @@ def _validate_call_graph_integrity(
         edges = gateway.ibis.table("graph.call_graph_edges")
         nodes = gateway.ibis.table("graph.call_graph_nodes")
 
-        scoped_edges = edges.filter((edges.repo == repo) & (edges.commit == commit))
+        scoped_edges = filter_by(edges, edges.repo == repo, edges.commit == commit)
 
-        caller_join = scoped_edges.left_join(nodes, scoped_edges.caller_goid_h128 == nodes.goid_h128)
-        orphan_callers = caller_join.filter(nodes.goid_h128.isnull()).count().execute()
-        if orphan_callers and orphan_callers > 0:
+        caller_join = scoped_edges.left_join(
+            nodes, predicates=[(scoped_edges.caller_goid_h128, nodes.goid_h128)]
+        )
+        orphan_callers = int(
+            caller_join.filter(ibis_bool(nodes.goid_h128.isnull())).count().execute()
+        )
+        if orphan_callers > 0:
             errors.append(f"Found {orphan_callers} call graph edges with orphan caller GOIDs")
 
-        callee_join = scoped_edges.left_join(nodes, scoped_edges.callee_goid_h128 == nodes.goid_h128)
-        orphan_callees = (
+        callee_join = scoped_edges.left_join(
+            nodes, predicates=[(scoped_edges.callee_goid_h128, nodes.goid_h128)]
+        )
+        orphan_callees = int(
             callee_join.filter(
-                scoped_edges.callee_goid_h128.notnull() & nodes.goid_h128.isnull()
+                ibis_bool(scoped_edges.callee_goid_h128.notnull())
+                & ibis_bool(nodes.goid_h128.isnull())
             )
             .count()
             .execute()
         )
-        if orphan_callees and orphan_callees > 0:
+        if orphan_callees > 0:
             log.debug(
                 "validation: %d call graph edges have unresolved callee GOIDs",
                 orphan_callees,
@@ -102,16 +110,18 @@ def _validate_import_graph_integrity(
     try:
         edges = gateway.ibis.table("graph.import_graph_edges")
         modules = gateway.ibis.table("graph.import_modules")
-        scoped_edges = edges.filter((edges.repo == repo) & (edges.commit == commit))
+        scoped_edges = filter_by(edges, edges.repo == repo, edges.commit == commit)
 
         joined = scoped_edges.left_join(
             modules,
-            (scoped_edges.src_module == modules.module)
-            & (scoped_edges.repo == modules.repo)
-            & (scoped_edges.commit == modules.commit),
+            predicates=[
+                (scoped_edges.src_module, modules.module),
+                (scoped_edges.repo, modules.repo),
+                (scoped_edges.commit, modules.commit),
+            ],
         )
-        orphan_src = joined.filter(modules.module.isnull()).count().execute()
-        if orphan_src and orphan_src > 0:
+        orphan_src = int(joined.filter(ibis_bool(modules.module.isnull())).count().execute())
+        if orphan_src > 0:
             errors.append(f"Found {orphan_src} import edges with missing source modules")
 
     except DuckDBError as exc:
@@ -149,11 +159,13 @@ def _validate_cfg_integrity(
 
         joined = edges.left_join(
             blocks,
-            (edges.src_block_id == blocks.block_id)
-            & (edges.function_goid_h128 == blocks.function_goid_h128),
+            predicates=[
+                (edges.src_block_id, blocks.block_id),
+                (edges.function_goid_h128, blocks.function_goid_h128),
+            ],
         )
-        orphan_edges = joined.filter(blocks.block_id.isnull()).count().execute()
-        if orphan_edges and orphan_edges > 0:
+        orphan_edges = int(joined.filter(ibis_bool(blocks.block_id.isnull())).count().execute())
+        if orphan_edges > 0:
             errors.append(f"Found {orphan_edges} CFG edges with missing source blocks")
 
     except DuckDBError as exc:

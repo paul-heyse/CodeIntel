@@ -6,6 +6,7 @@ Handlers for documentation export and validation operations.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -153,6 +154,20 @@ def _normalize_flag(value: object | None) -> str | None:
     return str(value).lower()
 
 
+@dataclass(frozen=True)
+class DocsDependencies:
+    """Injectable dependencies for docs handlers."""
+
+    runtime_builder: Callable[[CommandContext], object]
+
+
+def _default_runtime_builder(ctx: CommandContext) -> object:
+    return _build_runtime_from_ctx(ctx)
+
+
+DEFAULT_DOCS_DEPS = DocsDependencies(runtime_builder=_default_runtime_builder)
+
+
 def _collect_export_params(ctx: CommandContext) -> DocsExportParams:
     """Parse docs export parameters from the command context.
 
@@ -242,6 +257,7 @@ def _resolve_mode(*, dry_run: bool, skip_prereqs: bool) -> tuple[str, str]:
 
 def docs_export_handler(
     ctx: CommandContext,
+    deps: DocsDependencies | None = None,
 ) -> CliResult[DocsExportResult]:
     """Export Parquet + JSONL datasets from DuckDB into Document Output/.
 
@@ -256,17 +272,20 @@ def docs_export_handler(
         - schemas: Optional list of schemas to export.
         - dry_run: Whether to run in dry-run mode.
         - skip_prereqs: Whether to skip prerequisites.
+    deps
+        Optional dependency bundle providing runtime construction.
 
     Returns
     -------
     CliResult[DocsExportResult]
         Export result.
     """
+    deps = deps or DEFAULT_DOCS_DEPS
     params = _collect_export_params(ctx)
 
     try:
         # Access runtime to trigger resolution and validate project
-        _ = _build_runtime_from_ctx(ctx)
+        _ = deps.runtime_builder(ctx)
     except (ResolutionError, ValidationError) as e:
         return fail_project_error("docs", str(e))
 
@@ -316,6 +335,7 @@ def docs_export_handler(
 
 def docs_validate_handler(
     ctx: CommandContext,
+    deps: DocsDependencies | None = None,
 ) -> CliResult[DocsValidateResult]:
     """Validate documentation exports.
 
@@ -324,15 +344,18 @@ def docs_validate_handler(
     ctx
         Command context with params:
         - project_root: Optional project root override.
+    deps
+        Optional dependency bundle providing runtime construction.
 
     Returns
     -------
     CliResult[DocsValidateResult]
         Validation result.
     """
+    deps = deps or DEFAULT_DOCS_DEPS
     try:
         # Access runtime to trigger resolution and validate project
-        _ = _build_runtime_from_ctx(ctx)
+        _ = deps.runtime_builder(ctx)
     except (ResolutionError, ValidationError) as e:
         return fail_project_error("docs", str(e))
 
@@ -361,6 +384,7 @@ def _build_runtime_from_ctx(ctx: CommandContext) -> object:
 
 
 __all__ = [
+    "DocsDependencies",
     "DocsExportResult",
     "DocsValidateResult",
     "ExportMode",

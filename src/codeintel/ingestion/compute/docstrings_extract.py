@@ -325,7 +325,11 @@ class DocstringsExtractStep:
         # Delete existing docstrings for processed modules (idempotent re-ingest)
         if processed_paths:
             self._storage.delete_by_paths(
-                "core.docstrings", processed_paths, path_column="rel_path"
+                "core.docstrings",
+                processed_paths,
+                path_column="rel_path",
+                repo=repo,
+                commit=commit,
             )
 
         # Persist rows

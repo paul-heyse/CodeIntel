@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -30,18 +31,27 @@ def test_create_mcp_server_uses_register_tools_fn() -> None:
     gateway = GatewayFactory().with_macros().open()
     seed_repo_identity(gateway, repo=cfg.repo, commit=cfg.commit)
     backend_resource = build_backend_resource(cfg, gateway=gateway)
+
     original_close = backend_resource.close
+    wrapped_resource = cast(
+        "BackendResource",
+        SimpleNamespace(
+            backend=backend_resource.backend,
+            service=backend_resource.service,
+            close=None,
+        ),
+    )
 
     def _mark_close() -> None:
         nonlocal close_called
         close_called = True
         original_close()
 
-    backend_resource.close = _mark_close  # type: ignore[assignment]
+    wrapped_resource.close = _mark_close
 
     def _backend_factory(*args: tuple[object, ...], **kwargs: object) -> BackendResource:
         _ = (args, kwargs)
-        return backend_resource
+        return wrapped_resource
 
     def _register_tools_fn(mcp: object, svc: object, cfg: ServingConfig | None) -> None:
         _ = cfg

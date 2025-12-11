@@ -37,9 +37,11 @@ Or using the combinator:
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from typing import Any, cast
 
 import ibis.expr.types as it
+from ibis import window
 
 
 def ibis_bool(expr: object) -> it.BooleanValue:
@@ -189,8 +191,9 @@ def count_gt(expr: it.Value, value: int) -> it.BooleanValue:
     return comparison
 
 
-def ilike(column: it.StringValue, pattern: str) -> it.BooleanValue:
-    """Type-safe ILIKE pattern match.
+def ilike(column: it.Value, pattern: str) -> it.BooleanValue:
+    """
+    Type-safe ILIKE pattern match.
 
     Parameters
     ----------
@@ -204,7 +207,7 @@ def ilike(column: it.StringValue, pattern: str) -> it.BooleanValue:
     BooleanValue
         Ibis boolean expression.
     """
-    return cast("it.BooleanValue", column.ilike(pattern))
+    return cast("it.BooleanValue", cast("Any", column).ilike(pattern))
 
 
 def and_predicates(*predicates: object) -> it.BooleanValue:
@@ -310,16 +313,128 @@ def filter_by[TableT: it.Table](table: TableT, *predicates: object) -> TableT:
     return cast("TableT", table.filter(typed_predicates))
 
 
+def col_sum(expr: it.Value) -> it.Value:
+    """Type-safe sum aggregator.
+
+    Returns
+    -------
+    it.Value
+        Sum expression.
+    """
+    return cast("it.Value", cast("Any", expr).sum())
+
+
+def col_mean(expr: it.Value) -> it.Value:
+    """Type-safe mean aggregator.
+
+    Returns
+    -------
+    it.Value
+        Mean expression.
+    """
+    return cast("it.Value", cast("Any", expr).mean())
+
+
+def col_max(expr: it.Value) -> it.Value:
+    """Type-safe max aggregator.
+
+    Returns
+    -------
+    it.Value
+        Max expression.
+    """
+    return cast("it.Value", cast("Any", expr).max())
+
+
+def col_min(expr: it.Value) -> it.Value:
+    """Type-safe min aggregator.
+
+    Returns
+    -------
+    it.Value
+        Min expression.
+    """
+    return cast("it.Value", cast("Any", expr).min())
+
+
+def col_count(expr: it.Value) -> it.Value:
+    """Type-safe count aggregator.
+
+    Returns
+    -------
+    it.Value
+        Count expression.
+    """
+    return cast("it.Value", cast("Any", expr).count())
+
+
+def col_nunique(expr: it.Value) -> it.Value:
+    """Type-safe nunique aggregator.
+
+    Returns
+    -------
+    it.Value
+        Distinct count expression.
+    """
+    return cast("it.Value", cast("Any", expr).nunique())
+
+
+def bool_not(expr: object) -> it.BooleanValue:
+    """Type-safe boolean negation for Ibis predicates.
+
+    Returns
+    -------
+    it.BooleanValue
+        Negated boolean expression.
+    """
+    return cast("it.BooleanValue", ~ibis_bool(expr))
+
+
+def isin_values(column: it.Value, values: Iterable[object]) -> it.BooleanValue:
+    """Type-safe isin helper.
+
+    Returns
+    -------
+    it.BooleanValue
+        Predicate indicating membership in values.
+    """
+    return cast("it.BooleanValue", cast("Any", column).isin(list(values)))
+
+
+def window_over(
+    *,
+    partition_by: Sequence[it.Value] | None = None,
+    order_by: Sequence[it.Value | str] | None = None,
+) -> object:
+    """Create a typed window expression.
+
+    Returns
+    -------
+    it.Window
+        Window specification for subsequent operations.
+    """
+    return window(group_by=list(partition_by or []), order_by=list(order_by or []))
+
+
 __all__ = [
     "and_predicates",
+    "bool_not",
+    "col_count",
+    "col_max",
+    "col_mean",
+    "col_min",
+    "col_nunique",
+    "col_sum",
     "count_gt",
     "filter_by",
     "ge",
     "gt",
     "ibis_bool",
     "ilike",
+    "isin_values",
     "le",
     "lt",
     "ne",
     "or_predicates",
+    "window_over",
 ]

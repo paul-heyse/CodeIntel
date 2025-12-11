@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import ClassVar
 
 from codeintel.analytics.adapters.base import BatchAdapter
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 log = logging.getLogger(__name__)
 
@@ -210,8 +211,6 @@ class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
         if not rows:
             return 0
 
-        from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
-
         values = [
             (
                 row.repo,
@@ -275,8 +274,6 @@ class DependencyAggregateAdapter(BatchAdapter[DependencyAggregateRow]):
         """
         if not rows:
             return 0
-
-        from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend  # noqa: PLC0415
 
         values = [
             (

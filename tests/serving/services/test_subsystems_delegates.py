@@ -36,7 +36,7 @@ def _build_local_service(
     LocalQueryService
         Service instance wired to the provisioned gateway snapshot.
     """
-    return service_ctx.service  # type: ignore[no-any-return]
+    return service_ctx.service
 
 
 # =============================================================================
