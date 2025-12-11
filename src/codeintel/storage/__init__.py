@@ -7,9 +7,10 @@ This module provides the primary abstractions for database access:
 - DatasetRegistry: In-memory view of registered datasets
 - DuckDBConnection: Type alias for the underlying connection
 - GatewayCache: Thread-safe gateway caching for connection reuse
+- DuckDBPolicyBackend: Centralized DDL and mutation operations
 
-Due to circular import constraints, this package does NOT re-export
-submodule symbols at the package level. Import directly from submodules.
+Due to circular import constraints, most submodule symbols are NOT re-exported
+at the package level. Import directly from submodules for most use cases.
 
 Recommended import patterns::
 
@@ -18,6 +19,7 @@ Recommended import patterns::
     from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
     from codeintel.storage.repositories import fetch_models, DataModelRow
     from codeintel.storage.gateway_cache import get_gateway, close_gateways
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 Circular Import Note
 --------------------
@@ -30,9 +32,13 @@ The import cycle that prevents package-level exports is:
 5. gateway imports storage.helpers.db
 6. storage.helpers.db imports config.datasets (CYCLE)
 
-By keeping this package empty, the cycle is broken at step 3.
+DuckDBPolicyBackend is safe to import here because it only depends on
+config.datasets (not on gateway_cache or other storage submodules that
+create cycles).
 """
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+
+__all__: list[str] = ["DuckDBPolicyBackend"]

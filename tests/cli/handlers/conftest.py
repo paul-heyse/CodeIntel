@@ -101,14 +101,19 @@ def handler_context_builder() -> Iterator[HandlerContextBuilder]:
         params: dict[str, object],
     ) -> CommandContext:
         # Build CommandContext using the unified builder with injected gateway
+        merged_params = dict(params)
+        merged_params["_backend_override"] = service_ctx.backend
         builder = (
             CommandContextBuilder()
-            .with_params(params)
+            .with_params(merged_params)
             .with_operation_id(operation_id)
             .with_injected_gateway(service_ctx.gateway)
         )
 
-        return stack.enter_context(builder.build())
+        ctx = stack.enter_context(builder.build())
+        setattr(ctx.gateway, "backend", service_ctx.backend)
+        setattr(ctx, "_backend_override", service_ctx.backend)
+        return ctx
 
     try:
         yield _build

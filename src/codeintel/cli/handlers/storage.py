@@ -233,14 +233,22 @@ def profile_storage_handler(
     CliResult[ProfileStorageResult]
         Profiling result with paths and options used.
     """
-    # Get db_path from params or runtime
-    db_path_str = ctx.params.get_str("db_path")
-    db_path = ctx.runtime.paths.db_path if db_path_str is None else Path(db_path_str)
-
     output_dir_str = ctx.params.get_str("output_dir")
     if output_dir_str is None:
         return fail_missing_output_path("output_dir")
     output_dir = Path(output_dir_str)
+
+    db_path_str = ctx.params.get_str("db_path")
+    if db_path_str is not None:
+        db_path = Path(db_path_str)
+    elif ctx.has_runtime:
+        db_path = ctx.runtime.paths.db_path
+    else:
+        gateway_db_path = getattr(getattr(ctx.gateway, "config", None), "db_path", None)
+        if isinstance(gateway_db_path, (str, Path)):
+            db_path = Path(gateway_db_path)
+        else:
+            db_path = Path(":memory:")
 
     include_views = ctx.params.get_bool("include_views", default=False)
 

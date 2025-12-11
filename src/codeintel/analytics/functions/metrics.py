@@ -21,7 +21,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict, cast
 
 import pandas as pd
 
@@ -403,44 +403,56 @@ def build_function_analytics(
 def _load_goids(
     gateway: StorageGateway, cfg: FunctionAnalyticsStepConfig
 ) -> dict[str, list[GoidRow]]:
-    df = gateway.con.execute(
-        """
-        SELECT
-            goid_h128,
-            urn,
-            repo,
-            commit,
-            rel_path,
-            language,
-            kind,
-            qualname,
-            start_line,
-            end_line
-        FROM core.goids
-        WHERE repo = ? AND commit = ?
-          AND kind IN ('function', 'method')
-        """,
-        [cfg.repo, cfg.commit],
-    ).fetch_df()
+    """Load function GOIDs from core.goids using Ibis.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    cfg
+        Step configuration with repo and commit.
+
+    Returns
+    -------
+    dict[str, list[GoidRow]]
+        GOIDs grouped by relative file path.
+    """
+    tbl = gateway.ibis.table("core.goids")
+    repo_filter = cast("Any", tbl.repo == cfg.repo)
+    commit_filter = cast("Any", tbl.commit == cfg.commit)
+    kind_filter = cast("Any", tbl.kind.isin(cast("Any", ["function", "method"])))
+    expr = tbl.filter(repo_filter & commit_filter & kind_filter).select(
+        "goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "kind",
+        "qualname",
+        "start_line",
+        "end_line",
+    )
+    df = expr.execute()
 
     if df.empty:
         log.info("No function GOIDs found for repo=%s commit=%s", cfg.repo, cfg.commit)
         return {}
 
     goids_by_file: dict[str, list[GoidRow]] = {}
-    for _, row in df.iterrows():
-        rel_path = str(row["rel_path"]).replace("\\", "/")
+    for record in df.to_dict(orient="records"):  # type: ignore[call-overload]
+        rel_path = str(record["rel_path"]).replace("\\", "/")
         goid_row: GoidRow = {
-            "goid_h128": int(row["goid_h128"]),
-            "urn": str(row["urn"]),
-            "repo": str(row["repo"]),
-            "commit": str(row["commit"]),
+            "goid_h128": int(record["goid_h128"]),
+            "urn": str(record["urn"]),
+            "repo": str(record["repo"]),
+            "commit": str(record["commit"]),
             "rel_path": rel_path,
-            "language": str(row["language"]),
-            "kind": str(row["kind"]),
-            "qualname": str(row["qualname"]),
-            "start_line": int(row["start_line"]),
-            "end_line": int(row["end_line"]) if row["end_line"] is not None else None,
+            "language": str(record["language"]),
+            "kind": str(record["kind"]),
+            "qualname": str(record["qualname"]),
+            "start_line": int(record["start_line"]),
+            "end_line": int(record["end_line"]) if record["end_line"] is not None else None,
         }
         goids_by_file.setdefault(rel_path, []).append(goid_row)
     return goids_by_file

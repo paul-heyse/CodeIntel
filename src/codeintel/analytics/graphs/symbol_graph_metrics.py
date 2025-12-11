@@ -26,6 +26,7 @@ from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
@@ -35,7 +36,7 @@ MAX_BETWEENNESS_NODES = 1000
 MAX_COMMUNITY_NODES = 5000
 
 
-def compute_symbol_graph_metrics_modules(
+def compute_symbol_graph_metrics_modules(  # noqa: PLR0914
     gateway: StorageGateway,
     *,
     repo: str,
@@ -73,9 +74,9 @@ def compute_symbol_graph_metrics_modules(
         graph = graph.subgraph([module for module in graph.nodes if module in known_modules]).copy()
     if graph.number_of_nodes() == 0:
         log_empty_graph("symbol_module_graph", graph)
-        gateway.con.execute(
-            "DELETE FROM analytics.symbol_graph_metrics_modules WHERE repo = ? AND commit = ?",
-            [repo, commit],
+        backend = DuckDBPolicyBackend(gateway)
+        backend.delete_for_snapshot(
+            "analytics.symbol_graph_metrics_modules", repo=repo, commit=commit
         )
         return
 
@@ -115,9 +116,9 @@ def compute_symbol_graph_metrics_modules(
         rows,
         schema=contract.schema,
     )
-    gateway.con.execute(
-        "DELETE FROM analytics.symbol_graph_metrics_modules WHERE repo = ? AND commit = ?",
-        [repo, commit],
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot(
+        "analytics.symbol_graph_metrics_modules", repo=repo, commit=commit
     )
     if validated_rows:
         gateway.con.executemany(
@@ -133,7 +134,7 @@ def compute_symbol_graph_metrics_modules(
         )
 
 
-def compute_symbol_graph_metrics_functions(
+def compute_symbol_graph_metrics_functions(  # noqa: PLR0914
     gateway: StorageGateway,
     *,
     repo: str,
@@ -171,9 +172,9 @@ def compute_symbol_graph_metrics_functions(
         graph = graph.subgraph([goid for goid in graph.nodes if int(goid) in known_goids]).copy()
     if graph.number_of_nodes() == 0:
         log_empty_graph("symbol_function_graph", graph)
-        gateway.con.execute(
-            "DELETE FROM analytics.symbol_graph_metrics_functions WHERE repo = ? AND commit = ?",
-            [repo, commit],
+        backend = DuckDBPolicyBackend(gateway)
+        backend.delete_for_snapshot(
+            "analytics.symbol_graph_metrics_functions", repo=repo, commit=commit
         )
         return
 
@@ -213,9 +214,9 @@ def compute_symbol_graph_metrics_functions(
         rows,
         schema=contract.schema,
     )
-    gateway.con.execute(
-        "DELETE FROM analytics.symbol_graph_metrics_functions WHERE repo = ? AND commit = ?",
-        [repo, commit],
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot(
+        "analytics.symbol_graph_metrics_functions", repo=repo, commit=commit
     )
     if validated_rows:
         gateway.con.executemany(

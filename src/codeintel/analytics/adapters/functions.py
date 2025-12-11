@@ -11,7 +11,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from codeintel.analytics.adapters.base import BatchAdapter, DeleteScope
 from codeintel.analytics.utilities.datasets import (
@@ -147,46 +147,43 @@ class FunctionGoidLoader:
         return list(self.iter_goids())
 
     def iter_goids(self) -> Iterator[FunctionGoid]:
-        """Iterate over function GOIDs.
+        """Iterate over function GOIDs using Ibis.
 
         Yields
         ------
         FunctionGoid
             Each function GOID in the snapshot.
         """
-        query = """
-            SELECT
-                goid_h128,
-                urn,
-                repo,
-                commit,
-                rel_path,
-                language,
-                kind,
-                qualname,
-                start_line,
-                end_line
-            FROM core.goids
-            WHERE repo = ? AND commit = ?
-              AND kind IN ('function', 'method')
-        """
-        result = self._gateway.con.execute(
-            query,
-            [self._snapshot.repo, self._snapshot.commit],
+        tbl = self._gateway.ibis.table("core.goids")
+        repo_filter = cast("Any", tbl.repo == self._snapshot.repo)
+        commit_filter = cast("Any", tbl.commit == self._snapshot.commit)
+        kind_filter = cast("Any", tbl.kind.isin(cast("Any", ["function", "method"])))
+        expr = tbl.filter(repo_filter & commit_filter & kind_filter).select(
+            "goid_h128",
+            "urn",
+            "repo",
+            "commit",
+            "rel_path",
+            "language",
+            "kind",
+            "qualname",
+            "start_line",
+            "end_line",
         )
+        df = expr.execute()
 
-        for row in result.fetchall():
+        for record in df.to_dict(orient="records"):  # type: ignore[call-overload]
             goid_row: GoidRow = {
-                "goid_h128": row[0],
-                "urn": row[1],
-                "repo": row[2],
-                "commit": row[3],
-                "rel_path": row[4],
-                "language": row[5],
-                "kind": row[6],
-                "qualname": row[7],
-                "start_line": row[8],
-                "end_line": row[9],
+                "goid_h128": record["goid_h128"],
+                "urn": record["urn"],
+                "repo": record["repo"],
+                "commit": record["commit"],
+                "rel_path": record["rel_path"],
+                "language": record["language"],
+                "kind": record["kind"],
+                "qualname": record["qualname"],
+                "start_line": record["start_line"],
+                "end_line": record["end_line"],
             }
             yield FunctionGoid.from_row(goid_row)
 

@@ -39,6 +39,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from ibis.common.exceptions import IbisError
+
 if TYPE_CHECKING:
     from ibis.expr.types import BooleanValue, Table
 

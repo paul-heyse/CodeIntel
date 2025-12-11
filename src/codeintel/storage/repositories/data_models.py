@@ -6,9 +6,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Any, cast
+
+import pandas as pd
 
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.helpers.json import decode_json, decode_json_dict
+from codeintel.storage.ibis_types import and_predicates, ibis_bool
 
 
 def _as_int(value: Decimal | int | None) -> int | None:
@@ -134,45 +138,40 @@ def fetch_models(gateway: StorageGateway, repo: str, commit: str) -> list[DataMo
     list[DataModelRow]
         Parsed data model rows with base classes decoded.
     """
-    rows = gateway.con.execute(
-        """
-        SELECT
-            repo, commit, model_id, goid_h128, model_name, module, rel_path, model_kind,
-            base_classes_json, doc_short, doc_long, created_at
-        FROM analytics.data_models
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+    tbl = gateway.ibis.table("analytics.data_models")
+    expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit)).select(
+        "repo",
+        "commit",
+        "model_id",
+        "goid_h128",
+        "model_name",
+        "module",
+        "rel_path",
+        "model_kind",
+        "base_classes_json",
+        "doc_short",
+        "doc_long",
+        "created_at",
+    )
+    df = pd.DataFrame(expr.execute())
+
     result: list[DataModelRow] = []
-    for (
-        row_repo,
-        row_commit,
-        model_id,
-        goid_h128,
-        model_name,
-        module,
-        rel_path,
-        model_kind,
-        base_classes_json,
-        doc_short,
-        doc_long,
-        created_at,
-    ) in rows:
+    for record in df.to_dict(orient="records"):
+        row: dict[str, Any] = record
         result.append(
             DataModelRow(
-                repo=str(row_repo),
-                commit=str(row_commit),
-                model_id=str(model_id),
-                goid_h128=_as_int(goid_h128),
-                model_name=str(model_name),
-                module=str(module),
-                rel_path=str(rel_path),
-                model_kind=str(model_kind),
-                base_classes=_decode_base_classes(base_classes_json),
-                doc_short=str(doc_short) if doc_short is not None else None,
-                doc_long=str(doc_long) if doc_long is not None else None,
-                created_at=created_at,
+                repo=str(row["repo"]),
+                commit=str(row["commit"]),
+                model_id=str(row["model_id"]),
+                goid_h128=_as_int(row["goid_h128"]),
+                model_name=str(row["model_name"]),
+                module=str(row["module"]),
+                rel_path=str(row["rel_path"]),
+                model_kind=str(row["model_kind"]),
+                base_classes=_decode_base_classes(row["base_classes_json"]),
+                doc_short=str(row["doc_short"]) if row["doc_short"] is not None else None,
+                doc_long=str(row["doc_long"]) if row["doc_long"] is not None else None,
+                created_at=row["created_at"],
             )
         )
     return result
@@ -203,50 +202,48 @@ def fetch_fields(
     list[DataModelFieldRow]
         Normalized fields for the requested models.
     """
-    rows = gateway.con.execute(
-        """
-        SELECT
-            repo, commit, model_id, field_name, field_type, required, has_default,
-            default_expr, constraints_json, source, rel_path, lineno, created_at
-        FROM analytics.data_model_fields
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
-    allowed = set(model_ids) if model_ids else None
+    tbl = gateway.ibis.table("analytics.data_model_fields")
+    expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
+
+    # Apply model_ids filter via Ibis if provided
+    if model_ids is not None:
+        expr = expr.filter(ibis_bool(tbl.model_id.isin(cast("Any", list(model_ids)))))
+
+    expr = expr.select(
+        "repo",
+        "commit",
+        "model_id",
+        "field_name",
+        "field_type",
+        "required",
+        "has_default",
+        "default_expr",
+        "constraints_json",
+        "source",
+        "rel_path",
+        "lineno",
+        "created_at",
+    )
+    df = pd.DataFrame(expr.execute())
+
     result: list[DataModelFieldRow] = []
-    for (
-        row_repo,
-        row_commit,
-        model_id,
-        field_name,
-        field_type,
-        required,
-        has_default,
-        default_expr,
-        constraints_json,
-        source,
-        rel_path,
-        lineno,
-        created_at,
-    ) in rows:
-        if allowed is not None and model_id not in allowed:
-            continue
+    for record in df.to_dict(orient="records"):
+        row: dict[str, Any] = record
         result.append(
             DataModelFieldRow(
-                repo=str(row_repo),
-                commit=str(row_commit),
-                model_id=str(model_id),
-                name=str(field_name),
-                field_type=str(field_type) if field_type is not None else None,
-                required=bool(required),
-                has_default=bool(has_default),
-                default_expr=str(default_expr) if default_expr is not None else None,
-                constraints=decode_json_dict(constraints_json),
-                source=str(source),
-                rel_path=str(rel_path),
-                lineno=int(lineno) if lineno is not None else None,
-                created_at=created_at,
+                repo=str(row["repo"]),
+                commit=str(row["commit"]),
+                model_id=str(row["model_id"]),
+                name=str(row["field_name"]),
+                field_type=str(row["field_type"]) if row["field_type"] is not None else None,
+                required=bool(row["required"]),
+                has_default=bool(row["has_default"]),
+                default_expr=str(row["default_expr"]) if row["default_expr"] is not None else None,
+                constraints=decode_json_dict(row["constraints_json"]),
+                source=str(row["source"]),
+                rel_path=str(row["rel_path"]),
+                lineno=int(row["lineno"]) if row["lineno"] is not None else None,
+                created_at=row["created_at"],
             )
         )
     return result
@@ -277,53 +274,54 @@ def fetch_relationships(
     list[DataModelRelationshipRow]
         Normalized relationships for the requested models.
     """
-    rows = gateway.con.execute(
-        """
-        SELECT
-            repo, commit, source_model_id, target_model_id, target_module,
-            target_model_name, field_name, relationship_kind, multiplicity, via,
-            evidence_json, rel_path, lineno, created_at
-        FROM analytics.data_model_relationships
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
-    allowed = set(model_ids) if model_ids else None
+    tbl = gateway.ibis.table("analytics.data_model_relationships")
+    expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
+
+    # Apply model_ids filter via Ibis if provided
+    if model_ids is not None:
+        expr = expr.filter(ibis_bool(tbl.source_model_id.isin(cast("Any", list(model_ids)))))
+
+    expr = expr.select(
+        "repo",
+        "commit",
+        "source_model_id",
+        "target_model_id",
+        "target_module",
+        "target_model_name",
+        "field_name",
+        "relationship_kind",
+        "multiplicity",
+        "via",
+        "evidence_json",
+        "rel_path",
+        "lineno",
+        "created_at",
+    )
+    df = pd.DataFrame(expr.execute())
+
     result: list[DataModelRelationshipRow] = []
-    for (
-        row_repo,
-        row_commit,
-        source_model_id,
-        target_model_id,
-        target_module,
-        target_model_name,
-        field_name,
-        relationship_kind,
-        multiplicity,
-        via,
-        evidence_json,
-        rel_path,
-        lineno,
-        created_at,
-    ) in rows:
-        if allowed is not None and source_model_id not in allowed:
-            continue
+    for record in df.to_dict(orient="records"):
+        row: dict[str, Any] = record
         result.append(
             DataModelRelationshipRow(
-                repo=str(row_repo),
-                commit=str(row_commit),
-                source_model_id=str(source_model_id),
-                target_model_id=str(target_model_id),
-                target_module=str(target_module) if target_module is not None else None,
-                target_model_name=str(target_model_name) if target_model_name is not None else None,
-                field_name=str(field_name) if field_name is not None else None,
-                relationship_kind=str(relationship_kind),
-                multiplicity=str(multiplicity) if multiplicity is not None else None,
-                via=str(via) if via is not None else None,
-                evidence=decode_json_dict(evidence_json),
-                rel_path=str(rel_path),
-                lineno=int(lineno) if lineno is not None else None,
-                created_at=created_at,
+                repo=str(row["repo"]),
+                commit=str(row["commit"]),
+                source_model_id=str(row["source_model_id"]),
+                target_model_id=str(row["target_model_id"]),
+                target_module=str(row["target_module"])
+                if row["target_module"] is not None
+                else None,
+                target_model_name=str(row["target_model_name"])
+                if row["target_model_name"] is not None
+                else None,
+                field_name=str(row["field_name"]) if row["field_name"] is not None else None,
+                relationship_kind=str(row["relationship_kind"]),
+                multiplicity=str(row["multiplicity"]) if row["multiplicity"] is not None else None,
+                via=str(row["via"]) if row["via"] is not None else None,
+                evidence=decode_json_dict(row["evidence_json"]),
+                rel_path=str(row["rel_path"]),
+                lineno=int(row["lineno"]) if row["lineno"] is not None else None,
+                created_at=row["created_at"],
             )
         )
     return result
@@ -450,65 +448,83 @@ def _fetch_models_from_view(
     commit: str,
     allowed: set[str] | None,
 ) -> list[NormalizedDataModel]:
-    rows = gateway.con.execute(
-        """
-        SELECT
-            repo, commit, model_id, goid_h128, model_name, module, rel_path, model_kind,
-            base_classes_json, fields, relationships, doc_short, doc_long, created_at
-        FROM docs.v_data_models_normalized
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+    """
+    Fetch normalized data models from the view using Ibis.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway bound to the target DuckDB database.
+    repo
+        Repository slug.
+    commit
+        Commit SHA.
+    allowed
+        Optional set of model_ids to include; None means all.
+
+    Returns
+    -------
+    list[NormalizedDataModel]
+        Normalized models with decoded fields and relationships.
+    """
+    tbl = gateway.ibis.table("docs.v_data_models_normalized")
+    expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
+
+    # Apply model_ids filter via Ibis if provided
+    if allowed is not None:
+        expr = expr.filter(ibis_bool(tbl.model_id.isin(cast("Any", list(allowed)))))
+
+    expr = expr.select(
+        "repo",
+        "commit",
+        "model_id",
+        "goid_h128",
+        "model_name",
+        "module",
+        "rel_path",
+        "model_kind",
+        "base_classes_json",
+        "fields",
+        "relationships",
+        "doc_short",
+        "doc_long",
+        "created_at",
+    )
+    df = pd.DataFrame(expr.execute())
+
     result: list[NormalizedDataModel] = []
-    for (
-        row_repo,
-        row_commit,
-        model_id,
-        goid_h128,
-        model_name,
-        module,
-        rel_path,
-        model_kind,
-        base_classes_json,
-        fields,
-        relationships,
-        doc_short,
-        doc_long,
-        created_at,
-    ) in rows:
-        if allowed is not None and model_id not in allowed:
-            continue
+    for record in df.to_dict(orient="records"):
+        row: dict[str, Any] = record
         field_rows = _decode_field_structs(
-            fields,
-            repo=str(row_repo),
-            commit=str(row_commit),
-            model_id=str(model_id),
-            default_created_at=created_at,
+            row["fields"],
+            repo=str(row["repo"]),
+            commit=str(row["commit"]),
+            model_id=str(row["model_id"]),
+            default_created_at=row["created_at"],
         )
         relationship_rows = _decode_relationship_structs(
-            relationships,
-            repo=str(row_repo),
-            commit=str(row_commit),
-            model_id=str(model_id),
-            default_created_at=created_at,
+            row["relationships"],
+            repo=str(row["repo"]),
+            commit=str(row["commit"]),
+            model_id=str(row["model_id"]),
+            default_created_at=row["created_at"],
         )
         result.append(
             NormalizedDataModel(
-                repo=str(row_repo),
-                commit=str(row_commit),
-                model_id=str(model_id),
-                goid_h128=_as_int(goid_h128),
-                model_name=str(model_name),
-                module=str(module),
-                rel_path=str(rel_path),
-                model_kind=str(model_kind),
-                base_classes=_decode_base_classes(base_classes_json),
+                repo=str(row["repo"]),
+                commit=str(row["commit"]),
+                model_id=str(row["model_id"]),
+                goid_h128=_as_int(row["goid_h128"]),
+                model_name=str(row["model_name"]),
+                module=str(row["module"]),
+                rel_path=str(row["rel_path"]),
+                model_kind=str(row["model_kind"]),
+                base_classes=_decode_base_classes(row["base_classes_json"]),
                 fields=field_rows,
                 relationships=relationship_rows,
-                doc_short=str(doc_short) if doc_short is not None else None,
-                doc_long=str(doc_long) if doc_long is not None else None,
-                created_at=created_at,
+                doc_short=str(row["doc_short"]) if row["doc_short"] is not None else None,
+                doc_long=str(row["doc_long"]) if row["doc_long"] is not None else None,
+                created_at=row["created_at"],
             )
         )
     return result

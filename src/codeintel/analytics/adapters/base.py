@@ -33,7 +33,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.storage.sql import QueryBuilder
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -283,7 +283,7 @@ class SimpleBatchAdapter[RowT](ABC):
         ...
 
     def execute_delete(self, gateway: StorageGateway, scope: DeleteScope) -> int:
-        """Delete rows matching the scope.
+        """Delete rows matching the scope using the DuckDBPolicyBackend.
 
         Parameters
         ----------
@@ -295,13 +295,12 @@ class SimpleBatchAdapter[RowT](ABC):
         Returns
         -------
         int
-            Number of rows deleted.
+            Number of rows deleted (always 0 since DELETE doesn't return count).
         """
-        # Table name comes from subclass definition; QueryBuilder validates identifier
-        query = QueryBuilder.delete_repo_commit(self.table_name)
-        result = gateway.con.execute(query, [scope.repo, scope.commit])
-        row = result.fetchone()
-        return int(row[0]) if row else 0
+        backend = DuckDBPolicyBackend(gateway)
+        backend.delete_for_snapshot(self.table_name, repo=scope.repo, commit=scope.commit)
+        # DuckDB DELETE doesn't return affected row count directly
+        return 0
 
 
 class BatchAdapter[RowT](AnalyticsAdapter[RowT], ABC):
@@ -363,10 +362,10 @@ class BatchAdapter[RowT](AnalyticsAdapter[RowT], ABC):
         return self.persist(rows)
 
     def _delete_existing(self) -> None:
-        """Delete existing rows for this snapshot."""
+        """Delete existing rows for this snapshot using the DuckDBPolicyBackend."""
         scope = self.delete_scope()
-        query = QueryBuilder.delete_repo_commit(self.table_name)
-        self._gateway.con.execute(query, [scope.repo, scope.commit])
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.delete_for_snapshot(self.table_name, repo=scope.repo, commit=scope.commit)
 
 
 __all__ = [

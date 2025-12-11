@@ -1,4 +1,13 @@
-"""Docs view registry and creation helpers."""
+"""Docs view registry and creation helpers.
+
+This module provides two view creation systems:
+1. SQL-based views (create_all_views) - legacy, uses raw SQL
+2. Ibis-based views (VIEW_BUILDERS registry) - new, uses Ibis expressions
+
+New views should be added to the Ibis registry in ibis_views.py using the
+@register_view decorator. The registry is accessible via VIEW_BUILDERS or
+get_registered_views().
+"""
 
 from __future__ import annotations
 
@@ -6,12 +15,15 @@ from collections.abc import Callable
 
 from duckdb import DuckDBPyConnection
 
+# Import ibis_views to ensure view builders are registered
+import codeintel.storage.views.ibis_views as _ibis_views  # noqa: F401
 from codeintel.storage.views.data_model_views import (
     DATA_MODEL_VIEW_NAMES,
     create_data_model_views,
 )
 from codeintel.storage.views.function_views import FUNCTION_VIEW_NAMES, create_function_views
 from codeintel.storage.views.graph_views import GRAPH_VIEW_NAMES, create_graph_views
+from codeintel.storage.views.ibis_registry import VIEW_BUILDERS, ViewBuilder, get_registered_views
 from codeintel.storage.views.ide_views import IDE_VIEW_NAMES, create_ide_views
 from codeintel.storage.views.module_views import MODULE_VIEW_NAMES, create_module_views
 from codeintel.storage.views.subsystem_views import (
@@ -56,9 +68,17 @@ _VIEW_CREATORS: tuple[Callable[[DuckDBPyConnection], None], ...] = (
 
 
 def create_all_views(con: DuckDBPyConnection) -> None:
-    """Create or replace all docs.* views."""
+    """Create or replace all docs.* views using SQL-based creators."""
     for create in _VIEW_CREATORS:
         create(con)
 
 
-__all__ = ["ALIAS_DOCS_VIEWS", "DERIVED_DOCS_VIEWS", "DOCS_VIEWS", "create_all_views"]
+__all__ = [
+    "ALIAS_DOCS_VIEWS",
+    "DERIVED_DOCS_VIEWS",
+    "DOCS_VIEWS",
+    "VIEW_BUILDERS",
+    "ViewBuilder",
+    "create_all_views",
+    "get_registered_views",
+]

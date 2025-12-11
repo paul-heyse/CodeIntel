@@ -16,12 +16,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_ide_hints_not_found
+from codeintel.config.primitives import SnapshotRef
+from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 
 LOG = logging.getLogger(__name__)
@@ -113,15 +116,41 @@ def ide_hints_handler(ctx: CommandContext) -> CliResult[IdeHintsResult]:
 
     ctx.logger.debug("Resolving IDE hints for: %s", rel_path)
 
+    gateway_config = getattr(ctx.gateway, "config", None)
+    repo_root = ctx.params.get_path("repo_root") or Path.cwd()
+    repo = getattr(gateway_config, "repo", None) or ctx.params.get_str("repo")
+    if not isinstance(repo, str) or not repo:
+        repo = repo_root.name
+    commit = getattr(gateway_config, "commit", None) or ctx.params.get_str("commit")
+    if not isinstance(commit, str) or not commit:
+        commit = "HEAD"
+
+    snapshot = (
+        ctx.runtime.snapshot
+        if ctx.has_runtime
+        else SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
+    )
+
     # Build graph runtime for this operation
     graph_runtime = build_graph_runtime(
         gateway=ctx.gateway,
-        options=GraphRuntimeOptions(snapshot=ctx.runtime.snapshot),
+        options=GraphRuntimeOptions(snapshot=snapshot),
+    )
+
+    serving_cfg = (
+        ctx.runtime.serving
+        if ctx.has_runtime
+        else ServingConfig(
+            repo_root=repo_root,
+            repo=repo,
+            commit=commit,
+            db_path=getattr(gateway_config, "db_path", None),
+        )
     )
 
     # Build backend resource using context's lazy resources
     resource = build_backend_resource(
-        ctx.runtime.serving,
+        serving_cfg,
         gateway=ctx.gateway,
         options=BackendResourceOptions(graph_runtime=graph_runtime),
     )

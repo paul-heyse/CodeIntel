@@ -16,12 +16,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.cli.context import CommandContext
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_subsystem_not_found
+from codeintel.config.primitives import SnapshotRef
+from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import (
@@ -215,14 +218,50 @@ def _build_backend(ctx: CommandContext) -> DuckDBBackend:
     TypeError
         If resolved backend is not DuckDBBackend.
     """
+    gateway_backend = getattr(ctx.gateway, "backend", None)
+    if gateway_backend is not None:
+        return gateway_backend
+
+    backend_override = getattr(ctx, "_backend_override", None) or ctx.params.raw.get(
+        "_backend_override"
+    )
+    if backend_override is not None:
+        return backend_override  # type: ignore[return-value]
+
+    gateway_config = getattr(ctx.gateway, "config", None)
+    repo_root = ctx.params.get_path("repo_root") or Path.cwd()
+    repo = getattr(gateway_config, "repo", None) or ctx.params.get_str("repo")
+    if not isinstance(repo, str) or not repo:
+        repo = repo_root.name
+    commit = getattr(gateway_config, "commit", None) or ctx.params.get_str("commit")
+    if not isinstance(commit, str) or not commit:
+        commit = "HEAD"
+
+    snapshot = (
+        ctx.runtime.snapshot
+        if ctx.has_runtime
+        else SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
+    )
+
     # Build graph runtime for this operation
     graph_runtime = build_graph_runtime(
         gateway=ctx.gateway,
-        options=GraphRuntimeOptions(snapshot=ctx.runtime.snapshot),
+        options=GraphRuntimeOptions(snapshot=snapshot),
+    )
+
+    serving_cfg = (
+        ctx.runtime.serving
+        if ctx.has_runtime
+        else ServingConfig(
+            repo_root=repo_root,
+            repo=repo,
+            commit=commit,
+            db_path=getattr(gateway_config, "db_path", None),
+        )
     )
 
     resource = build_backend_resource(
-        ctx.runtime.serving,
+        serving_cfg,
         gateway=ctx.gateway,
         options=BackendResourceOptions(graph_runtime=graph_runtime),
     )
@@ -256,6 +295,22 @@ def subsystem_list_handler(ctx: CommandContext) -> CliResult[SubsystemListResult
     CliResult[SubsystemListResult]
         Result with subsystem list.
     """
+    backend_override = getattr(ctx, "_backend_override", None) or ctx.params.raw.get(
+        "_backend_override"
+    )
+    if backend_override is not None:
+        response = backend_override.list_subsystems(
+            limit=ctx.params.get_int("limit", default=0),
+            role=ctx.params.get_str("role"),
+            q=ctx.params.get_str("query"),
+        )
+        return CliResult.ok(
+            SubsystemListResult(
+                subsystems=[row.model_dump() for row in response.subsystems],
+                meta=response.meta.model_dump(),
+            )
+        )
+
     ctx.logger.debug("Listing subsystems")
     backend = _build_backend(ctx)
 

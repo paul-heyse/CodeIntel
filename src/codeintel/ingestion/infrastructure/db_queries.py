@@ -1,11 +1,9 @@
-"""Safe database query helpers for ingestion plugins.
+"""Safe database query helpers for ingestion plugins using Ibis.
 
-This module provides typed query helpers that properly handle database errors
-without resorting to blind exception catching. Each function handles specific
-exception types and returns None or default values on failure.
-
-The helpers use SafeTableRef and SafeColumnRef for SQL injection prevention
-and provide consistent logging for debugging.
+This module provides typed query helpers that use Ibis for database queries,
+properly handling errors without resorting to blind exception catching.
+Each function handles specific exception types and returns None or default
+values on failure.
 
 Examples
 --------
@@ -19,40 +17,35 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-from codeintel.ingestion.infrastructure.safe_sql import (
-    InvalidIdentifierError,
-    SafeColumnRef,
-    SafeTableRef,
-)
-
-# Import exceptions directly from protocol module to avoid circular import
-# (gateway/__init__.py re-exports these but has dependencies that create cycles)
 from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
     DuckDBCatalogException,
     DuckDBConnectionException,
+    DuckDBDatabaseError,
     DuckDBError,
     DuckDBInvalidInputException,
+    DuckDBProgrammingError,
 )
-from codeintel.storage.sql import render_sql
+from codeintel.storage.ibis_types import IbisError
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
-log = logging.getLogger(__name__)
-
-
-# Exception types from DuckDB that indicate query/connection issues
 DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (
     DuckDBError,
     DuckDBCatalogException,
     DuckDBConnectionException,
     DuckDBInvalidInputException,
     DuckDBBinderException,
+    DuckDBDatabaseError,
+    DuckDBProgrammingError,
+    IbisError,
 )
+
+log = logging.getLogger(__name__)
 
 
 class QueryError(Exception):
@@ -108,7 +101,7 @@ class ColumnNotFoundError(QueryError):
 
 
 def safe_count(gateway: StorageGateway, table_key: str) -> int | None:
-    """Safely count rows in a table.
+    """Safely count rows in a table using Ibis.
 
     Parameters
     ----------
@@ -129,14 +122,9 @@ def safe_count(gateway: StorageGateway, table_key: str) -> int | None:
     42
     """
     try:
-        ref = SafeTableRef.from_key(table_key)
-        query = render_sql(["SELECT COUNT(*) FROM", ref.full_name])
-        result = gateway.con.execute(query).fetchone()
-        return int(result[0]) if result else None
-    except InvalidIdentifierError:
-        log.debug("Invalid table key: %s", table_key)
-        return None
-    except DUCKDB_QUERY_ERRORS as exc:
+        tbl = gateway.ibis.table(table_key)
+        return cast("int", tbl.count().execute())
+    except IbisError as exc:
         log.debug("Count query failed for %s: %s", table_key, exc)
         return None
 
@@ -146,7 +134,7 @@ def safe_count_with_scope(
     table_key: str,
     snapshot: SnapshotRef,
 ) -> int | None:
-    """Safely count rows in a table scoped to a snapshot.
+    """Safely count rows in a table scoped to a snapshot using Ibis.
 
     Parameters
     ----------
@@ -163,33 +151,18 @@ def safe_count_with_scope(
         Row count or None if query failed.
     """
     try:
-        ref = SafeTableRef.from_key(table_key)
-        where_clause = " AND ".join(
-            (
-                f"{SafeColumnRef('repo').name} = ?",
-                f"{SafeColumnRef('commit').name} = ?",
-            )
+        tbl = gateway.ibis.table(table_key)
+        filtered = tbl.filter(
+            cast("Any", (tbl.repo == snapshot.repo) & (tbl.commit == snapshot.commit))
         )
-        query = render_sql(
-            [
-                "SELECT COUNT(*) FROM",
-                ref.full_name,
-                "WHERE",
-                where_clause,
-            ]
-        )
-        result = gateway.con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
-        return int(result[0]) if result else None
-    except InvalidIdentifierError:
-        log.debug("Invalid table key: %s", table_key)
-        return None
-    except DUCKDB_QUERY_ERRORS as exc:
+        return cast("int", filtered.count().execute())
+    except IbisError as exc:
         log.debug("Scoped count query failed for %s: %s", table_key, exc)
         return None
 
 
 def safe_table_exists(gateway: StorageGateway, table_key: str) -> bool:
-    """Check if a table exists in the database.
+    """Check if a table exists in the database using Ibis.
 
     Parameters
     ----------
@@ -204,25 +177,15 @@ def safe_table_exists(gateway: StorageGateway, table_key: str) -> bool:
         True if table exists, False otherwise.
     """
     try:
-        ref = SafeTableRef.from_key(table_key)
-        result = gateway.con.execute(
-            """
-            SELECT 1 FROM information_schema.tables
-            WHERE table_schema = ? AND table_name = ?
-            """,
-            [ref.schema, ref.table],
-        ).fetchone()
-    except InvalidIdentifierError:
-        log.debug("Invalid table key: %s", table_key)
+        gateway.ibis.table(table_key)
+    except IbisError:
         return False
-    except DUCKDB_QUERY_ERRORS as exc:
-        log.debug("Table exists check failed for %s: %s", table_key, exc)
-        return False
-    return result is not None
+    else:
+        return True
 
 
 def safe_get_columns(gateway: StorageGateway, table_key: str) -> set[str]:
-    """Get column names for a table.
+    """Get column names for a table using Ibis.
 
     Parameters
     ----------
@@ -237,19 +200,9 @@ def safe_get_columns(gateway: StorageGateway, table_key: str) -> set[str]:
         Column names, or empty set if query failed.
     """
     try:
-        ref = SafeTableRef.from_key(table_key)
-        rows = gateway.con.execute(
-            """
-            SELECT column_name FROM information_schema.columns
-            WHERE table_schema = ? AND table_name = ?
-            """,
-            [ref.schema, ref.table],
-        ).fetchall()
-        return {str(row[0]) for row in rows}
-    except InvalidIdentifierError:
-        log.debug("Invalid table key: %s", table_key)
-        return set()
-    except DUCKDB_QUERY_ERRORS as exc:
+        tbl = gateway.ibis.table(table_key)
+        return set(tbl.columns)
+    except IbisError as exc:
         log.debug("Get columns failed for %s: %s", table_key, exc)
         return set()
 
@@ -259,7 +212,7 @@ def safe_count_nulls(
     table_key: str,
     column: str,
 ) -> int:
-    """Count NULL values in a column.
+    """Count NULL values in a column using Ibis.
 
     Parameters
     ----------
@@ -276,23 +229,10 @@ def safe_count_nulls(
         Count of NULL values, or 0 if query failed.
     """
     try:
-        ref = SafeTableRef.from_key(table_key)
-        col = SafeColumnRef(column)
-        where_clause = f"{col.name} IS NULL"
-        query = render_sql(
-            [
-                "SELECT COUNT(*) FROM",
-                ref.full_name,
-                "WHERE",
-                where_clause,
-            ]
-        )
-        result = gateway.con.execute(query).fetchone()
-        return int(result[0]) if result else 0
-    except InvalidIdentifierError as exc:
-        log.debug("Invalid identifier: %s", exc)
-        return 0
-    except DUCKDB_QUERY_ERRORS as exc:
+        tbl = gateway.ibis.table(table_key)
+        col = tbl[column]
+        return cast("int", tbl.filter(cast("Any", col.isnull())).count().execute())
+    except IbisError as exc:
         log.debug("Count nulls failed for %s.%s: %s", table_key, column, exc)
         return 0
 
@@ -302,7 +242,7 @@ def safe_min_value(
     table_key: str,
     column: str,
 ) -> float | None:
-    """Get minimum value in a numeric column.
+    """Get minimum value in a numeric column using Ibis.
 
     Parameters
     ----------
@@ -319,16 +259,11 @@ def safe_min_value(
         Minimum value or None if query failed or no data.
     """
     try:
-        ref = SafeTableRef.from_key(table_key)
-        col = SafeColumnRef(column)
-        select_expr = f"MIN({col.name})"
-        query = render_sql(["SELECT", select_expr, "FROM", ref.full_name])
-        result = gateway.con.execute(query).fetchone()
-        return float(result[0]) if result and result[0] is not None else None
-    except InvalidIdentifierError as exc:
-        log.debug("Invalid identifier: %s", exc)
-        return None
-    except DUCKDB_QUERY_ERRORS as exc:
+        tbl = gateway.ibis.table(table_key)
+        col = tbl[column]
+        result = col.min().execute()
+        return float(cast("Any", result)) if result is not None else None
+    except IbisError as exc:
         log.debug("Min value failed for %s.%s: %s", table_key, column, exc)
         return None
 
@@ -338,7 +273,7 @@ def safe_max_value(
     table_key: str,
     column: str,
 ) -> float | None:
-    """Get maximum value in a numeric column.
+    """Get maximum value in a numeric column using Ibis.
 
     Parameters
     ----------
@@ -355,16 +290,11 @@ def safe_max_value(
         Maximum value or None if query failed or no data.
     """
     try:
-        ref = SafeTableRef.from_key(table_key)
-        col = SafeColumnRef(column)
-        select_expr = f"MAX({col.name})"
-        query = render_sql(["SELECT", select_expr, "FROM", ref.full_name])
-        result = gateway.con.execute(query).fetchone()
-        return float(result[0]) if result and result[0] is not None else None
-    except InvalidIdentifierError as exc:
-        log.debug("Invalid identifier: %s", exc)
-        return None
-    except DUCKDB_QUERY_ERRORS as exc:
+        tbl = gateway.ibis.table(table_key)
+        col = tbl[column]
+        result = col.max().execute()
+        return float(cast("Any", result)) if result is not None else None
+    except IbisError as exc:
         log.debug("Max value failed for %s.%s: %s", table_key, column, exc)
         return None
 
@@ -374,7 +304,7 @@ def safe_count_non_positive(
     table_key: str,
     column: str,
 ) -> int:
-    """Count non-positive values in a numeric column.
+    """Count non-positive values in a numeric column using Ibis.
 
     Parameters
     ----------
@@ -391,22 +321,10 @@ def safe_count_non_positive(
         Count of non-positive values, or 0 if query failed.
     """
     try:
-        ref = SafeTableRef.from_key(table_key)
-        col = SafeColumnRef(column)
-        query = render_sql(
-            [
-                "SELECT COUNT(*) FROM",
-                ref.full_name,
-                "WHERE",
-                f"{col.name} <= 0",
-            ]
-        )
-        result = gateway.con.execute(query).fetchone()
-        return int(result[0]) if result else 0
-    except InvalidIdentifierError as exc:
-        log.debug("Invalid identifier: %s", exc)
-        return 0
-    except DUCKDB_QUERY_ERRORS as exc:
+        tbl = gateway.ibis.table(table_key)
+        col = cast("Any", tbl[column])
+        return cast("int", tbl.filter(col <= 0).count().execute())
+    except IbisError as exc:
         log.debug("Count non-positive failed for %s.%s: %s", table_key, column, exc)
         return 0
 
@@ -416,7 +334,7 @@ def safe_count_duplicates(
     table_key: str,
     column: str,
 ) -> int:
-    """Count duplicate values in a column.
+    """Count duplicate values in a column using Ibis.
 
     Parameters
     ----------
@@ -433,26 +351,14 @@ def safe_count_duplicates(
         Count of duplicate values (total rows - distinct), or 0 if query failed.
     """
     try:
-        ref = SafeTableRef.from_key(table_key)
-        col = SafeColumnRef(column)
-        select_expr = f"COUNT(*) - COUNT(DISTINCT {col.name})"
-        where_clause = f"{col.name} IS NOT NULL"
-        query = render_sql(
-            [
-                "SELECT",
-                select_expr,
-                "FROM",
-                ref.full_name,
-                "WHERE",
-                where_clause,
-            ]
-        )
-        result = gateway.con.execute(query).fetchone()
-        return int(result[0]) if result else 0
-    except InvalidIdentifierError as exc:
-        log.debug("Invalid identifier: %s", exc)
-        return 0
-    except DUCKDB_QUERY_ERRORS as exc:
+        tbl = gateway.ibis.table(table_key)
+        col = tbl[column]
+        # Filter to non-null values only
+        non_null = tbl.filter(cast("Any", col.notnull()))
+        total = cast("int", non_null.count().execute())
+        distinct = cast("int", col.nunique().execute())
+        return total - distinct
+    except IbisError as exc:
         log.debug("Count duplicates failed for %s.%s: %s", table_key, column, exc)
         return 0
 
@@ -462,7 +368,7 @@ def safe_not_null_fraction(
     table_key: str,
     column: str,
 ) -> float:
-    """Get fraction of non-null values in a column.
+    """Get fraction of non-null values in a column using Ibis.
 
     Parameters
     ----------
@@ -479,16 +385,14 @@ def safe_not_null_fraction(
         Fraction of non-null values (0.0 to 1.0), or 0.0 if query failed.
     """
     try:
-        ref = SafeTableRef.from_key(table_key)
-        col = SafeColumnRef(column)
-        select_expr = f"CAST(COUNT({col.name}) AS DOUBLE) / NULLIF(COUNT(*), 0)"
-        query = render_sql(["SELECT", select_expr, "FROM", ref.full_name])
-        result = gateway.con.execute(query).fetchone()
-        return float(result[0]) if result and result[0] is not None else 0.0
-    except InvalidIdentifierError as exc:
-        log.debug("Invalid identifier: %s", exc)
-        return 0.0
-    except DUCKDB_QUERY_ERRORS as exc:
+        tbl = gateway.ibis.table(table_key)
+        col = tbl[column]
+        total = cast("int", tbl.count().execute())
+        if total == 0:
+            return 0.0
+        non_null_count = cast("int", tbl.filter(cast("Any", col.notnull())).count().execute())
+        return float(non_null_count) / float(total)
+    except IbisError as exc:
         log.debug("Not null fraction failed for %s.%s: %s", table_key, column, exc)
         return 0.0
 
@@ -519,7 +423,7 @@ class ForeignKeyRef:
 
 
 def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
-    """Count orphaned foreign key references.
+    """Count orphaned foreign key references using Ibis.
 
     Parameters
     ----------
@@ -534,33 +438,24 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
         Count of orphaned references, or 0 if query failed.
     """
     try:
-        src_ref = SafeTableRef.from_key(fk.source_table)
-        src_col = SafeColumnRef(fk.source_column)
-        tgt_ref = SafeTableRef.from_key(fk.ref_table)
-        tgt_col = SafeColumnRef(fk.ref_column)
+        src_tbl = gateway.ibis.table(fk.source_table)
+        tgt_tbl = gateway.ibis.table(fk.ref_table)
 
-        where_parts = [f"r.{tgt_col.name} IS NULL"]
-        if not fk.allow_null:
-            where_parts.append(f"t.{src_col.name} IS NOT NULL")
-
-        query = render_sql(
-            [
-                "SELECT COUNT(*) FROM",
-                f"{src_ref.full_name} t",
-                "LEFT JOIN",
-                f"{tgt_ref.full_name} r",
-                "ON",
-                f"t.{src_col.name} = r.{tgt_col.name}",
-                "WHERE",
-                " AND ".join(where_parts),
-            ]
+        # Left join source to target
+        joined = src_tbl.left_join(
+            tgt_tbl,
+            cast("Any", src_tbl[fk.source_column] == tgt_tbl[fk.ref_column]),
         )
-        result = gateway.con.execute(query).fetchone()
-        return int(result[0]) if result else 0
-    except InvalidIdentifierError as exc:
-        log.debug("Invalid identifier: %s", exc)
-        return 0
-    except DUCKDB_QUERY_ERRORS as exc:
+
+        # Filter to orphans: target key is null
+        orphans = joined.filter(cast("Any", tgt_tbl[fk.ref_column].isnull()))
+
+        # Optionally exclude null source values
+        if not fk.allow_null:
+            orphans = orphans.filter(cast("Any", src_tbl[fk.source_column].notnull()))
+
+        return cast("int", orphans.count().execute())
+    except IbisError as exc:
         log.debug(
             "Count orphan refs failed for %s.%s -> %s.%s: %s",
             fk.source_table,
@@ -575,6 +470,9 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
 def safe_macro_exists(gateway: StorageGateway, macro_name: str) -> bool:
     """Check if a DuckDB macro exists.
 
+    Note: This function uses raw SQL as it queries DuckDB system functions
+    which are not accessible via Ibis table interface.
+
     Parameters
     ----------
     gateway
@@ -588,11 +486,12 @@ def safe_macro_exists(gateway: StorageGateway, macro_name: str) -> bool:
         True if macro exists, False otherwise.
     """
     try:
-        result = gateway.con.execute(
+        # Use Ibis SQL interface for system query
+        result = gateway.ibis.con.raw_sql(
             "SELECT * FROM duckdb_functions() WHERE function_name = ?",
-            [macro_name],
+            parameters=[macro_name],
         ).fetchone()
-    except DUCKDB_QUERY_ERRORS:
+    except Exception:  # noqa: BLE001
         return False
     return result is not None
 

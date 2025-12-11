@@ -20,12 +20,16 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from codeintel.cli.commands import app as cli_app
 from codeintel.cli.config import load_config
+from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.core import CliResult
 from codeintel.cli.execution.registry import execute_operation
 from codeintel.cli.introspection import get_registry
+from codeintel.cli.rendering.types import OutputFormat
+from tests._helpers.gateway import GatewayFactory
 
 
 @dataclass
@@ -513,8 +517,43 @@ class OperationTestHarness:
                 stderr=f"Unknown operation: {operation_id}",
             )
 
-        # Execute operation through the standard registry path
-        result = execute_operation(spec, params)
+        params = dict(params or {})
+
+        with TemporaryDirectory() as tmp_dir:
+            gateway = None
+            try:
+                builder = (
+                    CommandContextBuilder()
+                    .with_params(params)
+                    .with_output_format(OutputFormat.JSON)
+                    .with_verbosity(0)
+                    .with_operation_id(spec.operation_id)
+                )
+                if spec.require_runtime:
+                    builder = builder.with_runtime(project_root=Path(tmp_dir))
+                if spec.require_gateway:
+                    gateway = GatewayFactory().open()
+                    builder = builder.with_injected_gateway(gateway)
+                needs_serving = bool(
+                    getattr(spec, "require_serving", False)
+                    or spec.serving_op_id is not None
+                    or spec.backend_method is not None
+                )
+                if needs_serving:
+                    builder = builder.with_serving()
+
+                with builder.build() as ctx:
+                    try:
+                        result = spec.handler(ctx)
+                    except Exception as exc:  # noqa: BLE001
+                        return CliInvocationResult(
+                            exit_code=1,
+                            stdout="",
+                            stderr=str(exc),
+                        )
+            finally:
+                if gateway is not None:
+                    gateway.close()
 
         if result.success:
             data = result.data

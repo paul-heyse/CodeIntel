@@ -192,7 +192,7 @@ class TestShouldSkipPlugin:
                 "repo": "owner/repo",
                 "commit": "abc123",
                 "scope_id": None,
-                "variant": None,
+                "variant": run_inputs.variant,
                 "input_hash": run_context.input_hash,
             },
         )
@@ -224,7 +224,7 @@ class TestShouldSkipPlugin:
                 "repo": "owner/repo",
                 "commit": "abc123",
                 "scope_id": None,
-                "variant": None,
+                "variant": run_inputs.variant,
                 "input_hash": run_context.input_hash,
             },
         )
@@ -257,7 +257,7 @@ class TestShouldSkipPlugin:
                 "repo": "owner/repo",
                 "commit": "abc123",
                 "scope_id": None,
-                "variant": None,
+                "variant": run_inputs.variant,
                 "input_hash": "different_hash",
             },
         )
