@@ -41,58 +41,57 @@ def create_function_summary_view(gateway: StorageGateway) -> None:
         ["repo", "commit", "rel_path", "function_goid_h128"],
     )
 
+    loc_col = joined["loc"]
+    cyclomatic_complexity = joined.cyclomatic_complexity
     loc_bucket = (
-        ibis.case()
-        .when(joined.loc <= 50, "small")
-        .when(joined.loc <= 200, "medium")
-        .else_("large")
-        .end()
+        ibis.case().when(loc_col <= 50, "small").when(loc_col <= 200, "medium").else_("large").end()
     )
     complexity_band = (
         ibis.case()
-        .when(joined.cyclomatic_complexity <= 5, "low")
-        .when(joined.cyclomatic_complexity <= 10, "medium")
+        .when(cyclomatic_complexity <= 5, "low")
+        .when(cyclomatic_complexity <= 10, "medium")
         .else_("high")
         .end()
     )
 
-    summary = joined.mutate(
+    enriched = joined.mutate(
         loc_bucket=loc_bucket,
         complexity_band=complexity_band,
-    ).select(
-        joined.function_goid_h128,
-        joined.repo,
-        joined.commit,
-        joined.rel_path,
-        joined.language,
-        joined.kind,
-        joined.qualname,
-        joined.loc,
-        joined.logical_loc,
-        joined.param_count,
-        joined.positional_params,
-        joined.keyword_only_params,
-        joined.has_varargs,
-        joined.has_varkw,
-        joined.is_async,
-        joined.is_generator,
-        joined.return_count,
-        joined.yield_count,
-        joined.raise_count,
-        joined.cyclomatic_complexity,
-        joined.complexity_bucket,
-        joined.complexity_band,
-        joined.max_nesting_depth,
-        joined.stmt_count,
-        joined.decorator_count,
-        joined.has_docstring,
-        joined.created_at,
-        joined.loc_bucket,
-        joined.param_typed_ratio,
-        joined.typedness_bucket,
-        joined.typedness_source,
-        joined.return_type,
-        joined.has_return_annotation,
+    )
+    summary = enriched.select(
+        enriched.function_goid_h128,
+        enriched.repo,
+        enriched.commit,
+        enriched.rel_path,
+        enriched.language,
+        enriched.kind,
+        enriched.qualname,
+        enriched["loc"],
+        enriched.logical_loc,
+        enriched.param_count,
+        enriched.positional_params,
+        enriched.keyword_only_params,
+        enriched.has_varargs,
+        enriched.has_varkw,
+        enriched.is_async,
+        enriched.is_generator,
+        enriched.return_count,
+        enriched.yield_count,
+        enriched.raise_count,
+        enriched.cyclomatic_complexity,
+        enriched.complexity_bucket,
+        enriched.complexity_band,
+        enriched.max_nesting_depth,
+        enriched.stmt_count,
+        enriched.decorator_count,
+        enriched.has_docstring,
+        enriched.created_at,
+        enriched.loc_bucket,
+        enriched.param_typed_ratio,
+        enriched.typedness_bucket,
+        enriched.typedness_source,
+        enriched.return_type,
+        enriched.has_return_annotation,
     )
 
     con.create_view("analytics.v_function_summary", summary, overwrite=True)

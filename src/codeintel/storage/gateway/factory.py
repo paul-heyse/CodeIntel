@@ -56,9 +56,9 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
         gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
         if config.ensure_views and not config.read_only:
             create_all_ibis_views(gateway)
-        return gateway
     except duckdb.Error as exc:
         raise StorageConnectionError(str(exc)) from exc
+    return gateway
 
 
 def build_snapshot_gateway_resolver(

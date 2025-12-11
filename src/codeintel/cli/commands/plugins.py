@@ -290,13 +290,13 @@ class PluginsDiscover(Command[PluginsDiscoverResult]):
 
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
-    def execute(self, deps: Deps) -> CliResult[PluginsDiscoverResult]:
+    def execute(self, ctx: CommandContext) -> CliResult[PluginsDiscoverResult]:
         """Execute plugin discovery.
 
         Parameters
         ----------
-        deps
-            Dependencies container.
+        ctx
+            Command context.
 
         Returns
         -------
@@ -304,7 +304,7 @@ class PluginsDiscover(Command[PluginsDiscoverResult]):
             Discovered plugins and search paths.
         """
         _ = self.flags  # Access for potential future use
-        _ = deps  # Not needed for plugin discovery
+        _ = ctx  # Not needed for plugin discovery
         LOG.info("Discovering available plugins")
 
         manager = get_plugin_manager()
@@ -348,20 +348,20 @@ class PluginsInfo(Command[PluginInfoResult]):
     name: Annotated[str, Parameter(help="Plugin name")]
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
-    def execute(self, deps: Deps) -> CliResult[PluginInfoResult]:
+    def execute(self, ctx: CommandContext) -> CliResult[PluginInfoResult]:
         """Execute plugin info query.
 
         Parameters
         ----------
-        deps
-            Dependencies container.
+        ctx
+            Command context.
 
         Returns
         -------
         CliResult[PluginInfoResult]
             Plugin details.
         """
-        _ = deps  # Not needed for plugin info
+        _ = ctx  # Not needed for plugin info
         LOG.info("Getting info for plugin: %s", self.name)
 
         manager = get_plugin_manager()
@@ -396,13 +396,13 @@ class PluginsPaths(Command[PluginPathsResult]):
 
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
-    def execute(self, deps: Deps) -> CliResult[PluginPathsResult]:
+    def execute(self, ctx: CommandContext) -> CliResult[PluginPathsResult]:
         """Execute paths listing.
 
         Parameters
         ----------
-        deps
-            Dependencies container.
+        ctx
+            Command context.
 
         Returns
         -------
@@ -410,7 +410,7 @@ class PluginsPaths(Command[PluginPathsResult]):
             Plugin search paths.
         """
         _ = self.flags  # Access for potential future use
-        _ = deps  # Not needed for paths listing
+        _ = ctx  # Not needed for paths listing
         LOG.info("Listing plugin search paths")
 
         manager = get_plugin_manager()
@@ -442,20 +442,20 @@ class PluginsNew(Command[PluginNewResult]):
     ] = None
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
-    def execute(self, deps: Deps) -> CliResult[PluginNewResult]:
+    def execute(self, ctx: CommandContext) -> CliResult[PluginNewResult]:
         """Execute plugin scaffold creation.
 
         Parameters
         ----------
-        deps
-            Dependencies container.
+        ctx
+            Command context.
 
         Returns
         -------
         CliResult[PluginNewResult]
             Created plugin info.
         """
-        _ = deps  # Not needed for scaffold creation
+        _ = ctx  # Not needed for scaffold creation
         output_dir = self.output or Path.cwd()
 
         LOG.info("Creating plugin scaffold: %s in %s", self.name, output_dir)
@@ -487,20 +487,20 @@ class PluginsTest(Command[PluginTestResult]):
     path: Annotated[Path, Parameter(help="Plugin directory")]
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
-    def execute(self, deps: Deps) -> CliResult[PluginTestResult]:
+    def execute(self, ctx: CommandContext) -> CliResult[PluginTestResult]:
         """Execute plugin tests.
 
         Parameters
         ----------
-        deps
-            Dependencies container.
+        ctx
+            Command context.
 
         Returns
         -------
         CliResult[PluginTestResult]
             Test results.
         """
-        _ = deps  # Not needed for plugin testing
+        _ = ctx  # Not needed for plugin testing
         LOG.info("Testing plugin at: %s", self.path)
 
         manifest_path = self.path / "plugin.json"
@@ -556,20 +556,20 @@ class PluginsValidate(Command[PluginValidateResult]):
     path: Annotated[Path, Parameter(help="Plugin directory")]
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
-    def execute(self, deps: Deps) -> CliResult[PluginValidateResult]:
+    def execute(self, ctx: CommandContext) -> CliResult[PluginValidateResult]:
         """Execute manifest validation.
 
         Parameters
         ----------
-        deps
-            Dependencies container.
+        ctx
+            Command context.
 
         Returns
         -------
         CliResult[PluginValidateResult]
             Validation results.
         """
-        _ = deps  # Not needed for validation
+        _ = ctx  # Not needed for validation
         LOG.info("Validating plugin at: %s", self.path)
 
         manifest_path = self.path / "plugin.json"

@@ -1,30 +1,25 @@
 """Unified CLI handlers package.
 
-This package provides business logic handlers for CLI commands. Two patterns exist:
+This package provides business logic handlers for CLI commands.
 
-Command[T] Pattern (preferred for simple commands):
+All handlers use CommandContext (from codeintel.cli.context) for unified
+access to runtime, storage, gateway, params, and service layers.
+
+Command[T] Pattern (for commands with parameters):
     Commands like jobs, health, plugins, graphs use `Command[T]` base class
-    with an `execute(deps: Deps)` method. These have business logic in the
-    command class itself.
+    with an `execute(ctx: CommandContext)` method.
 
-Handler Pattern (for complex commands):
-    Commands requiring runtime/gateway access (build, datasets, storage,
-    subsystem, docs, history, ops, serve, ide) use handler functions with
-    `HandlerContext`. This provides full access to resolved runtime,
-    storage gateway, and snapshot information.
+Handler Function Pattern (for complex operations):
+    Handler functions receive CommandContext and perform business logic
+    for domains like build, datasets, storage, subsystem, docs, etc.
 
 Components:
     - handlers._utilities: Shared utilities (gateway opening, logging)
-    - handlers.context: HandlerContext and related types
     - handlers.<domain>: Domain-specific handler functions
-
-Note:
-    Some handlers (jobs, health, plugins, graphs) still exist for backward
-    compatibility but the primary code path is now through Command[T].execute().
 
 Examples
 --------
->>> from codeintel.cli.handlers import HandlerContext
+>>> from codeintel.cli.context import CommandContext
 >>> from codeintel.cli.handlers.build import build_status_handler
 >>> from codeintel.cli.execution.bootstrap import bootstrap_cli
 >>> bootstrap_cli(verbosity=1)  # doctest: +SKIP
@@ -52,7 +47,8 @@ from codeintel.cli.handlers.build import (
     build_status_handler,
 )
 
-# Unified handler context
+# Legacy context types (for backward compatibility during transition)
+# New code should use CommandContext from codeintel.cli.context
 from codeintel.cli.handlers.context import (
     HandlerContext,
     HandlerContextOptions,

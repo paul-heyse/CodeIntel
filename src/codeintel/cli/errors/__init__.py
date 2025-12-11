@@ -36,28 +36,26 @@ from codeintel.cli.errors._cli_errors import (
 # Error builder (consolidated ProblemDetail creation)
 from codeintel.cli.errors.builder import ProblemBuilder
 
+# Factory exports (consolidated in results.py)
+from codeintel.cli.errors.results import (
+    fail_storage_query,
+    fail_with_problem,
+)
+
 # Result factories (new consolidated API)
 from codeintel.cli.errors.results import (
     fail_config,
     fail_domain,
-    fail_job_not_completed,
-    fail_job_not_found,
-    fail_operation,
-    fail_storage,
-    fail_validation,
-)
-from codeintel.cli.errors.results import (
     fail_internal,
     fail_invalid_value,
+    fail_job_not_completed,
+    fail_job_not_found,
     fail_missing_required,
     fail_not_found,
+    fail_operation,
+    fail_storage,
     fail_storage_connection,
-)
-
-# Legacy factory exports (for backward compatibility, use results.py instead)
-from codeintel.cli.errors.factory import (
-    fail_storage_query,
-    fail_with_problem,
+    fail_validation,
 )
 
 # Error taxonomy exports

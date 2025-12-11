@@ -10,7 +10,7 @@ Examples
 --------
 >>> from codeintel.cli import app, main
 >>> from codeintel.cli.handlers import ide_hints_handler
->>> from codeintel.cli.handlers.context import HandlerContext
+>>> from codeintel.cli.context import CommandContext
 """
 
 from __future__ import annotations

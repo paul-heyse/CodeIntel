@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -17,13 +17,13 @@ class TestRuntimeServiceCreation:
 
     def test_from_dict(self) -> None:
         """Create from dictionary."""
-        service = RuntimeService.from_dict({"project_root": Path(".")})
+        service = RuntimeService.from_dict({"project_root": Path()})
         assert service is not None
         assert not service.is_resolved
 
     def test_from_param_service(self) -> None:
         """Create from ParamService."""
-        params = ParamService({"project_root": Path(".")})
+        params = ParamService({"project_root": Path()})
         service = RuntimeService.from_param_service(params)
         assert service is not None
 

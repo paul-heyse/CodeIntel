@@ -57,7 +57,6 @@ from codeintel.storage.gateway.factory import (
     open_gateway,
     open_memory_gateway,
 )
-from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
     DuckDBCatalogException,
@@ -71,6 +70,7 @@ from codeintel.storage.gateway.protocol import (
     SnapshotGatewayResolver,
     StorageGateway,
 )
+from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.validation import table_has_rows_for_snapshot
 
 __all__ = [
