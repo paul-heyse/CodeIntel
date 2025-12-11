@@ -8,6 +8,7 @@ from typing import Literal, Protocol, cast, runtime_checkable
 
 from codeintel.serving import domain_models as dm
 from codeintel.serving.mcp.view_utils import normalize_entrypoints_rows
+from codeintel.storage.repositories.base import RowDict
 
 
 @runtime_checkable
@@ -21,9 +22,6 @@ class _SupportsModelDump(Protocol):
             Dictionary of model fields.
         """
         ...
-
-
-RowDict = Mapping[str, object]
 
 
 def _ensure_meta(meta: dm.ResponseMeta | None) -> dm.ResponseMeta:
@@ -397,7 +395,8 @@ def build_subsystem_profile(
     meta = _ensure_meta(meta)
     profiles: list[RowDict] = [_to_dict(row) for row in rows]
     normalize_entrypoints_rows(profiles)
-    return dm.SubsystemProfileResult(profiles=cast("list[object]", profiles), meta=meta)
+    profiles_payload = cast("list[object]", profiles)
+    return dm.SubsystemProfileResult(profiles=profiles_payload, meta=meta)
 
 
 def build_subsystem_coverage(

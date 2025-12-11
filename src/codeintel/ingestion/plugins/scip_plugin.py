@@ -16,6 +16,7 @@ from codeintel.ingestion.adapters import BuildToolAdapter, DuckDBStorageAdapter
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestStep
 from codeintel.ingestion.plugins.helpers import get_module_paths, paths_to_modules
 from codeintel.ingestion.plugins.scip_options import ScipIngestOptions
+from codeintel.storage.ibis_types import filter_by, ibis_bool
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -81,12 +82,12 @@ def _compute_row_counts(ctx: TargetExecutionContext) -> dict[str, int]:
     for table_key in ctx.contract.table_keys:
         try:
             table = ctx.gateway.ibis.table(table_key)
-            count = (
-                table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
-                .count()
-                .execute()
-            )
-            row_counts[table_key] = int(cast("SupportsInt", count))
+            count_expr = filter_by(
+                table,
+                ibis_bool(table.repo == ctx.repo),
+                ibis_bool(table.commit == ctx.commit),
+            ).count()
+            row_counts[table_key] = int(cast("SupportsInt", count_expr.execute()))
         except (RuntimeError, OSError):
             row_counts[table_key] = 0
     return row_counts

@@ -23,6 +23,7 @@ from codeintel.ingestion.adapters import (
 from codeintel.ingestion.compute import AstExtractStep
 from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 from codeintel.ingestion.ports.storage import IngestStoragePort
+from codeintel.storage.ibis_types import ibis_bool
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -219,7 +220,12 @@ def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
     try:
         table = ctx.gateway.ibis.table("core.modules")
         df = (
-            table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
+            table.filter(
+                [
+                    ibis_bool(table.repo == ctx.repo),
+                    ibis_bool(table.commit == ctx.commit),
+                ]
+            )
             .select("path")
             .execute()
         )

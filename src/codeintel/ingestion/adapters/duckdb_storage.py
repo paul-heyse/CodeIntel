@@ -1,9 +1,10 @@
-"""DuckDB storage adapter shim using policy backend and ibis.
+"""DuckDB ingestion storage adapter shim (policy backend + ibis).
 
-This adapter implements IngestStoragePort by delegating writes/deletes
-to DuckDBPolicyBackend and reads to the gateway/ibis. It exists as a
-compatibility layer while ingestion steps are refactored toward direct
-policy-backend usage.
+This compatibility layer keeps the IngestStoragePort surface while routing
+all writes/deletes through DuckDBPolicyBackend and reads through the
+gateway/ibis connection. Raw SQL helpers are retained only for legacy
+query execution in tests; new code should prefer ibis or the policy backend
+directly.
 """
 
 from __future__ import annotations
@@ -19,56 +20,32 @@ from pandera.errors import SchemaErrors
 from codeintel.config.datasets import load_columns_by_table
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.metadata import INGEST_MACROS
 from codeintel.storage.pandera_schemas import get_dataset_schema
 from codeintel.storage.sql import render_sql
-from codeintel.storage.sql.primitives import (
-    quote_identifier,
-    quote_table_key,
-)
-from codeintel.storage.ibis_types import and_predicates, ibis_bool
+from codeintel.storage.sql.primitives import quote_identifier, quote_table_key
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 SNAPSHOT_PARAM_LEN = 2
-SMALL_BATCH_THRESHOLD = 25
-
-__all__ = [
-    "DuckDBStorageAdapter",
-    "INGEST_MACROS",
-    "SMALL_BATCH_THRESHOLD",
-    "build_delete_in_query",
-    "quote_identifier",
-    "quote_macro_name",
-    "quote_table_key",
-]
 
 
 def build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
-    """Build parameterized DELETE statement with an IN clause."""
+    """Return a parameterized DELETE ... IN statement.
+
+    Returns
+    -------
+    str
+        Rendered SQL string containing placeholders.
+    """
     placeholders = ", ".join(["?"] * count)
     delete_clause = f"{column_sql} IN ({placeholders})"
     return render_sql(["DELETE FROM", table_sql, "WHERE", delete_clause])
 
 
-def _quote_macro_name(macro_name: str) -> str:
-    """Return a validated macro identifier (optionally schema-qualified)."""
-    parts = macro_name.split(".")
-    if not parts or any(not part for part in parts):
-        message = f"Unsafe macro name: {macro_name}"
-        raise ValueError(message)
-    return ".".join(parts)
-
-
-def quote_macro_name(macro_name: str) -> str:
-    """Public wrapper for quoting macro names safely."""
-    return _quote_macro_name(macro_name)
-
-
 class DuckDBStorageAdapter(IngestStoragePort):
-    """Adapter implementing ingestion storage using DuckDB."""
+    """Compatibility shim implementing IngestStoragePort via policy backend."""
 
     def __init__(self, gateway: StorageGateway) -> None:
         """Initialize adapter with a storage gateway."""
@@ -77,12 +54,25 @@ class DuckDBStorageAdapter(IngestStoragePort):
 
     @property
     def con(self) -> DuckDBConnection:
-        """Return the underlying DuckDB connection."""
+        """Return underlying DuckDB connection."""
         return self._gateway.con
 
+    @staticmethod
+    def _validate_table_exists(table_key: str) -> None:
+        """Raise when table_key is not present in the dataset registry.
+
+        Raises
+        ------
+        RuntimeError
+            If the table key is not registered.
+        """
+        if table_key not in load_columns_by_table():
+            message = f"Table {table_key} missing from TABLE_SCHEMAS"
+            raise RuntimeError(message)
+
     def ensure_schema(self, table_key: str) -> None:
-        """Ensure schemas are applied for the given table."""
-        _ = table_key
+        """Ensure schemas exist (idempotent)."""
+        self._validate_table_exists(table_key)
         self._backend.ensure_schemas_preserve()
 
     def write_batch(
@@ -92,8 +82,15 @@ class DuckDBStorageAdapter(IngestStoragePort):
         *,
         scope: str | None = None,
     ) -> BatchResult:
-        """Insert a batch of rows into the given table."""
+        """Insert rows using policy backend bulk_insert.
+
+        Returns
+        -------
+        BatchResult
+            Result including rows written.
+        """
         _ = scope
+        self._validate_table_exists(table_key)
         if not rows:
             return BatchResult(table_key=table_key, rows_written=0, duration_s=0.0)
         columns = load_columns_by_table().get(table_key, [])
@@ -109,7 +106,14 @@ class DuckDBStorageAdapter(IngestStoragePort):
         table_key: str,
         params: Sequence[object],
     ) -> int:
-        """Delete rows by snapshot parameters."""
+        """Delete snapshot rows when repo/commit are provided.
+
+        Returns
+        -------
+        int
+            Number of deleted rows (DuckDB returns 0).
+        """
+        self._validate_table_exists(table_key)
         if len(params) == SNAPSHOT_PARAM_LEN:
             self._backend.delete_for_snapshot(table_key, repo=str(params[0]), commit=str(params[1]))
         return 0
@@ -123,20 +127,35 @@ class DuckDBStorageAdapter(IngestStoragePort):
         repo: str | None = None,
         commit: str | None = None,
     ) -> int:
-        """Delete rows by path with optional repo/commit filters."""
+        """Delete rows filtered by path and optional repo/commit via ibis.
+
+        Returns
+        -------
+        int
+            Number of deleted rows (DuckDB returns 0).
+
+        Raises
+        ------
+        ValueError
+            If deletion fails.
+        """
+        self._validate_table_exists(table_key)
         if not paths:
             return 0
 
-        table = cast("Any", self._gateway.ibis.table(table_key))
-        predicates = [ibis_bool(cast("Any", table[path_column]).isin(list(paths)))]
-        if repo is not None and "repo" in table.schema().names:
+        table = self._gateway.ibis.table(table_key)
+        predicates = [isin_values(table[path_column], list(paths))]
+        schema_names_attr = table.schema().names
+        schema_names = list(cast("Sequence[str]", schema_names_attr))
+        if repo is not None and "repo" in schema_names:
             predicates.append(ibis_bool(table["repo"] == repo))
-        if commit is not None and "commit" in table.schema().names:
+        if commit is not None and "commit" in schema_names:
             predicates.append(ibis_bool(table["commit"] == commit))
         cond = and_predicates(*predicates)
 
         try:
-            table.delete(where=cond)
+            table_expr = cast("Any", table)
+            table_expr.delete(where=cond)
         except Exception as exc:  # pragma: no cover - delegated to backend
             message = f"Failed to delete rows from {table_key}"
             raise ValueError(message) from exc
@@ -147,7 +166,13 @@ class DuckDBStorageAdapter(IngestStoragePort):
         sql: str,
         params: Sequence[object] | None = None,
     ) -> QueryResult:
-        """Execute a raw SQL query and return a structured result."""
+        """Execute a raw SQL query and return a structured result.
+
+        Returns
+        -------
+        QueryResult
+            Container holding rows, columns, and row count.
+        """
         param_list = list(params) if params else []
         result = self.con.execute(sql, param_list)
         rows = result.fetchall()
@@ -159,12 +184,21 @@ class DuckDBStorageAdapter(IngestStoragePort):
         sql: str,
         params: Sequence[object] | None = None,
     ) -> pd.DataFrame:
+        """Execute a query and return results as a DataFrame.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Resulting dataframe from the query execution.
+        """
         param_list = list(params) if params else []
         return self.con.execute(sql, param_list).fetch_df()
 
 
 @dataclass
 class IngestStorageService:
+    """Validate and write ingest batches using a storage port."""
+
     storage: IngestStoragePort
     validate: bool = True
 
@@ -176,6 +210,13 @@ class IngestStorageService:
         delete_params: Sequence[object] | None = None,
         scope: str | None = None,
     ) -> BatchResult:
+        """Write batch with optional pre-delete and Pandera validation.
+
+        Returns
+        -------
+        BatchResult
+            Result containing rows written and duration.
+        """
         self.storage.ensure_schema(table_key)
 
         validated_rows = rows
@@ -191,6 +232,13 @@ class IngestStorageService:
     def _validate_rows(
         table_key: str, rows: Sequence[Sequence[object]]
     ) -> Sequence[Sequence[object]]:
+        """Validate rows using Pandera schema if available.
+
+        Returns
+        -------
+        Sequence[Sequence[object]]
+            Original rows irrespective of validation outcome.
+        """
         schema = get_dataset_schema(table_key)
         if schema is None:
             return rows
@@ -214,12 +262,20 @@ class IngestStorageService:
     def from_gateway(
         cls, gateway: StorageGateway, *, validate: bool = True
     ) -> IngestStorageService:
+        """Create a service instance from a StorageGateway.
+
+        Returns
+        -------
+        IngestStorageService
+            New service instance wrapping the provided gateway.
+        """
         return cls(storage=DuckDBStorageAdapter(gateway), validate=validate)
 
 
 __all__ = [
     "DuckDBStorageAdapter",
     "IngestStorageService",
+    "SNAPSHOT_PARAM_LEN",
     "build_delete_in_query",
     "quote_identifier",
     "quote_table_key",

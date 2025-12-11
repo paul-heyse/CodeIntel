@@ -21,7 +21,7 @@ from codeintel.core.validation import (
     has_error_findings,
 )
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import and_predicates, ibis_bool
+from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway

@@ -44,7 +44,7 @@ from codeintel.graphs.validation.findings import (
     resolve_validation_options,
 )
 from codeintel.storage.gateway import DuckDBError, StorageGateway
-from codeintel.storage.ibis_types import ibis_bool
+from codeintel.storage.ibis_types import ibis_bool, isin_values
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalogProvider
@@ -183,6 +183,8 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
         try:
             expr = table_expr if not predicates else table_expr.filter(list(predicates))
             result = expr.count().execute()
+            if hasattr(result, "iloc"):
+                return int(cast("SupportsInt", result.iloc[0, 0]))
             return int(cast("SupportsInt", result))
         except DuckDBError as exc:  # pragma: no cover - defensive logging
             log.warning("Validation snapshot count failed for %s: %s", table_expr, exc)

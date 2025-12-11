@@ -9,7 +9,7 @@ This module validates graph integrity by checking:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, SupportsInt, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
@@ -56,23 +56,19 @@ def _validate_call_graph_integrity(
         caller_join = scoped_edges.left_join(
             nodes, predicates=[(scoped_edges.caller_goid_h128, nodes.goid_h128)]
         )
-        orphan_callers = int(
-            caller_join.filter(ibis_bool(nodes.goid_h128.isnull())).count().execute()
-        )
+        orphan_callers_expr = caller_join.filter(ibis_bool(nodes.goid_h128.isnull())).count()
+        orphan_callers = int(cast("SupportsInt", orphan_callers_expr.execute()))
         if orphan_callers > 0:
             errors.append(f"Found {orphan_callers} call graph edges with orphan caller GOIDs")
 
         callee_join = scoped_edges.left_join(
             nodes, predicates=[(scoped_edges.callee_goid_h128, nodes.goid_h128)]
         )
-        orphan_callees = int(
-            callee_join.filter(
-                ibis_bool(scoped_edges.callee_goid_h128.notnull())
-                & ibis_bool(nodes.goid_h128.isnull())
-            )
-            .count()
-            .execute()
-        )
+        orphan_callees_expr = callee_join.filter(
+            ibis_bool(scoped_edges.callee_goid_h128.notnull())
+            & ibis_bool(nodes.goid_h128.isnull())
+        ).count()
+        orphan_callees = int(cast("SupportsInt", orphan_callees_expr.execute()))
         if orphan_callees > 0:
             log.debug(
                 "validation: %d call graph edges have unresolved callee GOIDs",
@@ -120,7 +116,8 @@ def _validate_import_graph_integrity(
                 (scoped_edges.commit, modules.commit),
             ],
         )
-        orphan_src = int(joined.filter(ibis_bool(modules.module.isnull())).count().execute())
+        orphan_src_expr = joined.filter(ibis_bool(modules.module.isnull())).count()
+        orphan_src = int(cast("SupportsInt", orphan_src_expr.execute()))
         if orphan_src > 0:
             errors.append(f"Found {orphan_src} import edges with missing source modules")
 
@@ -164,7 +161,8 @@ def _validate_cfg_integrity(
                 (edges.function_goid_h128, blocks.function_goid_h128),
             ],
         )
-        orphan_edges = int(joined.filter(ibis_bool(blocks.block_id.isnull())).count().execute())
+        orphan_edges_expr = joined.filter(ibis_bool(blocks.block_id.isnull())).count()
+        orphan_edges = int(cast("SupportsInt", orphan_edges_expr.execute()))
         if orphan_edges > 0:
             errors.append(f"Found {orphan_edges} CFG edges with missing source blocks")
 

@@ -22,6 +22,7 @@ from codeintel.ingestion.ports.change_detection import (
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.ibis_types import filter_by, ibis_bool, window_over
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -149,15 +150,15 @@ class HashChangeDetectionAdapter:
         gateway = getattr(self._storage, "_gateway", None)
         if gateway is not None:
             file_state = gateway.ibis.table("core.file_state")
-            window = ibis.window(
-                partition_by=file_state.rel_path,
+            window = window_over(
+                partition_by=[file_state.rel_path],
                 order_by=[file_state.mtime_ns.desc()],
             )
             rn_expr = ibis.row_number().over(window)
             ranked = (
-                file_state.filter((file_state.repo == repo) & (file_state.language == language))
+                filter_by(file_state, file_state.repo == repo, file_state.language == language)
                 .mutate(rn=rn_expr)
-                .filter(rn_expr == 0)
+                .filter(ibis_bool(rn_expr == 0))
                 .select("rel_path", "size_bytes", "mtime_ns", "content_hash")
             )
             df = ranked.execute()
