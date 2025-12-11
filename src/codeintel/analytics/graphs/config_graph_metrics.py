@@ -28,7 +28,7 @@ from codeintel.analytics.runtime.context import (
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 
 MAX_BETWEENNESS_NODES = 1000
@@ -154,11 +154,6 @@ def _projection_payload(
     )
 
 
-def _persist_rows(con: DuckDBConnection, sql: str, rows: list[tuple[object, ...]]) -> None:
-    if rows:
-        con.executemany(sql, rows)
-
-
 def compute_config_graph_metrics(
     gateway: StorageGateway,
     *,
@@ -256,41 +251,34 @@ def compute_config_graph_metrics(
 
     _clear_config_tables(gateway, repo, commit)
 
-    _persist_rows(
-        gateway.con,
-        """
-        INSERT INTO analytics.config_graph_metrics_keys (
-            repo, commit, config_key, degree, weighted_degree,
-            betweenness, closeness, community_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        key_rows,
-    )
-    _persist_rows(
-        gateway.con,
-        """
-        INSERT INTO analytics.config_graph_metrics_modules (
-            repo, commit, module, degree, weighted_degree,
-            betweenness, closeness, community_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        module_rows,
-    )
-    _persist_rows(
-        gateway.con,
-        """
-        INSERT INTO analytics.config_projection_key_edges (
-            repo, commit, src_key, dst_key, weight, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        key_edges,
-    )
-    _persist_rows(
-        gateway.con,
-        """
-        INSERT INTO analytics.config_projection_module_edges (
-            repo, commit, src_module, dst_module, weight, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        module_edges,
-    )
+    # Write rows using Ibis
+    if key_rows:
+        gateway.ibis.write(
+            "analytics.config_graph_metrics_keys",
+            key_rows,
+            columns=[
+                "repo", "commit", "config_key", "degree", "weighted_degree",
+                "betweenness", "closeness", "community_id", "created_at",
+            ],
+        )
+    if module_rows:
+        gateway.ibis.write(
+            "analytics.config_graph_metrics_modules",
+            module_rows,
+            columns=[
+                "repo", "commit", "module", "degree", "weighted_degree",
+                "betweenness", "closeness", "community_id", "created_at",
+            ],
+        )
+    if key_edges:
+        gateway.ibis.write(
+            "analytics.config_projection_key_edges",
+            key_edges,
+            columns=["repo", "commit", "src_key", "dst_key", "weight", "created_at"],
+        )
+    if module_edges:
+        gateway.ibis.write(
+            "analytics.config_projection_module_edges",
+            module_edges,
+            columns=["repo", "commit", "src_module", "dst_module", "weight", "created_at"],
+        )

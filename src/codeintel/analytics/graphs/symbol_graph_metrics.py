@@ -121,16 +121,15 @@ def compute_symbol_graph_metrics_modules(  # noqa: PLR0914
         "analytics.symbol_graph_metrics_modules", repo=repo, commit=commit
     )
     if validated_rows:
-        gateway.con.executemany(
-            """
-            INSERT INTO analytics.symbol_graph_metrics_modules (
-                repo, commit, module,
-                symbol_betweenness, symbol_closeness, symbol_eigenvector, symbol_harmonic,
-                symbol_k_core, symbol_constraint, symbol_effective_size,
-                symbol_community_id, symbol_component_id, symbol_component_size, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.symbol_graph_metrics_modules",
             validated_rows,
+            columns=[
+                "repo", "commit", "module",
+                "symbol_betweenness", "symbol_closeness", "symbol_eigenvector", "symbol_harmonic",
+                "symbol_k_core", "symbol_constraint", "symbol_effective_size",
+                "symbol_community_id", "symbol_component_id", "symbol_component_size", "created_at",
+            ],
         )
 
 
@@ -219,14 +218,13 @@ def compute_symbol_graph_metrics_functions(  # noqa: PLR0914
         "analytics.symbol_graph_metrics_functions", repo=repo, commit=commit
     )
     if validated_rows:
-        gateway.con.executemany(
-            """
-            INSERT INTO analytics.symbol_graph_metrics_functions (
-                repo, commit, function_goid_h128,
-                symbol_betweenness, symbol_closeness, symbol_eigenvector, symbol_harmonic,
-                symbol_k_core, symbol_constraint, symbol_effective_size,
-                symbol_community_id, symbol_component_id, symbol_component_size, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.symbol_graph_metrics_functions",
             validated_rows,
+            columns=[
+                "repo", "commit", "function_goid_h128",
+                "symbol_betweenness", "symbol_closeness", "symbol_eigenvector", "symbol_harmonic",
+                "symbol_k_core", "symbol_constraint", "symbol_effective_size",
+                "symbol_community_id", "symbol_component_id", "symbol_component_size", "created_at",
+            ],
         )

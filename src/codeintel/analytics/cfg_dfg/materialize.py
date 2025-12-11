@@ -23,8 +23,62 @@ from codeintel.analytics.cfg_dfg.dfg_core import (
     load_dfg_edges,
 )
 from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+# Column definitions for CFG tables
+CFG_FUNCTION_METRICS_COLS = [
+    "function_goid_h128", "repo", "commit", "rel_path", "module", "qualname",
+    "cfg_block_count", "cfg_edge_count", "cfg_has_cycles", "cfg_scc_count",
+    "cfg_longest_path_len", "cfg_avg_shortest_path_len",
+    "cfg_branching_factor_mean", "cfg_branching_factor_max",
+    "cfg_linear_block_fraction", "cfg_dom_tree_height",
+    "cfg_dominance_frontier_size_mean", "cfg_dominance_frontier_size_max",
+    "cfg_loop_count", "cfg_loop_nesting_depth_max",
+    "cfg_bc_betweenness_max", "cfg_bc_betweenness_mean",
+    "cfg_bc_closeness_mean", "cfg_bc_eigenvector_max",
+    "created_at", "metrics_version",
+]
+CFG_BLOCK_METRICS_COLS = [
+    "function_goid_h128", "repo", "commit", "block_idx", "is_entry", "is_exit",
+    "is_branch", "is_join", "dom_depth", "dominates_exit", "bc_betweenness",
+    "bc_closeness", "bc_eigenvector", "in_loop_scc", "loop_header",
+    "loop_nesting_depth", "created_at", "metrics_version",
+]
+CFG_FUNCTION_METRICS_EXT_COLS = [
+    "function_goid_h128", "repo", "commit",
+    "unreachable_block_count", "loop_header_count",
+    "true_edge_count", "false_edge_count", "back_edge_count",
+    "exception_edge_count", "fallthrough_edge_count", "loop_edge_count",
+    "entry_exit_simple_paths", "created_at", "metrics_version",
+]
+
+# Column definitions for DFG tables
+DFG_FUNCTION_METRICS_COLS = [
+    "function_goid_h128", "repo", "commit", "rel_path", "module", "qualname",
+    "dfg_block_count", "dfg_edge_count", "dfg_phi_edge_count", "dfg_symbol_count",
+    "dfg_component_count", "dfg_scc_count", "dfg_has_cycles",
+    "dfg_longest_chain_len", "dfg_avg_shortest_path_len",
+    "dfg_avg_in_degree", "dfg_avg_out_degree", "dfg_max_in_degree",
+    "dfg_max_out_degree", "dfg_branchy_block_fraction",
+    "dfg_bc_betweenness_max", "dfg_bc_betweenness_mean", "dfg_bc_eigenvector_max",
+    "created_at", "metrics_version",
+]
+DFG_BLOCK_METRICS_COLS = [
+    "function_goid_h128", "repo", "commit", "block_idx",
+    "dfg_in_degree", "dfg_out_degree", "dfg_phi_in_degree", "dfg_phi_out_degree",
+    "dfg_bc_betweenness", "dfg_bc_closeness", "dfg_bc_eigenvector",
+    "dfg_in_scc", "dfg_in_chain", "created_at", "metrics_version",
+]
+DFG_FUNCTION_METRICS_EXT_COLS = [
+    "function_goid_h128", "repo", "commit",
+    "data_flow_edge_count", "intra_block_edge_count",
+    "use_kind_phi_count", "use_kind_data_flow_count",
+    "use_kind_intra_block_count", "use_kind_other_count",
+    "phi_edge_ratio", "entry_exit_simple_paths",
+    "created_at", "metrics_version",
+]
 
 MAX_CFG_CENTRALITY_SAMPLE = 100
 MAX_CFG_EIGEN_SAMPLE = 200
@@ -81,61 +135,30 @@ def compute_cfg_metrics(
         fn_ext_rows.append(rows.ext_row)
         block_rows.extend(rows.block_rows)
 
-    con.execute(
-        "DELETE FROM analytics.cfg_function_metrics WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.cfg_function_metrics_ext WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.cfg_block_metrics WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
+    # Delete existing data for this snapshot
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.cfg_function_metrics", repo=repo, commit=commit)
+    backend.delete_for_snapshot("analytics.cfg_function_metrics_ext", repo=repo, commit=commit)
+    backend.delete_for_snapshot("analytics.cfg_block_metrics", repo=repo, commit=commit)
 
+    # Write new data using Ibis
     if fn_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.cfg_function_metrics (
-                function_goid_h128, repo, commit, rel_path, module, qualname,
-                cfg_block_count, cfg_edge_count, cfg_has_cycles, cfg_scc_count,
-                cfg_longest_path_len, cfg_avg_shortest_path_len,
-                cfg_branching_factor_mean, cfg_branching_factor_max,
-                cfg_linear_block_fraction, cfg_dom_tree_height,
-                cfg_dominance_frontier_size_mean, cfg_dominance_frontier_size_max,
-                cfg_loop_count, cfg_loop_nesting_depth_max,
-                cfg_bc_betweenness_max, cfg_bc_betweenness_mean,
-                cfg_bc_closeness_mean, cfg_bc_eigenvector_max,
-                created_at, metrics_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.cfg_function_metrics",
             fn_rows,
+            columns=CFG_FUNCTION_METRICS_COLS,
         )
     if block_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.cfg_block_metrics (
-                function_goid_h128, repo, commit, block_idx, is_entry, is_exit,
-                is_branch, is_join, dom_depth, dominates_exit, bc_betweenness,
-                bc_closeness, bc_eigenvector, in_loop_scc, loop_header,
-                loop_nesting_depth, created_at, metrics_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.cfg_block_metrics",
             block_rows,
+            columns=CFG_BLOCK_METRICS_COLS,
         )
     if fn_ext_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.cfg_function_metrics_ext (
-                function_goid_h128, repo, commit,
-                unreachable_block_count, loop_header_count,
-                true_edge_count, false_edge_count, back_edge_count,
-                exception_edge_count, fallthrough_edge_count, loop_edge_count,
-                entry_exit_simple_paths, created_at, metrics_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.cfg_function_metrics_ext",
             fn_ext_rows,
+            columns=CFG_FUNCTION_METRICS_EXT_COLS,
         )
 
 
@@ -188,58 +211,28 @@ def compute_dfg_metrics(
         fn_ext_rows.append(dfg_ext_row(ctx))
         block_rows.extend(dfg_block_rows(ctx))
 
-    con.execute(
-        "DELETE FROM analytics.dfg_function_metrics WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.dfg_block_metrics WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.dfg_function_metrics_ext WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
+    # Delete existing data for this snapshot
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.dfg_function_metrics", repo=repo, commit=commit)
+    backend.delete_for_snapshot("analytics.dfg_block_metrics", repo=repo, commit=commit)
+    backend.delete_for_snapshot("analytics.dfg_function_metrics_ext", repo=repo, commit=commit)
 
+    # Write new data using Ibis
     if fn_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.dfg_function_metrics (
-                function_goid_h128, repo, commit, rel_path, module, qualname,
-                dfg_block_count, dfg_edge_count, dfg_phi_edge_count, dfg_symbol_count,
-                dfg_component_count, dfg_scc_count, dfg_has_cycles,
-                dfg_longest_chain_len, dfg_avg_shortest_path_len,
-                dfg_avg_in_degree, dfg_avg_out_degree, dfg_max_in_degree,
-                dfg_max_out_degree, dfg_branchy_block_fraction,
-                dfg_bc_betweenness_max, dfg_bc_betweenness_mean, dfg_bc_eigenvector_max,
-                created_at, metrics_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.dfg_function_metrics",
             fn_rows,
+            columns=DFG_FUNCTION_METRICS_COLS,
         )
     if block_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.dfg_block_metrics (
-                function_goid_h128, repo, commit, block_idx,
-                dfg_in_degree, dfg_out_degree, dfg_phi_in_degree, dfg_phi_out_degree,
-                dfg_bc_betweenness, dfg_bc_closeness, dfg_bc_eigenvector,
-                dfg_in_scc, dfg_in_chain, created_at, metrics_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.dfg_block_metrics",
             block_rows,
+            columns=DFG_BLOCK_METRICS_COLS,
         )
     if fn_ext_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.dfg_function_metrics_ext (
-                function_goid_h128, repo, commit,
-                data_flow_edge_count, intra_block_edge_count,
-                use_kind_phi_count, use_kind_data_flow_count,
-                use_kind_intra_block_count, use_kind_other_count,
-                phi_edge_ratio, entry_exit_simple_paths,
-                created_at, metrics_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.dfg_function_metrics_ext",
             fn_ext_rows,
+            columns=DFG_FUNCTION_METRICS_EXT_COLS,
         )

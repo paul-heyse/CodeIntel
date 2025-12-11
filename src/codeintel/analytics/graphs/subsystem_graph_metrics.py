@@ -182,12 +182,12 @@ def compute_subsystem_graph_metrics(
 
     backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot("analytics.subsystem_graph_metrics", repo=repo, commit=commit)
-    gateway.con.executemany(
-        """
-        INSERT INTO analytics.subsystem_graph_metrics (
-            repo, commit, subsystem_id, import_in_degree, import_out_degree,
-            import_pagerank, import_betweenness, import_closeness, import_layer, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        validated_rows,
-    )
+    if validated_rows:
+        gateway.ibis.write(
+            "analytics.subsystem_graph_metrics",
+            validated_rows,
+            columns=[
+                "repo", "commit", "subsystem_id", "import_in_degree", "import_out_degree",
+                "import_pagerank", "import_betweenness", "import_closeness", "import_layer", "created_at",
+            ],
+        )

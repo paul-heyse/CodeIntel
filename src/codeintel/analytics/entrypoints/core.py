@@ -24,8 +24,23 @@ from codeintel.config import EntryPointsStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+ENTRYPOINTS_COLS = [
+    "repo", "commit", "entrypoint_id", "kind", "framework",
+    "handler_goid_h128", "handler_urn", "handler_rel_path", "handler_module", "handler_qualname",
+    "http_method", "route_path", "status_codes", "auth_required",
+    "command_name", "arguments_schema", "schedule", "trigger", "extra",
+    "subsystem_id", "subsystem_name", "tags", "owners",
+    "tests_touching", "failing_tests", "slow_tests", "flaky_tests",
+    "entrypoint_coverage_ratio", "last_test_status", "created_at",
+]
+ENTRYPOINT_TESTS_COLS = [
+    "repo", "commit", "entrypoint_id", "test_id", "test_goid_h128",
+    "coverage_ratio", "status", "duration_ms", "created_at",
+]
 
 if TYPE_CHECKING:
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
@@ -117,14 +132,9 @@ def build_entrypoints(
     ensure_schema(con, "analytics.entrypoints")
     ensure_schema(con, "analytics.entrypoint_tests")
 
-    con.execute(
-        "DELETE FROM analytics.entrypoints WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.entrypoint_tests WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.entrypoints", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot("analytics.entrypoint_tests", repo=cfg.repo, commit=cfg.commit)
 
     entrypoint_context = _build_entrypoint_context(
         con,
@@ -156,29 +166,16 @@ def build_entrypoints(
     )
 
     if entrypoint_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.entrypoints (
-                repo, commit, entrypoint_id, kind, framework,
-                handler_goid_h128, handler_urn, handler_rel_path, handler_module, handler_qualname,
-                http_method, route_path, status_codes, auth_required,
-                command_name, arguments_schema, schedule, trigger, extra,
-                subsystem_id, subsystem_name, tags, owners,
-                tests_touching, failing_tests, slow_tests, flaky_tests,
-                entrypoint_coverage_ratio, last_test_status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.entrypoints",
             entrypoint_rows,
+            columns=ENTRYPOINTS_COLS,
         )
     if test_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.entrypoint_tests (
-                repo, commit, entrypoint_id, test_id, test_goid_h128,
-                coverage_ratio, status, duration_ms, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.entrypoint_tests",
             test_rows,
+            columns=ENTRYPOINT_TESTS_COLS,
         )
 
     log.info(

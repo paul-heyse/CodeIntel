@@ -22,8 +22,21 @@ from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse,
 from codeintel.config import ExternalDependenciesStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+EXTERNAL_DEPENDENCY_CALLS_COLS = [
+    "repo", "commit", "dep_id", "library", "service_name",
+    "function_goid_h128", "function_urn", "rel_path", "module", "qualname",
+    "callsite_count", "modes", "evidence_json", "created_at",
+]
+EXTERNAL_DEPENDENCIES_COLS = [
+    "repo", "commit", "dep_id", "library", "service_name", "category", "language",
+    "severity", "criticality", "risk_score",
+    "function_count", "callsite_count", "modules_json", "usage_modes",
+    "config_keys", "risk_level", "created_at",
+]
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -198,10 +211,8 @@ def build_external_dependency_calls(
 
     con = gateway.con
     ensure_schema(con, "analytics.external_dependency_calls")
-    con.execute(
-        "DELETE FROM analytics.external_dependency_calls WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.external_dependency_calls", repo=cfg.repo, commit=cfg.commit)
 
     missing = inputs.missing_goids or set()
     if missing:
@@ -233,15 +244,10 @@ def build_external_dependency_calls(
         )
 
     if rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.external_dependency_calls (
-                repo, commit, dep_id, library, service_name,
-                function_goid_h128, function_urn, rel_path, module, qualname,
-                callsite_count, modes, evidence_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.external_dependency_calls",
             rows,
+            columns=EXTERNAL_DEPENDENCY_CALLS_COLS,
         )
     log.info(
         "external_dependency_calls populated: %d rows for %s@%s",
@@ -343,7 +349,7 @@ def build_external_dependencies(
         return
 
     con = gateway.con
-    _prepare_external_dependencies(con, cfg)
+    _prepare_external_dependencies(gateway, cfg)
 
     config_keys_by_module = _load_config_keys(con, cfg.repo, cfg.commit)
     rows = _fetch_dependency_call_rows(con, cfg)
@@ -351,16 +357,10 @@ def build_external_dependencies(
     dep_rows = _serialize_dependency_rows(aggregates, config_keys_by_module, cfg)
 
     if dep_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.external_dependencies (
-                repo, commit, dep_id, library, service_name, category, language,
-                severity, criticality, risk_score,
-                function_count, callsite_count, modules_json, usage_modes,
-                config_keys, risk_level, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.external_dependencies",
             dep_rows,
+            columns=EXTERNAL_DEPENDENCIES_COLS,
         )
     log.info(
         "external_dependencies populated: %d rows for %s@%s",
@@ -371,13 +371,11 @@ def build_external_dependencies(
 
 
 def _prepare_external_dependencies(
-    con: DuckDBConnection, cfg: ExternalDependenciesStepConfig
+    gateway: StorageGateway, cfg: ExternalDependenciesStepConfig
 ) -> None:
-    ensure_schema(con, "analytics.external_dependencies")
-    con.execute(
-        "DELETE FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
+    ensure_schema(gateway.con, "analytics.external_dependencies")
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.external_dependencies", repo=cfg.repo, commit=cfg.commit)
 
 
 def _fetch_dependency_call_rows(
