@@ -11,6 +11,7 @@ from codeintel.core.plugins.execution.manifest import (
     build_upstream_state_from_records,
     compute_scope_id,
 )
+from codeintel.core.plugins.execution.manifest_store import InMemoryManifestStore
 from codeintel.core.plugins.types.result import PluginExecutionRecord
 from tests._helpers.assertions import (
     expect_equal,
@@ -19,41 +20,6 @@ from tests._helpers.assertions import (
 )
 
 SCOPE_HASH_LENGTH = 16
-
-
-class InMemoryManifestStore:
-    """Simple in-memory manifest store for testing."""
-
-    def __init__(self) -> None:
-        self._records: dict[str, PluginExecutionRecord] = {}
-
-    def load_last_record(
-        self,
-        *,
-        plugin_name: str,
-        repo: str,
-        commit: str,
-        scope_id: str | None,
-        variant: str | None,
-    ) -> PluginExecutionRecord | None:
-        """Return the most recent record for the given key.
-
-        Returns
-        -------
-        PluginExecutionRecord | None
-            Matching record when present.
-        """
-        key = f"{plugin_name}:{repo}:{commit}:{scope_id}:{variant}"
-        return self._records.get(key)
-
-    def append_record(self, record: PluginExecutionRecord) -> None:
-        """Persist a record keyed by identity fields."""
-        repo = record.meta.get("repo", "")
-        commit = record.meta.get("commit", "")
-        scope_id = record.meta.get("scope_id")
-        variant = record.meta.get("variant")
-        key = f"{record.plugin_name}:{repo}:{commit}:{scope_id}:{variant}"
-        self._records[key] = record
 
 
 class TestComputeScopeId:

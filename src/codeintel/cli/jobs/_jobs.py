@@ -489,7 +489,11 @@ def run_job(job_id: str) -> int:
     int
         Exit code (0 on success, non-zero on failure).
     """
-    from codeintel.cli.execution.registry import execute_operation, get_registry
+    # Lazy import to avoid circular dependency with cli.execution.registry
+    from codeintel.cli.execution.registry import (  # noqa: PLC0415
+        execute_operation,
+        get_registry,
+    )
 
     store = JobStore()
     job = store.load(job_id)

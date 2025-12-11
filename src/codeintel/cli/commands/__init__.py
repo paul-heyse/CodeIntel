@@ -17,7 +17,7 @@ Example
 
 from __future__ import annotations
 
-# Common utilities for command definitions
+from codeintel.cli.commands import _help as help_utils
 from codeintel.cli.commands._common import (
     OutputFormatCLI,
     RuntimeCLI,
@@ -27,11 +27,7 @@ from codeintel.cli.commands._common import (
     resolve_output_format,
     runtime_field,
 )
-
-# Main app and entry point (must be last to avoid circular imports)
 from codeintel.cli.commands.app import app, main
-
-# Command apps - Domain
 from codeintel.cli.commands.build import build_app
 from codeintel.cli.commands.completions import completions_app
 from codeintel.cli.commands.config import config_app
@@ -49,7 +45,6 @@ from codeintel.cli.commands.plugins import plugins_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
 from codeintel.cli.commands.subsystem import subsystem_app
-from codeintel.cli.commands import _help as help_utils
 
 __all__ = [
     "OutputFormatCLI",
@@ -64,9 +59,9 @@ __all__ = [
     "get_output_format",
     "get_verbose",
     "graphs_app",
-    "help_utils",
     "health_app",
     "help_commands_app",
+    "help_utils",
     "history_app",
     "ide_app",
     "jobs_app",

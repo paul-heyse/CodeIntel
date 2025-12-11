@@ -223,7 +223,13 @@ class ServingService:
 
     @staticmethod
     def serialize_result(result: object) -> dict[str, Any]:
-        """Public wrapper for result serialization."""
+        """Public wrapper for result serialization.
+
+        Returns
+        -------
+        dict[str, Any]
+            Serialized result.
+        """
         return ServingService._serialize_result(result)
 
 

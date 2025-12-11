@@ -223,9 +223,7 @@ class SubsystemHandlerPack:
     """
 
     name: str = "subsystem_handler"
-    _dependencies: tuple[SeedPack, ...] = field(
-        default_factory=lambda: (CORE_PACK, SUBSYSTEM_PACK)
-    )
+    _dependencies: tuple[SeedPack, ...] = field(default_factory=lambda: (CORE_PACK, SUBSYSTEM_PACK))
 
     @property
     def dependencies(self) -> tuple[SeedPack, ...]:

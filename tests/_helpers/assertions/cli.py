@@ -147,7 +147,9 @@ def expect_handler_error(
         raise AssertionError(failure_message)
 
     if title_contains is not None and title_contains not in (error.title or ""):
-        failure_message = f"{msg_prefix}Expected title containing '{title_contains}', got '{error.title}'"
+        failure_message = (
+            f"{msg_prefix}Expected title containing '{title_contains}', got '{error.title}'"
+        )
         raise AssertionError(failure_message)
 
     return error
@@ -226,7 +228,9 @@ def expect_handler_data_contains[T](
         failure_message = f"{msg_prefix}Data has no attribute '{key}'"
         raise AssertionError(failure_message)
     if expected_item not in actual_list:
-        failure_message = f"{msg_prefix}Expected {key} to contain {expected_item!r}, got {actual_list!r}"
+        failure_message = (
+            f"{msg_prefix}Expected {key} to contain {expected_item!r}, got {actual_list!r}"
+        )
         raise AssertionError(failure_message)
 
 
@@ -270,7 +274,9 @@ def expect_handler_warnings(
     if contains is not None:
         matching = [w for w in warnings if contains in w]
         if not matching:
-            failure_message = f"{msg_prefix}Expected warning containing '{contains}', got {warnings}"
+            failure_message = (
+                f"{msg_prefix}Expected warning containing '{contains}', got {warnings}"
+            )
             raise AssertionError(failure_message)
 
     return warnings

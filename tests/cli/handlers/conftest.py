@@ -43,9 +43,7 @@ type HandlerContextBuilder = Callable[
     CommandContext,
 ]
 
-type CommandContextFactory = Callable[
-    [dict[str, object]], AbstractContextManager[CommandContext]
-]
+type CommandContextFactory = Callable[[dict[str, object]], AbstractContextManager[CommandContext]]
 
 
 @pytest.fixture

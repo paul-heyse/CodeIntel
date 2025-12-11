@@ -79,9 +79,7 @@ def dedupe_edge_rows(
     return unique_edges
 
 
-def _validate_rows(
-    table_key: str, rows: Sequence[Mapping[str, object]]
-) -> list[dict[str, object]]:
+def _validate_rows(table_key: str, rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
     """
     Validate rows using Pandera schema and convert to dict format.
 
@@ -139,8 +137,7 @@ def persist_call_graph_edges(
     if validate:
         validated = _validate_rows("graph.call_graph_edges", list(edges))
         edges_to_persist = [
-            {**e, "evidence_json": e.get("evidence_json") or "{}"}
-            for e in validated
+            {**e, "evidence_json": e.get("evidence_json") or "{}"} for e in validated
         ]
     else:
         edges_to_persist = list(edges)

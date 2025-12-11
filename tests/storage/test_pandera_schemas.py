@@ -125,8 +125,8 @@ class TestSchemaValidation:
 
     def test_validate_empty_dataframe(self, function_metrics_schema: DataFrameSchema) -> None:
         """Verify empty DataFrame passes validation."""
-        columns = list(function_metrics_schema.columns.keys())
-        df = pd.DataFrame(columns=columns)
+        column_names = list(function_metrics_schema.columns.keys())
+        df = pd.DataFrame(columns=pd.Index(column_names))
         result = validate_dataset_df("analytics.function_metrics", df)
         assert len(result) == 0
 
@@ -226,9 +226,7 @@ class TestJsonSchemaExport:
         schema = dataset_json_schema("unknown.table")
         assert schema is None
 
-    def test_json_schema_column_types(
-        self, function_metrics_schema: DataFrameSchema
-    ) -> None:
+    def test_json_schema_column_types(self, function_metrics_schema: DataFrameSchema) -> None:
         """Verify JSON Schema column types are correctly mapped."""
         json_schema = pandera_to_json_schema(function_metrics_schema)
         properties = json_schema["properties"]

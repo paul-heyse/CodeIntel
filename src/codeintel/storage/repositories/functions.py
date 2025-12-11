@@ -169,16 +169,13 @@ class FunctionRepository(BaseRepository):
         """
         try:
             table = self.gateway.ibis.table("docs.v_function_summary")
-            expr = (
-                table.filter(
-                    and_predicates(
-                        table.rel_path == rel_path,
-                        table.repo == self.repo,
-                        table.commit == self.commit,
-                    )
+            expr = table.filter(
+                and_predicates(
+                    table.rel_path == rel_path,
+                    table.repo == self.repo,
+                    table.commit == self.commit,
                 )
-                .order_by(table.qualname)
-            )
+            ).order_by(table.qualname)
             return self._validated_records("docs.v_function_summary", expr)
         except IbisError:
             sql = """

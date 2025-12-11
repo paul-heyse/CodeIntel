@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/execution/profile_loader.py
+# hypothesis_version: 6.148.7
+
+['.toml', '.yaml', '.yml', '0.0.0', 'description', 'file', 'name', 'plugins', 'profile', 'rb', 'shared', 'source', 'utf8', 'version']

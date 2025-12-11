@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.storage.ibis_types import and_predicates
 from codeintel.storage.repositories.base import BaseRepository, RowDict
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ class ModuleRepository(BaseRepository):
         def ibis_query() -> it.Table:
             tbl = self._ibis_table("core.modules")
             return (
-                tbl.filter((tbl.repo == self.repo) & (tbl.commit == self.commit))
+                tbl.filter(and_predicates(tbl.repo == self.repo, tbl.commit == self.commit))
                 .select("module")
                 .order_by("module")
             )
@@ -62,9 +63,11 @@ class ModuleRepository(BaseRepository):
         def ibis_query() -> it.Table:
             tbl = self._ibis_table("docs.v_file_summary")
             return tbl.filter(
-                (tbl.rel_path == rel_path)
-                & (tbl.repo == self.repo)
-                & (tbl.commit == self.commit)
+                and_predicates(
+                    tbl.rel_path == rel_path,
+                    tbl.repo == self.repo,
+                    tbl.commit == self.commit,
+                )
             )
 
         sql = """
@@ -75,9 +78,7 @@ class ModuleRepository(BaseRepository):
               AND commit = ?
             LIMIT 1
         """
-        return self._ibis_one_with_fallback(
-            ibis_query, sql, [rel_path, self.repo, self.commit]
-        )
+        return self._ibis_one_with_fallback(ibis_query, sql, [rel_path, self.repo, self.commit])
 
     def get_module_architecture(self, module: str) -> RowDict | None:
         """
@@ -94,9 +95,11 @@ class ModuleRepository(BaseRepository):
         def ibis_query() -> it.Table:
             tbl = self._ibis_table("docs.v_module_architecture")
             return tbl.filter(
-                (tbl.repo == self.repo)
-                & (tbl.commit == self.commit)
-                & (tbl.module == module)
+                and_predicates(
+                    tbl.repo == self.repo,
+                    tbl.commit == self.commit,
+                    tbl.module == module,
+                )
             )
 
         sql = """
@@ -107,9 +110,7 @@ class ModuleRepository(BaseRepository):
               AND module = ?
             LIMIT 1
         """
-        return self._ibis_one_with_fallback(
-            ibis_query, sql, [self.repo, self.commit, module]
-        )
+        return self._ibis_one_with_fallback(ibis_query, sql, [self.repo, self.commit, module])
 
     def get_module_profile(self, module: str) -> RowDict | None:
         """
@@ -126,9 +127,11 @@ class ModuleRepository(BaseRepository):
         def ibis_query() -> it.Table:
             tbl = self._ibis_table("analytics.module_profile")
             return tbl.filter(
-                (tbl.repo == self.repo)
-                & (tbl.commit == self.commit)
-                & (tbl.module == module)
+                and_predicates(
+                    tbl.repo == self.repo,
+                    tbl.commit == self.commit,
+                    tbl.module == module,
+                )
             )
 
         sql = """
@@ -161,9 +164,11 @@ class ModuleRepository(BaseRepository):
         def ibis_query() -> it.Table:
             tbl = self._ibis_table("analytics.file_profile")
             return tbl.filter(
-                (tbl.repo == self.repo)
-                & (tbl.commit == self.commit)
-                & (tbl.rel_path == rel_path)
+                and_predicates(
+                    tbl.repo == self.repo,
+                    tbl.commit == self.commit,
+                    tbl.rel_path == rel_path,
+                )
             )
 
         sql = """
@@ -196,9 +201,11 @@ class ModuleRepository(BaseRepository):
         def ibis_query() -> it.Table:
             tbl = self._ibis_table("docs.v_ide_hints")
             return tbl.filter(
-                (tbl.repo == self.repo)
-                & (tbl.commit == self.commit)
-                & (tbl.rel_path == rel_path)
+                and_predicates(
+                    tbl.repo == self.repo,
+                    tbl.commit == self.commit,
+                    tbl.rel_path == rel_path,
+                )
             )
 
         sql = """
@@ -208,6 +215,4 @@ class ModuleRepository(BaseRepository):
               AND commit = ?
               AND rel_path = ?
         """
-        return self._ibis_with_fallback(
-            ibis_query, sql, [self.repo, self.commit, rel_path]
-        )
+        return self._ibis_with_fallback(ibis_query, sql, [self.repo, self.commit, rel_path])

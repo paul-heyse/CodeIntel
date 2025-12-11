@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/types/metadata.py
+# hypothesis_version: 6.148.7
+
+['CorePluginMetadata', 'PluginDomain', 'analytics', 'cli', 'export', 'graph', 'ingest', 'serving']

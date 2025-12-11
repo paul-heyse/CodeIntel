@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/modules_options.py
+# hypothesis_version: 6.148.7
+
+[1024, 'ModuleIngestOptions']

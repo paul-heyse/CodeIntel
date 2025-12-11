@@ -137,8 +137,7 @@ def test_function_repository_reads(docs_export_gateway: TestContext) -> None:
     high_risk = functions.list_high_risk_functions(min_risk=0.0, limit=5, tested_only=False)
     _expect_true(bool(high_risk), "high risk list should not be empty")
     _expect_in(goid, [row["function_goid_h128"] for row in high_risk], "goid missing")
-    function_ids = functions.list_function_goids()
-    _expect_in(goid, function_ids, "goid missing from list_function_goids")
+    _expect_in(goid, functions.list_function_goids(), "goid missing from list_function_goids")
 
     tests_for_fn = tests_repo.get_tests_for_function(goid, limit=5)
     _expect_equal(len(tests_for_fn), 1, "tests_for_function length mismatch")

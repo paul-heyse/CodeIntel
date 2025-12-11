@@ -44,20 +44,16 @@ class TestRepository(BaseRepository):
         """
         tbl = self._ibis_table("docs.v_test_to_function")
         cols = set(tbl.columns)
-        repo_field = (
-            "test_repo" if "test_repo" in cols else ("repo" if "repo" in cols else None)
-        )
+        repo_field = "test_repo" if "test_repo" in cols else ("repo" if "repo" in cols else None)
         commit_field = (
-            "test_commit"
-            if "test_commit" in cols
-            else ("commit" if "commit" in cols else None)
+            "test_commit" if "test_commit" in cols else ("commit" if "commit" in cols else None)
         )
 
-        expr = tbl.filter(tbl.function_goid_h128 == goid_h128)
+        expr = tbl.filter(ibis_bool(tbl.function_goid_h128 == goid_h128))
         if repo_field is not None:
-            expr = expr.filter(tbl[repo_field] == self.repo)
+            expr = expr.filter(ibis_bool(tbl[repo_field] == self.repo))
         if commit_field is not None:
-            expr = expr.filter(tbl[commit_field] == self.commit)
+            expr = expr.filter(ibis_bool(tbl[commit_field] == self.commit))
         expr = expr.order_by("test_id").limit(limit)
 
         return self._ibis_to_dicts(expr)
@@ -73,9 +69,7 @@ class TestRepository(BaseRepository):
         """
         columns = {
             col[1]
-            for col in self.con.execute(
-                "PRAGMA table_info('docs.v_test_to_function')"
-            ).fetchall()
+            for col in self.con.execute("PRAGMA table_info('docs.v_test_to_function')").fetchall()
         }
         repo_field = (
             "test_repo" if "test_repo" in columns else ("repo" if "repo" in columns else None)
@@ -111,9 +105,7 @@ class TestRepository(BaseRepository):
         )
         return fetch_all_dicts(self.con, sql, [*params, limit])
 
-    def get_test_catalog(
-        self, *, limit: int, status: str | None = None
-    ) -> list[RowDict]:
+    def get_test_catalog(self, *, limit: int, status: str | None = None) -> list[RowDict]:
         """
         List test catalog entries with optional status filter.
 
@@ -127,9 +119,9 @@ class TestRepository(BaseRepository):
 
         def ibis_query() -> it.Table:
             tbl = self._ibis_table("analytics.test_catalog")
-            expr = tbl.filter((tbl.repo == self.repo) & (tbl.commit == self.commit))
+            expr = tbl.filter(and_predicates(tbl.repo == self.repo, tbl.commit == self.commit))
             if status:
-                expr = expr.filter(tbl.status == status)
+                expr = expr.filter(ibis_bool(tbl.status == status))
             return expr.order_by("test_id").limit(limit)
 
         if status:
@@ -150,9 +142,7 @@ class TestRepository(BaseRepository):
                 LIMIT ?
             """
             params = [self.repo, self.commit, limit]
-        return self._ibis_with_fallback(
-            ibis_query, sql, params, table_key="analytics.test_catalog"
-        )
+        return self._ibis_with_fallback(ibis_query, sql, params, table_key="analytics.test_catalog")
 
     def get_test_profile(self, test_id: str) -> RowDict | None:
         """
@@ -169,9 +159,11 @@ class TestRepository(BaseRepository):
         def ibis_query() -> it.Table:
             tbl = self._ibis_table("analytics.test_profile")
             return tbl.filter(
-                (tbl.repo == self.repo)
-                & (tbl.commit == self.commit)
-                & (tbl.test_id == test_id)
+                and_predicates(
+                    tbl.repo == self.repo,
+                    tbl.commit == self.commit,
+                    tbl.test_id == test_id,
+                )
             )
 
         sql = """
