@@ -8,7 +8,11 @@ from typing import cast
 import pytest
 
 from codeintel.ingestion.compute.base import StepResult
-from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin, StepFactory
+from codeintel.ingestion.plugins.ast_extract import (
+    AstExtractPlugin,
+    StepFactory,
+    StorageFactory,
+)
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.ingestion_plugins import (
@@ -36,7 +40,7 @@ def _make_plugin(
         make_recording_step_factory(capture, table_key=table_key, result=result),
     )
     return AstExtractPlugin(
-        storage_adapter_factory=storage_factory,
+        storage_adapter_factory=cast("StorageFactory", storage_factory),
         discovery_adapter_factory=discovery_factory,
         step_factory=step_factory,
     )

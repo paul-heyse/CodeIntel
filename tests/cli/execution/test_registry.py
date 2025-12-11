@@ -354,7 +354,7 @@ def test_spec_immutability() -> None:
     """Verify OperationSpec is frozen."""
     spec = _create_test_spec()
     with pytest.raises(AttributeError):
-        spec.operation_id = "other.op"  # type: ignore[misc]
+        setattr(spec, "operation_id", "other.op")
 
 
 # -----------------------------------------------------------------------------

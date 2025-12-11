@@ -17,8 +17,6 @@ from codeintel.config.datasets import (
     GraphMetricsModulesRow,
 )
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
-from codeintel.storage.macros import ensure_ingest_macros, list_ingest_macros
-from codeintel.storage.metadata import INGEST_MACROS
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.gateway import GatewayFactory
@@ -95,22 +93,6 @@ def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str)
         con.execute(statement, statement_params)
 
 
-def _assert_ingest_macros_present(gateway: StorageGateway) -> None:
-    """
-    Fail fast if ingest macros are not registered for the gateway connection.
-
-    Raises
-    ------
-    RuntimeError
-        When one or more required ingest macros are missing.
-    """
-    macros = list_ingest_macros(gateway.con)
-    missing = {m.lower() for m in INGEST_MACROS.values() if m.lower() not in macros}
-    if missing:
-        message = f"Missing ingest macros on seeded gateway: {sorted(missing)}"
-        raise RuntimeError(message)
-
-
 def open_seeded_architecture_gateway(
     *,
     repo: str,
@@ -172,8 +154,6 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
         Gateway with architecture tables populated for tests.
     """
     apply_all_schemas(gateway.con)
-    ensure_ingest_macros(gateway.con)
-    _assert_ingest_macros_present(gateway)
     _clear_architecture_seed(gateway=gateway, repo=repo, commit=commit)
     now = datetime.now(UTC)
     now_iso = now.isoformat()
@@ -600,6 +580,4 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
             now,
         ),
     )
-    ensure_ingest_macros(gateway.con)
-    _assert_ingest_macros_present(gateway)
     return gateway

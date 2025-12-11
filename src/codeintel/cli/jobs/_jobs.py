@@ -19,7 +19,8 @@ from multiprocessing import Process
 from pathlib import Path
 from typing import Any
 
-from codeintel.cli.execution.registry import execute_operation, get_registry
+import codeintel.cli.execution.registry as execution_registry
+from codeintel.core.singleton import SingletonHolder
 
 
 class JobStatus(Enum):
@@ -496,7 +497,7 @@ def run_job(job_id: str) -> int:
 
     if job is None:
         return 1
-    registry = get_registry()
+    registry = execution_registry.get_registry()
     spec = registry.get(job.operation_id)
 
     if spec is None:
@@ -507,7 +508,7 @@ def run_job(job_id: str) -> int:
         return 1
 
     try:
-        result = execute_operation(spec, job.params)
+        result = execution_registry.execute_operation(spec, job.params)
 
         if result.success:
             job.status = JobStatus.COMPLETED
@@ -539,7 +540,8 @@ def _run_job_process(job_id: str) -> None:
 
 
 # Global job manager
-_JOB_MANAGER: JobManager | None = None
+class JobManagerHolder(SingletonHolder[JobManager]):
+    """Thread-safe holder for the shared JobManager instance."""
 
 
 def get_job_manager() -> JobManager:
@@ -550,10 +552,7 @@ def get_job_manager() -> JobManager:
     JobManager
         Job manager instance.
     """
-    global _JOB_MANAGER  # noqa: PLW0603
-    if _JOB_MANAGER is None:
-        _JOB_MANAGER = JobManager()
-    return _JOB_MANAGER
+    return JobManagerHolder.get(JobManager)
 
 
 __all__ = [

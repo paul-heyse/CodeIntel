@@ -14,6 +14,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
+from codeintel.core.singleton import SingletonHolder
+
 if TYPE_CHECKING:
     from opentelemetry.trace import Span, Tracer
 
@@ -545,9 +547,12 @@ class TracingMiddleware:
             span_obj.end()
 
 
-# Global instances
-_TELEMETRY_PROVIDER: TelemetryProvider | None = None
-_OPERATION_METRICS: OperationMetrics | None = None
+class TelemetryProviderHolder(SingletonHolder[TelemetryProvider]):
+    """Thread-safe holder for the shared TelemetryProvider."""
+
+
+class OperationMetricsHolder(SingletonHolder[OperationMetrics]):
+    """Thread-safe holder for the shared OperationMetrics."""
 
 
 def get_telemetry_provider() -> TelemetryProvider:
@@ -558,10 +563,7 @@ def get_telemetry_provider() -> TelemetryProvider:
     TelemetryProvider
         Global provider instance.
     """
-    global _TELEMETRY_PROVIDER  # noqa: PLW0603
-    if _TELEMETRY_PROVIDER is None:
-        _TELEMETRY_PROVIDER = TelemetryProvider()
-    return _TELEMETRY_PROVIDER
+    return TelemetryProviderHolder.get(TelemetryProvider)
 
 
 def get_operation_metrics() -> OperationMetrics:
@@ -572,10 +574,7 @@ def get_operation_metrics() -> OperationMetrics:
     OperationMetrics
         Global metrics instance.
     """
-    global _OPERATION_METRICS  # noqa: PLW0603
-    if _OPERATION_METRICS is None:
-        _OPERATION_METRICS = OperationMetrics()
-    return _OPERATION_METRICS
+    return OperationMetricsHolder.get(OperationMetrics)
 
 
 __all__ = [

@@ -262,7 +262,7 @@ def apply_help_patch() -> None:
         setattr(module, attr, create_parameter_help_panel)
 
 
-_HELP_PATCH_APPLIED = False
+_HELP_STATE = {"applied": False}
 
 
 def build_patched_app(make_app: Callable[[], App]) -> App:
@@ -277,10 +277,9 @@ def build_patched_app(make_app: Callable[[], App]) -> App:
     App
         Application instance with global help rendering hardening applied.
     """
-    global _HELP_PATCH_APPLIED  # noqa: PLW0603
-    if not _HELP_PATCH_APPLIED:
+    if not _HELP_STATE["applied"]:
         apply_help_patch()
-        _HELP_PATCH_APPLIED = True
+        _HELP_STATE["applied"] = True
 
     return make_app()
 

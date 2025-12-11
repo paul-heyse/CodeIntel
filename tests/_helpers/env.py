@@ -1,8 +1,8 @@
 """Shared environment builder for tests.
 
 Provides a single entry point for constructing gateways and ``TestContext``
-instances with production-parity defaults (schema, views, macros). Exports
-canonical test defaults for repo/commit/run identifiers.
+instances with production-parity defaults (schema, views). Exports canonical
+test defaults for repo/commit/run identifiers.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from tests._helpers.orchestration.provisioning import (
 def build_test_gateway(
     options: GatewayOptions | None = None,
 ) -> StorageGateway:
-    """Create a StorageGateway with schema/views/macros ensured.
+    """Create a StorageGateway with schema/views ensured.
 
     Parameters
     ----------
@@ -39,7 +39,7 @@ def build_test_gateway(
     Returns
     -------
     StorageGateway
-        Gateway ready for test use with macros ensured.
+        Gateway ready for test use with schemas/views applied.
     """
     return _build_test_gateway(options)
 
@@ -55,7 +55,7 @@ def create_test_env(
     Returns
     -------
     TestContext
-        Constructed context with schemas/views/macros ensured.
+        Constructed context with schemas/views ensured.
     """
     return create_test_context(tmp_path, options=options, gateway_options=gateway_options)
 

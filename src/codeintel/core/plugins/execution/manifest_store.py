@@ -12,11 +12,10 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from ibis.expr.types import BooleanValue
-
 from codeintel.core.plugins.execution.manifest import ManifestStore
 from codeintel.core.plugins.types.result import PluginExecutionRecord, PluginStatus
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.ibis_types import and_predicates, ibis_bool
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
@@ -134,24 +133,18 @@ class DuckDBManifestStore(ManifestStore):
         """
         t = self._gateway.ibis.table(self._table_name)
 
-        # Build base filter - cast to BooleanValue for type safety
-        base_filter = cast(
-            "BooleanValue",
-            (t.plugin_name == plugin_name) & (t.repo == repo) & (t.commit == commit),
+        base_filter = ibis_bool(
+            (t.plugin_name == plugin_name) & (t.repo == repo) & (t.commit == commit)
         )
-
-        # Handle nullable scope_id and variant
-        scope_filter = cast(
-            "BooleanValue",
-            t.scope_id.isnull() if scope_id is None else t.scope_id == scope_id,
+        scope_filter = (
+            ibis_bool(t.scope_id.isnull())
+            if scope_id is None
+            else ibis_bool(t.scope_id == scope_id)
         )
-        variant_filter = cast(
-            "BooleanValue",
-            t.variant.isnull() if variant is None else t.variant == variant,
+        variant_filter = (
+            ibis_bool(t.variant.isnull()) if variant is None else ibis_bool(t.variant == variant)
         )
-
-        # Combine conditions and query
-        combined_filter = cast("BooleanValue", base_filter & scope_filter & variant_filter)
+        combined_filter = and_predicates(base_filter, scope_filter, variant_filter)
         expr = (
             t.filter(combined_filter)
             .order_by(t.created_at.desc())

@@ -12,7 +12,7 @@ import logging
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from ibis.common.exceptions import IbisError
 
@@ -98,7 +98,7 @@ def _write_synthetic_history_rows(
             continue
 
         records = [
-            {col: value for col, value in zip(df.columns, row, strict=False)}
+            dict(zip(df.columns, row, strict=False))
             for row in df.itertuples(index=False, name=None)
         ]
         for record in records:

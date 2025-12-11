@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from warnings import warn
 
 import duckdb
 
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.protocol import DuckDBConnection
-from codeintel.storage.macros import assert_ingest_macros_present, ensure_ingest_macros
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.views import create_all_views
 
@@ -91,13 +91,12 @@ def _apply_schema_and_views(con: DuckDBConnection, config: StorageConfig) -> Non
 
 
 def _ensure_macros_and_schema(con: DuckDBConnection, config: StorageConfig) -> None:
-    """Ensure ingest macros and validate schema when configured."""
+    """Validate schema when configured (macros deprecated)."""
     if not config.read_only:
-        ensure_ingest_macros(con)
-        try:
-            assert_ingest_macros_present(con)
-        except RuntimeError:
-            ensure_ingest_macros(con)
-            assert_ingest_macros_present(con)
+        warn(
+            "Ingest macros are deprecated and no longer applied during gateway setup.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     if config.validate_schema:
         assert_schema_alignment(con, strict=True)

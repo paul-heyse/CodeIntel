@@ -104,4 +104,4 @@ def test_runtime_params_immutable() -> None:
     params = RuntimeParams(repo="org/repo")
 
     with pytest.raises(AttributeError):
-        params.repo = "other/repo"  # type: ignore[misc]
+        params.repo = "other/repo"

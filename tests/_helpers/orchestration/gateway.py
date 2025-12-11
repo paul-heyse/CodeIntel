@@ -7,7 +7,6 @@ the orchestration package and for external imports via orchestration.
 from __future__ import annotations
 
 from tests._helpers.gateway import (
-    MACROS_EXPECTED,
     DuckDBConnection,
     GatewayFactory,
     ScopeRecordingQuery,
@@ -19,7 +18,6 @@ from tests._helpers.gateway import (
 )
 
 __all__ = [
-    "MACROS_EXPECTED",
     "DuckDBConnection",
     "GatewayFactory",
     "ScopeRecordingQuery",

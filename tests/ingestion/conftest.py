@@ -20,26 +20,26 @@ from tests._helpers.orchestration.tooling import tooling_outputs_session
 
 @pytest.fixture
 def ingestion_gateway_factory() -> GatewayFactory:
-    """Provide a gateway factory with macros applied.
+    """Provide a gateway factory with schema/views applied (no macros).
 
     Returns
     -------
     GatewayFactory
-        Factory preconfigured with macros for ingestion tests.
+        Factory preconfigured for ingestion tests.
     """
-    return GatewayFactory().with_macros()
+    return GatewayFactory()
 
 
 @pytest.fixture
 def ingestion_gateway() -> Generator[StorageGateway]:
-    """Provide a fresh gateway with schema, views, and macros applied.
+    """Provide a fresh gateway with schema and views applied (no macros).
 
     Yields
     ------
     StorageGateway
         Gateway instance opened for tests.
     """
-    gateway = GatewayFactory().with_macros().open()
+    gateway = GatewayFactory().open()
     with closing_gateway(gateway):
         yield gateway
 

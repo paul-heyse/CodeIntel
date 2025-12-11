@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 from collections.abc import ItemsView, Iterator, ValuesView
+from functools import cache
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.schema_builder import build_all_schemas
@@ -33,9 +34,7 @@ __all__ = [
 ]
 
 
-_PLUGIN_CATALOG: object | None = None
-
-
+@cache
 def _load_plugin_catalog() -> object | None:
     """Lazily load the plugin catalog to avoid import cycles.
 
@@ -44,17 +43,12 @@ def _load_plugin_catalog() -> object | None:
     object | None
         Plugin catalog if available, otherwise None.
     """
-    global _PLUGIN_CATALOG  # noqa: PLW0603
-    if _PLUGIN_CATALOG is not None:
-        return _PLUGIN_CATALOG
-
     spec = importlib.util.find_spec("codeintel.build.plugins")
     if spec is None:
         return None
 
     plugins_module = importlib.import_module("codeintel.build.plugins")
-    _PLUGIN_CATALOG = getattr(plugins_module, "PLUGIN_CATALOG", None)
-    return _PLUGIN_CATALOG
+    return getattr(plugins_module, "PLUGIN_CATALOG", None)
 
 
 class DatasetSchemaRegistry:

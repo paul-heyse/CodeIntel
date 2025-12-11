@@ -574,18 +574,8 @@ def test_command_config_defaults() -> None:
 
 
 def test_command_config_is_frozen() -> None:
-    """CommandConfig is immutable.
-
-    Raises
-    ------
-    AssertionError
-        If CommandConfig is not frozen (mutation succeeds).
-    """
+    """CommandConfig is immutable."""
     cfg = CommandConfig()
-    frozen_error = "CommandConfig should be frozen"
 
-    try:
-        cfg.require_runtime = False  # type: ignore[misc]
-        raise AssertionError(frozen_error)
-    except AttributeError:
-        pass  # Expected - dataclass is frozen
+    with pytest.raises(AttributeError):
+        cfg.require_runtime = False

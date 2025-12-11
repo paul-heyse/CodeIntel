@@ -51,6 +51,7 @@ from codeintel.storage.ibis_types import (
     col_count,
     col_nunique,
     filter_by,
+    gt,
     ibis_bool,
     isin_values,
     window_over,
@@ -440,9 +441,7 @@ def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, Covera
     return result
 
 
-def _load_test_tables(
-    gw_ibis: BaseBackend, repo: str, commit: str
-) -> tuple[it.Table, it.Table]:
+def _load_test_tables(gw_ibis: BaseBackend, repo: str, commit: str) -> tuple[it.Table, it.Table]:
     """Load coverage edge and catalog tables with repo/commit filtering.
 
     Returns
@@ -476,7 +475,7 @@ def _compute_test_stats(
         Aggregated coverage stats and status summaries.
     """
     failing_predicate = isin_values(catalog.status, ["failed", "error"])
-    slow_predicate = ibis_bool(catalog.duration_ms > slow_threshold_ms)
+    slow_predicate = gt(cast("it.Value", catalog.duration_ms), slow_threshold_ms)
     flaky_predicate = ibis_bool(catalog.flaky)
 
     joined = edges.left_join(

@@ -16,6 +16,7 @@ from codeintel.cli.introspection import OperationRegistry, get_registry
 from codeintel.cli.plugins.discovery import DEFAULT_PLUGIN_PATHS
 from codeintel.cli.plugins.loader import LoadedPlugin, PluginLoader, PluginLoadResult
 from codeintel.cli.plugins.manifest import PluginCapability
+from codeintel.core.singleton import SingletonHolder
 
 LOG = logging.getLogger(__name__)
 
@@ -347,8 +348,8 @@ class PluginManager:
         return self.loaded_plugins.get(name)
 
 
-# Global plugin manager
-_PLUGIN_MANAGER: PluginManager | None = None
+class PluginManagerHolder(SingletonHolder[PluginManager]):
+    """Thread-safe holder for the shared PluginManager."""
 
 
 def get_plugin_manager() -> PluginManager:
@@ -359,10 +360,7 @@ def get_plugin_manager() -> PluginManager:
     PluginManager
         Plugin manager instance.
     """
-    global _PLUGIN_MANAGER  # noqa: PLW0603
-    if _PLUGIN_MANAGER is None:
-        _PLUGIN_MANAGER = PluginManager()
-    return _PLUGIN_MANAGER
+    return PluginManagerHolder.get(PluginManager)
 
 
 __all__ = [

@@ -94,11 +94,14 @@ def safe_ratio(
     Value
         Ratio expression with zero-division guarded.
     """
-    num = numerator.cast("float64")
-    denom = denominator.cast("float64")
-    return ibis.cases(
-        (denom == 0, None),
-        else_=num / denom,
+    num = cast("it.NumericValue", numerator.cast("float64"))
+    denom = cast("it.NumericValue", denominator.cast("float64"))
+    return cast(
+        "it.NumericValue",
+        ibis.cases(
+            (denom == 0, None),
+            else_=num / denom,
+        ),
     )
 
 
