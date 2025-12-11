@@ -17,8 +17,15 @@ from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.config import ConfigDataFlowStepConfig
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+CONFIG_DATA_FLOW_COLS = [
+    "repo", "commit", "config_key", "config_path",
+    "function_goid_h128", "usage_kind", "evidence_json",
+    "call_chain_id", "call_chain_json", "created_at",
+]
 
 log = logging.getLogger(__name__)
 
@@ -312,10 +319,8 @@ def compute_config_data_flow(
     """
     con = gateway.con
     ensure_schema(con, "analytics.config_data_flow")
-    con.execute(
-        "DELETE FROM analytics.config_data_flow WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.config_data_flow", repo=cfg.repo, commit=cfg.commit)
 
     refs_by_path = _config_references(con, cfg.repo, cfg.commit)
     if not refs_by_path:
@@ -348,15 +353,10 @@ def compute_config_data_flow(
     )
 
     if rows_to_insert:
-        con.executemany(
-            """
-            INSERT INTO analytics.config_data_flow (
-                repo, commit, config_key, config_path,
-                function_goid_h128, usage_kind, evidence_json,
-                call_chain_id, call_chain_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.config_data_flow",
             rows_to_insert,
+            columns=CONFIG_DATA_FLOW_COLS,
         )
     log.info(
         "config_data_flow populated: %d rows for %s@%s",

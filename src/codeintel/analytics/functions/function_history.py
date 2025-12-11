@@ -9,8 +9,17 @@ from datetime import UTC, datetime, timedelta
 from codeintel.analytics.history.git_history import FileCommitDelta, iter_file_history
 from codeintel.config import FunctionHistoryStepConfig
 from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+FUNCTION_HISTORY_COLS = [
+    "repo", "commit", "function_goid_h128", "urn", "rel_path", "module", "qualname",
+    "created_in_commit", "created_at", "last_modified_commit", "last_modified_at",
+    "age_days", "commit_count", "author_count", "lines_added", "lines_deleted",
+    "churn_score", "stability_bucket", "history_window_start", "history_window_end",
+    "created_at_row",
+]
 
 log = logging.getLogger(__name__)
 
@@ -71,10 +80,8 @@ def compute_function_history(
     """
     con = gateway.con
     ensure_schema(con, "analytics.function_history")
-    con.execute(
-        "DELETE FROM analytics.function_history WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.function_history", repo=cfg.repo, commit=cfg.commit)
 
     spans_by_path = _load_function_spans(con, cfg.repo, cfg.commit)
     if not spans_by_path:
@@ -106,34 +113,12 @@ def compute_function_history(
         for spans in spans_by_path.values()
         for span in spans
     ]
-    con.executemany(
-        """
-        INSERT INTO analytics.function_history (
-            repo,
-            commit,
-            function_goid_h128,
-            urn,
-            rel_path,
-            module,
-            qualname,
-            created_in_commit,
-            created_at,
-            last_modified_commit,
-            last_modified_at,
-            age_days,
-            commit_count,
-            author_count,
-            lines_added,
-            lines_deleted,
-            churn_score,
-            stability_bucket,
-            history_window_start,
-            history_window_end,
-            created_at_row
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        insert_rows,
-    )
+    if insert_rows:
+        gateway.ibis.write(
+            "analytics.function_history",
+            insert_rows,
+            columns=FUNCTION_HISTORY_COLS,
+        )
     log.info(
         "function_history populated: %s rows for %s@%s",
         len(insert_rows),

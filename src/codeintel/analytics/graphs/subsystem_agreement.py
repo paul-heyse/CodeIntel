@@ -5,10 +5,15 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
+
+SUBSYSTEM_AGREEMENT_COLS = [
+    "repo", "commit", "module", "subsystem_id", "import_community_id", "agrees", "created_at",
+]
 
 
 def compute_subsystem_agreement(gateway: StorageGateway, *, repo: str, commit: str) -> None:
@@ -37,18 +42,13 @@ def compute_subsystem_agreement(gateway: StorageGateway, *, repo: str, commit: s
             agrees = str(subsystem_id) == str(community_id)
         inserts.append((repo, commit, str(module), subsystem_id, community_id, agrees, now))
 
-    con.execute(
-        "DELETE FROM analytics.subsystem_agreement WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.subsystem_agreement", repo=repo, commit=commit)
     if inserts:
-        con.executemany(
-            """
-            INSERT INTO analytics.subsystem_agreement (
-                repo, commit, module, subsystem_id, import_community_id, agrees, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.subsystem_agreement",
             inserts,
+            columns=SUBSYSTEM_AGREEMENT_COLS,
         )
     disagreeing = [row for row in inserts if not row[5]]
     if disagreeing:

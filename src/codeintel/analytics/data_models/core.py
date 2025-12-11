@@ -22,8 +22,26 @@ from codeintel.analytics.utilities.ast import (
 from codeintel.config import DataModelsStepConfig
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path, relpath_to_module
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql.builder import ensure_schema
+
+# Column definitions for data model tables
+DATA_MODELS_COLS = [
+    "repo", "commit", "model_id", "goid_h128",
+    "model_name", "module", "rel_path", "model_kind",
+    "base_classes_json", "doc_short", "doc_long", "created_at",
+]
+DATA_MODEL_FIELDS_COLS = [
+    "repo", "commit", "model_id", "field_name", "field_type", "required",
+    "has_default", "default_expr", "constraints_json", "source", "rel_path",
+    "lineno", "created_at",
+]
+DATA_MODEL_RELATIONSHIPS_COLS = [
+    "repo", "commit", "source_model_id", "target_model_id", "target_module",
+    "target_model_name", "field_name", "relationship_kind", "multiplicity",
+    "via", "evidence_json", "rel_path", "lineno", "created_at",
+]
 
 log = logging.getLogger(__name__)
 
@@ -828,7 +846,7 @@ def _attach_relationships(models: list[ModelRecord]) -> None:
 
 
 def _persist_models(
-    con: DuckDBConnection,
+    gateway: StorageGateway,
     cfg: DataModelsStepConfig,
     models: list[ModelRecord],
     now: datetime,
@@ -895,38 +913,24 @@ def _persist_models(
             ]
         )
 
+    # Write data using Ibis
     if rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.data_models (
-                repo, commit, model_id, goid_h128,
-                model_name, module, rel_path, model_kind,
-                base_classes_json, doc_short, doc_long, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.data_models",
             rows,
+            columns=DATA_MODELS_COLS,
         )
     if field_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.data_model_fields (
-                repo, commit, model_id, field_name, field_type, required,
-                has_default, default_expr, constraints_json, source, rel_path,
-                lineno, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.data_model_fields",
             field_rows,
+            columns=DATA_MODEL_FIELDS_COLS,
         )
     if relationship_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.data_model_relationships (
-                repo, commit, source_model_id, target_model_id, target_module,
-                target_model_name, field_name, relationship_kind, multiplicity,
-                via, evidence_json, rel_path, lineno, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        gateway.ibis.write(
+            "analytics.data_model_relationships",
             relationship_rows,
+            columns=DATA_MODEL_RELATIONSHIPS_COLS,
         )
 
 
@@ -948,18 +952,12 @@ def compute_data_models(
     ensure_schema(con, "analytics.data_models")
     ensure_schema(con, "analytics.data_model_fields")
     ensure_schema(con, "analytics.data_model_relationships")
-    con.execute(
-        "DELETE FROM analytics.data_models WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.data_model_fields WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.data_model_relationships WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
+
+    # Delete existing data for this snapshot
+    backend = DuckDBPolicyBackend(gateway)
+    backend.delete_for_snapshot("analytics.data_models", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot("analytics.data_model_fields", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot("analytics.data_model_relationships", repo=cfg.repo, commit=cfg.commit)
 
     class_metas = _load_class_metadata(con, cfg.repo, cfg.commit)
     if not class_metas:
@@ -992,5 +990,5 @@ def compute_data_models(
         )
 
     _attach_relationships(models)
-    _persist_models(con, cfg, models, datetime.now(tz=UTC))
+    _persist_models(gateway, cfg, models, datetime.now(tz=UTC))
     log.info("data_models populated: %d models for %s@%s", len(models), cfg.repo, cfg.commit)
