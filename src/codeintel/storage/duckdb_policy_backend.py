@@ -439,7 +439,7 @@ def _build_upsert(
         on_conflict = f"ON CONFLICT ({conflict_cols}) DO NOTHING"
 
     # Build complete statement - S608 is a false positive since all identifiers are validated
-    return f"INSERT INTO {qualified_table} ({cols_sql}) VALUES ({placeholders}) {on_conflict}"  # noqa: S608
+    return f"INSERT INTO {qualified_table} ({cols_sql}) VALUES ({placeholders}) {on_conflict}"
 
 
 @dataclass

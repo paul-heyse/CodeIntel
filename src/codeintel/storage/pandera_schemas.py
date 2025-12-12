@@ -1197,7 +1197,7 @@ def _get_dataset_schemas() -> dict[str, DataFrameSchema]:
     dict[str, DataFrameSchema]
         All registered dataset schemas.
     """
-    global _DATASET_SCHEMAS_CACHE  # noqa: PLW0603
+    global _DATASET_SCHEMAS_CACHE
     if _DATASET_SCHEMAS_CACHE is None:
         _DATASET_SCHEMAS_CACHE = _materialize_schemas()
         _DATASET_SCHEMAS_CACHE.update(_analytics_view_schemas())

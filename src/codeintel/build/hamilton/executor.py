@@ -145,7 +145,7 @@ def _start_build_run(
             status="running",
         )
         env.gateway.build.start_run(record)
-    except Exception:  # noqa: BLE001 - Best effort tracking
+    except Exception:
         log.warning("build.hamilton.executor.start_run_failed run_id=%s", run_id)
 
 
@@ -172,7 +172,7 @@ def _complete_build_run(params: _RunCompletionParams) -> None:
             skipped_targets=params.skipped,
             error_summary=params.error_summary,
         )
-    except Exception:  # noqa: BLE001 - Best effort tracking
+    except Exception:
         log.warning("build.hamilton.executor.complete_run_failed run_id=%s", params.run_id)
 
 
@@ -213,7 +213,7 @@ def _persist_run_targets(
                 run_id,
                 len(records),
             )
-    except Exception:  # noqa: BLE001 - Best effort tracking
+    except Exception:
         log.warning("build.hamilton.executor.run_targets_failed run_id=%s", run_id)
 
 

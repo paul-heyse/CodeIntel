@@ -500,9 +500,9 @@ def _compute_test_stats(
 
     t_stats = joined.group_by(joined.function_goid_h128).aggregate(
         tests_touching=col_nunique(joined.test_id),
-        failing_tests=col_nunique(ibis.where(failing_predicate, joined.test_id, ibis.null())),
-        slow_tests=col_nunique(ibis.where(slow_predicate, joined.test_id, ibis.null())),
-        flaky_tests=col_nunique(ibis.where(flaky_predicate, joined.test_id, ibis.null())),
+        failing_tests=col_nunique(ibis.ifelse(failing_predicate, joined.test_id, ibis.null())),
+        slow_tests=col_nunique(ibis.ifelse(slow_predicate, joined.test_id, ibis.null())),
+        flaky_tests=col_nunique(ibis.ifelse(flaky_predicate, joined.test_id, ibis.null())),
     )
 
     status_counts = joined.group_by(joined.function_goid_h128, catalog.status).aggregate(
@@ -605,9 +605,9 @@ def join_function_contracts(inputs: FunctionProfileInputs) -> Mapping[int, Funct
             contracts.function_goid_h128,
             contracts.param_nullability_json,
             contracts.return_nullability,
-            (contracts_expr.preconditions_json.length() > 0).name("has_preconditions"),
-            (contracts_expr.postconditions_json.length() > 0).name("has_postconditions"),
-            (contracts_expr.raises_json.length() > 0).name("has_raises"),
+            (contracts_expr.preconditions_json.cast("string").length() > 0).name("has_preconditions"),
+            (contracts_expr.postconditions_json.cast("string").length() > 0).name("has_postconditions"),
+            (contracts_expr.raises_json.cast("string").length() > 0).name("has_raises"),
             contracts.contract_confidence,
         ).execute()
     except DuckDBError as exc:

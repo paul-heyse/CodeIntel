@@ -864,10 +864,14 @@ class BuildHistoryResult:
         List of build run records.
     count
         Total number of runs returned.
+    targets
+        Per-target run records when a specific run_id is queried.
+        None when listing multiple runs.
     """
 
     runs: list[dict[str, Any]]
     count: int
+    targets: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -877,7 +881,10 @@ class BuildHistoryResult:
         dict[str, object]
             Dictionary representation.
         """
-        return {"runs": self.runs, "count": self.count}
+        result: dict[str, object] = {"runs": self.runs, "count": self.count}
+        if self.targets is not None:
+            result["targets"] = self.targets
+        return result
 
 
 @dataclass(frozen=True)

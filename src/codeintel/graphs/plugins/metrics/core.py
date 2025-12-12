@@ -112,7 +112,7 @@ class CoreMetricsPlugin(TargetPlugin):
                 "analytics.graph_stats",
             ]:
                 row = ctx.gateway.con.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",  # noqa: S608
+                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",
                     [cfg.repo, cfg.commit],
                 ).fetchone()
                 row_counts[table] = int(row[0]) if row else 0

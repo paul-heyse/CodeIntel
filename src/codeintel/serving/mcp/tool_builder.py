@@ -57,7 +57,6 @@ if TYPE_CHECKING:
 
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.backend import QueryBackend
-    from codeintel.serving.mcp.models import ProblemDetail
     from codeintel.serving.mcp.serialization import (
         ResponseFactory,
         SupportsFromDomain,
@@ -90,8 +89,8 @@ class McpToolRegistrar(Protocol):
 def _serialize_payload(
     payload: object,
     model_cls: ResponseFactory | None,
-) -> dict[str, object]:
-    """Serialize a response payload to a dictionary.
+) -> object:
+    """Serialize a response payload for MCP transport.
 
     Parameters
     ----------
@@ -102,9 +101,34 @@ def _serialize_payload(
 
     Returns
     -------
-    dict[str, object]
-        Serialized payload as a dictionary.
+    object
+        Serialized payload. Most operations return a dict payload; list-returning
+        operations are serialized as a list of dict payloads when possible.
     """
+    if isinstance(payload, (list, tuple)):
+        items: list[object] = []
+        for item in payload:
+            if hasattr(item, "model_dump"):
+                items.append(cast("_ModelLike", item).model_dump())
+                continue
+            if model_cls is not None:
+                if hasattr(model_cls, "from_domain"):
+                    items.append(
+                        cast(
+                            "_ModelLike",
+                            cast("SupportsFromDomain", model_cls).from_domain(item),
+                        ).model_dump()
+                    )
+                    continue
+                validator = cast("SupportsModelValidate", model_cls).model_validate
+                items.append(cast("_ModelLike", validator(item)).model_dump())
+                continue
+            if isinstance(item, dict):
+                items.append(cast("dict[str, object]", item))
+                continue
+            items.append(item)
+        return items
+
     if hasattr(payload, "model_dump"):
         return cast("_ModelLike", payload).model_dump()
     if model_cls is not None:
@@ -125,7 +149,7 @@ def build_tool_from_operation(
     *,
     model_resolver: Callable[[str], ResponseFactory | None] | None = None,
     prereq_runner: Callable[[str, ServingConfig, QueryBackend], object] | None = None,
-) -> Callable[..., dict[str, object] | dict[str, ProblemDetail]]:
+) -> Callable[..., object]:
     """Build an MCP tool function from an Operation specification.
 
     This is the core factory function that transforms an Operation definition
@@ -177,7 +201,7 @@ def build_tool_from_operation(
     has_gateway = getattr(backend, "gateway", None) is not None
 
     @_wrap
-    def _tool(**kwargs: object) -> dict[str, object] | dict[str, ProblemDetail]:
+    def _tool(**kwargs: object) -> object:
         # Check for auto-pipeline prerequisites
         if auto_pipeline_enabled and config is not None and has_gateway:
             run_prereqs(spec.id, config, cast("QueryBackend", backend))
@@ -203,7 +227,7 @@ def build_tool_from_operation(
         finally:
             reset_current_request_context(token)
 
-    return cast("Callable[..., dict[str, object] | dict[str, ProblemDetail]]", _tool)
+    return cast("Callable[..., object]", _tool)
 
 
 @dataclass

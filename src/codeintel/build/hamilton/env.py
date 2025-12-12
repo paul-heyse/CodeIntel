@@ -57,6 +57,10 @@ class BuildEnv:
         Pre-loaded mapping of target names to their manifests for this
         repo/commit. Used to avoid per-target DB round trips during
         skip checks and hash computation.
+    validate_outputs
+        When True, validate produced datasets against their Pandera schemas
+        after write. Validation failures will mark the target as failed and
+        block downstream targets.
 
     Examples
     --------
@@ -80,6 +84,7 @@ class BuildEnv:
     profile: str | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
     manifest_index: Mapping[str, OutputManifest] | None = None
+    validate_outputs: bool = False
 
     @property
     def repo(self) -> str:

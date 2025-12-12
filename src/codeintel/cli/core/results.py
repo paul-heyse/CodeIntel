@@ -86,7 +86,7 @@ def result_type[T](cls: type[T]) -> type[T]:
     if not hasattr(cls, "to_dict") or getattr(cls, "_result_type_generated", False):
         cls_with_attrs = cast("type[object]", cls)
         cls_with_attrs.to_dict = to_dict  # type: ignore[assignment]
-        cls_with_attrs._result_type_generated = True  # type: ignore[assignment]  # noqa: SLF001
+        cls_with_attrs._result_type_generated = True
 
     return cls
 

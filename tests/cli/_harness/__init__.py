@@ -547,7 +547,7 @@ class OperationTestHarness:
                 with builder.build() as ctx:
                     try:
                         result = spec.handler(ctx)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         return CliInvocationResult(
                             exit_code=1,
                             stdout="",

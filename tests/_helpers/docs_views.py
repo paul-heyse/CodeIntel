@@ -60,7 +60,7 @@ def seed_subsystem(con: DuckDBPyConnection, *, overrides: dict[str, object] | No
         base.update(overrides)
     con.execute(
         """
-        INSERT INTO analytics.subsystems (
+        INSERT OR REPLACE INTO analytics.subsystems (
             repo, commit, subsystem_id, name, description,
             module_count, modules_json, entrypoints_json,
             internal_edge_count, external_edge_count, fan_in, fan_out,

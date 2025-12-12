@@ -1898,3 +1898,781 @@ If you want the parametrized version (nicer per-case failure UX), say so and I�
 
 
 # optional enhancements to implement #
+
+Below are the optional enhancements, fully specified with **exact file edits + code**. I’m keeping everything compatible with the runner/manifest design you already have, and I’ll give you a **drop‑in replacement** for `tests/build/hamilton/test_cli_snapshots.py` that uses **parametrized pytest cases** (per-case reporting).
+
+---
+
+## 1) Parametrized pytest cases (per-case reporting)
+
+### What you get
+
+* Each manifest case becomes its **own pytest test item** (better failure UX).
+* Pytest shows failures like:
+
+  * `test_cli_snapshot[pr14_graph_risk_factors_dot] FAILED`
+* You can rerun a single snapshot case via:
+
+  * `pytest -k pr14_graph_risk_factors_dot -m cli_snapshot`
+
+### Drop‑in replacement: `tests/build/hamilton/test_cli_snapshots.py`
+
+Replace your current `test_cli_snapshots.py` with:
+
+```python
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+import fnmatch
+
+import pytest
+
+from tests.build.hamilton.snapshots._manifest import SnapshotCase, load_snapshot_manifest
+from tests.build.hamilton.snapshots._runner import execute_and_assert_snapshot
+
+
+def _default_snapshots_dir() -> Path:
+    return Path(__file__).parent / "snapshots"
+
+
+def _manifest_path(config: pytest.Config) -> Path:
+    override = config.getoption("--cli-snapshot-manifest")
+    if override:
+        return Path(override)
+    return _default_snapshots_dir() / "manifest.json"
+
+
+@lru_cache(maxsize=8)
+def _load_manifest_cached(manifest_path_str: str):
+    path = Path(manifest_path_str)
+    return load_snapshot_manifest(path)
+
+
+def _parse_csv_opt(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    return {x.strip() for x in value.split(",") if x.strip()}
+
+
+def _parse_patterns(value: str | None) -> list[str]:
+    if not value:
+        return []
+    # allow comma-separated glob patterns
+    return [p.strip() for p in value.split(",") if p.strip()]
+
+
+def _select_cases(
+    *,
+    cases: tuple[SnapshotCase, ...],
+    tags: set[str],
+    patterns: list[str],
+) -> list[SnapshotCase]:
+    selected: list[SnapshotCase] = []
+    for c in cases:
+        # Tag filtering
+        if tags:
+            case_tags = set(c.tags)
+            if case_tags.isdisjoint(tags):
+                continue
+
+        # Pattern filtering
+        if patterns:
+            if not any(fnmatch.fnmatch(c.name, pat) for pat in patterns):
+                continue
+
+        selected.append(c)
+    return selected
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """
+    Parametrize snapshot cases dynamically from the manifest at collection time.
+    This enables per-case reporting while still respecting config overrides.
+    """
+    if "snapshot_case" not in metafunc.fixturenames:
+        return
+
+    manifest_path = _manifest_path(metafunc.config)
+    manifest = _load_manifest_cached(str(manifest_path))
+
+    tag_filter = _parse_csv_opt(metafunc.config.getoption("--cli-snapshot-tags"))
+    patterns = _parse_patterns(metafunc.config.getoption("--cli-snapshot-pattern"))
+
+    selected = _select_cases(cases=manifest.cases, tags=tag_filter, patterns=patterns)
+    metafunc.parametrize(
+        "snapshot_case",
+        selected,
+        ids=[c.name for c in selected],
+    )
+
+
+@pytest.fixture(scope="session")
+def cli_snapshot_context(request: pytest.FixtureRequest):
+    """
+    Shared context (manifest + snapshot dir) for all parametrized cases.
+    """
+    snapshots_dir = _default_snapshots_dir()
+    manifest_path = _manifest_path(request.config)
+    manifest = _load_manifest_cached(str(manifest_path))
+    return snapshots_dir, manifest
+
+
+@pytest.mark.cli_snapshot
+def test_cli_snapshot(snapshot_case: SnapshotCase, cli_snapshot_context, request: pytest.FixtureRequest) -> None:
+    snapshots_dir, manifest = cli_snapshot_context
+    update = bool(request.config.getoption("--update-cli-snapshots"))
+
+    execute_and_assert_snapshot(
+        manifest=manifest,
+        snapshots_dir=snapshots_dir,
+        case=snapshot_case,
+        update=update,
+    )
+```
+
+This assumes you implement tags filtering in the manifest loader (see section 4).
+
+---
+
+## 2) Allow `manifest.yaml` as well (optional PyYAML)
+
+### What you get
+
+* You can maintain the snapshot manifest as YAML (often nicer to edit).
+* Still supports JSON with no extra dependencies.
+* If `.yaml`/`.yml` is used and PyYAML isn’t installed, it raises a clear error.
+
+### Changes
+
+#### A) Update the loader to support JSON or YAML
+
+Modify: `tests/build/hamilton/snapshots/_manifest.py`
+
+Add helper at top:
+
+```python
+def _load_manifest_data(path: Path) -> dict[str, Any]:
+    suffix = path.suffix.lower()
+    text = path.read_text(encoding="utf-8")
+
+    if suffix == ".json":
+        data = json.loads(text)
+    elif suffix in (".yaml", ".yml"):
+        try:
+            import yaml  # type: ignore
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                "PyYAML is required to load YAML manifests. "
+                "Install with: pip install pyyaml"
+            ) from e
+        data = yaml.safe_load(text)
+    else:
+        raise ValueError(f"Unsupported manifest extension: {suffix} (use .json, .yaml, or .yml)")
+
+    if not isinstance(data, dict):
+        raise TypeError("Manifest root must be an object")
+    return data
+```
+
+Then change your existing `load_snapshot_manifest(...)` to start with:
+
+```python
+def load_snapshot_manifest(path: Path) -> SnapshotManifest:
+    data = _load_manifest_data(path)
+    ...
+```
+
+#### B) Optional: add a dev dependency
+
+If you have a `pyproject.toml` or requirements extras:
+
+* `pyyaml` under `[dev]` or `[test]` extras.
+
+### Example YAML manifest
+
+`tests/build/hamilton/snapshots/manifest.yaml`
+
+```yaml
+app_import: "codeintel.cli.app:app"
+defaults:
+  kind: "json"
+  output: "stdout"
+  exit_code: 0
+  env:
+    CODEINTEL_TEST_MODE: "1"
+    CODEINTEL_LOG_LEVEL: "WARNING"
+
+cases:
+  - name: "pr09_plan_small_graph"
+    tags: ["pr09", "plan"]
+    args: ["build", "plan", "tiny_c", "--format", "json"]
+
+  - name: "pr14_graph_risk_factors_dot"
+    tags: ["pr14", "graph"]
+    kind: "text"
+    args: ["build", "graph", "risk_factors", "--format", "dot"]
+    snapshot: "pr14_graph_risk_factors.dot"
+```
+
+---
+
+## 3) Add a `--fail-fast` option (stop on first mismatch)
+
+### What you get
+
+* `pytest -m cli_snapshot --cli-snapshot-fail-fast` stops after the first failing snapshot.
+* Works naturally with parametrized tests by setting `maxfail=1`.
+
+### Changes: `tests/build/hamilton/conftest.py`
+
+Add option:
+
+```python
+def pytest_addoption(parser: pytest.Parser) -> None:
+    ...
+    parser.addoption(
+        "--cli-snapshot-fail-fast",
+        action="store_true",
+        default=False,
+        help="Stop after the first failing CLI snapshot (sets maxfail=1).",
+    )
+```
+
+Then in `pytest_configure`:
+
+```python
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "cli_snapshot: CLI golden snapshot tests")
+
+    if config.getoption("--cli-snapshot-fail-fast"):
+        # maxfail==0 means "no limit"; set to 1 to stop early.
+        if getattr(config.option, "maxfail", 0) in (0, None):
+            config.option.maxfail = 1
+```
+
+Usage:
+
+```bash
+pytest -m cli_snapshot --cli-snapshot-fail-fast
+```
+
+---
+
+## 4) Add “snapshot subsets” (tags) + name/pattern filters
+
+### What you get
+
+* Run only a subset of snapshots, e.g.:
+
+  * only PR‑14 graph snapshots
+  * only “plan” snapshots
+  * or by glob pattern (`pr14_*`)
+
+### A) Extend manifest schema with `tags`
+
+#### Update `SnapshotCase` in `_manifest.py`
+
+Add field:
+
+```python
+@dataclass(frozen=True)
+class SnapshotCase:
+    ...
+    tags: tuple[str, ...]
+```
+
+Add parser:
+
+```python
+def _get_tags(d: Mapping[str, Any]) -> tuple[str, ...]:
+    raw = d.get("tags") or []
+    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+        raise TypeError("Expected list[str] for 'tags'")
+    return tuple(raw)
+```
+
+Then when constructing `SnapshotCase(...)`, include:
+
+```python
+tags=_get_tags(c),
+```
+
+### B) Add pytest options for filtering
+
+In `tests/build/hamilton/conftest.py` add:
+
+```python
+parser.addoption(
+    "--cli-snapshot-tags",
+    action="store",
+    default=None,
+    help="Comma-separated tags to select snapshot cases (e.g. pr14,graph).",
+)
+parser.addoption(
+    "--cli-snapshot-pattern",
+    action="store",
+    default=None,
+    help="Comma-separated glob patterns to select cases by name (e.g. pr14_*,*graph*).",
+)
+```
+
+### C) Filtering behavior
+
+The parametrized `test_cli_snapshots.py` I provided above already:
+
+* filters by tags (intersection)
+* filters by glob patterns (any match)
+
+### Usage examples
+
+Run only PR‑14:
+
+```bash
+pytest -m cli_snapshot --cli-snapshot-tags pr14
+```
+
+Run only graph snapshots:
+
+```bash
+pytest -m cli_snapshot --cli-snapshot-tags graph
+```
+
+Run PR‑14 graph snapshots only:
+
+```bash
+pytest -m cli_snapshot --cli-snapshot-tags pr14,graph
+```
+
+Run only cases matching a name pattern:
+
+```bash
+pytest -m cli_snapshot --cli-snapshot-pattern "pr14_*"
+```
+
+Combine:
+
+```bash
+pytest -m cli_snapshot --cli-snapshot-tags pr14 --cli-snapshot-pattern "*risk_factors*"
+```
+
+---
+
+## Small additional polish (recommended)
+
+### 1) Add a “list snapshot cases” command
+
+This is super handy for dev UX.
+
+Add a pytest option:
+
+* `--list-cli-snapshots` to print case names and exit.
+
+In `conftest.py`:
+
+```python
+parser.addoption(
+    "--list-cli-snapshots",
+    action="store_true",
+    default=False,
+    help="List CLI snapshot cases from the manifest and exit.",
+)
+```
+
+Then in `pytest_configure`, if set, load manifest and print names/tags; call `pytest.exit(...)`.
+
+### 2) Add tag conventions
+
+Decide conventions like:
+
+* `["pr14", "graph"]`
+* `["plan"]`, `["explain"]`, `["run-info"]`
+* `["text"]` for DOT/Mermaid snapshots
+
+That makes subsets predictable.
+
+---
+
+## Summary of what to implement
+
+If you want to implement all optional enhancements cleanly:
+
+1. **Replace** `test_cli_snapshots.py` with the parametrized version above
+2. **Extend** `_manifest.py` to parse `tags` and optionally YAML
+3. **Extend** `conftest.py` with:
+
+   * `--cli-snapshot-tags`
+   * `--cli-snapshot-pattern`
+   * `--cli-snapshot-fail-fast`
+
+If you tell me whether you prefer:
+
+* **JSON-only** manifests (simpler), or
+* **YAML** manifests (nicer to edit)
+
+…I can tailor the final manifest examples and recommended tag taxonomy accordingly.
+
+# tailored manifest #
+
+Got it — YAML manifests it is. Below are the **tailored final manifest examples** (YAML-first), a **recommended tag taxonomy**, and the “extra polish” output: a **`--list-cli-snapshots` mode** that prints cases (respecting tag/pattern filters) and exits. This assumes your Phase 1 baseline is in place (full DAG, parity, observability, etc.) as described in your report. 
+
+---
+
+# Recommended tag taxonomy
+
+The goal is: **tags are composable**, and you can select snapshots by:
+
+* PR number (`pr14`)
+* command family (`graph`, `plan`, `explain`, `run-info`)
+* output format (`json`, `dot`, `mermaid`, `text`)
+* scope (`tiny`, `integration`, `slow`)
+* mode (`generated`, `phase0`)
+* feature toggles (`validate-outputs`, `native`)
+
+## Tag families
+
+### 1) PR tags
+
+* `pr08`, `pr09`, …
+  Use one PR tag per case.
+
+### 2) Command tags
+
+* `plan` — `build plan` or `build run --dry-run` equivalents
+* `graph` — `build graph`
+* `explain` — `build explain`
+* `run-info` — `build run-info` or history detail
+* `outputs` — `build outputs <target>` (if you add it)
+* `dataset` — dataset inspection commands (`dataset head`, etc.)
+
+### 3) Format tags
+
+* `json`, `text`, `dot`, `mermaid`
+
+*(Note: `dot` and `mermaid` are also `text`.)*
+
+### 4) Scope tags
+
+* `tiny` — uses tiny fixture graph/data, deterministic and fast
+* `integration` — hits a real DuckDB file or a more realistic run
+* `slow` — anything that is legitimately slow
+
+### 5) Mode tags
+
+* `generated`, `phase0`
+
+### 6) Feature toggle tags
+
+* `validate-outputs`
+* `native` (for Phase 3 native targets)
+
+---
+
+# YAML manifest (final example)
+
+Create: `tests/build/hamilton/snapshots/manifest.yaml`
+
+This version:
+
+* uses YAML anchors for defaults/env
+* includes tags everywhere
+* uses explicit snapshot filenames where helpful (DOT/Mermaid)
+
+```yaml
+app_import: "codeintel.cli.app:app"
+
+defaults: &defaults
+  kind: "json"          # json|text
+  output: "stdout"      # stdout|stderr|both
+  exit_code: 0
+  env: &default_env
+    CODEINTEL_TEST_MODE: "1"
+    CODEINTEL_LOG_LEVEL: "WARNING"
+
+cases:
+  # ---- PR-08 ----
+  - name: "pr08_graph_default"
+    tags: ["pr08", "graph", "json", "generated", "tiny"]
+    args: ["build", "graph", "risk_factors", "--format", "json"]
+    snapshot: "pr08_graph_default.json"
+    <<: *defaults
+
+  # ---- PR-09 ----
+  - name: "pr09_plan_small_graph"
+    tags: ["pr09", "plan", "json", "generated", "tiny"]
+    args: ["build", "plan", "tiny_c", "--format", "json"]
+    snapshot: "pr09_plan_small_graph.json"
+    <<: *defaults
+
+  - name: "pr09_dry_run_equals_plan"
+    tags: ["pr09", "plan", "json", "generated", "tiny"]
+    args: ["build", "run", "tiny_c", "--dry-run", "--format", "json"]
+    snapshot: "pr09_dry_run_equals_plan.json"
+    <<: *defaults
+
+  # ---- PR-10 ----
+  - name: "pr10_plan_with_prior_hashes"
+    tags: ["pr10", "plan", "json", "generated", "tiny"]
+    args: ["build", "plan", "tiny_c", "--format", "json"]
+    snapshot: "pr10_plan_with_prior_hashes.json"
+    # Example extra strip keys beyond defaults
+    strip_keys: ["input_hash", "prior_input_hash", "options_hash"]
+    <<: *defaults
+
+  # ---- PR-11 ----
+  - name: "pr11_outputs_risk_factors"
+    tags: ["pr11", "outputs", "json", "generated", "tiny"]
+    args: ["build", "outputs", "risk_factors", "--format", "json"]
+    snapshot: "pr11_outputs_risk_factors.json"
+    <<: *defaults
+
+  # ---- PR-12 ----
+  - name: "pr12_dataset_head"
+    tags: ["pr12", "dataset", "json", "generated", "tiny"]
+    args: ["build", "dataset", "head", "analytics.function_metrics", "--rows", "2", "--format", "json"]
+    snapshot: "pr12_dataset_head.json"
+    <<: *defaults
+
+  # ---- PR-13 ----
+  - name: "pr13_run_info"
+    tags: ["pr13", "run-info", "json", "generated", "integration"]
+    args: ["build", "run-info", "--run-id", "hamilton-test-0001", "--format", "json"]
+    snapshot: "pr13_run_info.json"
+    strip_keys: ["run_id"]   # keep run_id stable if you want to assert it
+    <<: *defaults
+
+  # ---- PR-14 ----
+  - name: "pr14_graph_risk_factors_dot"
+    tags: ["pr14", "graph", "dot", "text", "generated", "tiny"]
+    kind: "text"
+    args: ["build", "graph", "risk_factors", "--format", "dot"]
+    snapshot: "pr14_graph_risk_factors.dot"
+    <<: *defaults
+
+  - name: "pr14_graph_risk_factors_mermaid"
+    tags: ["pr14", "graph", "mermaid", "text", "generated", "tiny"]
+    kind: "text"
+    args: ["build", "graph", "risk_factors", "--format", "mermaid"]
+    snapshot: "pr14_graph_risk_factors.mmd"
+    <<: *defaults
+
+  # ---- PR-15 ----
+  - name: "pr15_explain_dep_change"
+    tags: ["pr15", "explain", "json", "generated", "tiny"]
+    args: ["build", "explain", "tiny_c", "--format", "json"]
+    snapshot: "pr15_explain_dep_change.json"
+    <<: *defaults
+```
+
+Notes:
+
+* `strip_keys` is **case-local** and is merged with your default dynamic key stripping in code.
+* For text cases, you can add `replace:` blocks to normalize file paths or IDs:
+
+  ```yaml
+  replace:
+    - pattern: "/tmp/[^\\s]+"
+      repl: "<TMP>"
+  ```
+
+---
+
+# Runner changes to prefer YAML by default
+
+## 1) Allow YAML in `_manifest.py`
+
+Update: `tests/build/hamilton/snapshots/_manifest.py`
+
+Add/replace the manifest reading logic with:
+
+```python
+def _load_manifest_data(path: Path) -> dict[str, Any]:
+    suffix = path.suffix.lower()
+    text = path.read_text(encoding="utf-8")
+
+    if suffix == ".json":
+        data = json.loads(text)
+    elif suffix in (".yaml", ".yml"):
+        try:
+            import yaml  # type: ignore
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                "PyYAML is required to load YAML manifests. Install with: pip install pyyaml"
+            ) from e
+        data = yaml.safe_load(text)
+    else:
+        raise ValueError(f"Unsupported manifest extension: {suffix} (use .json, .yaml, or .yml)")
+
+    if not isinstance(data, dict):
+        raise TypeError("Manifest root must be an object")
+    return data
+```
+
+Then in `load_snapshot_manifest(path)`, start with:
+
+```python
+data = _load_manifest_data(path)
+```
+
+## 2) Add `tags` parsing to `SnapshotCase`
+
+In `_manifest.py`:
+
+```python
+def _get_tags(d: Mapping[str, Any]) -> tuple[str, ...]:
+    raw = d.get("tags") or []
+    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+        raise TypeError("Expected list[str] for 'tags'")
+    return tuple(raw)
+```
+
+And include:
+
+```python
+tags=_get_tags(c),
+```
+
+## 3) Default manifest selection: YAML first, then JSON
+
+Wherever you currently compute the default manifest path (in the parametrized test file), use:
+
+```python
+snapshots_dir = Path(__file__).parent / "snapshots"
+manifest_yaml = snapshots_dir / "manifest.yaml"
+manifest_json = snapshots_dir / "manifest.json"
+manifest_path = manifest_yaml if manifest_yaml.exists() else manifest_json
+```
+
+---
+
+# Add the “list snapshot cases” mode
+
+This prints cases and exits early. It respects `--cli-snapshot-tags` and `--cli-snapshot-pattern` filters.
+
+## Update `tests/build/hamilton/conftest.py`
+
+Add an option:
+
+```python
+parser.addoption(
+    "--list-cli-snapshots",
+    action="store_true",
+    default=False,
+    help="List CLI snapshot cases from the manifest and exit.",
+)
+```
+
+Then in `pytest_configure(config)` add:
+
+```python
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "cli_snapshot: CLI golden snapshot tests")
+
+    if config.getoption("--list-cli-snapshots"):
+        from pathlib import Path
+        import fnmatch
+
+        from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest
+
+        snapshots_dir = Path(__file__).parent / "snapshots"
+
+        override = config.getoption("--cli-snapshot-manifest")
+        if override:
+            manifest_path = Path(override)
+        else:
+            manifest_yaml = snapshots_dir / "manifest.yaml"
+            manifest_json = snapshots_dir / "manifest.json"
+            manifest_path = manifest_yaml if manifest_yaml.exists() else manifest_json
+
+        manifest = load_snapshot_manifest(manifest_path)
+
+        # Apply optional filters
+        tags_opt = config.getoption("--cli-snapshot-tags")
+        pat_opt = config.getoption("--cli-snapshot-pattern")
+
+        tags = {t.strip() for t in (tags_opt or "").split(",") if t.strip()}
+        patterns = [p.strip() for p in (pat_opt or "").split(",") if p.strip()]
+
+        def selected(case) -> bool:
+            if tags:
+                if set(case.tags).isdisjoint(tags):
+                    return False
+            if patterns:
+                if not any(fnmatch.fnmatch(case.name, p) for p in patterns):
+                    return False
+            return True
+
+        lines = []
+        lines.append(f"Manifest: {manifest_path}")
+        lines.append(f"App: {manifest.app_import}")
+        lines.append("")
+        for c in manifest.cases:
+            if not selected(c):
+                continue
+            tag_str = ", ".join(c.tags) if c.tags else "-"
+            lines.append(f"- {c.name}")
+            lines.append(f"  tags: [{tag_str}]")
+            lines.append(f"  kind: {c.kind}  output: {c.output}  exit_code: {c.exit_code}")
+            lines.append(f"  snapshot: {c.snapshot}")
+            lines.append(f"  args: {list(c.args)}")
+            lines.append("")
+
+        import pytest
+        pytest.exit("\n".join(lines), returncode=0)
+```
+
+### Usage examples
+
+List all cases:
+
+```bash
+pytest -m cli_snapshot --list-cli-snapshots
+```
+
+List only PR‑14 graph cases:
+
+```bash
+pytest -m cli_snapshot --list-cli-snapshots --cli-snapshot-tags pr14,graph
+```
+
+List only cases matching `pr14_*`:
+
+```bash
+pytest -m cli_snapshot --list-cli-snapshots --cli-snapshot-pattern "pr14_*"
+```
+
+---
+
+# Tagging guidelines to keep the manifest clean
+
+## Naming conventions
+
+Use names that embed PR and function:
+
+* `pr09_plan_small_graph`
+* `pr14_graph_risk_factors_dot`
+* `phase3_native_plan_risk_factors`
+
+This makes pattern selection ergonomic (`pr14_*`).
+
+## Tag conventions
+
+I recommend this minimal set:
+
+* `prXX` (required)
+* one command tag (`plan|graph|explain|run-info|outputs|dataset`)
+* one format tag (`json|dot|mermaid|text`)
+* one scope tag (`tiny|integration`)
+* one mode tag (`generated|phase0`)
+
+---
+
+# PyYAML dependency
+
+Because you prefer YAML manifests, add **PyYAML** to your test dependencies:
+
+* `pip install pyyaml`
+* or in `pyproject.toml` dev/test extras.
+
+---
+

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/tracking/build_tracking.py
+# hypothesis_version: 6.148.7
+
+[100, 1000, 'BuildStatus', 'BuildTracking', 'build.run_targets', 'commit', 'datetime', 'datetime | None', 'duration_ms', 'error', 'input_hash', 'options_hash', 'plugin', 'recorded_at', 'repo', 'row_counts', 'run_id', 'status', 'str | None', 'target']

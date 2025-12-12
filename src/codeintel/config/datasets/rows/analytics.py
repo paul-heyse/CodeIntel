@@ -15,6 +15,7 @@ This module provides TypedDict definitions for analytics DuckDB tables:
 
 from __future__ import annotations
 
+import ast
 import json
 from datetime import datetime
 from typing import TYPE_CHECKING, Final, TypedDict, TypeVar
@@ -700,6 +701,16 @@ def function_types_row_to_tuple(row: FunctionTypesRow) -> tuple[object, ...]:
     param_types = normalized.get("param_types")
     if isinstance(param_types, dict):
         normalized["param_types"] = json.dumps(param_types)
+    elif isinstance(param_types, str):
+        try:
+            parsed = json.loads(param_types)
+        except json.JSONDecodeError:
+            try:
+                parsed = ast.literal_eval(param_types)
+            except (SyntaxError, ValueError):
+                parsed = None
+        if parsed is not None:
+            normalized["param_types"] = json.dumps(parsed)
     return _serialize_row(normalized, FUNCTION_TYPES_COLUMNS)
 
 
