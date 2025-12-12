@@ -26,6 +26,8 @@ import ibis.expr.types as it
 import pandas as pd
 from sqlglot import exp, parse_one
 
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+
 if TYPE_CHECKING:
     from ibis.backends.duckdb import Backend as DuckDBBackend
 
@@ -138,8 +140,6 @@ class _WriteContext:
     schema: str
     table: str
     table_key: str
-    columns: Sequence[str]
-    on_conflict: OnConflict | None
 
 
 def _split_table_key(table_key: str) -> tuple[str, str]:
@@ -202,89 +202,6 @@ def _build_insert_select(
     )
 
     return insert_stmt.sql(dialect=DUCKDB_DIALECT)
-
-
-def _build_insert_values(
-    schema: str,
-    table: str,
-    columns: Sequence[str],
-) -> str:
-    """Build INSERT...VALUES statement with placeholders using SQLGlot.
-
-    Parameters
-    ----------
-    schema
-        Target schema name.
-    table
-        Target table name.
-    columns
-        Column names for the INSERT.
-
-    Returns
-    -------
-    str
-        Generated INSERT...VALUES SQL with ? placeholders.
-    """
-    insert_stmt = exp.Insert(
-        this=exp.Schema(
-            this=exp.Table(
-                this=exp.to_identifier(table),
-                db=exp.to_identifier(schema),
-            ),
-            expressions=[exp.to_identifier(c) for c in columns],
-        ),
-        expression=exp.Values(
-            expressions=[exp.Tuple(expressions=[exp.Placeholder() for _ in columns])]
-        ),
-    )
-
-    return insert_stmt.sql(dialect=DUCKDB_DIALECT)
-
-
-def _build_upsert(
-    schema: str,
-    table: str,
-    columns: Sequence[str],
-    conflict_columns: Sequence[str],
-    update_columns: Sequence[str],
-) -> str:
-    """Build INSERT...ON CONFLICT DO UPDATE statement.
-
-    Parameters
-    ----------
-    schema
-        Target schema name.
-    table
-        Target table name.
-    columns
-        All column names for the INSERT.
-    conflict_columns
-        Columns that define uniqueness for conflict detection.
-    update_columns
-        Columns to update on conflict.
-
-    Returns
-    -------
-    str
-        Generated UPSERT SQL with ? placeholders.
-    """
-    # Build the base INSERT
-    quoted_schema = f'"{schema}"'
-    quoted_table = f'"{table}"'
-    quoted_cols = ", ".join(f'"{c}"' for c in columns)
-    placeholders = ", ".join("?" for _ in columns)
-
-    # Build ON CONFLICT clause
-    conflict_cols = ", ".join(f'"{c}"' for c in conflict_columns)
-    update_parts = [f'"{c}" = EXCLUDED."{c}"' for c in update_columns]
-    update_clause = ", ".join(update_parts)
-
-    # Construct full UPSERT - DuckDB uses INSERT...ON CONFLICT syntax
-    return (
-        f"INSERT INTO {quoted_schema}.{quoted_table} ({quoted_cols}) "  # noqa: S608
-        f"VALUES ({placeholders}) "
-        f"ON CONFLICT ({conflict_cols}) DO UPDATE SET {update_clause}"
-    )
 
 
 class IbisGateway:
@@ -589,9 +506,28 @@ class IbisGateway:
             Write operation result.
         """
         resolved_columns = list(df.columns) if columns is None else list(columns)
-        rows = list(df.itertuples(index=False, name=None))
-        return self._write_tuples(
-            write_ctx, rows=rows, columns=resolved_columns, on_conflict=on_conflict
+        normalized_rows = [_normalize_row(row) for row in df.itertuples(index=False, name=None)]
+        backend = DuckDBPolicyBackend(self._gateway)
+
+        if on_conflict is None:
+            count = backend.bulk_insert(write_ctx.table_key, normalized_rows, columns=resolved_columns)
+            return WriteResult(
+                table_key=write_ctx.table_key,
+                rows_affected=count,
+                method="insert_values",
+            )
+
+        count = backend.upsert(
+            write_ctx.table_key,
+            normalized_rows,
+            columns=resolved_columns,
+            conflict_columns=on_conflict.conflict_columns,
+            update_columns=on_conflict.update_columns,
+        )
+        return WriteResult(
+            table_key=write_ctx.table_key,
+            rows_affected=count,
+            method="upsert",
         )
 
     def _write_tuples(
@@ -622,75 +558,25 @@ class IbisGateway:
             raise ValueError(msg)
 
         resolved_columns = list(columns)
+        normalized_rows = [_normalize_row(row) for row in rows]
+        backend = DuckDBPolicyBackend(self._gateway)
 
-        if on_conflict is not None:
-            return self._upsert_tuples(
-                write_ctx,
-                rows=rows,
-                columns=resolved_columns,
-                on_conflict=on_conflict,
+        if on_conflict is None:
+            count = backend.bulk_insert(write_ctx.table_key, normalized_rows, columns=resolved_columns)
+            return WriteResult(
+                table_key=write_ctx.table_key,
+                rows_affected=count,
+                method="insert_values",
             )
 
-        # Normalize rows to convert numpy types to native Python types
-        normalized_rows = [_normalize_row(row) for row in rows]
-
-        # Build INSERT...VALUES
-        insert_sql = _build_insert_values(write_ctx.schema, write_ctx.table, resolved_columns)
-        log.debug("write INSERT...VALUES: %s (%d rows)", insert_sql[:100], len(normalized_rows))
-
-        # Execute batch insert
-        self._gateway.con.executemany(insert_sql, normalized_rows)
-
-        return WriteResult(
-            table_key=write_ctx.table_key, rows_affected=len(normalized_rows), method="insert_values"
+        count = backend.upsert(
+            write_ctx.table_key,
+            normalized_rows,
+            columns=resolved_columns,
+            conflict_columns=on_conflict.conflict_columns,
+            update_columns=on_conflict.update_columns,
         )
-
-    def _upsert_tuples(
-        self,
-        write_ctx: _WriteContext,
-        *,
-        rows: Sequence[tuple[object, ...]],
-        columns: Sequence[str],
-        on_conflict: OnConflict,
-    ) -> WriteResult:
-        """Write tuples using UPSERT (INSERT...ON CONFLICT).
-
-        Returns
-        -------
-        WriteResult
-            Write operation result.
-
-        Raises
-        ------
-        ValueError
-            If no columns remain to update after conflict columns.
-        """
-        conflict_set = set(on_conflict.conflict_columns)
-        update_columns = (
-            list(on_conflict.update_columns)
-            if on_conflict.update_columns is not None
-            else [c for c in columns if c not in conflict_set]
-        )
-
-        if not update_columns:
-            msg = "No columns to update on conflict"
-            raise ValueError(msg)
-
-        # Normalize rows to convert numpy types to native Python types
-        normalized_rows = [_normalize_row(row) for row in rows]
-
-        # Build UPSERT SQL
-        upsert_sql = _build_upsert(
-            write_ctx.schema, write_ctx.table, columns, on_conflict.conflict_columns, update_columns
-        )
-        log.debug("write UPSERT: %s (%d rows)", upsert_sql[:100], len(normalized_rows))
-
-        # Execute batch upsert
-        self._gateway.con.executemany(upsert_sql, normalized_rows)
-
-        return WriteResult(
-            table_key=write_ctx.table_key, rows_affected=len(normalized_rows), method="upsert"
-        )
+        return WriteResult(table_key=write_ctx.table_key, rows_affected=count, method="upsert")
 
     def delete(
         self,
@@ -720,24 +606,22 @@ class IbisGateway:
             # Delete all
             sql = f"DELETE FROM {quoted}"  # noqa: S608
         else:
-            # Build WHERE clause from Ibis expression
-            # Get the SQL representation of the boolean expression
-            # We need to wrap it in a SELECT to get valid SQL
             t = self.table(table_key)
             filter_expr = t.filter(where).limit(0)
             filter_sql = ibis.to_sql(filter_expr, dialect=DUCKDB_DIALECT)
-
-            # Extract WHERE clause from the generated SQL
-            # This is a bit hacky but works for simple expressions
-            if "WHERE" in filter_sql.upper():
-                where_idx = filter_sql.upper().index("WHERE")
-                # Find the end of WHERE clause (before LIMIT)
-                limit_idx = filter_sql.upper().find("LIMIT", where_idx)
-                if limit_idx > 0:
-                    where_clause = filter_sql[where_idx:limit_idx].strip()
-                else:
-                    where_clause = filter_sql[where_idx:].strip()
-                sql = f"DELETE FROM {quoted} {where_clause}"  # noqa: S608
+            select_ast = parse_one(filter_sql, dialect=DUCKDB_DIALECT)
+            from_ast = select_ast.args.get("from_") or select_ast.args.get("from")
+            alias: str | None = None
+            if isinstance(from_ast, exp.From) and isinstance(from_ast.this, exp.Table):
+                alias = from_ast.this.alias
+            where_ast = select_ast.args.get("where")
+            where_sql = (
+                where_ast.sql(dialect=DUCKDB_DIALECT) if isinstance(where_ast, exp.Where) else ""
+            )
+            if alias:
+                sql = f"DELETE FROM {quoted} AS {alias} {where_sql}"  # noqa: S608
+            elif where_sql:
+                sql = f"DELETE FROM {quoted} {where_sql}"  # noqa: S608
             else:
                 sql = f"DELETE FROM {quoted}"  # noqa: S608
 

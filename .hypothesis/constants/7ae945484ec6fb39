@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/executor.py
+# hypothesis_version: 6.148.7
+
+[0.0, 1000, '%Y%m%d-%H%M%S', '; ', '<executor>', 'BuildExecutor', 'BuildResult', 'StageExecutionResult', 'analytics', 'auto', 'completed_targets', 'duration_ms', 'error_count', 'error_summary', 'export', 'export_jsonl', 'export_parquet', 'failed', 'failed_targets', 'graphs', 'ingestion', 'plan', 'run_id', 'running', 'skipped_targets', 'status', 'succeeded']

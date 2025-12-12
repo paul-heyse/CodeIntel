@@ -16,11 +16,10 @@ from duckdb import DuckDBPyConnection
 
 # Import ibis_views to ensure view builders are registered
 import codeintel.storage.views.ibis_views as _ibis_views
-from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.views.data_model_views import DATA_MODEL_VIEW_NAMES
 from codeintel.storage.views.function_views import FUNCTION_VIEW_NAMES
 from codeintel.storage.views.graph_views import GRAPH_VIEW_NAMES
-from codeintel.storage.views.ibis_registry import VIEW_BUILDERS, ViewBuilder, get_registered_views
+from codeintel.storage.views.ibis_registry import IbisViewGateway, VIEW_BUILDERS, ViewBuilder, get_registered_views
 from codeintel.storage.views.ibis_views import _create_view
 from codeintel.storage.views.ide_views import IDE_VIEW_NAMES
 from codeintel.storage.views.module_views import MODULE_VIEW_NAMES
@@ -28,6 +27,9 @@ from codeintel.storage.views.subsystem_views import SUBSYSTEM_VIEW_NAMES
 from codeintel.storage.views.test_views import TEST_VIEW_NAMES
 
 if TYPE_CHECKING:
+    import ibis.expr.types as it
+    from ibis.backends.duckdb import Backend as DuckDBBackend
+
     from codeintel.storage.gateway.protocol import StorageGateway
 
 ALIAS_DOCS_VIEWS: dict[str, str] = {
@@ -55,9 +57,29 @@ DERIVED_DOCS_VIEWS: tuple[str, ...] = tuple(
 )
 
 
+class _IbisConnectionGateway:
+    """Provide IbisViewGateway interface for a raw DuckDB connection."""
+
+    def __init__(self, duckdb_con: DuckDBPyConnection) -> None:
+        self._duckdb_con = duckdb_con
+        self._ibis_con = ibis.duckdb.from_connection(duckdb_con)
+
+    @property
+    def con(self) -> DuckDBBackend:
+        """Return an Ibis backend bound to the DuckDB connection."""
+        return self._ibis_con
+
+    def table(self, table_name: str) -> it.Table:
+        """Return an Ibis table expression for a fully qualified table."""
+        if "." in table_name:
+            database, name = table_name.split(".", 1)
+            return self.con.table(name, database=database)
+        return self.con.table(table_name)
+
+
 def _get_ibis_gateway(
     con_or_gateway: DuckDBPyConnection | StorageGateway,
-) -> IbisGateway:
+) -> IbisViewGateway:
     """Extract or create IbisGateway from connection or gateway.
 
     Parameters
@@ -67,24 +89,18 @@ def _get_ibis_gateway(
 
     Returns
     -------
-    IbisGateway
-        Ibis gateway for building expressions.
+    IbisViewGateway
+        Ibis gateway-like object for building expressions.
 
     Raises
     ------
     TypeError
-        If the provided gateway does not expose an IbisGateway.
+        If the provided gateway does not expose an Ibis gateway.
     """
     if isinstance(con_or_gateway, DuckDBPyConnection):
-        ibis_con = ibis.duckdb.from_connection(con_or_gateway)
-        return IbisGateway(ibis_con)
+        return _IbisConnectionGateway(con_or_gateway)
 
-    ibis_gateway = getattr(con_or_gateway, "ibis", None)
-    if isinstance(ibis_gateway, IbisGateway):
-        return ibis_gateway
-
-    message = "StorageGateway must expose an IbisGateway via `ibis`"
-    raise TypeError(message)
+    return con_or_gateway.ibis
 
 
 def create_all_views(

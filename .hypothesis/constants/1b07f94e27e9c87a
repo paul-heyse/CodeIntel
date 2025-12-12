@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/execution/progress.py
+# hypothesis_version: 6.148.7
+
+[0.0, 0.1, 1.0, 100, '%H:%M:%S', '?', 'Completed', 'Failed', 'ProgressRenderer', 'ProgressStreamConfig', 'ProgressTracker', 'Stream cancelled', 'Unknown task_id: %s', 'configure_progress', 'get_progress_tracker', 'iter_with_progress', 'json', 'jsonl', 'progress_context', 'progress_generator', 'stream', 'stream_progress', 'text', '⊘', '█', '░', '○', '●', '◐', '✓', '✗', '⠇', '⠋', '⠏', '⠙', '⠦', '⠧', '⠴', '⠸', '⠹', '⠼']

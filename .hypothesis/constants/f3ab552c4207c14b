@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/mkdocs_gen/build_single_markdown.py
+# hypothesis_version: 6.148.7
+
+['#', '## Table of contents', '*[Image]*', '-', '---', '[^a-z0-9\\s-]', '\\1', '\\s+', '\\s+#*$', '^(```|~~~)', '__main__', 'docs', 'http://', 'https://', 'index.md', 'mailto:', 'mkdocs-build', 'utf-8']

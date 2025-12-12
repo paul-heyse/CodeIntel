@@ -108,6 +108,7 @@ dependencies = [
     "pandera>=0.27.0",
     "polars>=1.36.1",
     "sqlglot>=28.1.0",
+    "sf-hamilton>=1.89.0",
 ]
 
 [project.scripts]

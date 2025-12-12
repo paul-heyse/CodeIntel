@@ -1163,6 +1163,7 @@ def bootstrap_metadata_datasets(
     jsonl_filenames: Mapping[str, str] | None = None,
     parquet_filenames: Mapping[str, str] | None = None,
     include_views: bool = True,
+    validate_macros: bool = True,
 ) -> None:
     """
     Populate metadata.datasets from Python schemas and default filename mappings.
@@ -1175,7 +1176,8 @@ def bootstrap_metadata_datasets(
     apply_metadata_ddl(con)
     _register_macros(con)
     _register_dataset_schema_hashes(con)
-    validate_normalized_macro_schemas(con)
+    if validate_macros:
+        validate_normalized_macro_schemas(con)
     dataset_rows_list = dataset_rows_only_entries()
     if dataset_rows_list:
         warning_message = "dataset_rows-only datasets (no normalized macro): " + ", ".join(

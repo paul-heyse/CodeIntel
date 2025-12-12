@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import pandas as pd
 from pandera.errors import SchemaErrors
@@ -156,8 +156,7 @@ class DuckDBStorageAdapter(IngestStoragePort):
         cond = and_predicates(*predicates)
 
         try:
-            table_expr = cast("Any", table)
-            table_expr.delete(where=cond)
+            self._gateway.ibis.delete(table_key, where=cond)
         except Exception as exc:  # pragma: no cover - delegated to backend
             message = f"Failed to delete rows from {table_key}"
             raise ValueError(message) from exc

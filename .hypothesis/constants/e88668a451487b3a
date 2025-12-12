@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/symbols.py
+# hypothesis_version: 6.148.7
+
+['SymbolOccurrence', 'SymbolUseEdge', 'SymbolUseRow', 'build_def_map', 'build_use_edges', 'edges_to_rows', 'parse_symbol_roles']

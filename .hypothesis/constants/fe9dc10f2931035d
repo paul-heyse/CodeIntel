@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/types/result.py
+# hypothesis_version: 6.148.7
+
+[0.0, 1000, 'BasePluginResult', 'PluginArtifact', 'PluginResult', 'PluginStatus', 'failed', 'skipped', 'succeeded']

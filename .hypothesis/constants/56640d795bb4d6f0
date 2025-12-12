@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/http_transport.py
+# hypothesis_version: 6.148.7
+
+[0.0, 'T', '_HttpTransportMixin', '__self__', 'http', 'last_retry_attempts']
