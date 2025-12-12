@@ -12,10 +12,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ParamSpec, TextIO
 
-from cyclopts.exceptions import UnknownCommandError, UnknownOptionError
+from cyclopts.exceptions import CoercionError, UnknownCommandError, UnknownOptionError
 
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
+from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.storage.exceptions import (
     QueryError as StorageQueryError,
 )
@@ -176,6 +177,22 @@ def _exception_to_problem(exc: BaseException) -> ProblemDetail:
             title="Unknown Command",
             status=CLI_EXIT_USAGE,
             detail=message,
+        )
+
+    if isinstance(exc, CoercionError):
+        return ProblemDetail(
+            type=ErrorType.VALIDATION.value,
+            title="Validation Error",
+            status=CLI_EXIT_VALIDATION,
+            detail=str(exc) if str(exc) else None,
+        )
+
+    if isinstance(exc, ResolutionError):
+        return ProblemDetail(
+            type=ErrorType.VALIDATION.value,
+            title="Validation Error",
+            status=CLI_EXIT_VALIDATION,
+            detail=str(exc) if str(exc) else None,
         )
 
     if isinstance(exc, SystemExit):

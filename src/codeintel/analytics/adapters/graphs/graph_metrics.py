@@ -212,12 +212,12 @@ def load_symbol_module_edges(
         joined = (
             su.left_join(m_def, cast("Any", su.def_path == m_def.path))
             .left_join(m_use, cast("Any", su.use_path == m_use.path))
-            .filter(
-                cast(
-                    "Any",
-                    m_def.module.notna() & m_use.module.notna(),
+                .filter(
+                    cast(
+                        "Any",
+                        m_def.module.notnull() & m_use.module.notnull(),
+                    )
                 )
-            )
             .select(
                 use_module=m_use.module,
                 def_module=m_def.module,

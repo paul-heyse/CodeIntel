@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/metadata/bootstrap.py
+# hypothesis_version: 6.148.7
+
+['.', ';', '; ', 'BIGINT', 'DECIMAL', 'METADATA_SCHEMA_DDL', 'PIPELINE_INDEXES_DDL', 'PIPELINE_RUNS_DDL', 'PIPELINE_STEPS_DDL', 'TIMESTAMPTZ', 'apply_metadata_ddl', 'utf-8', '|']

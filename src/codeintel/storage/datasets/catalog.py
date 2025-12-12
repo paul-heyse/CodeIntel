@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import ibis
 import pandas as pd
+from ibis.common import exceptions as ibis_exceptions
 
 from codeintel.export.manifest import compute_file_hash
 from codeintel.storage.gateway import DuckDBError
@@ -165,7 +166,13 @@ def _sample_rows(
 
         df = pd.DataFrame(expr.limit(limited).execute())
         return df.to_dict(orient="records")
-    except (DuckDBError, RuntimeError, ValueError) as exc:
+    except (
+        DuckDBError,
+        ibis_exceptions.IbisError,
+        ibis_exceptions.TableNotFound,
+        RuntimeError,
+        ValueError,
+    ) as exc:
         return _handle_sampling_failure(
             dataset_name=dataset.name,
             strict=strict,
