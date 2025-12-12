@@ -7,6 +7,7 @@ using the Command[T] pattern.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Annotated
 
@@ -35,6 +36,38 @@ graphs_app = App(
     name="graph",
     help="Graph analytics plugin commands.",
 )
+
+
+def _dedupe_preserve_order(names: Sequence[str]) -> list[str]:
+    """Return names de-duplicated while preserving order."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
+
+
+def _resolve_requested_plan_plugins(
+    *,
+    names: Sequence[str] | None,
+    enable: Sequence[str] | None,
+) -> list[str] | None:
+    """Resolve which plugins the plan should start from.
+
+    Defaults to planning currently registered plugins that are enabled-by-default.
+    """
+    if names:
+        return _dedupe_preserve_order([*names, *(enable or ())])
+    if enable:
+        return list(enable)
+
+    enabled_by_default_names = [
+        plugin.metadata.name for plugin in list_graph_plugins() if plugin.metadata.enabled_by_default
+    ]
+    return enabled_by_default_names or None
 
 
 # =============================================================================
@@ -245,7 +278,7 @@ class GraphPluginsPlan(Command[GraphPlanResult]):
             help="How to handle missing/disabled dependencies.",
             show_default=True,
         ),
-    ] = DependencyPolicy.STRICT
+    ] = DependencyPolicy.SKIP
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult]:
@@ -289,6 +322,8 @@ class GraphPluginsPlan(Command[GraphPlanResult]):
             disable,
         )
 
+        requested_plugins = _resolve_requested_plan_plugins(names=names, enable=enable)
+
         options = PlanningOptions(
             dependency_policy=dependency_policy,
             selection_policy=selection_policy,
@@ -296,8 +331,7 @@ class GraphPluginsPlan(Command[GraphPlanResult]):
 
         # Call with the correct API signature
         plan = plan_graph_plugins(
-            plugin_names=names,
-            enabled=enable,
+            plugin_names=requested_plugins,
             disabled=disable,
             plan_options=options,
         )
@@ -383,7 +417,7 @@ class GraphPlugins(Command[GraphPlanResult | GraphPluginsResult]):
             help="How to handle missing/disabled dependencies.",
             show_default=True,
         ),
-    ] = DependencyPolicy.STRICT
+    ] = DependencyPolicy.SKIP
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphPluginsResult]:
@@ -420,9 +454,9 @@ class GraphPlugins(Command[GraphPlanResult | GraphPluginsResult]):
                 dependency_policy=dependency_policy,
                 selection_policy=selection_policy,
             )
+            requested_plugins = _resolve_requested_plan_plugins(names=names, enable=enable)
             plan = plan_graph_plugins(
-                plugin_names=names,
-                enabled=enable,
+                plugin_names=requested_plugins,
                 disabled=disable,
                 plan_options=options,
             )

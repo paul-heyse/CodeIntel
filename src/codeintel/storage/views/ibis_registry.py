@@ -31,8 +31,8 @@ if TYPE_CHECKING:
     from ibis.backends.duckdb import Backend as DuckDBBackend
 
 __all__ = [
-    "IbisViewGateway",
     "VIEW_BUILDERS",
+    "IbisViewGateway",
     "ViewBuilder",
     "get_registered_views",
     "register_view",

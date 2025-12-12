@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 from hamilton import driver
 
 from codeintel.build.hamilton.nodes import targets_phase0
+from codeintel.build.hamilton.nodes.node_factory import get_generated_module
 from codeintel.build.registry import get_target_graph
 
 if TYPE_CHECKING:
@@ -52,23 +53,36 @@ class HamiltonRuntime:
     graph: TargetGraph
 
 
-def build_driver(*, config: dict[str, Any] | None = None) -> HamiltonRuntime:
+def build_driver(
+    *,
+    config: dict[str, Any] | None = None,
+    use_generated: bool = False,
+) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.
 
-    Constructs a Hamilton Driver from the Phase 0 node modules and
-    returns it bundled with the target graph. The driver can be used
-    to execute build targets in dependency order.
+    Constructs a Hamilton Driver from node modules and returns it
+    bundled with the target graph. The driver can be used to execute
+    build targets in dependency order.
 
     Parameters
     ----------
     config
         Optional configuration dict passed to the Hamilton Driver.
         Can include profile name and other settings.
+    use_generated
+        If True, use dynamically generated nodes from TargetGraph
+        instead of explicit Phase 0 nodes. Default is False.
 
     Returns
     -------
     HamiltonRuntime
         Runtime containing Driver and TargetGraph.
+
+    Notes
+    -----
+    Generated nodes are created from TargetGraph metadata and include
+    all registered targets. Phase 0 nodes are hand-written and cover
+    only the risk_factors execution chain.
 
     Examples
     --------
@@ -77,11 +91,21 @@ def build_driver(*, config: dict[str, Any] | None = None) -> HamiltonRuntime:
     ...     ["t__modules"],
     ...     inputs={"env": env, "graph": runtime.graph},
     ... )
+
+    >>> runtime = build_driver(use_generated=True)
+    >>> "t__function_metrics" in runtime.dr.list_available_variables()
+    True
     """
     graph = get_target_graph()
+
+    if use_generated:
+        nodes_module = get_generated_module()
+    else:
+        nodes_module = targets_phase0
+
     dr = driver.Driver(
         config or {},
-        targets_phase0,
+        nodes_module,
     )
     return HamiltonRuntime(dr=dr, graph=graph)
 

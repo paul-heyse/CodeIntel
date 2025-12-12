@@ -32,7 +32,7 @@ from __future__ import annotations
 import importlib
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.core.singleton import SingletonHolder
@@ -44,6 +44,18 @@ if TYPE_CHECKING:
     from codeintel.cli.core import CliResult
 
 LOG = logging.getLogger(__name__)
+
+
+class _ContextModule(Protocol):
+    """Protocol describing the CLI context module exports."""
+
+    CommandContextBuilder: type[CommandContextBuilder]
+
+
+def _load_context_module() -> _ContextModule:
+    """Import the CLI context module lazily to avoid import cycles."""
+    module = importlib.import_module("codeintel.cli.context")
+    return cast("_ContextModule", module)
 
 
 @dataclass(frozen=True)
@@ -573,7 +585,7 @@ def execute_operation(
     >>> result = execute_operation(spec, {"param": "value"})  # doctest: +SKIP
     """
     builder = (
-        CommandContextBuilder()
+        _load_context_module().CommandContextBuilder()
         .with_params(params)
         .with_output_format(OutputFormat.JSON)  # Default to JSON for programmatic use
         .with_verbosity(0)

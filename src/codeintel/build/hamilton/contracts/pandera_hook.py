@@ -1,0 +1,227 @@
+"""Pandera contract integration for Hamilton nodes.
+
+This module provides utilities to attach Pandera validation to Hamilton
+node outputs using the existing SCHEMA_REGISTRY as the schema source.
+
+Design Principles
+-----------------
+1. Pandera schemas come from SCHEMA_REGISTRY (single source of truth).
+2. Integration uses Hamilton's @check_output decorator.
+3. Validation errors propagate with full Pandera error context.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from functools import wraps
+from typing import TYPE_CHECKING, Any, TypeVar
+
+import pandas as pd
+
+from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+
+if TYPE_CHECKING:
+    import pandera as pa
+
+    from codeintel.build.hamilton.io.dataset_ref import DatasetRef
+    from codeintel.storage.gateway import StorageGateway
+
+__all__ = [
+    "get_pandera_schema",
+    "validate_dataframe",
+    "validate_dataset_ref",
+    "with_contract",
+]
+
+log = logging.getLogger(__name__)
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def get_pandera_schema(table_key: str) -> pa.DataFrameSchema | None:
+    """Retrieve Pandera schema from registry.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table name.
+
+    Returns
+    -------
+    pa.DataFrameSchema | None
+        Pandera schema if registered, None otherwise.
+
+    Examples
+    --------
+    >>> schema = get_pandera_schema("analytics.function_metrics")
+    >>> schema is not None  # If registered
+    True
+    """
+    dataset_schema = SCHEMA_REGISTRY.get(table_key)
+    if dataset_schema is None:
+        return None
+    return dataset_schema.pandera_schema
+
+
+def validate_dataframe(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
+    """Validate a DataFrame against its registered schema.
+
+    Parameters
+    ----------
+    df
+        DataFrame to validate.
+    table_key
+        Table key for schema lookup.
+
+    Returns
+    -------
+    pd.DataFrame
+        Validated DataFrame (may be coerced).
+
+    Raises
+    ------
+    ValueError
+        If no schema is registered for the table key, or if validation fails.
+
+    Examples
+    --------
+    >>> df = pd.DataFrame({"repo": ["r1"], "loc": [100]})
+    >>> validated = validate_dataframe(df, "test.table")  # If schema exists
+    """
+    schema = get_pandera_schema(table_key)
+    if schema is None:
+        msg = f"No Pandera schema registered for {table_key}"
+        raise ValueError(msg)
+    return schema.validate(df)
+
+
+def with_contract(table_key: str) -> Callable[[F], F]:
+    """Decorate a function to validate its output against a Pandera schema.
+
+    This is a lightweight decorator that validates the function's return
+    value (expected to be a DataFrame) against the schema from SCHEMA_REGISTRY.
+
+    Parameters
+    ----------
+    table_key
+        Table key for schema lookup.
+
+    Returns
+    -------
+    Callable[[F], F]
+        Decorated function with Pandera validation.
+
+    Notes
+    -----
+    If no schema is registered for the table key, the decorator passes
+    through without validation and logs a warning.
+
+    Examples
+    --------
+    >>> @with_contract("analytics.function_metrics")
+    ... def compute_metrics(data: pd.DataFrame) -> pd.DataFrame:
+    ...     return process(data)
+    """
+    schema = get_pandera_schema(table_key)
+
+    def decorator(func: F) -> F:
+        if schema is None:
+            log.warning(
+                "No Pandera schema for %s; skipping validation for %s",
+                table_key,
+                func.__name__,
+            )
+            return func
+
+        @wraps(func)
+        def wrapper(*args: object, **kwargs: object) -> object:
+            result = func(*args, **kwargs)
+            # Validate the result if it's a DataFrame
+            if isinstance(result, pd.DataFrame):
+                return schema.validate(result)
+            return result
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorator
+
+
+def validate_dataset_ref(
+    ref: DatasetRef,
+    gateway: StorageGateway,
+) -> tuple[bool, str | None]:
+    """Validate a DatasetRef's underlying table against its schema.
+
+    Loads the table data and validates it against the Pandera schema
+    from SCHEMA_REGISTRY.
+
+    Parameters
+    ----------
+    ref
+        Dataset reference to validate.
+    gateway
+        Storage gateway for table access.
+
+    Returns
+    -------
+    tuple[bool, str | None]
+        (is_valid, error_message) tuple. If valid, error_message is None.
+
+    Examples
+    --------
+    >>> ref = DatasetRef(table_key="analytics.function_metrics")
+    >>> is_valid, error = validate_dataset_ref(ref, gateway)
+    >>> if not is_valid:
+    ...     print(f"Validation failed: {error}")
+    """
+    schema = get_pandera_schema(ref.table_key)
+    if schema is None:
+        # No schema = no validation required
+        return True, None
+
+    try:
+        # Load table and validate
+        table = gateway.ibis.table(ref.table_key)
+        df = table.execute()
+        schema.validate(df)
+    except (ValueError, TypeError, RuntimeError) as e:
+        return False, str(e)
+    else:
+        return True, None
+
+
+def contract_status_for_table(table_key: str) -> dict[str, Any]:
+    """Get contract status information for a table.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table name.
+
+    Returns
+    -------
+    dict[str, Any]
+        Status information including whether schema exists and column info.
+
+    Examples
+    --------
+    >>> status = contract_status_for_table("analytics.function_metrics")
+    >>> status["has_schema"]
+    True
+    """
+    schema = get_pandera_schema(table_key)
+    if schema is None:
+        return {
+            "table_key": table_key,
+            "has_schema": False,
+            "columns": [],
+        }
+
+    return {
+        "table_key": table_key,
+        "has_schema": True,
+        "columns": list(schema.columns.keys()),
+        "coerce": schema.coerce,
+        "strict": schema.strict,
+    }

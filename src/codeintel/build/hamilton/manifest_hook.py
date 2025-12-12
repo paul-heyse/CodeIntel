@@ -24,6 +24,7 @@ from codeintel.build.manifest import OutputManifest
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from codeintel.build.hamilton.io.dataset_ref import DatasetRef
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
@@ -57,6 +58,8 @@ class TargetRunRecord:
         Mapping of table keys to row counts written.
     error
         Error message if execution failed.
+    datasets
+        Tuple of DatasetRef instances produced by this target (Phase 1).
 
     Examples
     --------
@@ -78,6 +81,7 @@ class TargetRunRecord:
     duration_ms: float = 0.0
     row_counts: Mapping[str, int] = field(default_factory=dict)
     error: str | None = None
+    datasets: tuple[DatasetRef, ...] = ()
 
     @property
     def success(self) -> bool:
@@ -100,6 +104,37 @@ class TargetRunRecord:
             True if status is "skipped".
         """
         return self.status == "skipped"
+
+    def get_dataset(self, table_key: str) -> DatasetRef | None:
+        """Get a specific dataset ref by table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully-qualified table name to find.
+
+        Returns
+        -------
+        DatasetRef | None
+            The matching DatasetRef, or None if not found.
+
+        Examples
+        --------
+        >>> record = TargetRunRecord(
+        ...     target="test",
+        ...     plugin_name="test.plugin",
+        ...     status="succeeded",
+        ...     input_hash="abc123",
+        ...     datasets=(DatasetRef(table_key="test.table"),),
+        ... )
+        >>> ds = record.get_dataset("test.table")
+        >>> ds is not None
+        True
+        """
+        for ds in self.datasets:
+            if ds.table_key == table_key:
+                return ds
+        return None
 
 
 def compute_target_input_hash(

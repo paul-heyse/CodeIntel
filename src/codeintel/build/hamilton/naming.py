@@ -56,14 +56,15 @@ def to_node_name(logical_name: str, *, prefix: str) -> str:
     'p__some__path__name'
     """
     cleaned = logical_name.strip()
-    # Replace common separators with double underscores
-    cleaned = cleaned.replace(".", "__")
+    # Replace hyphens with single underscores first
     cleaned = cleaned.replace("-", "_")
+    # Replace dots and slashes with double underscores (structural separators)
+    cleaned = cleaned.replace(".", "__")
     cleaned = cleaned.replace("/", "__")
     # Remove any remaining non-identifier characters
     cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", cleaned)
-    # Collapse multiple underscores
-    cleaned = re.sub(r"_+", "_", cleaned)
+    # Collapse 3+ underscores to double underscores (preserve intentional __)
+    cleaned = re.sub(r"_{3,}", "__", cleaned)
     # Remove leading/trailing underscores from the cleaned part
     cleaned = cleaned.strip("_")
     return f"{prefix}__{cleaned}"

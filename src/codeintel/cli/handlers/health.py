@@ -6,7 +6,6 @@ dependencies are available before running operations.
 
 from __future__ import annotations
 
-import importlib
 import logging
 import sys
 import time
@@ -14,50 +13,20 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any
 
 from codeintel.cli.config import DEFAULT_CONFIG_PATHS
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.observability import TelemetryConfig
+from codeintel.storage.exceptions import StorageConnectionError
+from codeintel.storage.gateway import open_memory_gateway
 
 if TYPE_CHECKING:
-    from types import ModuleType
-
     from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)
-
-
-# -----------------------------------------------------------------------------
-# Protocols for optional dependencies
-# -----------------------------------------------------------------------------
-
-
-class DuckDBModule(Protocol):
-    """Protocol for DuckDB module interface used in health checks."""
-
-    def connect(self, database: str) -> DuckDBConnection:
-        """Connect to a database."""
-        ...
-
-
-class DuckDBConnection(Protocol):
-    """Protocol for DuckDB connection interface."""
-
-    def execute(self, query: str) -> DuckDBConnection:
-        """Execute a query."""
-        ...
-
-    def fetchone(self) -> tuple[Any, ...] | None:
-        """Fetch one row."""
-        ...
-
-    def close(self) -> None:
-        """Close the connection."""
-        ...
-
 
 # -----------------------------------------------------------------------------
 # Health Check Infrastructure
@@ -222,46 +191,27 @@ def _check_storage() -> CheckResult:
     CheckResult
         Check result.
     """
-    duckdb = _try_import_duckdb()
-    if duckdb is None:
-        return CheckResult(
-            name="storage_connection",
-            status=CheckStatus.FAIL,
-            message="DuckDB not installed",
-        )
-
     try:
-        conn = duckdb.connect(":memory:")
-        conn.execute("SELECT 1").fetchone()
-        conn.close()
-    except (OSError, RuntimeError) as e:
+        gateway = open_memory_gateway(
+            apply_schema=False,
+            ensure_views=False,
+            validate_schema=False,
+        )
+        gateway.execute("SELECT 1").fetchone()
+        gateway.close()
+    except StorageConnectionError as exc:
         return CheckResult(
             name="storage_connection",
             status=CheckStatus.FAIL,
-            message=f"Storage error: {e}",
+            message=f"Storage error: {exc}",
         )
 
     return CheckResult(
         name="storage_connection",
         status=CheckStatus.OK,
-        message="DuckDB available",
-        details={"engine": "duckdb"},
+        message="Storage available",
+        details={"engine": "duckdb", "api": "storage.gateway"},
     )
-
-
-def _try_import_duckdb() -> DuckDBModule | None:
-    """Try to import duckdb module.
-
-    Returns
-    -------
-    DuckDBModule | None
-        The duckdb module or None if not installed.
-    """
-    try:
-        module: ModuleType = importlib.import_module("duckdb")
-        return cast("DuckDBModule", module)
-    except ImportError:
-        return None
 
 
 def _check_project() -> CheckResult:

@@ -26,6 +26,8 @@ from codeintel.config.datasets.rows import (
     DocstringRow,
     FileProfileRowModel,
     FunctionAstFeaturesRow,
+    FunctionContractsRow,
+    FunctionEffectsRow,
     FunctionMetricsRow,
     FunctionProfileRowModel,
     FunctionTypesRow,
@@ -57,6 +59,8 @@ from codeintel.config.datasets.rows import (
     docstring_row_to_tuple,
     file_profile_row_to_tuple,
     function_ast_features_row_to_tuple,
+    function_contracts_row_to_tuple,
+    function_effects_row_to_tuple,
     function_metrics_row_to_tuple,
     function_profile_row_to_tuple,
     function_types_row_to_tuple,
@@ -742,6 +746,14 @@ def _build_row_bindings() -> dict[str, RowBinding]:
         "analytics.function_types": _row_binding(
             row_type=FunctionTypesRow,
             to_tuple=function_types_row_to_tuple,
+        ),
+        "analytics.function_effects": _row_binding(
+            row_type=FunctionEffectsRow,
+            to_tuple=function_effects_row_to_tuple,
+        ),
+        "analytics.function_contracts": _row_binding(
+            row_type=FunctionContractsRow,
+            to_tuple=function_contracts_row_to_tuple,
         ),
         "analytics.graph_validation": _row_binding(
             row_type=GraphValidationRow,

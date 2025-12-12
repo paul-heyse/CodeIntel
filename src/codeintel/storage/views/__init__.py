@@ -19,7 +19,11 @@ import codeintel.storage.views.ibis_views as _ibis_views
 from codeintel.storage.views.data_model_views import DATA_MODEL_VIEW_NAMES
 from codeintel.storage.views.function_views import FUNCTION_VIEW_NAMES
 from codeintel.storage.views.graph_views import GRAPH_VIEW_NAMES
-from codeintel.storage.views.ibis_registry import IbisViewGateway, VIEW_BUILDERS, ViewBuilder, get_registered_views
+from codeintel.storage.views.ibis_registry import (
+    VIEW_BUILDERS,
+    ViewBuilder,
+    get_registered_views,
+)
 from codeintel.storage.views.ibis_views import _create_view
 from codeintel.storage.views.ide_views import IDE_VIEW_NAMES
 from codeintel.storage.views.module_views import MODULE_VIEW_NAMES
@@ -31,6 +35,9 @@ if TYPE_CHECKING:
     from ibis.backends.duckdb import Backend as DuckDBBackend
 
     from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.storage.views.ibis_registry import (
+        IbisViewGateway,
+    )
 
 ALIAS_DOCS_VIEWS: dict[str, str] = {
     "docs.v_function_profile": "analytics.function_profile",
@@ -66,11 +73,28 @@ class _IbisConnectionGateway:
 
     @property
     def con(self) -> DuckDBBackend:
-        """Return an Ibis backend bound to the DuckDB connection."""
+        """Return an Ibis backend bound to the DuckDB connection.
+
+        Returns
+        -------
+        DuckDBBackend
+            Ibis backend referencing the underlying DuckDB connection.
+        """
         return self._ibis_con
 
     def table(self, table_name: str) -> it.Table:
-        """Return an Ibis table expression for a fully qualified table."""
+        """Return an Ibis table expression for a fully qualified table.
+
+        Parameters
+        ----------
+        table_name
+            Fully qualified table name; may include a database prefix.
+
+        Returns
+        -------
+        ibis.expr.types.relations.Table
+            Ibis table expression for the requested table.
+        """
         if "." in table_name:
             database, name = table_name.split(".", 1)
             return self.con.table(name, database=database)
@@ -91,11 +115,6 @@ def _get_ibis_gateway(
     -------
     IbisViewGateway
         Ibis gateway-like object for building expressions.
-
-    Raises
-    ------
-    TypeError
-        If the provided gateway does not expose an Ibis gateway.
     """
     if isinstance(con_or_gateway, DuckDBPyConnection):
         return _IbisConnectionGateway(con_or_gateway)

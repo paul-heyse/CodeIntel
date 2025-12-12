@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-import ibis
 from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
@@ -321,7 +320,7 @@ def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> 
                 and_predicates(
                     edges.repo == repo,
                     edges.commit == commit,
-                    ibis.isnull(edges.callee_goid_h128),
+                    edges.callee_goid_h128.isnull(),
                 )
             )
             .group_by(edges.caller_goid_h128)

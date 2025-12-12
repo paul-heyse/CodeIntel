@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/manifest_hook.py
+# hypothesis_version: 6.148.7
+
+[0.0, 'ManifestSaveRequest', 'TargetRunRecord', 'save_manifest', 'should_skip', 'skipped', 'succeeded']
