@@ -403,7 +403,7 @@ def _build_nodes_from_goids(
             is_public=True,  # Default value, column may not exist
             rel_path=str(rel_path),
         )
-        for goid_h128, language, kind, rel_path in rows
+        for goid_h128, language, kind, rel_path in rows.itertuples(index=False, name=None)
     ]
 
 

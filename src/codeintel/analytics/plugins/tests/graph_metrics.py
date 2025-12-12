@@ -110,9 +110,11 @@ class TestGraphMetricsPlugin(TargetPlugin):
             "analytics.test_graph_metrics_functions",
         ):
             relation = ctx.gateway.con.table(table)
-            row = relation.filter("repo = ? AND commit = ?", [repo, commit]).aggregate(
-                "count(*)"
-            ).fetchone()
+            row = (
+                relation.filter("repo = ? AND commit = ?", [repo, commit])
+                .aggregate("count(*)")
+                .fetchone()
+            )
             row_counts[table] = int(row[0]) if row else 0
 
         log.info("Test graph metrics completed: %s", row_counts)

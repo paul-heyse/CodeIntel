@@ -39,7 +39,13 @@ graphs_app = App(
 
 
 def _dedupe_preserve_order(names: Sequence[str]) -> list[str]:
-    """Return names de-duplicated while preserving order."""
+    """Return names de-duplicated while preserving order.
+
+    Returns
+    -------
+    list[str]
+        Input names without duplicates, preserving first-seen order.
+    """
     out: list[str] = []
     seen: set[str] = set()
     for name in names:
@@ -58,6 +64,11 @@ def _resolve_requested_plan_plugins(
     """Resolve which plugins the plan should start from.
 
     Defaults to planning currently registered plugins that are enabled-by-default.
+
+    Returns
+    -------
+    list[str] | None
+        Ordered plugin names to include in the plan, or None to use defaults.
     """
     if names:
         return _dedupe_preserve_order([*names, *(enable or ())])
@@ -65,7 +76,9 @@ def _resolve_requested_plan_plugins(
         return list(enable)
 
     enabled_by_default_names = [
-        plugin.metadata.name for plugin in list_graph_plugins() if plugin.metadata.enabled_by_default
+        plugin.metadata.name
+        for plugin in list_graph_plugins()
+        if plugin.metadata.enabled_by_default
     ]
     return enabled_by_default_names or None
 

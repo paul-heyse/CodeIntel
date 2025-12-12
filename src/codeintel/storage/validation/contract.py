@@ -62,7 +62,7 @@ def _validate_row_bindings(registry: DatasetRegistry) -> list[str]:
     ]
 
 
-def _validate_schema_alignment(registry: DatasetRegistry) -> list[str]:
+def _validate_schema_alignment(registry: DatasetRegistry, *, include_views: bool) -> list[str]:
     missing_schema = [
         f"Dataset {name} missing TableSchema definition"
         for name, ds in registry.by_name.items()
@@ -78,7 +78,9 @@ def _validate_schema_alignment(registry: DatasetRegistry) -> list[str]:
     missing_in_registry = [
         key
         for key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
-        if key not in registry.by_table_key and not key.startswith("tmp_")
+        if key not in registry.by_table_key
+        and not key.startswith("tmp_")
+        and (include_views or not contract.is_view)
     ]
     registry_errors = (
         [f"Table schemas missing from metadata registry: {', '.join(sorted(missing_in_registry))}"]
@@ -127,7 +129,7 @@ def _validate_schemas_match_contracts() -> list[str]:
     return issues
 
 
-def _validate_dependencies(registry: DatasetRegistry) -> list[str]:
+def _validate_dependencies(registry: DatasetRegistry, *, include_views: bool) -> list[str]:
     issues: list[str] = []
     known = set(registry.by_name)
     graph = build_dataset_dependency_graph(registry)
@@ -140,6 +142,8 @@ def _validate_dependencies(registry: DatasetRegistry) -> list[str]:
     )
 
     for name, contract in DATASET_CONTRACTS.items():
+        if contract.is_view and not include_views:
+            continue
         expected = set(contract.upstream_dependencies)
         actual = set(graph.get(name, ()))
         if expected != actual:
@@ -155,6 +159,7 @@ def collect_contract_issues(
     con: DuckDBPyConnection,
     *,
     schema_base_dir: Path | None = None,
+    include_views: bool = True,
 ) -> list[str]:
     """Collect contract inconsistencies for the active database.
 
@@ -167,12 +172,14 @@ def collect_contract_issues(
     issues: list[str] = []
     issues.extend(_validate_schema_files(registry, base_dir=schema_base_dir))
     issues.extend(_validate_row_bindings(registry))
-    issues.extend(_validate_schema_alignment(registry))
+    issues.extend(_validate_schema_alignment(registry, include_views=include_views))
     issues.extend(_validate_schemas_match_contracts())
     issues.extend(_validate_table_columns(con, registry))
-    issues.extend(_validate_dependencies(registry))
+    issues.extend(_validate_dependencies(registry, include_views=include_views))
     missing_json_schema = [
-        name for name in JSON_SCHEMA_BY_DATASET_NAME if name not in registry.by_name
+        name
+        for name in JSON_SCHEMA_BY_DATASET_NAME
+        if name not in registry.by_name and (include_views or not DATASET_CONTRACTS[name].is_view)
     ]
     if missing_json_schema:
         issues.append(
@@ -186,6 +193,7 @@ def validate_contract_or_raise(
     con: DuckDBPyConnection,
     *,
     schema_base_dir: Path | None = None,
+    include_views: bool = True,
 ) -> None:
     """Validate dataset contract and raise on any issues.
 
@@ -194,7 +202,11 @@ def validate_contract_or_raise(
     ValueError
         When any contract problems are detected.
     """
-    issues = collect_contract_issues(con, schema_base_dir=schema_base_dir)
+    issues = collect_contract_issues(
+        con,
+        schema_base_dir=schema_base_dir,
+        include_views=include_views,
+    )
     if issues:
         message = "Dataset contract validation failed:\n" + "\n".join(f"- {i}" for i in issues)
         raise ValueError(message)

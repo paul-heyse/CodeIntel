@@ -381,7 +381,9 @@ class IbisGateway:
                 write_ctx, expr=data, columns=columns, on_conflict=on_conflict
             )
         if isinstance(data, pd.DataFrame):
-            return self._write_dataframe(write_ctx, df=data, columns=columns, on_conflict=on_conflict)
+            return self._write_dataframe(
+                write_ctx, df=data, columns=columns, on_conflict=on_conflict
+            )
         if isinstance(data, Sequence) and not isinstance(data, (str, bytes)):
             return self._write_tuples(
                 write_ctx,
@@ -482,7 +484,9 @@ class IbisGateway:
             )
 
         # Build INSERT...SELECT
-        insert_sql = _build_insert_select(write_ctx.schema, write_ctx.table, resolved_columns, select_sql)
+        insert_sql = _build_insert_select(
+            write_ctx.schema, write_ctx.table, resolved_columns, select_sql
+        )
         log.debug("write INSERT...SELECT: %s", insert_sql[:200])
 
         # Execute
@@ -510,7 +514,9 @@ class IbisGateway:
         backend = DuckDBPolicyBackend(self._gateway)
 
         if on_conflict is None:
-            count = backend.bulk_insert(write_ctx.table_key, normalized_rows, columns=resolved_columns)
+            count = backend.bulk_insert(
+                write_ctx.table_key, normalized_rows, columns=resolved_columns
+            )
             return WriteResult(
                 table_key=write_ctx.table_key,
                 rows_affected=count,
@@ -562,7 +568,9 @@ class IbisGateway:
         backend = DuckDBPolicyBackend(self._gateway)
 
         if on_conflict is None:
-            count = backend.bulk_insert(write_ctx.table_key, normalized_rows, columns=resolved_columns)
+            count = backend.bulk_insert(
+                write_ctx.table_key, normalized_rows, columns=resolved_columns
+            )
             return WriteResult(
                 table_key=write_ctx.table_key,
                 rows_affected=count,

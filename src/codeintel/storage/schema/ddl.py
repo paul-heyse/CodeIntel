@@ -149,6 +149,7 @@ def ensure_schemas_preserve(
 def assert_schema_alignment(
     con: DuckDBPyConnection,
     *,
+    include_views: bool = True,
     strict: bool = True,
     logger: logging.Logger | None = None,
 ) -> list[str]:
@@ -160,6 +161,8 @@ def assert_schema_alignment(
         DuckDB connection.
     strict
         If True, raise RuntimeError on schema drift.
+    include_views
+        When False, ignore view contracts during alignment checks.
     logger
         Optional logger for error messages.
 
@@ -175,6 +178,8 @@ def assert_schema_alignment(
     """
     issues: list[str] = []
     for contract in get_dataset_contracts_by_table_key().values():
+        if contract.is_view and not include_views:
+            continue
         if contract.schema is None:
             continue
         table = contract.schema

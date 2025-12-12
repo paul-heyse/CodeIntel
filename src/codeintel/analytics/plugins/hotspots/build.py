@@ -113,10 +113,14 @@ class HotspotsPlugin(TargetPlugin):
         for table_key in ctx.contract.table_keys:
             try:
                 relation = ctx.gateway.con.table(table_key)
-                count_row = relation.filter(
-                    "repo = ? AND commit = ?",
-                    [ctx.repo, ctx.commit],
-                ).aggregate("count(*)").fetchone()
+                count_row = (
+                    relation.filter(
+                        "repo = ? AND commit = ?",
+                        [ctx.repo, ctx.commit],
+                    )
+                    .aggregate("count(*)")
+                    .fetchone()
+                )
                 count = int(count_row[0]) if count_row else 0
                 row_counts[table_key] = count
             except (RuntimeError, OSError):

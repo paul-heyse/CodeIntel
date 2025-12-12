@@ -203,9 +203,7 @@ def _apply_moves(path: Path, lines: set[int]) -> bool:
     wrapper = metadata.MetadataWrapper(module)
     positions = wrapper.resolve(metadata.PositionProvider)
 
-    moved_imports, remaining_body = _collect_movable_imports(
-        list(module.body), lines, positions
-    )
+    moved_imports, remaining_body = _collect_movable_imports(list(module.body), lines, positions)
     if not moved_imports:
         return False
 

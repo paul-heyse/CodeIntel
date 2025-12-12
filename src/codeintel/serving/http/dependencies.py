@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.auto_pipeline import ensure_prereqs_for_http
@@ -14,8 +14,6 @@ from codeintel.serving.services.query_service import QueryService
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-    from fastapi import Request
 
 
 def get_app_config(request: Request) -> ServingConfig:

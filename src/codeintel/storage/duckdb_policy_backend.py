@@ -608,7 +608,61 @@ class DuckDBPolicyBackend:
             # Default to main schema for unqualified table names
             schema = "main"
             table = table_key
-        self.delete_repo_commit(schema, table, repo, commit)
+        columns = self._get_table_columns(schema, table)
+        if not columns:
+            return
+        if "repo" in columns and "commit" in columns:
+            self.delete_repo_commit(schema, table, repo, commit)
+            return
+
+        if "repo" in columns:
+            delete_expr = _build_delete(schema, table, {"repo": "repo"})
+            sql = delete_expr.sql(dialect=DUCKDB_DIALECT)
+            sql = sql.replace(":repo", "?").replace("$repo", "?")
+            self._run_sql(sql, (repo,))
+            return
+
+        if "commit" in columns:
+            delete_expr = _build_delete(schema, table, {"commit": "commit"})
+            sql = (
+                delete_expr.sql(dialect=DUCKDB_DIALECT)
+                .replace(":commit", "?")
+                .replace("$commit", "?")
+            )
+            self._run_sql(sql, (commit,))
+            return
+
+        delete_expr = exp.Delete(
+            this=exp.Table(
+                this=exp.to_identifier(table),
+                db=exp.to_identifier(schema),
+            )
+        )
+        self._run_sql(delete_expr.sql(dialect=DUCKDB_DIALECT))
+
+    def _get_table_columns(self, schema: str, table: str) -> frozenset[str]:
+        """Return column names present in the given table.
+
+        Parameters
+        ----------
+        schema
+            Schema containing the table.
+        table
+            Table name (unqualified).
+
+        Returns
+        -------
+        frozenset[str]
+            Column names present in the table, or empty when missing.
+        """
+        rows = self.gateway.con.execute(
+            (
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = ? AND table_name = ?"
+            ),
+            (schema, table),
+        ).fetchall()
+        return frozenset(str(row[0]) for row in rows)
 
     def clear_cfg_metrics(self, repo: str, commit: str) -> None:
         """Clear CFG metrics for a snapshot.

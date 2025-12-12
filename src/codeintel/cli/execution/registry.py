@@ -53,7 +53,13 @@ class _ContextModule(Protocol):
 
 
 def _load_context_module() -> _ContextModule:
-    """Import the CLI context module lazily to avoid import cycles."""
+    """Import the CLI context module lazily to avoid import cycles.
+
+    Returns
+    -------
+    _ContextModule
+        Imported context module providing CommandContextBuilder.
+    """
     module = importlib.import_module("codeintel.cli.context")
     return cast("_ContextModule", module)
 
@@ -585,7 +591,8 @@ def execute_operation(
     >>> result = execute_operation(spec, {"param": "value"})  # doctest: +SKIP
     """
     builder = (
-        _load_context_module().CommandContextBuilder()
+        _load_context_module()
+        .CommandContextBuilder()
         .with_params(params)
         .with_output_format(OutputFormat.JSON)  # Default to JSON for programmatic use
         .with_verbosity(0)

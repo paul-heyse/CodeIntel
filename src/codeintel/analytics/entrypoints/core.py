@@ -429,8 +429,20 @@ def _load_coverage_by_goid(
     rows = con.execute(
         """
         SELECT function_goid_h128, coverage_ratio
-        FROM analytics.coverage_functions
-        WHERE repo = ? AND commit = ?
+        FROM (
+            SELECT
+                function_goid_h128,
+                coverage_ratio,
+                executable_lines,
+                created_at,
+                ROW_NUMBER() OVER (
+                    PARTITION BY function_goid_h128
+                    ORDER BY executable_lines DESC NULLS LAST, created_at DESC NULLS LAST
+                ) AS rn
+            FROM analytics.coverage_functions
+            WHERE repo = ? AND commit = ?
+        ) ranked
+        WHERE rn = 1
         """,
         [repo, commit],
     ).fetchall()

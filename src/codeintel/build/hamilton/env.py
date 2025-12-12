@@ -14,7 +14,7 @@ Design Principles
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -47,6 +47,9 @@ class BuildEnv:
     profile
         Optional policy profile name (e.g., "fast", "full", "default").
         Used to select execution variants in later phases.
+    force_targets
+        Set of target names that should bypass skip checks and always
+        recompute. Used to implement --force CLI flag.
 
     Examples
     --------
@@ -57,6 +60,7 @@ class BuildEnv:
     ...     providers=providers,
     ...     config=config,
     ...     profile="default",
+    ...     force_targets=frozenset(["function_metrics"]),
     ... )
     >>> driver.execute(["t__risk_factors"], inputs={"env": env})
     """
@@ -67,6 +71,7 @@ class BuildEnv:
     providers: Providers
     config: BuildConfig
     profile: str | None = None
+    force_targets: frozenset[str] = field(default_factory=frozenset)
 
     @property
     def repo(self) -> str:
@@ -89,6 +94,21 @@ class BuildEnv:
             Commit identifier from snapshot.
         """
         return self.snapshot.commit
+
+    def is_forced(self, target_name: str) -> bool:
+        """Check if a target is in the force set.
+
+        Parameters
+        ----------
+        target_name
+            Target name to check.
+
+        Returns
+        -------
+        bool
+            True if target should bypass skip checks.
+        """
+        return target_name in self.force_targets
 
 
 __all__ = [

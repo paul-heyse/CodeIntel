@@ -281,7 +281,7 @@ _LAZY_HELPERS = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name in _LAZY_HELPERS:
         module_name = _LAZY_HELPERS[name]
         module = __import__(module_name, fromlist=[name])

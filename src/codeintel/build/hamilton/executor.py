@@ -7,19 +7,29 @@ execution of build targets.
 Design Principles
 -----------------
 1. HamiltonBuildExecutor.run() is the main entry point for execution.
-2. It maps target names to Hamilton node names automatically.
+2. It maps target names to Hamilton node names via runtime mappings.
 3. Results are returned in a structured HamiltonBuildResult.
 4. The executor integrates with existing manifest/tracking infrastructure.
+5. Executes the full dependency closure, not just requested targets.
 """
 
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
+from codeintel.build.hamilton.driver_factory import (
+    HamiltonNodeMode,
+    HamiltonRuntime,
+    build_driver,
+    target_to_node_name,
+)
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.manifest import BuildRunRecord
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
@@ -28,100 +38,231 @@ log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
+class _RunContext:
+    """Execution context shared across run steps."""
+
+    env: BuildEnv
+    targets: tuple[str, ...]
+    runtime: HamiltonRuntime
+    run_id: str
+    start_time: float
+    started_at: datetime
+
+    @property
+    def duration_ms(self) -> float:
+        """Return elapsed milliseconds for the run."""
+        return (time.perf_counter() - self.start_time) * 1000
+
+
+def _generate_run_id() -> str:
+    """Generate a unique run ID for build tracking.
+
+    Returns
+    -------
+    str
+        Unique run identifier for this Hamilton execution.
+    """
+    timestamp = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
+    suffix = uuid.uuid4().hex[:8]
+    return f"hamilton-{timestamp}-{suffix}"
+
+
+def _categorize_outputs(
+    closure: tuple[str, ...],
+    outputs: dict[str, Any],
+    runtime: HamiltonRuntime,
+) -> tuple[list[str], list[str], list[str]]:
+    """Categorize outputs into computed/skipped/failed lists.
+
+    Returns
+    -------
+    tuple[list[str], list[str], list[str]]
+        Computed, skipped, and failed targets in that order.
+    """
+    computed: list[str] = []
+    skipped: list[str] = []
+    failed: list[str] = []
+
+    for target in closure:
+        node_name = target_to_node_name(target, runtime=runtime)
+        if node_name is None:
+            failed.append(target)
+            continue
+
+        record = outputs.get(node_name)
+        if not isinstance(record, TargetRunRecord):
+            failed.append(target)
+        elif record.status == "succeeded":
+            computed.append(target)
+        elif record.status == "skipped":
+            skipped.append(target)
+        else:
+            failed.append(target)
+
+    return computed, skipped, failed
+
+
+def _map_closure_to_nodes(
+    closure: tuple[str, ...],
+    runtime: HamiltonRuntime,
+) -> tuple[list[str], list[str]]:
+    """Map closure targets to Hamilton node names.
+
+    Returns
+    -------
+    tuple[list[str], list[str]]
+        Node names for final execution variables, and missing targets.
+    """
+    final_vars: list[str] = []
+    missing: list[str] = []
+
+    for target in closure:
+        node_name = target_to_node_name(target, runtime=runtime)
+        if node_name is None:
+            missing.append(target)
+        else:
+            final_vars.append(node_name)
+
+    return final_vars, missing
+
+
+def _start_build_run(
+    env: BuildEnv,
+    run_id: str,
+    targets: list[str],
+    start_datetime: datetime,
+) -> None:
+    """Record the start of a build run."""
+    try:
+        record = BuildRunRecord(
+            run_id=run_id,
+            repo=env.repo,
+            commit=env.commit,
+            requested_targets=tuple(targets),
+            computed_targets=(),
+            skipped_targets=(),
+            started_at=start_datetime,
+            status="running",
+        )
+        env.gateway.build.start_run(record)
+    except Exception:  # noqa: BLE001 - Best effort tracking
+        log.warning("build.hamilton.executor.start_run_failed run_id=%s", run_id)
+
+
+@dataclass(frozen=True)
+class _RunCompletionParams:
+    """Parameters for completing a build run."""
+
+    env: BuildEnv
+    run_id: str
+    success: bool
+    computed: tuple[str, ...]
+    skipped: tuple[str, ...]
+    error_summary: str | None
+
+
+def _complete_build_run(params: _RunCompletionParams) -> None:
+    """Complete a build run record."""
+    try:
+        status = "succeeded" if params.success else "failed"
+        params.env.gateway.build.complete_run(
+            run_id=params.run_id,
+            status=status,
+            computed_targets=params.computed,
+            skipped_targets=params.skipped,
+            error_summary=params.error_summary,
+        )
+    except Exception:  # noqa: BLE001 - Best effort tracking
+        log.warning("build.hamilton.executor.complete_run_failed run_id=%s", params.run_id)
+
+
+@dataclass(frozen=True)
 class HamiltonBuildResult:
     """Result of a Hamilton-based build execution.
-
-    This captures the outputs from Hamilton Driver execution along with
-    metadata about what was requested.
 
     Attributes
     ----------
     requested
-        Tuple of target names that were requested.
+        Tuple of target names that were requested by the user.
+    closure
+        Tuple of target names in the full dependency closure.
+    computed_targets
+        Targets that were actually computed (status="succeeded").
+    skipped_targets
+        Targets that were skipped (status="skipped").
+    failed_targets
+        Targets that failed during execution (status="failed").
     outputs
-        Dictionary mapping Hamilton node names to their outputs
-        (TargetRunRecord instances).
+        Dictionary mapping Hamilton node names to their outputs.
     success
         Whether all requested targets succeeded.
-    failed_targets
-        Names of targets that failed during execution.
-
-    Examples
-    --------
-    >>> result = executor.run(env=env, targets=["modules", "ast"])
-    >>> if result.success:
-    ...     print(f"Completed {len(result.requested)} targets")
-    ... else:
-    ...     print(f"Failed: {result.failed_targets}")
+    duration_ms
+        Total execution duration in milliseconds.
+    error
+        Error message if the entire execution failed.
+    run_id
+        Unique identifier for this build run.
+    runtime
+        Reference to the HamiltonRuntime for mapping lookups.
     """
 
     requested: tuple[str, ...]
+    closure: tuple[str, ...] = ()
+    computed_targets: tuple[str, ...] = ()
+    skipped_targets: tuple[str, ...] = ()
+    failed_targets: tuple[str, ...] = ()
     outputs: dict[str, Any] = field(default_factory=dict)
     success: bool = True
-    failed_targets: tuple[str, ...] = ()
+    duration_ms: float = 0.0
+    error: str | None = None
+    run_id: str = ""
+    runtime: HamiltonRuntime | None = None
 
     def get_record(self, target_name: str) -> TargetRunRecord | None:
         """Get the execution record for a target.
 
-        Parameters
-        ----------
-        target_name
-            Target name (e.g., "modules", not "t__modules").
-
         Returns
         -------
         TargetRunRecord | None
-            Execution record if available, None otherwise.
+            Execution record for the target, if present.
         """
-        node_name = target_to_node_name(target_name)
+        node_name = target_to_node_name(target_name, runtime=self.runtime)
         if node_name is None:
             return None
         value = self.outputs.get(node_name)
-        if isinstance(value, TargetRunRecord):
-            return value
-        return None
+        return value if isinstance(value, TargetRunRecord) else None
 
 
 class HamiltonBuildExecutor:
     """Execute build targets using Hamilton Driver.
 
-    This executor provides an alternative to the legacy BuildExecutor,
-    using Hamilton for DAG-based dependency resolution and execution.
-
     Parameters
     ----------
     profile
         Optional policy profile name (e.g., "fast", "full", "default").
-
-    Examples
-    --------
-    >>> executor = HamiltonBuildExecutor(profile="default")
-    >>> result = executor.run(env=env, targets=["function_metrics"])
-    >>> for target in result.requested:
-    ...     record = result.get_record(target)
-    ...     print(f"{target}: {record.status}")
+    mode
+        Node mode: "phase0" for explicit nodes, "generated" for all targets.
     """
 
-    def __init__(self, *, profile: str | None = None) -> None:
-        """Initialize the Hamilton executor.
-
-        Parameters
-        ----------
-        profile
-            Optional policy profile name.
-        """
+    def __init__(
+        self,
+        *,
+        profile: str | None = None,
+        mode: HamiltonNodeMode = "phase0",
+    ) -> None:
+        """Initialize the Hamilton executor."""
         self._profile = profile
+        self._mode: HamiltonNodeMode = mode
 
     @property
     def profile(self) -> str | None:
-        """Return the configured profile name.
-
-        Returns
-        -------
-        str | None
-            Profile name or None if not configured.
-        """
+        """Return the configured profile name."""
         return self._profile
+
+    @property
+    def mode(self) -> HamiltonNodeMode:
+        """Return the configured node mode."""
+        return self._mode
 
     def run(
         self,
@@ -131,103 +272,179 @@ class HamiltonBuildExecutor:
     ) -> HamiltonBuildResult:
         """Execute build targets using Hamilton.
 
-        Builds a Hamilton Driver, maps target names to node names,
-        and executes the DAG to compute the requested targets.
+        Returns
+        -------
+        HamiltonBuildResult
+            Structured result containing outputs and status details.
+        """
+        context = _RunContext(
+            env=env,
+            targets=tuple(targets),
+            runtime=self._build_runtime(),
+            run_id=_generate_run_id(),
+            start_time=time.perf_counter(),
+            started_at=datetime.now(tz=UTC),
+        )
+        log.info(
+            "build.hamilton.executor.start run_id=%s targets=%s mode=%s",
+            context.run_id,
+            targets,
+            self._mode,
+        )
 
-        Parameters
-        ----------
-        env
-            Build environment with gateway, snapshot, providers, etc.
-        targets
-            List of target names to compute (e.g., ["function_metrics"]).
+        closure = self._compute_closure(context.runtime, targets, context.run_id)
+        if closure is None:
+            return self._make_error_result(context, "Failed to compute closure")
+
+        final_vars, missing = _map_closure_to_nodes(closure, context.runtime)
+        if missing:
+            return self._make_missing_result(context, closure, missing)
+
+        _start_build_run(context.env, context.run_id, targets, context.started_at)
+        outputs, error = self._execute_dag(
+            context.runtime,
+            final_vars,
+            context.env,
+            context.run_id,
+        )
+
+        computed, skipped, failed = _categorize_outputs(closure, outputs, context.runtime)
+        duration_ms = context.duration_ms
+        success = not failed and error is None
+
+        error_summary = error or (f"{len(failed)} targets failed" if failed else None)
+        completion_params = _RunCompletionParams(
+            env=context.env,
+            run_id=context.run_id,
+            success=success,
+            computed=tuple(computed),
+            skipped=tuple(skipped),
+            error_summary=error_summary,
+        )
+        _complete_build_run(completion_params)
+
+        log.info(
+            "build.hamilton.executor.complete run_id=%s success=%s duration_ms=%.1f",
+            context.run_id,
+            success,
+            duration_ms,
+        )
+
+        return HamiltonBuildResult(
+            requested=context.targets,
+            closure=closure,
+            computed_targets=tuple(computed),
+            skipped_targets=tuple(skipped),
+            failed_targets=tuple(failed),
+            outputs=outputs,
+            success=success,
+            duration_ms=duration_ms,
+            error=error,
+            run_id=context.run_id,
+            runtime=context.runtime,
+        )
+
+    def _build_runtime(self) -> HamiltonRuntime:
+        """Build Hamilton runtime with configured mode.
+
+        Returns
+        -------
+        HamiltonRuntime
+            Configured runtime with driver and target graph.
+        """
+        config: dict[str, Any] = {"profile": self._profile or "default"}
+        return build_driver(config=config, mode=self._mode)
+
+    @staticmethod
+    def _compute_closure(
+        runtime: HamiltonRuntime,
+        targets: list[str],
+        run_id: str,
+    ) -> tuple[str, ...] | None:
+        """Compute dependency closure, returning None on error.
+
+        Returns
+        -------
+        tuple[str, ...] | None
+            Ordered dependency closure, or None if computation failed.
+        """
+        try:
+            return runtime.graph.topological_order(targets)
+        except (KeyError, ValueError):
+            log.exception("build.hamilton.executor.closure_error run_id=%s", run_id)
+            return None
+
+    @staticmethod
+    def _make_error_result(
+        context: _RunContext,
+        error: str,
+    ) -> HamiltonBuildResult:
+        """Create error result for closure computation failure.
 
         Returns
         -------
         HamiltonBuildResult
-            Result with outputs and success status.
-
-        Examples
-        --------
-        >>> result = executor.run(env=env, targets=["modules", "ast"])
-        >>> print(f"Completed: {result.success}")
+            Error result indicating failed closure computation.
         """
-        log.info(
-            "build.hamilton.executor.start targets=%s profile=%s",
-            targets,
-            self._profile,
+        return HamiltonBuildResult(
+            requested=context.targets,
+            success=False,
+            failed_targets=context.targets,
+            duration_ms=context.duration_ms,
+            error=error,
+            run_id=context.run_id,
+            runtime=context.runtime,
         )
 
-        # Map target names to Hamilton node names
-        node_names: list[str] = []
-        missing_targets: list[str] = []
+    @staticmethod
+    def _make_missing_result(
+        context: _RunContext,
+        closure: tuple[str, ...],
+        missing: list[str],
+    ) -> HamiltonBuildResult:
+        """Create error result for missing node mappings.
 
-        for target in targets:
-            node_name = target_to_node_name(target)
-            if node_name is None:
-                log.warning(
-                    "build.hamilton.executor.unknown_target target=%s",
-                    target,
-                )
-                missing_targets.append(target)
-            else:
-                node_names.append(node_name)
+        Returns
+        -------
+        HamiltonBuildResult
+            Error result indicating missing node mappings.
+        """
+        log.error("build.hamilton.executor.missing_targets targets=%s", missing)
+        return HamiltonBuildResult(
+            requested=context.targets,
+            closure=closure,
+            success=False,
+            failed_targets=tuple(missing),
+            duration_ms=context.duration_ms,
+            error=f"Missing node mappings for: {missing}",
+            run_id=context.run_id,
+            runtime=context.runtime,
+        )
 
-        if missing_targets:
-            log.error(
-                "build.hamilton.executor.missing_targets targets=%s",
-                missing_targets,
-            )
-            return HamiltonBuildResult(
-                requested=tuple(targets),
-                outputs={},
-                success=False,
-                failed_targets=tuple(missing_targets),
-            )
+    @staticmethod
+    def _execute_dag(
+        runtime: HamiltonRuntime,
+        final_vars: list[str],
+        env: BuildEnv,
+        run_id: str,
+    ) -> tuple[dict[str, Any], str | None]:
+        """Execute the Hamilton DAG, returning (outputs, error).
 
-        # Build Hamilton Driver
-        config: dict[str, Any] = {"profile": self._profile or "default"}
-        runtime = build_driver(config=config)
-
-        # Execute the DAG
+        Returns
+        -------
+        tuple[dict[str, Any], str | None]
+            Outputs keyed by node name, and optional error string.
+        """
         try:
-            # Hamilton's execute() accepts list of strings, functions, or nodes
             outputs = runtime.dr.execute(
-                final_vars=list(node_names),
+                final_vars=list(final_vars),
                 inputs={"env": env, "graph": runtime.graph},
             )
-        except Exception:
-            log.exception("build.hamilton.executor.error")
-            return HamiltonBuildResult(
-                requested=tuple(targets),
-                outputs={},
-                success=False,
-                failed_targets=tuple(targets),
-            )
-
-        # Check for failed targets
-        failed: list[str] = []
-        for target in targets:
-            node_name = target_to_node_name(target)
-            if node_name is None:
-                continue
-            record = outputs.get(node_name)
-            if isinstance(record, TargetRunRecord) and record.status == "failed":
-                failed.append(target)
-
-        success = len(failed) == 0
-
-        log.info(
-            "build.hamilton.executor.complete success=%s failed=%s",
-            success,
-            failed,
-        )
-
-        return HamiltonBuildResult(
-            requested=tuple(targets),
-            outputs=outputs,
-            success=success,
-            failed_targets=tuple(failed),
-        )
+        except Exception as exc:
+            log.exception("build.hamilton.executor.error run_id=%s", run_id)
+            return {}, str(exc)
+        else:
+            return outputs, None
 
 
 __all__ = [

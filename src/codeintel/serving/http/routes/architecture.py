@@ -6,13 +6,12 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends
 
-from codeintel.serving.http.dependencies import make_op_prereq_dependency
+from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import FunctionArchitectureResponse, ModuleArchitectureResponse
 from codeintel.serving.operations import get_operation
 
 if TYPE_CHECKING:
-    from codeintel.serving.http.dependencies import ServiceDep
     from codeintel.serving.http.routes.functions import RouterOptions
     from codeintel.serving.operations import Operation
 

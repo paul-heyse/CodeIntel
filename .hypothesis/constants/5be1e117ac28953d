@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/validation/contract.py
+# hypothesis_version: 6.148.7
+
+['.', 'data_model_fields', 'dataset_rows_only', 'tmp_']

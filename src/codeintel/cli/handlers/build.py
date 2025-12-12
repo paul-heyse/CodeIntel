@@ -273,6 +273,7 @@ def _execute_build_hamilton(
     gateway: StorageGateway,
     goals: list[str],
     run_mode: RunMode,
+    force: list[str] | None = None,
 ) -> BuildResultLike | None:
     """Execute build using Hamilton executor.
 
@@ -286,6 +287,8 @@ def _execute_build_hamilton(
         Target names to build.
     run_mode
         Whether to execute or return a dry-run plan.
+    force
+        Optional list of targets to force recompute.
 
     Returns
     -------
@@ -296,7 +299,7 @@ def _execute_build_hamilton(
         LOG.info("build.cli.hamilton.dry_run goals=%s", goals)
         return None
 
-    LOG.info("build.cli.hamilton.execute goals=%s", goals)
+    LOG.info("build.cli.hamilton.execute goals=%s force=%s", goals, force)
 
     # Build the Hamilton environment
     providers = create_default_providers(runtime.tools)
@@ -309,6 +312,7 @@ def _execute_build_hamilton(
         providers=providers,
         config=config,
         profile="default",
+        force_targets=frozenset(force or ()),
     )
 
     executor = HamiltonBuildExecutor(profile="default")
@@ -334,23 +338,19 @@ class _HamiltonResultAdapter:
 
     @property
     def completed_targets(self) -> tuple[str, ...]:
-        """Return targets that completed successfully."""
-        completed: list[str] = []
-        for target in self._result.requested:
-            record = self._result.get_record(target)
-            if record is not None and record.status in {"succeeded", "skipped"}:
-                completed.append(target)
-        return tuple(completed)
+        """Return targets that completed successfully.
+
+        Uses the new computed_targets field from HamiltonBuildResult.
+        """
+        return self._result.computed_targets
 
     @property
     def skipped_targets(self) -> tuple[str, ...]:
-        """Return targets that were skipped."""
-        skipped: list[str] = []
-        for target in self._result.requested:
-            record = self._result.get_record(target)
-            if record is not None and record.status == "skipped":
-                skipped.append(target)
-        return tuple(skipped)
+        """Return targets that were skipped.
+
+        Uses the new skipped_targets field from HamiltonBuildResult.
+        """
+        return self._result.skipped_targets
 
     @property
     def failed_targets(self) -> tuple[str, ...]:
@@ -359,13 +359,11 @@ class _HamiltonResultAdapter:
 
     @property
     def duration_ms(self) -> float:
-        """Return total duration in milliseconds."""
-        total = 0.0
-        for target in self._result.requested:
-            record = self._result.get_record(target)
-            if record is not None:
-                total += record.duration_ms
-        return total
+        """Return total duration in milliseconds.
+
+        Uses the duration_ms field from HamiltonBuildResult.
+        """
+        return self._result.duration_ms
 
 
 def _lookup_run_by_id(
@@ -624,7 +622,7 @@ def _execute_and_format_result(
     try:
         with runtime_gateway(runtime, read_only=False) as gateway:
             if engine == "hamilton":
-                result = _execute_build_hamilton(runtime, gateway, goals, run_mode)
+                result = _execute_build_hamilton(runtime, gateway, goals, run_mode, force)
             else:
                 result, _plan = _execute_build(runtime, gateway, goals, force, run_mode)
     except Exception as exc:
@@ -700,12 +698,95 @@ def build_history_handler(
     )
 
 
+@dataclass(frozen=True)
+class BuildGraphResult:
+    """Result type for build graph command."""
+
+    dag_json: str
+    node_count: int
+    edge_count: int
+
+
+def build_graph_handler(
+    ctx: CommandContext,
+) -> CliResult[BuildGraphResult]:
+    """Export Hamilton DAG for specified targets.
+
+    Parameters
+    ----------
+    ctx
+        Command context with params:
+        - targets: List of target names.
+        - module: Optional module filter.
+        - all_targets: Whether to include all targets.
+        - output_format: Output format (json or text).
+        - output_file: Optional output file path.
+
+    Returns
+    -------
+    CliResult[BuildGraphResult]
+        Structured result with DAG information.
+    """
+    from pathlib import Path
+
+    from codeintel.build.hamilton.driver_factory import build_driver
+    from codeintel.build.hamilton.observability import export_dag_json, get_dag_info
+
+    # Verify we can resolve runtime (validates project)
+    try:
+        _ = ctx.runtime
+    except ResolutionError as e:
+        return fail_project_error("build", str(e))
+
+    graph = get_target_graph()
+
+    # Parse targets
+    targets_list = ctx.params.get_list("targets")
+    targets: list[str] | None = targets_list if targets_list else None
+
+    module = ctx.params.get_str("module")
+    all_targets = ctx.params.get_bool("all_targets")
+    output_file = ctx.params.get_str("output_file")
+
+    try:
+        goals = _resolve_goals(
+            targets=targets,
+            module=module,
+            target_scope=TargetScope.ALL if all_targets else TargetScope.REQUESTED,
+            graph=graph,
+        )
+    except ValidationError as e:
+        return fail_invalid_target_selection(str(e))
+
+    # Build Hamilton runtime in generated mode
+    hamilton_runtime = build_driver(mode="generated")
+
+    # Get DAG info
+    dag_info = get_dag_info(hamilton_runtime, goals)
+    dag_json = export_dag_json(hamilton_runtime, goals)
+
+    # Write to file if specified
+    if output_file:
+        Path(output_file).write_text(dag_json, encoding="utf-8")
+        LOG.info("build.graph.written path=%s", output_file)
+
+    return CliResult.ok(
+        BuildGraphResult(
+            dag_json=dag_json,
+            node_count=dag_info["node_count"],
+            edge_count=dag_info["edge_count"],
+        )
+    )
+
+
 __all__ = [
+    "BuildGraphResult",
     "BuildHistoryResult",
     "BuildRunResult",
     "BuildStatusResult",
     "RunMode",
     "TargetScope",
+    "build_graph_handler",
     "build_history_handler",
     "build_run_handler",
     "build_status_handler",

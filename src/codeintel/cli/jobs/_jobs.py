@@ -40,7 +40,13 @@ class _ExecutionRegistryModule(Protocol):
 
 
 def _load_execution_registry() -> _ExecutionRegistryModule:
-    """Import the execution registry lazily to avoid import cycles."""
+    """Import the execution registry lazily to avoid import cycles.
+
+    Returns
+    -------
+    _ExecutionRegistryModule
+        Imported execution registry module providing registry accessors.
+    """
     module = importlib.import_module("codeintel.cli.execution.registry")
     return cast("_ExecutionRegistryModule", module)
 

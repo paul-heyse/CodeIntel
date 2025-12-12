@@ -207,8 +207,8 @@ def load_symbol_module_edges(
     if module_by_path is None:
         # Join symbol_use_edges with modules tables to get module names
         su = gateway.ibis.table("graph.symbol_use_edges")
-        m_def = gateway.ibis.table("core.modules")
-        m_use = gateway.ibis.table("core.modules")
+        m_def = gateway.ibis.table("core.modules").view()
+        m_use = gateway.ibis.table("core.modules").view()
 
         # Left join to get module names for def and use paths
         joined = (

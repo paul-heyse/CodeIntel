@@ -32,16 +32,14 @@ Layer Hierarchy
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from collections.abc import Mapping, Sequence
+from typing import Protocol
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
-    from codeintel.config.steps_graphs import GraphRunScope
-    from codeintel.serving import domain_models as dm
-    from codeintel.serving.backend.pagination import BackendLimits
-    from codeintel.serving.mcp.models import DatasetSpecDescriptor
-    from codeintel.storage.gateway import StorageGateway
+from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.serving import domain_models as dm
+from codeintel.serving.backend.pagination import BackendLimits
+from codeintel.serving.mcp.models import DatasetSpecDescriptor
+from codeintel.storage.gateway import StorageGateway
 
 
 class FunctionQueriesApi(Protocol):

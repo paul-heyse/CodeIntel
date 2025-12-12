@@ -252,7 +252,7 @@ def _is_optional_type(type_hint: type[Any] | None) -> bool:
         True if the type is Optional[X] or X | None.
     """
     if type_hint is None:
-        return True
+        return False
 
     origin = get_origin(type_hint)
     if origin is None:

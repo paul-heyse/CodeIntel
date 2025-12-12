@@ -39,6 +39,32 @@ log = logging.getLogger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 
 
+def _ensure_dataframe(result: object, table_key: str) -> pd.DataFrame:
+    """Ensure validation inputs are DataFrames.
+
+    Parameters
+    ----------
+    result
+        Object to validate.
+    table_key
+        Table key used for error context.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame to validate.
+
+    Raises
+    ------
+    TypeError
+        If the provided result is not a pandas DataFrame.
+    """
+    if isinstance(result, pd.DataFrame):
+        return result
+    msg = f"Expected pandas.DataFrame for {table_key}, got {type(result).__name__}"
+    raise TypeError(msg)
+
+
 def get_pandera_schema(table_key: str) -> pa.DataFrameSchema | None:
     """Retrieve Pandera schema from registry.
 
@@ -83,6 +109,8 @@ def validate_dataframe(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
     ------
     ValueError
         If no schema is registered for the table key, or if validation fails.
+    TypeError
+        If the provided object is not a pandas DataFrame.
 
     Examples
     --------
@@ -93,6 +121,9 @@ def validate_dataframe(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
     if schema is None:
         msg = f"No Pandera schema registered for {table_key}"
         raise ValueError(msg)
+    if not isinstance(df, pd.DataFrame):
+        msg = f"Expected pandas.DataFrame for {table_key}, got {type(df).__name__}"
+        raise TypeError(msg)
     return schema.validate(df)
 
 
@@ -123,24 +154,23 @@ def with_contract(table_key: str) -> Callable[[F], F]:
     ... def compute_metrics(data: pd.DataFrame) -> pd.DataFrame:
     ...     return process(data)
     """
-    schema = get_pandera_schema(table_key)
-
     def decorator(func: F) -> F:
-        if schema is None:
-            log.warning(
-                "No Pandera schema for %s; skipping validation for %s",
-                table_key,
-                func.__name__,
-            )
-            return func
-
         @wraps(func)
         def wrapper(*args: object, **kwargs: object) -> object:
             result = func(*args, **kwargs)
-            # Validate the result if it's a DataFrame
-            if isinstance(result, pd.DataFrame):
-                return schema.validate(result)
-            return result
+            if not isinstance(result, pd.DataFrame):
+                return result
+
+            schema = get_pandera_schema(table_key)
+            if schema is None:
+                log.warning(
+                    "No Pandera schema for %s; skipping validation for %s",
+                    table_key,
+                    func.__name__,
+                )
+                return result
+
+            return schema.validate(result)
 
         return wrapper  # type: ignore[return-value]
 
@@ -181,10 +211,10 @@ def validate_dataset_ref(
         return True, None
 
     try:
-        # Load table and validate
         table = gateway.ibis.table(ref.table_key)
         df = table.execute()
-        schema.validate(df)
+        frame = _ensure_dataframe(df, ref.table_key)
+        schema.validate(frame)
     except (ValueError, TypeError, RuntimeError) as e:
         return False, str(e)
     else:

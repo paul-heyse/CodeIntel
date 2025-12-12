@@ -6,13 +6,13 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter
 
+from codeintel.serving.http.dependencies import BackendDep, ConfigDep
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.operations import get_operation
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    from codeintel.serving.http.dependencies import BackendDep, ConfigDep
     from codeintel.serving.operations import Operation
 
 

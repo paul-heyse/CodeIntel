@@ -255,6 +255,8 @@ def _resolve_gateway_for_config(
 def _build_backend_kwargs(
     backend_factory: Callable[..., BackendResource],
     gateway: StorageGateway | None,
+    *,
+    owns_gateway: bool,
 ) -> dict[str, object]:
     """
     Build keyword arguments for the backend factory.
@@ -270,6 +272,10 @@ def _build_backend_kwargs(
         backend_kwargs["gateway"] = gateway
     elif "_gateway" in params:
         backend_kwargs["_gateway"] = gateway
+    if "owns_gateway" in params:
+        backend_kwargs["owns_gateway"] = owns_gateway
+    elif "_owns_gateway" in params:
+        backend_kwargs["_owns_gateway"] = owns_gateway
     return backend_kwargs
 
 
@@ -342,11 +348,16 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config = config_loader()
+        owns_gateway = gateway is None and config.mode == "local_db"
         gw = _resolve_gateway_for_config(config, gateway)
         if gw is None and config.mode == "local_db":
             message = "StorageGateway is required for local_db FastAPI app"
             raise mcp_errors.backend_failure(message)
-        backend_kwargs = _build_backend_kwargs(backend_factory, gw)
+        backend_kwargs = _build_backend_kwargs(
+            backend_factory,
+            gw,
+            owns_gateway=owns_gateway,
+        )
         try:
             backend_resource = backend_factory(config, **backend_kwargs)
         except (ProblemError, ValueError, OSError, RuntimeError) as exc:

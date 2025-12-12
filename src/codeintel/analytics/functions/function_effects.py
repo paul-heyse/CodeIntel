@@ -23,6 +23,7 @@ from codeintel.analytics.runtime import (
 )
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
+from codeintel.config import FunctionEffectsStepConfig
 from codeintel.graphs.catalog import (
     FunctionCatalogService,
 )
@@ -39,7 +40,6 @@ if TYPE_CHECKING:
         GraphRuntime,
         GraphRuntimeOptions,
     )
-    from codeintel.config import FunctionEffectsStepConfig
     from codeintel.graphs.catalog import (
         FunctionCatalogProvider,
     )

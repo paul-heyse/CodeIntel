@@ -7,6 +7,7 @@ real database schemas, ingestion pipelines, and tooling configurations.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
@@ -38,6 +39,8 @@ from tests._helpers.builders import (
     CallGraphNodeRow,
     GoidRow,
     RepoMapRow,
+    SubsystemModuleRow,
+    SubsystemRow,
     SymbolUseEdgeRow,
     insert_rows,
 )
@@ -870,7 +873,70 @@ def docs_views_ready_gateway(
         ),
     )
     seed_docs_export_minimal(ctx.gateway, repo=repo, commit=commit)
+    _seed_minimal_subsystems(ctx.gateway, repo=repo, commit=commit)
     return ctx
+
+
+def _seed_minimal_subsystems(gateway: StorageGateway, *, repo: str, commit: str) -> None:
+    """Seed subsystem rows for docs/CLI tests when missing."""
+    con = gateway.con
+    exists = con.execute(
+        "SELECT 1 FROM analytics.subsystems WHERE repo = ? AND commit = ? LIMIT 1",
+        [repo, commit],
+    ).fetchone()
+    if exists is not None:
+        return
+
+    module_rows = con.execute(
+        "SELECT module FROM core.modules WHERE repo = ? AND commit = ? ORDER BY module",
+        [repo, commit],
+    ).fetchall()
+    modules = [str(row[0]) for row in module_rows if row and row[0] is not None]
+    if not modules:
+        return
+
+    entrypoint_module = "pkg.mod" if "pkg.mod" in modules else modules[0]
+    ordered_modules = [entrypoint_module, *[m for m in modules if m != entrypoint_module]]
+    subsystem_id = "subsysdemo"
+
+    insert_rows(
+        gateway,
+        [
+            SubsystemModuleRow(
+                repo=repo,
+                commit=commit,
+                subsystem_id=subsystem_id,
+                module=mod,
+                role="entrypoint" if mod == entrypoint_module else "internal",
+            )
+            for mod in ordered_modules
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
+            SubsystemRow(
+                repo=repo,
+                commit=commit,
+                subsystem_id=subsystem_id,
+                name="Subsystem Demo",
+                description="Seeded subsystem for docs/CLI tests",
+                module_count=len(ordered_modules),
+                modules_json=json.dumps(ordered_modules),
+                entrypoints_json=json.dumps([entrypoint_module]),
+                internal_edge_count=0,
+                external_edge_count=0,
+                fan_in=0,
+                fan_out=0,
+                function_count=0,
+                avg_risk_score=None,
+                max_risk_score=None,
+                high_risk_function_count=0,
+                risk_level="low",
+                created_at=utcnow(),
+            )
+        ],
+    )
 
 
 def build_callgraph_fixture_repo(
