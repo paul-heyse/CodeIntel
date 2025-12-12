@@ -177,7 +177,7 @@ class CoreTables(BaseTableAccessor):
             else _normalize_to_mapping(row, self._repo_map_columns, "core.repo_map")
             for row in rows
         )
-        insert_rows(self.con, "core.repo_map", normalized_rows)
+        insert_rows(self.gateway, "core.repo_map", normalized_rows)
 
     def insert_modules(
         self,
@@ -228,7 +228,7 @@ class CoreTables(BaseTableAccessor):
                 f"or {full_len} fields, got {len(sequence)}: {sequence}"
             )
             raise ValueError(message)
-        insert_rows(self.con, "core.modules", normalized_rows)
+        insert_rows(self.gateway, "core.modules", normalized_rows)
 
     def insert_file_state(
         self,
@@ -247,7 +247,7 @@ class CoreTables(BaseTableAccessor):
             else _normalize_to_mapping(row, self._file_state_columns, "core.file_state")
             for row in rows
         )
-        insert_rows(self.con, "core.file_state", normalized_rows)
+        insert_rows(self.gateway, "core.file_state", normalized_rows)
 
     def insert_goids(
         self,
@@ -266,7 +266,7 @@ class CoreTables(BaseTableAccessor):
             else _normalize_to_mapping(row, self._goids_columns, "core.goids")
             for row in rows
         )
-        insert_rows(self.con, "core.goids", normalized_rows)
+        insert_rows(self.gateway, "core.goids", normalized_rows)
 
     def insert_scip_occurrences(
         self,
@@ -289,7 +289,7 @@ class CoreTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "core.scip_occurrences", normalized_rows)
+        insert_rows(self.gateway, "core.scip_occurrences", normalized_rows)
 
 
 @dataclass(frozen=True)
@@ -390,7 +390,7 @@ class GraphTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "graph.call_graph_edges", normalized_rows)
+        insert_rows(self.gateway, "graph.call_graph_edges", normalized_rows)
 
     def call_graph_nodes(self) -> DuckDBRelation:
         """Return relation for graph.call_graph_nodes.
@@ -415,7 +415,7 @@ class GraphTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "graph.call_graph_nodes", normalized_rows)
+        insert_rows(self.gateway, "graph.call_graph_nodes", normalized_rows)
 
     def import_graph_edges(self) -> DuckDBRelation:
         """Return relation for graph.import_graph_edges.
@@ -445,7 +445,7 @@ class GraphTables(BaseTableAccessor):
                     sequence, self._import_graph_edges_columns, "graph.import_graph_edges"
                 )
             )
-        insert_rows(self.con, "graph.import_graph_edges", normalized_rows)
+        insert_rows(self.gateway, "graph.import_graph_edges", normalized_rows)
 
     def symbol_use_edges(self) -> DuckDBRelation:
         """Return relation for graph.symbol_use_edges.
@@ -506,7 +506,7 @@ class GraphTables(BaseTableAccessor):
                 f"got {len(sequence)}: {sequence}"
             )
             raise ValueError(message)
-        insert_rows(self.con, "graph.symbol_use_edges", normalized_rows)
+        insert_rows(self.gateway, "graph.symbol_use_edges", normalized_rows)
 
     def insert_cfg_blocks(
         self,
@@ -519,7 +519,7 @@ class GraphTables(BaseTableAccessor):
             else _normalize_to_mapping(row, self._cfg_blocks_columns, "graph.cfg_blocks")
             for row in rows
         )
-        insert_rows(self.con, "graph.cfg_blocks", normalized_rows)
+        insert_rows(self.gateway, "graph.cfg_blocks", normalized_rows)
 
     def insert_cfg_edges(
         self,
@@ -532,7 +532,7 @@ class GraphTables(BaseTableAccessor):
             else _normalize_to_mapping(row, self._cfg_edges_columns, "graph.cfg_edges")
             for row in rows
         )
-        insert_rows(self.con, "graph.cfg_edges", normalized_rows)
+        insert_rows(self.gateway, "graph.cfg_edges", normalized_rows)
 
     def insert_dfg_edges(
         self,
@@ -545,7 +545,7 @@ class GraphTables(BaseTableAccessor):
             else _normalize_to_mapping(row, self._dfg_edges_columns, "graph.dfg_edges")
             for row in rows
         )
-        insert_rows(self.con, "graph.dfg_edges", normalized_rows)
+        insert_rows(self.gateway, "graph.dfg_edges", normalized_rows)
 
 
 @dataclass(frozen=True)
@@ -790,7 +790,7 @@ class AnalyticsTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "analytics.coverage_functions", normalized_rows)
+        insert_rows(self.gateway, "analytics.coverage_functions", normalized_rows)
 
     def coverage_lines(self) -> DuckDBRelation:
         """Return relation for analytics.coverage_lines.
@@ -833,7 +833,7 @@ class AnalyticsTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "analytics.coverage_lines", normalized_rows)
+        insert_rows(self.gateway, "analytics.coverage_lines", normalized_rows)
 
     def test_catalog(self) -> DuckDBRelation:
         """Return relation for analytics.test_catalog.
@@ -856,7 +856,7 @@ class AnalyticsTables(BaseTableAccessor):
             else _normalize_to_mapping(row, self._test_catalog_columns, "analytics.test_catalog")
             for row in rows
         )
-        insert_rows(self.con, "analytics.test_catalog", normalized_rows)
+        insert_rows(self.gateway, "analytics.test_catalog", normalized_rows)
 
     def test_coverage_edges(self) -> DuckDBRelation:
         """Return relation for analytics.test_coverage_edges.
@@ -883,7 +883,7 @@ class AnalyticsTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "analytics.test_coverage_edges", normalized_rows)
+        insert_rows(self.gateway, "analytics.test_coverage_edges", normalized_rows)
 
     def insert_function_metrics(
         self,
@@ -898,7 +898,7 @@ class AnalyticsTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "analytics.function_metrics", normalized_rows)
+        insert_rows(self.gateway, "analytics.function_metrics", normalized_rows)
 
     def insert_goid_risk_factors(
         self,
@@ -913,7 +913,7 @@ class AnalyticsTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "analytics.goid_risk_factors", normalized_rows)
+        insert_rows(self.gateway, "analytics.goid_risk_factors", normalized_rows)
 
     def insert_config_values(
         self,
@@ -926,7 +926,7 @@ class AnalyticsTables(BaseTableAccessor):
             else _normalize_to_mapping(row, self._config_values_columns, "analytics.config_values")
             for row in rows
         )
-        insert_rows(self.con, "analytics.config_values", normalized_rows)
+        insert_rows(self.gateway, "analytics.config_values", normalized_rows)
 
     def insert_typedness(
         self,
@@ -951,7 +951,7 @@ class AnalyticsTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "analytics.typedness", normalized_rows)
+        insert_rows(self.gateway, "analytics.typedness", normalized_rows)
 
     def insert_static_diagnostics(
         self,
@@ -966,7 +966,7 @@ class AnalyticsTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "analytics.static_diagnostics", normalized_rows)
+        insert_rows(self.gateway, "analytics.static_diagnostics", normalized_rows)
 
     def insert_subsystems(
         self,
@@ -979,7 +979,7 @@ class AnalyticsTables(BaseTableAccessor):
             else _normalize_to_mapping(row, self._subsystems_columns, "analytics.subsystems")
             for row in rows
         )
-        insert_rows(self.con, "analytics.subsystems", normalized_rows)
+        insert_rows(self.gateway, "analytics.subsystems", normalized_rows)
 
     def insert_subsystem_modules(
         self,
@@ -994,7 +994,7 @@ class AnalyticsTables(BaseTableAccessor):
             )
             for row in rows
         )
-        insert_rows(self.con, "analytics.subsystem_modules", normalized_rows)
+        insert_rows(self.gateway, "analytics.subsystem_modules", normalized_rows)
 
 
 def _normalize_to_mapping(
@@ -1040,11 +1040,11 @@ class DuckDBGateway:
         """Initialize table accessor instances after dataclass init."""
         self.ibis = IbisGateway(self)
         self.policy = DuckDBPolicyBackend(self)
-        self.analytics = AnalyticsTables(self.con)
+        self.analytics = AnalyticsTables(self)
         self.build = BuildTracking(self)
-        self.core = CoreTables(self.con)
-        self.docs = DocsViews(self.con)
-        self.graph = GraphTables(self.con)
+        self.core = CoreTables(self)
+        self.docs = DocsViews(self)
+        self.graph = GraphTables(self)
         self.runs = PipelineRunTracking(self.con)
 
     def close(self) -> None:

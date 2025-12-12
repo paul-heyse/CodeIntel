@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.config.datasets.schemas import TABLE_SCHEMAS
 from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
-from codeintel.storage.gateway.registry_generated import TABLE_REGISTRY
 from codeintel.storage.repositories import (
     DatasetReadRepository,
     FunctionRepository,
@@ -54,8 +54,10 @@ def _expect_in(member: object, container: Sequence[object], message: str) -> Non
 
 
 def _as_mapping(row: tuple[object, ...], table_key: str) -> dict[str, object]:
-    columns_raw = TABLE_REGISTRY[table_key]["columns"]
-    columns = cast("Sequence[str]", columns_raw)
+    schema = TABLE_SCHEMAS.get(table_key)
+    if schema is None:
+        raise AssertionError(f"Unknown table key: {table_key}")
+    columns = tuple(schema.column_names())
     return dict(zip(columns, row, strict=True))
 
 
@@ -262,17 +264,17 @@ def test_data_model_accessors(docs_export_gateway: TestContext) -> None:
     )
 
     insert_mapping_rows(
-        gateway.con,
+        gateway,
         "analytics.data_models",
         [_as_mapping(model_row, "analytics.data_models")],
     )
     insert_mapping_rows(
-        gateway.con,
+        gateway,
         "analytics.data_model_fields",
         [_as_mapping(field_row, "analytics.data_model_fields")],
     )
     insert_mapping_rows(
-        gateway.con,
+        gateway,
         "analytics.data_model_relationships",
         [_as_mapping(relationship_row, "analytics.data_model_relationships")],
     )

@@ -203,7 +203,7 @@ def test_list_subsystem_profiles_uses_cache_when_present(
     commit = subsystem_ctx.commit
 
     insert_mapping_rows(
-        subsystem_ctx.con,
+        subsystem_ctx.gateway,
         "analytics.subsystem_profile_cache",
         [
             {
@@ -250,7 +250,7 @@ def test_list_subsystem_coverage_uses_cache_when_present(
     commit = subsystem_ctx.commit
 
     insert_mapping_rows(
-        subsystem_ctx.con,
+        subsystem_ctx.gateway,
         "analytics.subsystem_coverage_cache",
         [
             {

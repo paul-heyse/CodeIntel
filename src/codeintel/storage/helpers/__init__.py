@@ -4,10 +4,6 @@ This package provides various helper functions for DuckDB operations.
 
 Submodules
 ----------
-helpers.db
-    Bulk row insertion via `macro_insert_rows()` - the canonical method
-    for inserting data into DuckDB tables. Used internally by accessor classes.
-
 helpers.json
     JSON encode/decode helpers for DuckDB column values. Handles the various
     forms DuckDB returns JSON data (string, dict, list, None).
@@ -22,7 +18,7 @@ helpers.module_index
 
 Note
 ----
-Only db and json helpers are re-exported here to avoid circular imports.
+Only json helpers are re-exported here to avoid circular imports.
 Import profiling and module_index directly from their submodules:
 
     from codeintel.storage.helpers.profiling import run_profile
@@ -34,7 +30,6 @@ For row count operations, use `codeintel.storage.validation.data_checks`.
 from __future__ import annotations
 
 from codeintel.storage.errors import DUCKDB_ERRORS
-from codeintel.storage.helpers.db import macro_insert_rows
 from codeintel.storage.helpers.json import (
     decode_json,
     decode_json_dict,
@@ -48,5 +43,4 @@ __all__ = [
     "decode_json_dict",
     "decode_json_list",
     "encode_json_compact",
-    "macro_insert_rows",
 ]

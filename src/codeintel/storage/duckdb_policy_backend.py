@@ -30,7 +30,7 @@ import sqlglot.expressions as exp
 from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from codeintel.config.datasets import TableSchema
     from codeintel.config.datasets.contracts import DatasetContract
@@ -413,47 +413,29 @@ def _build_upsert(
     str
         SQL string for upsert operation.
     """
-    table_expr = exp.Table(
-        this=exp.to_identifier(table_name),
-        db=exp.to_identifier(table_schema),
-    )
-    column_exprs = [exp.to_identifier(col) for col in columns]
-    placeholder_row = exp.Tuple(expressions=[exp.Parameter()] * len(columns))
-    values_expr = exp.Values(expressions=[placeholder_row])
-    base_insert = exp.Insert(
-        this=table_expr,
-        columns=column_exprs,
-        expression=values_expr,
-    )
+    table_sql = ".".join((_quote_identifier(table_schema), _quote_identifier(table_name)))
+    cols_sql = ", ".join(_quote_identifier(col) for col in columns)
+    placeholders = ", ".join("?" for _ in columns)
     conflict_cols_sql = ", ".join(_quote_identifier(col) for col in conflict_columns)
 
     cols_to_update = (
-        update_columns
-        if update_columns is not None
-        else [col for col in columns if col not in conflict_columns]
+        [col for col in columns if col not in conflict_columns]
+        if update_columns is None
+        else [col for col in update_columns if col not in conflict_columns]
     )
 
     if cols_to_update:
-        updates = ", ".join(
+        updates_sql = ", ".join(
             f"{_quote_identifier(col)} = excluded.{_quote_identifier(col)}"
             for col in cols_to_update
         )
-        conflict_action = exp.parse_one(f"DO UPDATE SET {updates}")
+        action_sql = f"DO UPDATE SET {updates_sql}"
     else:
-        conflict_action = exp.parse_one("DO NOTHING")
+        action_sql = "DO NOTHING"
 
-    on_conflict_expr = exp.OnConflict(
-        expressions=[exp.to_identifier(col) for col in conflict_columns],
-        action=conflict_action,
-    )
-
-    return " ".join(
-        (
-            base_insert.sql(dialect=DUCKDB_DIALECT),
-            on_conflict_expr.sql(dialect=DUCKDB_DIALECT).replace(
-                "ON CONFLICT()", f"ON CONFLICT ({conflict_cols_sql})"
-            ),
-        )
+    return (
+        f"INSERT INTO {table_sql} ({cols_sql}) VALUES ({placeholders}) "
+        f"ON CONFLICT ({conflict_cols_sql}) {action_sql}"
     )
 
 
@@ -848,6 +830,54 @@ class DuckDBPolicyBackend:
         log.debug("Bulk insert into %s: %d rows", table_key, len(rows))
         self.gateway.con.executemany(sql, rows)
         return len(rows)
+
+    def bulk_insert_mappings(
+        self,
+        table_key: str,
+        rows: Iterable[Mapping[str, object]],
+        *,
+        columns: Sequence[str] | None = None,
+    ) -> int:
+        """Bulk insert mapping rows with stable column order.
+
+        This convenience method accepts mapping-shaped rows (e.g. TypedDict) and
+        converts them into tuples in a deterministic column order before calling
+        bulk_insert().
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table name (e.g., 'analytics.function_metrics').
+        rows
+            Iterable of mapping rows keyed by column name.
+        columns
+            Optional column order override. When omitted, columns are derived from
+            the table's DatasetContract schema.
+
+        Returns
+        -------
+        int
+            Number of rows inserted.
+        """
+        row_list = list(rows)
+        if not row_list:
+            return 0
+
+        resolved_columns: Sequence[str] | None = columns
+        if resolved_columns is None:
+            contracts = _get_dataset_contracts_by_table_key()
+            contract = contracts.get(table_key)
+            if contract is None or contract.schema is None:
+                message = f"No TableSchema found for {table_key}; columns must be provided"
+                raise ValueError(message)
+            resolved_columns = [col.name for col in contract.schema.columns if col.name is not None]
+
+        try:
+            tuple_rows = [tuple(row[col] for col in resolved_columns) for row in row_list]
+        except KeyError as exc:
+            message = f"Missing column {exc.args[0]} for {table_key}"
+            raise ValueError(message) from exc
+        return self.bulk_insert(table_key, tuple_rows, columns=resolved_columns)
 
     def upsert(
         self,

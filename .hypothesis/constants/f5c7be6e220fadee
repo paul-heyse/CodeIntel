@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/catalog.py
+# hypothesis_version: 6.148.7
+
+['.', 'Any', 'FunctionCatalog', 'FunctionMeta', 'FunctionSpan', 'FunctionSpanIndex', 'core.goids', 'end_line', 'function', 'goid_h128', 'load_function_index', 'load_function_spans', 'method', 'pd.DataFrame', 'qualname', 'records', 'rel_path', 'start_line', 'urn']

@@ -19,8 +19,7 @@ This package provides type-safe SQL construction utilities:
 
     **Still supported:**
 
-    - ``quote_identifier``, ``quote_table_key``: Used by macros and policy backend
-    - ``safe_macro_call``, ``macro_select_sql``: Used for macro invocations
+    - ``quote_identifier``, ``quote_table_key``: Used by the policy backend and storage utilities
     - ``InvalidIdentifierError``, ``SqlBuilderError``: Exception types
 
 For most use cases, import directly from this package which re-exports all
@@ -42,12 +41,9 @@ from codeintel.storage.sql.primitives import (
     SqlParams,
     build_delete_query,
     build_insert_sql,
-    macro_select_sql,
     quote_identifier,
-    quote_macro_name,
     quote_table_key,
     render_sql,
-    safe_macro_call,
     validate_identifier,
 )
 
@@ -62,11 +58,8 @@ __all__ = [
     "SqlParams",
     "build_delete_query",
     "build_insert_sql",
-    "macro_select_sql",
     "quote_identifier",
-    "quote_macro_name",
     "quote_table_key",
     "render_sql",
-    "safe_macro_call",
     "validate_identifier",
 ]

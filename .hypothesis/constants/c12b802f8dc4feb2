@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/metrics/community.py
+# hypothesis_version: 6.148.7
+
+[0.0, 1.0, 'compute_modularity']

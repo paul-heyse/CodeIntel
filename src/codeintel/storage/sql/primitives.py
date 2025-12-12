@@ -19,8 +19,7 @@ concerns.
     - ``build_insert_sql``, ``build_delete_query``: Use policy backend methods
 
     The following utilities remain supported:
-    - ``quote_identifier``, ``quote_table_key``: Used by macros and policy backend
-    - ``safe_macro_call``, ``macro_select_sql``: Used for macro invocations
+    - ``quote_identifier``, ``quote_table_key``: Used by the policy backend and storage utilities
     - ``InvalidIdentifierError``, ``SqlBuilderError``: Exception types
 """
 
@@ -30,10 +29,6 @@ import re
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from collections.abc import Collection
 
 
 type SqlParams = Sequence[object]
@@ -531,104 +526,6 @@ def quote_table_key(table_key: str) -> str:
     return f"{quote_identifier(schema_name)}.{quote_identifier(table_name)}"
 
 
-def quote_macro_name(macro_name: str) -> str:
-    """Validate a fully qualified macro name without quoting.
-
-    Parameters
-    ----------
-    macro_name
-        Macro identifier, optionally schema-qualified (e.g., "analytics.ingest_modules").
-
-    Returns
-    -------
-    str
-        Validated macro name (unchanged).
-
-    Raises
-    ------
-    ValueError
-        If any macro component is unsafe or empty.
-    """
-    parts = macro_name.split(".")
-    if not parts or any(not part or not _IDENTIFIER_RE.fullmatch(part) for part in parts):
-        message = f"Unsafe macro name: {macro_name}"
-        raise ValueError(message)
-    return ".".join(parts)
-
-
-def macro_select_sql(macro_name: str, placeholders: str) -> str:
-    """Build a validated SELECT statement invoking a macro.
-
-    Parameters
-    ----------
-    macro_name
-        Fully qualified macro name (schema.macro).
-    placeholders
-        Placeholder string (e.g., "?, ?, ?").
-
-    Returns
-    -------
-    str
-        Safe SELECT statement invoking the macro.
-
-    Raises
-    ------
-    ValueError
-        If the macro name is unsafe.
-    """
-    if "." not in macro_name:
-        message = f"Macro name must include schema: {macro_name}"
-        raise ValueError(message)
-    schema_name, macro = macro_name.split(".", maxsplit=1)
-    macro_sql = ".".join((quote_identifier(schema_name), quote_identifier(macro)))
-    return "".join(
-        (
-            "SELECT * FROM /*",
-            macro_name,
-            "*/ ",
-            macro_sql,
-            "(",
-            placeholders,
-            ")",
-        )
-    )
-
-
-def safe_macro_call(
-    macro_name: str,
-    args: Sequence[object],
-    *,
-    allowed: Collection[str] | None = None,
-) -> tuple[str, Sequence[object]]:
-    """Return a safe SELECT statement and args for a macro invocation.
-
-    Parameters
-    ----------
-    macro_name
-        Fully qualified macro name (schema.macro).
-    args
-        Parameters to pass to the macro.
-    allowed
-        Optional allowlist of macro names; when provided, macro_name must be present.
-
-    Returns
-    -------
-    tuple[str, Sequence[object]]
-        Parameterized SQL and the original args.
-
-    Raises
-    ------
-    ValueError
-        If the macro name is unsafe or not allowlisted.
-    """
-    if allowed is not None and macro_name not in allowed:
-        message = f"Macro {macro_name} is not allowlisted"
-        raise ValueError(message)
-    placeholders = ", ".join("?" for _ in args)
-    sql = macro_select_sql(macro_name, placeholders)
-    return sql, args
-
-
 def build_insert_sql(
     table_identifier: str,
     columns: Sequence[str],
@@ -680,11 +577,8 @@ __all__ = [
     "SqlParams",
     "build_delete_query",
     "build_insert_sql",
-    "macro_select_sql",
     "quote_identifier",
-    "quote_macro_name",
     "quote_table_key",
     "render_sql",
-    "safe_macro_call",
     "validate_identifier",
 ]

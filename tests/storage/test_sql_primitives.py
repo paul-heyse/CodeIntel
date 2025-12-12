@@ -19,11 +19,9 @@ from codeintel.storage.sql.primitives import (
     SqlBuilderError,
     build_delete_query,
     build_insert_sql,
-    macro_select_sql,
     quote_identifier,
     quote_table_key,
     render_sql,
-    safe_macro_call,
     validate_identifier,
 )
 from tests._helpers import assert_frozen
@@ -471,51 +469,6 @@ def test_quote_table_key_rejects_invalid(value: str) -> None:
     """Verify invalid table keys raise ValueError."""
     with pytest.raises(ValueError, match="Table key must include schema"):
         quote_table_key(value)
-
-
-def test_macro_select_sql_builds_select() -> None:
-    """Verify macro SELECT statement generation."""
-    sql = macro_select_sql("metadata.dataset_rows", "?, ?")
-    expect_equal(sql, 'SELECT * FROM /*metadata.dataset_rows*/ "metadata"."dataset_rows"(?, ?)')
-
-
-def test_macro_select_sql_preserves_placeholders() -> None:
-    """Verify placeholders are preserved in output."""
-    sql = macro_select_sql("schema.macro", "?, ?, ?")
-    expect_in("(?, ?, ?)", sql)
-
-
-def test_macro_select_sql_rejects_unqualified() -> None:
-    """Verify unqualified macro names raise ValueError."""
-    with pytest.raises(ValueError, match="must include schema"):
-        macro_select_sql("unqualified", "?")
-
-
-def test_safe_macro_call_generates_sql_and_preserves_args() -> None:
-    """Verify SQL generation and argument preservation."""
-    sql, args = safe_macro_call("metadata.dataset_rows", [1, "test"])
-    expect_query_contains(sql, "metadata.dataset_rows")
-    expect_params(args, [1, "test"])
-
-
-def test_safe_macro_call_validates_against_allowlist() -> None:
-    """Verify allowlist validation."""
-    allowed = {"metadata.dataset_rows", "metadata.other"}
-    sql, _ = safe_macro_call("metadata.dataset_rows", [], allowed=allowed)
-    expect_query_contains(sql, "dataset_rows")
-
-
-def test_safe_macro_call_rejects_non_allowlisted() -> None:
-    """Verify non-allowlisted macro raises ValueError."""
-    allowed = {"metadata.dataset_rows"}
-    with pytest.raises(ValueError, match="not allowlisted"):
-        safe_macro_call("metadata.bad_macro", [], allowed=allowed)
-
-
-def test_safe_macro_call_allows_any_without_allowlist() -> None:
-    """Verify any macro is accepted when allowlist is None."""
-    sql, _ = safe_macro_call("any.macro", [])
-    expect_query_contains(sql, "any.macro")
 
 
 def test_build_insert_sql_builds_basic() -> None:

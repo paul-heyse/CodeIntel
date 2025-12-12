@@ -23,14 +23,9 @@ Recommended import patterns::
 
 Circular Import Note
 --------------------
-The import cycle that prevents package-level exports is:
-
-1. config.datasets.contracts imports storage.views
-2. storage.views imports storage (this package)
-3. storage would import storage.gateway_cache
-4. gateway_cache imports storage.gateway
-5. gateway imports storage.helpers.db
-6. storage.helpers.db imports config.datasets (CYCLE)
+Some config/dataset modules import storage view builders. To avoid introducing
+import cycles, this package intentionally keeps its public surface small and
+does not re-export most gateway/view helpers.
 
 DuckDBPolicyBackend is safe to import here because it only depends on
 config.datasets (not on gateway_cache or other storage submodules that

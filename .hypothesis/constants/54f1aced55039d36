@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/config.py
+# hypothesis_version: 6.148.7
+
+['\nSources: ', ' → ', '-', '--format', '.codeintel', 'Output format.', 'Status: INVALID\n', 'Status: VALID\n', '_sources', 'all', 'build_dir', 'cli', 'codeintel.toml', 'commit', 'config', 'config.yaml', 'config_app', 'db_path', 'document_output_dir', 'env', 'file', 'init', 'json', 'path', 'paths', 'rb', 'repo', 'repo_root', 'show', 'sources', 'text', 'unknown', 'validate', '✓', '✗']

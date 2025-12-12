@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/config/env.py
+# hypothesis_version: 6.148.7
+
+['.', 'CODEINTEL_', 'COLOR', 'ENV_MAPPINGS', 'LOG_LEVEL', 'OUTPUT_FORMAT', 'PROGRESS_ENABLED', 'PROGRESS_THRESHOLD', 'PROJECT_COMMIT', 'PROJECT_NAME', 'PROJECT_REPO', 'PROJECT_ROOT', 'RETRY_BACKOFF_FACTOR', 'RETRY_INITIAL_DELAY', 'RETRY_MAX_ATTEMPTS', 'RETRY_MAX_DELAY', 'STORAGE_CACHE_DIR', 'STORAGE_DB_PATH', 'TELEMETRY_ENABLED', 'TELEMETRY_ENDPOINT', 'color', 'load_env_config', 'log_level', 'output_format', 'progress.enabled', 'progress.threshold', 'project.commit', 'project.name', 'project.repo', 'project.root', 'retry.backoff_factor', 'retry.initial_delay', 'retry.max_attempts', 'retry.max_delay', 'storage.cache_dir', 'storage.db_path', 'telemetry.enabled', 'telemetry.endpoint']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/errors.py
+# hypothesis_version: 6.148.7
+
+[0.6, ' -> ', ', ', 'BuildError', 'BuildErrorCollection', 'ContractError', 'CycleDetectedError', 'ExecutionError', 'No errors', 'PluginExecutionError', 'ResourceError', 'SchemaNotFoundError', 'TargetNotFoundError', 'TargetTimeoutError', 'coverage', 'pyrefly', 'pyright', 'pytest', 'ruff', 'scip', 'scip-python', 'target']
