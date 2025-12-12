@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/gateway/insert_helpers.py
+# hypothesis_version: 6.148.7
+
+['insert_one', 'insert_rows']

@@ -74,13 +74,13 @@ def _require_row(row: tuple[object, ...] | None, message: str) -> tuple[object, 
 
 def test_core_tables_creates_with_connection(fresh_gateway: StorageGateway) -> None:
     """Verify CoreTables initializes with DuckDB connection."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     expect_true(core.con is fresh_gateway.con)
 
 
 def test_core_tables_goids_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify goids() returns DuckDB relation."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     relation = core.goids()
     # Verify it's a valid relation by executing a count
     _require_row(relation.count("*").fetchone(), "goids count missing")
@@ -88,21 +88,21 @@ def test_core_tables_goids_returns_relation(fresh_gateway: StorageGateway) -> No
 
 def test_core_tables_modules_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify modules() returns DuckDB relation."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     relation = core.modules()
     _require_row(relation.count("*").fetchone(), "modules count missing")
 
 
 def test_core_tables_repo_map_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify repo_map() returns DuckDB relation."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     relation = core.repo_map()
     _require_row(relation.count("*").fetchone(), "repo_map count missing")
 
 
 def test_core_tables_insert_modules_inserts_rows(fresh_gateway: StorageGateway) -> None:
     """Verify insert_modules inserts rows into core.modules."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     rows: list[CoreModulesRow] = [
         {
             "module": "test_mod1",
@@ -139,7 +139,7 @@ def test_core_tables_insert_modules_inserts_rows(fresh_gateway: StorageGateway) 
 
 def test_core_tables_insert_modules_adds_defaults(fresh_gateway: StorageGateway) -> None:
     """Verify insert_modules adds default values for language and lists."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     rows: list[CoreModulesRow] = [
         {
             "module": "mod",
@@ -165,7 +165,7 @@ def test_core_tables_insert_modules_adds_defaults(fresh_gateway: StorageGateway)
 
 def test_core_tables_insert_repo_map_inserts_rows(fresh_gateway: StorageGateway) -> None:
     """Verify insert_repo_map inserts rows."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     now = datetime.now(tz=UTC).isoformat()
     rows: list[CoreRepoMapRow] = [
         {
@@ -190,7 +190,7 @@ def test_core_tables_insert_repo_map_inserts_rows(fresh_gateway: StorageGateway)
 
 def test_core_tables_insert_goids_inserts_rows(fresh_gateway: StorageGateway) -> None:
     """Verify insert_goids inserts rows into core.goids."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     now = datetime.now(tz=UTC).isoformat()
     rows: list[CoreGoidsRow] = [
         {
@@ -219,7 +219,7 @@ def test_core_tables_insert_goids_inserts_rows(fresh_gateway: StorageGateway) ->
 
 def test_core_tables_insert_file_state_inserts_rows(fresh_gateway: StorageGateway) -> None:
     """Verify insert_file_state accepts mapping rows."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     rows: list[CoreFileStateRow] = [
         {
             "repo": "test/repo",
@@ -243,7 +243,7 @@ def test_core_tables_insert_file_state_inserts_rows(fresh_gateway: StorageGatewa
 
 def test_core_tables_insert_scip_occurrences_inserts_rows(fresh_gateway: StorageGateway) -> None:
     """Verify insert_scip_occurrences accepts mapping rows."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     now = datetime.now(tz=UTC).isoformat()
     rows: list[CoreScipOccurrencesRow] = [
         {
@@ -271,7 +271,7 @@ def test_core_tables_insert_scip_occurrences_inserts_rows(fresh_gateway: Storage
 
 def test_core_tables_is_frozen(fresh_gateway: StorageGateway) -> None:
     """Verify CoreTables is immutable."""
-    core = CoreTables(fresh_gateway.con)
+    core = CoreTables(fresh_gateway)
     assert_frozen(core, "con", fresh_gateway.con)
 
 
@@ -282,41 +282,41 @@ def test_core_tables_is_frozen(fresh_gateway: StorageGateway) -> None:
 
 def test_graph_tables_creates_with_connection(fresh_gateway: StorageGateway) -> None:
     """Verify GraphTables initializes with DuckDB connection."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     expect_true(graph.con is fresh_gateway.con)
 
 
 def test_graph_tables_call_graph_edges_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify call_graph_edges() returns DuckDB relation."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     relation = graph.call_graph_edges()
     _require_row(relation.count("*").fetchone(), "call_graph_edges count missing")
 
 
 def test_graph_tables_call_graph_nodes_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify call_graph_nodes() returns DuckDB relation."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     relation = graph.call_graph_nodes()
     _require_row(relation.count("*").fetchone(), "call_graph_nodes count missing")
 
 
 def test_graph_tables_import_graph_edges_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify import_graph_edges() returns DuckDB relation."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     relation = graph.import_graph_edges()
     _require_row(relation.count("*").fetchone(), "import_graph_edges count missing")
 
 
 def test_graph_tables_symbol_use_edges_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify symbol_use_edges() returns DuckDB relation."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     relation = graph.symbol_use_edges()
     _require_row(relation.count("*").fetchone(), "symbol_use_edges count missing")
 
 
 def test_graph_tables_insert_call_graph_nodes(fresh_gateway: StorageGateway) -> None:
     """Verify insert_call_graph_nodes inserts rows."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     rows: list[GraphCallGraphNodesRow] = [
         {
             "goid_h128": 1001,
@@ -349,7 +349,7 @@ def test_graph_tables_insert_call_graph_nodes(fresh_gateway: StorageGateway) -> 
 
 def test_graph_tables_insert_call_graph_edges(fresh_gateway: StorageGateway) -> None:
     """Verify insert_call_graph_edges inserts rows."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     edges: list[GraphCallGraphEdgesRow] = [
         {
             "repo": "test/repo",
@@ -378,7 +378,7 @@ def test_graph_tables_insert_call_graph_edges(fresh_gateway: StorageGateway) -> 
 
 def test_graph_tables_insert_import_graph_edges(fresh_gateway: StorageGateway) -> None:
     """Verify insert_import_graph_edges inserts rows."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     edges: list[GraphImportGraphEdgesRow] = [
         {
             "repo": "test/repo",
@@ -405,7 +405,7 @@ def test_graph_tables_insert_symbol_use_edges_with_5_fields(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify insert_symbol_use_edges handles 5-field rows."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     edges: list[GraphSymbolUseEdgesRow] = [
         {
             "symbol": "symbol1",
@@ -431,7 +431,7 @@ def test_graph_tables_insert_symbol_use_edges_with_7_fields(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify insert_symbol_use_edges handles 7-field rows."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     edges: list[GraphSymbolUseEdgesRow] = [
         {
             "symbol": "symbol2",
@@ -458,7 +458,7 @@ def test_graph_tables_insert_symbol_use_edges_rejects_invalid_length(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify insert_symbol_use_edges rejects invalid row lengths."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     edges = [("a", "b", "c")]  # Only 3 fields
     with pytest.raises(ValueError, match="must have 5 or 7 fields"):
         graph.insert_symbol_use_edges(edges)
@@ -466,7 +466,7 @@ def test_graph_tables_insert_symbol_use_edges_rejects_invalid_length(
 
 def test_graph_tables_insert_cfg_blocks(fresh_gateway: StorageGateway) -> None:
     """Verify insert_cfg_blocks inserts rows."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     # Schema: function_goid_h128, block_idx, block_id, label, file_path, start_line, end_line, kind, stmts_json, in_degree, out_degree
     blocks = [
         (1001, 0, "block_0", "entry", "test.py", 1, 5, "entry", "[]", 0, 1),
@@ -483,7 +483,7 @@ def test_graph_tables_insert_cfg_blocks(fresh_gateway: StorageGateway) -> None:
 
 def test_graph_tables_insert_cfg_edges(fresh_gateway: StorageGateway) -> None:
     """Verify insert_cfg_edges inserts rows."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     edges = [
         (1001, "0", "1", "sequential"),
     ]
@@ -499,7 +499,7 @@ def test_graph_tables_insert_cfg_edges(fresh_gateway: StorageGateway) -> None:
 
 def test_graph_tables_insert_dfg_edges(fresh_gateway: StorageGateway) -> None:
     """Verify insert_dfg_edges inserts rows."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     # Schema: function_goid_h128, src_block_id, dst_block_id, src_var, dst_var, edge_kind, via_phi, use_kind
     edges = [
         (1001, "block_0", "block_1", "x", "x", "def-use", False, "read"),
@@ -516,7 +516,7 @@ def test_graph_tables_insert_dfg_edges(fresh_gateway: StorageGateway) -> None:
 
 def test_graph_tables_is_frozen(fresh_gateway: StorageGateway) -> None:
     """Verify GraphTables is immutable."""
-    graph = GraphTables(fresh_gateway.con)
+    graph = GraphTables(fresh_gateway)
     assert_frozen(graph, "con", fresh_gateway.con)
 
 
@@ -527,7 +527,7 @@ def test_graph_tables_is_frozen(fresh_gateway: StorageGateway) -> None:
 
 def test_docs_views_creates_with_connection(fresh_gateway: StorageGateway) -> None:
     """Verify DocsViews initializes with DuckDB connection."""
-    docs = DocsViews(fresh_gateway.con)
+    docs = DocsViews(fresh_gateway)
     expect_true(docs.con is fresh_gateway.con)
 
 
@@ -553,14 +553,14 @@ def test_docs_views_call_graph_enriched_returns_relation(fresh_gateway: StorageG
 
 def test_docs_views_function_profile_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify function_profile() returns DuckDB relation."""
-    docs = DocsViews(fresh_gateway.con)
+    docs = DocsViews(fresh_gateway)
     relation = docs.function_profile()
     _require_row(relation.count("*").fetchone(), "function_profile count missing")
 
 
 def test_docs_views_is_frozen(fresh_gateway: StorageGateway) -> None:
     """Verify DocsViews is immutable."""
-    docs = DocsViews(fresh_gateway.con)
+    docs = DocsViews(fresh_gateway)
     assert_frozen(docs, "con", fresh_gateway.con)
 
 
@@ -571,7 +571,7 @@ def test_docs_views_is_frozen(fresh_gateway: StorageGateway) -> None:
 
 def test_analytics_tables_creates_with_connection(fresh_gateway: StorageGateway) -> None:
     """Verify AnalyticsTables initializes with DuckDB connection."""
-    analytics = AnalyticsTables(fresh_gateway.con)
+    analytics = AnalyticsTables(fresh_gateway)
     expect_true(analytics.con is fresh_gateway.con)
 
 
@@ -579,14 +579,14 @@ def test_analytics_tables_function_metrics_returns_relation(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify function_metrics() returns DuckDB relation."""
-    analytics = AnalyticsTables(fresh_gateway.con)
+    analytics = AnalyticsTables(fresh_gateway)
     relation = analytics.function_metrics()
     _require_row(relation.count("*").fetchone(), "function_metrics count missing")
 
 
 def test_analytics_tables_function_types_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify function_types() returns DuckDB relation."""
-    analytics = AnalyticsTables(fresh_gateway.con)
+    analytics = AnalyticsTables(fresh_gateway)
     relation = analytics.function_types()
     _require_row(relation.count("*").fetchone(), "function_types count missing")
 
@@ -595,7 +595,7 @@ def test_analytics_tables_coverage_functions_returns_relation(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify coverage_functions() returns DuckDB relation."""
-    analytics = AnalyticsTables(fresh_gateway.con)
+    analytics = AnalyticsTables(fresh_gateway)
     relation = analytics.coverage_functions()
     result = relation.count("*").fetchone()
     expect_is_not_none(result)
@@ -603,7 +603,7 @@ def test_analytics_tables_coverage_functions_returns_relation(
 
 def test_analytics_tables_coverage_lines_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify coverage_lines() returns DuckDB relation."""
-    analytics = AnalyticsTables(fresh_gateway.con)
+    analytics = AnalyticsTables(fresh_gateway)
     relation = analytics.coverage_lines()
     result = relation.count("*").fetchone()
     require_row(result, message="Expected coverage_lines count row")
@@ -611,7 +611,7 @@ def test_analytics_tables_coverage_lines_returns_relation(fresh_gateway: Storage
 
 def test_analytics_tables_test_catalog_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify test_catalog() returns DuckDB relation."""
-    analytics = AnalyticsTables(fresh_gateway.con)
+    analytics = AnalyticsTables(fresh_gateway)
     relation = analytics.test_catalog()
     result = relation.count("*").fetchone()
     require_row(result, message="Expected test_catalog count row")
@@ -621,7 +621,7 @@ def test_analytics_tables_test_coverage_edges_returns_relation(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify test_coverage_edges() returns DuckDB relation."""
-    analytics = AnalyticsTables(fresh_gateway.con)
+    analytics = AnalyticsTables(fresh_gateway)
     relation = analytics.test_coverage_edges()
     result = relation.count("*").fetchone()
     require_row(result, message="Expected test_coverage_edges count row")
@@ -846,7 +846,7 @@ def test_analytics_tables_insert_config_values(test_ctx: TestContext) -> None:
 
 def test_analytics_tables_is_frozen(fresh_gateway: StorageGateway) -> None:
     """Verify AnalyticsTables is immutable."""
-    analytics = AnalyticsTables(fresh_gateway.con)
+    analytics = AnalyticsTables(fresh_gateway)
     assert_frozen(analytics, "con", fresh_gateway.con)
 
 

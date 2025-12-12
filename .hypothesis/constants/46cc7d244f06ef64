@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/compute/typing_ingest.py
+# hypothesis_version: 6.148.7
+
+[0.5, 1.0, '.py', 'AnnotationInfo', 'TypingIngestStep', 'analytics.typedness', 'cls', 'is_fully_typed', 'params', 'path', 'posonlyargs', 'pyrefly', 'pyright', 'rel_path', 'returns', 'ruff', 'self']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/protocols.py
+# hypothesis_version: 6.148.7
+
+[100.0, 100, 'CoverageCollector', 'CoverageData', 'GitHistoryProvider', 'GitLogEntry', 'ScipIndexResult', 'ScipIndexer', 'ScipOccurrence', 'ScipParseResult', 'ScipSymbol', 'TestReporter', 'TestResult', 'ToolRunResult', 'ToolRunner', 'TypeCheckResult', 'TypeChecker', 'TypeDiagnostic']

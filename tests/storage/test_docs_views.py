@@ -75,7 +75,7 @@ def test_docs_views_registered_in_metadata(docs_views_gateway: StorageGateway) -
 
 
 def test_docs_view_readable_via_dataset_rows(docs_views_gateway: StorageGateway) -> None:
-    """Docs views remain readable through metadata.dataset_rows slices."""
+    """Docs views remain readable through DatasetReadRepository slices."""
     bootstrap_metadata_datasets(docs_views_gateway.con)
     repo = DatasetReadRepository(gateway=docs_views_gateway, repo="demo/repo", commit="deadbeef")
     rows = repo.read_dataset_rows("docs.v_function_summary", limit=5, offset=0)

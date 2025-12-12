@@ -11,12 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.storage.helpers.db import macro_insert_rows
-
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
+    from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation, StorageGateway
 
 __all__ = ["BaseTableAccessor"]
 
@@ -34,7 +32,12 @@ class BaseTableAccessor:
         DuckDB connection instance.
     """
 
-    con: DuckDBConnection
+    gateway: StorageGateway
+
+    @property
+    def con(self) -> DuckDBConnection:
+        """Return the underlying DuckDB connection."""
+        return self.gateway.con
 
     def _table(self, table_key: str) -> DuckDBRelation:
         """Return a relation for the given table key.
@@ -56,11 +59,7 @@ class BaseTableAccessor:
         table_key: str,
         rows: Iterable[Sequence[object]],
     ) -> None:
-        """Insert rows into a table using the schema-aware macro.
-
-        This is the canonical method for bulk row insertion. It uses
-        macro_insert_rows which validates rows against the table schema
-        and pads missing columns with NULL values.
+        """Insert rows into a table via the policy backend.
 
         Parameters
         ----------
@@ -69,4 +68,7 @@ class BaseTableAccessor:
         rows
             Iterable of row tuples matching the table schema.
         """
-        macro_insert_rows(self.con, table_key, rows)
+        row_list = [tuple(row) for row in rows]
+        if not row_list:
+            return
+        self.gateway.policy.bulk_insert(table_key, row_list)

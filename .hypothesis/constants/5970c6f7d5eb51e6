@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/services/serving.py
+# hypothesis_version: 6.148.7
+
+['ServingError', 'ServingService', '__dict__', 'dict[str, Any]', 'error', 'input', 'json', 'model_dump', 'result', 'success', 'value']

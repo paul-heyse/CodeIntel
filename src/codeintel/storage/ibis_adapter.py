@@ -212,6 +212,7 @@ class IbisGateway:
         self._gateway = gateway
         self._con: DuckDBBackend | None = None
 
+    @property
     def con(self) -> DuckDBBackend:
         """
         Return an Ibis backend that reuses the gateway DuckDB connection.
@@ -604,12 +605,12 @@ class IbisGateway:
             If the WHERE clause cannot be derived from the provided filter.
         """
         schema, table = _split_table_key(table_key)
-        table_expr = exp.Table(
-            this=exp.to_identifier(table),
-            db=exp.to_identifier(schema),
-        )
 
         if where is None:
+            table_expr = exp.Table(
+                this=exp.to_identifier(table),
+                db=exp.to_identifier(schema),
+            )
             delete_expr = exp.Delete(this=table_expr)
         else:
             t = self.table(table_key)
@@ -620,6 +621,23 @@ class IbisGateway:
             if not isinstance(where_ast, exp.Where):
                 message = "Unable to derive WHERE clause for delete()"
                 raise ValueError(message)
+
+            alias: str | None = None
+            for col in where_ast.find_all(exp.Column):
+                table_alias = getattr(col, "table", None)
+                if isinstance(table_alias, str) and table_alias:
+                    alias = table_alias
+                    break
+
+            table_expr = exp.Table(
+                this=exp.to_identifier(table),
+                db=exp.to_identifier(schema),
+                alias=(
+                    exp.TableAlias(this=exp.to_identifier(alias))
+                    if alias is not None
+                    else None
+                ),
+            )
             delete_expr = exp.Delete(this=table_expr, where=where_ast)
 
         sql = delete_expr.sql(dialect=DUCKDB_DIALECT)

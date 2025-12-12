@@ -111,14 +111,14 @@ def insert_rows(
     columns: tuple[str, ...] = row_type.__columns__
 
     validate_identifier(table, kind="table")
-    validated_columns = [validate_identifier(col, kind="column") for col in columns]
+    for col in columns:
+        validate_identifier(col, kind="column")
 
-    col_names = ", ".join(validated_columns)
-    placeholders = ", ".join("?" for _ in validated_columns)
-    sql = " ".join(["INSERT INTO", table, "(", col_names, ")", "VALUES", "(", placeholders, ")"])
-
-    gateway.con.executemany(sql, [r.to_tuple() for r in row_list])
-    return len(row_list)
+    return gateway.policy.bulk_insert(
+        table,
+        [r.to_tuple() for r in row_list],
+        columns=columns,
+    )
 
 
 __all__ = ["InsertableRow", "insert_rows"]

@@ -148,7 +148,7 @@ def _sample_rows(
     Raises
     ------
     RuntimeError
-        When sampling is strict and the dataset_rows macro is unavailable or sampling fails.
+        When sampling is strict and sampling fails.
     """
     limited = max(0, limit)
     if con is None or limited == 0:

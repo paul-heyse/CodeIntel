@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/datasets/primitives.py
+# hypothesis_version: 6.148.7
+
+['BIGINT', 'BOOLEAN', 'COLUMN_TYPE', 'CREATED_AT_COL', 'Column', 'ColumnType', 'CompositeSchema', 'DECIMAL', 'DECIMAL(38,0)', 'DOUBLE', 'FUNCTION_ENTITY_COLS', 'FUNCTION_GOID_COL', 'INTEGER', 'Index', 'JSON', 'MODULE_ENTITY_COLS', 'OWNERSHIP_COLS', 'REPO_COMMIT_COLS', 'RISK_COLS', 'RowDictType', 'RowToTuple', 'SOURCE_SPAN_COLS', 'TEST_ENTITY_COLS', 'TIMESTAMP', 'TIMESTAMPTZ', 'TableSchema', 'VARCHAR', 'commit', 'created_at', 'end_line', 'function_goid_h128', 'kind', 'language', 'module', 'owners', 'qualname', 'rel_path', 'repo', 'risk_level', 'risk_score', 'start_line', 'subsystem_id', 'tags', 'test_goid_h128', 'test_id', 'urn']

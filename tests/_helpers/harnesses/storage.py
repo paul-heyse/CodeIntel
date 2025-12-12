@@ -1,4 +1,4 @@
-"""Harness for storage handler testing with seeded macros/profiles."""
+"""Harness for storage handler testing with seeded profiles."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.storage.macros import ensure_ingest_macros
 from tests._helpers.cli_context import create_cli_test_context
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.seeds import CORE_PACK
@@ -60,7 +59,6 @@ def storage_macro_harness(tmp_path: Path) -> Iterator[StorageHandlerHarness]:
     ctx = create_cli_test_context(tmp_path, options=EnvOptions(file_backed=True))
     ctx.require(CORE_PACK, STORAGE_PROFILE_PACK)
 
-    ensure_ingest_macros(ctx.gateway.con)
     harness = StorageHandlerHarness(ctx=ctx)
     try:
         yield harness

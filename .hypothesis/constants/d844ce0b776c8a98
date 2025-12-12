@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/profiles/build.py
+# hypothesis_version: 6.148.7
+
+['3.0.0', 'PROFILES_METADATA', 'ProfilesPlugin', 'analytics.profiles', 'metric', 'profiles']

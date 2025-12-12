@@ -197,7 +197,7 @@ def test_get_function_profile_returns_none_when_not_found(
 def test_get_function_profile_returns_row(metrics_ctx: TestContext) -> None:
     """Verify get_function_profile returns row when found."""
     insert_mapping_rows(
-        metrics_ctx.con,
+        metrics_ctx.gateway,
         "analytics.function_profile",
         [
             function_profile_row(

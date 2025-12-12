@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/engine/backend.py
+# hypothesis_version: 6.148.7
+
+['BackendEnablement', 'True', 'auto', 'backend_priority', 'cache', 'config', 'cpu', 'cugraph', 'maybe_enable_nx_gpu', 'networkx', 'nx-cugraph', 'nx_cugraph', 'set_default_backend', 'warnings_to_ignore']
