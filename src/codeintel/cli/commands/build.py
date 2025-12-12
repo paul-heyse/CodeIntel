@@ -94,6 +94,14 @@ class BuildRunCommand:
             show_choices=True,
         ),
     ] = "generated"
+    validate_outputs: Annotated[
+        bool,
+        Parameter(
+            name=["--validate-outputs"],
+            help="Validate produced datasets against Pandera schemas after write.",
+            negative=(),
+        ),
+    ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

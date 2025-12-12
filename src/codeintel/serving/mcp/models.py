@@ -1292,7 +1292,7 @@ class ModuleArchitectureResponse(BaseModel):
         return dm.ModuleArchitectureResult(
             found=self.found,
             architecture=(
-                self.architecture.model_dump() if self.architecture is not None else None
+                self.architecture.model_dump(exclude_none=True) if self.architecture is not None else None
             ),
             meta=self.meta.to_domain(),
         )

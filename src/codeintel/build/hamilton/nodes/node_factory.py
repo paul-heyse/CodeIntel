@@ -27,6 +27,7 @@ from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.metadata_bridge import from_target
 from codeintel.build.hamilton.naming import (
+    artifact_node,
     dataframe_node,
     dataset_node,
     query_node,
@@ -279,12 +280,82 @@ def _create_dataframe_node_function(
     return tag(domain=domain, table=table_key, node_type="dataframe")(dataframe_fn)
 
 
+def _create_artifact_node_function(
+    *,
+    artifact_name: str,
+    target_name: str,
+) -> Callable[..., object]:
+    """Create a Hamilton node function for artifact access.
+
+    Artifact nodes provide access to non-tabular build artifacts like
+    FAISS indexes, model weights, or SCIP indexes.
+
+    Parameters
+    ----------
+    artifact_name
+        Artifact identifier (e.g., "faiss_index", "scip_index").
+    target_name
+        Target that produces this artifact.
+
+    Returns
+    -------
+    Callable[..., ArtifactRef]
+        Node function that provides artifact reference.
+    """
+    from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
+
+    a_name = artifact_node(artifact_name)
+    t_name = target_node(target_name)
+
+    def artifact_fn(env: BuildEnv, **kwargs: object) -> ArtifactRef:
+        run_record = kwargs.get(t_name)
+        if not isinstance(run_record, TargetRunRecord):
+            msg = f"Expected TargetRunRecord for {t_name}, got {type(run_record)}"
+            raise TypeError(msg)
+
+        # Look up artifact from the run record
+        for art in run_record.artifacts:
+            if art.name == artifact_name:
+                return art
+
+        # Return a placeholder if artifact not found (for skipped targets)
+        return ArtifactRef(
+            name=artifact_name,
+            artifact_type="unknown",
+            repo=env.repo,
+            commit=env.commit,
+        )
+
+    # Build signature with env and target node parameters
+    params = [
+        inspect.Parameter(
+            "env",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=BuildEnv,
+        ),
+        inspect.Parameter(
+            t_name,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=TargetRunRecord,
+        ),
+    ]
+
+    artifact_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
+    artifact_fn.__name__ = a_name
+    artifact_fn.__doc__ = f"Access {artifact_name} artifact from {target_name} target."
+
+    # Apply tag decorator for Hamilton observability
+    domain = artifact_name.split(".", 1)[0] if "." in artifact_name else "main"
+    return tag(domain=domain, artifact=artifact_name, node_type="artifact")(artifact_fn)
+
+
 def build_target_module(
     *,
     include_targets: set[str] | None = None,
     exclude_targets: set[str] | None = None,
     include_dataset_nodes: bool = True,
     include_loader_nodes: bool = True,
+    include_artifact_nodes: bool = True,
 ) -> ModuleType:
     """Generate a module containing Hamilton nodes for all targets.
 
@@ -303,6 +374,9 @@ def build_target_module(
     include_loader_nodes
         If True (default), also generate q__* and df__* loader nodes
         for all tables in target contracts.
+    include_artifact_nodes
+        If True (default), also generate a__* artifact nodes for
+        all artifacts in target contracts.
 
     Returns
     -------
@@ -329,6 +403,7 @@ def build_target_module(
     dataset_to_node: dict[str, str] = {}
     query_to_node: dict[str, str] = {}
     dataframe_to_node: dict[str, str] = {}
+    artifact_to_node: dict[str, str] = {}
 
     for target in graph.all_targets:
         if target.name not in include or target.name in exclude:
@@ -383,18 +458,32 @@ def build_target_module(
                     setattr(module, df_name, df_fn)
                     dataframe_to_node[table_key] = df_name
 
+        # Generate artifact nodes for targets with artifact contracts
+        if include_artifact_nodes:
+            art_names = target.contract.artifact_names if target.contract else ()
+            for art_name in art_names:
+                a_fn = _create_artifact_node_function(
+                    artifact_name=art_name,
+                    target_name=target.name,
+                )
+                a_node_name = artifact_node(art_name)
+                setattr(module, a_node_name, a_fn)
+                artifact_to_node[art_name] = a_node_name
+
     # Attach mappings for executor lookups
     module.TARGET_TO_NODE = target_to_node  # type: ignore[attr-defined]
     module.DATASET_TO_NODE = dataset_to_node  # type: ignore[attr-defined]
     module.QUERY_TO_NODE = query_to_node  # type: ignore[attr-defined]
     module.DATAFRAME_TO_NODE = dataframe_to_node  # type: ignore[attr-defined]
+    module.ARTIFACT_TO_NODE = artifact_to_node  # type: ignore[attr-defined]
 
     log.debug(
-        "build_target_module: generated %d target, %d dataset, %d query, %d df nodes",
+        "build_target_module: generated %d target, %d dataset, %d query, %d df, %d artifact",
         len(target_to_node),
         len(dataset_to_node),
         len(query_to_node),
         len(dataframe_to_node),
+        len(artifact_to_node),
     )
 
     return module
@@ -421,7 +510,7 @@ def get_generated_module() -> ModuleType:
     >>> hasattr(module, "TARGET_TO_NODE")
     True
     """
-    global _generated_module  # noqa: PLW0603 - Intentional caching pattern
+    global _generated_module
     if _generated_module is None:
         _generated_module = build_target_module()
     return _generated_module
@@ -432,5 +521,5 @@ def clear_generated_module_cache() -> None:
 
     Useful for testing or when the TargetGraph has changed.
     """
-    global _generated_module  # noqa: PLW0603 - Intentional caching pattern
+    global _generated_module
     _generated_module = None

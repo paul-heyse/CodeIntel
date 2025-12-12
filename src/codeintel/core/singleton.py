@@ -2,7 +2,7 @@
 
 This module provides a reusable pattern for managing global singleton instances
 in a thread-safe manner, eliminating the need for `global` statements and
-their associated `# noqa: PLW0603` suppressions.
+their associated `
 
 Example
 -------

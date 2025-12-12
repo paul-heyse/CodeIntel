@@ -322,7 +322,7 @@ def _load_module_aggregates(
         file_profile.commit,
         file_profile.module,
     ).aggregate(
-        file_count=file_profile.path.count(),
+        file_count=file_profile.rel_path.count(),
         class_count=col_sum(file_profile.class_count),
         avg_file_complexity=col_mean(file_profile.ast_complexity),
         max_file_complexity=col_max(file_profile.ast_complexity),

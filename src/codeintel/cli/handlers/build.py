@@ -285,6 +285,7 @@ def _execute_build_hamilton(
     run_mode: RunMode,
     force: list[str] | None = None,
     hamilton_mode: str = "generated",
+    validate_outputs: bool = False,
 ) -> BuildResultLike | None:
     """Execute build using Hamilton executor.
 
@@ -302,6 +303,8 @@ def _execute_build_hamilton(
         Optional list of targets to force recompute.
     hamilton_mode
         Hamilton node mode: "generated" (default) or "phase0" (debug).
+    validate_outputs
+        When True, validate produced datasets against Pandera schemas.
 
     Returns
     -------
@@ -315,10 +318,11 @@ def _execute_build_hamilton(
         return None
 
     LOG.info(
-        "build.cli.hamilton.execute goals=%s force=%s mode=%s",
+        "build.cli.hamilton.execute goals=%s force=%s mode=%s validate=%s",
         goals,
         force,
         hamilton_mode,
+        validate_outputs,
     )
 
     # Build the Hamilton environment
@@ -342,6 +346,7 @@ def _execute_build_hamilton(
         profile="default",
         force_targets=frozenset(force or ()),
         manifest_index=manifest_index,
+        validate_outputs=validate_outputs,
     )
 
     # Cast hamilton_mode to proper type - validated earlier
@@ -508,6 +513,7 @@ class _BuildRunParams:
     force: list[str] | None
     engine: str
     hamilton_mode: str
+    validate_outputs: bool
 
 
 def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
@@ -537,6 +543,7 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         force=force,
         engine=ctx.params.get_str("engine") or "hamilton",
         hamilton_mode=ctx.params.get_str("hamilton_mode") or "generated",
+        validate_outputs=ctx.params.get_bool("validate_outputs"),
     )
 
 
@@ -631,7 +638,13 @@ def build_run_handler(
 
     run_mode = RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE
     return _execute_and_format_result(
-        runtime, goals, params.force, run_mode, params.engine, params.hamilton_mode
+        runtime,
+        goals,
+        params.force,
+        run_mode,
+        params.engine,
+        params.hamilton_mode,
+        params.validate_outputs,
     )
 
 
@@ -642,6 +655,7 @@ def _execute_and_format_result(
     run_mode: RunMode,
     engine: str = "hamilton",
     hamilton_mode: str = "generated",
+    validate_outputs: bool = False,
 ) -> CliResult[BuildRunResult]:
     """Execute build and format result.
 
@@ -659,6 +673,8 @@ def _execute_and_format_result(
         Build engine to use: "hamilton" (default) or "legacy".
     hamilton_mode
         Hamilton node mode: "generated" (default) or "phase0" (debug).
+    validate_outputs
+        When True, validate produced datasets against Pandera schemas.
 
     Returns
     -------
@@ -669,7 +685,13 @@ def _execute_and_format_result(
         with runtime_gateway(runtime, read_only=False) as gateway:
             if engine == "hamilton":
                 result = _execute_build_hamilton(
-                    runtime, gateway, goals, run_mode, force, hamilton_mode
+                    runtime,
+                    gateway,
+                    goals,
+                    run_mode,
+                    force,
+                    hamilton_mode,
+                    validate_outputs,
                 )
             else:
                 result, _plan = _execute_build(runtime, gateway, goals, force, run_mode)
@@ -729,10 +751,15 @@ def build_history_handler(
             record = _lookup_run_by_id(gateway, runtime.snapshot.repo, run_id)
         except ValidationError as e:
             return fail_build_run_not_found(str(e))
+
+        # Fetch per-target breakdown for this run
+        run_targets = gateway.build.list_run_targets(record.run_id)
+
         return CliResult.ok(
             BuildHistoryResult(
                 runs=[record.to_dict()],
                 count=1,
+                targets=run_targets,
             )
         )
 

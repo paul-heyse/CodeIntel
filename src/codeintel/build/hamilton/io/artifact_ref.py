@@ -109,4 +109,3 @@ class ArtifactRef:
 __all__ = [
     "ArtifactRef",
 ]
-

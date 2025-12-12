@@ -118,7 +118,7 @@ class CfgDfgMetricsPlugin(TargetPlugin):
                 "analytics.cfg_function_metrics_ext",
             ):
                 row = ctx.gateway.con.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",  # noqa: S608
+                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",
                     [repo, commit],
                 ).fetchone()
                 row_counts[table] = int(row[0]) if row else 0
@@ -137,7 +137,7 @@ class CfgDfgMetricsPlugin(TargetPlugin):
                 "analytics.dfg_function_metrics_ext",
             ):
                 row = ctx.gateway.con.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",  # noqa: S608
+                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",
                     [repo, commit],
                 ).fetchone()
                 row_counts[table] = int(row[0]) if row else 0

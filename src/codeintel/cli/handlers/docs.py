@@ -154,8 +154,12 @@ def _normalize_flag(value: object | None) -> str | None:
     if value is None:
         return None
     if isinstance(value, Enum):
-        return str(value.value).lower()
-    return str(value).lower()
+        normalized = str(value.value).lower()
+    else:
+        normalized = str(value).lower()
+    if "." in normalized:
+        normalized = normalized.rsplit(".", maxsplit=1)[-1]
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -180,12 +184,18 @@ def _collect_export_params(ctx: CommandContext) -> DocsExportParams:
     DocsExportParams
         Parsed parameters used for export orchestration.
     """
-    validation_mode = ctx.params.get_str("validation") or ctx.params.get_str("validation_mode")
+    validation_mode = _normalize_flag(
+        ctx.params.raw.get("validation_mode") or ctx.params.raw.get("validation")
+    )
     if ctx.params.get_bool("validate"):
-        validation_mode = "required"
-    validation = (validation_mode or "required").lower()
-    macro_requirement_raw = ctx.params.get_str("macro_requirement", "require_normalized")
-    macro_requirement = (macro_requirement_raw or "require_normalized").lower()
+        validation = ExportValidationMode.REQUIRED.value
+    else:
+        validation = validation_mode or ExportValidationMode.REQUIRED.value
+
+    macro_requirement = (
+        _normalize_flag(ctx.params.raw.get("macro_requirement"))
+        or MacroRequirement.REQUIRE_NORMALIZED.value
+    )
 
     datasets = ctx.params.get_list("datasets") or None
     schemas = ctx.params.get_list("schemas") or None

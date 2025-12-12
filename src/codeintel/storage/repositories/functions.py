@@ -231,7 +231,7 @@ class FunctionRepository(BaseRepository):
             )
         )
         if tested_only:
-            expr = expr.filter(ibis_bool(table.tested == True))  # noqa: E712
+            expr = expr.filter(ibis_bool(table.tested == True))
         expr = expr.order_by(table.risk_score.desc()).limit(limit)
         return self._validated_records("analytics.goid_risk_factors", expr)
 

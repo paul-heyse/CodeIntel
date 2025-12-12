@@ -85,15 +85,9 @@ def _load_file_profile_tables(
         fp_table = gw.ibis.table("analytics.function_profile")
         fp = filter_by(fp_table, fp_table.repo == inputs.repo, fp_table.commit == inputs.commit)
         ast_table = gw.ibis.table("core.ast_metrics")
-        ast_metrics = filter_by(
-            ast_table, ast_table.repo == inputs.repo, ast_table.commit == inputs.commit
-        )
+        ast_metrics = ast_table
         hotspots_table = gw.ibis.table("analytics.hotspots")
-        hotspots = filter_by(
-            hotspots_table,
-            hotspots_table.repo == inputs.repo,
-            hotspots_table.commit == inputs.commit,
-        )
+        hotspots = hotspots_table
         typedness_table = gw.ibis.table("analytics.typedness")
         typedness = filter_by(
             typedness_table,
@@ -212,7 +206,7 @@ def build_file_profile_rows(
             fm.high_risk_function_count,
             fm.medium_risk_function_count,
             fm.max_risk_score,
-            (fm.sum_covered_lines.cast("float64") / ibis.nullif(fm.sum_exec_lines, 0)).name(
+            (fm.sum_covered_lines.cast("float64") / fm.sum_exec_lines.nullif(0)).name(
                 "file_coverage_ratio"
             ),
             fm.tested_function_count,

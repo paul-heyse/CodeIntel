@@ -612,7 +612,7 @@ class IbisGateway:
 
         if where is None:
             # Delete all
-            sql = f"DELETE FROM {quoted}"  # noqa: S608
+            sql = f"DELETE FROM {quoted}"
         else:
             t = self.table(table_key)
             filter_expr = t.filter(where).limit(0)
@@ -627,11 +627,11 @@ class IbisGateway:
                 where_ast.sql(dialect=DUCKDB_DIALECT) if isinstance(where_ast, exp.Where) else ""
             )
             if alias:
-                sql = f"DELETE FROM {quoted} AS {alias} {where_sql}"  # noqa: S608
+                sql = f"DELETE FROM {quoted} AS {alias} {where_sql}"
             elif where_sql:
-                sql = f"DELETE FROM {quoted} {where_sql}"  # noqa: S608
+                sql = f"DELETE FROM {quoted} {where_sql}"
             else:
-                sql = f"DELETE FROM {quoted}"  # noqa: S608
+                sql = f"DELETE FROM {quoted}"
 
         log.debug("delete: %s", sql[:200])
         self._gateway.con.execute(sql)

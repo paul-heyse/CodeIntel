@@ -126,7 +126,7 @@ def run_cli(
                     print_error=False,
                 )
                 exit_code = 0
-            except BaseException as exc:  # noqa: BLE001
+            except BaseException as exc:
                 exit_code = handle_cli_error(exc, stderr_buf)
     finally:
         os.environ.clear()
