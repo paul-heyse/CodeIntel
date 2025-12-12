@@ -252,7 +252,19 @@ def profile_storage_handler(
 
     include_views = ctx.params.get_bool("include_views", default=False)
 
-    run_profile(db_path=db_path, output_dir=output_dir, analyze=include_views)
+    profile_con = None
+    gateway_db_path = getattr(getattr(ctx.gateway, "config", None), "db_path", None)
+    if isinstance(gateway_db_path, (str, Path)):
+        if str(db_path) == ":memory:" or str(gateway_db_path) == str(db_path):
+            profile_con = ctx.gateway.con
+        else:
+            try:
+                if Path(gateway_db_path).resolve() == db_path.resolve():
+                    profile_con = ctx.gateway.con
+            except OSError:
+                profile_con = None
+
+    run_profile(db_path=db_path, output_dir=output_dir, analyze=include_views, con=profile_con)
 
     return CliResult.ok(
         ProfileStorageResult(

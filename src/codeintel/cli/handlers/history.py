@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -61,6 +62,19 @@ def _output_gateway(output_db: Path) -> Iterator[StorageGateway]:
         yield gw
     finally:
         gw.close()
+
+
+def _coerce_enum_param(value: object | None, *, default: str) -> str:
+    """Coerce cyclopts enum parameters to their string value.
+
+    Cyclopts may supply Enum instances for typed parameters; downstream config
+    expects the Enum's `.value` string, not `EnumClass.MEMBER`.
+    """
+    if value is None:
+        return default
+    if isinstance(value, Enum):
+        return str(value.value)
+    return str(value)
 
 
 def _write_synthetic_history_rows(
@@ -188,14 +202,17 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
     output_db = ctx.params.get_path("output_db", Path("build/db/history.duckdb")) or Path(
         "build/db/history.duckdb"
     )
-    entity_kind = ctx.params.get_str("entity_kind", "function") or "function"
+    entity_kind = _coerce_enum_param(ctx.params.raw.get("entity_kind"), default="function")
     cfg = ConfigBuilder.from_snapshot(
         snapshot=SnapshotInit(repo=repo, commit=commits[0], repo_root=repo_root),
     ).history_timeseries(
         commits=tuple(commits),
         entity_kind=entity_kind,
         max_entities=ctx.params.get_int("max_entities", 500),
-        selection_strategy=ctx.params.get_str("selection_strategy", "risk_score") or "risk_score",
+        selection_strategy=_coerce_enum_param(
+            ctx.params.raw.get("selection_strategy"),
+            default="risk_score",
+        ),
     )
 
     # Use dedicated output gateway (separate from runtime's database)

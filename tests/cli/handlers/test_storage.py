@@ -61,7 +61,7 @@ def test_generate_macros_handler_returns_ok_with_tables(
     storage_macro_harness_fixture: StorageHandlerHarness,
 ) -> None:
     """Handler returns success when tables are provided."""
-    with storage_macro_harness_fixture.command_context({"tables": ["test_table"]}) as ctx:
+    with storage_macro_harness_fixture.command_context({"tables": ["core.modules"]}) as ctx:
         result = generate_macros_handler(ctx)
 
     expect_true(result.success)

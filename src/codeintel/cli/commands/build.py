@@ -19,6 +19,7 @@ from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.build import (
     build_graph_handler,
     build_history_handler,
+    build_plan_handler,
     build_run_handler,
     build_status_handler,
 )
@@ -80,10 +81,18 @@ class BuildRunCommand:
         str,
         Parameter(
             name=["--engine", "-e"],
-            help="Build engine to use: legacy (default) or hamilton.",
+            help="Build engine to use: hamilton (default) or legacy.",
             show_choices=True,
         ),
-    ] = "legacy"
+    ] = "hamilton"
+    hamilton_mode: Annotated[
+        str,
+        Parameter(
+            name=["--hamilton-mode"],
+            help="Hamilton node mode: generated (default) or phase0 (debug).",
+            show_choices=True,
+        ),
+    ] = "generated"
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
@@ -127,6 +136,52 @@ class BuildHistoryCommand:
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
+@cli_command("build.plan", handler=build_plan_handler, config=_BUILD_CONFIG)
+@build_app.command(name="plan")
+@dataclass
+class BuildPlanCommand:
+    """Show build plan with status and reason for each target."""
+
+    targets: Annotated[
+        list[str] | None,
+        Parameter(
+            name=None,
+            help="Target names to plan (e.g., function_metrics, call_graph).",
+        ),
+    ] = None
+    module: Annotated[
+        str | None,
+        Parameter(
+            name=["--module", "-m"],
+            help="Plan all targets in a module (ingestion, graphs, analytics).",
+            show_choices=True,
+        ),
+    ] = None
+    all_targets: Annotated[
+        bool,
+        Parameter(
+            name=["--all", "-a"],
+            help="Plan all targets across all modules.",
+            negative=(),
+        ),
+    ] = False
+    force: Annotated[
+        list[str] | None,
+        Parameter(
+            name=["--force", "-f"],
+            help="Mark specific targets as forced (repeatable).",
+        ),
+    ] = None
+    output_file: Annotated[
+        str | None,
+        Parameter(
+            name=["--output", "-o"],
+            help="Output file path (stdout if not specified).",
+        ),
+    ] = None
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
 @cli_command("build.graph", handler=build_graph_handler, config=_BUILD_CONFIG)
 @build_app.command(name="graph")
 @dataclass
@@ -160,7 +215,7 @@ class BuildGraphCommand:
         str,
         Parameter(
             name=["--format", "-f"],
-            help="Output format: json (default) or text.",
+            help="Output format: json (default), mermaid, or dot.",
         ),
     ] = "json"
     output_file: Annotated[

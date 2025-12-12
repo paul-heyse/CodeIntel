@@ -123,6 +123,78 @@ def dataset_node(dataset_key: str) -> str:
     return to_node_name(dataset_key, prefix="d")
 
 
+def artifact_node(artifact_name: str) -> str:
+    """Convert an artifact name to a Hamilton node identifier.
+
+    Artifacts use the "a" prefix to distinguish them from target and dataset nodes.
+
+    Parameters
+    ----------
+    artifact_name
+        The artifact name (e.g., "faiss_index", "model_weights").
+
+    Returns
+    -------
+    str
+        Hamilton node name with "a__" prefix.
+
+    Examples
+    --------
+    >>> artifact_node("faiss_index")
+    'a__faiss_index'
+
+    >>> artifact_node("model_weights")
+    'a__model_weights'
+    """
+    return to_node_name(artifact_name, prefix="a")
+
+
+def query_node(table_key: str) -> str:
+    """Convert a table key to an Ibis query loader node identifier.
+
+    Query nodes use the "q" prefix and return Ibis table expressions.
+
+    Parameters
+    ----------
+    table_key
+        The table key (e.g., "analytics.function_metrics").
+
+    Returns
+    -------
+    str
+        Hamilton node name with "q__" prefix.
+
+    Examples
+    --------
+    >>> query_node("analytics.function_metrics")
+    'q__analytics__function_metrics'
+    """
+    return to_node_name(table_key, prefix="q")
+
+
+def dataframe_node(table_key: str) -> str:
+    """Convert a table key to a pandas DataFrame loader node identifier.
+
+    DataFrame nodes use the "df" prefix and return pandas DataFrames.
+
+    Parameters
+    ----------
+    table_key
+        The table key (e.g., "analytics.function_metrics").
+
+    Returns
+    -------
+    str
+        Hamilton node name with "df__" prefix.
+
+    Examples
+    --------
+    >>> dataframe_node("analytics.function_metrics")
+    'df__analytics__function_metrics'
+    """
+    return to_node_name(table_key, prefix="df")
+
+
 def node_to_target(node_name: str) -> str | None:
     """Extract the original target name from a Hamilton node identifier.
 
@@ -152,8 +224,11 @@ def node_to_target(node_name: str) -> str | None:
 
 
 __all__ = [
+    "artifact_node",
+    "dataframe_node",
     "dataset_node",
     "node_to_target",
+    "query_node",
     "target_node",
     "to_node_name",
 ]

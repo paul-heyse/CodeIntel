@@ -69,7 +69,13 @@ def explain(*, con: DuckDBConnection, view: str, analyze: bool) -> str:
     return "\n".join(str(row[0]) for row in rows)
 
 
-def run_profile(*, db_path: Path, output_dir: Path, analyze: bool) -> None:
+def run_profile(
+    *,
+    db_path: Path,
+    output_dir: Path,
+    analyze: bool,
+    con: DuckDBConnection | None = None,
+) -> None:
     """Generate profiling artifacts for the configured database.
 
     Parameters
@@ -86,20 +92,23 @@ def run_profile(*, db_path: Path, output_dir: Path, analyze: bool) -> None:
     FileNotFoundError
         When the supplied db_path does not exist.
     """
-    if not db_path.exists():
-        message = f"DuckDB not found at {db_path}"
-        raise FileNotFoundError(message)
-    gateway = open_gateway(StorageConfig.for_readonly(db_path))
-    try:
-        con = gateway.con
-        meta = {"db_path": str(db_path), "analyze": analyze, "views": DOCS_VIEWS}
-        write_text(output_dir / "profile_meta.json", json.dumps(meta, indent=2))
-        for view in DOCS_VIEWS:
-            plan = explain(con=con, view=view, analyze=analyze)
-            suffix = "analyze" if analyze else "explain"
-            write_text(output_dir / f"{view.replace('.', '_')}.{suffix}.txt", plan)
-    finally:
-        gateway.close()
+    if con is None:
+        if not db_path.exists():
+            message = f"DuckDB not found at {db_path}"
+            raise FileNotFoundError(message)
+        gateway = open_gateway(StorageConfig.for_readonly(db_path))
+        try:
+            run_profile(db_path=db_path, output_dir=output_dir, analyze=analyze, con=gateway.con)
+        finally:
+            gateway.close()
+        return
+
+    meta = {"db_path": str(db_path), "analyze": analyze, "views": DOCS_VIEWS}
+    write_text(output_dir / "profile_meta.json", json.dumps(meta, indent=2))
+    for view in DOCS_VIEWS:
+        plan = explain(con=con, view=view, analyze=analyze)
+        suffix = "analyze" if analyze else "explain"
+        write_text(output_dir / f"{view.replace('.', '_')}.{suffix}.txt", plan)
 
 
 __all__ = ["DOCS_VIEWS", "explain", "run_profile", "write_text"]

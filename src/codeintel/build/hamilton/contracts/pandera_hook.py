@@ -154,6 +154,7 @@ def with_contract(table_key: str) -> Callable[[F], F]:
     ... def compute_metrics(data: pd.DataFrame) -> pd.DataFrame:
     ...     return process(data)
     """
+
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args: object, **kwargs: object) -> object:

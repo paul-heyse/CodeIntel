@@ -509,6 +509,54 @@ class BuildRunResult:
 
 
 @dataclass(frozen=True)
+class BuildPlanResult:
+    """Result from build plan command.
+
+    Parameters
+    ----------
+    requested
+        List of requested target names.
+    closure
+        List of target names in dependency closure.
+    entries
+        List of plan entry dictionaries with status/reason.
+    to_compute
+        List of target names that will be computed.
+    to_skip
+        List of target names that will be skipped.
+    blocked
+        List of target names that are blocked.
+    """
+
+    requested: list[str]
+    closure: list[str]
+    entries: list[dict[str, object]]
+    to_compute: list[str]
+    to_skip: list[str]
+    blocked: list[str]
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "requested": self.requested,
+            "closure": self.closure,
+            "entries": self.entries,
+            "to_compute": self.to_compute,
+            "to_skip": self.to_skip,
+            "blocked": self.blocked,
+            "compute_count": len(self.to_compute),
+            "skip_count": len(self.to_skip),
+            "blocked_count": len(self.blocked),
+        }
+
+
+@dataclass(frozen=True)
 class SubsystemListResult:
     """Result from subsystem list command.
 
@@ -1563,6 +1611,7 @@ __all__ = [
     "ActionResult",
     "BuildExecutionResult",
     "BuildHistoryResult",
+    "BuildPlanResult",
     "BuildRunResult",
     "BuildStatusResult",
     "BuildTargetInfo",

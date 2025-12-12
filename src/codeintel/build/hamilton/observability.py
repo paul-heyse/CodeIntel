@@ -232,8 +232,106 @@ def export_execution_json(
     return json.dumps(execution_info, indent=2)
 
 
+def export_dag_mermaid(
+    runtime: HamiltonRuntime,
+    targets: list[str],
+) -> str:
+    """Export DAG as Mermaid graph definition.
+
+    Generates a Mermaid flowchart diagram that can be rendered by
+    GitHub, Notion, Obsidian, and other Mermaid-compatible tools.
+
+    Parameters
+    ----------
+    runtime
+        Hamilton runtime with driver and graph.
+    targets
+        Target names to export DAG for.
+
+    Returns
+    -------
+    str
+        Mermaid flowchart definition string.
+
+    Examples
+    --------
+    >>> runtime = build_driver(mode="generated")
+    >>> mermaid = export_dag_mermaid(runtime, ["risk_factors"])
+    >>> mermaid.startswith("graph TD")
+    True
+    """
+    info = get_dag_info(runtime, targets)
+    lines = ["graph TD"]
+
+    # Add nodes with labels showing module
+    for node in info["nodes"]:
+        name = node["name"]
+        module = node.get("module", "node")
+        # Escape special characters for Mermaid
+        label = f"{name} ({module})"
+        lines.append(f'  {name}["{label}"]')
+
+    # Add edges
+    for edge in info["edges"]:
+        from_node = edge["from"]
+        to_node = edge["to"]
+        lines.append(f"  {from_node} --> {to_node}")
+
+    return "\n".join(lines) + "\n"
+
+
+def export_dag_dot(
+    runtime: HamiltonRuntime,
+    targets: list[str],
+) -> str:
+    """Export DAG as Graphviz DOT definition.
+
+    Generates a DOT graph that can be rendered by Graphviz tools
+    like dot, neato, or web-based viewers.
+
+    Parameters
+    ----------
+    runtime
+        Hamilton runtime with driver and graph.
+    targets
+        Target names to export DAG for.
+
+    Returns
+    -------
+    str
+        Graphviz DOT graph definition string.
+
+    Examples
+    --------
+    >>> runtime = build_driver(mode="generated")
+    >>> dot = export_dag_dot(runtime, ["risk_factors"])
+    >>> dot.startswith("digraph G {")
+    True
+    """
+    info = get_dag_info(runtime, targets)
+    lines = ["digraph G {", "  rankdir=TB;"]
+
+    # Add nodes with labels showing module
+    for node in info["nodes"]:
+        name = node["name"]
+        module = node.get("module", "node")
+        label = f"{name}\\n({module})"
+        lines.append(f'  "{name}" [label="{label}"];')
+
+    # Add edges
+    for edge in info["edges"]:
+        from_node = edge["from"]
+        to_node = edge["to"]
+        lines.append(f'  "{from_node}" -> "{to_node}";')
+
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
 __all__ = [
+    "export_dag_dot",
     "export_dag_json",
+    "export_dag_mermaid",
     "export_execution_json",
     "get_dag_info",
     "list_execution_order",

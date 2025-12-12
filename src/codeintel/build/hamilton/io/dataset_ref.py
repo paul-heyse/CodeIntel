@@ -9,11 +9,16 @@ Design Principles
 1. DatasetRef is a frozen dataclass for immutability and hashability.
 2. References carry metadata but not data - data flows through IbisGateway.
 3. Helper functions bridge target execution results to DatasetRef instances.
+4. repo/commit fields enable snapshot identity for lineage tracking.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codeintel.config.primitives import SnapshotRef
 
 
 @dataclass(frozen=True)
@@ -27,6 +32,10 @@ class DatasetRef:
     ----------
     table_key
         Fully-qualified table name (e.g., "analytics.function_metrics").
+    repo
+        Repository slug for snapshot identity (e.g., "org/repo").
+    commit
+        Commit SHA for snapshot identity.
     schema_version
         Optional schema version for compatibility tracking.
     row_count
@@ -40,6 +49,8 @@ class DatasetRef:
     --------
     >>> ref = DatasetRef(
     ...     table_key="analytics.function_metrics",
+    ...     repo="org/repo",
+    ...     commit="abc123",
     ...     source_target="function_metrics",
     ...     row_count=1500,
     ... )
@@ -50,6 +61,8 @@ class DatasetRef:
     """
 
     table_key: str
+    repo: str = ""
+    commit: str = ""
     schema_version: str | None = None
     row_count: int | None = None
     source_target: str | None = None
@@ -108,13 +121,15 @@ class DatasetRef:
 
         Examples
         --------
-        >>> ref = DatasetRef(table_key="test.table")
+        >>> ref = DatasetRef(table_key="test.table", repo="org/repo", commit="abc")
         >>> updated = ref.with_row_count(100)
         >>> updated.row_count
         100
         """
         return DatasetRef(
             table_key=self.table_key,
+            repo=self.repo,
+            commit=self.commit,
             schema_version=self.schema_version,
             row_count=count,
             source_target=self.source_target,
@@ -138,7 +153,7 @@ class DatasetRef:
 
         Examples
         --------
-        >>> ref = DatasetRef(table_key="test.table")
+        >>> ref = DatasetRef(table_key="test.table", repo="org/repo", commit="abc")
         >>> updated = ref.with_metadata("computed_at", "2024-01-01")
         >>> updated.metadata["computed_at"]
         '2024-01-01'
@@ -147,6 +162,8 @@ class DatasetRef:
         new_metadata[key] = value
         return DatasetRef(
             table_key=self.table_key,
+            repo=self.repo,
+            commit=self.commit,
             schema_version=self.schema_version,
             row_count=self.row_count,
             source_target=self.source_target,
@@ -158,6 +175,8 @@ def refs_from_target_result(
     target_name: str,
     table_keys: tuple[str, ...],
     row_counts: dict[str, int] | None = None,
+    *,
+    snapshot: SnapshotRef | None = None,
 ) -> dict[str, DatasetRef]:
     """Create DatasetRef instances from a target execution result.
 
@@ -169,6 +188,8 @@ def refs_from_target_result(
         Table keys produced by the target.
     row_counts
         Optional mapping of table key to row count.
+    snapshot
+        Optional snapshot reference for repo/commit identity.
 
     Returns
     -------
@@ -186,9 +207,13 @@ def refs_from_target_result(
     1500
     """
     counts = row_counts or {}
+    repo = snapshot.repo if snapshot else ""
+    commit = snapshot.commit if snapshot else ""
     return {
         key: DatasetRef(
             table_key=key,
+            repo=repo,
+            commit=commit,
             source_target=target_name,
             row_count=counts.get(key),
         )

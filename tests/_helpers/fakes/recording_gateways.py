@@ -157,6 +157,49 @@ class _FailingConnectionProxy:
         raise RuntimeError(self._error_message)
 
 
+class _FailingIbisProxy:
+    """Ibis proxy that fails on access.
+
+    Used by `FailingGateway` so code paths using `gateway.ibis` also fail
+    consistently during tests.
+    """
+
+    def __init__(self, error_message: str) -> None:
+        self._error_message = error_message
+
+    def table(self, _table_name: str) -> object:
+        """Raise RuntimeError to simulate database failure."""
+        raise RuntimeError(self._error_message)
+
+    def read(self, _table_name: str) -> object:
+        """Alias for table() to match IbisGateway surface."""
+        raise RuntimeError(self._error_message)
+
+    def view(self, _view_name: str) -> object:
+        """Alias for table() to match IbisGateway surface."""
+        raise RuntimeError(self._error_message)
+
+    def delete(self, _table_key: str, *, where: object | None = None) -> int:
+        """Raise RuntimeError to simulate database failure."""
+        _ = where
+        raise RuntimeError(self._error_message)
+
+    def write(
+        self,
+        _table_key: str,
+        _data: object,
+        *,
+        columns: object | None = None,
+        on_conflict: object | None = None,
+    ) -> object:
+        """Raise RuntimeError to simulate database failure."""
+        _ = columns, on_conflict
+        raise RuntimeError(self._error_message)
+
+    def __getattr__(self, _item: str) -> object:
+        raise RuntimeError(self._error_message)
+
+
 class FailingGateway:
     """Gateway that raises on execute for testing error recovery.
 
@@ -175,7 +218,7 @@ class FailingGateway:
         self.datasets = gateway.datasets
         self.docs = gateway.docs
         self.graph = gateway.graph
-        self.ibis = gateway.ibis
+        self.ibis = cast("Any", _FailingIbisProxy(error_message))
         self.runs = gateway.runs
 
     @property

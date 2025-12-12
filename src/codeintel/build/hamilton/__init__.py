@@ -60,18 +60,26 @@ from codeintel.build.hamilton.observability import (
     list_execution_order,
     list_execution_targets,
 )
+from codeintel.build.hamilton.planner import (
+    HamiltonBuildPlan,
+    PlanEntry,
+    compute_plan,
+)
 
 __all__ = [
     "BuildEnv",
     "CanonicalPluginMeta",
     "DatasetRef",
     "HamiltonBuildExecutor",
+    "HamiltonBuildPlan",
     "HamiltonBuildResult",
     "HamiltonNodeMode",
     "HamiltonRuntime",
     "IbisIOConfig",
+    "PlanEntry",
     "TargetRunRecord",
     "build_driver",
+    "compute_plan",
     "dataset_node",
     "export_dag_json",
     "export_execution_json",

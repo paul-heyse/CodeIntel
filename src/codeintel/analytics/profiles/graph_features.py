@@ -45,7 +45,7 @@ def summarize_graph_for_function_profile(
             call_edge_out_count=scoped_edges.caller_goid_h128.count(),
             call_fan_out=scoped_edges.callee_goid_h128.nunique(),
         )
-        .rename({"caller_goid_h128": "function_goid_h128"})
+        .rename({"function_goid_h128": "caller_goid_h128"})
     )
 
     cg_in = (
@@ -55,7 +55,7 @@ def summarize_graph_for_function_profile(
             call_edge_in_count=scoped_edges.callee_goid_h128.count(),
             call_fan_in=scoped_edges.caller_goid_h128.nunique(),
         )
-        .rename({"callee_goid_h128": "function_goid_h128"})
+        .rename({"function_goid_h128": "callee_goid_h128"})
     )
 
     cg_nodes = nodes.select(
@@ -63,27 +63,42 @@ def summarize_graph_for_function_profile(
         nodes.is_public,
     )
 
-    joined = cg_out.outer_join(
-        cg_in, [cg_out.function_goid_h128 == cg_in.function_goid_h128]
-    ).outer_join(cg_nodes, [cg_out.function_goid_h128 == cg_nodes.function_goid_h128])
-
-    rows_df = (
-        joined.select(
-            joined.function_goid_h128,
-            joined.call_fan_in.fillna(ibis.literal(0)),
-            joined.call_fan_out.fillna(ibis.literal(0)),
-            joined.call_edge_in_count.fillna(ibis.literal(0)),
-            joined.call_edge_out_count.fillna(ibis.literal(0)),
-            (joined.call_fan_out.fillna(ibis.literal(0)) == 0).name("call_is_leaf"),
-            (
-                (joined.call_fan_in.fillna(ibis.literal(0)) == 0)
-                & (joined.call_fan_out.fillna(ibis.literal(0)) > 0)
-            ).name("call_is_entrypoint"),
-            joined.is_public.name("call_is_public"),
-        )
-        .order_by(joined.function_goid_h128)
-        .execute()
+    combined = cg_out.outer_join(
+        cg_in,
+        [cg_out.function_goid_h128 == cg_in.function_goid_h128],
+        rname="{name}_in",
     )
+    joined = combined.left_join(
+        cg_nodes,
+        [
+            (combined.function_goid_h128 == cg_nodes.function_goid_h128)
+            | (combined.function_goid_h128_in == cg_nodes.function_goid_h128)
+        ],
+        rname="{name}_node",
+    )
+
+    zero = ibis.literal(0)
+    function_goid_h128 = ibis.coalesce(
+        joined.function_goid_h128,
+        joined.function_goid_h128_in,
+    ).name("function_goid_h128")
+    call_fan_in = joined.call_fan_in.fill_null(zero)
+    call_fan_out = joined.call_fan_out.fill_null(zero)
+    call_edge_in_count = joined.call_edge_in_count.fill_null(zero)
+    call_edge_out_count = joined.call_edge_out_count.fill_null(zero)
+    call_is_leaf = (call_fan_out == 0).name("call_is_leaf")
+    call_is_entrypoint = ((call_fan_in == 0) & (call_fan_out > 0)).name("call_is_entrypoint")
+    selected = joined.select(
+        function_goid_h128,
+        call_fan_in,
+        call_fan_out,
+        call_edge_in_count,
+        call_edge_out_count,
+        call_is_leaf,
+        call_is_entrypoint,
+        joined.is_public.name("call_is_public"),
+    )
+    rows_df = selected.order_by(selected.function_goid_h128).execute()
 
     features: dict[int, FunctionGraphFeatures] = {}
     for (

@@ -12,6 +12,9 @@ import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.build.manifest import OutputManifest
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
@@ -22,12 +25,14 @@ def compute_input_hash(
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     options_hash: str | None = None,
+    *,
+    manifests: Mapping[str, OutputManifest] | None = None,
 ) -> str:
     """Compute content-addressable hash of a target's inputs.
 
     The input hash combines:
     - Repository and commit identifiers
-    - Dependency output hashes (from their manifests)
+    - Dependency input hashes (from their manifests) - cascades correctly
     - Plugin options hash (if provided)
 
     This enables cache invalidation: if the input hash matches a stored
@@ -43,6 +48,9 @@ def compute_input_hash(
         Storage gateway for loading dependency manifests.
     options_hash
         Optional hash of plugin configuration options.
+    manifests
+        Optional pre-loaded mapping of target names to manifests.
+        If provided, avoids per-dependency DB round trips.
 
     Returns
     -------
@@ -68,18 +76,23 @@ def compute_input_hash(
     hasher.update(b"|")
 
     # Include dependency hashes (sorted for determinism)
+    # Use input_hash for cascade (more robust than output_hash)
     dep_hashes: list[str] = []
     for dep_name in sorted(target.dependencies):
-        # Load manifest for dependency
-        manifest = gateway.build.load_manifest(
-            target=dep_name,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        )
-        if manifest is not None and manifest.output_hash is not None:
-            dep_hashes.append(f"{dep_name}:{manifest.output_hash}")
+        # Use pre-loaded manifests if available, otherwise load from DB
+        if manifests is not None:
+            manifest = manifests.get(dep_name)
         else:
-            # Dependency not computed or no output hash - use sentinel
+            manifest = gateway.build.load_manifest(
+                target=dep_name,
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+            )
+        # Cascade on input_hash for proper propagation of changes
+        if manifest is not None and manifest.input_hash is not None:
+            dep_hashes.append(f"{dep_name}:{manifest.input_hash}")
+        else:
+            # Dependency not computed or no input hash - use sentinel
             dep_hashes.append(f"{dep_name}:MISSING")
 
     hasher.update(",".join(dep_hashes).encode("utf-8"))

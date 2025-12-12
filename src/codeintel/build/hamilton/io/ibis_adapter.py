@@ -29,6 +29,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "IbisIOConfig",
+    "load_dataset_df",
+    "load_dataset_ibis",
     "load_ibis_table",
     "load_table_as_dataframe",
     "save_dataframe",
@@ -338,3 +340,78 @@ def upsert_dataframe(
         "row_count": result.rows_affected,
         "method": result.method,
     }
+
+
+def load_dataset_ibis(
+    *,
+    gateway: StorageGateway,
+    ref: DatasetRef,
+) -> ir.Table:
+    """Load a dataset as an Ibis expression with repo/commit filtering.
+
+    This function loads a table via IbisGateway and applies repo/commit
+    filtering if those columns exist and ref contains valid values.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    ref
+        DatasetRef v2 with table_key, repo, and commit.
+
+    Returns
+    -------
+    ir.Table
+        Ibis table expression, potentially filtered by repo/commit.
+
+    Examples
+    --------
+    >>> ref = DatasetRef(
+    ...     table_key="analytics.function_metrics",
+    ...     repo="org/repo",
+    ...     commit="abc123",
+    ... )
+    >>> table = load_dataset_ibis(gateway=gateway, ref=ref)
+    """
+    t = gateway.ibis.table(ref.table_key)
+    cols = set(t.columns)
+
+    # Apply repo/commit filtering if columns exist and ref has values
+    if ref.repo and ref.commit and "repo" in cols and "commit" in cols:
+        t = t.filter((t.repo == ref.repo) & (t.commit == ref.commit))
+
+    return t
+
+
+def load_dataset_df(
+    *,
+    gateway: StorageGateway,
+    ref: DatasetRef,
+) -> pd.DataFrame:
+    """Load a dataset as a pandas DataFrame with repo/commit filtering.
+
+    Convenience wrapper that executes the Ibis expression from load_dataset_ibis.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    ref
+        DatasetRef v2 with table_key, repo, and commit.
+
+    Returns
+    -------
+    pd.DataFrame
+        Pandas DataFrame with the dataset contents.
+
+    Examples
+    --------
+    >>> ref = DatasetRef(
+    ...     table_key="analytics.function_metrics",
+    ...     repo="org/repo",
+    ...     commit="abc123",
+    ... )
+    >>> df = load_dataset_df(gateway=gateway, ref=ref)
+    """
+    table = load_dataset_ibis(gateway=gateway, ref=ref)
+    return cast("pd.DataFrame", table.execute())

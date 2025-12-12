@@ -118,6 +118,7 @@ def _compute_hashes(
         snapshot=env.snapshot,
         gateway=env.gateway,
         options_hash=options_hash,
+        manifests=env.manifest_index,
     )
     return HashComputation(
         input_hash=input_hash,
@@ -158,6 +159,7 @@ def _should_skip_target(
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
         input_hash=input_hash,
+        manifest_index=env.manifest_index,
     )
 
 
@@ -248,6 +250,7 @@ def _build_success_record(params: _SuccessRecordParams) -> TargetRunRecord:
         target_name=params.target_name,
         table_keys=table_keys,
         row_counts=params.row_counts,
+        snapshot=params.env.snapshot,
     )
     datasets = refs_to_tuple(refs)
 
@@ -338,6 +341,15 @@ def _run_target(
             target_name,
             hashes.input_hash,
         )
+        # Populate dataset refs even when skipped for asset-centric DAG
+        skip_table_keys = target.contract.table_keys or target.table_keys
+        skip_refs = refs_from_target_result(
+            target_name=target_name,
+            table_keys=skip_table_keys,
+            row_counts=None,
+            snapshot=env.snapshot,
+        )
+        skip_datasets = refs_to_tuple(skip_refs)
         return TargetRunRecord(
             target=target_name,
             plugin_name=meta.name,
@@ -345,6 +357,7 @@ def _run_target(
             input_hash=hashes.input_hash,
             options_hash=hashes.options_hash,
             duration_ms=0.0,
+            datasets=skip_datasets,
         )
 
     # Execute plugin

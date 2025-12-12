@@ -176,6 +176,47 @@ def _complete_build_run(params: _RunCompletionParams) -> None:
         log.warning("build.hamilton.executor.complete_run_failed run_id=%s", params.run_id)
 
 
+def _persist_run_targets(
+    env: BuildEnv,
+    run_id: str,
+    outputs: dict[str, Any],
+    runtime: HamiltonRuntime,
+) -> None:
+    """Persist per-target execution records.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway.
+    run_id
+        Run identifier.
+    outputs
+        Outputs from Hamilton execution.
+    runtime
+        Hamilton runtime for node mapping.
+    """
+    try:
+        records: list[TargetRunRecord] = []
+        for node_name, value in outputs.items():
+            if isinstance(value, TargetRunRecord):
+                records.append(value)
+
+        if records:
+            env.gateway.build.save_run_targets(
+                run_id=run_id,
+                repo=env.repo,
+                commit=env.commit,
+                records=records,
+            )
+            log.debug(
+                "build.hamilton.executor.run_targets_saved run_id=%s count=%d",
+                run_id,
+                len(records),
+            )
+    except Exception:  # noqa: BLE001 - Best effort tracking
+        log.warning("build.hamilton.executor.run_targets_failed run_id=%s", run_id)
+
+
 @dataclass(frozen=True)
 class HamiltonBuildResult:
     """Result of a Hamilton-based build execution.
@@ -248,7 +289,7 @@ class HamiltonBuildExecutor:
         self,
         *,
         profile: str | None = None,
-        mode: HamiltonNodeMode = "phase0",
+        mode: HamiltonNodeMode = "generated",
     ) -> None:
         """Initialize the Hamilton executor."""
         self._profile = profile
@@ -311,6 +352,9 @@ class HamiltonBuildExecutor:
         computed, skipped, failed = _categorize_outputs(closure, outputs, context.runtime)
         duration_ms = context.duration_ms
         success = not failed and error is None
+
+        # Persist per-target execution records
+        _persist_run_targets(context.env, context.run_id, outputs, context.runtime)
 
         error_summary = error or (f"{len(failed)} targets failed" if failed else None)
         completion_params = _RunCompletionParams(

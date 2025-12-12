@@ -1042,6 +1042,74 @@ Phase 1 Implementation (Full Production Features)
 
 ---
 
+## Code Quality Refinements
+
+### Pandera Contract Hooks (`contracts/pandera_hook.py`)
+
+The Pandera integration was hardened with explicit type guards and clearer error paths:
+
+```python
+def _ensure_dataframe(result: object, table_key: str) -> pd.DataFrame:
+    """Ensure validation inputs are DataFrames.
+
+    Raises
+    ------
+    TypeError
+        If the provided result is not a pandas DataFrame.
+    """
+    if isinstance(result, pd.DataFrame):
+        return result
+    msg = f"Expected pandas.DataFrame for {table_key}, got {type(result).__name__}"
+    raise TypeError(msg)
+```
+
+**Key improvements**:
+- **Explicit type guard** (`_ensure_dataframe`) with clear error messages
+- **Skip-on-missing-schema preserved** for `validate_dataset_ref` (returns `True, None` when no schema)
+- **TypeError vs ValueError** distinction for clearer error categorization
+- **Full NumPy-style docstrings** on all public functions
+
+### Node Helper Semantics (`targets_phase0.py`)
+
+Helper functions now use dataclasses for complex parameter sets:
+
+```python
+@dataclass(frozen=True)
+class _SuccessRecordParams:
+    """Parameters for building a success record."""
+    env: BuildEnv
+    target: OutputTarget
+    target_name: str
+    meta_name: str
+    input_hash: str | None
+    options_hash: str | None
+    duration_ms: float
+    row_counts: dict[str, int]
+```
+
+**Key improvements**:
+- **Dataclass-based parameters** reduce function argument counts
+- **Full NumPy-style return docs** on all helpers
+- **Sorted `__all__` exports** for consistency
+
+### DAG Edge Construction (`observability.py`)
+
+```python
+# Before: nested loop with append
+for dep in target.dependencies:
+    if dep in runtime.target_to_node:
+        edges.append({"from": dep, "to": target_name})
+
+# After: list.extend with generator comprehension
+edges.extend(
+    {"from": dep, "to": target_name}
+    for dep in target.dependencies
+    if dep in runtime.target_to_node
+)
+```
+
+---
+
 ## Definition of Done Verification
 
 | Criterion | Status |

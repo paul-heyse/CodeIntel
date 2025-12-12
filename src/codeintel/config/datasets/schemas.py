@@ -2030,6 +2030,47 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         ),
         description="Build system run tracking for debugging and observability",
     ),
+    "build.run_targets": TableSchema(
+        schema="build",
+        name="run_targets",
+        columns=[
+            Column("run_id", "VARCHAR", nullable=False, description="Parent run identifier"),
+            Column("repo", "VARCHAR", nullable=False, description="Repository slug"),
+            Column("commit", "VARCHAR", nullable=False, description="Commit SHA"),
+            Column("target", "VARCHAR", nullable=False, description="Target name"),
+            Column("plugin", "VARCHAR", nullable=False, description="Plugin name"),
+            Column(
+                "status",
+                "VARCHAR",
+                nullable=False,
+                description="Target status: succeeded/failed/skipped",
+            ),
+            Column("input_hash", "VARCHAR", description="Input hash for cache validation"),
+            Column("options_hash", "VARCHAR", description="Plugin options hash"),
+            Column(
+                "duration_ms",
+                "DOUBLE",
+                nullable=False,
+                description="Target execution duration in milliseconds",
+            ),
+            Column(
+                "row_counts",
+                "JSON",
+                nullable=False,
+                description="JSON object mapping table keys to row counts",
+            ),
+            Column("error", "VARCHAR", description="Error message if failed"),
+            Column(
+                "recorded_at",
+                "TIMESTAMPTZ",
+                nullable=False,
+                description="When the record was persisted",
+            ),
+        ],
+        primary_key=("run_id", "target"),
+        indexes=(Index("idx_build_run_targets_repo_commit", ("repo", "commit")),),
+        description="Per-target execution records for build observability",
+    ),
 }
 
 # ---------------------------------------------------------------------------

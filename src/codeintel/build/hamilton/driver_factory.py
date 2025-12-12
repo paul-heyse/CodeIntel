@@ -106,7 +106,7 @@ def _build_target_to_node_map(
 def build_driver(
     *,
     config: dict[str, Any] | None = None,
-    mode: HamiltonNodeMode = "phase0",
+    mode: HamiltonNodeMode = "generated",
 ) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.
 
@@ -168,7 +168,7 @@ def build_driver(
     )
 
 
-def list_available_nodes(*, mode: HamiltonNodeMode = "phase0") -> list[str]:
+def list_available_nodes(*, mode: HamiltonNodeMode = "generated") -> list[str]:
     """List all available Hamilton node names.
 
     Parameters
@@ -199,7 +199,7 @@ def target_to_node_name(
     target_name: str,
     *,
     runtime: HamiltonRuntime | None = None,
-    mode: HamiltonNodeMode = "phase0",
+    mode: HamiltonNodeMode = "generated",
 ) -> str | None:
     """Convert a target name to its Hamilton node name.
 
