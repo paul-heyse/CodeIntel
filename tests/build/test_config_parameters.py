@@ -33,7 +33,7 @@ def test_load_build_config_merges_module_and_target(tmp_path: Path) -> None:
 
     expect_equal(params.get("threshold", int), 3)
     expect_true(params.get("enabled", bool) is True)
-    # Module-level settings are merged even if defined in other modules
+
     expect_equal(params.get("sampling_rate", float), 0.2)
     expect_equal(params.get("shared", str), "module")
 
@@ -68,9 +68,9 @@ def test_build_config_get_nested_with_defaults() -> None:
 
     expect_equal(cfg.get("analytics.hotspots.max_commits"), 5)
     expect_equal(cfg.get("analytics.hotspots.missing", default="fallback"), "fallback")
-    # None values short-circuit traversal and use the provided default
+
     expect_equal(cfg.get("value", default="default"), "default")
-    # When a non-mapping is encountered mid-path, default is returned
+
     expect_equal(cfg.get("nested.deeper", default=0), 0)
 
 

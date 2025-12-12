@@ -17,10 +17,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-# =============================================================================
-# CFG Row Types
-# =============================================================================
-
 
 @dataclass(frozen=True)
 class CFGBlockRow:
@@ -107,11 +103,6 @@ class CFGEdgeRow:
         return dataclasses.astuple(self)
 
 
-# =============================================================================
-# DFG Row Types
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class DFGEdgeRow:
     """Row data for graph.dfg_edges table.
@@ -154,11 +145,6 @@ class DFGEdgeRow:
             Field values in INSERT column order.
         """
         return dataclasses.astuple(self)
-
-
-# =============================================================================
-# Import Graph Row Types
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -246,11 +232,6 @@ class ImportEdgeRow:
         return dataclasses.astuple(self)
 
 
-# =============================================================================
-# Symbol Use Row Types
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class SymbolUseRow:
     """Row data for graph.symbol_use_edges table.
@@ -290,11 +271,6 @@ class SymbolUseRow:
             Field values in INSERT column order.
         """
         return dataclasses.astuple(self)
-
-
-# =============================================================================
-# GOID Row Types
-# =============================================================================
 
 
 @dataclass(frozen=True)

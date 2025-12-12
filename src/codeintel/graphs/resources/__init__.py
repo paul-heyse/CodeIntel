@@ -18,11 +18,11 @@ Example
 from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.resources import CatalogResource
 
-# Build registry
+
 resources = ResourceRegistry()
 resources.register_provider(CatalogResource(catalog))
 
-# Resolve in plugin
+
 catalog = resources.require_by_name(CatalogResource.RESOURCE_NAME)
 spans = catalog.function_spans
 ```

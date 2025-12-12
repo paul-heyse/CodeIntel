@@ -13,7 +13,6 @@ from typing import TypeVar
 
 import networkx as nx
 
-# Type variable for node types in CFG computations
 NodeT = TypeVar("NodeT", bound=Hashable)
 
 log = logging.getLogger(__name__)
@@ -68,7 +67,6 @@ def compute_dominator_tree(
         log.warning("Dominator computation failed: %s", exc)
         return {}
 
-    # Entry dominates itself in NetworkX output; we represent as None
     result: dict[Hashable, Hashable | None] = {}
     for node, idom in idoms.items():
         result[node] = None if node == entry else idom
@@ -179,17 +177,15 @@ def find_natural_loop_headers(
     except nx.NetworkXError:
         return set()
 
-    # Build dominance relation (transitive closure)
     dominates: dict[Hashable, set[Hashable]] = {node: set() for node in graph.nodes()}
     for node in graph.nodes():
         current: Hashable | None = node
         while current is not None:
             dominates[current].add(node)
             current = idoms.get(current)
-            if current == node:  # Prevent infinite loop at entry
+            if current == node:
                 break
 
-    # Find back edges (edge n -> h where h dominates n)
     headers: set[Hashable] = set()
     for node in graph.nodes():
         for succ in graph.successors(node):
@@ -219,11 +215,9 @@ def compute_cfg_longest_path(
     if graph.number_of_nodes() == 0:
         return 0
 
-    # Check if acyclic
     if nx.is_directed_acyclic_graph(graph):
         return int(nx.dag_longest_path_length(graph))
 
-    # For cyclic graphs, compute on condensation
     condensation = nx.condensation(graph)
     if condensation.number_of_nodes() == 0:
         return 0

@@ -51,9 +51,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# =============================================================================
-# Type Definitions
-# =============================================================================
 
 ResolutionKind = Literal[
     "requested",
@@ -201,11 +198,6 @@ class ResolutionResult:
         return self.reasons[name]
 
 
-# =============================================================================
-# Build Resolver
-# =============================================================================
-
-
 class BuildResolver:
     """Resolve minimal work needed to achieve goal targets.
 
@@ -275,11 +267,9 @@ class BuildResolver:
         >>> print(f"Need to compute {result.total_work} targets")
         Need to compute 4 targets
         """
-        # Convert to tuples for consistency
         goal_list = tuple(goals)
         force_set = set(force_recompute) if force_recompute else set()
 
-        # Handle empty goals case
         if not goal_list:
             return ResolutionResult(
                 requested=(),
@@ -289,17 +279,14 @@ class BuildResolver:
                 reasons={},
             )
 
-        # Phase A: Validate and expand
         self._validate_goals(goal_list)
         all_needed = self._expand_transitive(goal_list)
         force_set = self._filter_force_targets(force_set, all_needed)
 
-        # Phase B: Categorize targets
         must_compute, to_skip, blocked, reasons = self._categorize_targets(
             goal_list, all_needed, force_set
         )
 
-        # Phase C: Build result with proper ordering
         return self._build_result(goal_list, must_compute, to_skip, blocked, reasons)
 
     def resolve_all(
@@ -333,10 +320,6 @@ class BuildResolver:
         else:
             goals = list(self._graph)
         return self.resolve(goals)
-
-    # =========================================================================
-    # Phase A: Validation and Expansion
-    # =========================================================================
 
     def _validate_goals(self, goals: tuple[str, ...]) -> None:
         """Validate that all goals exist in the graph.
@@ -410,10 +393,6 @@ class BuildResolver:
 
         return force_set & all_needed
 
-    # =========================================================================
-    # Phase B: Categorization
-    # =========================================================================
-
     def _categorize_targets(
         self,
         goals: tuple[str, ...],
@@ -446,7 +425,6 @@ class BuildResolver:
 
         goal_set = set(goals)
 
-        # Process in topological order (deps before dependents)
         topo_order = self._graph.topological_order(all_needed)
 
         for target_name in topo_order:
@@ -457,7 +435,7 @@ class BuildResolver:
                 must_compute.add(target_name)
             elif reason.kind == "blocked_external":
                 blocked.add(target_name)
-            else:  # current
+            else:
                 to_skip.add(target_name)
 
         return must_compute, to_skip, blocked, reasons
@@ -490,11 +468,9 @@ class BuildResolver:
         target_state = self._state.get(target_name)
         is_goal = target_name in goal_set
 
-        # Check if forced
         if target_name in force_set:
             return self._make_forced_reason(is_goal=is_goal)
 
-        # Dispatch based on state status
         return self._categorize_by_state(
             target_name, target_state, is_goal=is_goal, must_compute=must_compute
         )
@@ -553,7 +529,6 @@ class BuildResolver:
         if target_state.status == "blocked":
             return self._make_blocked_reason(target_state, must_compute=must_compute)
 
-        # Status is "computed" - check cascade invalidation
         return self._make_computed_reason(target_name, is_goal=is_goal, must_compute=must_compute)
 
     @staticmethod
@@ -627,7 +602,7 @@ class BuildResolver:
         if blocking_deps_will_compute:
             detail = f"Dependencies {target_state.blocking_deps} will be computed first"
             return ResolutionReason(kind="dependency", details=detail)
-        # Truly blocked by external constraint
+
         unresolved = [d for d in target_state.blocking_deps if d not in must_compute]
         detail = f"Blocked by unresolved dependencies: {tuple(unresolved)}"
         return ResolutionReason(kind="blocked_external", details=detail)
@@ -660,7 +635,6 @@ class BuildResolver:
             detail = f"Dependency cascade from: {tuple(cascading_deps)}"
             return ResolutionReason(kind="cascade", details=detail)
 
-        # Target is current and can be skipped
         detail = "Already computed and up-to-date"
         if is_goal:
             detail += " (requested goal)"
@@ -713,10 +687,6 @@ class BuildResolver:
         target = self._graph.get(target_name)
         return [dep for dep in target.dependencies if dep in must_compute]
 
-    # =========================================================================
-    # Phase C: Build Result
-    # =========================================================================
-
     def _build_result(
         self,
         goals: tuple[str, ...],
@@ -745,7 +715,6 @@ class BuildResolver:
         ResolutionResult
             Final structured result.
         """
-        # Order to_compute in topological order (excluding non-work deps)
         topo = self._graph.topological_order(must_compute) if must_compute else ()
         ordered_compute = tuple(name for name in topo if name in must_compute)
 

@@ -5,7 +5,6 @@ Handlers for build operations, status, and history.
 
 from __future__ import annotations
 
-# Used by build_plan_handler for JSON serialization
 import json as _json
 import logging
 from dataclasses import dataclass
@@ -16,6 +15,13 @@ from typing import TYPE_CHECKING, Protocol, cast
 from codeintel.build.config import load_build_config
 from codeintel.build.executor import BuildExecutor, ExecutorEnv
 from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
+from codeintel.build.hamilton.driver_factory import HamiltonNodeMode, build_driver
+from codeintel.build.hamilton.observability import (
+    export_dag_dot,
+    export_dag_json,
+    export_dag_mermaid,
+    get_dag_info,
+)
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.plan import PlanGenerator
 from codeintel.build.providers import create_default_providers
@@ -91,6 +97,58 @@ class TargetScope(Enum):
 
     REQUESTED = "requested"
     ALL = "all"
+
+
+@dataclass(frozen=True)
+class BuildExecutionArgs:
+    """Build execution options for both Hamilton and legacy engines."""
+
+    goals: list[str]
+    force: list[str] | None
+    run_mode: RunMode
+    engine: str
+    hamilton_mode: str
+    validate_outputs: bool
+
+    @property
+    def is_dry_run(self) -> bool:
+        """Return True when run_mode is DRY_RUN."""
+        return self.run_mode is RunMode.DRY_RUN
+
+    @property
+    def node_mode(self) -> HamiltonNodeMode:
+        """Return typed HamiltonNodeMode value."""
+        return "generated" if self.hamilton_mode == "generated" else "phase0"
+
+
+@dataclass(frozen=True)
+class BuildPlanArgs:
+    """Argument bundle for build_plan_handler."""
+
+    targets: list[str] | None
+    module: str | None
+    force: list[str] | None
+    all_targets: bool
+    output_file: str | None
+
+
+def _parse_plan_args(ctx: CommandContext) -> BuildPlanArgs:
+    """Extract plan arguments from CLI context.
+
+    Returns
+    -------
+    BuildPlanArgs
+        Parsed plan arguments from CLI parameters.
+    """
+    targets_list = ctx.params.get_list("targets")
+    force_list = ctx.params.get_list("force")
+    return BuildPlanArgs(
+        targets=targets_list if targets_list else None,
+        module=ctx.params.get_str("module"),
+        force=force_list if force_list else None,
+        all_targets=ctx.params.get_bool("all_targets"),
+        output_file=ctx.params.get_str("output_file"),
+    )
 
 
 def _resolve_goals(
@@ -281,11 +339,7 @@ def _execute_build(
 def _execute_build_hamilton(
     runtime: ResolvedRuntime,
     gateway: StorageGateway,
-    goals: list[str],
-    run_mode: RunMode,
-    force: list[str] | None = None,
-    hamilton_mode: str = "generated",
-    validate_outputs: bool = False,
+    execution: BuildExecutionArgs,
 ) -> BuildResultLike | None:
     """Execute build using Hamilton executor.
 
@@ -295,41 +349,27 @@ def _execute_build_hamilton(
         Resolved runtime context.
     gateway
         Open storage gateway.
-    goals
-        Target names to build.
-    run_mode
-        Whether to execute or return a dry-run plan.
-    force
-        Optional list of targets to force recompute.
-    hamilton_mode
-        Hamilton node mode: "generated" (default) or "phase0" (debug).
-    validate_outputs
-        When True, validate produced datasets against Pandera schemas.
+    execution
+        BuildExecutionArgs describing goals, engine mode, force targets, and validation.
 
     Returns
     -------
     BuildResult | None
         Build result or None for dry-run.
     """
-    from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
-
-    if run_mode is RunMode.DRY_RUN:
-        LOG.info("build.cli.hamilton.dry_run goals=%s", goals)
+    if execution.run_mode is RunMode.DRY_RUN:
+        LOG.info("build.cli.hamilton.dry_run goals=%s", execution.goals)
         return None
 
     LOG.info(
         "build.cli.hamilton.execute goals=%s force=%s mode=%s validate=%s",
-        goals,
-        force,
-        hamilton_mode,
-        validate_outputs,
+        execution.goals,
+        execution.force,
+        execution.hamilton_mode,
+        execution.validate_outputs,
     )
-
-    # Build the Hamilton environment
     providers = create_default_providers(runtime.tools)
     config = load_build_config(runtime.snapshot.repo_root)
-
-    # Prefetch all manifests for this repo/commit to avoid per-target DB calls
     manifests_list = gateway.build.list_manifests(
         repo=runtime.snapshot.repo,
         commit=runtime.snapshot.commit,
@@ -344,18 +384,14 @@ def _execute_build_hamilton(
         providers=providers,
         config=config,
         profile="default",
-        force_targets=frozenset(force or ()),
+        force_targets=frozenset(execution.force or ()),
         manifest_index=manifest_index,
-        validate_outputs=validate_outputs,
+        validate_outputs=execution.validate_outputs,
     )
 
-    # Cast hamilton_mode to proper type - validated earlier
-    mode: HamiltonNodeMode = "generated" if hamilton_mode == "generated" else "phase0"
-    executor = HamiltonBuildExecutor(profile="default", mode=mode)
-    hamilton_result = executor.run(env=env, targets=goals)
+    executor = HamiltonBuildExecutor(profile="default", mode=execution.node_mode)
+    hamilton_result = executor.run(env=env, targets=execution.goals)
 
-    # Convert Hamilton result to BuildResult-like object for compatibility
-    # We create a minimal adapter that has the expected attributes
     return _HamiltonResultAdapter(hamilton_result)
 
 
@@ -571,14 +607,12 @@ def _validate_build_run_params(
     if sum(provided) != 1:
         return fail_invalid_target_selection("Provide exactly one of targets, --module, or --all.")
 
-    # Validate engine parameter
     valid_engines = ("legacy", "hamilton")
     if params.engine not in valid_engines:
         return fail_invalid_target_selection(
             f"Invalid engine '{params.engine}'. Valid: {', '.join(valid_engines)}"
         )
 
-    # Validate hamilton_mode parameter
     valid_modes = ("phase0", "generated")
     if params.hamilton_mode not in valid_modes:
         return fail_invalid_target_selection(
@@ -636,26 +670,20 @@ def build_run_handler(
         params.hamilton_mode,
     )
 
-    run_mode = RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE
-    return _execute_and_format_result(
-        runtime,
-        goals,
-        params.force,
-        run_mode,
-        params.engine,
-        params.hamilton_mode,
-        params.validate_outputs,
+    execution_args = BuildExecutionArgs(
+        goals=goals,
+        force=params.force,
+        run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
+        engine=params.engine,
+        hamilton_mode=params.hamilton_mode,
+        validate_outputs=params.validate_outputs,
     )
+    return _execute_and_format_result(runtime, execution_args)
 
 
 def _execute_and_format_result(
     runtime: ResolvedRuntime,
-    goals: list[str],
-    force: list[str] | None,
-    run_mode: RunMode,
-    engine: str = "hamilton",
-    hamilton_mode: str = "generated",
-    validate_outputs: bool = False,
+    execution: BuildExecutionArgs,
 ) -> CliResult[BuildRunResult]:
     """Execute build and format result.
 
@@ -663,18 +691,8 @@ def _execute_and_format_result(
     ----------
     runtime
         Resolved runtime.
-    goals
-        Target goals.
-    force
-        Force recompute targets.
-    run_mode
-        Execution mode.
-    engine
-        Build engine to use: "hamilton" (default) or "legacy".
-    hamilton_mode
-        Hamilton node mode: "generated" (default) or "phase0" (debug).
-    validate_outputs
-        When True, validate produced datasets against Pandera schemas.
+    execution
+        BuildExecutionArgs capturing engine, mode, validation, and goal selection.
 
     Returns
     -------
@@ -683,23 +701,21 @@ def _execute_and_format_result(
     """
     try:
         with runtime_gateway(runtime, read_only=False) as gateway:
-            if engine == "hamilton":
-                result = _execute_build_hamilton(
+            if execution.engine == "hamilton":
+                result = _execute_build_hamilton(runtime, gateway, execution)
+            else:
+                result, _plan = _execute_build(
                     runtime,
                     gateway,
-                    goals,
-                    run_mode,
-                    force,
-                    hamilton_mode,
-                    validate_outputs,
+                    execution.goals,
+                    execution.force,
+                    execution.run_mode,
                 )
-            else:
-                result, _plan = _execute_build(runtime, gateway, goals, force, run_mode)
     except Exception as exc:
-        LOG.exception("build.run.error engine=%s", engine)
+        LOG.exception("build.run.error engine=%s", execution.engine)
         return fail_execution_failed("build", str(exc))
 
-    if run_mode is RunMode.DRY_RUN or result is None:
+    if execution.run_mode is RunMode.DRY_RUN or result is None:
         return CliResult.ok(
             BuildRunResult(
                 executed=[],
@@ -752,7 +768,6 @@ def build_history_handler(
         except ValidationError as e:
             return fail_build_run_not_found(str(e))
 
-        # Fetch per-target breakdown for this run
         run_targets = gateway.build.list_run_targets(record.run_id)
 
         return CliResult.ok(
@@ -802,17 +817,6 @@ def build_graph_handler(
     CliResult[BuildGraphResult]
         Structured result with DAG information.
     """
-    from pathlib import Path
-
-    from codeintel.build.hamilton.driver_factory import build_driver
-    from codeintel.build.hamilton.observability import (
-        export_dag_dot,
-        export_dag_json,
-        export_dag_mermaid,
-        get_dag_info,
-    )
-
-    # Verify we can resolve runtime (validates project)
     try:
         _ = ctx.runtime
     except ResolutionError as e:
@@ -820,7 +824,6 @@ def build_graph_handler(
 
     graph = get_target_graph()
 
-    # Parse targets
     targets_list = ctx.params.get_list("targets")
     targets: list[str] | None = targets_list if targets_list else None
 
@@ -839,13 +842,10 @@ def build_graph_handler(
     except ValidationError as e:
         return fail_invalid_target_selection(str(e))
 
-    # Build Hamilton runtime in generated mode
     hamilton_runtime = build_driver(mode="generated")
 
-    # Get DAG info
     dag_info = get_dag_info(hamilton_runtime, goals)
 
-    # Export in requested format
     if output_format == "mermaid":
         dag_output = export_dag_mermaid(hamilton_runtime, goals)
     elif output_format == "dot":
@@ -853,7 +853,6 @@ def build_graph_handler(
     else:
         dag_output = export_dag_json(hamilton_runtime, goals)
 
-    # Write to file if specified
     if output_file:
         Path(output_file).write_text(dag_output, encoding="utf-8")
         LOG.info("build.graph.written path=%s format=%s", output_file, output_format)
@@ -893,23 +892,13 @@ def build_plan_handler(
         return fail_project_error("build", str(e))
 
     graph = get_target_graph()
-
-    # Parse parameters
-    targets_list = ctx.params.get_list("targets")
-    targets: list[str] | None = targets_list if targets_list else None
-
-    force_list = ctx.params.get_list("force")
-    force: list[str] | None = force_list if force_list else None
-
-    module = ctx.params.get_str("module")
-    all_targets = ctx.params.get_bool("all_targets")
-    output_file = ctx.params.get_str("output_file")
+    plan_args = _parse_plan_args(ctx)
 
     try:
         goals = _resolve_goals(
-            targets=targets,
-            module=module,
-            target_scope=TargetScope.ALL if all_targets else TargetScope.REQUESTED,
+            targets=plan_args.targets,
+            module=plan_args.module,
+            target_scope=TargetScope.ALL if plan_args.all_targets else TargetScope.REQUESTED,
             graph=graph,
         )
     except ValidationError as e:
@@ -920,20 +909,19 @@ def build_plan_handler(
         runtime.snapshot.repo,
         runtime.snapshot.commit,
         goals,
-        force,
+        plan_args.force,
     )
 
     with runtime_gateway(runtime, read_only=True) as gateway:
-        # Build environment for planning
         providers = create_default_providers(runtime.tools)
         config = load_build_config(runtime.snapshot.repo_root)
-
-        # Prefetch manifests for planning
-        manifests_list = gateway.build.list_manifests(
-            repo=runtime.snapshot.repo,
-            commit=runtime.snapshot.commit,
-        )
-        manifest_index = {m.target: m for m in manifests_list}
+        manifest_index = {
+            m.target: m
+            for m in gateway.build.list_manifests(
+                repo=runtime.snapshot.repo,
+                commit=runtime.snapshot.commit,
+            )
+        }
 
         env = BuildEnv(
             gateway=gateway,
@@ -942,11 +930,10 @@ def build_plan_handler(
             providers=providers,
             config=config,
             profile="default",
-            force_targets=frozenset(force or ()),
+            force_targets=frozenset(plan_args.force or ()),
             manifest_index=manifest_index,
         )
 
-        # Compute the plan
         plan = compute_plan(
             env=env,
             graph=graph,
@@ -954,7 +941,6 @@ def build_plan_handler(
             mode="generated",
         )
 
-    # Build result
     result = BuildPlanResult(
         requested=list(plan.requested),
         closure=list(plan.closure),
@@ -964,13 +950,12 @@ def build_plan_handler(
         blocked=list(plan.blocked),
     )
 
-    # Write to file if specified
-    if output_file:
-        Path(output_file).write_text(
+    if plan_args.output_file:
+        Path(plan_args.output_file).write_text(
             _json.dumps(result.to_dict(), indent=2),
             encoding="utf-8",
         )
-        LOG.info("build.plan.written path=%s", output_file)
+        LOG.info("build.plan.written path=%s", plan_args.output_file)
 
     return CliResult.ok(result)
 
@@ -999,7 +984,6 @@ def build_explain_handler(
 
     graph = get_target_graph()
 
-    # Parse parameters
     target = ctx.params.get_str("target")
     if not target:
         return fail_invalid_targets("No target specified")
@@ -1007,7 +991,6 @@ def build_explain_handler(
     force_list = ctx.params.get_list("force")
     force: list[str] | None = force_list if force_list else None
 
-    # Validate target exists
     try:
         graph.get(target)
     except KeyError:
@@ -1022,11 +1005,9 @@ def build_explain_handler(
     )
 
     with runtime_gateway(runtime, read_only=True) as gateway:
-        # Build environment for planning
         providers = create_default_providers(runtime.tools)
         config = load_build_config(runtime.snapshot.repo_root)
 
-        # Prefetch manifests for planning
         manifests_list = gateway.build.list_manifests(
             repo=runtime.snapshot.repo,
             commit=runtime.snapshot.commit,
@@ -1044,7 +1025,6 @@ def build_explain_handler(
             manifest_index=manifest_index,
         )
 
-        # Compute the plan
         plan = compute_plan(
             env=env,
             graph=graph,
@@ -1052,15 +1032,12 @@ def build_explain_handler(
             mode="generated",
         )
 
-    # Find the entry for the target
     entry = plan.get_entry(target)
     if entry is None:
         return fail_invalid_targets(f"Target not found in plan: {target}")
 
-    # Generate staleness explanation
     explanation = entry.explain_staleness()
 
-    # Build result
     result = BuildExplainResult(
         target=explanation.target,
         status=explanation.status,

@@ -62,13 +62,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-# Base context
 from codeintel.core.execution.base_context import BaseContext
-
-# Run context and identity
 from codeintel.core.execution.context import RunContext, RunKind, TriggerKind
-
-# Error handling
 from codeintel.core.execution.errors import (
     PLUGIN_CATCHABLE_ERRORS,
     PluginFatalError,
@@ -85,8 +80,6 @@ from codeintel.core.execution.ids import (
     new_run_id,
 )
 from codeintel.core.execution.orchestrator import new_run_context
-
-# Retry and resilience
 from codeintel.core.execution.retry import (
     DATABASE_RETRY_POLICY,
     NETWORK_RETRY_POLICY,
@@ -97,8 +90,6 @@ from codeintel.core.execution.retry import (
     with_retry,
     with_retry_async,
 )
-
-# Telemetry and observability
 from codeintel.core.execution.telemetry import (
     DEFAULT_DURATION_BUCKETS,
     OTEL_AVAILABLE,
@@ -109,8 +100,6 @@ from codeintel.core.execution.telemetry import (
     get_runtime_telemetry,
     reset_runtime_telemetry,
 )
-
-# Timing utilities
 from codeintel.core.execution.timing import (
     TimingResult,
     measure_duration,
@@ -118,8 +107,6 @@ from codeintel.core.execution.timing import (
     timed,
     utc_now,
 )
-
-# Validation utilities
 from codeintel.core.execution.validation import (
     BaseValidationOptions,
     SeverityLevel,

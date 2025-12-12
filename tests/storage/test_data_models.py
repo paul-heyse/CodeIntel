@@ -100,7 +100,6 @@ def _insert_relationships(ctx: TestContext, seeds: list[DataModelRelationshipSee
     )
 
 
-# Test constants to avoid magic value warnings
 EXPECTED_INT_42 = 42
 EXPECTED_INT_123 = 123
 EXPECTED_GOID = 1001
@@ -108,11 +107,6 @@ EXPECTED_LINENO_10 = 10
 EXPECTED_LINENO_25 = 25
 EXPECTED_COUNT_2 = 2
 EXPECTED_COUNT_3 = 3
-
-
-# =============================================================================
-# DataClass Tests
-# =============================================================================
 
 
 def test_data_model_row_is_frozen() -> None:
@@ -362,11 +356,6 @@ def test_normalized_data_model_stores_nested_data() -> None:
     expect_equal(model.relationships[0].target_model_id, "model_2")
 
 
-# =============================================================================
-# fetch_models Tests
-# =============================================================================
-
-
 def test_fetch_models_returns_empty_list(data_models_ctx: TestContext) -> None:
     """Verify fetch_models returns empty list when no data."""
     result = fetch_models(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
@@ -541,11 +530,6 @@ def test_fetch_models_returns_multiple(data_models_ctx: TestContext) -> None:
     expect_length(result, EXPECTED_COUNT_3)
 
 
-# =============================================================================
-# fetch_fields Tests
-# =============================================================================
-
-
 def test_fetch_fields_returns_empty_list(data_models_ctx: TestContext) -> None:
     """Verify fetch_fields returns empty list when no data."""
     result = fetch_fields(data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit)
@@ -690,11 +674,6 @@ def test_fetch_fields_parses_constraints_json(data_models_ctx: TestContext) -> N
     expect_equal(field.constraints, {"pattern": "^.+@.+$", "max_length": 255})
 
 
-# =============================================================================
-# fetch_relationships Tests
-# =============================================================================
-
-
 def test_fetch_relationships_returns_empty_list(
     data_models_ctx: TestContext,
 ) -> None:
@@ -831,11 +810,6 @@ def test_fetch_relationships_handles_nullable_fields(
     expect_is_none(rel.multiplicity)
     expect_is_none(rel.via)
     expect_is_none(rel.lineno)
-
-
-# =============================================================================
-# fetch_models_normalized Tests
-# =============================================================================
 
 
 def test_fetch_models_normalized_returns_empty_list(

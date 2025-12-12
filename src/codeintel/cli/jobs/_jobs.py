@@ -339,7 +339,6 @@ class JobManager:
         )
         self._store.save(job)
 
-        # Start subprocess
         self._start_job_process(job)
 
         return job_id
@@ -568,7 +567,6 @@ def _run_job_process(job_id: str) -> None:
     sys.exit(exit_code)
 
 
-# Global job manager
 class JobManagerHolder(SingletonHolder[JobManager]):
     """Thread-safe holder for the shared JobManager instance."""
 

@@ -26,10 +26,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# =============================================================================
-# Test Fixtures
-# =============================================================================
-
 
 def _create_test_graph() -> TargetGraph:
     r"""Create a minimal test graph for plan tests.
@@ -53,7 +49,6 @@ def _create_test_graph() -> TargetGraph:
     """
     graph = TargetGraph()
 
-    # Root target with no dependencies
     modules_target = OutputTarget.from_tables(
         name="modules",
         module="ingestion",
@@ -62,7 +57,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(description="Repository module index"),
     )
 
-    # Target depending on modules
     ast_target = OutputTarget.from_tables(
         name="ast",
         module="ingestion",
@@ -71,7 +65,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(dependencies=("modules",), description="AST extraction"),
     )
 
-    # Target depending on ast
     goids_target = OutputTarget.from_tables(
         name="goids",
         module="graphs",
@@ -80,7 +73,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(dependencies=("ast",), description="GOID construction"),
     )
 
-    # Independent target depending on ast
     typing_target = OutputTarget.from_tables(
         name="typing",
         module="ingestion",
@@ -89,7 +81,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(dependencies=("ast",), description="Type analysis"),
     )
 
-    # Target depending on goids
     metrics_target = OutputTarget.from_tables(
         name="function_metrics",
         module="analytics",
@@ -177,11 +168,6 @@ def _make_resolution(
     )
 
 
-# =============================================================================
-# Helper Function Tests
-# =============================================================================
-
-
 class TestFormatDuration:
     """Tests for format_duration helper."""
 
@@ -189,7 +175,7 @@ class TestFormatDuration:
     def test_format_none() -> None:
         """None returns empty string."""
         result = format_duration(None)
-        expect_false(bool(result))  # Empty string is falsey
+        expect_false(bool(result))
 
     @staticmethod
     def test_format_milliseconds() -> None:
@@ -203,11 +189,6 @@ class TestFormatDuration:
         expect_equal(format_duration(1000), ", ~1s")
         expect_equal(format_duration(5000), ", ~5s")
         expect_equal(format_duration(90000), ", ~90s")
-
-
-# =============================================================================
-# PlanStep Tests
-# =============================================================================
 
 
 class TestPlanStep:
@@ -279,11 +260,6 @@ class TestPlanStep:
         expect_is_none(result["estimated_duration_ms"])
 
 
-# =============================================================================
-# PlanStage Tests
-# =============================================================================
-
-
 class TestPlanStage:
     """Tests for PlanStage dataclass."""
 
@@ -343,11 +319,6 @@ class TestPlanStage:
         expect_equal(result["step_count"], 2)
         expect_equal(result["estimated_duration_ms"], 6000)
         expect_length(result["steps"], 2)
-
-
-# =============================================================================
-# BuildPlan Tests
-# =============================================================================
 
 
 class TestBuildPlan:
@@ -488,16 +459,10 @@ class TestBuildPlan:
             blocked_targets=(),
         )
 
-        # Should not raise
         json_str = json.dumps(plan.to_dict())
         parsed = json.loads(json_str)
 
         expect_equal(parsed["total_steps"], 1)
-
-
-# =============================================================================
-# BuildPlan.format_summary Tests
-# =============================================================================
 
 
 class TestFormatSummary:
@@ -617,11 +582,6 @@ class TestFormatSummary:
         expect_in("~5s", summary)
 
 
-# =============================================================================
-# PlanGenerator Tests
-# =============================================================================
-
-
 class TestPlanGenerator:
     """Tests for PlanGenerator class."""
 
@@ -666,7 +626,6 @@ class TestPlanGenerator:
 
         plan = generator.generate(resolution)
 
-        # Should have 3 stages: ingestion, graphs, analytics
         expect_length(plan.stages, 3)
         expect_equal(plan.stages[0].module, "ingestion")
         expect_equal(plan.stages[1].module, "graphs")
@@ -675,7 +634,6 @@ class TestPlanGenerator:
     @staticmethod
     def test_stages_in_module_order(generator: PlanGenerator) -> None:
         """Stages are ordered: ingestion -> graphs -> analytics."""
-        # Create resolution with targets in reverse order
         resolution = _make_resolution(
             requested=("function_metrics",),
             to_compute=("function_metrics", "goids", "modules", "ast"),
@@ -689,7 +647,6 @@ class TestPlanGenerator:
     @staticmethod
     def test_empty_modules_skipped(generator: PlanGenerator) -> None:
         """Modules with no targets don't create stages."""
-        # Only ingestion targets
         resolution = _make_resolution(
             requested=("ast",),
             to_compute=("modules", "ast"),
@@ -761,11 +718,6 @@ class TestPlanGenerator:
         expect_equal(plan.requested_targets, ("function_metrics", "typing"))
 
 
-# =============================================================================
-# Integration Tests
-# =============================================================================
-
-
 class TestPlanGeneratorIntegration:
     """Integration tests for plan generation."""
 
@@ -781,11 +733,9 @@ class TestPlanGeneratorIntegration:
 
         plan = generator.generate(resolution)
 
-        # Verify structure
         expect_equal(plan.total_steps, 4)
         expect_length(plan.stages, 3)
 
-        # Verify stage contents
         ingestion_targets = [s.target for s in plan.stages[0].steps]
         graphs_targets = [s.target for s in plan.stages[1].steps]
         analytics_targets = [s.target for s in plan.stages[2].steps]
@@ -801,7 +751,6 @@ class TestPlanGeneratorIntegration:
         graph = get_target_graph()
         generator = PlanGenerator(graph)
 
-        # Create resolution for a real target
         resolution = _make_resolution(
             requested=("function_metrics",),
             to_compute=("modules", "ast", "goids", "function_metrics"),
@@ -809,11 +758,9 @@ class TestPlanGeneratorIntegration:
 
         plan = generator.generate(resolution)
 
-        # Should produce valid plan
         expect_equal(plan.total_steps, 4)
         expect_false(plan.is_empty())
 
-        # Should serialize without error
         plan_dict = plan.to_dict()
         expect_in("stages", plan_dict)
 
@@ -839,7 +786,6 @@ class TestPlanGeneratorIntegration:
         plan = generator.generate(resolution)
         summary = plan.format_summary()
 
-        # Verify all expected content
         expect_in("function_metrics", summary)
         expect_in("modules", summary)
         expect_in("Ingestion", summary)

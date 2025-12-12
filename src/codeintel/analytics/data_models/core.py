@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from codeintel.config import DataModelsStepConfig
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
-# Column definitions for data model tables
+
 DATA_MODELS_COLS = [
     "repo",
     "commit",
@@ -947,7 +947,6 @@ def _persist_models(
             ]
         )
 
-    # Write data using Ibis
     if rows:
         gateway.ibis.write(
             "analytics.data_models",
@@ -987,7 +986,6 @@ def compute_data_models(
     ensure_schema(con, "analytics.data_model_fields")
     ensure_schema(con, "analytics.data_model_relationships")
 
-    # Delete existing data for this snapshot
     backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot("analytics.data_models", repo=cfg.repo, commit=cfg.commit)
     backend.delete_for_snapshot("analytics.data_model_fields", repo=cfg.repo, commit=cfg.commit)

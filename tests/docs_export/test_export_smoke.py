@@ -215,7 +215,7 @@ def test_export_validation_runs_against_registry(
 ) -> None:
     """Exports should validate the dataset registry before writing files."""
     output_dir = tmp_path / "Document Output"
-    # Create a broken registry with a dataset pointing to a non-existent table
+
     broken_contract = DatasetContract(
         table_key="missing.table",
         name="broken",

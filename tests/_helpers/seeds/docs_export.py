@@ -37,20 +37,11 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Docs Export Data Constants
-# =============================================================================
-
 DEFAULT_GOID: int = 1
 DEFAULT_MODULE: str = "pkg.foo"
 DEFAULT_PATH: str = "foo.py"
 DEFAULT_QUALNAME: str = "pkg.foo:func"
 DEFAULT_URN: str = "urn:foo"
-
-
-# =============================================================================
-# Docs Export Pack Implementation
-# =============================================================================
 
 
 @dataclass
@@ -112,10 +103,8 @@ class DocsExportPack:
         repo = self.repo
         commit = self.commit
 
-        # Clean up any existing data first
         self._cleanup_existing_data(ctx, repo, commit, goid)
 
-        # Seed all tables
         self._seed_repo_map(ctx, repo, commit)
         self._seed_modules(ctx, repo, commit)
         self._seed_goids(ctx, repo, commit, goid, now)

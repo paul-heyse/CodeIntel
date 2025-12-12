@@ -110,7 +110,7 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
     gateway = ctx.gateway
     con = gateway.con
     insert_symbol_use_edges(gateway, [("sym", "pkg/a.py", "pkg/b.py", False, False)])
-    # Populate evidence_json for unresolved edges when missing or missing scip candidates.
+
     rows = con.execute(
         """
         SELECT rowid, evidence_json

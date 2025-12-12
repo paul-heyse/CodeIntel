@@ -559,7 +559,6 @@ class ValidationSchema:
         return ValidationResult.ok(validated)
 
 
-# Common validators
 OPERATION_ID_VALIDATOR = StringValidator(
     min_length=1,
     max_length=100,

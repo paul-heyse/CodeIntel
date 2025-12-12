@@ -211,11 +211,6 @@ def test_load_dataset_registry_from_db(fresh_gateway: StorageGateway) -> None:
     expect_true(len(registry.by_table_key) > 0, message="by_table_key populated")
 
 
-# -------------------------------------------------------------------------
-# Compatibility property tests (migrated from test_registry_helpers.py)
-# -------------------------------------------------------------------------
-
-
 def test_dataset_registry_mapping_property() -> None:
     """Verify mapping returns name -> table_key dict."""
     registry = _sample_registry()
@@ -308,11 +303,6 @@ def test_describe_all_datasets_returns_serializable_list(
     expect_is_instance(first_desc, dict)
     expect_in("name", first_desc)
     expect_in("table_key", first_desc)
-
-
-# =============================================================================
-# Contract and Row Binding Tests (merged from test_datasets_contract.py)
-# =============================================================================
 
 
 def _require(*, condition: bool, message: str) -> None:

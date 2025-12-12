@@ -19,7 +19,6 @@ from codeintel.graphs.ports import StoragePort, ParsingPort
 def process_files(storage: StoragePort, parser: ParsingPort) -> list[Edge]:
     source = storage.read_source("module.py")
     module = parser.parse_module(source)
-    # Pure computation on parsed module...
 ```
 """
 

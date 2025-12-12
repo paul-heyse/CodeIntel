@@ -11,7 +11,6 @@ This package provides:
 
 from __future__ import annotations
 
-# Registry from execution layer
 from codeintel.cli.execution.registry import (
     OperationRegistry,
     OperationSpec,

@@ -40,11 +40,6 @@ LOG = logging.getLogger(__name__)
 plugins_app = App(name="plugins", help="Manage CLI plugins")
 
 
-# =============================================================================
-# Result Types
-# =============================================================================
-
-
 @result_type
 @dataclass(frozen=True)
 class PluginInfo:
@@ -232,11 +227,6 @@ class PluginValidateResult:
     errors: list[str] = field(default_factory=list)
 
 
-# =============================================================================
-# Commands
-# =============================================================================
-
-
 @cli_command("plugins.list", require_storage=False)
 @plugins_app.command(name="list")
 @dataclass(frozen=True)
@@ -264,8 +254,8 @@ class PluginsList(Command[PluginsListResult]):
         CliResult[PluginsListResult]
             List of installed plugins.
         """
-        _ = self.flags  # Access for potential future use
-        _ = ctx  # Not needed for plugin listing
+        _ = self.flags
+        _ = ctx
         LOG.info("Listing installed plugins")
 
         manager = get_plugin_manager()
@@ -303,8 +293,8 @@ class PluginsDiscover(Command[PluginsDiscoverResult]):
         CliResult[PluginsDiscoverResult]
             Discovered plugins and search paths.
         """
-        _ = self.flags  # Access for potential future use
-        _ = ctx  # Not needed for plugin discovery
+        _ = self.flags
+        _ = ctx
         LOG.info("Discovering available plugins")
 
         manager = get_plugin_manager()
@@ -361,7 +351,7 @@ class PluginsInfo(Command[PluginInfoResult]):
         CliResult[PluginInfoResult]
             Plugin details.
         """
-        _ = ctx  # Not needed for plugin info
+        _ = ctx
         LOG.info("Getting info for plugin: %s", self.name)
 
         manager = get_plugin_manager()
@@ -409,8 +399,8 @@ class PluginsPaths(Command[PluginPathsResult]):
         CliResult[PluginPathsResult]
             Plugin search paths.
         """
-        _ = self.flags  # Access for potential future use
-        _ = ctx  # Not needed for paths listing
+        _ = self.flags
+        _ = ctx
         LOG.info("Listing plugin search paths")
 
         manager = get_plugin_manager()
@@ -455,12 +445,11 @@ class PluginsNew(Command[PluginNewResult]):
         CliResult[PluginNewResult]
             Created plugin info.
         """
-        _ = ctx  # Not needed for scaffold creation
+        _ = ctx
         output_dir = self.output or Path.cwd()
 
         LOG.info("Creating plugin scaffold: %s in %s", self.name, output_dir)
 
-        # Validate name
         pattern = re.compile(r"^[a-z][a-z0-9_-]*$")
         if not pattern.match(self.name):
             return fail_invalid_plugin_name(
@@ -500,7 +489,7 @@ class PluginsTest(Command[PluginTestResult]):
         CliResult[PluginTestResult]
             Test results.
         """
-        _ = ctx  # Not needed for plugin testing
+        _ = ctx
         LOG.info("Testing plugin at: %s", self.path)
 
         manifest_path = self.path / "plugin.json"
@@ -569,7 +558,7 @@ class PluginsValidate(Command[PluginValidateResult]):
         CliResult[PluginValidateResult]
             Validation results.
         """
-        _ = ctx  # Not needed for validation
+        _ = ctx
         LOG.info("Validating plugin at: %s", self.path)
 
         manifest_path = self.path / "plugin.json"

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 
-# Fields that vary between runs and should be removed for comparison
 DYNAMIC_KEYS: frozenset[str] = frozenset(
     {
         "run_id",

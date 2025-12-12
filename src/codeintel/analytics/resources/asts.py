@@ -195,7 +195,6 @@ class AstProvider(LazyResource[AstResourceData]):
         >>> provider = AstProvider.from_asts(existing_asts, missing)
         >>> registry.register(AstProvider, provider)
         """
-        # Create provider with None - valid since we set preloaded
         provider = cls(gateway=None, snapshot=None)
         provider.set_preloaded(
             AstResourceData(

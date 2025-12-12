@@ -250,23 +250,23 @@ def test_compute_function_effects_with_transitive_and_missing(
     finally:
         ctx.close()
 
-    expect_false(effects_by_goid[goids["impure"]][1])  # is_pure
-    expect_true(effects_by_goid[goids["impure"]][2])  # uses_io
-    expect_true(effects_by_goid[goids["impure"]][4])  # uses_time
-    expect_true(effects_by_goid[goids["impure"]][5])  # uses_randomness
-    expect_true(effects_by_goid[goids["impure"]][6])  # modifies_globals
-    expect_true(effects_by_goid[goids["impure"]][8])  # spawns_threads_or_tasks
+    expect_false(effects_by_goid[goids["impure"]][1])
+    expect_true(effects_by_goid[goids["impure"]][2])
+    expect_true(effects_by_goid[goids["impure"]][4])
+    expect_true(effects_by_goid[goids["impure"]][5])
+    expect_true(effects_by_goid[goids["impure"]][6])
+    expect_true(effects_by_goid[goids["impure"]][8])
 
     expect_false(effects_by_goid[goids["caller"]][1])
-    expect_true(effects_by_goid[goids["caller"]][9])  # has_transitive_effects
-    expect_true(effects_by_goid[goids["caller"]][10] < 1.0)  # purity_confidence reduced
-    expect_true(effects_by_goid[goids["wrapper"]][9])  # transitive via caller
+    expect_true(effects_by_goid[goids["caller"]][9])
+    expect_true(effects_by_goid[goids["caller"]][10] < 1.0)
+    expect_true(effects_by_goid[goids["wrapper"]][9])
 
-    expect_true(effects_by_goid[goids["uses_nonlocal"]][7])  # modifies_closure
+    expect_true(effects_by_goid[goids["uses_nonlocal"]][7])
 
-    expect_false(effects_by_goid[goids["missing"]][1])  # is_pure should default to False
-    expect_equal(effects_by_goid[goids["missing"]][10], 0.0)  # purity_confidence
-    expect_true(effects_by_goid[goids["naive_unicode"]][1])  # pure
+    expect_false(effects_by_goid[goids["missing"]][1])
+    expect_equal(effects_by_goid[goids["missing"]][10], 0.0)
+    expect_true(effects_by_goid[goids["naive_unicode"]][1])
 
     effects_json = effects_by_goid[goids["missing"]][11]
     parsed = effects_json if isinstance(effects_json, dict) else json.loads(effects_json)

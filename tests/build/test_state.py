@@ -32,10 +32,6 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
 
-# =============================================================================
-# Test Fixtures
-# =============================================================================
-
 
 def _create_test_graph() -> TargetGraph:
     """Create a minimal test graph for state validation tests.
@@ -47,7 +43,6 @@ def _create_test_graph() -> TargetGraph:
     """
     graph = TargetGraph()
 
-    # Root target with no dependencies
     modules_target = OutputTarget.from_tables(
         name="modules",
         module="ingestion",
@@ -56,7 +51,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(description="Repository module index"),
     )
 
-    # Target depending on modules
     ast_target = OutputTarget.from_tables(
         name="ast",
         module="ingestion",
@@ -65,7 +59,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(dependencies=("modules",), description="AST extraction"),
     )
 
-    # Target depending on ast
     goids_target = OutputTarget.from_tables(
         name="goids",
         module="graphs",
@@ -74,7 +67,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(dependencies=("ast",), description="GOID construction"),
     )
 
-    # Independent target depending on modules
     typing_target = OutputTarget.from_tables(
         name="typing",
         module="ingestion",
@@ -83,7 +75,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(dependencies=("modules",), description="Type analysis"),
     )
 
-    # Target with multiple dependencies
     metrics_target = OutputTarget.from_tables(
         name="function_metrics",
         module="analytics",
@@ -159,11 +150,6 @@ def validator(
         Validator configured for testing.
     """
     return StateValidator(test_graph, fresh_gateway, snapshot)
-
-
-# =============================================================================
-# Type Definition Tests
-# =============================================================================
 
 
 class TestStalenessReason:
@@ -485,11 +471,6 @@ class TestDatabaseState:
         expect_false(db_state.is_target_current("nonexistent"))
 
 
-# =============================================================================
-# StateValidator Tests
-# =============================================================================
-
-
 class TestStateValidatorInit:
     """Tests for StateValidator initialization."""
 
@@ -509,7 +490,6 @@ class TestStateValidatorInit:
         snapshot: SnapshotRef,
     ) -> None:
         """Creating validator with invalid graph raises ValueError."""
-        # Create graph with missing dependency
         graph = TargetGraph()
         target = OutputTarget.from_tables(
             name="target",
@@ -534,10 +514,7 @@ class TestValidateEmptyDatabase:
         """All targets should be missing when database is empty."""
         state = validator.validate()
 
-        # All targets should be missing
-        expect_equal(
-            len(state.missing_targets()), 5
-        )  # modules, ast, goids, typing, function_metrics
+        expect_equal(len(state.missing_targets()), 5)
         expect_equal(len(state.computed_targets()), 0)
         expect_equal(len(state.stale_targets()), 0)
         expect_equal(len(state.blocked_targets()), 0)
@@ -553,11 +530,9 @@ class TestValidateComputedTargets:
         snapshot: SnapshotRef,
     ) -> None:
         """Target with matching hash should be computed."""
-        # First, compute what the hash should be
         target = test_graph.get("modules")
         correct_hash = compute_input_hash(target, snapshot, fresh_gateway)
 
-        # Update manifest with correct hash
         manifest = OutputManifest(
             target="modules",
             repo=snapshot.repo,
@@ -582,7 +557,6 @@ class TestValidateComputedTargets:
         snapshot: SnapshotRef,
     ) -> None:
         """Chain of targets with valid hashes should all be computed."""
-        # Compute and save manifest for modules
         modules_target = test_graph.get("modules")
         modules_hash = compute_input_hash(modules_target, snapshot, fresh_gateway)
         modules_manifest = OutputManifest(
@@ -597,7 +571,6 @@ class TestValidateComputedTargets:
         )
         fresh_gateway.build.save_manifest(modules_manifest)
 
-        # Compute and save manifest for ast (depends on modules)
         ast_target = test_graph.get("ast")
         ast_hash = compute_input_hash(ast_target, snapshot, fresh_gateway)
         ast_manifest = OutputManifest(
@@ -629,7 +602,6 @@ class TestValidateStaleTargets:
         snapshot: SnapshotRef,
     ) -> None:
         """Target with wrong input hash should be stale."""
-        # Save manifest with incorrect hash
         manifest = OutputManifest(
             target="modules",
             repo=snapshot.repo,
@@ -689,7 +661,6 @@ class TestValidateBlockedTargets:
         snapshot: SnapshotRef,
     ) -> None:
         """Target should be blocked when dependency is missing."""
-        # Save manifest for ast but NOT for modules (its dependency)
         ast_target = test_graph.get("ast")
         ast_hash = compute_input_hash(ast_target, snapshot, fresh_gateway)
         ast_manifest = OutputManifest(
@@ -706,10 +677,8 @@ class TestValidateBlockedTargets:
         validator = StateValidator(test_graph, fresh_gateway, snapshot)
         state = validator.validate()
 
-        # modules is missing
         expect_equal(state.get("modules").status, "missing")
 
-        # ast should be blocked because modules is missing
         ast_state = state.get("ast")
         expect_equal(ast_state.status, "blocked")
         expect_in("modules", ast_state.blocking_deps)
@@ -725,7 +694,6 @@ class TestValidateBlockedTargets:
         snapshot: SnapshotRef,
     ) -> None:
         """Target should be blocked when dependency is stale."""
-        # Save manifest for modules with wrong hash (stale)
         modules_manifest = OutputManifest(
             target="modules",
             repo=snapshot.repo,
@@ -737,7 +705,6 @@ class TestValidateBlockedTargets:
         )
         fresh_gateway.build.save_manifest(modules_manifest)
 
-        # Save manifest for ast with correct hash
         ast_target = test_graph.get("ast")
         ast_hash = compute_input_hash(ast_target, snapshot, fresh_gateway)
         ast_manifest = OutputManifest(
@@ -754,10 +721,8 @@ class TestValidateBlockedTargets:
         validator = StateValidator(test_graph, fresh_gateway, snapshot)
         state = validator.validate()
 
-        # modules is stale
         expect_equal(state.get("modules").status, "stale")
 
-        # ast should be blocked because modules is stale
         ast_state = state.get("ast")
         expect_equal(ast_state.status, "blocked")
         expect_in("modules", ast_state.blocking_deps)
@@ -773,7 +738,6 @@ class TestValidateBlockedTargets:
         snapshot: SnapshotRef,
     ) -> None:
         """Blocking should cascade through dependency chain."""
-        # Save manifest for modules with wrong hash (stale)
         modules_manifest = OutputManifest(
             target="modules",
             repo=snapshot.repo,
@@ -785,7 +749,6 @@ class TestValidateBlockedTargets:
         )
         fresh_gateway.build.save_manifest(modules_manifest)
 
-        # Save manifest for ast with correct hash
         ast_target = test_graph.get("ast")
         ast_hash = compute_input_hash(ast_target, snapshot, fresh_gateway)
         ast_manifest = OutputManifest(
@@ -799,7 +762,6 @@ class TestValidateBlockedTargets:
         )
         fresh_gateway.build.save_manifest(ast_manifest)
 
-        # Save manifest for goids with correct hash
         goids_target = test_graph.get("goids")
         goids_hash = compute_input_hash(goids_target, snapshot, fresh_gateway)
         goids_manifest = OutputManifest(
@@ -816,13 +778,10 @@ class TestValidateBlockedTargets:
         validator = StateValidator(test_graph, fresh_gateway, snapshot)
         state = validator.validate()
 
-        # modules is stale
         expect_equal(state.get("modules").status, "stale")
 
-        # ast is blocked by stale modules
         expect_equal(state.get("ast").status, "blocked")
 
-        # goids is blocked because ast is blocked
         goids_state = state.get("goids")
         expect_equal(goids_state.status, "blocked")
         expect_in("ast", goids_state.blocking_deps)
@@ -838,7 +797,6 @@ class TestValidateBlockedTargets:
         snapshot: SnapshotRef,
     ) -> None:
         """Target with multiple blocking deps should list all."""
-        # Make modules stale
         modules_manifest = OutputManifest(
             target="modules",
             repo=snapshot.repo,
@@ -850,7 +808,6 @@ class TestValidateBlockedTargets:
         )
         fresh_gateway.build.save_manifest(modules_manifest)
 
-        # Make ast stale too
         ast_manifest = OutputManifest(
             target="ast",
             repo=snapshot.repo,
@@ -862,7 +819,6 @@ class TestValidateBlockedTargets:
         )
         fresh_gateway.build.save_manifest(ast_manifest)
 
-        # Save manifest for function_metrics (depends on goids and ast)
         metrics_target = test_graph.get("function_metrics")
         metrics_hash = compute_input_hash(metrics_target, snapshot, fresh_gateway)
         metrics_manifest = OutputManifest(
@@ -879,10 +835,9 @@ class TestValidateBlockedTargets:
         validator = StateValidator(test_graph, fresh_gateway, snapshot)
         state = validator.validate()
 
-        # function_metrics should be blocked by both ast (stale) and goids (missing)
         metrics_state = state.get("function_metrics")
         expect_equal(metrics_state.status, "blocked")
-        # Both dependencies should be in blocking_deps
+
         expect_true(len(metrics_state.blocking_deps) >= 1)
 
 
@@ -896,7 +851,7 @@ class TestValidateTarget:
         """Validate a single target by name."""
         state = validator.validate_target("modules")
         expect_equal(state.name, "modules")
-        expect_equal(state.status, "missing")  # No manifest saved
+        expect_equal(state.status, "missing")
 
     @staticmethod
     def test_validate_nonexistent_target_raises(
@@ -918,7 +873,6 @@ class TestEdgeCases:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Manifest for unknown target should be logged but not crash."""
-        # Save manifest for target not in graph
         unknown_manifest = OutputManifest(
             target="unknown_target",
             repo=snapshot.repo,
@@ -935,9 +889,8 @@ class TestEdgeCases:
         with caplog.at_level("WARNING"):
             state = validator.validate()
 
-        # Should not crash
         expect_is_not_none(state)
-        # Should log warning
+
         expect_true("unknown_target" in caplog.text or len(caplog.records) > 0)
 
     @staticmethod
@@ -956,11 +909,6 @@ class TestEdgeCases:
         expect_equal(state.computed_targets(), ())
 
 
-# =============================================================================
-# Integration Tests with Real Registry
-# =============================================================================
-
-
 class TestWithRealRegistry:
     """Integration tests using the full target registry."""
 
@@ -974,7 +922,6 @@ class TestWithRealRegistry:
         validator = StateValidator(graph, fresh_gateway, snapshot)
         state = validator.validate()
 
-        # All targets should be missing (no manifests)
         expect_equal(len(state.missing_targets()), len(graph))
         expect_equal(len(state.computed_targets()), 0)
 

@@ -67,7 +67,6 @@ def test_coverage_ingest_uses_runner(
         for report in tooling_outputs.coverage_reports
     )
 
-    # Use Step-based API
     storage = DuckDBStorageAdapter(gateway)
     tools = ToolRunnerAdapter(tool_service)
     step = CoverageIngestStep(storage=storage, tools=tools)

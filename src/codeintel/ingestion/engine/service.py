@@ -146,12 +146,10 @@ class ToolService:
             message = "pyright plugin failed without ToolRunResult"
             raise RuntimeError(message)
 
-        # Return parsed diagnostics from plugin
         parsed = plugin_result.parsed
         if isinstance(parsed, DiagnosticReport):
             return parsed.errors_by_path()
 
-        # Fallback for backward compatibility
         if plugin_result.run is None:
             message = "pyright plugin returned no run metadata"
             raise RuntimeError(message)
@@ -193,11 +191,9 @@ class ToolService:
             await to_thread.run_sync(_unlink_missing, output_path)
             return {}
 
-        # Clean up temp file
         json_path = plugin_result.artifacts.get("pyrefly_json", output_path)
         await to_thread.run_sync(_unlink_missing, json_path)
 
-        # Return parsed diagnostics from plugin
         parsed = plugin_result.parsed
         if isinstance(parsed, DiagnosticReport):
             return parsed.errors_by_path()
@@ -243,7 +239,6 @@ class ToolService:
             message = "ruff plugin failed without ToolRunResult"
             raise RuntimeError(message)
 
-        # Return parsed diagnostics from plugin
         parsed = plugin_result.parsed
         if isinstance(parsed, DiagnosticReport):
             return parsed.errors_by_path()
@@ -420,7 +415,6 @@ class ToolService:
             message = "SCIP plugin failed without ToolRunResult"
             raise RuntimeError(message)
 
-        # Return parsed SCIP result
         parsed = plugin_result.parsed
         if isinstance(parsed, ScipIndexResult):
             return parsed
@@ -477,7 +471,6 @@ class ToolService:
             message = "SCIP plugin failed without ToolRunResult"
             raise RuntimeError(message)
 
-        # Return parsed SCIP result
         parsed = plugin_result.parsed
         if isinstance(parsed, ScipIndexResult):
             return parsed

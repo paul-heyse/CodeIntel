@@ -135,7 +135,7 @@ class ModuleIngestPlugin(TargetPlugin):
         TargetResult
             Execution result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
         opts = self.resolve_options()
 
         storage = DuckDBStorageAdapter(ctx.gateway)

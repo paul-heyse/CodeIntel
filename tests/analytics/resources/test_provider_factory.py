@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     )
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants
+
 MAX_FUNCTIONS_TEST_VALUE = 50
 
 
@@ -193,7 +193,7 @@ def test_create_registry_default(test_gateway: StorageGateway, test_snapshot: Sn
     expect_is_instance(registry, ResourceRegistry)
     expect_true(registry.has(GraphProvider))
     expect_true(registry.has(CatalogProvider))
-    # Default excludes AST, features, module map
+
     expect_true(not registry.has(AstProvider))
     expect_true(not registry.has(FeaturesProvider))
     expect_true(not registry.has(ModuleMapProvider))
@@ -203,7 +203,7 @@ class _BadRuntimeLike(GraphRuntimeLike):
     """Runtime double with invalid graph types to trigger warnings."""
 
     def __init__(self) -> None:
-        self._call_graph = nx.Graph()  # should be DiGraph
+        self._call_graph = nx.Graph()
         self._import_graph = nx.Graph()
         self._symbol_module_graph = nx.Graph()
         self._symbol_function_graph = nx.Graph()
@@ -383,7 +383,6 @@ def test_make_catalog_provider_with_catalog(
 
     provider = factory.make_catalog_provider(catalog=catalog_obj)
 
-    # Provider wraps the provided catalog
     expect_is_instance(provider, CatalogProvider)
 
 
@@ -429,9 +428,8 @@ def test_make_graph_provider_with_runtime(
 
     provider = factory.make_graph_provider(runtime=runtime)
 
-    # Provider wraps the provided runtime
     expect_is_instance(provider, GraphProvider)
-    # Does not cache when runtime is provided
+
     provider2 = factory.make_graph_provider()
     expect_true(provider is not provider2)
 
@@ -550,14 +548,11 @@ def test_clear_cache(test_gateway: StorageGateway, test_snapshot: SnapshotRef) -
     """Clear cache resets cached providers."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
-    # Create cached providers
     catalog1 = factory.make_catalog_provider()
     graphs1 = factory.make_graph_provider()
 
-    # Clear cache
     factory.clear_cache()
 
-    # New providers should be different instances
     catalog2 = factory.make_catalog_provider()
     graphs2 = factory.make_graph_provider()
 

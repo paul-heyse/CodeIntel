@@ -25,10 +25,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# =============================================================================
-# Test Fixtures
-# =============================================================================
-
 
 def _create_test_graph() -> TargetGraph:
     r"""Create a minimal test graph for resolver tests.
@@ -52,7 +48,6 @@ def _create_test_graph() -> TargetGraph:
     """
     graph = TargetGraph()
 
-    # Root target with no dependencies
     modules_target = OutputTarget.from_tables(
         name="modules",
         module="ingestion",
@@ -61,7 +56,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(description="Repository module index"),
     )
 
-    # Target depending on modules
     ast_target = OutputTarget.from_tables(
         name="ast",
         module="ingestion",
@@ -70,7 +64,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(dependencies=("modules",), description="AST extraction"),
     )
 
-    # Target depending on ast
     goids_target = OutputTarget.from_tables(
         name="goids",
         module="graphs",
@@ -79,7 +72,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(dependencies=("ast",), description="GOID construction"),
     )
 
-    # Independent target depending on ast
     typing_target = OutputTarget.from_tables(
         name="typing",
         module="ingestion",
@@ -88,7 +80,6 @@ def _create_test_graph() -> TargetGraph:
         options=TargetOptions(dependencies=("ast",), description="Type analysis"),
     )
 
-    # Target depending on goids
     metrics_target = OutputTarget.from_tables(
         name="function_metrics",
         module="analytics",
@@ -292,11 +283,6 @@ def all_computed_state(resolver_graph: TargetGraph) -> DatabaseState:
     return _create_all_computed_state(resolver_graph)
 
 
-# =============================================================================
-# Type Definition Tests
-# =============================================================================
-
-
 class TestResolutionReason:
     """Tests for ResolutionReason dataclass."""
 
@@ -410,11 +396,6 @@ class TestResolutionResult:
             result.get_reason("nonexistent")
 
 
-# =============================================================================
-# Basic Resolution Tests
-# =============================================================================
-
-
 class TestBasicResolution:
     """Tests for basic resolution scenarios."""
 
@@ -456,7 +437,6 @@ class TestBasicResolution:
         resolver = BuildResolver(resolver_graph, all_missing_state)
         result = resolver.resolve(["function_metrics"])
 
-        # Should compute modules -> ast -> goids -> function_metrics
         expect_equal(result.requested, ("function_metrics",))
         expect_length(result.to_compute, 4)
         expect_in("modules", result.to_compute)
@@ -464,7 +444,6 @@ class TestBasicResolution:
         expect_in("goids", result.to_compute)
         expect_in("function_metrics", result.to_compute)
 
-        # Should be in topological order
         compute_list = list(result.to_compute)
         expect_true(compute_list.index("modules") < compute_list.index("ast"))
         expect_true(compute_list.index("ast") < compute_list.index("goids"))
@@ -483,7 +462,7 @@ class TestBasicResolution:
 
         expect_true(result.is_empty())
         expect_equal(result.total_work, 0)
-        expect_equal(result.total_skipped, 4)  # modules, ast, goids, function_metrics
+        expect_equal(result.total_skipped, 4)
         expect_equal(result.get_reason("function_metrics").kind, "current")
 
     @staticmethod
@@ -509,11 +488,6 @@ class TestBasicResolution:
             resolver.resolve(["foo", "bar"])
 
 
-# =============================================================================
-# Cascade Invalidation Tests
-# =============================================================================
-
-
 class TestCascadeInvalidation:
     """Tests for cascade invalidation behavior."""
 
@@ -527,13 +501,11 @@ class TestCascadeInvalidation:
 
         result = resolver.resolve(["function_metrics"])
 
-        # All should be computed due to cascade
         expect_in("modules", result.to_compute)
         expect_in("ast", result.to_compute)
         expect_in("goids", result.to_compute)
         expect_in("function_metrics", result.to_compute)
 
-        # Root is stale, others are cascade
         expect_equal(result.get_reason("modules").kind, "stale")
         expect_equal(result.get_reason("ast").kind, "cascade")
         expect_equal(result.get_reason("goids").kind, "cascade")
@@ -549,9 +521,8 @@ class TestCascadeInvalidation:
 
         result = resolver.resolve(["function_metrics"])
 
-        # modules should be skipped (upstream of stale)
         expect_in("modules", result.to_skip)
-        # ast and downstream should compute
+
         expect_in("ast", result.to_compute)
         expect_in("goids", result.to_compute)
         expect_in("function_metrics", result.to_compute)
@@ -577,14 +548,11 @@ class TestCascadeInvalidation:
         resolver_graph: TargetGraph,
     ) -> None:
         """Only affected subtree cascades, parallel branches unaffected."""
-        # Make goids stale - should cascade to function_metrics
-        # but typing (parallel branch from ast) should be unaffected if not requested
         state = _create_state_with_stale(resolver_graph, {"goids"})
         resolver = BuildResolver(resolver_graph, state)
 
         result = resolver.resolve(["function_metrics"])
 
-        # Only goids and function_metrics should compute
         expect_in("modules", result.to_skip)
         expect_in("ast", result.to_skip)
         expect_in("goids", result.to_compute)
@@ -598,14 +566,11 @@ class TestCascadeInvalidation:
         resolver_graph: TargetGraph,
     ) -> None:
         """Cascade affects all goals sharing the stale dependency."""
-        # Make ast stale - should cascade to both goids and typing
         state = _create_state_with_stale(resolver_graph, {"ast"})
         resolver = BuildResolver(resolver_graph, state)
 
-        # Request both typing and function_metrics
         result = resolver.resolve(["typing", "function_metrics"])
 
-        # Both branches should cascade from stale ast
         expect_in("ast", result.to_compute)
         expect_in("typing", result.to_compute)
         expect_in("goids", result.to_compute)
@@ -613,11 +578,6 @@ class TestCascadeInvalidation:
 
         expect_equal(result.get_reason("typing").kind, "cascade")
         expect_equal(result.get_reason("goids").kind, "cascade")
-
-
-# =============================================================================
-# Force Recompute Tests
-# =============================================================================
 
 
 class TestForceRecompute:
@@ -644,12 +604,10 @@ class TestForceRecompute:
         resolver = BuildResolver(resolver_graph, all_computed_state)
         result = resolver.resolve(["function_metrics"], force_recompute=["ast"])
 
-        # ast forced, should cascade downstream
         expect_in("ast", result.to_compute)
         expect_in("goids", result.to_compute)
         expect_in("function_metrics", result.to_compute)
 
-        # modules unaffected
         expect_in("modules", result.to_skip)
 
         expect_equal(result.get_reason("ast").kind, "forced")
@@ -667,8 +625,6 @@ class TestForceRecompute:
         with caplog.at_level("WARNING"):
             resolver.resolve(["modules"], force_recompute=["nonexistent"])
 
-        # Should still work, just ignoring the unknown force target
-        # modules is current (not forced because nonexistent isn't a valid target)
         expect_true("nonexistent" in caplog.text or len(caplog.records) > 0)
 
     @staticmethod
@@ -680,17 +636,10 @@ class TestForceRecompute:
         """Force target not in transitive deps is ignored."""
         resolver = BuildResolver(resolver_graph, all_computed_state)
 
-        # Force typing but only request modules (typing is not a dep of modules)
         with caplog.at_level("WARNING"):
             result = resolver.resolve(["modules"], force_recompute=["typing"])
 
-        # typing should not be forced because it's not needed for modules
         expect_false("typing" in result.to_compute)
-
-
-# =============================================================================
-# Blocked Target Tests
-# =============================================================================
 
 
 class TestBlockedTargets:
@@ -701,13 +650,11 @@ class TestBlockedTargets:
         resolver_graph: TargetGraph,
     ) -> None:
         """Blocked target resolves when blocking deps will compute."""
-        # ast is blocked by modules (which is missing)
-        # When we resolve, modules will be computed, so ast becomes computable
         state = _create_state_with_blocked(
             resolver_graph,
             blocked_map={"ast": ("modules",)},
         )
-        # Also mark modules as missing
+
         targets = dict(state.targets)
         targets["modules"] = TargetState(
             name="modules",
@@ -722,7 +669,6 @@ class TestBlockedTargets:
         resolver = BuildResolver(resolver_graph, state)
         result = resolver.resolve(["ast"])
 
-        # Both should be computable now
         expect_in("modules", result.to_compute)
         expect_in("ast", result.to_compute)
         expect_length(result.blocked, 0)
@@ -730,13 +676,6 @@ class TestBlockedTargets:
     @staticmethod
     def test_truly_blocked_external() -> None:
         """External block prevents computation."""
-        # Create a scenario where ast is blocked by something that won't be computed
-        # This is a bit artificial - in real usage, blocking deps should be in the graph
-        # But we can simulate by having a target blocked by a computed target
-        # that we don't need to recompute
-
-        # Let's create a more realistic scenario:
-        # Add an external_data target that's blocked by something not in our goals
         graph = _create_test_graph()
         external_target = OutputTarget.from_tables(
             name="external_data",
@@ -747,8 +686,6 @@ class TestBlockedTargets:
         )
         graph.register(external_target)
 
-        # Create state where external_data is blocked by something
-        # that won't be resolved (simulating external constraint)
         targets: dict[str, TargetState] = {}
         for name in graph:
             if name == "external_data":
@@ -760,7 +697,7 @@ class TestBlockedTargets:
                         kind="dependency_missing",
                         details="Blocked by external system",
                     ),
-                    blocking_deps=("external_system",),  # Not in graph
+                    blocking_deps=("external_system",),
                     current_input_hash=None,
                 )
             else:
@@ -777,14 +714,8 @@ class TestBlockedTargets:
         resolver = BuildResolver(graph, state)
         result = resolver.resolve(["external_data"])
 
-        # external_data should be blocked
         expect_in("external_data", result.blocked)
         expect_equal(result.get_reason("external_data").kind, "blocked_external")
-
-
-# =============================================================================
-# Module Filtering Tests
-# =============================================================================
 
 
 class TestResolveAll:
@@ -799,7 +730,6 @@ class TestResolveAll:
         resolver = BuildResolver(resolver_graph, all_missing_state)
         result = resolver.resolve_all()
 
-        # All 5 targets should be in to_compute
         expect_length(result.to_compute, 5)
         expect_in("modules", result.to_compute)
         expect_in("ast", result.to_compute)
@@ -816,12 +746,10 @@ class TestResolveAll:
         resolver = BuildResolver(resolver_graph, all_missing_state)
         result = resolver.resolve_all(module="ingestion")
 
-        # Only ingestion targets requested (modules, ast, typing)
         expect_in("modules", result.requested)
         expect_in("ast", result.requested)
         expect_in("typing", result.requested)
 
-        # But dependencies still computed
         expect_in("modules", result.to_compute)
         expect_in("ast", result.to_compute)
         expect_in("typing", result.to_compute)
@@ -835,19 +763,12 @@ class TestResolveAll:
         resolver = BuildResolver(resolver_graph, all_missing_state)
         result = resolver.resolve_all(module="analytics")
 
-        # Only function_metrics is analytics
         expect_equal(result.requested, ("function_metrics",))
 
-        # But should include all deps
         expect_in("modules", result.to_compute)
         expect_in("ast", result.to_compute)
         expect_in("goids", result.to_compute)
         expect_in("function_metrics", result.to_compute)
-
-
-# =============================================================================
-# Reason Tracking Tests
-# =============================================================================
 
 
 class TestReasonTracking:
@@ -927,14 +848,8 @@ class TestReasonTracking:
         resolver = BuildResolver(resolver_graph, all_missing_state)
         result = resolver.resolve(["function_metrics"])
 
-        # function_metrics is a goal, should be noted
         reason = result.get_reason("function_metrics")
         expect_in("goal", reason.details.lower())
-
-
-# =============================================================================
-# Topological Order Tests
-# =============================================================================
 
 
 class TestTopologicalOrder:
@@ -951,11 +866,10 @@ class TestTopologicalOrder:
 
         compute_list = list(result.to_compute)
 
-        # modules must come before ast
         expect_true(compute_list.index("modules") < compute_list.index("ast"))
-        # ast must come before goids
+
         expect_true(compute_list.index("ast") < compute_list.index("goids"))
-        # goids must come before function_metrics
+
         expect_true(compute_list.index("goids") < compute_list.index("function_metrics"))
 
     @staticmethod
@@ -967,20 +881,13 @@ class TestTopologicalOrder:
         resolver = BuildResolver(resolver_graph, all_missing_state)
         result = resolver.resolve(["typing", "goids"])
 
-        # Both typing and goids depend on ast
         expect_in("ast", result.to_compute)
         expect_in("typing", result.to_compute)
         expect_in("goids", result.to_compute)
 
-        # ast must come before both
         compute_list = list(result.to_compute)
         expect_true(compute_list.index("ast") < compute_list.index("typing"))
         expect_true(compute_list.index("ast") < compute_list.index("goids"))
-
-
-# =============================================================================
-# Integration Tests with Real Registry
-# =============================================================================
 
 
 class TestWithRealRegistry:
@@ -991,7 +898,6 @@ class TestWithRealRegistry:
         """Resolve using the full target registry."""
         graph = get_target_graph()
 
-        # Create all-missing state for real graph
         targets: dict[str, TargetState] = {}
         for name in graph:
             targets[name] = TargetState(
@@ -1006,20 +912,17 @@ class TestWithRealRegistry:
 
         resolver = BuildResolver(graph, state)
 
-        # Resolve a real target
         result = resolver.resolve(["function_metrics"])
 
-        # Should include all its dependencies
         expect_in("modules", result.to_compute)
         expect_in("function_metrics", result.to_compute)
-        expect_true(len(result.to_compute) > 1)  # Has dependencies
+        expect_true(len(result.to_compute) > 1)
 
     @staticmethod
     def test_real_registry_all_targets_resolvable() -> None:
         """All targets in real registry can be resolved."""
         graph = get_target_graph()
 
-        # Create all-missing state
         targets: dict[str, TargetState] = {}
         for name in graph:
             targets[name] = TargetState(
@@ -1034,8 +937,6 @@ class TestWithRealRegistry:
 
         resolver = BuildResolver(graph, state)
 
-        # resolve_all should work without errors
         result = resolver.resolve_all()
 
-        # All targets should be in to_compute (since all are missing)
         expect_equal(result.total_work, len(list(graph)))

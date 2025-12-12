@@ -128,7 +128,6 @@ class _StubSubsystems(SubsystemRepository):
 
 
 class _StubSubsystemQueryService:
-    # Explicit type annotations for attributes that get reassigned
     subsystems: _StubSubsystems | _StubSubsystemQueryService
 
     def __init__(

@@ -208,15 +208,13 @@ def build_scip_candidates(
                 symbols_compute.SymbolOccurrence(
                     symbol=str(symbol),
                     rel_path=normalize_rel_path(str(rel_path)),
-                    line=0,  # We don't need exact line for this use case
+                    line=0,
                     roles=symbols_compute.parse_symbol_roles(roles),
                 )
             )
 
-        # Build def map
         def_map = symbols_compute.build_def_map(occurrences)
 
-        # Build use -> def paths mapping
         return {
             use_path: tuple(sorted(def_paths))
             for use_path, def_paths in symbols_compute.build_use_def_mapping(
@@ -420,7 +418,6 @@ def _persist_symbol_use_edges(
     if not edges:
         return 0
 
-    # Convert SymbolUseEdge to SymbolUseRow using edges_to_rows
     rows = symbols_compute.edges_to_rows(edges)
 
     storage = IngestStorageService.from_gateway(gateway)
@@ -501,10 +498,9 @@ class SymbolUsesPlugin(TargetPlugin):
         TargetResult
             Execution result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
         opts = self.resolve_options()
 
-        # Build config - SymbolUsesStepConfig requires paths
         cfg = SymbolUsesStepConfig(
             snapshot=ctx.snapshot,
             paths=ctx.paths,
@@ -515,7 +511,6 @@ class SymbolUsesPlugin(TargetPlugin):
         commit = cfg.commit
 
         try:
-            # Step 1: Load symbol occurrences
             occurrences = _load_symbol_occurrences(gateway, repo, commit)
             occurrences = _filter_occurrences(occurrences, opts)
 
@@ -525,26 +520,21 @@ class SymbolUsesPlugin(TargetPlugin):
 
             log.info("symbol_uses: Loaded %d symbol occurrences", len(occurrences))
 
-            # Step 2: Load module map
             module_by_path = _filter_module_map(_load_module_map(gateway, repo, commit), opts)
             log.debug("symbol_uses: Loaded %d module mappings", len(module_by_path))
 
-            # Step 3: Build definition map
             def_map = symbols_compute.build_def_map(occurrences)
             log.debug("symbol_uses: Built def map with %d entries", len(def_map))
 
-            # Step 4: Build use edges
             edges = symbols_compute.build_use_edges(occurrences, def_map, module_by_path)
             log.info("symbol_uses: Built %d use edges", len(edges))
 
-            # Step 5: Enrich edges with GOIDs for function-level tracking
             path_to_goid = _filter_path_to_goid_map(
                 _load_path_to_goid_map(gateway, repo, commit), opts
             )
             log.debug("symbol_uses: Loaded %d path->goid mappings", len(path_to_goid))
             edges = _enrich_edges_with_goids(edges, path_to_goid)
 
-            # Step 6: Persist
             edge_count = _persist_symbol_use_edges(gateway, edges, repo, commit)
             log.info("symbol_uses: Persisted %d edges", edge_count)
 

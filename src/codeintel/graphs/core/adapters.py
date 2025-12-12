@@ -43,22 +43,18 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-# Mapping of plugin names to their kind and stage for metadata creation
 _PLUGIN_KIND_STAGE_MAP: dict[str, tuple[GraphPluginKind, GraphPluginStage]] = {
-    # Builders
     "goid_builder": ("builder", "goid"),
     "callgraph": ("builder", "edges"),
     "import_graph": ("builder", "edges"),
     "cfg_dfg": ("builder", "cfg"),
     "symbol_uses": ("builder", "symbol"),
-    # Metrics
     "graph_metrics.core": ("metric", "core"),
     "graph_metrics.secondary": ("metric", "core"),
-    # Validation
     "graph_validation": ("validation", "validation"),
 }
 
-# Mapping of plugin names to their corresponding target names in the build graph
+
 _PLUGIN_TO_TARGET_MAP: dict[str, str] = {
     "goid_builder": "goids",
     "callgraph": "call_graph",
@@ -348,12 +344,10 @@ class TargetPluginAdapter:
         """
         target = self._resolve_target()
 
-        # Build paths from snapshot if not provided in context
         paths = ctx.paths
         if paths is None:
             paths = BuildPaths.from_layout(repo_root=ctx.snapshot.repo_root)
 
-        # Build resources from context
         resources = ContextResources(
             gateway=ctx.gateway,
             modules=(),

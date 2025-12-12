@@ -80,7 +80,7 @@ def _validate_jsonl(path: Path, validator: jsonschema.Draft202012Validator) -> l
                 continue
             try:
                 record = json.loads(line)
-            except json.JSONDecodeError as exc:  # pragma: no cover - user error
+            except json.JSONDecodeError as exc:
                 errors.append(f"row={idx}: invalid JSON ({exc})")
                 continue
             errors.extend(_validate_records([record], validator))

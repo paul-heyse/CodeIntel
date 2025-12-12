@@ -94,7 +94,7 @@ def create_mcp_server(
     mcp_ctor = mcp_factory or (lambda name: FastMCP(name, json_response=True))
     mcp_instance = mcp_ctor("CodeIntel")
     service = getattr(backend, "service", None)
-    # Pass config to enable auto-pipeline support
+
     registrar = as_registrar(mcp_instance)
     if register_tools_fn is not None:
         register_tools_fn(registrar, service or backend, config)
@@ -114,7 +114,7 @@ def main() -> None:
     server_obj, close = create_mcp_server()
     mcp_server = cast("FastMCP", server_obj)
     try:
-        mcp_server.run()  # stdio by default
+        mcp_server.run()
     finally:
         close()
 

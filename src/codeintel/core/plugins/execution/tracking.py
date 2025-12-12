@@ -70,20 +70,17 @@ def record_plugin_steps(
     --------
     >>> def get_stage(plugin_name: str) -> str:
     ...     return "core" if plugin_name.startswith("core.") else "other"
-    >>> # record_plugin_steps(runs, "run-123", "analytics", records, get_stage)
+    >>>
     """
     for rec in records:
         stage = get_stage(rec.plugin_name)
 
-        # Extract row_counts from result if present
         row_counts: dict[str, int] | None = None
         if rec.result is not None and rec.result.row_counts is not None:
             row_counts = dict(rec.result.row_counts)
 
-        # Map plugin status to step status
         step_status = _map_plugin_status_to_step_status(rec.status)
 
-        # Build extra metadata
         extra = _build_step_extra(rec)
 
         runs.record_step(
@@ -125,7 +122,7 @@ def complete_run_from_records(
 
     Examples
     --------
-    >>> # complete_run_from_records(runs, "run-123", records, options=TrackingOptions())
+    >>>
     """
     effective_options = options or TrackingOptions()
     status, error_summary = _compute_run_status(records, effective_options.fatal_handling)

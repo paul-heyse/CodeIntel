@@ -28,10 +28,10 @@ def _is_type_checking_guard(node: ast.If) -> bool:
         True if the test is `TYPE_CHECKING` or `typing.TYPE_CHECKING`.
     """
     test = node.test
-    # Check for `if TYPE_CHECKING:`
+
     if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
         return True
-    # Check for `if typing.TYPE_CHECKING:`
+
     return (
         isinstance(test, ast.Attribute)
         and test.attr == "TYPE_CHECKING"
@@ -55,7 +55,6 @@ def _collect_type_checking_imports(tree: ast.Module) -> set[int]:
     type_checking_lines: set[int] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.If) and _is_type_checking_guard(node):
-            # Collect all import line numbers from the if body
             for child in ast.walk(node):
                 if isinstance(child, (ast.Import, ast.ImportFrom)):
                     type_checking_lines.add(child.lineno)
@@ -90,14 +89,12 @@ def _assert_no_imports(
 
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
-                # Skip imports inside TYPE_CHECKING blocks
                 if node.lineno in type_checking_lines:
                     continue
                 module = node.module or ""
                 if module.startswith(forbidden_prefix):
                     bad_imports.append((rel.as_posix(), f"from {module} import ..."))
             elif isinstance(node, ast.Import):
-                # Skip imports inside TYPE_CHECKING blocks
                 if node.lineno in type_checking_lines:
                     continue
                 bad_imports.extend(

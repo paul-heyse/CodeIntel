@@ -230,11 +230,9 @@ def execute_batch(
             skipped += 1
             continue
 
-        # Emit progress
         if renderer:
             renderer.emit_stream_progress(i, len(operations), batch_op.operation_id)
 
-        # Get operation spec
         spec = registry.get(batch_op.operation_id)
         if spec is None:
             result: CliResult[Any] = CliResult.fail(

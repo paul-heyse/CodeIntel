@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-# Fields that vary between runs and should be removed for comparison
+
 DEFAULT_DYNAMIC_KEYS: frozenset[str] = frozenset(
     {
         "run_id",
@@ -117,16 +117,12 @@ def normalize_text(text: str, *, replaces: Iterable[TextReplace]) -> str:
     >>> normalize_text("line1  \r\nline2\r", replaces=[])
     'line1\nline2\n'
     """
-    # Normalize line endings
     t = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # Trim trailing whitespace per line
     t = "\n".join(line.rstrip() for line in t.split("\n"))
 
-    # Strip leading/trailing blank lines and ensure trailing newline
     t = t.strip() + "\n"
 
-    # Apply regex replacements
     for r in replaces:
         t = re.sub(r.pattern, r.repl, t)
 
@@ -213,7 +209,6 @@ def assert_or_update_snapshot(
 
     expected = snapshot_path.read_text(encoding="utf-8")
     if actual != expected:
-        # Create diff-friendly error message
         msg = (
             f"Snapshot mismatch: {snapshot_path}\n"
             f"--- Expected ---\n{expected}\n"

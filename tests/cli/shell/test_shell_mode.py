@@ -27,14 +27,9 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Expected number of history entries for tests
+
 EXPECTED_HISTORY_ENTRIES = 2
 EXPECTED_HISTORY_AFTER_APPEND = 3
-
-
-# ---------------------------------------------------------------------------
-# ShellSession tests
-# ---------------------------------------------------------------------------
 
 
 def test_session_initialization() -> None:
@@ -80,16 +75,10 @@ def test_last_result_storage() -> None:
     expect_equal(session.last_result.data, {"count": 10})
 
 
-# ---------------------------------------------------------------------------
-# ShellCompleter tests
-# ---------------------------------------------------------------------------
-
-
 def test_completer_initialization() -> None:
     """Test completer initializes with commands."""
     completer = ShellCompleter()
 
-    # Should have built-in commands
     expect_in("call", completer.commands)
     expect_in("list", completer.commands)
     expect_in("help", completer.commands)
@@ -100,11 +89,9 @@ def test_complete_builtin_commands() -> None:
     """Test completing built-in commands."""
     completer = ShellCompleter()
 
-    # Complete "he" should give "help"
     matches = completer.complete("he", 0)
     expect_equal(matches, "help")
 
-    # Complete "q" should give "quit"
     matches = completer.complete("q", 0)
     expect_equal(matches, "quit")
 
@@ -113,7 +100,6 @@ def test_complete_partial_match() -> None:
     """Test completing partial input."""
     completer = ShellCompleter()
 
-    # Multiple matches for "s"
     matches = []
     idx = 0
     while True:
@@ -131,7 +117,6 @@ def test_complete_no_match() -> None:
     """Test completion with no matches."""
     completer = ShellCompleter()
 
-    # No command starts with "xyz"
     matches = completer.complete("xyz", 0)
     expect_is_none(matches)
 
@@ -140,13 +125,7 @@ def test_complete_operations() -> None:
     """Test completing operation IDs."""
     completer = ShellCompleter()
 
-    # Verify method exists
     expect_true(hasattr(completer, "complete"))
-
-
-# ---------------------------------------------------------------------------
-# InteractiveShell tests
-# ---------------------------------------------------------------------------
 
 
 def test_shell_initialization() -> None:
@@ -191,11 +170,6 @@ def test_variable_substitution() -> None:
 
     params = shell.parse_params("--project=$mypath")
     expect_equal(params["project"], "/custom/path")
-
-
-# ---------------------------------------------------------------------------
-# Shell command tests
-# ---------------------------------------------------------------------------
 
 
 def test_set_command() -> None:
@@ -263,13 +237,8 @@ def test_export_command(tmp_path: Path) -> None:
 
     expect_true(export_file.exists())
     content = export_file.read_text()
-    # Export filters to only 'call' commands
+
     expect_true(isinstance(content, str))
-
-
-# ---------------------------------------------------------------------------
-# Shell operations tests
-# ---------------------------------------------------------------------------
 
 
 def test_list_shows_operations() -> None:
@@ -314,20 +283,13 @@ def test_call_missing_operation() -> None:
     expect_true(bool(output.getvalue().strip()))
 
 
-# ---------------------------------------------------------------------------
-# Shell integration tests
-# ---------------------------------------------------------------------------
-
-
 def test_session_persists_across_commands() -> None:
     """Test session state persists across commands."""
     shell = InteractiveShell()
 
-    # Set a variable
     output1 = StringIO()
     shell.execute_command("set myvar hello", output1)
 
-    # Get the variable
     output2 = StringIO()
     shell.execute_command("get myvar", output2)
 
@@ -338,7 +300,6 @@ def test_history_accumulates() -> None:
     """Test history accumulates commands."""
     shell = InteractiveShell()
 
-    # Simulate command execution
     shell.session.history.append("list")
     shell.session.history.append("search build")
     shell.session.history.append("quit")
@@ -350,7 +311,6 @@ def test_completer_has_operations() -> None:
     """Test completer has access to operations."""
     completer = ShellCompleter()
 
-    # Refresh operations
     completer.refresh_operations()
 
     expect_true(hasattr(completer, "operations"))

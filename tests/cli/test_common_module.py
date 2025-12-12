@@ -99,11 +99,6 @@ def test_build_config_from_options_creates_paths(tmp_path: Path) -> None:
     expect_equal(cfg.build_paths.db_path, db_path)
 
 
-# ---------------------------------------------------------------------------
-# Tests for cyclopts_common field helpers and output format resolution
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class _TestRuntimeCli:
     """Test dataclass using RuntimeCLI for field helper verification."""
@@ -121,15 +116,14 @@ class _TestOutputCli:
 def test_runtime_field_returns_none_by_default() -> None:
     """Verify RuntimeCLI field defaults to None (Cyclopts pattern)."""
     instance = _TestRuntimeCli()
-    # In Cyclopts pattern, nested dataclass fields default to None
-    # and Cyclopts instantiates them during parsing
+
     expect_true(instance.runtime is None)
 
 
 def test_output_field_returns_none_by_default() -> None:
     """Verify OutputFormatCLI field defaults to None (Cyclopts pattern)."""
     instance = _TestOutputCli()
-    # In Cyclopts pattern, nested dataclass fields default to None
+
     expect_true(instance.output is None)
 
 
@@ -144,22 +138,18 @@ def test_get_verbose_extracts_verbose_level() -> None:
 
 def test_get_output_format_resolves_correctly() -> None:
     """Verify get_output_format resolves format with correct precedence."""
-    # Default format
     output_cli = OutputFormatCLI()
     expect_equal(get_output_format(output_cli), OutputFormat.TEXT)
 
-    # Explicit JSON format
     output_cli_json = OutputFormatCLI(output_format=OutputFormat.JSON)
     expect_equal(get_output_format(output_cli_json), OutputFormat.JSON)
 
-    # JSON flag overrides explicit format
     output_cli_flag = OutputFormatCLI(output_format=OutputFormat.TEXT, json=True)
     expect_equal(get_output_format(output_cli_flag), OutputFormat.JSON)
 
 
 def test_resolve_output_format_precedence() -> None:
     """Verify resolve_output_format handles precedence correctly."""
-    # JSON flag takes highest precedence
     expect_equal(
         resolve_output_format(
             json_flag=True, explicit=OutputFormat.TEXT, default=OutputFormat.TEXT
@@ -167,7 +157,6 @@ def test_resolve_output_format_precedence() -> None:
         OutputFormat.JSON,
     )
 
-    # Explicit format takes precedence over default
     expect_equal(
         resolve_output_format(
             json_flag=False, explicit=OutputFormat.JSON, default=OutputFormat.TEXT
@@ -175,7 +164,6 @@ def test_resolve_output_format_precedence() -> None:
         OutputFormat.JSON,
     )
 
-    # Default is used when no override
     expect_equal(
         resolve_output_format(json_flag=False, explicit=None, default=OutputFormat.TEXT),
         OutputFormat.TEXT,

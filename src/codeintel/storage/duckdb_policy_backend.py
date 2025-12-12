@@ -27,13 +27,13 @@ from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
 
-from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
     from codeintel.config.datasets import TableSchema
+    from codeintel.config.datasets.contracts import DatasetContract
     from codeintel.storage.gateway.protocol import StorageGateway
 
 __all__ = [
@@ -43,14 +43,21 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-# DuckDB dialect for SQLGlot
+
 DUCKDB_DIALECT = "duckdb"
 
-# Schemas to create during bootstrap
+
 SCHEMAS = ("build", "core", "graph", "analytics", "docs")
 
-# Tables that should not be auto-created
+
 _TABLE_CREATION_DENYLIST = frozenset({"docs.v_validation_summary"})
+
+
+def _get_dataset_contracts_by_table_key() -> dict[str, DatasetContract]:
+    """Lazy import to avoid circular imports at module import time."""
+    from codeintel.config.datasets import get_dataset_contracts_by_table_key
+
+    return get_dataset_contracts_by_table_key()
 
 
 def _column_type_to_sqlglot(col_type: str) -> exp.DataType:
@@ -66,13 +73,12 @@ def _column_type_to_sqlglot(col_type: str) -> exp.DataType:
     exp.DataType
         SQLGlot DataType expression.
     """
-    # Handle DECIMAL with precision
     if col_type.startswith("DECIMAL"):
         return exp.DataType.build(col_type, dialect=DUCKDB_DIALECT)
-    # Handle TIMESTAMPTZ
+
     if col_type == "TIMESTAMPTZ":
         return exp.DataType.build("TIMESTAMPTZ", dialect=DUCKDB_DIALECT)
-    # Map standard types
+
     type_map: dict[str, exp.DataType.Type] = {
         "BOOLEAN": exp.DataType.Type.BOOLEAN,
         "INTEGER": exp.DataType.Type.INT,
@@ -84,7 +90,7 @@ def _column_type_to_sqlglot(col_type: str) -> exp.DataType:
     }
     if col_type in type_map:
         return exp.DataType(this=type_map[col_type])
-    # Fall back to building from string
+
     return exp.DataType.build(col_type, dialect=DUCKDB_DIALECT)
 
 
@@ -147,12 +153,10 @@ def _build_create_table(table: TableSchema, *, if_not_exists: bool = False) -> e
     exp.Create
         SQLGlot CREATE TABLE expression.
     """
-    # Build column definitions
     column_defs = [
         _build_column_def(col.name, col.type, nullable=col.nullable) for col in table.columns
     ]
 
-    # Build schema expression (database = schema in DuckDB terms)
     schema_expr = exp.Schema(
         this=exp.Table(
             this=exp.to_identifier(table.name),
@@ -161,7 +165,6 @@ def _build_create_table(table: TableSchema, *, if_not_exists: bool = False) -> e
         expressions=column_defs,
     )
 
-    # Add primary key if defined
     if table.primary_key:
         pk_constraint = _build_primary_key_constraint(table.primary_key)
         schema_expr.expressions.append(pk_constraint)
@@ -229,7 +232,6 @@ def _build_create_index(
         db=exp.to_identifier(table_schema),
     )
 
-    # Build column list wrapped in IndexParameters
     index_columns = [exp.Ordered(this=exp.Column(this=exp.to_identifier(col))) for col in columns]
     index_params = exp.IndexParameters(columns=index_columns)
 
@@ -242,8 +244,8 @@ def _build_create_index(
     return exp.Create(
         this=index_expr,
         kind="INDEX",
-        exists=True,  # IF NOT EXISTS
-        unique=unique,  # UNIQUE goes on Create, not Index
+        exists=True,
+        unique=unique,
     )
 
 
@@ -263,7 +265,7 @@ def _build_create_schema(schema_name: str) -> exp.Create:
     return exp.Create(
         this=exp.to_identifier(schema_name),
         kind="SCHEMA",
-        exists=True,  # IF NOT EXISTS
+        exists=True,
     )
 
 
@@ -293,7 +295,6 @@ def _build_delete(
         db=exp.to_identifier(table_schema),
     )
 
-    # Build WHERE conditions with placeholders
     where_conditions: list[exp.Expression] = []
     for col_name, placeholder in conditions.items():
         condition = exp.EQ(
@@ -302,7 +303,6 @@ def _build_delete(
         )
         where_conditions.append(condition)
 
-    # Combine conditions with AND
     if len(where_conditions) == 1:
         where_expr = where_conditions[0]
     else:
@@ -337,19 +337,16 @@ def _build_insert(
     exp.Insert
         SQLGlot INSERT expression with placeholders.
     """
-    # Build table expression
     table_expr = exp.Table(
         this=exp.to_identifier(table_name),
         db=exp.to_identifier(table_schema),
     )
 
-    # Build Schema with table and columns (required for INSERT column list)
     schema = exp.Schema(
         this=table_expr,
         expressions=[exp.to_identifier(col) for col in columns],
     )
 
-    # Build VALUES clause with placeholders
     placeholders = [exp.Placeholder() for _ in columns]
     values = exp.Values(expressions=[exp.Tuple(expressions=placeholders)])
 
@@ -377,7 +374,6 @@ def _quote_identifier(name: str) -> str:
     ValueError
         If the identifier contains invalid characters.
     """
-    # Validate identifier to prevent injection
     if not name or not all(c.isalnum() or c == "_" for c in name):
         message = f"Invalid identifier: {name}"
         raise ValueError(message)
@@ -417,7 +413,6 @@ def _build_upsert(
     str
         SQL string for upsert operation.
     """
-    # Build qualified table with validated identifiers
     table_expr = exp.Table(
         this=exp.to_identifier(table_name),
         db=exp.to_identifier(table_schema),
@@ -432,7 +427,6 @@ def _build_upsert(
     )
     conflict_cols_sql = ", ".join(_quote_identifier(col) for col in conflict_columns)
 
-    # Determine which columns to update
     cols_to_update = (
         update_columns
         if update_columns is not None
@@ -590,7 +584,7 @@ class DuckDBPolicyBackend:
         """
         delete_expr = _build_delete(schema, table, {"repo": "repo", "commit": "commit"})
         sql = delete_expr.sql(dialect=DUCKDB_DIALECT)
-        # SQLGlot produces named placeholders, convert to positional for DuckDB
+
         sql = (
             sql.replace(":repo", "?")
             .replace(":commit", "?")
@@ -626,7 +620,6 @@ class DuckDBPolicyBackend:
         if "." in table_key:
             schema, table = table_key.split(".", 1)
         else:
-            # Default to main schema for unqualified table names
             schema = "main"
             table = table_key
         columns = self._get_table_columns(schema, table)
@@ -728,12 +721,10 @@ class DuckDBPolicyBackend:
         extra_ddl
             Additional DDL statements to execute after table creation.
         """
-        # Create all schemas
         for schema_name in SCHEMAS:
             self.create_schema_if_not_exists(schema_name)
 
-        # Create all tables from dataset contracts
-        contracts = get_dataset_contracts_by_table_key()
+        contracts = _get_dataset_contracts_by_table_key()
         for table_key, contract in contracts.items():
             if contract.schema is None:
                 continue
@@ -746,7 +737,6 @@ class DuckDBPolicyBackend:
             )
             self.create_indexes_from_schema(contract.schema)
 
-        # Execute any extra DDL
         if extra_ddl:
             for stmt in extra_ddl:
                 self._run_sql(stmt)
@@ -773,7 +763,7 @@ class DuckDBPolicyBackend:
         for view_name, builder in VIEW_BUILDERS.items():
             try:
                 expr = builder(ibis_gateway)
-                # Use the Ibis gateway's con to create the view
+
                 if "." in view_name:
                     database, name = view_name.split(".", 1)
                     ibis_gateway.con.create_view(name, expr, database=database, overwrite=overwrite)
@@ -844,16 +834,14 @@ class DuckDBPolicyBackend:
 
         schema, table = table_key.split(".", 1)
 
-        # Determine columns
         if columns is None:
-            contracts = get_dataset_contracts_by_table_key()
+            contracts = _get_dataset_contracts_by_table_key()
             contract = contracts.get(table_key)
             if contract is None or contract.schema is None:
                 message = f"No TableSchema found for {table_key}; columns must be provided"
                 raise ValueError(message)
             columns = [col.name for col in contract.schema.columns]
 
-        # Build INSERT statement via SQLGlot
         insert_expr = _build_insert(schema, table, columns)
         sql = insert_expr.sql(dialect=DUCKDB_DIALECT)
 
@@ -913,7 +901,6 @@ class DuckDBPolicyBackend:
 
         schema, table = table_key.split(".", 1)
 
-        # Build UPSERT statement
         sql = _build_upsert(schema, table, columns, conflict_columns, update_columns)
 
         log.debug("Upsert into %s: %d rows", table_key, len(rows))

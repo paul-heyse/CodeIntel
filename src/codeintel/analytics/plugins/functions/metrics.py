@@ -167,9 +167,8 @@ class FunctionMetricsPlugin(TargetPlugin):
         This plugin validates output data against Pandera schemas when available.
         Schema validation occurs in the persistence layer via validate_dataset_df.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Log schema availability status
         schema_status = self.check_schemas_available()
         for table, available in schema_status.items():
             if not available:
@@ -177,13 +176,8 @@ class FunctionMetricsPlugin(TargetPlugin):
             else:
                 log.debug("Schema available for validation: %s", table)
 
-        # Get AST data from catalog if available
         function_ast_map = None
         missing_function_goids: set[int] = set()
-
-        # Note: Direct resource access not yet implemented in build context
-        # The FunctionCatalogProvider doesn't have get_resource()
-        # This will be populated when the build executor provides resources
 
         opts = self.resolve_options(
             dynamic_overrides={
@@ -192,7 +186,6 @@ class FunctionMetricsPlugin(TargetPlugin):
             }
         )
 
-        # Build config from parameters
         cfg = FunctionAnalyticsStepConfig(
             snapshot=ctx.snapshot,
         )

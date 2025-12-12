@@ -90,16 +90,14 @@ class ProfilesPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Build config from context
         cfg = ProfilesAnalyticsStepConfig(
             snapshot=ctx.snapshot,
         )
 
-        # Get optional resources
         catalog_provider = ctx.resources.catalog
-        module_map = None  # Will be loaded from catalog if available
+        module_map = None
 
         try:
             build_function_profile(

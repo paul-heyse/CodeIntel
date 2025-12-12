@@ -48,11 +48,6 @@ __all__ = [
 ]
 
 
-# =============================================================================
-# Tool Runner Protocol
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class ToolRunResult:
     """Result of running an external tool.
@@ -148,11 +143,6 @@ class ToolRunner(Protocol):
             True if the tool can be executed.
         """
         ...
-
-
-# =============================================================================
-# SCIP Indexer Protocol
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -316,11 +306,6 @@ class ScipIndexer(Protocol):
         ...
 
 
-# =============================================================================
-# Type Checker Protocol
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class TypeDiagnostic:
     """A diagnostic from static type checking.
@@ -411,11 +396,6 @@ class TypeChecker(Protocol):
         ...
 
 
-# =============================================================================
-# Coverage Collector Protocol
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class CoverageData:
     """Coverage data for a file.
@@ -482,11 +462,6 @@ class CoverageCollector(Protocol):
         ...
 
 
-# =============================================================================
-# Test Reporter Protocol
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class TestResult:
     """Result of a single test.
@@ -543,11 +518,6 @@ class TestReporter(Protocol):
             Collected test results.
         """
         ...
-
-
-# =============================================================================
-# Git History Protocol
-# =============================================================================
 
 
 @dataclass(frozen=True)

@@ -13,6 +13,7 @@ production-parity execution paths.
 from __future__ import annotations
 
 import inspect
+from typing import Any, cast
 
 import pytest
 
@@ -132,9 +133,9 @@ class TestMetadataBridge:
             domain="test",
             description="Test plugin",
         )
-        # Frozen dataclass should raise on mutation attempt
+
         with pytest.raises(AttributeError):
-            meta.name = "changed"  # type: ignore[misc]
+            object.__setattr__(cast("Any", meta), "name", "changed")  # noqa: PLC2801
 
 
 class TestDriverFactory:
@@ -180,11 +181,10 @@ class TestDriverFactory:
     def test_driver_node_dependencies() -> None:
         """Verify DAG has correct dependency structure via function signatures."""
         runtime = build_driver()
-        # Get all available nodes
+
         all_vars = runtime.dr.list_available_variables()
         var_by_name = {v.name: v for v in all_vars}
 
-        # Verify key nodes exist
         if "t__modules" not in var_by_name:
             pytest.fail("t__modules not found in driver")
         if "t__scip" not in var_by_name:
@@ -192,22 +192,16 @@ class TestDriverFactory:
         if "t__goids" not in var_by_name:
             pytest.fail("t__goids not found in driver")
 
-        # Verify dependency structure by checking the actual function signatures
-        # The node functions have parameters that match their dependencies
-
-        # modules should have no t__ dependencies (only env, graph)
         modules_sig = inspect.signature(targets_phase0.t__modules)
         modules_params = [p for p in modules_sig.parameters if p.startswith("t__")]
         if modules_params:
             pytest.fail(f"modules should have no target dependencies, got: {modules_params}")
 
-        # scip should depend on modules
         scip_sig = inspect.signature(targets_phase0.t__scip)
         scip_params = list(scip_sig.parameters.keys())
         if "t__modules" not in scip_params:
             pytest.fail("scip missing dependency on modules")
 
-        # goids should depend on scip and ast
         goids_sig = inspect.signature(targets_phase0.t__goids)
         goids_params = list(goids_sig.parameters.keys())
         if "t__scip" not in goids_params:
@@ -223,11 +217,11 @@ class TestDAGVisualization:
     def test_driver_can_list_final_vars() -> None:
         """Verify we can list all nodes from driver."""
         runtime = build_driver()
-        # Hamilton Driver should support getting all node names
+
         all_nodes = list(runtime.dr.list_available_variables())
         if not all_nodes:
             pytest.fail("No nodes returned from driver")
-        # Should include our Phase 0 targets
+
         node_names = [n.name for n in all_nodes]
         if "t__modules" not in node_names:
             pytest.fail("t__modules not returned in node list")
@@ -236,15 +230,12 @@ class TestDAGVisualization:
     def test_driver_can_display_graph() -> None:
         """Verify driver supports DAG visualization."""
         runtime = build_driver()
-        # Hamilton provides display methods - we just verify they work
-        # In a real test, you might capture and inspect the output
+
         try:
-            # This returns a graphviz object, not raises
             dag = runtime.dr.display_all_functions()
             if dag is None:
                 pytest.fail("display_all_functions returned None")
         except ImportError:
-            # graphviz may not be installed in test env
             pytest.skip("graphviz not available")
 
 
@@ -258,13 +249,10 @@ class TestTargetNodeTags:
         all_vars = runtime.dr.list_available_variables()
         var_by_name = {v.name: v for v in all_vars}
 
-        # Check that modules node has tags
         modules_var = var_by_name.get("t__modules")
         if modules_var is None:
             pytest.fail("t__modules not found in driver")
-        # Hamilton Variable objects may have a tags attribute
-        # Tags may or may not be present depending on Hamilton version
-        # Just verify the node exists and is properly formed
+
         if modules_var.name != "t__modules":
             pytest.fail("modules node has wrong name")
 
@@ -275,11 +263,10 @@ class TestTargetNodeTags:
         all_vars = runtime.dr.list_available_variables()
         var_by_name = {v.name: v for v in all_vars}
 
-        # Check that modules node exists
         modules_var = var_by_name.get("t__modules")
         if modules_var is None:
             pytest.fail("t__modules not found in driver")
-        # Verify the node has expected attributes
+
         if not hasattr(modules_var, "name"):
             pytest.fail("modules node missing name attribute")
         if not hasattr(modules_var, "type"):

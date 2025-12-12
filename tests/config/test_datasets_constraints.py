@@ -29,11 +29,6 @@ def _expect_equal(actual: object, expected: object, label: str) -> None:
         pytest.fail(f"{label}: expected {expected!r}, got {actual!r}")
 
 
-# ------------------------------------------------------------------
-# ConstraintKind tests
-# ------------------------------------------------------------------
-
-
 def test_constraint_kind_values() -> None:
     """Verify all ConstraintKind enum values are defined."""
     _expect_equal(ConstraintKind.TYPE.value, "type", "TYPE value")
@@ -51,11 +46,6 @@ def test_constraint_kind_all_members() -> None:
     members = list(ConstraintKind)
     expected_count = 8
     _expect_equal(len(members), expected_count, "ConstraintKind member count")
-
-
-# ------------------------------------------------------------------
-# Constraint tests
-# ------------------------------------------------------------------
 
 
 def test_constraint_creation_minimal() -> None:
@@ -113,11 +103,6 @@ def test_constraint_is_frozen() -> None:
     attr = "column"
     with pytest.raises(AttributeError):
         setattr(frozen_constraint, attr, "new_col")
-
-
-# ------------------------------------------------------------------
-# ConstraintSet tests
-# ------------------------------------------------------------------
 
 
 def test_constraint_set_empty() -> None:
@@ -287,11 +272,6 @@ def test_constraint_set_column_names() -> None:
     _expect_equal(names, {"col_a", "col_b"}, "column names set")
 
 
-# ------------------------------------------------------------------
-# extract_constraints_from_pandera tests
-# ------------------------------------------------------------------
-
-
 def test_extract_type_constraints() -> None:
     """Extract TYPE constraints from Pandera schema."""
     schema = pa.DataFrameSchema(
@@ -347,7 +327,7 @@ def test_extract_range_constraints_non_negative() -> None:
     cs = extract_constraints_from_pandera("test.table", schema)
 
     range_constraints = cs.by_kind(ConstraintKind.RANGE)
-    # May or may not extract depending on check str representation
+
     _require(
         condition=len(range_constraints) >= 0,
         message="range constraints should be non-negative count",

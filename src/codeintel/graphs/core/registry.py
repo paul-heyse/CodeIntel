@@ -133,7 +133,7 @@ class _StubGraphPlugin(GraphPluginProtocol):
     def metadata(self) -> GraphPluginMetadata:
         return self._metadata
 
-    def execute(self, ctx: object) -> PluginResult:  # pragma: no cover - not executed
+    def execute(self, ctx: object) -> PluginResult:
         _ = ctx
         return PluginResult.ok(meta={"stub": self._metadata.name})
 
@@ -337,7 +337,6 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                 plan_opts.requested_required,
             )
 
-        # Resolve which plugins to include
         selected, skipped = self._resolve_graph_selection(
             plugin_names=plugin_names,
             enabled=enabled,
@@ -347,14 +346,12 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         )
         skip_buffer = list(skipped)
 
-        # Build dependency graph
         dependencies = self._resolve_graph_dependencies(
             selected,
             skipped=skip_buffer,
             plan_opts=plan_opts,
         )
 
-        # Topological sort using shared utility
         ordered = topological_sort(selected, dependencies)
 
         dep_graph_out: dict[str, tuple[str, ...]] = {
@@ -392,7 +389,6 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         ValueError
             If a plugin name appears more than once or required dependencies are disabled.
         """
-        # Determine base selection
         if enabled:
             names = list(enabled)
         elif plugin_names:

@@ -42,7 +42,7 @@ row = CFGBlockRow(
     out_degree=1,
 )
 
-# Serialize for DuckDB insertion
+
 values = row.to_tuple()
 ```
 """

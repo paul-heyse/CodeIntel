@@ -29,10 +29,6 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# =============================================================================
-# Test Fixture Classes
-# =============================================================================
-
 
 @dataclass
 class SampleRegistry:
@@ -79,11 +75,6 @@ class CountingHolder(SingletonHolder[int]):
         cls.call_count = 0
 
 
-# =============================================================================
-# Test Fixtures
-# =============================================================================
-
-
 @pytest.fixture(autouse=True)
 def reset_singletons() -> None:
     """Reset all singleton holders before each test."""
@@ -91,11 +82,6 @@ def reset_singletons() -> None:
     AnotherRegistryHolder.reset()
     CountingHolder.reset()
     CountingHolder.reset_count()
-
-
-# =============================================================================
-# Basic Functionality Tests
-# =============================================================================
 
 
 def test_singleton_get_creates_instance_via_factory() -> None:
@@ -165,11 +151,6 @@ def test_singleton_reset_allows_new_instance() -> None:
     expect_equal(registry2.name, "second")
 
 
-# =============================================================================
-# Subclass Isolation Tests
-# =============================================================================
-
-
 def test_singleton_subclasses_are_independent() -> None:
     """Verify that different subclasses maintain independent singletons."""
     sample_registry = SampleRegistryHolder.get(SampleRegistry.create_default)
@@ -190,11 +171,6 @@ def test_singleton_reset_only_affects_own_subclass() -> None:
 
     expect_true(not SampleRegistryHolder.is_initialized())
     expect_true(AnotherRegistryHolder.is_initialized())
-
-
-# =============================================================================
-# Factory Invocation Tests
-# =============================================================================
 
 
 def test_singleton_factory_called_only_once() -> None:
@@ -221,17 +197,11 @@ def test_singleton_factory_returning_none_raises_error() -> None:
         return None
 
     factory: Callable[[], SampleRegistry] = cast("Callable[[], SampleRegistry]", null_factory)
-    # The factory returns None, which should trigger the error after the factory runs
-    # The SingletonHolder stores None, then checks and raises
+
     with pytest.raises(SingletonNotInitializedError) as exc_info:
         SampleRegistryHolder.get(factory)
 
     expect_in("SampleRegistryHolder", str(exc_info.value))
-
-
-# =============================================================================
-# Thread Safety Tests
-# =============================================================================
 
 
 def test_singleton_thread_safe_initialization() -> None:
@@ -242,7 +212,7 @@ def test_singleton_thread_safe_initialization() -> None:
 
     def worker() -> None:
         try:
-            barrier.wait()  # Synchronize all threads to start together
+            barrier.wait()
             registry = SampleRegistryHolder.get(SampleRegistry.create_default)
             results.append(registry)
         except (threading.BrokenBarrierError, RuntimeError) as e:
@@ -255,7 +225,7 @@ def test_singleton_thread_safe_initialization() -> None:
 
     expect_true(not errors, message=f"Unexpected errors: {errors}")
     expect_length(results, 10)
-    # All results should be the same instance
+
     first = results[0]
     expect_true(all(r is first for r in results))
 
@@ -280,15 +250,9 @@ def test_singleton_concurrent_get_single_factory_call() -> None:
         futures = [executor.submit(worker) for _ in range(10)]
         results = [f.result() for f in futures]
 
-    # Factory should only be called once
     expect_equal(call_count, 1)
-    # All results should be 1 (the value from the single factory call)
+
     expect_true(all(r == 1 for r in results))
-
-
-# =============================================================================
-# Error Handling Tests
-# =============================================================================
 
 
 def test_singleton_not_initialized_error_message() -> None:
@@ -309,5 +273,4 @@ def test_singleton_factory_exception_propagates() -> None:
     with pytest.raises(ValueError, match="Factory failed intentionally"):
         SampleRegistryHolder.get(failing_factory)
 
-    # After a factory failure, the singleton should not be initialized
     expect_true(not SampleRegistryHolder.is_initialized())

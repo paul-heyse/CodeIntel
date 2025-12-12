@@ -71,11 +71,6 @@ def _get_now() -> datetime:
     return datetime.now(tz=UTC)
 
 
-# =============================================================================
-# FunctionContext Tests
-# =============================================================================
-
-
 def test_context_name_property() -> None:
     """Extract function name from qualname."""
     context = _make_context(qualname="module.submodule.my_function")
@@ -112,11 +107,6 @@ def test_context_tag_strings() -> None:
     tags = context.tag_strings
     expect_in("api", tags)
     expect_in("service", tags)
-
-
-# =============================================================================
-# RoleAccumulator Tests
-# =============================================================================
 
 
 def test_accumulator_bump_single() -> None:
@@ -193,11 +183,6 @@ def test_accumulator_finalize_caps_confidence() -> None:
     expect_true(confidence <= CONFIDENCE_CAP)
 
 
-# =============================================================================
-# classify_function_role Tests
-# =============================================================================
-
-
 def test_classify_test_function() -> None:
     """Classify test function from path and name."""
     context = _make_context(
@@ -212,7 +197,7 @@ def test_classify_test_function() -> None:
 def test_classify_test_prefix() -> None:
     """Classify by test_ prefix in name."""
     context = _make_context(
-        rel_path="src/module.py",  # Not in tests/
+        rel_path="src/module.py",
         qualname="module.test_something",
     )
     role, _, _, _ = classify_function_role(context)
@@ -360,11 +345,10 @@ def test_classify_helper() -> None:
 
 def test_classify_module_tags() -> None:
     """Module tags contribute to classification."""
-    # Tags alone (0.3) are below threshold, need additional signal
     context = _make_context(
-        rel_path="src/api/handlers.py",  # path:api adds 0.4
-        qualname="api.handlers.get_items",  # name:http_verb adds 0.2
-        module_tags=["api"],  # tag:api adds 0.3
+        rel_path="src/api/handlers.py",
+        qualname="api.handlers.get_items",
+        module_tags=["api"],
     )
     role, _, _, _ = classify_function_role(context)
     expect_equal(role, "api_handler")
@@ -386,15 +370,10 @@ def test_classify_other() -> None:
     context = _make_context(
         rel_path="src/misc.py",
         qualname="misc.do_something",
-        loc=LARGE_LOC,  # Too large for helper
+        loc=LARGE_LOC,
     )
     role, _, _, _ = classify_function_role(context)
     expect_equal(role, "other")
-
-
-# =============================================================================
-# classify_modules Tests
-# =============================================================================
 
 
 def test_modules_classify_empty() -> None:
@@ -414,10 +393,9 @@ def test_modules_classify_from_tags() -> None:
     module_meta = {
         "api.routes": ModuleRecord(path="src/api/routes.py", tags=["api"]),
     }
-    # Module needs function roles + tags to cross threshold
-    # Tag contributes 0.3, need function roles to exceed ROLE_THRESHOLD
+
     roles_by_module = {
-        "api.routes": [("api_handler", 0.5)],  # Combined with tag = 0.8 > threshold
+        "api.routes": [("api_handler", 0.5)],
     }
     rows = classify_modules(
         module_meta=module_meta,
@@ -427,7 +405,7 @@ def test_modules_classify_from_tags() -> None:
         now=_get_now(),
     )
     expect_length(rows, EXPECTED_ROWS_1)
-    # Row format: (repo, commit, module, role, confidence, metadata, timestamp)
+
     expect_equal(rows[0][3], "api_handler")
 
 
@@ -501,7 +479,7 @@ def test_modules_classify_multiple() -> None:
         "services.user": ModuleRecord(path="src/services/user.py", tags=["service"]),
         "cli.main": ModuleRecord(path="src/cli/main.py", tags=["cli"]),
     }
-    # Provide function roles to cross threshold
+
     roles_by_module = {
         "api.routes": [("api_handler", BUMP_VALUE_0_6)],
         "services.user": [("service", BUMP_VALUE_0_5)],
@@ -519,11 +497,6 @@ def test_modules_classify_multiple() -> None:
     expect_equal(roles.get("api.routes"), "api_handler")
     expect_equal(roles.get("services.user"), "service")
     expect_equal(roles.get("cli.main"), "cli_command")
-
-
-# =============================================================================
-# decorator_names Tests
-# =============================================================================
 
 
 def test_decorator_names_empty() -> None:
@@ -571,11 +544,6 @@ def test_decorator_names_multiple() -> None:
     ]
     result = decorator_names(decorators)
     expect_length(result, EXPECTED_DECORATORS_2)
-
-
-# =============================================================================
-# Constants Tests
-# =============================================================================
 
 
 def test_constants_role_threshold_positive() -> None:

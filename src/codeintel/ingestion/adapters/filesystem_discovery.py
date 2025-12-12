@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Progress logging cadence defaults
+
 PROGRESS_LOG_INTERVAL = 5.0
 PROGRESS_LOG_EVERY = 50
 
@@ -72,11 +72,9 @@ class FilesystemDiscoveryAdapter:
         scanner = SourceScanner(profile)
         modules: list[ModuleRecord] = []
 
-        # First pass: collect all files
         paths = list(scanner.iter_files())
         total = len(paths)
 
-        # Second pass: build module records
         for idx, path in enumerate(paths, start=1):
             rel_path = repo_relpath(repo_root, path)
             module_name = relpath_to_module(rel_path)

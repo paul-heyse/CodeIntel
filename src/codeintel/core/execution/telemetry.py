@@ -19,7 +19,6 @@ from typing import Any, Literal
 
 from codeintel.core.singleton import SingletonHolder
 
-# Optional OpenTelemetry imports with graceful degradation
 try:
     from opentelemetry import metrics as otel_metrics
     from opentelemetry import trace as otel_trace
@@ -32,7 +31,7 @@ except ImportError:
     StatusCode = None
     OTEL_AVAILABLE = False
 
-# Optional Prometheus imports with graceful degradation
+
 try:
     from prometheus_client import Counter as PromCounter
     from prometheus_client import Histogram as PromHistogram
@@ -46,7 +45,7 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
-# Default histogram buckets following OpenTelemetry HTTP semconv recommendations
+
 DEFAULT_DURATION_BUCKETS: tuple[float, ...] = (
     0.005,
     0.01,
@@ -169,7 +168,6 @@ class RuntimeTelemetry:
     >>> telemetry = RuntimeTelemetry()
     >>> span = telemetry.start_span("my.plugin", "run-123")
     >>> try:
-    ...     # Do work
     ...     telemetry.end_span(span, success=True, rows_written=100)
     ... except Exception as e:
     ...     telemetry.end_span(span, success=False, error=str(e))
@@ -222,15 +220,11 @@ class RuntimeTelemetry:
         if not self._config.enable_metrics:
             return
 
-        # Guard for type narrowing - PromHistogram and PromCounter are guaranteed non-None
-        # when PROMETHEUS_AVAILABLE is True
         if PromHistogram is None or PromCounter is None:
             return
 
-        # Sanitize service name for Prometheus metric naming
         metric_prefix = self._config.service_name.replace(".", "_").replace("-", "_")
 
-        # Handle duplicate registration gracefully (can happen in tests)
         try:
             self._prom_duration_histogram = PromHistogram(
                 f"{metric_prefix}_plugin_duration_seconds",
@@ -239,7 +233,6 @@ class RuntimeTelemetry:
                 buckets=self._config.histogram_buckets,
             )
         except ValueError:
-            # Metric already registered - this is OK in test environments
             log.debug("Prometheus duration histogram already registered for %s", metric_prefix)
 
         try:
@@ -249,7 +242,6 @@ class RuntimeTelemetry:
                 ["plugin_name", "status"],
             )
         except ValueError:
-            # Metric already registered - this is OK in test environments
             log.debug("Prometheus executions counter already registered for %s", metric_prefix)
 
     @property
@@ -309,7 +301,6 @@ class RuntimeTelemetry:
             attributes=attributes or {},
         )
 
-        # Start OTel span if available
         if self._tracer is not None:
             otel_span = self._tracer.start_span(
                 f"plugin.{plugin_name}",
@@ -353,14 +344,12 @@ class RuntimeTelemetry:
         duration_ms = span.elapsed_ms
         status: Literal["success", "error"] = "success" if success else "error"
 
-        # Record OTel metrics
         if self._otel_duration_histogram is not None:
             self._otel_duration_histogram.record(
                 duration_ms,
                 {"plugin": span.plugin_name, "status": status},
             )
 
-        # Record Prometheus metrics
         if self._prom_duration_histogram is not None:
             self._prom_duration_histogram.labels(
                 plugin_name=span.plugin_name,
@@ -373,7 +362,6 @@ class RuntimeTelemetry:
                 status=status,
             ).inc()
 
-        # End OTel span
         otel_span = span.context_data.get("otel_span")
         if otel_span is not None:
             otel_span.set_attribute("duration_ms", duration_ms)
@@ -386,7 +374,6 @@ class RuntimeTelemetry:
                 otel_span.set_status(StatusCode.OK)
             otel_span.end()
 
-        # Log completion
         if error:
             log.debug(
                 "telemetry.span.end plugin=%s duration=%.3fs success=%s error=%s",

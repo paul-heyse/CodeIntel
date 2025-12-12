@@ -26,7 +26,7 @@ def test_build_status_returns_structured_result(
     result = op_harness.execute("build.status")
 
     expect_is_not_none(result)
-    # Result may have data as dict or string
+
     expect_true(result.success or result.data is None)
 
 
@@ -37,7 +37,7 @@ def test_build_status_no_params(
     result = op_harness.execute("build.status")
 
     expect_is_not_none(result)
-    # Handler may succeed or fail depending on environment
+
     expect_true(result.success or result.error is not None)
 
 
@@ -64,7 +64,7 @@ def test_op_list_returns_operations(
     result = op_harness.execute("op.list")
 
     expect_true(result.success)
-    # Result may have stdout content
+
     expect_is_not_none(result)
 
 
@@ -89,7 +89,7 @@ def test_dataset_list_returns_datasets(
     result = op_harness.execute("dataset.list")
 
     expect_is_not_none(result)
-    # Result is valid (either success or expected resolution error)
+
     expect_true(result.exit_code in {0, 1})
 
 
@@ -115,8 +115,6 @@ def test_registry_lookup_nonexistent() -> None:
     registry = get_registry()
     _spec = registry.get("nonexistent.operation")
 
-    # Should return None, not raise
-
 
 def test_operations_have_required_fields() -> None:
     """All registered operations have required fields."""
@@ -124,7 +122,7 @@ def test_operations_have_required_fields() -> None:
 
     for spec in registry.list_operations():
         expect_is_not_none(spec)
-        # Handler is always present on valid specs (not optional)
+
         expect_true(
             spec.handler is not None,
             message=f"Handler missing for {spec.operation_id}",

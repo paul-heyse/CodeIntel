@@ -56,10 +56,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.tracking import PipelineRunTracking, PipelineStatus
 
-# -----------------------------------------------------------------------------
-# is_auto_pipeline_enabled Tests
-# -----------------------------------------------------------------------------
-
 
 @pytest.fixture
 def clean_auto_pipeline_env() -> Generator[None]:
@@ -111,11 +107,6 @@ def test_auto_pipeline_disabled_with_falsy_values(
     expect_false(is_auto_pipeline_enabled())
 
 
-# -----------------------------------------------------------------------------
-# build_paths_for_serving Tests
-# -----------------------------------------------------------------------------
-
-
 def test_build_paths_with_defaults(tmp_path: Path) -> None:
     """Verify paths are built with default values."""
     config = ServingConfig(
@@ -141,7 +132,7 @@ def test_build_paths_with_default_repo_root() -> None:
     )
 
     paths = build_paths_for_serving(config)
-    # Should use current working directory
+
     expect_true(paths.db_path.is_absolute())
 
 
@@ -200,11 +191,6 @@ def _seed_run(tracking: PipelineRunTracking, params: RunParams) -> None:
         trigger=params.trigger,
     )
     tracking.start_run(ctx, status=params.status)
-
-
-# -----------------------------------------------------------------------------
-# has_successful_prereq_run Tests
-# -----------------------------------------------------------------------------
 
 
 def test_has_successful_prereq_run_returns_true_when_matching_run_exists(
@@ -306,11 +292,6 @@ def test_has_successful_prereq_run_returns_false_for_other_kinds(
     expect_false(result)
 
 
-# -----------------------------------------------------------------------------
-# should_run_auto_pipeline Tests
-# -----------------------------------------------------------------------------
-
-
 def test_should_run_auto_pipeline_returns_false_for_remote_mode(
     clean_auto_pipeline_env: None,
     duckdb_backend: DuckDBBackend,
@@ -398,11 +379,6 @@ def test_should_run_auto_pipeline_returns_true_with_valid_config(
     expect_false(bool(reason))
 
 
-# -----------------------------------------------------------------------------
-# ensure_prereqs_for_mcp Tests
-# -----------------------------------------------------------------------------
-
-
 def test_ensure_prereqs_for_mcp_skips_when_disabled(
     clean_auto_pipeline_env: None,
     tmp_path: Path,
@@ -448,11 +424,6 @@ def test_ensure_prereqs_for_mcp_skips_for_non_local_mode(
         backend=duckdb_backend,
     )
     expect_true(result is None)
-
-
-# -----------------------------------------------------------------------------
-# ensure_prereqs_for_http Tests
-# -----------------------------------------------------------------------------
 
 
 def test_ensure_prereqs_for_http_skips_when_disabled(
@@ -552,16 +523,10 @@ def test_ensure_prereqs_for_mcp_skips_without_gateway(
     expect_is_none(result)
 
 
-# -----------------------------------------------------------------------------
-# build_paths_for_serving Additional Tests
-# -----------------------------------------------------------------------------
-
-
 def test_build_paths_with_default_repo_root_uses_cwd(tmp_path: Path) -> None:
     """Verify paths use cwd when repo_root uses default."""
     config = ServingConfig(
         mode="local_db",
-        # repo_root uses default (cwd) when not specified
         repo="test/repo",
         commit="abc123",
         db_path=tmp_path / "db.duckdb",
@@ -569,7 +534,6 @@ def test_build_paths_with_default_repo_root_uses_cwd(tmp_path: Path) -> None:
 
     paths = build_paths_for_serving(config)
 
-    # Should use cwd for repo_root but db_path should be as specified
     expect_equal(paths.db_path, tmp_path / "db.duckdb")
 
 
@@ -580,13 +544,11 @@ def test_build_paths_with_none_db_path(tmp_path: Path) -> None:
         repo_root=tmp_path,
         repo="test/repo",
         commit="abc123",
-        db_path=None,  # Explicitly None
+        db_path=None,
     )
 
     paths = build_paths_for_serving(config)
 
-    # Should use default path under repo_root (determined by CliPathsInput.to_build_paths)
-    # The actual default path structure is build/db/codeintel.duckdb
     expect_true(paths.db_path.is_absolute())
     expect_in("codeintel", paths.db_path.name.lower())
 
@@ -603,14 +565,8 @@ def test_build_paths_result_has_required_attributes(tmp_path: Path) -> None:
 
     paths = build_paths_for_serving(config)
 
-    # BuildPaths should have these attributes
     expect_true(hasattr(paths, "db_path"))
     expect_true(hasattr(paths, "build_dir"))
-
-
-# -----------------------------------------------------------------------------
-# has_successful_prereq_run Additional Tests
-# -----------------------------------------------------------------------------
 
 
 def test_has_successful_prereq_run_returns_false_for_running_status(
@@ -651,11 +607,9 @@ def test_has_successful_prereq_run_multiple_runs_finds_matching(
     pipeline_run_tracking: PipelineRunTracking,
 ) -> None:
     """Verify returns True when one of multiple runs matches."""
-    # Seed a failed run
     params_failed = RunParams(repo="test/repo", commit="abc123", status="failed", kind="full")
     _seed_run(pipeline_run_tracking, params_failed)
 
-    # Seed a successful run
     params_success = RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="full")
     _seed_run(pipeline_run_tracking, params_success)
 
@@ -667,11 +621,6 @@ def test_has_successful_prereq_run_multiple_runs_finds_matching(
     )
 
     expect_true(result)
-
-
-# -----------------------------------------------------------------------------
-# should_run_auto_pipeline Additional Tests
-# -----------------------------------------------------------------------------
 
 
 def test_should_run_auto_pipeline_returns_correct_gateway_reference(
@@ -693,7 +642,6 @@ def test_should_run_auto_pipeline_returns_correct_gateway_reference(
 
     _should_run, gateway, _reason = should_run_auto_pipeline(config, duckdb_backend)
 
-    # The gateway should be the same object as the backend's gateway
     expect_true(gateway is duckdb_backend.gateway)
 
 
@@ -718,11 +666,6 @@ def test_should_run_auto_pipeline_empty_reason_when_enabled(
 
     expect_true(should_run)
     expect_true(not reason)
-
-
-# -----------------------------------------------------------------------------
-# wrap_tool_with_prereqs Test Fixtures
-# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -776,16 +719,12 @@ def auto_pipeline_test_env(
     """
     _ = clean_auto_pipeline_env
 
-    # Enable auto-pipeline
     os.environ[AUTO_PIPELINE_ENV] = "1"
 
-    # Create gateway with schema
     gateway = GatewayFactory().with_snapshot("test/repo", "abc123").open()
 
-    # Create backend
     backend: DuckDBBackend = build_duckdb_backend(gateway, repo="test/repo", commit="abc123")
 
-    # Create serving config
     db_path = tmp_path / "codeintel.duckdb"
     config = ServingConfig(
         mode="local_db",
@@ -862,11 +801,6 @@ def create_capturing_tool(
     return tool_fn, captured
 
 
-# -----------------------------------------------------------------------------
-# wrap_tool_with_prereqs Tests
-# -----------------------------------------------------------------------------
-
-
 def test_wrap_tool_preserves_function_metadata(
     clean_auto_pipeline_env: None,
     tmp_path: Path,
@@ -896,7 +830,6 @@ def test_wrap_tool_preserves_function_metadata(
         backend=duckdb_backend,
     )
 
-    # Verify metadata is preserved via functools.wraps
     expect_equal(wrapped.__name__, "my_test_tool")
     expect_equal(wrapped.__doc__, "My test tool docstring.")
 
@@ -926,10 +859,8 @@ def test_wrap_tool_passes_kwargs_to_original(
         backend=duckdb_backend,
     )
 
-    # Call with specific kwargs
     wrapped(arg1="value1", arg2=42, nested={"key": "val"})
 
-    # Verify kwargs were passed through
     expect_length(captured, 1)
     expect_equal(captured[0], {"arg1": "value1", "arg2": 42, "nested": {"key": "val"}})
 
@@ -975,7 +906,6 @@ def test_wrap_tool_executes_with_auto_pipeline_disabled(
 ) -> None:
     """Verify wrapped tool executes when auto-pipeline is disabled."""
     _ = clean_auto_pipeline_env
-    # Auto-pipeline is disabled (env var not set)
 
     config = ServingConfig(
         mode="local_db",
@@ -994,7 +924,6 @@ def test_wrap_tool_executes_with_auto_pipeline_disabled(
         backend=duckdb_backend,
     )
 
-    # Should execute without error even though auto-pipeline is disabled
     result = wrapped(test_arg="test_value")
 
     expect_equal(result, {"captured": True})
@@ -1009,7 +938,6 @@ def test_wrap_tool_with_local_db_mode_disabled(
 ) -> None:
     """Verify wrapped tool works with local_db mode but auto-pipeline disabled."""
     _ = clean_auto_pipeline_env
-    # Auto-pipeline disabled via env
 
     config = ServingConfig(
         mode="local_db",
@@ -1063,15 +991,9 @@ def test_wrap_tool_logs_debug_message(
     with caplog.at_level(logging.DEBUG):
         wrapped()
 
-    # Check that the debug message was logged
     expect_true(
         any("auto_pipeline check for op=function.summary" in r.message for r in caplog.records)
     )
-
-
-# -----------------------------------------------------------------------------
-# ensure_prereqs Integration Tests
-# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -1174,11 +1096,6 @@ def test_ensure_prereqs_skip_matrix(
         expect_false(has_prereq)
 
 
-# -----------------------------------------------------------------------------
-# Full MCP Tool Flow Integration Tests
-# -----------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_wrapped_tool_executes_after_prereq_check_with_existing_run(
     auto_pipeline_test_env: AutoPipelineTestEnv,
@@ -1186,7 +1103,6 @@ def test_wrapped_tool_executes_after_prereq_check_with_existing_run(
     """Verify wrapped tool executes after prereq check when run exists."""
     env = auto_pipeline_test_env
 
-    # Seed a successful run so prereq check passes quickly
     params = RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="full")
     _seed_run(env.gateway.runs, params)
 
@@ -1207,10 +1123,8 @@ def test_wrapped_tool_executes_after_prereq_check_with_existing_run(
         backend=env.backend,
     )
 
-    # Execute the wrapped tool
     result = wrapped(flow_arg="test_value")
 
-    # Verify tool was called with correct kwargs
     expected_call_count = 1
     expect_length(captured, expected_call_count)
     expect_equal(captured[0], {"flow_arg": "test_value"})
@@ -1225,7 +1139,6 @@ def test_wrapped_tool_with_remote_api_mode_skips_prereqs(
     """Verify wrapped tool skips prereq check for remote_api mode."""
     _ = clean_auto_pipeline_env
 
-    # Enable auto-pipeline but use remote_api mode
     os.environ[AUTO_PIPELINE_ENV] = "1"
     config = ServingConfig(
         mode="remote_api",
@@ -1244,7 +1157,6 @@ def test_wrapped_tool_with_remote_api_mode_skips_prereqs(
         backend=duckdb_backend,
     )
 
-    # Should execute without attempting prereqs
     result = wrapped()
 
     expect_equal(result, expected_result)
@@ -1257,7 +1169,6 @@ def test_full_flow_with_multiple_tool_calls(
     """Verify multiple wrapped tool calls work correctly."""
     env = auto_pipeline_test_env
 
-    # Seed a successful run
     params = RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="full")
     _seed_run(env.gateway.runs, params)
 
@@ -1278,13 +1189,11 @@ def test_full_flow_with_multiple_tool_calls(
         backend=env.backend,
     )
 
-    # Make multiple calls
     expected_call_count = 3
     wrapped(call=1)
     wrapped(call=2)
     wrapped(call=3)
 
-    # Verify all calls were captured
     expect_length(captured, expected_call_count)
     expect_equal(captured[0], {"call": 1})
     expect_equal(captured[1], {"call": 2})
@@ -1299,7 +1208,6 @@ def test_wrapped_tool_logs_when_prereqs_skipped(
     """Verify logging when prereqs are skipped due to existing run."""
     env = auto_pipeline_test_env
 
-    # Seed a successful run
     params = RunParams(repo="test/repo", commit="abc123", status="succeeded", kind="full")
     _seed_run(env.gateway.runs, params)
 
@@ -1323,13 +1231,7 @@ def test_wrapped_tool_logs_when_prereqs_skipped(
     with caplog.at_level(logging.DEBUG):
         wrapped()
 
-    # Should have debug logs from wrapper and possibly from ensure_prereqs_for_mcp
     expect_true(any("auto_pipeline" in r.message.lower() for r in caplog.records))
-
-
-# -----------------------------------------------------------------------------
-# Data-Aware Prerequisite Tests
-# -----------------------------------------------------------------------------
 
 
 def test_dataset_has_rows_for_snapshot_returns_true_when_data_present(
@@ -1395,7 +1297,6 @@ def test_dataset_has_rows_for_snapshot_returns_false_when_empty(
     if contract is None:
         pytest.skip("core.goids contract not found")
 
-    # Query for data that doesn't exist
     result = dataset_has_rows_for_snapshot(
         env.gateway,
         contract,
@@ -1416,7 +1317,7 @@ def test_get_required_table_keys_for_operation_returns_frozenset(
     auto_pipeline_test_env
         Test environment with gateway and configuration.
     """
-    _ = auto_pipeline_test_env  # Use env for fixture consistency
+    _ = auto_pipeline_test_env
 
     result = get_required_table_keys_for_operation("function.summary")
 
@@ -1433,7 +1334,7 @@ def test_get_required_table_keys_for_unknown_operation_returns_empty(
     auto_pipeline_test_env
         Test environment with gateway and configuration.
     """
-    _ = auto_pipeline_test_env  # Use env for fixture consistency
+    _ = auto_pipeline_test_env
 
     result = get_required_table_keys_for_operation("nonexistent.operation")
 
@@ -1452,7 +1353,6 @@ def test_has_required_data_for_operation_returns_false_when_missing(
     """
     env = auto_pipeline_test_env
 
-    # Query for data that doesn't exist
     result = has_required_data_for_operation(
         env.gateway,
         "function.summary",
@@ -1460,7 +1360,6 @@ def test_has_required_data_for_operation_returns_false_when_missing(
         commit="nonexistent",
     )
 
-    # Should be False because data doesn't exist
     expect_false(result)
 
 
@@ -1478,12 +1377,10 @@ def test_operation_prereqs_satisfied_uses_data_check_when_datasets_declared(
     repo = "test/repo"
     commit = "abc123"
 
-    # Get an operation with required_datasets
     op = get_operation("function.summary")
     if op is None or not op.required_datasets:
         pytest.skip("function.summary doesn't have required_datasets")
 
-    # Without seeding data, should return False
     result = operation_prereqs_satisfied(
         env.gateway,
         "function.summary",
@@ -1491,7 +1388,6 @@ def test_operation_prereqs_satisfied_uses_data_check_when_datasets_declared(
         commit=commit,
     )
 
-    # Data doesn't exist, so should be False
     expect_false(result)
 
 
@@ -1513,28 +1409,13 @@ def test_operation_prereqs_satisfied_falls_back_to_run_check(
     repo = "test/repo"
     commit = "abc123"
 
-    # Seed a successful run
     params = RunParams(repo=repo, commit=commit, status="succeeded", kind="full")
     _seed_run(env.gateway.runs, params)
 
-    # function.summary has required_targets (from required_graphs), so it uses
-    # DatabaseReadinessView check, not run-based fallback.
-    # Without target readiness data seeded, the check returns False.
     op = get_operation("function.summary")
     op_targets = get_targets_for_operation("function.summary")
 
-    if op_targets.required_targets:
-        # Operation has required targets - DatabaseReadinessView check applies
-        # Without target readiness data, result is False
-        result = operation_prereqs_satisfied(
-            env.gateway,
-            "function.summary",
-            repo=repo,
-            commit=commit,
-        )
-        expect_false(result)
-    elif op is not None and op.required_datasets:
-        # Fallback: If no required_targets but has required_datasets, data check applies
+    if op_targets.required_targets or (op is not None and op.required_datasets):
         result = operation_prereqs_satisfied(
             env.gateway,
             "function.summary",
@@ -1543,7 +1424,6 @@ def test_operation_prereqs_satisfied_falls_back_to_run_check(
         )
         expect_false(result)
     else:
-        # No requirements declared - consider satisfied
         result = operation_prereqs_satisfied(
             env.gateway,
             "function.summary",
@@ -1574,7 +1454,6 @@ def test_build_prereq_debug_info_returns_complete_info(
         commit=commit,
     )
 
-    # Check all expected fields
     expect_equal(debug_info.op_id, "function.summary")
     expect_equal(debug_info.repo, repo)
     expect_equal(debug_info.commit, commit)
@@ -1601,7 +1480,6 @@ def test_build_prereq_debug_info_includes_run_summaries(
     repo = "test/repo"
     commit = "abc123"
 
-    # Seed a run for this repo/commit
     params = RunParams(repo=repo, commit=commit, status="succeeded", kind="full")
     _seed_run(env.gateway.runs, params)
 
@@ -1612,10 +1490,8 @@ def test_build_prereq_debug_info_includes_run_summaries(
         commit=commit,
     )
 
-    # Should have at least one run considered
     expect_true(len(debug_info.runs_considered) >= 1)
 
-    # Run should match our seeded run
     run = debug_info.runs_considered[0]
     expect_equal(run.status, "succeeded")
     expect_equal(run.kind, "full")

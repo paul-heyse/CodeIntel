@@ -26,10 +26,6 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 from tests._helpers.cli_context import make_command_context
 
-# =============================================================================
-# DatasetInfoResult Tests
-# =============================================================================
-
 
 def test_dataset_info_result_to_dict() -> None:
     """DatasetInfoResult.to_dict returns expected structure."""
@@ -67,11 +63,6 @@ def test_dataset_info_result_empty_metadata() -> None:
     expect_true(not data["has_pandera_schema"])
 
 
-# =============================================================================
-# DatasetFlowResult Tests
-# =============================================================================
-
-
 def test_dataset_flow_result_to_dict() -> None:
     """DatasetFlowResult.to_dict returns expected structure."""
     result = DatasetFlowResult(
@@ -103,22 +94,14 @@ def test_dataset_flow_result_empty_flow() -> None:
     expect_equal(data["consumer_count"], 0)
 
 
-# =============================================================================
-# Handler Tests - Structured Functions
-# =============================================================================
-
-
 def test_dataset_info_structured_for_registered_dataset() -> None:
     """Structured info handler returns schema info for registered dataset."""
-    # Initialize the registry
     SCHEMA_REGISTRY.initialize()
 
-    # Check if we have any registered schemas
     all_schemas = SCHEMA_REGISTRY.all()
     if not all_schemas:
         pytest.skip("No schemas registered in SCHEMA_REGISTRY")
 
-    # Pick a known schema
     table_key = next(iter(all_schemas.keys()))
     result = dataset_info_structured(table_key=table_key)
 
@@ -140,15 +123,12 @@ def test_dataset_info_structured_for_unregistered_dataset() -> None:
 
 def test_dataset_flow_structured_for_registered_dataset() -> None:
     """Structured flow handler returns flow info for registered dataset."""
-    # Initialize the registry
     SCHEMA_REGISTRY.initialize()
 
-    # Check if we have any registered schemas
     all_schemas = SCHEMA_REGISTRY.all()
     if not all_schemas:
         pytest.skip("No schemas registered in SCHEMA_REGISTRY")
 
-    # Pick a known schema
     table_key = next(iter(all_schemas.keys()))
     result = dataset_flow_structured(table_key=table_key)
 
@@ -169,17 +149,10 @@ def test_dataset_flow_structured_for_unregistered_dataset() -> None:
     expect_is_not_none(result.error)
 
 
-# =============================================================================
-# Handler Tests - Context-Based
-# =============================================================================
-
-
 def test_dataset_info_handler_with_valid_table_key() -> None:
     """Info handler extracts table_key from context and returns result."""
-    # Initialize the registry
     SCHEMA_REGISTRY.initialize()
 
-    # Check if we have any registered schemas
     all_schemas = SCHEMA_REGISTRY.all()
     if not all_schemas:
         pytest.skip("No schemas registered in SCHEMA_REGISTRY")
@@ -200,10 +173,8 @@ def test_dataset_info_handler_with_valid_table_key() -> None:
 
 def test_dataset_flow_handler_with_valid_table_key() -> None:
     """Flow handler extracts table_key from context and returns result."""
-    # Initialize the registry
     SCHEMA_REGISTRY.initialize()
 
-    # Check if we have any registered schemas
     all_schemas = SCHEMA_REGISTRY.all()
     if not all_schemas:
         pytest.skip("No schemas registered in SCHEMA_REGISTRY")
@@ -222,11 +193,6 @@ def test_dataset_flow_handler_with_valid_table_key() -> None:
         expect_equal(result.data.table_key, table_key)
 
 
-# =============================================================================
-# Integration Tests
-# =============================================================================
-
-
 def test_dataset_info_includes_column_names() -> None:
     """Info result includes actual column names from schema."""
     SCHEMA_REGISTRY.initialize()
@@ -235,7 +201,6 @@ def test_dataset_info_includes_column_names() -> None:
     if not all_schemas:
         pytest.skip("No schemas registered in SCHEMA_REGISTRY")
 
-    # Test with a well-known schema if available
     known_tables = ["analytics.function_metrics", "core.goids"]
     table_key = None
     for key in known_tables:
@@ -250,7 +215,6 @@ def test_dataset_info_includes_column_names() -> None:
 
     expect_true(result.success)
     if result.data is not None:
-        # Columns should be present
         expect_true(len(result.data.columns) > 0)
 
 
@@ -267,6 +231,5 @@ def test_dataset_info_json_schema_is_valid() -> None:
 
     expect_true(result.success)
     if result.data is not None:
-        # JSON schema should have type key
         json_schema = result.data.json_schema
         expect_is_instance(json_schema, dict)

@@ -14,10 +14,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Final, Literal
 
-# ---------------------------------------------------------------------------
-# Schema Definition Types
-# ---------------------------------------------------------------------------
-
 ColumnType = Literal[
     "BOOLEAN",
     "INTEGER",
@@ -123,34 +119,26 @@ class TableSchema:
         return [col.name for col in self.columns]
 
 
-# Type aliases for row serialization
 RowToTuple = Callable[[Mapping[str, object]], tuple[object, ...]]
 RowDictType = type[object]
 
 
-# ---------------------------------------------------------------------------
-# Reusable Column Fragments
-# ---------------------------------------------------------------------------
-# These fragments provide composable building blocks for TABLE_SCHEMAS.
-# Use tuple unpacking (*FRAGMENT) to include them in column lists.
-
-# Versioning context (repo + commit)
 REPO_COMMIT_COLS: Final[tuple[Column, ...]] = (
     Column("repo", "VARCHAR", nullable=False),
     Column("commit", "VARCHAR", nullable=False),
 )
 
-# Function entity identification (GOID only, nullable=False)
+
 FUNCTION_GOID_COL: Final[tuple[Column, ...]] = (
     Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
 )
 
-# Function entity identification (GOID only, nullable)
+
 FUNCTION_GOID_COL_NULLABLE: Final[tuple[Column, ...]] = (
     Column("function_goid_h128", "DECIMAL(38,0)"),
 )
 
-# Function entity with full context (nullable columns for analytics tables)
+
 FUNCTION_ENTITY_COLS: Final[tuple[Column, ...]] = (
     Column("function_goid_h128", "DECIMAL(38,0)"),
     Column("urn", "VARCHAR"),
@@ -164,21 +152,21 @@ FUNCTION_ENTITY_COLS: Final[tuple[Column, ...]] = (
     Column("end_line", "INTEGER"),
 )
 
-# Module entity identification
+
 MODULE_ENTITY_COLS: Final[tuple[Column, ...]] = (
     Column("repo", "VARCHAR", nullable=False),
     Column("commit", "VARCHAR", nullable=False),
     Column("module", "VARCHAR", nullable=False),
 )
 
-# Subsystem entity identification
+
 SUBSYSTEM_ENTITY_COLS: Final[tuple[Column, ...]] = (
     Column("repo", "VARCHAR", nullable=False),
     Column("commit", "VARCHAR", nullable=False),
     Column("subsystem_id", "VARCHAR", nullable=False),
 )
 
-# Test entity identification
+
 TEST_ENTITY_COLS: Final[tuple[Column, ...]] = (
     Column("test_id", "VARCHAR", nullable=False),
     Column("test_goid_h128", "DECIMAL(38,0)"),
@@ -186,35 +174,30 @@ TEST_ENTITY_COLS: Final[tuple[Column, ...]] = (
     Column("commit", "VARCHAR", nullable=False),
 )
 
-# Timestamp suffix (nullable=False)
+
 CREATED_AT_COL: Final[tuple[Column, ...]] = (Column("created_at", "TIMESTAMP", nullable=False),)
 
-# Timestamp suffix (nullable)
+
 CREATED_AT_COL_NULLABLE: Final[tuple[Column, ...]] = (Column("created_at", "TIMESTAMP"),)
 
-# Location columns (for entities with source spans)
+
 SOURCE_SPAN_COLS: Final[tuple[Column, ...]] = (
     Column("rel_path", "VARCHAR"),
     Column("start_line", "INTEGER"),
     Column("end_line", "INTEGER"),
 )
 
-# Risk columns (used in risk factor tables)
+
 RISK_COLS: Final[tuple[Column, ...]] = (
     Column("risk_score", "DOUBLE"),
     Column("risk_level", "VARCHAR"),
 )
 
-# Ownership columns (tags and owners)
+
 OWNERSHIP_COLS: Final[tuple[Column, ...]] = (
     Column("tags", "JSON"),
     Column("owners", "JSON"),
 )
-
-
-# ---------------------------------------------------------------------------
-# CompositeSchema - Profile Composition Metadata
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,15 +275,13 @@ class CompositeSchema:
                 continue
             for col_name in schema.column_names():
                 if col_name in shared_cols:
-                    # Shared columns are added once, not per-source
                     continue
                 if col_name in self.excluded_columns:
                     continue
-                # Apply mapping if present
+
                 mapped_name = self.column_mappings.get(col_name, col_name)
                 result.add(mapped_name)
 
-        # Add shared fragment columns (once)
         result.update(shared_cols)
         return result
 
@@ -325,19 +306,13 @@ class CompositeSchema:
         """
         errors: list[str] = []
 
-        # Get expected columns from sources
         expected_from_sources = self.source_column_names(table_schemas)
 
-        # Get actual profile columns
         actual_cols = set(profile_schema.column_names())
 
-        # Check for missing columns (expected but not in profile)
         missing = expected_from_sources - actual_cols
         if missing:
             errors.append(f"Missing columns from sources: {sorted(missing)}")
-
-        # Note: We don't flag extra columns as errors since profiles may have
-        # computed columns or columns from sources not yet mapped
 
         return errors
 
@@ -360,22 +335,17 @@ class CompositeSchema:
         str | None
             The table key of the source providing this column, or None.
         """
-        # Check if it's a shared fragment column
         shared_cols = self._get_shared_column_names()
         if column_name in shared_cols:
-            # Shared columns come from all sources; return first
             return self.composed_of[0] if self.composed_of else None
 
-        # Check if it's an additional column
         for col in self.additional_columns:
             if col.name == column_name:
-                return None  # Profile-specific, no source
+                return None
 
-        # Reverse the mapping to find source name
         reverse_mapping = {v: k for k, v in self.column_mappings.items()}
         source_name = reverse_mapping.get(column_name, column_name)
 
-        # Search source tables
         for table_key in self.composed_of:
             schema = table_schemas.get(table_key)
             if schema is None:

@@ -101,7 +101,7 @@ def compute_input_hash(payload: InputHashPayload) -> str:
         "version_hash": payload.version_hash,
         "options_hash": payload.options_hash,
     }
-    # Include any extra fields
+
     data.update(payload.extra_fields)
 
     serialized = json.dumps(data, sort_keys=True, default=str)
@@ -421,11 +421,6 @@ def build_manifest_entry(
     }
 
 
-# =============================================================================
-# ManifestStore Protocol
-# =============================================================================
-
-
 class ManifestStore(Protocol):
     """Abstract interface for storing and retrieving execution records."""
 
@@ -454,11 +449,6 @@ class ManifestQuery:
     commit: str
     scope_id: str | None
     variant: str | None
-
-
-# =============================================================================
-# Upstream State Resolution
-# =============================================================================
 
 
 def compute_scope_id(paths: list[str] | None) -> str | None:

@@ -10,7 +10,6 @@ This package provides:
 
 from __future__ import annotations
 
-# CLI error handling exports
 from codeintel.cli.errors._cli_errors import (
     CLI_EXIT_SUCCESS,
     CLI_EXIT_USAGE,
@@ -32,12 +31,7 @@ from codeintel.cli.errors._cli_errors import (
     run_structured_handler,
     runtime_required,
 )
-
-# Error builder (consolidated ProblemDetail creation)
 from codeintel.cli.errors.builder import ProblemBuilder
-
-# Factory exports (consolidated in results.py)
-# Result factories (new consolidated API)
 from codeintel.cli.errors.results import (
     fail_config,
     fail_domain,
@@ -54,8 +48,6 @@ from codeintel.cli.errors.results import (
     fail_validation,
     fail_with_problem,
 )
-
-# Error taxonomy exports
 from codeintel.cli.errors.taxonomy import (
     ALREADY_EXISTS,
     AUTH_FAILED,
@@ -112,7 +104,6 @@ from codeintel.cli.errors.taxonomy import (
 )
 
 __all__ = [
-    # Error codes
     "ALREADY_EXISTS",
     "AUTH_FAILED",
     "CANCELLED",
@@ -143,7 +134,6 @@ __all__ = [
     "SCHEMA_MISMATCH",
     "SERVICE_UNAVAILABLE",
     "TIMEOUT",
-    # Error types and enums
     "CliError",
     "ConfigErrorCode",
     "DocsValidationError",
@@ -169,11 +159,9 @@ __all__ = [
     "UnknownOptionCliError",
     "ValidationError",
     "ValidationErrorCode",
-    # Taxonomy functions
     "config_error",
     "config_not_found_error",
     "config_validation_error",
-    # Result factories (new consolidated API)
     "fail_config",
     "fail_domain",
     "fail_internal",
@@ -188,7 +176,6 @@ __all__ = [
     "fail_storage_query",
     "fail_validation",
     "fail_with_problem",
-    # Handler utilities
     "handle_cli_error",
     "internal_error",
     "job_not_found_error",

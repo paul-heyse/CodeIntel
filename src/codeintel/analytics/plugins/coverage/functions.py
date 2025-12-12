@@ -74,9 +74,8 @@ class CoverageFunctionsPlugin(TargetPlugin):
         TargetResult
             Success result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Build config from context
         cfg = CoverageAnalyticsStepConfig(
             snapshot=ctx.snapshot,
         )

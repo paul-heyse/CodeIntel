@@ -166,7 +166,7 @@ class TypednessRow(TypedDict):
     commit: str
     path: str
     type_error_count: int
-    annotation_ratio: str  # JSON string
+    annotation_ratio: str
     untyped_defs: int
     overlay_needed: bool
 

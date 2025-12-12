@@ -31,11 +31,6 @@ def _expect_equal(actual: object, expected: object, label: str) -> None:
         pytest.fail(f"{label}: expected {expected!r}, got {actual!r}")
 
 
-# ------------------------------------------------------------------
-# DependencyNode tests
-# ------------------------------------------------------------------
-
-
 def test_dependency_node_creation() -> None:
     """Create DependencyNode with basic fields."""
     node = DependencyNode(
@@ -120,11 +115,6 @@ def test_dependency_node_is_leaf() -> None:
     )
     _require(condition=leaf_node.is_leaf, message="should be leaf")
     _require(condition=not non_leaf.is_leaf, message="should not be leaf")
-
-
-# ------------------------------------------------------------------
-# DependencyGraph tests
-# ------------------------------------------------------------------
 
 
 def test_dependency_graph_creation() -> None:
@@ -214,15 +204,10 @@ def test_dependency_graph_topological_order() -> None:
 
     order = graph.topological_order()
     _expect_equal(len(order), 2, "order length")
-    # Root should come before child
+
     root_idx = order.index("root")
     child_idx = order.index("child")
     _require(condition=root_idx < child_idx, message="root should come before child")
-
-
-# ------------------------------------------------------------------
-# infer_upstream_dependencies tests
-# ------------------------------------------------------------------
 
 
 def test_infer_upstream_dependencies_returns_list() -> None:
@@ -237,11 +222,6 @@ def test_infer_upstream_dependencies_unknown_table() -> None:
     _expect_equal(len(result), 0, "should be empty")
 
 
-# ------------------------------------------------------------------
-# infer_downstream_consumers tests
-# ------------------------------------------------------------------
-
-
 def test_infer_downstream_consumers_returns_list() -> None:
     """Verify infer_downstream_consumers returns a list."""
     result = infer_downstream_consumers("core.goids")
@@ -254,11 +234,6 @@ def test_infer_downstream_consumers_unknown_table() -> None:
     _expect_equal(len(result), 0, "should be empty")
 
 
-# ------------------------------------------------------------------
-# build_dependency_graph tests
-# ------------------------------------------------------------------
-
-
 def test_build_dependency_graph_returns_graph() -> None:
     """Verify build_dependency_graph returns DependencyGraph."""
     result = build_dependency_graph()
@@ -268,13 +243,8 @@ def test_build_dependency_graph_returns_graph() -> None:
 def test_build_dependency_graph_has_nodes() -> None:
     """Verify build_dependency_graph includes registered tables."""
     result = build_dependency_graph()
-    # Should have at least some tables if registry is populated
+
     _require(condition=result.table_count >= 0, message="table_count should be non-negative")
-
-
-# ------------------------------------------------------------------
-# get_transitive_dependencies tests
-# ------------------------------------------------------------------
 
 
 def test_get_transitive_dependencies_returns_list() -> None:
@@ -287,18 +257,13 @@ def test_get_transitive_dependencies_include_self() -> None:
     """Verify include_self option works."""
     result_without = get_transitive_dependencies("test.table", include_self=False)
     result_with = get_transitive_dependencies("test.table", include_self=True)
-    # With should include table itself, without should not
+
     _require(
         condition="test.table" not in result_without,
         message="should not include self without flag",
     )
-    # Can't guarantee it's in result_with if there are no deps, but should differ
+
     _require(condition=isinstance(result_with, list), message="should return list")
-
-
-# ------------------------------------------------------------------
-# get_transitive_consumers tests
-# ------------------------------------------------------------------
 
 
 def test_get_transitive_consumers_returns_list() -> None:
@@ -311,7 +276,7 @@ def test_get_transitive_consumers_include_self() -> None:
     """Verify include_self option works."""
     result_without = get_transitive_consumers("test.table", include_self=False)
     result_with = get_transitive_consumers("test.table", include_self=True)
-    # With should include table itself, without should not
+
     _require(
         condition="test.table" not in result_without,
         message="should not include self without flag",

@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from duckdb import Error as DuckDBError
 
-# Tuple of DuckDB-related exceptions that can be caught and handled.
-# This is used by both storage and core.execution layers.
 DUCKDB_ERRORS: tuple[type[Exception], ...] = (DuckDBError,)
 
 __all__ = [

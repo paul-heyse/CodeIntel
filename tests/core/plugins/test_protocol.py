@@ -42,17 +42,13 @@ RESOURCE_MAX_RUNTIME_MS = 5000
 RESOURCE_MAX_MEMORY_MB = 512
 RESOURCE_PRIORITY = 10
 
-# =============================================================================
-# PluginCapability Tests
-# =============================================================================
-
 
 def test_plugin_capability_construction() -> None:
     """Verify PluginCapability can be constructed with required fields."""
     capability = PluginCapability(name="test.capability")
 
     expect_equal(capability.name, "test.capability")
-    expect_equal(capability.kind, "dataset")  # Default
+    expect_equal(capability.kind, "dataset")
 
 
 def test_plugin_capability_with_kind() -> None:
@@ -70,20 +66,15 @@ def test_plugin_capability_is_frozen() -> None:
     assert_frozen(capability, "name", "modified")
 
 
-# =============================================================================
-# PluginInputSpec Tests
-# =============================================================================
-
-
 def test_plugin_input_spec_construction() -> None:
     """Verify PluginInputSpec can be constructed."""
     spec = PluginInputSpec(name="config", type_ref="AppConfig")
 
     expect_equal(spec.name, "config")
     expect_equal(spec.type_ref, "AppConfig")
-    expect_true(spec.required)  # Default
-    expect_equal(spec.source, "config")  # Default
-    expect_true(spec.default is None)  # Default
+    expect_true(spec.required)
+    expect_equal(spec.source, "config")
+    expect_true(spec.default is None)
 
 
 def test_plugin_input_spec_optional() -> None:
@@ -117,20 +108,15 @@ def test_plugin_input_spec_is_frozen() -> None:
     assert_frozen(spec, "name", "modified")
 
 
-# =============================================================================
-# PluginOutputSpec Tests
-# =============================================================================
-
-
 def test_plugin_output_spec_construction() -> None:
     """Verify PluginOutputSpec can be constructed."""
     spec = PluginOutputSpec(name="metrics")
 
     expect_equal(spec.name, "metrics")
-    expect_equal(spec.tables, ())  # Default
-    expect_true(spec.artifact_type is None)  # Default
-    expect_true(spec.min_rows is None)  # Default
-    expect_equal(spec.required_columns, ())  # Default
+    expect_equal(spec.tables, ())
+    expect_true(spec.artifact_type is None)
+    expect_true(spec.min_rows is None)
+    expect_equal(spec.required_columns, ())
 
 
 def test_plugin_output_spec_with_tables() -> None:
@@ -155,11 +141,6 @@ def test_plugin_output_spec_with_artifact() -> None:
     )
 
     expect_equal(spec.artifact_type, "networkx.DiGraph")
-
-
-# =============================================================================
-# PluginResourceHints Tests
-# =============================================================================
 
 
 def test_plugin_resource_hints_defaults() -> None:
@@ -190,11 +171,6 @@ def test_plugin_resource_hints_all_fields() -> None:
     expect_true(hints.cpu_intensive)
     expect_true(hints.requires_gpu)
     expect_equal(hints.priority, RESOURCE_PRIORITY)
-
-
-# =============================================================================
-# ValidationResult Tests
-# =============================================================================
 
 
 def test_validation_result_success() -> None:
@@ -232,11 +208,6 @@ def test_validation_result_is_frozen() -> None:
     result = ValidationResult.success()
 
     assert_frozen(result, "valid", new_value=False)
-
-
-# =============================================================================
-# PluginMetadata Tests
-# =============================================================================
 
 
 def test_plugin_metadata_minimal() -> None:
@@ -327,14 +298,13 @@ def test_plugin_metadata_all_fields() -> None:
 
 def test_plugin_metadata_post_init_isolation_normalization() -> None:
     """Verify __post_init__ normalizes requires_isolation based on isolation_kind."""
-    # When isolation_kind is not "none", requires_isolation should be True
     metadata = PluginMetadata(
         name="test.isolated",
         description="Isolated plugin",
         kind="analytics",
         stage="function",
         isolation_kind="process",
-        requires_isolation=False,  # Should be normalized to True
+        requires_isolation=False,
     )
 
     expect_true(metadata.requires_isolation)
@@ -364,11 +334,6 @@ def test_plugin_metadata_is_frozen() -> None:
     )
 
     assert_frozen(metadata, "name", "modified")
-
-
-# =============================================================================
-# Literal Type Coverage Tests
-# =============================================================================
 
 
 @pytest.mark.parametrize(
@@ -479,15 +444,9 @@ def test_input_source_values(source: InputSource) -> None:
     expect_equal(spec.source, source)
 
 
-# =============================================================================
-# PluginProtocol Runtime Check Tests
-# =============================================================================
-
-
 def test_plugin_protocol_is_runtime_checkable() -> None:
     """Verify PluginProtocol is a runtime_checkable protocol."""
 
-    # Classes implementing the protocol should pass isinstance checks
     class ConformingPlugin:
         def __init__(self) -> None:
             self._metadata = PluginMetadata(
@@ -510,7 +469,7 @@ def test_plugin_protocol_is_runtime_checkable() -> None:
             return ValidationResult.success()
 
     plugin = ConformingPlugin()
-    # Use hasattr checks for protocol compliance instead of isinstance
+
     expect_true(hasattr(plugin, "metadata"))
     expect_true(hasattr(plugin, "execute"))
     expect_true(hasattr(plugin, "validate_inputs"))

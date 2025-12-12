@@ -84,7 +84,7 @@ class GraphData:
             Graph data extracted from NetworkX.
         """
         nodes = tuple(graph.nodes())
-        # Cast edges to expected type due to imprecise NetworkX stubs
+
         edges_list = cast("list[tuple[Any, Any]]", list(graph.edges()))
         edges = tuple(edges_list)
         node_attrs = {node: dict(graph.nodes[node]) for node in graph.nodes()}

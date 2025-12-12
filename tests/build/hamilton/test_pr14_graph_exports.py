@@ -37,7 +37,6 @@ class TestMermaidExport:
         runtime = build_driver(mode="phase0")
         result = export_dag_mermaid(runtime, ["modules"])
 
-        # Mermaid DAG should start with graph or flowchart directive
         if not result.strip().startswith(("graph", "flowchart")):
             pytest.fail(f"Mermaid should start with graph/flowchart: {result[:50]}")
 
@@ -48,7 +47,6 @@ class TestMermaidExport:
         runtime = build_driver(mode="phase0")
         result = export_dag_mermaid(runtime, ["modules"])
 
-        # Should contain reference to modules target
         if "modules" not in result.lower():
             pytest.fail("Mermaid output should reference modules target")
 
@@ -75,11 +73,9 @@ class TestDotExport:
         runtime = build_driver(mode="phase0")
         result = export_dag_dot(runtime, ["modules"])
 
-        # DOT digraph should start with "digraph"
         if not result.strip().startswith("digraph"):
             pytest.fail(f"DOT should start with digraph: {result[:50]}")
 
-        # Should contain opening and closing braces
         if "{" not in result or "}" not in result:
             pytest.fail("DOT output should contain braces")
 
@@ -90,7 +86,6 @@ class TestDotExport:
         runtime = build_driver(mode="phase0")
         result = export_dag_dot(runtime, ["modules"])
 
-        # Should contain reference to modules target
         if "modules" not in result.lower():
             pytest.fail("DOT output should reference modules target")
 
@@ -107,7 +102,6 @@ class TestGraphExportConsistency:
         mermaid = export_dag_mermaid(runtime, ["modules", "scip"])
         dot = export_dag_dot(runtime, ["modules", "scip"])
 
-        # Both should contain modules and scip references
         for target in ["modules", "scip"]:
             if target not in mermaid.lower():
                 pytest.fail(f"Mermaid missing target: {target}")

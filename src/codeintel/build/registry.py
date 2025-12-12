@@ -33,9 +33,6 @@ log = logging.getLogger(__name__)
 
 _DATASET_TABLE_SCHEMAS = get_table_schemas()
 
-# =============================================================================
-# Ingestion Targets
-# =============================================================================
 
 MODULES_TARGET = OutputTarget(
     name="modules",
@@ -129,9 +126,6 @@ CONFIG_INGEST_TARGET = OutputTarget(
     description="Configuration file parsing and reference tracking.",
 )
 
-# =============================================================================
-# Graph Targets
-# =============================================================================
 
 GOIDS_TARGET = OutputTarget(
     name="goids",
@@ -193,7 +187,7 @@ CFG_TARGET = OutputTarget(
 DFG_TARGET = OutputTarget(
     name="dfg",
     module="graphs",
-    plugin="",  # No separate plugin - CFG target runs cfg_dfg which produces both
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["graph.dfg_edges"],)),
     dependencies=("cfg",),
     description="Data flow graph construction per function.",
@@ -224,9 +218,6 @@ GRAPH_VALIDATION_TARGET = OutputTarget(
     description="Graph integrity validation checks.",
 )
 
-# =============================================================================
-# Analytics Targets
-# =============================================================================
 
 HOTSPOTS_TARGET = OutputTarget(
     name="hotspots",
@@ -447,15 +438,12 @@ FUNCTION_AST_FEATURES_TARGET = OutputTarget(
     description="AST-derived semantic features for functions.",
 )
 
-# =============================================================================
-# Export Targets
-# =============================================================================
 
 EXPORT_JSONL_TARGET = OutputTarget(
     name="export_jsonl",
     module="export",
     plugin="export_jsonl",
-    dependencies=("profiles",),  # Depends on analytics being complete
+    dependencies=("profiles",),
     description="Export datasets to JSONL format for Document Output.",
 )
 
@@ -463,16 +451,12 @@ EXPORT_PARQUET_TARGET = OutputTarget(
     name="export_parquet",
     module="export",
     plugin="export_parquet",
-    dependencies=("profiles",),  # Depends on analytics being complete
+    dependencies=("profiles",),
     description="Export datasets to Parquet format for Document Output.",
 )
 
-# =============================================================================
-# Target Registration
-# =============================================================================
 
 ALL_TARGETS: tuple[OutputTarget, ...] = (
-    # Ingestion
     MODULES_TARGET,
     AST_TARGET,
     CST_TARGET,
@@ -482,7 +466,6 @@ ALL_TARGETS: tuple[OutputTarget, ...] = (
     TESTS_INGEST_TARGET,
     DOCSTRINGS_TARGET,
     CONFIG_INGEST_TARGET,
-    # Graphs
     GOIDS_TARGET,
     CALL_GRAPH_TARGET,
     IMPORT_GRAPH_TARGET,
@@ -491,7 +474,6 @@ ALL_TARGETS: tuple[OutputTarget, ...] = (
     CFG_DFG_METRICS_TARGET,
     SYMBOL_USES_TARGET,
     GRAPH_VALIDATION_TARGET,
-    # Analytics
     HOTSPOTS_TARGET,
     FUNCTION_METRICS_TARGET,
     FUNCTION_EFFECTS_TARGET,
@@ -517,7 +499,6 @@ ALL_TARGETS: tuple[OutputTarget, ...] = (
     EXTERNAL_DEPS_TARGET,
     PROFILES_TARGET,
     FUNCTION_AST_FEATURES_TARGET,
-    # Export
     EXPORT_JSONL_TARGET,
     EXPORT_PARQUET_TARGET,
 )

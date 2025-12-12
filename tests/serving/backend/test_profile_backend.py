@@ -21,11 +21,6 @@ def _expect(*, condition: bool, message: str) -> None:
     expect_true(condition, message=message)
 
 
-# -----------------------------------------------------------------------------
-# Tests for backend properties
-# -----------------------------------------------------------------------------
-
-
 def test_backend_con_property(architecture_gateway: StorageGateway) -> None:
     """Verify con property returns DuckDB connection."""
     components = build_backend_components(architecture_gateway)
@@ -74,11 +69,6 @@ def test_backend_subsystems_property(architecture_gateway: StorageGateway) -> No
     )
 
 
-# -----------------------------------------------------------------------------
-# Tests for get_file_profile
-# -----------------------------------------------------------------------------
-
-
 def test_get_file_profile_not_found(architecture_gateway: StorageGateway) -> None:
     """Return not-found metadata when file profile is missing."""
     components = build_backend_components(architecture_gateway)
@@ -105,19 +95,12 @@ def test_get_file_profile_success(architecture_gateway: StorageGateway) -> None:
         repositories=components.repositories,
     )
 
-    # The architecture fixture seeds pkg/mod.py
     result = backend.get_file_profile(rel_path="pkg/mod.py")
 
-    # The file may or may not have a profile depending on fixture setup
     _expect(
         condition=result is not None,
         message="Should return a result object",
     )
-
-
-# -----------------------------------------------------------------------------
-# Tests for get_file_summary
-# -----------------------------------------------------------------------------
 
 
 def test_get_file_summary_not_found(architecture_gateway: StorageGateway) -> None:
@@ -145,8 +128,6 @@ def test_get_file_summary_success(architecture_gateway: StorageGateway) -> None:
         repositories=components.repositories,
     )
 
-    # Try to get summary for a known file - this may raise not_found
-    # depending on fixture data, but we verify it handles the call correctly
     try:
         result = backend.get_file_summary(rel_path="pkg/mod.py")
         _expect(
@@ -170,7 +151,6 @@ def test_get_file_summary_with_scope(architecture_gateway: StorageGateway) -> No
 
     scope = GraphRunScope(paths=("pkg/mod.py",), modules=("pkg.mod",))
 
-    # Try to get summary with scope
     try:
         result = backend.get_file_summary(rel_path="pkg/mod.py", scope=scope)
         _expect(
@@ -182,11 +162,6 @@ def test_get_file_summary_with_scope(architecture_gateway: StorageGateway) -> No
             condition=exc.detail.code == "not-found",
             message="Should raise not-found if summary missing",
         )
-
-
-# -----------------------------------------------------------------------------
-# Tests for get_module_profile
-# -----------------------------------------------------------------------------
 
 
 def test_get_module_profile_not_found(architecture_gateway: StorageGateway) -> None:
@@ -214,7 +189,6 @@ def test_get_module_profile_success(architecture_gateway: StorageGateway) -> Non
         repositories=components.repositories,
     )
 
-    # The architecture fixture seeds module_profile for pkg.mod
     result = backend.get_module_profile(module="pkg.mod")
 
     _expect(
@@ -226,11 +200,6 @@ def test_get_module_profile_success(architecture_gateway: StorageGateway) -> Non
             condition=result.profile.get("module") == "pkg.mod",
             message="Module name should be preserved in profile",
         )
-
-
-# -----------------------------------------------------------------------------
-# Tests for get_module_architecture
-# -----------------------------------------------------------------------------
 
 
 def test_get_module_architecture_success(architecture_gateway: StorageGateway) -> None:
@@ -267,11 +236,6 @@ def test_get_module_architecture_not_found(architecture_gateway: StorageGateway)
         condition=excinfo.value.detail.code == "not-found",
         message="Missing module architecture should raise not-found error",
     )
-
-
-# -----------------------------------------------------------------------------
-# Tests for get_file_hints
-# -----------------------------------------------------------------------------
 
 
 def test_get_file_hints_returns_result(architecture_gateway: StorageGateway) -> None:

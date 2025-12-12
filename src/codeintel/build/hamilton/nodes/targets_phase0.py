@@ -47,6 +47,7 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.dataset_ref import refs_from_target_result, refs_to_tuple
 from codeintel.build.hamilton.manifest_hook import (
     ManifestSaveRequest,
+    SkipCheckRequest,
     TargetRunRecord,
     compute_target_input_hash,
     compute_target_options_hash,
@@ -58,11 +59,6 @@ from codeintel.build.plugin_registry import get_plugin_for_target
 from codeintel.build.targets import OutputTarget, TargetGraph
 
 log = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Internal Helpers
-# =============================================================================
 
 
 def _check_upstream_failures(upstream: tuple[TargetRunRecord, ...]) -> tuple[str, ...]:
@@ -274,11 +270,6 @@ def _build_success_record(params: _SuccessRecordParams) -> TargetRunRecord:
     )
 
 
-# =============================================================================
-# Main Execution Helper
-# =============================================================================
-
-
 def _run_target(
     *,
     env: BuildEnv,
@@ -320,7 +311,6 @@ def _run_target(
 
     meta = from_plugin_or_target(plugin=plugin, target=target)
 
-    # Check upstream failures
     failed_upstream = _check_upstream_failures(upstream)
     if failed_upstream:
         log.info("build.hamilton.upstream_failed target=%s", target_name)
@@ -332,17 +322,15 @@ def _run_target(
             error=f"upstream_failed:{','.join(failed_upstream)}",
         )
 
-    # Compute hashes
     hashes = _compute_hashes(env, target, target_name)
 
-    # Check skip
     if _should_skip_target(env, target_name, hashes.input_hash):
         log.info(
             "build.hamilton.skip target=%s input_hash=%s",
             target_name,
             hashes.input_hash,
         )
-        # Populate dataset refs even when skipped for asset-centric DAG
+
         skip_table_keys = target.contract.table_keys or target.table_keys
         skip_refs = refs_from_target_result(
             target_name=target_name,
@@ -361,7 +349,6 @@ def _run_target(
             datasets=skip_datasets,
         )
 
-    # Execute plugin
     try:
         result, duration_ms = _execute_plugin(env, target, hashes.raw_params, plugin)
     except Exception as exc:
@@ -401,15 +388,6 @@ def _run_target(
         row_counts=row_counts,
         error=result.error_message,
     )
-
-
-# =============================================================================
-# Phase 0 Hamilton Nodes
-# =============================================================================
-
-# Note: Hamilton determines dependencies from function parameter names.
-# Each node function receives env and graph as common inputs, plus any
-# upstream node outputs as dependencies.
 
 
 @tag(domain="ingestion", target="modules")
@@ -637,13 +615,6 @@ def t__risk_factors(
     )
 
 
-# =============================================================================
-# Node Registry
-# =============================================================================
-
-# These are the available node functions for Phase 0.
-# Hamilton will discover them automatically from this module.
-
 PHASE0_NODES: tuple[Any, ...] = (
     t__modules,
     t__scip,
@@ -654,7 +625,7 @@ PHASE0_NODES: tuple[Any, ...] = (
     t__risk_factors,
 )
 
-# Mapping from target name to node name for executor lookups
+
 TARGET_TO_NODE: dict[str, str] = {
     "modules": "t__modules",
     "scip": "t__scip",

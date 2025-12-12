@@ -42,7 +42,6 @@ if TYPE_CHECKING:
     )
 
 
-# Categories handled by the unified tool builder
 _STANDARD_CATEGORIES: set[str] = {"functions", "graph", "files", "profiles", "datasets"}
 
 
@@ -144,13 +143,13 @@ def register_tools(
         Optional serving config for auto-pipeline support.
     """
     registrar = as_registrar(mcp)
-    # Register standard category-based tools via unified builder
+
     register_tools_for_category(registrar, backend, _STANDARD_CATEGORIES, config)
-    # Register architecture/subsystem tools (custom implementation)
+
     register_architecture_tools(registrar, backend, config)
-    # Register introspection/meta tools (custom implementation)
+
     register_meta_tools(registrar, backend)
-    # Expose registered tools for callers that inspect `mcp.tools` in tests/utilities.
+
     _expose_tools(mcp)
 
 

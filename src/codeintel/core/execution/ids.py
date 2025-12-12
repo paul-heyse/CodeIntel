@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-# Standard prefixes for run ID generation
 RUN_PREFIX_PIPELINE = "ci"
 RUN_PREFIX_INGEST = "ingest"
 RUN_PREFIX_GRAPHS = "graphs"

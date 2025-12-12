@@ -28,10 +28,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# =============================================================================
-# Test Fixtures
-# =============================================================================
-
 
 @dataclass
 class TestConfig:
@@ -46,11 +42,6 @@ class AnotherConfig:
     """Another test configuration class."""
 
     name: str
-
-
-# =============================================================================
-# ConfigRegistry Basic Tests
-# =============================================================================
 
 
 def test_config_registry_empty_by_default() -> None:
@@ -149,11 +140,6 @@ def test_config_registry_clear() -> None:
     expect_false(registry.has(AnotherConfig))
 
 
-# =============================================================================
-# Type Safety Tests
-# =============================================================================
-
-
 def test_config_registry_register_type_mismatch() -> None:
     """Verify register raises ConfigTypeError for type mismatch."""
     registry = ConfigRegistry()
@@ -178,11 +164,6 @@ def test_config_registry_multiple_types() -> None:
     expect_true(registry.get(TestConfig) is test_config)
     expect_true(registry.get(AnotherConfig) is another_config)
     expect_equal(len(registry), 2)
-
-
-# =============================================================================
-# Validator Tests
-# =============================================================================
 
 
 def test_config_registry_register_validator() -> None:
@@ -231,7 +212,6 @@ def test_config_registry_validate_all() -> None:
     config = TestConfig(host="localhost", port=5432)
     registry.register(TestConfig, config)
 
-    # Clear and re-validate
     validated.clear()
     registry.validate_all()
 
@@ -251,15 +231,10 @@ def test_config_registry_validate_all_raises() -> None:
 
     registry.register_validator(TestConfig, validator)
     config = TestConfig(host="localhost", port=5432)
-    registry.register(TestConfig, config)  # First call passes
+    registry.register(TestConfig, config)
 
     with pytest.raises(ConfigValidationError):
-        registry.validate_all()  # Second call fails
-
-
-# =============================================================================
-# Iteration and Container Protocol Tests
-# =============================================================================
+        registry.validate_all()
 
 
 def test_config_registry_len() -> None:
@@ -308,11 +283,6 @@ def test_config_registry_types() -> None:
     expect_true(AnotherConfig in types)
 
 
-# =============================================================================
-# Mapping and Copy Tests
-# =============================================================================
-
-
 def test_config_registry_as_mapping() -> None:
     """Verify as_mapping returns correct mapping."""
     registry = ConfigRegistry()
@@ -333,11 +303,9 @@ def test_config_registry_copy() -> None:
 
     registry2 = registry1.copy()
 
-    # Both have the config
     expect_true(registry2.has(TestConfig))
     expect_true(registry2.get(TestConfig) is config)
 
-    # Modifying one doesn't affect the other
     registry1.remove(TestConfig)
     expect_false(registry1.has(TestConfig))
     expect_true(registry2.has(TestConfig))
@@ -355,16 +323,10 @@ def test_config_registry_copy_includes_validators() -> None:
 
     registry2 = registry1.copy()
 
-    # Register config in copy - validator should run
     config = TestConfig(host="localhost", port=5432)
     registry2.register(TestConfig, config)
 
     expect_equal(len(validated), 1)
-
-
-# =============================================================================
-# Error Classes Tests
-# =============================================================================
 
 
 def test_config_not_found_error() -> None:

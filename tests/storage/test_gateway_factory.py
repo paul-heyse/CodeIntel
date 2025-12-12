@@ -25,10 +25,6 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 
-# =============================================================================
-# StorageConfig Tests
-# =============================================================================
-
 
 def test_storage_config_creates_with_defaults() -> None:
     """Verify StorageConfig default values."""
@@ -111,16 +107,10 @@ def test_storage_config_is_frozen() -> None:
     assert_frozen(cfg, "db_path", Path("/other"))
 
 
-# =============================================================================
-# open_memory_gateway Tests
-# =============================================================================
-
-
 def test_open_memory_gateway_returns_gateway() -> None:
     """Verify open_memory_gateway returns a DuckDBGateway."""
     gateway = open_memory_gateway(validate_schema=False)
     try:
-        # DuckDBGateway implements StorageGateway protocol
         expect_is_instance(gateway, DuckDBGateway, label="gateway type")
         expect_is_not_none(gateway.config, label="gateway config")
         expect_is_not_none(gateway.datasets, label="gateway datasets")
@@ -132,7 +122,6 @@ def test_open_memory_gateway_with_defaults() -> None:
     """Verify open_memory_gateway applies schema by default."""
     gateway = open_memory_gateway(validate_schema=False)
     try:
-        # Should be able to query core.modules if schema applied
         result = gateway.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         if result is None:
             pytest.fail("Expected modules count row")
@@ -146,7 +135,6 @@ def test_open_memory_gateway_without_views() -> None:
     """Verify open_memory_gateway can skip view creation."""
     gateway = open_memory_gateway(ensure_views=False, validate_schema=False)
     try:
-        # Tables should exist
         result = gateway.con.execute(
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'modules'"
         ).fetchone()
@@ -162,7 +150,6 @@ def test_open_memory_gateway_with_views() -> None:
     """Verify open_memory_gateway can create views."""
     gateway = open_memory_gateway(ensure_views=True, validate_schema=False)
     try:
-        # docs views should exist
         result = gateway.con.execute(
             "SELECT COUNT(*) FROM information_schema.tables "
             "WHERE table_schema = 'docs' AND table_type = 'VIEW'"
@@ -238,15 +225,10 @@ def test_open_memory_gateway_has_dataset_registry() -> None:
     gateway = open_memory_gateway(validate_schema=False)
     try:
         expect_is_not_none(gateway.datasets, label="datasets registry")
-        # Registry should have some datasets accessible by name
+
         expect_true(len(gateway.datasets.by_name) > 0, message="dataset registry populated")
     finally:
         gateway.close()
-
-
-# =============================================================================
-# open_gateway Tests with File Database
-# =============================================================================
 
 
 def test_open_gateway_creates_file_database(tmp_path: Path) -> None:
@@ -279,7 +261,6 @@ def test_open_gateway_creates_tables(tmp_path: Path) -> None:
     )
     gateway = open_gateway(cfg)
     try:
-        # core.modules should exist
         result = gateway.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         expect_is_not_none(result, label="modules count")
     finally:
@@ -290,7 +271,6 @@ def test_open_gateway_persists_data(tmp_path: Path) -> None:
     """Verify data persists across gateway sessions."""
     db_path = tmp_path / "test.duckdb"
 
-    # First session - insert data
     cfg1 = StorageConfig(
         db_path=db_path,
         read_only=False,
@@ -304,7 +284,6 @@ def test_open_gateway_persists_data(tmp_path: Path) -> None:
     finally:
         gateway1.close()
 
-    # Second session - verify data
     cfg2 = StorageConfig(
         db_path=db_path,
         read_only=True,
@@ -329,7 +308,6 @@ def test_open_gateway_read_only_mode(tmp_path: Path) -> None:
     """Verify read_only mode doesn't apply schema or views."""
     db_path = tmp_path / "test.duckdb"
 
-    # Create database first
     cfg_write = StorageConfig(
         db_path=db_path,
         read_only=False,
@@ -340,7 +318,6 @@ def test_open_gateway_read_only_mode(tmp_path: Path) -> None:
     gateway_write = open_gateway(cfg_write)
     gateway_write.close()
 
-    # Open in read-only mode
     cfg_read = StorageConfig(
         db_path=db_path,
         read_only=True,
@@ -350,16 +327,10 @@ def test_open_gateway_read_only_mode(tmp_path: Path) -> None:
     )
     gateway_read = open_gateway(cfg_read)
     try:
-        # Should be able to read
         result = gateway_read.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         expect_is_not_none(result, label="read count")
     finally:
         gateway_read.close()
-
-
-# =============================================================================
-# build_snapshot_gateway_resolver Tests
-# =============================================================================
 
 
 def test_snapshot_resolver_returns_callable(tmp_path: Path) -> None:
@@ -380,7 +351,6 @@ def test_snapshot_resolver_opens_existing_snapshot(tmp_path: Path) -> None:
     commit = "abc123"
     db_path = tmp_path / f"codeintel-{commit}.duckdb"
 
-    # Create a snapshot database
     cfg = StorageConfig(
         db_path=db_path,
         read_only=False,
@@ -391,11 +361,9 @@ def test_snapshot_resolver_opens_existing_snapshot(tmp_path: Path) -> None:
     setup_gw = open_gateway(cfg)
     setup_gw.close()
 
-    # Use resolver to open it
     resolver = build_snapshot_gateway_resolver(db_dir=tmp_path, repo="test/repo")
     gateway = resolver(commit)
     try:
-        # DuckDBGateway implements StorageGateway protocol
         expect_is_instance(gateway, DuckDBGateway, label="gateway type")
         expect_true(gateway.config.read_only is True, message="read_only")
         expect_equal(gateway.config.repo, "test/repo", label="repo")
@@ -409,7 +377,6 @@ def test_snapshot_resolver_reuses_primary_gateway(tmp_path: Path) -> None:
     commit = "abc123"
     db_path = tmp_path / f"codeintel-{commit}.duckdb"
 
-    # Create primary gateway
     cfg = StorageConfig(
         db_path=db_path,
         read_only=False,
@@ -420,13 +387,11 @@ def test_snapshot_resolver_reuses_primary_gateway(tmp_path: Path) -> None:
     primary = open_gateway(cfg)
 
     try:
-        # Create resolver with primary gateway
         resolver = build_snapshot_gateway_resolver(
             db_dir=tmp_path,
             primary_gateway=primary,
         )
 
-        # Should return same instance
         resolved = resolver(commit)
         expect_true(resolved is primary, message="resolver reused primary gateway")
     finally:
@@ -437,7 +402,6 @@ def test_snapshot_resolver_opens_different_commits(tmp_path: Path) -> None:
     """Verify resolver opens different snapshots for different commits."""
     commits = ["commit1", "commit2"]
 
-    # Create snapshot databases
     for commit in commits:
         db_path = tmp_path / f"codeintel-{commit}.duckdb"
         cfg = StorageConfig(
@@ -448,18 +412,16 @@ def test_snapshot_resolver_opens_different_commits(tmp_path: Path) -> None:
             validate_schema=False,
         )
         gw = open_gateway(cfg)
-        # Insert unique data per commit
+
         gw.core.insert_modules([(f"mod_{commit}", "mod.py", "repo", commit)])
         gw.close()
 
-    # Resolve both commits
     resolver = build_snapshot_gateway_resolver(db_dir=tmp_path)
 
     gw1 = resolver("commit1")
     gw2 = resolver("commit2")
 
     try:
-        # Verify different data
         r1 = gw1.con.execute("SELECT module FROM core.modules").fetchone()
         r2 = gw2.con.execute("SELECT module FROM core.modules").fetchone()
         if r1 is None or r2 is None:
@@ -471,40 +433,27 @@ def test_snapshot_resolver_opens_different_commits(tmp_path: Path) -> None:
         gw2.close()
 
 
-# =============================================================================
-# Gateway Close and Resource Management
-# =============================================================================
-
-
 def test_gateway_close_releases_connection() -> None:
     """Verify close() releases the database connection."""
     gateway = open_memory_gateway(validate_schema=False)
     expect_is_not_none(gateway.con, label="connection before close")
     gateway.close()
-    # After close, connection should be closed
-    # (attempting to use it would raise an error)
 
 
 def test_gateway_supports_context_manager() -> None:
     """Verify gateway can be used as context manager if supported."""
     gateway = open_memory_gateway(validate_schema=False)
-    # Manually close since DuckDBGateway might not implement __enter__/__exit__
+
     try:
         expect_is_not_none(gateway.con, label="connection available")
     finally:
         gateway.close()
 
 
-# =============================================================================
-# Integration Tests
-# =============================================================================
-
-
 def test_full_gateway_lifecycle(tmp_path: Path) -> None:
     """Test complete lifecycle: create, write, close, reopen, read."""
     db_path = tmp_path / "lifecycle.duckdb"
 
-    # Create and populate
     cfg_write = StorageConfig(
         db_path=db_path,
         read_only=False,
@@ -521,7 +470,6 @@ def test_full_gateway_lifecycle(tmp_path: Path) -> None:
     )
     gw_write.close()
 
-    # Reopen and verify
     cfg_read = StorageConfig.for_readonly(db_path)
     gw_read = open_gateway(cfg_read)
     try:
@@ -543,16 +491,13 @@ def test_multiple_memory_gateways_are_independent() -> None:
     gw2 = open_memory_gateway(validate_schema=False)
 
     try:
-        # Insert in gw1
         gw1.core.insert_modules([("mod1", "m1.py", "repo1", "c1")])
 
-        # gw2 should be empty
         r2 = gw2.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         if r2 is None:
             pytest.fail("Expected gateway2 modules count")
         expect_equal(r2[0], 0, label="gateway2 modules")
 
-        # gw1 should have data
         r1 = gw1.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         if r1 is None:
             pytest.fail("Expected gateway1 modules count")

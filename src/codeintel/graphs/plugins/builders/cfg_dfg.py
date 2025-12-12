@@ -219,16 +219,12 @@ def _build_cfg_dfg_for_function(
     tuple[list[CFGBlockRow], list[CFGEdgeRow], list[DFGEdgeRow]]
         CFG blocks, CFG edges, and DFG edges.
     """
-    # Build CFG
     cfg_result = cfg_compute.build_cfg(goid, func_node, file_path)
 
-    # Convert CFG to rows (already canonical dataclasses)
     cfg_blocks, cfg_edges = cfg_compute.cfg_to_rows(cfg_result, file_path, start_line, end_line)
 
-    # Build DFG from CFG
     dfg_result = dfg_compute.build_dfg(goid, cfg_result.blocks, cfg_result.edges)
 
-    # Convert DFG to rows (already canonical dataclasses)
     dfg_edges = dfg_compute.dfg_to_rows(dfg_result)
 
     return list(cfg_blocks), list(cfg_edges), list(dfg_edges)
@@ -464,7 +460,7 @@ class CfgDfgPlugin(TargetPlugin):
         TargetResult
             Execution result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
         config = CFGBuilderStepConfig(snapshot=ctx.snapshot)
         opts = self.resolve_options()
         gateway, repo, commit = ctx.gateway, config.repo, config.commit
@@ -479,7 +475,6 @@ class CfgDfgPlugin(TargetPlugin):
                     row_counts={"graph.cfg_blocks": 0, "graph.cfg_edges": 0, "graph.dfg_edges": 0}
                 )
 
-            # Use snapshot repo_root directly, fall back to db or cwd
             source_root = (
                 ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
             )

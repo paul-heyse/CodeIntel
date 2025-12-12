@@ -66,7 +66,6 @@ class PrereqMode(Enum):
     SKIP = "skip"
 
 
-# Config for docs commands - requires runtime and gateway
 _DOCS_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
 
@@ -76,7 +75,6 @@ _DOCS_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 class DocsExportCommand:
     """Export datasets to Document Output/."""
 
-    # Project options
     repo: Annotated[
         str | None,
         Parameter(
@@ -120,7 +118,6 @@ class DocsExportCommand:
         ),
     ] = None
 
-    # Backend options
     nx_backend: Annotated[
         NxBackend,
         Parameter(
@@ -137,7 +134,6 @@ class DocsExportCommand:
         ),
     ] = NxGpuMode.DISABLED
 
-    # Export options
     validation_mode: Annotated[
         ExportValidationMode,
         Parameter(
@@ -209,7 +205,6 @@ class DocsExportCommand:
         ),
     ] = PrereqMode.RUN
 
-    # Shared flags
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

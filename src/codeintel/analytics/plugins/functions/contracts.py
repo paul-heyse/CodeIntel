@@ -80,19 +80,16 @@ class FunctionContractsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Build config from context
         cfg = FunctionContractsStepConfig(
             snapshot=ctx.snapshot,
         )
 
-        # Get catalog provider
         catalog = ctx.resources.catalog
         if catalog is None:
             return TargetResult.failed("CatalogProvider is required")
 
-        # Load AST data directly
         try:
             function_ast_map, _missing = load_function_asts(
                 ctx.gateway,

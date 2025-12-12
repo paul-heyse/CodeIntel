@@ -14,14 +14,11 @@ for config classes and scattered ClassVars.
 Example
 -------
 >>> async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
-...     # Access parameters
 ...     max_commits = ctx.parameters.get("max_commits", int, default=2000)
 ...
-...     # Access resources
 ...     git = ctx.resources.git_history
 ...     entries = await git.log(ctx.repo_root, max_count=max_commits)
 ...
-...     # Write to tables with validation
 ...     ctx.write_table("analytics.hotspots", rows)
 ...
 ...     return TargetResult.success()
@@ -73,11 +70,6 @@ __all__ = [
 ]
 
 
-# =============================================================================
-# Write Record
-# =============================================================================
-
-
 @dataclass
 class WriteRecord:
     """Record of data written to a table.
@@ -98,11 +90,6 @@ class WriteRecord:
     table_key: str
     rows: list[tuple[Any, ...] | dict[str, Any]] = field(default_factory=list)
     validated: bool = False
-
-
-# =============================================================================
-# Context Resources
-# =============================================================================
 
 
 @dataclass
@@ -202,11 +189,6 @@ class ContextResources:
         return self.providers.git_history if self.providers else None
 
 
-# =============================================================================
-# Target Execution Context
-# =============================================================================
-
-
 @dataclass
 class TargetExecutionContext:
     """Complete execution context for a target plugin.
@@ -243,10 +225,6 @@ class TargetExecutionContext:
     parameters: TargetParameters = field(default_factory=lambda: EMPTY_PARAMETERS)
     _written_tables: dict[str, WriteRecord] = field(default_factory=dict)
 
-    # -------------------------------------------------------------------------
-    # Target Information
-    # -------------------------------------------------------------------------
-
     @property
     def target_name(self) -> str:
         """Return the target name.
@@ -268,10 +246,6 @@ class TargetExecutionContext:
             Tables and artifacts this target produces.
         """
         return self.target.contract
-
-    # -------------------------------------------------------------------------
-    # Snapshot Information
-    # -------------------------------------------------------------------------
 
     @property
     def repo(self) -> str:
@@ -305,10 +279,6 @@ class TargetExecutionContext:
             Repository root directory.
         """
         return self.snapshot.repo_root
-
-    # -------------------------------------------------------------------------
-    # Path Resolution
-    # -------------------------------------------------------------------------
 
     @property
     def build_dir(self) -> Path:
@@ -367,7 +337,6 @@ class TargetExecutionContext:
             msg = f"Artifact '{artifact_name}' not in contract. Available: {available}"
             raise KeyError(msg)
 
-        # Resolve template placeholders
         template = spec.path_template
         resolved = template.format(
             build_dir=self.build_dir,
@@ -376,10 +345,6 @@ class TargetExecutionContext:
             repo_root=self.repo_root,
         )
         return Path(resolved)
-
-    # -------------------------------------------------------------------------
-    # Gateway Access
-    # -------------------------------------------------------------------------
 
     @property
     def gateway(self) -> StorageGateway:
@@ -399,10 +364,6 @@ class TargetExecutionContext:
             msg = "Gateway not available in execution context"
             raise RuntimeError(msg)
         return self.resources.gateway
-
-    # -------------------------------------------------------------------------
-    # Table Writing
-    # -------------------------------------------------------------------------
 
     def write_table(
         self,
@@ -432,7 +393,6 @@ class TargetExecutionContext:
         SchemaNotFoundError
             If table is not in the contract and validate=True.
         """
-        # Track write for testing
         if table_key not in self._written_tables:
             self._written_tables[table_key] = WriteRecord(table_key)
 
@@ -441,10 +401,9 @@ class TargetExecutionContext:
         if validate:
             schema = self.contract.get_table(table_key)
             if schema is None:
-                # Table must be declared in the contract
                 if table_key not in self.target.table_keys:
                     raise SchemaNotFoundError(self.target_name, table_key)
-                # Table exists but has no schema - skip validation
+
                 schema = None
 
             if schema is not None and not (
@@ -458,7 +417,6 @@ class TargetExecutionContext:
         record.rows.extend(rows)
         record.validated = validate
 
-        # Actually write to database if gateway available
         if self.resources.gateway is not None:
             self._persist_rows(table_key, rows)
 
@@ -514,18 +472,12 @@ class TargetExecutionContext:
         rows
             Row data.
         """
-        # This will use the gateway's persistence methods via self.resources.gateway
-        # For now, log the write - will be extended when gateway has insert API
         log.debug(
             "Writing %d rows to %s (gateway=%s)",
             len(rows),
             table_key,
             self.resources.gateway is not None,
         )
-
-    # -------------------------------------------------------------------------
-    # Schema-Aware Writing
-    # -------------------------------------------------------------------------
 
     def write_validated_table(
         self,
@@ -569,7 +521,6 @@ class TargetExecutionContext:
             msg = f"No schema registered for {table_key}"
             raise KeyError(msg)
 
-        # Validate the DataFrame
         if strict:
             validated_df = schema.validate(df)
         else:
@@ -579,13 +530,8 @@ class TargetExecutionContext:
                 log.warning("Schema validation failed for %s: %s", table_key, exc)
                 validated_df = df
 
-        # Convert to rows and write
         rows = list(validated_df.itertuples(index=False, name=None))
         return self.write_table(table_key, rows, validate=False)
-
-    # -------------------------------------------------------------------------
-    # Testing Helpers
-    # -------------------------------------------------------------------------
 
     @property
     def written_tables(self) -> Mapping[str, WriteRecord]:

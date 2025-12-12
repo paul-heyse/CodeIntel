@@ -217,7 +217,7 @@ def build_hotspots(
     ...     repo_root=Path("."),
     ...     max_commits=0,
     ... )
-    >>> build_hotspots(gateway, cfg)  # consumes empty git stats when max_commits=0
+    >>> build_hotspots(gateway, cfg)
     >>> con.execute("SELECT rel_path, score FROM analytics.hotspots").fetchall()
     [('sample.py', 0.17328679513998632)]
     """
@@ -252,7 +252,6 @@ def build_hotspots(
         lines_added = int(s.get("lines_added", 0))
         lines_deleted = int(s.get("lines_deleted", 0))
 
-        # Simple composite hotspot score
         score = (
             0.4 * math.log1p(commit_count)
             + 0.3 * math.log1p(author_count)

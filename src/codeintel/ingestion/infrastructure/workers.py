@@ -174,7 +174,6 @@ def executor_factory(
     return _factory
 
 
-# Pre-configured worker configs for common use cases
 AST_WORKER_CONFIG = WorkerConfig(
     env_var="CODEINTEL_AST_WORKERS",
     default_max=DEFAULT_MAX_WORKERS,

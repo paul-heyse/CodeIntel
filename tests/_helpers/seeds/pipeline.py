@@ -38,23 +38,13 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Pipeline Test Constants
-# =============================================================================
-
-# Reuse span constants for consistency
 PIPELINE_REPO = SPAN_REPO
 PIPELINE_COMMIT = SPAN_COMMIT
 
-# GOID for the callee function in pkg/a.py (additional to span pack)
+
 PIPELINE_CALLEE_GOID = 100
 PIPELINE_CALLEE_START = 1
 PIPELINE_CALLEE_END = 2
-
-
-# =============================================================================
-# Pipeline Pack Implementation
-# =============================================================================
 
 
 @dataclass
@@ -101,13 +91,10 @@ class PipelinePack:
         """
         now = datetime.now(UTC)
 
-        # Seed modules
         self._seed_modules(ctx)
 
-        # Seed GOIDs (both callee and caller)
         self._seed_goids(ctx, now)
 
-        # Seed test catalog
         self._seed_test_catalog(ctx, now)
 
     @staticmethod
@@ -148,7 +135,6 @@ class PipelinePack:
             Timestamp for created_at fields.
         """
         rows = [
-            # Callee function in pkg/a.py
             GoidRow(
                 goid_h128=self.callee_goid,
                 urn=f"urn:{SPAN_MOD_A_FQN}.callee",
@@ -162,7 +148,6 @@ class PipelinePack:
                 language="python",
                 created_at=now,
             ),
-            # Caller function in pkg/b.py
             GoidRow(
                 goid_h128=self.caller_goid,
                 urn=f"urn:{SPAN_MOD_B_FQN}.caller",
@@ -204,7 +189,6 @@ class PipelinePack:
         insert_rows(ctx.gateway, rows)
 
 
-# Default instance for common usage
 PIPELINE_PACK = PipelinePack()
 
 

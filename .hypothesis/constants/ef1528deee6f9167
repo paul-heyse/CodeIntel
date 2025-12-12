@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/validation/runner.py
+# hypothesis_version: 6.148.7
+
+['  - %s', 'error', 'foreign_key_contract', 'not_null', 'not_null_contract', 'options', 'row_count_contract', 'spec', 'warning']

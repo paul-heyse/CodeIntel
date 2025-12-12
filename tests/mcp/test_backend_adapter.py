@@ -20,7 +20,7 @@ def test_require_identifier_validation(fresh_gateway: StorageGateway) -> None:
     backend = build_duckdb_backend(fresh_gateway, repo="r", commit="c")
     with pytest.raises(errors.McpError):
         backend.get_function_summary()
-    # should succeed with identifier
+
     resp = backend.get_function_summary(urn="urn:foo")
     if not isinstance(resp, FunctionSummaryResponse):
         pytest.fail("Expected FunctionSummaryResponse")

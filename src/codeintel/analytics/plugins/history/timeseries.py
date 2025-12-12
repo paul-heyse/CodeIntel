@@ -83,10 +83,8 @@ class HistoryTimeseriesPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Get snapshot resolver from parameters (if available)
-        # This is a specialized resource for multi-commit analysis
         snapshot_resolver = ctx.parameters.get_optional("history_snapshot_resolver", object)
         if snapshot_resolver is None:
             log.info(
@@ -95,7 +93,6 @@ class HistoryTimeseriesPlugin(TargetPlugin):
             )
             return TargetResult.succeeded(row_counts={"analytics.history_timeseries": 0})
 
-        # Get commits from parameters
         commits_raw = ctx.parameters.get_optional("commits", list)
         if not commits_raw:
             log.info(
@@ -105,7 +102,6 @@ class HistoryTimeseriesPlugin(TargetPlugin):
             return TargetResult.succeeded(row_counts={"analytics.history_timeseries": 0})
         commits = tuple(str(c) for c in commits_raw)
 
-        # Build config from context
         cfg = HistoryTimeseriesStepConfig(
             snapshot=ctx.snapshot,
             commits=commits,
@@ -114,7 +110,6 @@ class HistoryTimeseriesPlugin(TargetPlugin):
         resolver = cast("SnapshotGatewayResolver", snapshot_resolver)
 
         try:
-            # Note: ToolRunner type mismatch - passing None
             compute_history_timeseries_gateways(
                 ctx.gateway,
                 cfg,

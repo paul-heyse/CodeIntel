@@ -25,20 +25,12 @@ if TYPE_CHECKING:
 
     from tests._helpers.plugins.mcp import McpBackendComponents
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100
 
-# Profile tools category
+
 PROFILE_CATEGORIES: set[str] = {"profiles"}
-
-
-# =============================================================================
-# register_profile_tools Tests
-# =============================================================================
 
 
 def test_register_profile_tools_success(
@@ -47,10 +39,8 @@ def test_register_profile_tools_success(
     """Verify register_profile_tools registers tools successfully."""
     mcp = wrap_fastmcp("Test Profile Tools")
 
-    # Should not raise
     register_tools_for_category(mcp, mcp_backend.backend, PROFILE_CATEGORIES)
 
-    # Server should be configured
     expect_equal(mcp.name, "Test Profile Tools")
 
 
@@ -116,11 +106,6 @@ def test_register_profile_tools_on_multiple_servers(
     expect_equal(mcp2.name, "Server 2")
 
 
-# =============================================================================
-# Operation Tests
-# =============================================================================
-
-
 def test_get_operation_profiles_function() -> None:
     """Verify get_operation returns profiles.function operation."""
     spec = expect_is_not_none(get_operation("profiles.function"))
@@ -145,11 +130,6 @@ def test_profile_operations_have_backend_method() -> None:
     for op_id in op_ids:
         spec = expect_is_not_none(get_operation(op_id))
         expect_is_not_none(spec.backend_method)
-
-
-# =============================================================================
-# Backend Method Tests
-# =============================================================================
 
 
 def test_backend_get_function_profile(
@@ -206,11 +186,6 @@ def test_backend_get_module_profile(
     expect_is_not_none(result)
 
 
-# =============================================================================
-# Error Handling Tests
-# =============================================================================
-
-
 def test_backend_get_function_profile_not_found(
     mcp_backend: McpBackendComponents,
 ) -> None:
@@ -226,7 +201,7 @@ def test_backend_get_file_profile_not_found(
 ) -> None:
     """Verify backend handles nonexistent file gracefully."""
     result = mcp_backend.backend.get_file_profile(rel_path="nonexistent/path/to/file.py")
-    # Should return result with found=False or empty
+
     expect_is_not_none(result)
 
 
@@ -236,11 +211,6 @@ def test_backend_get_module_profile_not_found(
     """Verify backend raises McpError for nonexistent module."""
     with pytest.raises(McpError):
         mcp_backend.backend.get_module_profile(module="nonexistent.module.path")
-
-
-# =============================================================================
-# Limits Tests
-# =============================================================================
 
 
 def test_backend_with_custom_limits(
@@ -262,11 +232,6 @@ def test_backend_with_custom_limits(
     expect_equal(backend.limits.max_rows_per_call, custom_max)
 
 
-# =============================================================================
-# State Preservation Tests
-# =============================================================================
-
-
 def test_register_profile_tools_preserves_backend_state(
     mcp_backend: McpBackendComponents,
 ) -> None:
@@ -285,11 +250,6 @@ def test_register_profile_tools_preserves_backend_state(
     expect_equal(backend.limits, original_limits)
 
 
-# =============================================================================
-# Service as Backend Tests
-# =============================================================================
-
-
 def test_local_query_service_as_backend(
     mcp_backend_components: McpBackendComponents,
 ) -> None:
@@ -300,18 +260,12 @@ def test_local_query_service_as_backend(
     expect_equal(mcp.name, "Test Local Service")
 
 
-# =============================================================================
-# Response Structure Tests
-# =============================================================================
-
-
 def test_function_profile_response_structure(
     mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify function profile response contains expected fields."""
     backend = mcp_backend.backend
 
-    # Get a valid goid from the backend
     result_obj = backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
@@ -324,7 +278,6 @@ def test_function_profile_response_structure(
 
     result = backend.get_function_profile(goid_h128=int(goid))
 
-    # Should have profile-related fields
     expect_is_not_none(result)
     expect_true(hasattr(result, "goid_h128") or hasattr(result, "message"))
 
@@ -335,7 +288,6 @@ def test_file_profile_response_structure(
     """Verify file profile response contains expected fields."""
     backend = mcp_backend.backend
 
-    # Get a valid path from the backend
     result_obj = backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
@@ -348,7 +300,6 @@ def test_file_profile_response_structure(
 
     result = backend.get_file_profile(rel_path=str(rel_path))
 
-    # Should have profile-related fields
     expect_is_not_none(result)
     expect_true(hasattr(result, "rel_path") or hasattr(result, "message"))
 
@@ -359,7 +310,6 @@ def test_module_profile_response_structure(
     """Verify module profile response contains expected fields."""
     backend = mcp_backend.backend
 
-    # Get a valid module from the backend
     result_obj = backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
@@ -372,6 +322,5 @@ def test_module_profile_response_structure(
 
     result = backend.get_module_profile(module=str(module))
 
-    # Should have profile-related fields
     expect_is_not_none(result)
     expect_true(hasattr(result, "module") or hasattr(result, "message"))

@@ -184,14 +184,12 @@ class DependencyGraph:
         Uses Kahn's algorithm for topological sort. Returns partial
         ordering if cycles exist (logs a warning).
         """
-        # Build in-degree counts
         in_degree: dict[str, int] = dict.fromkeys(self.nodes, 0)
         for node in self.nodes.values():
             for downstream in node.downstream:
                 if downstream in in_degree:
                     in_degree[downstream] += 1
 
-        # Start with root tables
         queue = [key for key in self.nodes if in_degree[key] == 0]
         result: list[str] = []
 
@@ -251,14 +249,12 @@ def infer_upstream_dependencies(table_key: str) -> list[str]:
     """
     upstream: list[str] = []
 
-    # Get all plugins that produce this table
     producers = get_producer_plugins(table_key)
 
     for meta in producers:
         if meta.consumes_tables:
             upstream.extend(meta.consumes_tables)
 
-    # Deduplicate while preserving order
     return list(dict.fromkeys(upstream))
 
 
@@ -296,14 +292,12 @@ def infer_downstream_consumers(table_key: str) -> list[str]:
     """
     downstream: list[str] = []
 
-    # Get all plugins that consume this table
     consumers = get_consumer_plugins(table_key)
 
     for meta in consumers:
         if meta.produces_tables:
             downstream.extend(meta.produces_tables)
 
-    # Deduplicate while preserving order
     return list(dict.fromkeys(downstream))
 
 
@@ -332,12 +326,11 @@ def build_dependency_graph() -> DependencyGraph:
     Examples
     --------
     >>> graph = build_dependency_graph()
-    >>> graph.table_count > 0  # doctest: +SKIP
+    >>> graph.table_count > 0
     True
     """
     graph = DependencyGraph()
 
-    # Build nodes for all registered tables
     for table_key in SCHEMA_REGISTRY:
         producer_metas = get_producer_plugins(table_key)
         producer_names = [m.name for m in producer_metas]

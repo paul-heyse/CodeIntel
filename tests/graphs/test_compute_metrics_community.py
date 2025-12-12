@@ -35,9 +35,6 @@ from tests._helpers.fakes.networkx_graphs import (
 )
 from tests.graphs.constants import COMPLETE_GRAPH_SIZES
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 EXPECTED_NODE_COUNT_THREE: Final[int] = 3
 EXPECTED_NODE_COUNT_FOUR: Final[int] = 4
 EXPECTED_NODE_COUNT_FIVE: Final[int] = 5
@@ -48,11 +45,6 @@ MODULARITY_MIN: Final[float] = -0.5
 MODULARITY_MAX: Final[float] = 1.0
 DEFAULT_RESOLUTION: Final[float] = 1.0
 RANDOM_SEED: Final[int] = 42
-
-
-# ===========================================================================
-# detect_communities_greedy Tests
-# ===========================================================================
 
 
 def test_greedy_empty_graph_returns_empty() -> None:
@@ -77,7 +69,7 @@ def test_greedy_complete_graph() -> None:
     result = detect_communities_greedy(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_FIVE)
-    # All nodes should be assigned to some community
+
     community_ids = set(result.values())
     expect_true(len(community_ids) >= EXPECTED_SINGLE_COMMUNITY)
 
@@ -87,12 +79,11 @@ def test_greedy_disconnected_components_separate_communities() -> None:
     graph = bridged_cliques_graph(3, 3)
     result = detect_communities_greedy(graph)
 
-    # Nodes in same clique should have same community
     expect_equal(result["a0"], result["a1"])
     expect_equal(result["a1"], result["a2"])
     expect_equal(result["b0"], result["b1"])
     expect_equal(result["b1"], result["b2"])
-    # Different cliques should have different communities
+
     expect_true(result["a0"] != result["b0"])
 
 
@@ -102,7 +93,7 @@ def test_greedy_directed_graph_converted() -> None:
     result = detect_communities_greedy(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_THREE)
-    # All nodes should be assigned
+
     expect_true(all(node in result for node in [1, 2, 3]))
 
 
@@ -123,17 +114,11 @@ def test_greedy_resolution_parameter() -> None:
     result_low = detect_communities_greedy(graph, resolution=0.5)
     result_high = detect_communities_greedy(graph, resolution=2.0)
 
-    # Higher resolution typically finds more communities
     communities_low = len(set(result_low.values()))
     communities_high = len(set(result_high.values()))
-    # Both should work and return valid results
+
     expect_true(communities_low >= 1)
     expect_true(communities_high >= 1)
-
-
-# ===========================================================================
-# detect_communities_louvain Tests
-# ===========================================================================
 
 
 def test_louvain_empty_graph_returns_empty() -> None:
@@ -166,7 +151,7 @@ def test_louvain_disconnected_separate_communities() -> None:
     result = detect_communities_louvain(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_SIX)
-    # Check that nodes from same component share community
+
     expect_true(result["A"] == result["B"] or result["B"] == result["C"])
 
 
@@ -195,7 +180,6 @@ def test_louvain_different_seeds_may_differ() -> None:
     result1 = detect_communities_louvain(graph, seed=1)
     result2 = detect_communities_louvain(graph, seed=999)
 
-    # Results should still be valid
     expect_equal(len(result1), len(result2))
 
 
@@ -206,7 +190,6 @@ def test_louvain_resolution_parameter() -> None:
     result_low = detect_communities_louvain(graph, resolution=0.5, seed=RANDOM_SEED)
     result_high = detect_communities_louvain(graph, resolution=2.0, seed=RANDOM_SEED)
 
-    # Both should return valid community assignments
     expect_equal(len(result_low), len(result_high))
 
 
@@ -219,11 +202,6 @@ def test_louvain_weighted_edges() -> None:
     result = detect_communities_louvain(graph, weight="weight")
 
     expect_length(result, EXPECTED_NODE_COUNT_FOUR)
-
-
-# ===========================================================================
-# detect_communities_label_propagation Tests
-# ===========================================================================
 
 
 def test_label_propagation_empty_graph_returns_empty() -> None:
@@ -256,7 +234,7 @@ def test_label_propagation_disconnected_components() -> None:
     result = detect_communities_label_propagation(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_SIX)
-    # Same component should have same community
+
     expect_equal(result["a0"], result["a1"])
     expect_equal(result["a1"], result["a2"])
     expect_equal(result["b0"], result["b1"])
@@ -277,13 +255,8 @@ def test_label_propagation_chain_graph() -> None:
     result = detect_communities_label_propagation(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_FIVE)
-    # All nodes should be assigned
+
     expect_true(all(node in result for node in ["A", "B", "C", "D", "E"]))
-
-
-# ===========================================================================
-# compute_modularity Tests
-# ===========================================================================
 
 
 def test_modularity_empty_graph_returns_zero() -> None:
@@ -306,7 +279,6 @@ def test_modularity_single_community() -> None:
     communities = dict.fromkeys(graph.nodes(), 0)
     result = compute_modularity(graph, communities)
 
-    # Single community modularity is well-defined
     expect_true(MODULARITY_MIN <= result <= MODULARITY_MAX)
 
 
@@ -316,18 +288,16 @@ def test_modularity_optimal_partition() -> None:
     communities = {node: 0 if node.startswith("a") else 1 for node in graph.nodes()}
     result = compute_modularity(graph, communities)
 
-    # Should have positive modularity for good partition
     expect_true(result > 0)
 
 
 def test_modularity_poor_partition() -> None:
     """Poorly separated partition has lower modularity."""
     graph = complete_graph(4)
-    # Split complete graph - not a natural partition
+
     communities = {0: 0, 1: 0, 2: 1, 3: 1}
     result = compute_modularity(graph, communities)
 
-    # Complete graph has no good partition
     expect_true(MODULARITY_MIN <= result <= MODULARITY_MAX)
 
 
@@ -348,7 +318,6 @@ def test_modularity_resolution_parameter() -> None:
     result_default = compute_modularity(graph, communities, resolution=DEFAULT_RESOLUTION)
     result_high = compute_modularity(graph, communities, resolution=2.0)
 
-    # Both should be valid but may differ
     expect_true(MODULARITY_MIN <= result_default <= MODULARITY_MAX)
     expect_true(MODULARITY_MIN <= result_high <= MODULARITY_MAX)
 
@@ -363,7 +332,6 @@ def test_modularity_weighted_graph() -> None:
     result_weighted = compute_modularity(graph, communities, weight="weight")
     result_unweighted = compute_modularity(graph, communities, weight=None)
 
-    # Both should return valid results
     expect_true(MODULARITY_MIN <= result_weighted <= MODULARITY_MAX)
     expect_true(MODULARITY_MIN <= result_unweighted <= MODULARITY_MAX)
 
@@ -374,13 +342,7 @@ def test_modularity_with_detected_communities() -> None:
     communities = detect_communities_louvain(graph, seed=RANDOM_SEED)
     result = compute_modularity(graph, communities)
 
-    # Louvain optimizes modularity, so should be positive
     expect_true(result > 0)
-
-
-# ===========================================================================
-# Integration Tests
-# ===========================================================================
 
 
 def test_all_algorithms_same_graph() -> None:
@@ -391,7 +353,6 @@ def test_all_algorithms_same_graph() -> None:
     louvain_result = detect_communities_louvain(graph, seed=RANDOM_SEED)
     label_prop_result = detect_communities_label_propagation(graph)
 
-    # All should assign all nodes
     expect_equal(len(greedy_result), graph.number_of_nodes())
     expect_equal(len(louvain_result), graph.number_of_nodes())
     expect_equal(len(label_prop_result), graph.number_of_nodes())
@@ -407,14 +368,8 @@ def test_modularity_comparison_across_algorithms() -> None:
     greedy_mod = compute_modularity(graph, greedy_communities)
     louvain_mod = compute_modularity(graph, louvain_communities)
 
-    # Both should have valid modularity
     expect_true(MODULARITY_MIN <= greedy_mod <= MODULARITY_MAX)
     expect_true(MODULARITY_MIN <= louvain_mod <= MODULARITY_MAX)
-
-
-# ===========================================================================
-# Parametrized Tests
-# ===========================================================================
 
 
 @pytest.mark.parametrize(
@@ -457,5 +412,4 @@ def test_two_cliques_detected_separately(clique1_size: int, clique2_size: int) -
     result = detect_communities_louvain(graph, seed=RANDOM_SEED)
     communities = set(result.values())
 
-    # Should find at least 2 communities
     expect_true(len(communities) >= EXPECTED_MIN_COMMUNITIES)

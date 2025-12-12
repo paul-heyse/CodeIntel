@@ -13,29 +13,22 @@ from pathlib import Path
 
 from codeintel.cli.core.parsing import parse_bool
 
-# Mapping of environment variables to config paths and types
 ENV_MAPPINGS: dict[str, tuple[str, type]] = {
-    # Top-level
     "OUTPUT_FORMAT": ("output_format", str),
     "COLOR": ("color", bool),
     "LOG_LEVEL": ("log_level", str),
-    # Progress
     "PROGRESS_ENABLED": ("progress.enabled", bool),
     "PROGRESS_THRESHOLD": ("progress.threshold", float),
-    # Telemetry
     "TELEMETRY_ENABLED": ("telemetry.enabled", bool),
     "TELEMETRY_ENDPOINT": ("telemetry.endpoint", str),
     "TELEMETRY_SERVICE_NAME": ("telemetry.service_name", str),
-    # Retry
     "RETRY_MAX_ATTEMPTS": ("retry.max_attempts", int),
     "RETRY_INITIAL_DELAY": ("retry.initial_delay", float),
     "RETRY_BACKOFF_FACTOR": ("retry.backoff_factor", float),
     "RETRY_MAX_DELAY": ("retry.max_delay", float),
-    # Storage
     "STORAGE_DB_PATH": ("storage.db_path", Path),
     "STORAGE_CACHE_DIR": ("storage.cache_dir", Path),
     "STORAGE_MAX_CONNECTIONS": ("storage.max_connections", int),
-    # Project
     "PROJECT_NAME": ("project.name", str),
     "PROJECT_REPO": ("project.repo", str),
     "PROJECT_ROOT": ("project.root", Path),
@@ -90,7 +83,7 @@ def _convert_value(value: str, target_type: type) -> str | bool | int | float:
         return int(value)
     if target_type is float:
         return float(value)
-    # Path and str both return string for config dict
+
     return value
 
 

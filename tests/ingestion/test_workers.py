@@ -27,13 +27,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# Test constants for magic values
 TEST_WORKER_COUNT = 42
 EXPECTED_DEFAULT_MAX_WORKERS = 16
 EXPECTED_DEFAULT_MIN_WORKERS = 2
-
-
-# --- WorkerConfig Tests ---
 
 
 def test_worker_config_create_with_defaults() -> None:
@@ -70,9 +66,6 @@ def test_worker_config_frozen_dataclass() -> None:
     assert_cannot_setattr(config, "env_var", "NEW")
 
 
-# --- ResolveWorkerCount Tests ---
-
-
 def test_resolve_worker_count_explicit_count_takes_precedence() -> None:
     """Explicit count should override environment and defaults."""
     explicit = 4
@@ -91,7 +84,6 @@ def test_resolve_worker_count_explicit_zero_is_ignored() -> None:
         explicit_count=0,
     )
 
-    # Should fall back to CPU-based calculation
     cpu_count = os.cpu_count() or 1
     expected = min(DEFAULT_MAX_WORKERS, max(DEFAULT_MIN_WORKERS, cpu_count // 2))
     expect_equal(result, expected)
@@ -104,7 +96,6 @@ def test_resolve_worker_count_negative_explicit_is_ignored() -> None:
         explicit_count=-1,
     )
 
-    # Should fall back to CPU-based calculation
     cpu_count = os.cpu_count() or 1
     expected = min(DEFAULT_MAX_WORKERS, max(DEFAULT_MIN_WORKERS, cpu_count // 2))
     expect_equal(result, expected)
@@ -125,7 +116,6 @@ def test_resolve_worker_count_invalid_env_var_is_ignored() -> None:
         "TEST_WORKERS_INVALID", env={"TEST_WORKERS_INVALID": "not_a_number"}
     )
 
-    # Should fall back to CPU-based calculation
     cpu_count = os.cpu_count() or 1
     expected = min(DEFAULT_MAX_WORKERS, max(DEFAULT_MIN_WORKERS, cpu_count // 2))
     expect_equal(result, expected)
@@ -135,7 +125,6 @@ def test_resolve_worker_count_zero_env_var_is_ignored() -> None:
     """Environment variable with zero should be ignored."""
     result = resolve_worker_count("TEST_WORKERS_ZERO", env={"TEST_WORKERS_ZERO": "0"})
 
-    # Should fall back to CPU-based calculation
     cpu_count = os.cpu_count() or 1
     expected = min(DEFAULT_MAX_WORKERS, max(DEFAULT_MIN_WORKERS, cpu_count // 2))
     expect_equal(result, expected)
@@ -176,9 +165,6 @@ def test_resolve_worker_count_custom_min_workers() -> None:
     expect_equal(result, expected)
 
 
-# --- CreateExecutor Tests ---
-
-
 def test_create_executor_process_executor() -> None:
     """create_executor should return ProcessPoolExecutor for 'process'."""
     workers = 2
@@ -212,9 +198,6 @@ def test_create_executor_unknown_kind_defaults_to_thread() -> None:
         executor.shutdown(wait=False)
 
 
-# --- WorkerPool Tests ---
-
-
 def test_worker_pool_process() -> None:
     """worker_pool should yield ProcessPoolExecutor for 'process'."""
     with worker_pool("process", 2) as executor:
@@ -230,15 +213,8 @@ def test_worker_pool_thread() -> None:
 def test_worker_pool_shutdown_on_exit() -> None:
     """worker_pool should shutdown executor on context exit."""
     with worker_pool("thread", 2) as executor:
-        # Executor should be usable inside context
         future = executor.submit(lambda: TEST_WORKER_COUNT)
         expect_equal(future.result(), TEST_WORKER_COUNT)
-
-    # Executor should be shutdown after context exit
-    # (we can't easily verify this directly, but submitting should fail)
-
-
-# --- ExecutorFactory Tests ---
 
 
 def test_executor_factory_returns_callable() -> None:
@@ -283,9 +259,6 @@ def test_executor_factory_creates_new_instance_each_call() -> None:
         executor2.shutdown(wait=False)
 
 
-# --- PreConfiguredConfigs Tests ---
-
-
 def test_ast_worker_config() -> None:
     """AST_WORKER_CONFIG should be properly configured."""
     expect_equal(AST_WORKER_CONFIG.env_var, "CODEINTEL_AST_WORKERS")
@@ -298,9 +271,6 @@ def test_cst_worker_config() -> None:
     expect_equal(CST_WORKER_CONFIG.env_var, "CODEINTEL_CST_WORKERS")
     expect_equal(CST_WORKER_CONFIG.default_max, DEFAULT_MAX_WORKERS)
     expect_equal(CST_WORKER_CONFIG.executor_kind, "process")
-
-
-# --- DefaultConstants Tests ---
 
 
 def test_default_max_workers() -> None:

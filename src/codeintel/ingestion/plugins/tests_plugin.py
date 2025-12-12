@@ -104,20 +104,18 @@ class TestsIngestPlugin(TargetPlugin):
         TargetResult
             Success result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Get module paths and convert to ModuleRecord
         paths = get_module_paths(ctx)
         modules = paths_to_modules(paths, ctx.repo_root)
 
-        # Get report path - check common locations
         report_path = resolve_report_file(ctx)
         if report_path is None:
             log.info("No pytest report found, skipping tests ingestion")
             return TargetResult.succeeded(row_counts={})
 
         storage = DuckDBStorageAdapter(ctx.gateway)
-        # Execute step
+
         step = TestsIngestStep(storage=storage)
         result = step.execute(
             modules,
@@ -147,19 +145,15 @@ def resolve_report_file(ctx: TargetExecutionContext) -> Path | None:
     Path | None
         Path to report file or None if not found.
     """
-    # Check common locations - including various naming conventions
     candidates = [
-        # Standard locations
         ctx.build_dir / "test-results" / "pytest-report.json",
         ctx.build_dir / "test-results" / "pytest_report.json",
         ctx.build_dir / "pytest-report.json",
         ctx.build_dir / "pytest_report.json",
         ctx.build_dir / "report.json",
-        # Repo root locations
         ctx.repo_root / "pytest-report.json",
         ctx.repo_root / "pytest_report.json",
         ctx.repo_root / "report.json",
-        # CI common locations
         ctx.repo_root / "test-results" / "pytest-report.json",
         ctx.repo_root / ".pytest_cache" / "pytest_report.json",
     ]

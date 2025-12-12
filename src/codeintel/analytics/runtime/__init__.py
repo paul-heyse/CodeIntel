@@ -18,11 +18,11 @@ from codeintel.analytics.runtime import (
     encode_manifest,
 )
 
-# Build a graph runtime
+
 options = GraphRuntimeOptions(snapshot=snapshot, backend=backend)
 runtime = build_graph_runtime(gateway, options)
 
-# Access graphs
+
 call_graph = runtime.ensure_call_graph()
 ```
 """

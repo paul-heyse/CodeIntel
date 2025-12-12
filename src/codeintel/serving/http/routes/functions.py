@@ -27,7 +27,7 @@ from codeintel.serving.operations import get_operation
 if TYPE_CHECKING:
     from codeintel.serving.operations import Operation
 
-RouteDeps = Sequence[Any]  # FastAPI dependencies list
+RouteDeps = Sequence[Any]
 
 
 @dataclass(frozen=True)

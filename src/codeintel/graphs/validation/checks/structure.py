@@ -28,11 +28,6 @@ if TYPE_CHECKING:
     from codeintel.graphs.engine import GraphEngine
 
 
-# =============================================================================
-# Call Graph Checks
-# =============================================================================
-
-
 def call_graph_findings(
     call_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
@@ -124,11 +119,6 @@ def call_graph_findings(
         )
 
     return findings
-
-
-# =============================================================================
-# Import Graph Checks
-# =============================================================================
 
 
 def import_graph_findings(
@@ -334,11 +324,6 @@ def import_bridge_findings(
     ]
 
 
-# =============================================================================
-# Symbol Graph Checks
-# =============================================================================
-
-
 def symbol_graph_findings(
     symbol_graph: nx.Graph, repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
@@ -374,11 +359,6 @@ def symbol_graph_findings(
             "context": {"hubs": high_degree[: SAMPLE_LIMIT * 4]},
         }
     ]
-
-
-# =============================================================================
-# Config Key Checks
-# =============================================================================
 
 
 def config_key_findings(
@@ -417,11 +397,6 @@ def config_key_findings(
             "context": {"keys": high_keys[: SAMPLE_LIMIT * 4]},
         }
     ]
-
-
-# =============================================================================
-# Composite Check
-# =============================================================================
 
 
 def warn_graph_structure(

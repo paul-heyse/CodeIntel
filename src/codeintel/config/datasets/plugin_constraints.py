@@ -49,7 +49,6 @@ def _get_plugin_catalog() -> object | None:
         return existing
 
     try:
-        # Use importlib to avoid circular dependency at module load time
         analytics_registry = importlib.import_module("codeintel.analytics.core.registry")
         catalog = analytics_registry.ANALYTICS_REGISTRY
     except ImportError:
@@ -288,12 +287,11 @@ def extract_constraints_from_plugins(table_key: str) -> ConstraintSet:
     Examples
     --------
     >>> cs = extract_constraints_from_plugins("analytics.function_metrics")
-    >>> # When fully activated, this returns computation constraints
-    >>> # representing which plugins produce/consume this table
+    >>>
+    >>>
     """
     cs = ConstraintSet(table_key=table_key)
 
-    # Add producer constraints
     producers = get_producer_plugins(table_key)
     for meta in producers:
         cs.add(
@@ -306,7 +304,6 @@ def extract_constraints_from_plugins(table_key: str) -> ConstraintSet:
             )
         )
 
-    # Add consumer constraints
     consumers = get_consumer_plugins(table_key)
     for meta in consumers:
         cs.add(
@@ -319,8 +316,6 @@ def extract_constraints_from_plugins(table_key: str) -> ConstraintSet:
             )
         )
 
-    # Add foreign key constraints for consumed tables
-    # These represent implicit dependencies
     for meta in producers:
         if meta.consumes_tables:
             for consumed_table in meta.consumes_tables:

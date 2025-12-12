@@ -22,10 +22,6 @@ if TYPE_CHECKING:
 
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# High Risk Functions Tests
-# =============================================================================
-
 
 @pytest.mark.parametrize(
     ("query", "expect_payload_key"),
@@ -53,11 +49,6 @@ def test_high_risk_functions_endpoint(
     expect_in(expect_payload_key, payload)
 
 
-# =============================================================================
-# Function Summary Tests
-# =============================================================================
-
-
 def test_function_summary_missing_params(
     functions_http_client: TestClient,
 ) -> None:
@@ -65,11 +56,6 @@ def test_function_summary_missing_params(
     response = functions_http_client.get("/function/summary")
 
     assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
-
-
-# =============================================================================
-# Router Options Tests
-# =============================================================================
 
 
 def test_router_options_default() -> None:

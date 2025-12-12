@@ -31,10 +31,10 @@ if TYPE_CHECKING:
     from codeintel.build.manifest import OutputManifest
     from codeintel.build.targets import OutputTarget, TargetGraph
 
-# Plan entry status values
+
 PlanStatus = Literal["compute", "skip", "missing", "blocked"]
 
-# Plan entry reason values
+
 PlanReason = Literal[
     "forced",
     "no_manifest",
@@ -44,7 +44,7 @@ PlanReason = Literal[
     "no_plugin",
 ]
 
-# Implementation kind for Phase 3 migration
+
 ImplKind = Literal["wrapper", "native"]
 
 
@@ -158,7 +158,6 @@ class PlanEntry:
         StalenessExplanation
             Detailed explanation of staleness, including changed dependencies.
         """
-        # Use set comprehensions for cleaner categorization
         added_deps = [dep for dep in self.dep_hashes if dep not in self.prior_dep_hashes]
         changed_deps = [
             dep
@@ -291,7 +290,6 @@ class StalenessExplanation:
         if self.reason == "forced":
             return f"{self.target}: forced recomputation"
 
-        # Hash changed - explain why
         parts: list[str] = [f"{self.target}: stale"]
         if self.changed_deps:
             parts.append(f"changed deps: {', '.join(self.changed_deps)}")
@@ -440,10 +438,8 @@ def _compute_entry_for_target(
     node = target_node(target_name)
     module = target.module
 
-    # Get table keys
     table_keys = target.contract.table_keys or target.table_keys
 
-    # Check for upstream issues
     blocked_deps = [
         dep for dep in target.dependencies if upstream_status.get(dep) in {"missing", "blocked"}
     ]
@@ -461,7 +457,6 @@ def _compute_entry_for_target(
             table_keys=tuple(table_keys),
         )
 
-    # Compute hashes with dependency breakdown for staleness explanation
     raw_params = env.config.parameters_for(target_name)
     options_hash = compute_target_options_hash(raw_params) if raw_params else None
     input_hash, dep_hashes = compute_target_input_hash_with_deps(
@@ -472,11 +467,9 @@ def _compute_entry_for_target(
         manifests=manifests,
     )
 
-    # Get prior manifest and extract prior_dep_hashes
     prior = manifests.get(target_name)
     prior_dep_hashes = prior.dep_hashes if prior and prior.dep_hashes else {}
 
-    # Check if forced
     if env.is_forced(target_name):
         return PlanEntry(
             target=target_name,
@@ -493,7 +486,6 @@ def _compute_entry_for_target(
             prior_dep_hashes=prior_dep_hashes,
         )
 
-    # Check manifest
     if prior is None:
         return PlanEntry(
             target=target_name,
@@ -510,7 +502,6 @@ def _compute_entry_for_target(
             prior_dep_hashes={},
         )
 
-    # Compare hashes
     if prior.input_hash != input_hash:
         return PlanEntry(
             target=target_name,
@@ -527,7 +518,6 @@ def _compute_entry_for_target(
             prior_dep_hashes=prior_dep_hashes,
         )
 
-    # Up to date - can skip
     return PlanEntry(
         target=target_name,
         node=node,
@@ -582,16 +572,13 @@ def compute_plan(
     >>> len(plan.to_compute)
     7
     """
-    # Use mode parameter for potential future expansion
     _ = mode
 
     if graph is None:
         graph = get_target_graph()
 
-    # Compute closure
     closure = graph.topological_order(list(requested))
 
-    # Load manifests (use env.manifest_index if available)
     if env.manifest_index is not None:
         manifests: Mapping[str, OutputManifest] = env.manifest_index
     else:
@@ -601,7 +588,6 @@ def compute_plan(
         )
         manifests = {m.target: m for m in manifest_list}
 
-    # Compute entries in topological order
     entries: list[PlanEntry] = []
     upstream_status: dict[str, PlanStatus] = {}
 
@@ -609,7 +595,6 @@ def compute_plan(
         try:
             target = graph.get(target_name)
         except KeyError:
-            # Target not in graph - mark as missing
             entry = PlanEntry(
                 target=target_name,
                 node=target_node(target_name),

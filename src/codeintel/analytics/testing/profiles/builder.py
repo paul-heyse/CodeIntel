@@ -50,7 +50,7 @@ log = logging.getLogger(__name__)
 
 PRIMARY_COVERAGE_THRESHOLD = 0.4
 
-# Empty sentinel values
+
 EMPTY_FUNCTION_COVERAGE_ENTRY = FunctionCoverageEntry(functions=[], count=0, primary=[])
 EMPTY_SUBSYSTEM_ENTRY = SubsystemCoverageEntry(
     subsystems=[],
@@ -838,7 +838,6 @@ def _uses_concurrency(node: ast.Call, config: SpanConfig) -> bool:
     return library_root in config.patterns.concurrency_libs
 
 
-# Re-exports for backward compatibility
 __all__ = [
     "EMPTY_FUNCTION_COVERAGE_ENTRY",
     "EMPTY_SUBSYSTEM_ENTRY",

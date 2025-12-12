@@ -25,11 +25,6 @@ T = TypeVar("T")
 K = TypeVar("K")
 
 
-# =============================================================================
-# Type Guards for Provider Protocol
-# =============================================================================
-
-
 @runtime_checkable
 class _Gettable(Protocol):
     """Protocol for objects with a get() method."""
@@ -131,8 +126,8 @@ class ResourceRegistry:
     >>> from codeintel.core.resources import ResourceRegistry
     >>> registry = ResourceRegistry()
     >>> registry.register(GraphProvider, graph_provider)
-    >>> provider = registry.get(GraphProvider)  # returns provider
-    >>> value = registry.require(GraphProvider)  # returns provider.get()
+    >>> provider = registry.get(GraphProvider)
+    >>> value = registry.require(GraphProvider)
     """
 
     def __init__(self) -> None:
@@ -481,7 +476,7 @@ class ResourceRegistry:
         if entry is None or entry.provider is None:
             raise ResourceNotFoundError(resource_type)
         provider = entry.provider
-        # Call .get() if the provider has it, otherwise return the provider itself
+
         if _is_gettable(provider):
             return cast("T", provider.get())
         return cast("T", provider)
@@ -510,7 +505,7 @@ class ResourceRegistry:
         if entry is None or entry.provider is None:
             return None
         provider = entry.provider
-        # Call .get() if available, with error handling
+
         if _is_gettable(provider):
             try:
                 return cast("T", provider.get())

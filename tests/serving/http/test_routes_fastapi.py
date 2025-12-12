@@ -32,9 +32,6 @@ if TYPE_CHECKING:
     from fastapi.testclient import TestClient
 
     from tests._helpers.context import TestContext
-# =============================================================================
-# load_api_config Tests (covers _ensure_readable_db via public interface)
-# =============================================================================
 
 
 def test_load_api_config_local_db_path_not_found(tmp_path: Path, codeintel_env: None) -> None:
@@ -47,7 +44,7 @@ def test_load_api_config_local_db_path_not_found(tmp_path: Path, codeintel_env: 
     codeintel_env
         Fixture that saves/restores CODEINTEL_* env vars.
     """
-    _ = codeintel_env  # Used for cleanup side effect
+    _ = codeintel_env
     nonexistent = tmp_path / "missing.duckdb"
     os.environ["CODEINTEL_REPO"] = "test/repo"
     os.environ["CODEINTEL_COMMIT"] = "abc123"
@@ -68,7 +65,7 @@ def test_load_api_config_local_db_path_is_directory(tmp_path: Path, codeintel_en
     codeintel_env
         Fixture that saves/restores CODEINTEL_* env vars.
     """
-    _ = codeintel_env  # Used for cleanup side effect
+    _ = codeintel_env
     directory = tmp_path / "some_dir"
     directory.mkdir()
     os.environ["CODEINTEL_REPO"] = "test/repo"
@@ -88,7 +85,7 @@ def test_load_api_config_remote_api_success(codeintel_env: None) -> None:
     codeintel_env
         Fixture that saves/restores CODEINTEL_* env vars.
     """
-    _ = codeintel_env  # Used for cleanup side effect
+    _ = codeintel_env
     os.environ["CODEINTEL_REPO"] = "test/repo"
     os.environ["CODEINTEL_COMMIT"] = "abc123"
     os.environ["CODEINTEL_MCP_MODE"] = "remote_api"
@@ -111,7 +108,7 @@ def test_load_api_config_local_db_success(tmp_path: Path, codeintel_env: None) -
     codeintel_env
         Fixture that saves/restores CODEINTEL_* env vars.
     """
-    _ = codeintel_env  # Used for cleanup side effect
+    _ = codeintel_env
     db_file = tmp_path / "valid.duckdb"
     db_file.write_bytes(b"valid content")
     os.environ["CODEINTEL_REPO"] = "test/repo"
@@ -124,11 +121,6 @@ def test_load_api_config_local_db_success(tmp_path: Path, codeintel_env: None) -
     expect_equal(config.repo, "test/repo")
     expect_equal(config.mode, "local_db")
     expect_equal(config.db_path, db_file)
-
-
-# =============================================================================
-# problem_response Tests
-# =============================================================================
 
 
 def test_problem_response_returns_json_response() -> None:
@@ -163,11 +155,6 @@ def test_problem_response_defaults_status_500() -> None:
     response = problem_response(detail)
 
     expect_equal(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# =============================================================================
-# build_backend_resource Tests
-# =============================================================================
 
 
 def test_build_backend_resource_raises_error_on_failure(
@@ -214,11 +201,6 @@ def test_build_backend_resource_with_gateway(
 
     expect_is_not_none(resource.backend)
     expect_true(callable(resource.close))
-
-
-# =============================================================================
-# create_app Integration Tests
-# =============================================================================
 
 
 def test_create_app_with_provisioned_gateway(
@@ -292,13 +274,7 @@ def test_create_app_x_correlation_id_header(
         headers={"X-Correlation-ID": "alt-correlation-id"},
     )
 
-    # Should use X-Correlation-ID when X-Request-ID is not present
     expect_equal(response.headers.get("X-Request-ID"), "alt-correlation-id")
-
-
-# =============================================================================
-# Exception Handler Tests
-# =============================================================================
 
 
 def test_exception_handler_problem_error(
@@ -311,7 +287,6 @@ def test_exception_handler_problem_error(
     provisioned_http_client
         Test client bound to the provisioned app.
     """
-    # Request a non-existent dataset to trigger ProblemError
     response = provisioned_http_client.get("/datasets/nonexistent_dataset")
 
     assert_problem_detail_response(
@@ -332,7 +307,6 @@ def test_exception_handler_validation_error(
     provisioned_http_client
         Test client bound to the provisioned app.
     """
-    # Request with invalid limit value to trigger validation error
     response = provisioned_http_client.get("/functions/high-risk?limit=invalid")
 
     assert_problem_detail_response(
@@ -341,11 +315,6 @@ def test_exception_handler_validation_error(
     )
     payload = response.json()
     expect_equal(payload.get("code"), "invalid-request")
-
-
-# =============================================================================
-# Route Registration Tests
-# =============================================================================
 
 
 def test_register_routes_includes_all_routers(
@@ -365,7 +334,6 @@ def test_register_routes_includes_all_routers(
             if isinstance(path_value, str):
                 routes.append(path_value)
 
-    # Verify key route groups are registered
     expect_in("/health", routes)
     expect_true(any("/function" in r for r in routes))
     expect_true(any("/architecture" in r for r in routes))
@@ -385,7 +353,6 @@ def test_create_app_with_auto_pipeline_option(
     make_http_app
         Factory fixture that constructs FastAPI applications for serving tests.
     """
-    # Should not raise when auto_pipeline is enabled
     app = make_http_app(
         gateway=provisioned_repo.gateway,
         snapshot=(provisioned_repo.repo, provisioned_repo.commit),

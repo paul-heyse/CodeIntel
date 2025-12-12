@@ -12,7 +12,7 @@ Loading and registering plugins::
 
     from codeintel.cli.plugins import initialize_plugins
 
-    # Initialize all discovered plugins
+
     registrations = initialize_plugins()
 
 Creating a custom loader::
@@ -28,23 +28,18 @@ Creating a custom loader::
 
 from __future__ import annotations
 
-# Discovery
 from codeintel.cli.plugins.discovery import (
     DEFAULT_PLUGIN_PATHS,
     DiscoveredPlugin,
     discover_plugins,
     get_default_plugin_paths,
 )
-
-# Loader
 from codeintel.cli.plugins.loader import (
     LoadedPlugin,
     PluginLoader,
     PluginLoadResult,
     get_plugin_loader,
 )
-
-# Manifest
 from codeintel.cli.plugins.manifest import (
     CLI_API_VERSION,
     PluginCapability,
@@ -52,8 +47,6 @@ from codeintel.cli.plugins.manifest import (
     PluginManifest,
     SemanticVersion,
 )
-
-# Registry
 from codeintel.cli.plugins.registry import (
     PluginInfo,
     PluginManager,
@@ -62,8 +55,6 @@ from codeintel.cli.plugins.registry import (
     register_all_plugins,
     register_plugin_operations,
 )
-
-# Sandbox
 from codeintel.cli.plugins.sandbox import (
     ALLOWED_MODULES,
     CAPABILITY_MODULES,
@@ -71,8 +62,6 @@ from codeintel.cli.plugins.sandbox import (
     SandboxConfig,
     SandboxedImporter,
 )
-
-# Testing
 from codeintel.cli.plugins.testing import (
     OperationSpecProtocol,
     PluginTestHarness,

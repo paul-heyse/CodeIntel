@@ -11,7 +11,6 @@ Example
 >>> def test_executor(tmp_path: Path) -> None:
 ...     env = GraphTestEnv.create(tmp_path)
 ...     try:
-...         # Use env.gateway and env.snapshot
 ...         pass
 ...     finally:
 ...         env.close()
@@ -20,7 +19,6 @@ Or use the context manager pattern:
 
 >>> def test_executor(tmp_path: Path) -> None:
 ...     with GraphTestEnv.create(tmp_path) as env:
-...         # Use env.gateway and env.snapshot
 ...         pass
 """
 
@@ -46,15 +44,8 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+
 DEFAULT_PLUGIN_NAME = "test_plugin"
-
-
-# ---------------------------------------------------------------------------
-# Environment Classes
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -188,11 +179,6 @@ class GraphTestEnv:
     ) -> None:
         """Exit context manager and close gateway."""
         self.close()
-
-
-# ---------------------------------------------------------------------------
-# Factory Functions
-# ---------------------------------------------------------------------------
 
 
 def create_graph_gateway() -> StorageGateway:

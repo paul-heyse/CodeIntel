@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     )
     from codeintel.storage.gateway import StorageGateway
 
-# Column definitions for CFG tables
+
 CFG_FUNCTION_METRICS_COLS = [
     "function_goid_h128",
     "repo",
@@ -98,7 +98,7 @@ CFG_FUNCTION_METRICS_EXT_COLS = [
     "metrics_version",
 ]
 
-# Column definitions for DFG tables
+
 DFG_FUNCTION_METRICS_COLS = [
     "function_goid_h128",
     "repo",
@@ -214,13 +214,11 @@ def compute_cfg_metrics(
         fn_ext_rows.append(rows.ext_row)
         block_rows.extend(rows.block_rows)
 
-    # Delete existing data for this snapshot
     backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot("analytics.cfg_function_metrics", repo=repo, commit=commit)
     backend.delete_for_snapshot("analytics.cfg_function_metrics_ext", repo=repo, commit=commit)
     backend.delete_for_snapshot("analytics.cfg_block_metrics", repo=repo, commit=commit)
 
-    # Write new data using Ibis
     if fn_rows:
         gateway.ibis.write(
             "analytics.cfg_function_metrics",
@@ -290,13 +288,11 @@ def compute_dfg_metrics(
         fn_ext_rows.append(dfg_ext_row(ctx))
         block_rows.extend(dfg_block_rows(ctx))
 
-    # Delete existing data for this snapshot
     backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot("analytics.dfg_function_metrics", repo=repo, commit=commit)
     backend.delete_for_snapshot("analytics.dfg_block_metrics", repo=repo, commit=commit)
     backend.delete_for_snapshot("analytics.dfg_function_metrics_ext", repo=repo, commit=commit)
 
-    # Write new data using Ibis
     if fn_rows:
         gateway.ibis.write(
             "analytics.dfg_function_metrics",

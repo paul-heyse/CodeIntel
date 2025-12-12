@@ -38,11 +38,6 @@ if TYPE_CHECKING:
     from tests._helpers.configs.provisioning_config import ProvisionedGateway
 
 
-# =============================================================================
-# Seed Pack Protocol
-# =============================================================================
-
-
 @runtime_checkable
 class SeedPack(Protocol):
     """Protocol for composable seed packs that populate test data.
@@ -71,11 +66,6 @@ class SeedPack(Protocol):
             Test context to seed; seeds write to ctx.gateway.
         """
         ...
-
-
-# =============================================================================
-# Query Result Types
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -151,11 +141,6 @@ class QueryRow:
         return dict(zip(self._columns, self._data, strict=True))
 
 
-# =============================================================================
-# Test Context
-# =============================================================================
-
-
 @dataclass
 class TestContext:
     """Unified test environment with lazy resource access.
@@ -177,7 +162,7 @@ class TestContext:
         Additional context metadata for test-specific needs.
     """
 
-    __test__ = False  # Prevent pytest collection
+    __test__ = False
 
     snapshot: SnapshotRef
     gateway: StorageGateway
@@ -338,10 +323,10 @@ class TestContext:
         """
         if pack.name in self.seeds_applied:
             return
-        # Apply dependencies first
+
         for dep in pack.dependencies:
             self._apply_pack(dep)
-        # Apply this pack
+
         pack.apply(self)
         self.seeds_applied.add(pack.name)
 
@@ -415,8 +400,6 @@ class TestContext:
         int
             Number of rows.
         """
-        # Build SQL using join to avoid S608 lint on f-string concatenation
-        # Table names cannot be parameterized; this is safe as test code controls input
         parts = ["SELECT COUNT(*) FROM", table]
         if where:
             parts.extend(["WHERE", where])
@@ -448,11 +431,6 @@ class TestContext:
     ) -> None:
         """Exit context manager and close gateway."""
         self.close()
-
-
-# =============================================================================
-# Factory Functions
-# =============================================================================
 
 
 def create_test_context(

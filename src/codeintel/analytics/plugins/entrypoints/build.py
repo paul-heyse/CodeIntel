@@ -82,7 +82,7 @@ class EntrypointsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         cfg = EntryPointsStepConfig(
             snapshot=ctx.snapshot,
@@ -92,7 +92,6 @@ class EntrypointsPlugin(TargetPlugin):
         if catalog is None:
             return TargetResult.failed("CatalogProvider is required")
 
-        # Load module map from database
         rows = ctx.gateway.con.execute(
             """
             SELECT path, module
@@ -103,7 +102,6 @@ class EntrypointsPlugin(TargetPlugin):
         ).fetchall()
         module_map = {str(row[0]): str(row[1]) for row in rows}
 
-        # Load features from FeaturesProvider
         try:
             provider = FeaturesProvider(
                 gateway=ctx.gateway,

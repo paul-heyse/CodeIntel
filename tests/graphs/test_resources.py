@@ -27,9 +27,7 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+
 TEST_RESOURCE_NAME: Final[str] = "test_resource"
 FACTORY_RESOURCE_NAME: Final[str] = "factory_resource"
 STORAGE_RESOURCE_NAME: Final[str] = "storage"
@@ -39,11 +37,6 @@ EXPECTED_ONE: Final[int] = 1
 EXPECTED_TWO: Final[int] = 2
 EXPECTED_THREE: Final[int] = 3
 EXPECTED_FORTY_TWO: Final[int] = 42
-
-
-# ---------------------------------------------------------------------------
-# Test Resource Implementations
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -190,11 +183,6 @@ class _ConcreteBaseProvider(ResourceProviderBase[str]):
         return self._value
 
 
-# ===========================================================================
-# ResourceRegistry Tests
-# ===========================================================================
-
-
 def test_registry_register_and_require() -> None:
     """Registry registers and retrieves providers."""
     registry = ResourceRegistry()
@@ -267,14 +255,11 @@ def test_registry_factory_lazy_creation() -> None:
 
     registry.register_factory(FACTORY_RESOURCE_NAME, factory)
 
-    # Factory not called yet
     expect_equal(creation_count, 0)
 
-    # First access creates resource
     registry.require_by_name(FACTORY_RESOURCE_NAME)
     expect_equal(creation_count, EXPECTED_ONE)
 
-    # Second access uses cached
     registry.require_by_name(FACTORY_RESOURCE_NAME)
     expect_equal(creation_count, EXPECTED_ONE)
 
@@ -331,17 +316,11 @@ def test_registry_overwrite_allows_new_value() -> None:
     provider2 = _TestResourceProvider(value="new_value")
 
     registry.register_provider(provider1)
-    # Second registration overwrites (with warning)
+
     registry.register_provider(provider2)
 
-    # The new value should be stored
     result = registry.require_by_name(TEST_RESOURCE_NAME)
     expect_equal(result, "new_value")
-
-
-# ===========================================================================
-# ResourceProviderBase Tests
-# ===========================================================================
 
 
 class _CountingProvider(ResourceProviderBase[str]):
@@ -395,10 +374,8 @@ def test_base_provider_lazy_loading() -> None:
     _CountingProvider.reset_count()
     provider = _CountingProvider("test")
 
-    # Not loaded yet - load_count is 0
     expect_equal(_CountingProvider.load_count, 0)
 
-    # First access loads
     result = provider.get()
     expect_equal(result, "value")
     expect_equal(_CountingProvider.load_count, EXPECTED_ONE)
@@ -409,15 +386,12 @@ def test_base_provider_invalidate() -> None:
     _CountingProvider.reset_count()
     provider = _CountingProvider("test")
 
-    # Load and cache
     provider.get()
     expect_equal(_CountingProvider.load_count, EXPECTED_ONE)
 
-    # Second get uses cache
     provider.get()
     expect_equal(_CountingProvider.load_count, EXPECTED_ONE)
 
-    # Invalidate clears, next get reloads
     provider.invalidate()
     provider.get()
     expect_equal(_CountingProvider.load_count, EXPECTED_TWO)
@@ -455,11 +429,6 @@ def test_base_provider_load_not_implemented() -> None:
         provider.get()
 
 
-# ===========================================================================
-# ResourceProvider Protocol Tests
-# ===========================================================================
-
-
 def test_resource_provider_protocol_conformance() -> None:
     """Test resources conform to ResourceProvider protocol."""
     provider = _TestResourceProvider()
@@ -475,11 +444,6 @@ def test_resource_provider_base_protocol_conformance() -> None:
     provider = _ConcreteBaseProvider("test", "value")
 
     expect_is_instance(provider, ResourceProvider)
-
-
-# ===========================================================================
-# StorageResource Tests
-# ===========================================================================
 
 
 def test_storage_resource_creation(storage_resource: StorageResource, tmp_path: Path) -> None:
@@ -664,11 +628,6 @@ def test_storage_resource_connection_usable(storage_resource: StorageResource) -
 def test_storage_resource_protocol_conformance(storage_resource: StorageResource) -> None:
     """StorageResource conforms to ResourceProvider protocol."""
     expect_is_instance(storage_resource, ResourceProvider)
-
-
-# ===========================================================================
-# ResourceNotFoundError Tests
-# ===========================================================================
 
 
 def test_resource_not_found_error_message() -> None:

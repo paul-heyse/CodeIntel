@@ -54,6 +54,6 @@ def test_build_ast_map_raises_for_missing_target(tmp_path: Path) -> None:
 
     paths = {"mod": module_path}
     goids = {"foo": 1}
-    # target_names requests a non-existent function
+
     with pytest.raises(ValueError, match="Function bar not found"):
         build_ast_map(paths, goids, tmp_path, target_names={"mod": ("bar",)})

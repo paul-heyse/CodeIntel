@@ -11,9 +11,9 @@ This package provides the single source of truth for CLI output rendering:
 Examples
 --------
 >>> from codeintel.cli.rendering import UnifiedRenderer, RenderContext
->>> ctx = RenderContext.auto_detect()  # doctest: +SKIP
->>> renderer = UnifiedRenderer(ctx)  # doctest: +SKIP
->>> renderer.render_message("Done!", level="success")  # doctest: +SKIP
+>>> ctx = RenderContext.auto_detect()
+>>> renderer = UnifiedRenderer(ctx)
+>>> renderer.render_message("Done!", level="success")
 """
 
 from __future__ import annotations

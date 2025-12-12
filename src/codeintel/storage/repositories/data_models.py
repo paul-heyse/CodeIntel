@@ -208,7 +208,6 @@ def fetch_fields(
     tbl = gateway.ibis.table("analytics.data_model_fields")
     expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
 
-    # Apply model_ids filter via Ibis if provided
     if model_ids is not None:
         expr = expr.filter(ibis_bool(tbl.model_id.isin(cast("Any", list(model_ids)))))
 
@@ -280,7 +279,6 @@ def fetch_relationships(
     tbl = gateway.ibis.table("analytics.data_model_relationships")
     expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
 
-    # Apply model_ids filter via Ibis if provided
     if model_ids is not None:
         expr = expr.filter(ibis_bool(tbl.source_model_id.isin(cast("Any", list(model_ids)))))
 
@@ -473,7 +471,6 @@ def _fetch_models_from_view(
     tbl = gateway.ibis.table("docs.v_data_models_normalized")
     expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
 
-    # Apply model_ids filter via Ibis if provided
     if allowed is not None:
         expr = expr.filter(ibis_bool(tbl.model_id.isin(cast("Any", list(allowed)))))
 

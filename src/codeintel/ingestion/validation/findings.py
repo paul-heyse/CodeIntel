@@ -18,23 +18,14 @@ from codeintel.core.validation import BaseValidationOptions, ValidationSeverity
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-# =============================================================================
-# Constants
-# =============================================================================
 
-# Maximum sample findings to return per rule
 SAMPLE_LIMIT = 10
 
-# Minimum row count threshold for validation
+
 MIN_ROW_THRESHOLD = 1
 
-# Default maximum findings per rule
+
 MAX_FINDINGS_PER_RULE = 50
-
-
-# =============================================================================
-# Validation Options
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -57,11 +48,6 @@ class IngestValidationOptions(BaseValidationOptions):
 
     max_findings_per_rule: int | None = MAX_FINDINGS_PER_RULE
     skip_empty_tables: bool = True
-
-
-# =============================================================================
-# Constraint Types
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -114,11 +100,6 @@ class ForeignKeyConstraint:
     allow_null: bool = True
 
 
-# =============================================================================
-# Contract Specification
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class IngestContractSpec:
     """Specification for plugin output validation.
@@ -159,11 +140,6 @@ class IngestContractSpec:
     skip_if_empty: bool = False
 
 
-# =============================================================================
-# Violation Types
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class ContractViolation:
     """Record of a contract violation.
@@ -184,11 +160,6 @@ class ContractViolation:
     message: str
     severity: Literal["error", "warning"]
     details: Mapping[str, object] = field(default_factory=dict)
-
-
-# =============================================================================
-# Validation Results
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -276,11 +247,6 @@ class ContractValidationResult:
         )
 
 
-# =============================================================================
-# Finding Helpers (typed for ContractViolation)
-# =============================================================================
-
-
 def apply_severity_overrides(
     violations: Sequence[ContractViolation],
     overrides: Mapping[str, ValidationSeverity] | None,
@@ -308,7 +274,7 @@ def apply_severity_overrides(
     result: list[ContractViolation] = []
     for violation in violations:
         table = violation.contract.table
-        # Check for specific override first, then wildcard
+
         override = overrides.get(table) or overrides.get("*")
         if override == "error":
             result.append(
@@ -329,7 +295,6 @@ def apply_severity_overrides(
                 )
             )
         else:
-            # "info" or no override - keep original
             result.append(violation)
     return result
 
@@ -391,11 +356,9 @@ def has_error_findings(violations: Sequence[ContractViolation]) -> bool:
 
 
 __all__ = [
-    # Constants
     "MAX_FINDINGS_PER_RULE",
     "MIN_ROW_THRESHOLD",
     "SAMPLE_LIMIT",
-    # Types
     "ColumnConstraint",
     "ContractValidationResult",
     "ContractViolation",
@@ -403,7 +366,6 @@ __all__ = [
     "IngestContractSpec",
     "IngestValidationOptions",
     "ValidationSeverity",
-    # Functions
     "apply_severity_overrides",
     "cap_findings",
     "has_error_findings",

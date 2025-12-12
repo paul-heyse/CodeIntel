@@ -64,7 +64,6 @@ def export_all_constraints_json() -> dict[str, Any]:
     for table_key, schema in SCHEMA_REGISTRY.items():
         constraints = extract_constraints_from_pandera(table_key, schema.pandera_schema)
 
-        # Group constraints by column
         by_column: dict[str, list[dict[str, Any]]] = {}
         table_level: list[dict[str, Any]] = []
 
@@ -205,12 +204,10 @@ def export_dependency_graph_json() -> dict[str, Any]:
             "is_leaf": node.is_leaf,
         }
 
-        # Build edge list
         edges.extend(
             {"from": upstream, "to": table_key, "type": "depends_on"} for upstream in node.upstream
         )
 
-    # Get topological order
     topo_order = graph.topological_order()
 
     return {

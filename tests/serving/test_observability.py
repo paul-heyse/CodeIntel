@@ -25,7 +25,6 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.fakes.logging import CAPTURE_HANDLER_LEVEL, CapturingHandler
 
-# Constants for test values
 DURATION_MS = 15.5
 DURATION_PRECISE = 15.12345
 DURATION_ROUNDED = 15.12
@@ -69,11 +68,6 @@ def _get_payload(handler: CapturingHandler, index: int = 0) -> dict[str, object]
         args = cast("tuple[object, ...]", args_obj)
         payload = args[0]
     return cast("dict[str, object]", payload)
-
-
-# =============================================================================
-# ServiceCallMetrics Tests
-# =============================================================================
 
 
 def test_service_call_metrics_required_fields() -> None:
@@ -156,11 +150,6 @@ def test_service_call_metrics_optional_fields_none() -> None:
     expect_is_none(metrics.user_agent)
 
 
-# =============================================================================
-# ServiceCallContext Tests
-# =============================================================================
-
-
 def test_service_call_context_defaults() -> None:
     """Verify ServiceCallContext default values."""
     ctx = ServiceCallContext()
@@ -181,11 +170,6 @@ def test_service_call_context_with_values() -> None:
     expect_equal(ctx.dataset, "test.dataset")
     expect_equal(ctx.schema_version, "2.0")
     expect_equal(ctx.retries, ROW_COUNT_THREE)
-
-
-# =============================================================================
-# ServiceObservability Tests
-# =============================================================================
 
 
 def test_service_observability_disabled_by_default() -> None:
@@ -282,7 +266,7 @@ def test_service_observability_record_merges_context_values() -> None:
         name="test",
         transport="local",
         duration_ms=1.0,
-        correlation_id="metric-override",  # Should override ctx
+        correlation_id="metric-override",
     )
     obs.record(metrics, context=ctx)
 
@@ -372,7 +356,6 @@ def test_service_observability_record_context_enrichment() -> None:
     expect_length(handler.records, 1)
     payload = _get_payload(handler)
 
-    # Context values should be in payload
     expect_equal(payload["correlation_id"], "enrichment-test")
     expect_equal(payload["external_transport"], "mcp")
     expect_equal(payload["operation"], "get_function_summary")
@@ -394,7 +377,6 @@ def test_service_observability_record_rounds_duration() -> None:
     expect_length(handler.records, 1)
     payload = _get_payload(handler)
 
-    # Duration should be rounded to 2 decimal places
     expect_equal(payload["duration_ms"], DURATION_ROUNDED)
 
 
@@ -413,7 +395,6 @@ def test_service_observability_record_excludes_none_values() -> None:
     expect_length(handler.records, 1)
     payload = _get_payload(handler)
 
-    # None values should not be in payload
     expect_not_in("rows", payload)
     expect_not_in("dataset", payload)
     expect_not_in("error", payload)
@@ -434,15 +415,14 @@ def test_service_observability_record_metric_overrides_context() -> None:
         name="override_test",
         transport="local",
         duration_ms=1.0,
-        correlation_id="metric-corr",  # Should override context
-        repo="metric-repo",  # Should override context
+        correlation_id="metric-corr",
+        repo="metric-repo",
     )
     obs.record(metrics, context=ctx)
 
     expect_length(handler.records, 1)
     payload = _get_payload(handler)
 
-    # Metric values should take precedence
     expect_equal(payload["correlation_id"], "metric-corr")
     expect_equal(payload["repo"], "metric-repo")
 

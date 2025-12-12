@@ -33,11 +33,6 @@ def _expect_equal(actual: object, expected: object, label: str) -> None:
         pytest.fail(f"{label}: expected {expected!r}, got {actual!r}")
 
 
-# ------------------------------------------------------------------
-# MigrationStatus tests
-# ------------------------------------------------------------------
-
-
 def test_migration_status_compatible() -> None:
     """Create status for compatible models."""
     status = MigrationStatus(
@@ -82,11 +77,6 @@ def test_migration_status_missing_schema() -> None:
     _require(condition=status.has_manual_model, message="has_manual_model should be True")
     _require(condition=not status.has_schema_model, message="has_schema_model should be False")
     _require(condition=not status.compatible, message="compatible should be False")
-
-
-# ------------------------------------------------------------------
-# RowModelMigrationResult tests
-# ------------------------------------------------------------------
 
 
 def test_migration_result_ready() -> None:
@@ -137,11 +127,6 @@ def test_migration_result_not_ready_missing() -> None:
     )
 
 
-# ------------------------------------------------------------------
-# get_row_model tests
-# ------------------------------------------------------------------
-
-
 def test_get_row_model_registered() -> None:
     """Get row model for a registered dataset."""
     all_keys = SCHEMA_REGISTRY.all()
@@ -151,10 +136,8 @@ def test_get_row_model_registered() -> None:
     table_key = next(iter(all_keys))
     model = get_row_model(table_key)
 
-    # Should return a type (class)
     _require(condition=isinstance(model, type), message="model should be a type")
 
-    # Should have __annotations__
     _require(
         condition=hasattr(model, "__annotations__"),
         message="model should have __annotations__",
@@ -165,11 +148,6 @@ def test_get_row_model_unregistered() -> None:
     """Raise KeyError for unregistered dataset without manual model."""
     with pytest.raises(KeyError, match="No row model available"):
         get_row_model("completely.nonexistent.table")
-
-
-# ------------------------------------------------------------------
-# validate_row_model_compatibility tests
-# ------------------------------------------------------------------
 
 
 def test_validate_registered_dataset() -> None:
@@ -197,11 +175,6 @@ def test_validate_unregistered_dataset() -> None:
     )
 
 
-# ------------------------------------------------------------------
-# validate_all_row_models tests
-# ------------------------------------------------------------------
-
-
 def test_validate_all_returns_result() -> None:
     """Validate all returns proper result structure."""
     result = validate_all_row_models()
@@ -218,7 +191,6 @@ def test_validate_all_returns_result() -> None:
         message="missing_schema_count should be >= 0",
     )
 
-    # Verify sum matches total
     total = result.compatible_count + result.incompatible_count + result.missing_schema_count
     _expect_equal(total, result.total_datasets, "counts sum")
 
@@ -236,11 +208,6 @@ def test_validate_all_statuses_match_counts() -> None:
     _expect_equal(compatible, result.compatible_count, "compatible count")
     _expect_equal(incompatible, result.incompatible_count, "incompatible count")
     _expect_equal(missing, result.missing_schema_count, "missing count")
-
-
-# ------------------------------------------------------------------
-# DatasetSchema.get_row_model tests
-# ------------------------------------------------------------------
 
 
 def test_schema_get_row_model_generates_typed_dict() -> None:
@@ -290,5 +257,4 @@ def test_schema_get_row_model_cached() -> None:
     model1 = schema.get_row_model()
     model2 = schema.get_row_model()
 
-    # Should return the same object from cache
     _require(condition=model1 is model2, message="cached models should be identical")

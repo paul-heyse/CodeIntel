@@ -35,20 +35,12 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# =============================================================================
-# Module-level Constants
-# =============================================================================
 
 MODULE_ORDER: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics", "export")
 """Canonical execution order for target modules."""
 
 MS_PER_SECOND: int = 1000
 """Milliseconds per second for duration formatting."""
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
 
 
 def format_duration(ms: float | None) -> str:
@@ -78,11 +70,6 @@ def format_duration(ms: float | None) -> str:
     if ms < MS_PER_SECOND:
         return f", ~{ms}ms"
     return f", ~{ms // MS_PER_SECOND}s"
-
-
-# =============================================================================
-# Type Definitions
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -362,11 +349,6 @@ class BuildPlan:
         return "\n".join(lines)
 
 
-# =============================================================================
-# Plan Generator
-# =============================================================================
-
-
 class PlanGenerator:
     """Generate executable plans from resolution results.
 
@@ -420,7 +402,6 @@ class PlanGenerator:
         >>> plan.total_steps
         4
         """
-        # Phase A: Group targets by module
         by_module: dict[TargetModule, list[str]] = {
             "ingestion": [],
             "graphs": [],
@@ -432,7 +413,6 @@ class PlanGenerator:
             target = self._graph.get(target_name)
             by_module[target.module].append(target_name)
 
-        # Phase B: Build stages in canonical order
         stages: list[PlanStage] = []
         for module in MODULE_ORDER:
             target_names = by_module[module]

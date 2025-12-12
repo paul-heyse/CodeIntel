@@ -132,6 +132,5 @@ class TargetPlugin(ABC):
         list[str]
             List of validation error messages. Empty if valid.
         """
-        # Base implementation performs no validation; subclasses may override
-        _ = (self, ctx)  # Protocol method signature - both used in subclasses
+        _ = (self, ctx)
         return []

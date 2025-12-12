@@ -27,7 +27,6 @@ from codeintel.storage.exceptions import (
     StorageError,
 )
 
-# CLI exit codes (canonical definitions)
 CLI_EXIT_SUCCESS = 0
 CLI_EXIT_VALIDATION = 1
 CLI_EXIT_USAGE = 2
@@ -40,9 +39,6 @@ if TYPE_CHECKING:
 
 _HandlerP = ParamSpec("_HandlerP")
 
-# -----------------------------------------------------------------------------
-# RFC 9457 Problem Details
-# -----------------------------------------------------------------------------
 
 ERROR_TYPE_BASE = "https://codeintel.dev/errors"
 
@@ -199,11 +195,6 @@ def _exception_to_problem(exc: BaseException) -> ProblemDetail:
         detail=str(exc) if str(exc) else None,
         extensions={"exception_type": type(exc).__name__},
     )
-
-
-# -----------------------------------------------------------------------------
-# CLI Error Classes
-# -----------------------------------------------------------------------------
 
 
 class CliError(Exception):

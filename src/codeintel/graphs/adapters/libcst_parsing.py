@@ -229,13 +229,11 @@ class LibCSTParsingAdapter:
                 )
             )
 
-        # Also parse with AST for fallback operations
         try:
             ast_module = ast.parse(source)
         except SyntaxError:
             ast_module = None
 
-        # Collect imports and functions using a single visitor
         collector = _LibcstCollector()
         wrapper = cst.MetadataWrapper(cst_module)
         wrapper.visit(collector)
@@ -357,7 +355,6 @@ def _extract_call_name(node: ast.expr) -> str | None:
     return None
 
 
-# Verify protocol compliance
 def _check_protocol_compliance() -> None:
     """Verify LibCSTParsingAdapter implements ParsingPort."""
     adapter: ParsingPort = LibCSTParsingAdapter()

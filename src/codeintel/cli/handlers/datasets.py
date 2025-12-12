@@ -90,7 +90,7 @@ def datasets_list_handler(
     include_internal = ctx.params.get_bool("include_internal")
 
     deps = deps or DEFAULT_DATASET_DEPS
-    # Trigger runtime resolution to validate project exists
+
     try:
         _ = deps.runtime_builder(ctx)
     except ResolutionError as e:
@@ -104,13 +104,12 @@ def datasets_list_handler(
         {
             "name": contract.name,
             "table_key": contract.table_key,
-            "category": None,  # Category not directly available in contracts
+            "category": None,
             "description": contract.description,
         }
         for contract in contracts.values()
     ]
 
-    # Sort by name for consistent ordering
     dataset_dicts.sort(key=lambda d: d["name"] or "")
 
     return CliResult.ok(
@@ -142,7 +141,6 @@ def datasets_lint_handler(
     """
     deps = deps or DEFAULT_DATASET_DEPS
     try:
-        # Trigger runtime resolution for early error detection
         runtime = deps.runtime_builder(ctx)
     except ResolutionError as exc:
         return fail_project_error("datasets", str(exc))
@@ -268,7 +266,6 @@ def datasets_diff_handler(
     added = sorted(current_names - baseline_names)
     removed = sorted(baseline_names - current_names)
 
-    # For changed, we'd need deeper comparison - simplified for now
     changed: list[str] = []
 
     has_differences = bool(added or removed or changed)

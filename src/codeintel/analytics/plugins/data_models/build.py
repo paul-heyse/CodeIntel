@@ -82,7 +82,7 @@ class DataModelsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         cfg = DataModelsStepConfig(
             snapshot=ctx.snapshot,

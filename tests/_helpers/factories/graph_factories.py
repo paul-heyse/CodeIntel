@@ -26,19 +26,10 @@ from typing import Final
 
 import networkx as nx
 
-# =============================================================================
-# Constants for realistic graph validation
-# =============================================================================
-
 GOLDEN_MIN_NODES: Final[int] = 13
 GOLDEN_MIN_EDGES: Final[int] = 30
 GOLDEN_EXPECTED_COMMUNITIES: Final[int] = 2
 GOLDEN_EXPECTED_SCC: Final[int] = 1
-
-
-# =============================================================================
-# Realistic Production-Like Graphs
-# =============================================================================
 
 
 def build_layered_call_graph() -> nx.DiGraph:
@@ -67,18 +58,15 @@ def build_layered_call_graph() -> nx.DiGraph:
     """
     g = nx.DiGraph()
 
-    # Layer 0: Core utilities (no internal deps)
     core_funcs = ["format_string", "parse_json", "validate_input", "hash_value"]
     g.add_nodes_from(core_funcs)
 
-    # Layer 1: Services (depend on core)
     services = ["authenticate", "query", "execute", "get_cached", "set_cached"]
     g.add_nodes_from(services)
     for s in services:
         g.add_edge(s, "validate_input")
         g.add_edge(s, "format_string")
 
-    # Layer 2: Handlers (depend on services, core)
     handlers = ["create_user", "get_user", "update_user", "delete_user", "create_order"]
     g.add_nodes_from(handlers)
     for h in handlers:
@@ -86,21 +74,18 @@ def build_layered_call_graph() -> nx.DiGraph:
         g.add_edge(h, "query")
         g.add_edge(h, "get_cached")
 
-    # Layer 3: API (depend on handlers)
     api = ["handle_request", "register_routes"]
     g.add_nodes_from(api)
     for a in api:
         for h in handlers:
             g.add_edge(a, h)
 
-    # Hub function: log_info is called by many
     g.add_node("log_info")
     for node in services + handlers:
         g.add_edge(node, "log_info")
 
-    # Small SCC: auth <-> cache interaction
     g.add_edge("authenticate", "get_cached")
-    g.add_edge("get_cached", "authenticate")  # Cache validates with auth
+    g.add_edge("get_cached", "authenticate")
 
     return g
 
@@ -131,18 +116,15 @@ def build_layered_import_graph() -> nx.DiGraph:
     """
     g = nx.DiGraph()
 
-    # Core modules
     core = ["core.utils", "core.types", "core.errors", "core.config"]
     g.add_nodes_from(core)
 
-    # Service modules
     services = ["services.auth", "services.cache", "services.database"]
     g.add_nodes_from(services)
     for s in services:
         g.add_edge(s, "core.utils")
         g.add_edge(s, "core.errors")
 
-    # Handler modules
     handlers = ["handlers.user", "handlers.product", "handlers.order"]
     g.add_nodes_from(handlers)
     for h in handlers:
@@ -150,28 +132,20 @@ def build_layered_import_graph() -> nx.DiGraph:
         g.add_edge(h, "services.database")
         g.add_edge(h, "core.errors")
 
-    # API modules
     api = ["api.routes", "api.middleware"]
     g.add_nodes_from(api)
     for a in api:
         for h in handlers:
             g.add_edge(a, h)
 
-    # Cross-cutting: utils.logging imported by many
     g.add_node("utils.logging")
     for node in services + handlers + api:
         g.add_edge(node, "utils.logging")
 
-    # Intentional cycle: services.auth <-> services.cache
     g.add_edge("services.auth", "services.cache")
     g.add_edge("services.cache", "services.auth")
 
     return g
-
-
-# =============================================================================
-# Simple Structural Graphs for Unit Tests
-# =============================================================================
 
 
 def build_star_graph(center: str | int = 0, leaves: int = 10) -> nx.DiGraph:
@@ -344,7 +318,6 @@ def build_two_communities_graph(
     """
     g = nx.DiGraph()
 
-    # Community A (densely connected)
     a_nodes = [f"a_{i}" for i in range(community_a_size)]
     g.add_nodes_from(a_nodes)
     for i, source in enumerate(a_nodes):
@@ -352,7 +325,6 @@ def build_two_communities_graph(
             g.add_edge(source, target)
             g.add_edge(target, source)
 
-    # Community B (densely connected)
     b_nodes = [f"b_{i}" for i in range(community_b_size)]
     g.add_nodes_from(b_nodes)
     for i, source in enumerate(b_nodes):
@@ -360,7 +332,6 @@ def build_two_communities_graph(
             g.add_edge(source, target)
             g.add_edge(target, source)
 
-    # Inter-community edges
     for i in range(min(inter_edges, community_a_size, community_b_size)):
         g.add_edge(a_nodes[i], b_nodes[i])
 
@@ -392,12 +363,12 @@ def build_simple_call_graph() -> nx.DiGraph:
     g = nx.DiGraph()
     g.add_edges_from(
         [
-            (1001, 1002),  # main -> process
-            (1002, 1003),  # process -> validate
-            (1003, 1004),  # validate -> helper
-            (1002, 1005),  # process -> util
-            (1004, 1005),  # helper -> util
-            (1003, 1002),  # validate -> process (cycle)
+            (1001, 1002),
+            (1002, 1003),
+            (1003, 1004),
+            (1002, 1005),
+            (1004, 1005),
+            (1003, 1002),
         ]
     )
     return g
@@ -477,7 +448,6 @@ def build_dag_with_bottleneck(
         current_layer = [f"layer{layer_idx}_node{i}" for i in range(layer_width)]
         g.add_nodes_from(current_layer)
 
-        # Connect from previous layer to current
         if prev_layer:
             for source in prev_layer:
                 for target in current_layer:

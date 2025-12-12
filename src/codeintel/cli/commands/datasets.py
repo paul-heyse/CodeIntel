@@ -65,7 +65,6 @@ class BootstrapSnippet(Enum):
     SKIP = "skip"
 
 
-# Config for datasets commands - requires runtime and gateway
 _DATASETS_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 _SCAFFOLD_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 

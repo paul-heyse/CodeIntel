@@ -73,7 +73,7 @@ class TestToDecimalId:
     @staticmethod
     def test_handles_large_integers() -> None:
         """Verify large integers are handled correctly."""
-        large_int = 340282366920938463463374607431768211456  # 2^128
+        large_int = 340282366920938463463374607431768211456
         result = to_decimal_id(large_int)
         expect_equal(result, Decimal(large_int))
 
@@ -171,8 +171,6 @@ class TestNormalizeDecimalId:
     @staticmethod
     def test_converts_float_via_string() -> None:
         """Verify float values are converted via string representation."""
-        # Float goes through str() then int(str()), but "123.0" can't be int()
-        # so the result is None
         result = normalize_decimal_id(123.0)
         expect_is_none(result)
 
@@ -249,8 +247,6 @@ class TestNormalizeNodeId:
     @staticmethod
     def test_raises_on_float_infinity() -> None:
         """Verify float infinity raises OverflowError (uncaught by function)."""
-        # The function catches TypeError/ValueError but not OverflowError
-        # This documents the current behavior - infinity conversion raises
         with pytest.raises(OverflowError):
             normalize_node_id(float("inf"))
 
@@ -396,14 +392,12 @@ class TestIntegrationScenarios:
     @staticmethod
     def test_graph_node_id_normalization() -> None:
         """Verify graph node IDs normalize consistently."""
-        # Create a graph with various node ID types
         graph: nx.DiGraph = nx.DiGraph()
         graph.add_node(Decimal("123"))
         graph.add_node(456)
         graph.add_node("789")
         graph.add_node("func_name")
 
-        # Normalize all node IDs
         normalized = {normalize_node_id(n) for n in graph.nodes()}
         expected = {123, 456, 789, "func_name"}
         expect_equal(normalized, expected)

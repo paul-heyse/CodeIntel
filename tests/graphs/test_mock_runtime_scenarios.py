@@ -42,17 +42,9 @@ from tests._helpers.graphs import (
     standard_graph_fixtures,
 )
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 EXPECTED_CHAIN_NODES: Final = 4
 EXPECTED_STAR_EDGES: Final = 3
 EXPECTED_CYCLE_SIZE: Final = 3
-
-
-# ===========================================================================
-# GraphProvider with MockGraphRuntime Tests
-# ===========================================================================
 
 
 class TestGraphProviderWithMockRuntime:
@@ -92,7 +84,6 @@ class TestGraphProviderWithMockRuntime:
         provider = GraphProvider.from_runtime(mock_runtime_all_graphs)
         resources = provider.get()
 
-        # All graphs should be available
         expect_is_not_none(resources.call_graph)
         expect_is_not_none(resources.import_graph)
         expect_is_not_none(resources.symbol_module_graph)
@@ -121,11 +112,6 @@ class TestGraphProviderWithMockRuntime:
 
         expect_true(provider.backend is backend)
         expect_true(provider.use_gpu)
-
-
-# ===========================================================================
-# Custom Graph Shapes with MockGraphRuntime Tests
-# ===========================================================================
 
 
 class TestCustomGraphShapes:
@@ -168,7 +154,7 @@ class TestCustomGraphShapes:
         import_graph = expect_is_not_none(
             resources.import_graph, message="Expected import graph to be set"
         )
-        # Cyclic graph has same number of edges as nodes
+
         expect_equal(import_graph.number_of_edges(), EXPECTED_CYCLE_SIZE)
 
     @staticmethod
@@ -185,22 +171,15 @@ class TestCustomGraphShapes:
         expect_equal(call_graph.number_of_edges(), EXPECTED_CHAIN_NODES - 1)
 
 
-# ===========================================================================
-# Mixed Graph Types Tests
-# ===========================================================================
-
-
 class TestMixedGraphTypes:
     """Test MockGraphRuntime with mixed graph types."""
 
     @staticmethod
     def test_directed_and_undirected_together() -> None:
         """MockGraphRuntime handles both directed and undirected graphs."""
-        # Directed graphs
         call_g = nx.DiGraph([("a", "b"), ("b", "c")])
         import_g = nx.DiGraph([("mod1", "mod2")])
 
-        # Undirected graphs
         symbol_mod_g = nx.Graph([("sym1", "mod1"), ("sym2", "mod2")])
 
         mock = MockGraphRuntime(
@@ -211,7 +190,6 @@ class TestMixedGraphTypes:
         provider = GraphProvider.from_runtime(mock)
         resources = provider.get()
 
-        # Directed graphs
         call_graph = expect_is_not_none(
             resources.call_graph, message="Expected call graph to be set"
         )
@@ -221,7 +199,6 @@ class TestMixedGraphTypes:
         expect_true(isinstance(call_graph, nx.DiGraph))
         expect_true(isinstance(import_graph, nx.DiGraph))
 
-        # Undirected graph
         symbol_module_graph = expect_is_not_none(
             resources.symbol_module_graph, message="Expected symbol_module_graph to be set"
         )
@@ -230,13 +207,12 @@ class TestMixedGraphTypes:
     @staticmethod
     def test_cfg_graph_structure() -> None:
         """MockGraphRuntime preserves CFG graph structure."""
-        # Create a simple CFG with entry/exit blocks
         cfg = empty_digraph()
         cfg.add_edges_from(
             [
                 ("entry", "block1"),
                 ("block1", "block2"),
-                ("block1", "block3"),  # Branch
+                ("block1", "block3"),
                 ("block2", "exit"),
                 ("block3", "exit"),
             ]
@@ -251,11 +227,6 @@ class TestMixedGraphTypes:
         expect_true("exit" in cfg_graph.nodes)
 
 
-# ===========================================================================
-# Graph Resource Caching Tests
-# ===========================================================================
-
-
 class TestGraphResourceCaching:
     """Test that GraphProvider caches resources from MockGraphRuntime."""
 
@@ -267,7 +238,6 @@ class TestGraphResourceCaching:
         resources1 = provider.get()
         resources2 = provider.get()
 
-        # Should return same cached instance
         expect_true(resources1 is resources2)
 
     @staticmethod
@@ -281,14 +251,7 @@ class TestGraphResourceCaching:
         provider.invalidate()
         resources2 = provider.get()
 
-        # Should get fresh resources after invalidation
-        # Note: for mocks without state changes, content is same but instance may differ
         expect_true(resources1 is not resources2)
-
-
-# ===========================================================================
-# Factory Function Tests
-# ===========================================================================
 
 
 class TestMockRuntimeFactories:
@@ -337,7 +300,6 @@ class TestMockRuntimeFactories:
         """Factory creates mock with all graph types populated."""
         mock = create_mock_runtime_all_graphs()
 
-        # All graph properties should be non-None
         expect_true(mock.call_graph is not None)
         expect_true(mock.import_graph is not None)
         expect_true(mock.symbol_module_graph is not None)
@@ -345,11 +307,6 @@ class TestMockRuntimeFactories:
         expect_true(mock.config_module_bipartite is not None)
         expect_true(mock.test_function_bipartite is not None)
         expect_true(mock.cfg_graph is not None)
-
-
-# ===========================================================================
-# Ensure Methods Tests
-# ===========================================================================
 
 
 class TestEnsureMethods:

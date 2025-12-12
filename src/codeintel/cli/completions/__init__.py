@@ -81,22 +81,22 @@ def get_install_instructions(shell: Shell) -> str:
         Installation instructions.
     """
     instructions = {
-        Shell.BASH: """# Add to ~/.bashrc:
+        Shell.BASH: """
 source <(codeintel completions bash)
 
-# Or save to file:
+
 codeintel completions bash > ~/.local/share/bash-completion/completions/codeintel""",
-        Shell.ZSH: """# Add to ~/.zshrc:
+        Shell.ZSH: """
 source <(codeintel completions zsh)
 
-# Or save to fpath:
+
 codeintel completions zsh > ~/.zsh/completions/_codeintel""",
-        Shell.FISH: """# Save to fish completions directory:
+        Shell.FISH: """
 codeintel completions fish > ~/.config/fish/completions/codeintel.fish""",
-        Shell.POWERSHELL: """# Add to $PROFILE:
+        Shell.POWERSHELL: """
 codeintel completions powershell | Out-String | Invoke-Expression
 
-# Or save to module:
+
 codeintel completions powershell > $HOME/Documents/PowerShell/Modules/CodeIntel/CodeIntel.psm1""",
     }
 

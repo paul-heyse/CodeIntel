@@ -9,10 +9,10 @@ Key components:
 - _runner.py: CLI execution and snapshot comparison
 
 Usage:
-    pytest -m cli_snapshot                         # Run all snapshot tests
-    pytest -m cli_snapshot --update-cli-snapshots  # Update snapshots
-    pytest -m cli_snapshot --cli-snapshot-tags pr14,graph  # Filter by tags
-    pytest -m cli_snapshot --list-cli-snapshots    # List cases and exit
+    pytest -m cli_snapshot
+    pytest -m cli_snapshot --update-cli-snapshots
+    pytest -m cli_snapshot --cli-snapshot-tags pr14,graph
+    pytest -m cli_snapshot --list-cli-snapshots
 """
 
 from __future__ import annotations

@@ -58,7 +58,6 @@ class ConstraintCheckerContext:
     gateway: StorageGateway
 
 
-# Type alias for constraint checker functions
 ConstraintCheckerFn = Callable[[ConstraintCheckerContext], ContractViolation | None]
 
 
@@ -228,7 +227,6 @@ def check_min_fraction_not_null(ctx: ConstraintCheckerContext) -> ContractViolat
     return None
 
 
-# Registry mapping constraint types to checker functions
 CONSTRAINT_CHECKERS: dict[str, ConstraintCheckerFn] = {
     "not_null": check_not_null,
     "min_value": check_min_value,

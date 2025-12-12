@@ -50,7 +50,7 @@ class _DisplayDefault:
     """
 
     __slots__ = ("name",)
-    __hash__: ClassVar[None] = None  # Unhashable due to mutable-like equality
+    __hash__: ClassVar[None] = None
 
     def __init__(self, name: str) -> None:
         """Initialize with the display name.

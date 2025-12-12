@@ -248,7 +248,7 @@ def plugins_list_handler(ctx: CommandContext) -> CliResult[PluginsListResult]:
     CliResult[PluginsListResult]
         List of installed plugins.
     """
-    _ = ctx.params.raw  # Acknowledge params
+    _ = ctx.params.raw
     LOG.info("Listing installed plugins")
 
     manager = get_plugin_manager()
@@ -274,7 +274,7 @@ def plugins_discover_handler(
     CliResult[PluginsDiscoverResult]
         Discovered plugins and search paths.
     """
-    _ = ctx.params.raw  # Acknowledge params
+    _ = ctx.params.raw
     LOG.info("Discovering available plugins")
 
     manager = get_plugin_manager()
@@ -351,7 +351,7 @@ def plugins_paths_handler(ctx: CommandContext) -> CliResult[PluginPathsResult]:
     CliResult[PluginPathsResult]
         Plugin search paths.
     """
-    _ = ctx.params.raw  # Acknowledge params
+    _ = ctx.params.raw
     LOG.info("Listing plugin search paths")
 
     manager = get_plugin_manager()
@@ -384,7 +384,6 @@ def plugins_new_handler(ctx: CommandContext) -> CliResult[PluginNewResult]:
 
     LOG.info("Creating plugin scaffold: %s in %s", name, output_dir)
 
-    # Validate name
     pattern = re.compile(r"^[a-z][a-z0-9_-]*$")
     if not pattern.match(name):
         return fail_invalid_plugin_name(

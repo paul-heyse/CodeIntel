@@ -158,7 +158,7 @@ class FakeJobManager(JobManagerProtocol):
         """
         self._max_age_days = max_age_days
         self._cleanup_count += 1
-        return 5  # Fake cleanup count
+        return 5
 
     def submit(self, operation_id: str, params: dict[str, Any]) -> str:
         """Record a submitted job and return its identifier.
@@ -213,7 +213,6 @@ class TestListJobs:
         expect_equal(data.count, 2)
         expect_equal(len(data.items), 2)
 
-        # Check first job
         job = data.items[0]
         expect_is_instance(job, JobInfo)
         expect_equal(job.job_id, "job-001")
@@ -380,7 +379,7 @@ class TestJobInfoSerialization:
         expect_in("operation_id", result)
         expect_in("status", result)
         expect_in("created_at", result)
-        # None fields should be omitted
+
         expect_true("started_at" not in result)
         expect_true("error" not in result)
 

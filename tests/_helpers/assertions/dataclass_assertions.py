@@ -29,7 +29,6 @@ def assert_cannot_setattr(instance: object, field_name: str, value: object) -> N
     """
     expected_errors = (AttributeError, FrozenInstanceError)
 
-    # Guard against using this helper on mutable instances to avoid false positives.
     params = getattr(instance, "__dataclass_params__", None)
     if is_dataclass(instance) and params is not None and not params.frozen:
         message = f"{type(instance).__name__} is not frozen; cannot assert immutability."

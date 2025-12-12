@@ -10,9 +10,6 @@ from tests._helpers.cli import run_cli
 if TYPE_CHECKING:
     from tests._helpers.cli import CLIContext
 
-# NOTE: These tests target option-bearing subcommands directly instead of root
-# help to reduce brittleness and align with Cyclopts' help structure.
-
 
 def test_docs_export_help_renders(cli_ctx: CLIContext) -> None:
     """Ensure docs export help prints without crashing when defaults lack metadata."""
@@ -81,8 +78,8 @@ def test_graphs_help_renders_enum_choices(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("selection-policy", output)  # enum-bearing option lives on this subcommand
-    expect_in("lenient", output)  # enum choice
+    expect_in("selection-policy", output)
+    expect_in("lenient", output)
     expect_in("dependency-policy", output)
     expect_in("strict", output)
     expect_not_in("simplenamespace", output)
@@ -95,7 +92,7 @@ def test_history_help_renders_positional(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("repo", output)  # Updated: key flag in the new command
+    expect_in("repo", output)
     expect_not_in("simplenamespace", output)
 
 
@@ -110,7 +107,7 @@ def test_storage_help_renders_nested(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("macros", output)  # validation mode choices
+    expect_in("macros", output)
     expect_in("require", output)
     expect_in("root", output)
     expect_not_in("simplenamespace", output)
@@ -143,7 +140,7 @@ def test_build_status_help_renders_core_flags(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("module", output)  # Updated: new simplified command uses --module
+    expect_in("module", output)
     expect_not_in("simplenamespace", output)
 
 
@@ -158,7 +155,7 @@ def test_build_history_help_renders_core_flags(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("limit", output)  # Updated: new simplified command uses --limit
+    expect_in("limit", output)
     expect_not_in("simplenamespace", output)
 
 
@@ -173,7 +170,7 @@ def test_op_list_help_renders_core_options(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("op", output)  # stable text in this help surface
+    expect_in("op", output)
     expect_not_in("simplenamespace", output)
 
 
@@ -188,7 +185,7 @@ def test_op_call_help_renders_core_options(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("op", output)  # stable text in this help surface
+    expect_in("op", output)
     expect_not_in("simplenamespace", output)
 
 

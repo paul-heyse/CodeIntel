@@ -84,9 +84,9 @@ class TargetParameters:
     Examples
     --------
     >>> params = TargetParameters({"max_commits": 2000, "enabled": True})
-    >>> params.get("max_commits", int)  # Returns 2000
+    >>> params.get("max_commits", int)
     2000
-    >>> params.get("missing", str, default="fallback")  # Returns "fallback"
+    >>> params.get("missing", str, default="fallback")
     'fallback'
     """
 
@@ -227,5 +227,4 @@ class TargetParameters:
         return cls({})
 
 
-# Singleton empty parameters
 EMPTY_PARAMETERS = TargetParameters({})

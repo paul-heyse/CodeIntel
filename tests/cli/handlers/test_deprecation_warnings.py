@@ -22,5 +22,4 @@ def test_placeholder() -> None:
     - subsystem_handlers.py -> handlers/subsystem.py
     - history_handlers.py -> handlers/history.py
     """
-    # All legacy handlers have been migrated and deleted - no assertions needed
     _ = "placeholder"

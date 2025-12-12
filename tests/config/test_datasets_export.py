@@ -44,11 +44,6 @@ def _expect_in(key: str, container: Mapping[str, object], label: str) -> None:
         pytest.fail(f"{label}: key '{key}' not in {list(container.keys())}")
 
 
-# ------------------------------------------------------------------
-# export_all_constraints_json tests
-# ------------------------------------------------------------------
-
-
 def test_export_all_constraints_json_returns_dict() -> None:
     """Verify export_all_constraints_json returns a dict."""
     result = export_all_constraints_json()
@@ -88,11 +83,6 @@ def test_export_all_constraints_json_structure() -> None:
         _expect_in("constraint_count", data, f"{table_key}")
 
 
-# ------------------------------------------------------------------
-# export_dataset_catalog_json tests
-# ------------------------------------------------------------------
-
-
 def test_export_dataset_catalog_json_returns_dict() -> None:
     """Verify export_dataset_catalog_json returns a dict."""
     result = export_dataset_catalog_json()
@@ -129,11 +119,6 @@ def test_export_dataset_catalog_json_structure() -> None:
         _expect_in("name", data, f"{table_key}")
         _expect_in("columns", data, f"{table_key}")
         _expect_in("column_count", data, f"{table_key}")
-
-
-# ------------------------------------------------------------------
-# export_dependency_graph_json tests
-# ------------------------------------------------------------------
 
 
 def test_export_dependency_graph_json_returns_dict() -> None:
@@ -190,11 +175,6 @@ def test_export_dependency_graph_json_node_structure() -> None:
         _expect_in("downstream", data, f"{table_key}")
         _expect_in("is_root", data, f"{table_key}")
         _expect_in("is_leaf", data, f"{table_key}")
-
-
-# ------------------------------------------------------------------
-# export_to_file tests
-# ------------------------------------------------------------------
 
 
 def test_export_to_file_constraints() -> None:
@@ -264,7 +244,7 @@ def test_export_to_file_invalid_type() -> None:
             export_to_file("invalid_type", path)
             pytest.fail("Should have raised ValueError")
         except ValueError:
-            pass  # Expected
+            pass
     finally:
         if path.exists():
             path.unlink()
@@ -277,11 +257,6 @@ def test_export_to_file_creates_directories() -> None:
         bytes_written = export_to_file("catalog", path)
         _require(condition=bytes_written > 0, message="should write bytes")
         _require(condition=path.exists(), message="file should exist")
-
-
-# ------------------------------------------------------------------
-# get_constraint_summary tests
-# ------------------------------------------------------------------
 
 
 def test_get_constraint_summary_returns_dict() -> None:

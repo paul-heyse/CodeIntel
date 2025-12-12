@@ -22,12 +22,11 @@ Example
 >>> from codeintel.ingestion.plugins import AstExtractPlugin
 >>> from codeintel.build.plugin_registry import get_plugin_for_target
 >>> plugin = get_plugin_for_target("ast")
->>> # Execute via BuildExecutor or directly with TargetExecutionContext
+>>>
 """
 
 from __future__ import annotations
 
-# Direct imports - no lazy loading needed for simple plugin classes
 from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
 from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
 from codeintel.ingestion.plugins.coverage_plugin import CoverageIngestPlugin
@@ -38,8 +37,6 @@ from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from codeintel.ingestion.plugins.scip_plugin import ScipIngestPlugin
 from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
 from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
-
-# Import contracts from validation/ (canonical location)
 from codeintel.ingestion.validation import (
     ColumnConstraint,
     ContractValidationResult,

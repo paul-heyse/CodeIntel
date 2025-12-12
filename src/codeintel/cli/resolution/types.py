@@ -46,10 +46,10 @@ class ResolvedRuntime:
     Examples
     --------
     >>> from codeintel.cli.resolution import resolve_runtime
-    >>> runtime = resolve_runtime(ctx)  # doctest: +SKIP
-    >>> runtime.db_path  # doctest: +SKIP
+    >>> runtime = resolve_runtime(ctx)
+    >>> runtime.db_path
     PosixPath('build/db/codeintel.duckdb')
-    >>> runtime.repo  # doctest: +SKIP
+    >>> runtime.repo
     'org/repo'
     """
 

@@ -21,11 +21,6 @@ if TYPE_CHECKING:
 _Column = TypeVar("_Column", bound=str)
 
 
-# ---------------------------------------------------------------------------
-# SQL Generation Functions
-# ---------------------------------------------------------------------------
-
-
 def build_insert_sql(table_key: str) -> str:
     """Generate an INSERT SQL statement from the TableSchema.
 
@@ -50,7 +45,7 @@ def build_insert_sql(table_key: str) -> str:
         message = f"No schema defined for table key: {table_key}"
         raise ValueError(message)
     col_names = [col.name for col in schema.columns]
-    # Validate table and column names
+
     safe_cols = [SafeColumn(name) for name in col_names]
     return QueryBuilder.insert(SafeTable(table_key), safe_cols)
 
@@ -114,11 +109,6 @@ def build_delete_sql_by_table() -> dict[str, str]:
     return result
 
 
-# ---------------------------------------------------------------------------
-# Special SQL Constants (non-generatable patterns)
-# ---------------------------------------------------------------------------
-
-# AST/CST tables use path-based subqueries for deletion (no direct repo/commit)
 AST_NODES_DELETE: Final[str] = (
     "DELETE FROM core.ast_nodes "
     "WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"
@@ -132,12 +122,12 @@ CST_NODES_DELETE: Final[str] = (
     "WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"
 )
 
-# File state uses 3 parameters for deletion
+
 FILE_STATE_DELETE: Final[str] = (
     "DELETE FROM core.file_state WHERE repo = ? AND rel_path = ? AND language = ?"
 )
 
-# Global tables without repo/commit
+
 TAGS_INDEX_DELETE: Final[str] = "DELETE FROM analytics.tags_index"
 SYMBOL_USE_DELETE: Final[str] = "DELETE FROM graph.symbol_use_edges"
 CALL_GRAPH_NODES_DELETE: Final[str] = "DELETE FROM graph.call_graph_nodes"
@@ -145,7 +135,7 @@ CFG_BLOCKS_DELETE: Final[str] = "DELETE FROM graph.cfg_blocks"
 CFG_EDGES_DELETE: Final[str] = "DELETE FROM graph.cfg_edges"
 DFG_EDGES_DELETE: Final[str] = "DELETE FROM graph.dfg_edges"
 
-# UPDATE statements (can't be auto-generated)
+
 TEST_CATALOG_UPDATE_GOIDS: Final[str] = (
     "UPDATE analytics.test_catalog "
     "SET test_goid_h128 = ?, urn = ? "
@@ -154,11 +144,6 @@ TEST_CATALOG_UPDATE_GOIDS: Final[str] = (
 GOID_CROSSWALK_UPDATE_SCIP: Final[str] = (
     "UPDATE core.goid_crosswalk SET scip_symbol = ? WHERE goid = ? AND repo = ? AND commit = ?"
 )
-
-
-# ---------------------------------------------------------------------------
-# Column Name Accessors
-# ---------------------------------------------------------------------------
 
 
 def load_columns_by_table() -> dict[str, list[str]]:
@@ -230,11 +215,6 @@ def get_contract_columns(table_key: str) -> tuple[str, ...]:
     return tuple(col.name for col in schema.columns)
 
 
-# ---------------------------------------------------------------------------
-# Row Serialization Helpers
-# ---------------------------------------------------------------------------
-
-
 def serialize_row(row: Mapping[_Column, object], columns: Sequence[_Column]) -> tuple[object, ...]:
     """Serialize a mapping using a stable column sequence.
 
@@ -253,7 +233,6 @@ def serialize_row(row: Mapping[_Column, object], columns: Sequence[_Column]) -> 
     return tuple(row[column] for column in columns)
 
 
-# ---------------------------------------------------------------------------
 def get_insert_sql_by_table() -> dict[str, str]:
     """Return the INSERT_SQL_BY_TABLE dictionary.
 

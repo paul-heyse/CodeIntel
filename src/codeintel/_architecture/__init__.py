@@ -64,10 +64,6 @@ class ImportBoundary:
     description: str
 
 
-# ============================================================================
-# Boundary Definitions
-# ============================================================================
-
 DUCKDB_BOUNDARY = ImportBoundary(
     name="duckdb",
     restricted_modules=frozenset({"duckdb"}),
@@ -136,11 +132,9 @@ def check_boundary(boundary: ImportBoundary, root: Path) -> list[str]:
     for path in root.rglob("*.py"):
         str_path = str(path)
 
-        # Check if this path is in an allowed location
         if any(allowed in str_path for allowed in boundary.allowed_paths):
             continue
 
-        # Check for restricted imports
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:

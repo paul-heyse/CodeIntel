@@ -12,11 +12,9 @@ from typing import Any, TypeVar, cast
 
 import networkx as nx
 
-# Type variable for node types (typically int for GOIDs)
 NodeT = TypeVar("NodeT", bound=Hashable)
 
-# NetworkX DegreeView is Iterable[tuple[node, degree]] but stubs type it as int
-# Use Any for node type since graphs can have any hashable node type
+
 DegreeViewT = Iterable[tuple[Any, int]]
 
 
@@ -73,7 +71,6 @@ def get_in_degrees(graph: nx.DiGraph) -> list[tuple[Any, int]]:
     >>> get_in_degrees(g)
     [(1, 0), (2, 1), (3, 2)]
     """
-    # NetworkX stubs incorrectly type this as int; cast to actual iterable type
     degrees = cast("DegreeViewT", graph.in_degree())
     return [(node, degree) for node, degree in degrees]
 
@@ -97,7 +94,6 @@ def get_out_degrees(graph: nx.DiGraph) -> list[tuple[Any, int]]:
     >>> get_out_degrees(g)
     [(1, 2), (2, 1), (3, 0)]
     """
-    # NetworkX stubs incorrectly type this as int; cast to actual iterable type
     degrees = cast("DegreeViewT", graph.out_degree())
     return [(node, degree) for node, degree in degrees]
 
@@ -121,7 +117,6 @@ def get_degrees(graph: nx.Graph) -> list[tuple[Any, int]]:
     >>> get_degrees(g)
     [(1, 2), (2, 2), (3, 2)]
     """
-    # NetworkX stubs have issues with degree(); use attribute access
     degrees = cast("DegreeViewT", graph.degree)
     return [(node, degree) for node, degree in degrees]
 
@@ -139,7 +134,6 @@ def get_in_degree_values(graph: nx.DiGraph) -> list[int]:
     list[int]
         List of in-degree values for all nodes (in node iteration order).
     """
-    # NetworkX stubs incorrectly type this as int; cast to actual iterable type
     degrees = cast("DegreeViewT", graph.in_degree())
     return [degree for _, degree in degrees]
 
@@ -157,7 +151,6 @@ def get_out_degree_values(graph: nx.DiGraph) -> list[int]:
     list[int]
         List of out-degree values for all nodes (in node iteration order).
     """
-    # NetworkX stubs incorrectly type this as int; cast to actual iterable type
     degrees = cast("DegreeViewT", graph.out_degree())
     return [degree for _, degree in degrees]
 
@@ -175,7 +168,6 @@ def get_degree_values(graph: nx.Graph) -> list[int]:
     list[int]
         List of degree values for all nodes (in node iteration order).
     """
-    # NetworkX stubs have issues with degree(); use attribute access
     degrees = cast("DegreeViewT", graph.degree)
     return [degree for _, degree in degrees]
 
@@ -273,7 +265,7 @@ def compute_condensation_layer_count(graph: nx.DiGraph) -> int | None:
     condensation = nx.condensation(graph)
     if condensation.number_of_nodes() == 0:
         return 0
-    # Compute topological layers for the condensation DAG
+
     layers: dict[int, int] = {
         node: 0 for node in condensation.nodes if condensation.in_degree(node) == 0
     }
@@ -325,20 +317,16 @@ def compute_graph_statistics(graph: nx.DiGraph) -> GraphStatistics:
             is_dag=True,
         )
 
-    # Density
     density = nx.density(graph)
 
-    # Average degrees (using type-safe wrappers)
     in_degrees = get_in_degree_values(graph)
     out_degrees = get_out_degree_values(graph)
     avg_in_degree = sum(in_degrees) / node_count if node_count else 0.0
     avg_out_degree = sum(out_degrees) / node_count if node_count else 0.0
 
-    # Connected components
     strongly_connected = nx.number_strongly_connected_components(graph)
     weakly_connected = nx.number_weakly_connected_components(graph)
 
-    # DAG check
     is_dag = nx.is_directed_acyclic_graph(graph)
 
     return GraphStatistics(

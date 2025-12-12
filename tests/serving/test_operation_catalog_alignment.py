@@ -17,10 +17,6 @@ from codeintel.serving.operations.catalog import (
     iter_registry_operations,
 )
 
-# =============================================================================
-# Catalog ↔ Registry Alignment
-# =============================================================================
-
 
 def test_registry_and_catalog_agree_on_ids() -> None:
     """Registry operation IDs must match catalog operation IDs."""
@@ -36,8 +32,7 @@ def test_registry_returns_catalog_objects() -> None:
     for op in iter_operations():
         registry_op = get_registry_operation(op.id)
         catalog_op = get_operation(op.id)
-        # For non-patched operations, should have same attributes
-        # datasets.rows is patched with exposed_datasets, so compare by ID
+
         if registry_op is None:
             pytest.fail(f"get_registry_operation returned None for {op.id}")
         if catalog_op is None:
@@ -55,11 +50,6 @@ def test_all_operation_ids_are_unique() -> None:
     ids = [op.id for op in iter_operations()]
     if len(ids) != len(set(ids)):
         pytest.fail("Duplicate operation IDs found")
-
-
-# =============================================================================
-# Operation Data Source Validation
-# =============================================================================
 
 
 def test_view_operations_have_source_names() -> None:
@@ -94,15 +84,8 @@ def test_required_datasets_are_valid() -> None:
 
     for op in iter_operations():
         for dataset_key in op.required_datasets:
-            # Some dataset keys are informal (like "call_graph_nodes")
-            # Only validate if it looks like a table_key
             if "." in dataset_key and dataset_key not in valid_keys:
                 pytest.fail(f"Operation {op.id} requires unknown dataset: {dataset_key}")
-
-
-# =============================================================================
-# Tool Name Uniqueness
-# =============================================================================
 
 
 def test_all_tool_names_are_unique() -> None:
@@ -120,16 +103,10 @@ def test_tool_names_follow_convention() -> None:
             pytest.fail(f"Tool name {op.tool_name} for {op.id} should be snake_case")
 
 
-# =============================================================================
-# HTTP Path Configuration
-# =============================================================================
-
-
 def test_http_paths_are_unique() -> None:
     """Every non-None http_path must be unique (ignoring path params)."""
 
     def normalize_path(path: str) -> str:
-        # Replace {param} with a placeholder
         return re.sub(r"\{[^}]+\}", "{}", path)
 
     paths_with_methods: list[tuple[str, str]] = []

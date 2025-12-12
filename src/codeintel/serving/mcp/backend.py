@@ -89,7 +89,6 @@ async def _get_async(
     return await client.get(path, params=params)
 
 
-# Canonical alias for the aggregated backend protocol
 QueryBackend = AggregatedBackendProtocol
 
 
@@ -250,8 +249,6 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
     >>> backend = resource.backend
     """
 
-    # Attribute typed as QueryService for protocol compatibility;
-    # __init__ enforces LocalQueryService at construction time
     service: QueryService
     gateway: StorageGateway
     repo: str | None = None
@@ -802,7 +799,7 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
                     response = anyio.run(_get_async, client, path, normalized_params)
                 else:
                     response = client.get(path, params=normalized_params)
-            except httpx.RequestError as exc:  # pragma: no cover - network dependent
+            except httpx.RequestError as exc:
                 attempt_error = exc
             else:
                 if response.status_code >= HTTP_ERROR_STATUS:

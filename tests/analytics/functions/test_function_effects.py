@@ -289,13 +289,11 @@ def test_effect_analysis_direct_effectful_all_false() -> None:
         evidence=_empty_evidence(),
     )
 
-    # Verify property returns False
     expect_false(analysis.direct_effectful)
 
 
 def test_effect_analysis_direct_effectful_any_true() -> None:
     """direct_effectful is True when any flag is True."""
-    # Test each flag individually
     flags = [
         "uses_io",
         "touches_db",

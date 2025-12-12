@@ -26,7 +26,6 @@ def test_export_mappings_cover_required_tables(
     parquet_mapping = gateway.datasets.parquet_mapping or {}
 
     required_tables = {
-        # core
         "core.goids",
         "core.goid_crosswalk",
         "core.modules",
@@ -34,7 +33,6 @@ def test_export_mappings_cover_required_tables(
         "core.ast_metrics",
         "core.cst_nodes",
         "core.docstrings",
-        # graph
         "graph.call_graph_nodes",
         "graph.call_graph_edges",
         "graph.cfg_blocks",
@@ -42,7 +40,6 @@ def test_export_mappings_cover_required_tables(
         "graph.dfg_edges",
         "graph.import_graph_edges",
         "graph.symbol_use_edges",
-        # analytics
         "analytics.function_metrics",
         "analytics.function_types",
         "analytics.coverage_lines",

@@ -110,7 +110,6 @@ def run_checked(
         raise FileNotFoundError(exc.filename or cmd[0]) from exc
 
 
-# Top-level packages to include in overview diagrams
 TOP_LEVEL_PACKAGES = (
     "codeintel.analytics",
     "codeintel.config",
@@ -157,14 +156,14 @@ def generate_pydeps_diagram(
             "pydeps",
             "codeintel",
             "--max-module-depth",
-            "3",  # Coalesce to codeintel.X.Y level (shows subfolders like analytics.core)
+            "3",
             "--max-bacon",
-            "0",  # No hop limit (show all relationships)
+            "0",
             "--only",
-            "codeintel",  # Only show codeintel modules, exclude external dependencies
+            "codeintel",
             "--cluster",
             "--rankdir",
-            "TB",  # Top-to-bottom layout for cleaner architecture view
+            "TB",
             "--noshow",
             "-T",
             "svg",
@@ -213,12 +212,6 @@ def generate_pyreverse_diagrams(
     log.info("[2/3] Generating pyreverse UML diagrams (overview)...")
 
     try:
-        # Run pyreverse with options for cleaner output:
-        # -k / --only-classnames: Don't show attributes and methods
-        # -a 0: Don't show ancestor classes
-        # -s 0: Don't show associated classes
-        # -m y: Include module name in class name for clarity
-        # -f PUB_ONLY: Only show public members (when not using -k)
         run_checked(
             [
                 "pyreverse",
@@ -226,19 +219,18 @@ def generate_pyreverse_diagrams(
                 "svg",
                 "-p",
                 "codeintel",
-                "-k",  # Only class names, no attributes/methods
+                "-k",
                 "-a",
-                "0",  # No ancestor classes
+                "0",
                 "-s",
-                "0",  # No associated classes
-                *TOP_LEVEL_PACKAGES,  # Only analyze top-level packages
+                "0",
+                *TOP_LEVEL_PACKAGES,
             ],
             cwd=src_root,
             env=env,
-            capture_stderr=True,  # Suppress Graphviz info message
+            capture_stderr=True,
         )
 
-        # Move generated files to docs folder
         packages_svg = src_root / "packages_codeintel.svg"
         classes_svg = src_root / "classes_codeintel.svg"
 
@@ -323,14 +315,12 @@ def generate_diagrams(*, parallel: bool = True) -> list[DiagramResult]:
     docs_arch = root / "mkdocs-build" / "docs" / "architecture"
     docs_arch.mkdir(parents=True, exist_ok=True)
 
-    # Check prerequisites
     if not check_graphviz():
         log.warning(
             "Graphviz not found. Install with: sudo apt install graphviz (Ubuntu) "
             "or brew install graphviz (macOS)"
         )
 
-    # Setup environment with PYTHONPATH
     env = os.environ.copy()
     python_path = env.get("PYTHONPATH", "")
     if python_path:
@@ -353,7 +343,6 @@ def generate_diagrams(*, parallel: bool = True) -> list[DiagramResult]:
     results: list[DiagramResult] = []
 
     if parallel:
-        # Run pydeps and pyreverse in parallel
         with ThreadPoolExecutor(max_workers=2) as executor:
             futures = [
                 executor.submit(generate_pydeps_batch),
@@ -363,11 +352,9 @@ def generate_diagrams(*, parallel: bool = True) -> list[DiagramResult]:
             for future in as_completed(futures):
                 results.extend(future.result())
     else:
-        # Sequential execution
         results.extend(generate_pydeps_batch())
         results.extend(generate_pyreverse_diagrams(src_root, docs_arch, env))
 
-    # Summary
     log.info("-" * 60)
     succeeded = sum(1 for r in results if r.success)
     failed = len(results) - succeeded

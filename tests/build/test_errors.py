@@ -127,4 +127,4 @@ def test_error_collection_empty_summary() -> None:
     collection = BuildErrorCollection()
 
     expect_equal(collection.format_summary(), "No errors")
-    collection.raise_if_errors()  # Should not raise
+    collection.raise_if_errors()

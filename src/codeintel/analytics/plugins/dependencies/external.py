@@ -87,7 +87,7 @@ class ExternalDepsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         cfg = ExternalDependenciesStepConfig(
             snapshot=ctx.snapshot,
@@ -97,7 +97,6 @@ class ExternalDepsPlugin(TargetPlugin):
         if catalog is None:
             return TargetResult.failed("CatalogProvider is required")
 
-        # Get resources from catalog
         module_map: dict[str, str] = dict(catalog.catalog().module_by_path)
         missing_goids: set[int] = set()
         features_map: dict[int, FunctionAstFeatures] = {}

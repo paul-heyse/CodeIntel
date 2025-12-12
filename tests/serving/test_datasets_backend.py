@@ -37,19 +37,10 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-# -----------------------------------------------------------------------------
-# Constants
-# -----------------------------------------------------------------------------
-
 DEFAULT_LIMIT = 100
 MAX_ROWS = 1000
 CUSTOM_LIMIT = 50
 CUSTOM_MAX = 500
-
-
-# -----------------------------------------------------------------------------
-# Fixtures
-# -----------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -85,11 +76,6 @@ class MockConfig:
         self.max_rows_per_call = max_rows
 
 
-# -----------------------------------------------------------------------------
-# DOCS_VIEWS Constant Tests
-# -----------------------------------------------------------------------------
-
-
 def test_docs_views_contains_only_views() -> None:
     """Verify DOCS_VIEWS dictionary contains only view contracts."""
     contracts = get_dataset_contracts()
@@ -119,13 +105,7 @@ def test_docs_views_is_non_empty_if_views_exist() -> None:
     contracts = get_dataset_contracts()
     view_count = sum(1 for c in contracts.values() if c.is_view)
 
-    # DOCS_VIEWS should match the number of views
     expect_equal(len(DOCS_VIEWS), view_count)
-
-
-# -----------------------------------------------------------------------------
-# build_dataset_registry Tests
-# -----------------------------------------------------------------------------
 
 
 def test_build_dataset_registry_returns_dict() -> None:
@@ -138,7 +118,6 @@ def test_build_dataset_registry_includes_docs_views_by_default() -> None:
     """Verify docs views are included when include_docs_views is 'include'."""
     registry = build_dataset_registry(include_docs_views="include")
 
-    # Check that at least some docs views are present
     for view_name in DOCS_VIEWS:
         expect_in(view_name, registry, label=f"Expected docs view {view_name} in registry")
 
@@ -147,7 +126,6 @@ def test_build_dataset_registry_excludes_docs_views_when_requested() -> None:
     """Verify docs views are excluded when include_docs_views is 'exclude'."""
     registry = build_dataset_registry(include_docs_views="exclude")
 
-    # Verify no docs views are present
     for view_name in DOCS_VIEWS:
         expect_not_in(view_name, registry, label=f"Docs view {view_name} should be excluded")
 
@@ -201,11 +179,6 @@ def test_build_dataset_registry_contains_all_non_view_datasets() -> None:
         expect_in(name, registry_exclude)
 
 
-# -----------------------------------------------------------------------------
-# build_registry_and_limits Tests
-# -----------------------------------------------------------------------------
-
-
 def test_build_registry_and_limits_returns_tuple() -> None:
     """Verify build_registry_and_limits returns a tuple of registry and limits."""
     config = MockConfig()
@@ -232,7 +205,6 @@ def test_build_registry_and_limits_respects_include_docs_views() -> None:
     registry_with_views, _ = build_registry_and_limits(config, include_docs_views="include")
     registry_without_views, _ = build_registry_and_limits(config, include_docs_views="exclude")
 
-    # The registry with views should be larger (or equal if no docs views exist)
     expect_true(len(registry_with_views) >= len(registry_without_views))
 
 
@@ -251,31 +223,23 @@ def test_build_registry_and_limits_limits_has_expected_attributes() -> None:
     config = MockConfig()
     _registry, limits = build_registry_and_limits(config)
 
-    # BackendLimits should have these attributes
     expect_true(hasattr(limits, "default_limit"))
     expect_true(hasattr(limits, "max_rows_per_call"))
-
-
-# -----------------------------------------------------------------------------
-# describe_dataset Tests
-# -----------------------------------------------------------------------------
 
 
 def test_describe_dataset_with_known_contract() -> None:
     """Verify describe_dataset includes column preview for known contracts."""
     contracts_by_key = get_dataset_contracts_by_table_key()
 
-    # Find a contract with a schema
     for table_key, contract in contracts_by_key.items():
         if contract.schema is not None and len(contract.schema.columns) > 0:
             name = contract.name or "dataset"
             description = describe_dataset(name, table_key)
 
-            # Should include the table key
             expect_in(table_key, description)
-            # Should include the name
+
             expect_in(name, description)
-            # Should include column names
+
             first_column = contract.schema.columns[0].name
             expect_in(first_column, description)
             break
@@ -295,7 +259,6 @@ def test_describe_dataset_shows_ellipsis_for_many_columns() -> None:
     """Verify ellipsis is shown when more columns exist than preview count."""
     contracts_by_key = get_dataset_contracts_by_table_key()
 
-    # Find a contract with more columns than PREVIEW_COLUMN_COUNT
     for table_key, contract in contracts_by_key.items():
         if contract.schema is not None and len(contract.schema.columns) > PREVIEW_COLUMN_COUNT:
             name = contract.name or "dataset"
@@ -309,13 +272,11 @@ def test_describe_dataset_no_ellipsis_for_few_columns() -> None:
     """Verify no ellipsis when columns are within preview count."""
     contracts_by_key = get_dataset_contracts_by_table_key()
 
-    # Find a contract with fewer columns than or equal to PREVIEW_COLUMN_COUNT
     for table_key, contract in contracts_by_key.items():
         if contract.schema is not None and len(contract.schema.columns) <= PREVIEW_COLUMN_COUNT:
             name = contract.name or "dataset"
             description = describe_dataset(name, table_key)
 
-            # Should not have ellipsis
             expect_not_in("...", description)
             break
 
@@ -329,7 +290,6 @@ def test_describe_dataset_format_with_parentheses() -> None:
             name = contract.name or "dataset"
             description = describe_dataset(name, table_key)
 
-            # Should have format: "name: table_key (col1, col2, ...)"
             expect_in("(", description)
             expect_in(")", description)
             break
@@ -337,20 +297,13 @@ def test_describe_dataset_format_with_parentheses() -> None:
 
 def test_describe_dataset_with_none_contract() -> None:
     """Verify describe_dataset handles tables without contracts gracefully."""
-    # Use a completely unknown table that won't have a contract
     name = "completely_unknown"
     table = "no_schema.no_table"
 
     description = describe_dataset(name, table)
 
-    # Should fall back to simple format
     expect_equal(description, f"{name}: {table}")
     expect_not_in("(", description)
-
-
-# -----------------------------------------------------------------------------
-# validate_dataset_registry Tests
-# -----------------------------------------------------------------------------
 
 
 def test_validate_dataset_registry_with_minimal_gateway(gateway: StorageGateway) -> None:
@@ -360,12 +313,10 @@ def test_validate_dataset_registry_with_minimal_gateway(gateway: StorageGateway)
     registered datasets exist. This test verifies the function runs and
     produces expected error format when validation fails.
     """
-    # Try validation - may succeed or fail depending on gateway state
     try:
         validate_dataset_registry(gateway)
-        # Validation passed - gateway has all required tables
+
     except ValueError as exc:
-        # Validation failed - verify error message format
         error_msg = str(exc)
         expect_in("Dataset registry validation failed", error_msg)
 
@@ -378,7 +329,7 @@ def test_validate_dataset_registry_error_contains_details() -> None:
             validate_dataset_registry(gw)
         except ValueError as exc:
             error_msg = str(exc)
-            # Error should contain specific issue categories
+
             has_detail = any(
                 detail in error_msg
                 for detail in [
@@ -387,7 +338,7 @@ def test_validate_dataset_registry_error_contains_details() -> None:
                     "dataset_rows failures",
                 ]
             )
-            # Either validation passed or error has proper details
+
             expect_in("Dataset registry validation failed", error_msg)
             expect_true(has_detail)
     finally:
@@ -396,26 +347,17 @@ def test_validate_dataset_registry_error_contains_details() -> None:
 
 def test_validate_dataset_registry_uses_gateway_datasets(gateway: StorageGateway) -> None:
     """Verify validate_dataset_registry reads from gateway.datasets.mapping."""
-    # Verify the gateway has a datasets.mapping attribute
     expect_true(hasattr(gateway, "datasets"))
     expect_true(hasattr(gateway.datasets, "mapping"))
 
-    # The mapping should be a dict-like
     mapping = gateway.datasets.mapping
     expect_is_instance(mapping, dict)
 
 
 def test_validate_dataset_registry_only_raises_valueerror(gateway: StorageGateway) -> None:
     """Verify validate_dataset_registry only raises ValueError when it fails."""
-    # This tests that the function either succeeds or raises ValueError
-    # No other exception type should be raised
     with contextlib.suppress(ValueError):
         validate_dataset_registry(gateway)
-
-
-# -----------------------------------------------------------------------------
-# PREVIEW_COLUMN_COUNT Constant Tests
-# -----------------------------------------------------------------------------
 
 
 def test_preview_column_count_is_positive() -> None:
@@ -433,15 +375,14 @@ def test_preview_column_count_used_in_describe() -> None:
             name = contract.name or "dataset"
             description = describe_dataset(name, table_key)
 
-            # Extract column list from parentheses
             paren_start = description.find("(")
             paren_end = description.find(")")
             if paren_start != -1 and paren_end != -1:
                 paren_content = description[paren_start + 1 : paren_end]
-                # Remove trailing ellipsis if present
+
                 if paren_content.endswith("..."):
                     paren_content = paren_content[:-3]
                 columns_shown = paren_content.split(",")
-                # Should show at most PREVIEW_COLUMN_COUNT columns
+
                 expect_true(len(columns_shown) <= PREVIEW_COLUMN_COUNT + 1)
             break

@@ -27,10 +27,6 @@ from codeintel.config.datasets.primitives import (
     TableSchema,
 )
 
-# ---------------------------------------------------------------------------
-# TABLE_SCHEMAS - All table definitions (79 schemas)
-# ---------------------------------------------------------------------------
-
 TABLE_SCHEMAS: dict[str, TableSchema] = {
     "core.ast_nodes": TableSchema(
         schema="core",
@@ -1795,7 +1791,6 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         ],
         description="File-level hotspot scores",
     ),
-    # Graph schemas
     "graph.call_graph_nodes": TableSchema(
         schema="graph",
         name="call_graph_nodes",
@@ -1934,7 +1929,6 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         indexes=(Index("idx_graph_symbol_use_symbol", ("symbol",)),),
         description="Definition-to-use edges derived from SCIP",
     ),
-    # Docs schema
     "docs.v_validation_summary": TableSchema(
         schema="docs",
         name="v_validation_summary",
@@ -1947,7 +1941,6 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("detail", "VARCHAR"),
         ],
     ),
-    # Build system schemas
     "build.output_manifests": TableSchema(
         schema="build",
         name="output_manifests",
@@ -2078,21 +2071,14 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
     ),
 }
 
-# ---------------------------------------------------------------------------
-# COMPOSITE_SCHEMAS - Profile Composition Registry (4 schemas)
-# ---------------------------------------------------------------------------
-# This registry declares how profile tables are composed from their source
-# tables, enabling validation and documentation of schema relationships.
 
-# Define a shared fragment for function_profile columns that come from the
-# entity identity, which is common across all function source tables.
 _FUNCTION_PROFILE_ENTITY_COLS: Final[tuple[Column, ...]] = (
     Column("function_goid_h128", "DECIMAL(38,0)"),
     Column("urn", "VARCHAR"),
     Column("repo", "VARCHAR"),
     Column("commit", "VARCHAR"),
     Column("rel_path", "VARCHAR"),
-    Column("module", "VARCHAR"),  # Note: profile has module, FUNCTION_ENTITY_COLS doesn't
+    Column("module", "VARCHAR"),
     Column("language", "VARCHAR"),
     Column("kind", "VARCHAR"),
     Column("qualname", "VARCHAR"),
@@ -2114,14 +2100,10 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
         ),
         shared_fragments=(FUNCTION_ENTITY_COLS,),
         additional_columns=(
-            # Profile-specific entity column (not in FUNCTION_ENTITY_COLS)
             Column("module", "VARCHAR"),
-            # Note: keyword_params, vararg, kwarg come from sources via mappings
-            # Types profile-specific subset
-            Column("file_typed_ratio", "DOUBLE"),  # computed
-            Column("static_error_count", "INTEGER"),  # from static_diagnostics
-            Column("has_static_errors", "BOOLEAN"),  # computed
-            # Test and coverage profile-specific
+            Column("file_typed_ratio", "DOUBLE"),
+            Column("static_error_count", "INTEGER"),
+            Column("has_static_errors", "BOOLEAN"),
             Column("tests_touching", "INTEGER"),
             Column("failing_tests", "INTEGER"),
             Column("slow_tests", "INTEGER"),
@@ -2129,9 +2111,7 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
             Column("last_test_status", "VARCHAR"),
             Column("dominant_test_status", "VARCHAR"),
             Column("slow_test_threshold_ms", "DOUBLE"),
-            # Renamed history column
-            Column("created_at_history", "TIMESTAMP"),  # from created_at
-            # Graph metrics (from graph_metrics_functions)
+            Column("created_at_history", "TIMESTAMP"),
             Column("call_fan_in", "INTEGER"),
             Column("call_fan_out", "INTEGER"),
             Column("call_edge_in_count", "INTEGER"),
@@ -2139,26 +2119,21 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
             Column("call_is_leaf", "BOOLEAN"),
             Column("call_is_entrypoint", "BOOLEAN"),
             Column("call_is_public", "BOOLEAN"),
-            # Risk (from goid_risk_factors + computed)
             Column("risk_score", "DOUBLE"),
             Column("risk_level", "VARCHAR"),
             Column("risk_component_coverage", "DOUBLE"),
             Column("risk_component_complexity", "DOUBLE"),
             Column("risk_component_static", "DOUBLE"),
             Column("risk_component_hotspot", "DOUBLE"),
-            # Contracts (derived booleans)
             Column("has_preconditions", "BOOLEAN"),
             Column("has_postconditions", "BOOLEAN"),
             Column("has_raises", "BOOLEAN"),
-            # Docstring (from docstrings)
             Column("doc_short", "VARCHAR"),
             Column("doc_long", "VARCHAR"),
             Column("doc_params", "JSON"),
             Column("doc_returns", "JSON"),
-            # Ownership
             Column("tags", "JSON"),
             Column("owners", "JSON"),
-            # Timestamp
             Column("created_at", "TIMESTAMP"),
         ),
         column_mappings={
@@ -2168,28 +2143,27 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
         },
         excluded_columns=frozenset(
             {
-                "created_at",  # Each source has its own; profile has one
-                "effects_json",  # Flattened into booleans
-                "preconditions_json",  # Flattened into has_preconditions
-                "postconditions_json",  # Flattened into has_postconditions
-                "raises_json",  # Flattened into has_raises
-                "unannotated_params",  # Redundant with annotated_params
-                "param_typed_ratio",  # Not in profile
-                "has_return_annotation",  # Replaced by return_type presence
-                "return_type_source",  # Not in profile
-                "type_comment",  # Not in profile
-                "is_async",  # Not in profile (in ast_features)
-                "is_generator",  # Not in profile
-                "return_count",  # Not in profile
-                "yield_count",  # Not in profile
-                "raise_count",  # Not in profile
-                "history_window_start",  # Not in profile
-                "history_window_end",  # Not in profile
-                "created_at_row",  # Renamed to created_at
-                # From goid_risk_factors (profile uses different test columns)
-                "failing_test_count",  # Profile has failing_tests instead
-                "hotspot_score",  # Not in function_profile
-                "test_count",  # Profile has tests_touching instead
+                "created_at",
+                "effects_json",
+                "preconditions_json",
+                "postconditions_json",
+                "raises_json",
+                "unannotated_params",
+                "param_typed_ratio",
+                "has_return_annotation",
+                "return_type_source",
+                "type_comment",
+                "is_async",
+                "is_generator",
+                "return_count",
+                "yield_count",
+                "raise_count",
+                "history_window_start",
+                "history_window_end",
+                "created_at_row",
+                "failing_test_count",
+                "hotspot_score",
+                "test_count",
             }
         ),
     ),
@@ -2202,61 +2176,50 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
         ),
         shared_fragments=(REPO_COMMIT_COLS,),
         additional_columns=(
-            # File identity
             Column("rel_path", "VARCHAR"),
             Column("module", "VARCHAR"),
             Column("language", "VARCHAR"),
-            # AST structure
             Column("node_count", "INTEGER"),
             Column("function_count", "INTEGER"),
             Column("class_count", "INTEGER"),
             Column("avg_depth", "DOUBLE"),
             Column("max_depth", "INTEGER"),
             Column("ast_complexity", "DOUBLE"),
-            # Function aggregates
             Column("total_functions", "INTEGER"),
             Column("public_functions", "INTEGER"),
             Column("avg_loc", "DOUBLE"),
             Column("max_loc", "INTEGER"),
             Column("avg_cyclomatic_complexity", "DOUBLE"),
             Column("max_cyclomatic_complexity", "INTEGER"),
-            # Risk aggregates
             Column("high_risk_function_count", "INTEGER"),
             Column("medium_risk_function_count", "INTEGER"),
             Column("max_risk_score", "DOUBLE"),
-            # Coverage aggregates
             Column("file_coverage_ratio", "DOUBLE"),
             Column("tested_function_count", "INTEGER"),
             Column("untested_function_count", "INTEGER"),
             Column("tests_touching", "INTEGER"),
-            # Ownership
             Column("tags", "JSON"),
             Column("owners", "JSON"),
-            # Timestamp
             Column("created_at", "TIMESTAMP"),
         ),
         column_mappings={},
         excluded_columns=frozenset(
             {
-                "created_at",  # Each source has its own
-                "rel_path",  # Profile has its own
-                # From typedness
-                "path",  # Profile uses rel_path
-                # From static_diagnostics
-                "has_errors",  # Profile has has_static_errors
-                "pyrefly_errors",  # Not in profile (aggregated)
-                "pyright_errors",  # Not in profile (aggregated)
-                "ruff_errors",  # Not in profile (aggregated)
-                "total_errors",  # Profile has static_error_count
-                # From hotspots
-                "complexity",  # Profile has ast_complexity
-                "score",  # Profile has hotspot_score
-                # From tags_index
-                "tag",  # Profile has tags JSON array
-                "description",  # Not in file_profile
-                "includes",  # Not in file_profile
-                "excludes",  # Not in file_profile
-                "matches",  # Not in file_profile
+                "created_at",
+                "rel_path",
+                "path",
+                "has_errors",
+                "pyrefly_errors",
+                "pyright_errors",
+                "ruff_errors",
+                "total_errors",
+                "complexity",
+                "score",
+                "tag",
+                "description",
+                "includes",
+                "excludes",
+                "matches",
             }
         ),
     ),
@@ -2268,10 +2231,8 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
         ),
         shared_fragments=(MODULE_ENTITY_COLS,),
         additional_columns=(
-            # Module identity
             Column("path", "VARCHAR"),
             Column("language", "VARCHAR"),
-            # Size metrics
             Column("file_count", "INTEGER"),
             Column("total_loc", "INTEGER"),
             Column("total_logical_loc", "INTEGER"),
@@ -2279,23 +2240,18 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
             Column("class_count", "INTEGER"),
             Column("avg_file_complexity", "DOUBLE"),
             Column("max_file_complexity", "DOUBLE"),
-            # Risk metrics
             Column("high_risk_function_count", "INTEGER"),
             Column("medium_risk_function_count", "INTEGER"),
             Column("low_risk_function_count", "INTEGER"),
             Column("max_risk_score", "DOUBLE"),
             Column("avg_risk_score", "DOUBLE"),
-            # Coverage metrics
             Column("module_coverage_ratio", "DOUBLE"),
             Column("tested_function_count", "INTEGER"),
             Column("untested_function_count", "INTEGER"),
-            # Graph metrics (from graph_metrics_modules)
             Column("cycle_group", "INTEGER"),
             Column("in_cycle", "BOOLEAN"),
-            # Ownership
             Column("tags", "JSON"),
             Column("owners", "JSON"),
-            # Timestamp
             Column("created_at", "TIMESTAMP"),
         ),
         column_mappings={
@@ -2303,23 +2259,22 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
         },
         excluded_columns=frozenset(
             {
-                "created_at",  # Each source has its own
-                "import_in_degree",  # Renamed to import_fan_in
-                "import_out_degree",  # Renamed to import_fan_out
-                "import_pagerank",  # Not in profile
-                "import_betweenness",  # Not in profile
-                "import_closeness",  # Not in profile
-                "import_cycle_id",  # Simplified to in_cycle
-                "import_layer",  # Not in profile
-                "symbol_fan_in",  # Not in profile
-                "symbol_fan_out",  # Not in profile
-                "framework",  # Not in profile (role has it)
-                # From tags_index
-                "tag",  # Profile has tags JSON array
-                "description",  # Not in module_profile
-                "includes",  # Not in module_profile
-                "excludes",  # Not in module_profile
-                "matches",  # Not in module_profile
+                "created_at",
+                "import_in_degree",
+                "import_out_degree",
+                "import_pagerank",
+                "import_betweenness",
+                "import_closeness",
+                "import_cycle_id",
+                "import_layer",
+                "symbol_fan_in",
+                "symbol_fan_out",
+                "framework",
+                "tag",
+                "description",
+                "includes",
+                "excludes",
+                "matches",
             }
         ),
     ),
@@ -2331,7 +2286,6 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
         ),
         shared_fragments=(REPO_COMMIT_COLS,),
         additional_columns=(
-            # Test identity
             Column("test_id", "VARCHAR"),
             Column("test_goid_h128", "DECIMAL(38,0)"),
             Column("urn", "VARCHAR"),
@@ -2340,20 +2294,17 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
             Column("qualname", "VARCHAR"),
             Column("language", "VARCHAR"),
             Column("kind", "VARCHAR"),
-            # Test status
             Column("status", "VARCHAR"),
             Column("duration_ms", "DOUBLE"),
             Column("markers", "JSON"),
             Column("flaky", "BOOLEAN"),
             Column("last_run_at", "TIMESTAMP"),
-            # Coverage
             Column("functions_covered", "JSON"),
             Column("functions_covered_count", "INTEGER"),
             Column("primary_function_goids", "JSON"),
             Column("subsystems_covered", "JSON"),
             Column("subsystems_covered_count", "INTEGER"),
             Column("primary_subsystem_id", "VARCHAR"),
-            # Test characteristics
             Column("assert_count", "INTEGER"),
             Column("raise_count", "INTEGER"),
             Column("uses_parametrize", "BOOLEAN"),
@@ -2363,18 +2314,15 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
             Column("uses_db", "BOOLEAN"),
             Column("uses_filesystem", "BOOLEAN"),
             Column("uses_subprocess", "BOOLEAN"),
-            # Scores
             Column("flakiness_score", "DOUBLE"),
             Column("importance_score", "DOUBLE"),
             Column("notes", "VARCHAR"),
-            # Graph metrics (from test_graph_metrics_tests)
             Column("tg_degree", "INTEGER"),
             Column("tg_weighted_degree", "DOUBLE"),
             Column("tg_proj_degree", "INTEGER"),
             Column("tg_proj_weight", "DOUBLE"),
             Column("tg_proj_clustering", "DOUBLE"),
             Column("tg_proj_betweenness", "DOUBLE"),
-            # Timestamp
             Column("created_at", "TIMESTAMP"),
         ),
         column_mappings={
@@ -2388,23 +2336,18 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
         },
         excluded_columns=frozenset(
             {
-                "created_at",  # Each source has its own
-                "degree_centrality",  # Not in profile
-                "risk_weighted_degree",  # Not in profile
-                "behavior_tags",  # Not in profile (behavioral_coverage)
-                "tag_source",  # Not in profile
-                "heuristic_version",  # Not in profile
-                "llm_model",  # Not in profile
-                "llm_run_id",  # Not in profile
+                "created_at",
+                "degree_centrality",
+                "risk_weighted_degree",
+                "behavior_tags",
+                "tag_source",
+                "heuristic_version",
+                "llm_model",
+                "llm_run_id",
             }
         ),
     ),
 }
-
-
-# ---------------------------------------------------------------------------
-# Schema Derivation Support
-# ---------------------------------------------------------------------------
 
 
 def get_table_schema(table_key: str) -> TableSchema | None:

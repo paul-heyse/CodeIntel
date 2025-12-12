@@ -146,7 +146,7 @@ def test_register_tools_registers_all_categories() -> None:
     ctx.register({"functions", "profiles", "architecture", "datasets"})
 
     expect_equal(set(ctx.mcp.registry.keys()), {"fn_tool", "prof_tool", "arch_tool", "data_tool"})
-    # Invoke tools to ensure backend wiring
+
     ctx.mcp.registry["fn_tool"]()
     ctx.mcp.registry["prof_tool"]()
     ctx.mcp.registry["arch_tool"]()

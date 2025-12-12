@@ -51,9 +51,6 @@ from tests.graphs.constants import (
     TREE_SHAPES,
 )
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 EXPECTED_NODE_COUNT_THREE: Final[int] = 3
 EXPECTED_NODE_COUNT_FOUR: Final[int] = 4
 EXPECTED_NODE_COUNT_FIVE: Final[int] = 5
@@ -75,15 +72,10 @@ TOLERANCE: Final[float] = 0.01
 DIAMETER_CHAIN_FIVE: Final[float] = 4.0
 DIAMETER_COMPLETE: Final[float] = 1.0
 DIAMETER_STAR: Final[float] = 2.0
-AVG_PATH_CHAIN_FOUR: Final[float] = 5 / 3  # (1+2+3+1+2+1) / 6 paths
+AVG_PATH_CHAIN_FOUR: Final[float] = 5 / 3
 AVG_PATH_COMPLETE: Final[float] = 1.0
 DENSITY_COMPLETE_FOUR: Final[float] = 1.0
-DENSITY_CHAIN_FOUR: Final[float] = 3 / 12  # 3 edges, max 12
-
-
-# ===========================================================================
-# get_in_degrees Tests
-# ===========================================================================
+DENSITY_CHAIN_FOUR: Final[float] = 3 / 12
 
 
 def test_in_degrees_empty_graph() -> None:
@@ -104,11 +96,11 @@ def test_in_degrees_single_node() -> None:
 
 def test_in_degrees_chain_graph() -> None:
     """Chain graph has correct in-degrees."""
-    graph = chain_graph(4)  # A -> B -> C -> D
+    graph = chain_graph(4)
     result = get_in_degrees(graph)
 
     in_degree_dict = dict(result)
-    expect_equal(in_degree_dict["A"], 0)  # Source
+    expect_equal(in_degree_dict["A"], 0)
     expect_equal(in_degree_dict["B"], 1)
     expect_equal(in_degree_dict["C"], 1)
     expect_equal(in_degree_dict["D"], 1)
@@ -137,11 +129,6 @@ def test_in_degrees_diamond_graph() -> None:
     expect_equal(in_degree_dict["D"], EXPECTED_DEGREE_TWO)
 
 
-# ===========================================================================
-# get_out_degrees Tests
-# ===========================================================================
-
-
 def test_out_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
     graph = empty_digraph()
@@ -158,7 +145,7 @@ def test_out_degrees_chain_graph() -> None:
     expect_equal(out_degree_dict["A"], 1)
     expect_equal(out_degree_dict["B"], 1)
     expect_equal(out_degree_dict["C"], 1)
-    expect_equal(out_degree_dict["D"], 0)  # Sink
+    expect_equal(out_degree_dict["D"], 0)
 
 
 def test_out_degrees_star_graph() -> None:
@@ -184,11 +171,6 @@ def test_out_degrees_diamond_graph() -> None:
     expect_equal(out_degree_dict["D"], 0)
 
 
-# ===========================================================================
-# get_degrees Tests (Undirected)
-# ===========================================================================
-
-
 def test_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
     graph = empty_graph()
@@ -202,10 +184,10 @@ def test_degrees_chain_undirected() -> None:
     result = get_degrees(graph)
 
     degree_dict = dict(result)
-    expect_equal(degree_dict["A"], EXPECTED_DEGREE_ONE)  # End node
-    expect_equal(degree_dict["B"], EXPECTED_DEGREE_TWO)  # Middle node
-    expect_equal(degree_dict["C"], EXPECTED_DEGREE_TWO)  # Middle node
-    expect_equal(degree_dict["D"], EXPECTED_DEGREE_ONE)  # End node
+    expect_equal(degree_dict["A"], EXPECTED_DEGREE_ONE)
+    expect_equal(degree_dict["B"], EXPECTED_DEGREE_TWO)
+    expect_equal(degree_dict["C"], EXPECTED_DEGREE_TWO)
+    expect_equal(degree_dict["D"], EXPECTED_DEGREE_ONE)
 
 
 def test_degrees_complete_graph() -> None:
@@ -214,12 +196,7 @@ def test_degrees_complete_graph() -> None:
     result = get_degrees(graph)
 
     for _, degree in result:
-        expect_equal(degree, EXPECTED_DEGREE_FOUR)  # n-1 for complete graph
-
-
-# ===========================================================================
-# get_in_degree_values / get_out_degree_values / get_degree_values Tests
-# ===========================================================================
+        expect_equal(degree, EXPECTED_DEGREE_FOUR)
 
 
 def test_in_degree_values() -> None:
@@ -228,8 +205,8 @@ def test_in_degree_values() -> None:
     result = get_in_degree_values(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_THREE)
-    expect_in(0, result)  # A has in-degree 0
-    expect_true(result.count(EXPECTED_DEGREE_ONE) >= EXPECTED_DEGREE_TWO)  # B, C have in-degree 1
+    expect_in(0, result)
+    expect_true(result.count(EXPECTED_DEGREE_ONE) >= EXPECTED_DEGREE_TWO)
 
 
 def test_out_degree_values() -> None:
@@ -238,7 +215,7 @@ def test_out_degree_values() -> None:
     result = get_out_degree_values(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_THREE)
-    expect_in(0, result)  # C has out-degree 0
+    expect_in(0, result)
 
 
 def test_degree_values() -> None:
@@ -247,13 +224,8 @@ def test_degree_values() -> None:
     result = get_degree_values(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_THREE)
-    expect_in(EXPECTED_DEGREE_ONE, result)  # End nodes have degree 1
-    expect_in(EXPECTED_DEGREE_TWO, result)  # Middle node has degree 2
-
-
-# ===========================================================================
-# compute_diameter_estimate Tests
-# ===========================================================================
+    expect_in(EXPECTED_DEGREE_ONE, result)
+    expect_in(EXPECTED_DEGREE_TWO, result)
 
 
 def test_diameter_empty_graph() -> None:
@@ -275,7 +247,6 @@ def test_diameter_chain_graph() -> None:
     graph = chain_graph(5)
     result = compute_diameter_estimate(graph)
 
-    # Diameter of path with 5 nodes is 4
     expect_equal(result, DIAMETER_CHAIN_FIVE)
 
 
@@ -292,7 +263,6 @@ def test_diameter_disconnected_uses_largest_component() -> None:
     graph = disconnected_graph()
     result = compute_diameter_estimate(graph)
 
-    # Both components are chains of length 3 (diameter 2)
     expect_equal(result, DIAMETER_STAR)
 
 
@@ -301,13 +271,7 @@ def test_diameter_star_graph() -> None:
     graph = star_graph(5)
     result = compute_diameter_estimate(graph)
 
-    # Undirected: spoke -> hub -> spoke = 2
     expect_equal(result, DIAMETER_STAR)
-
-
-# ===========================================================================
-# compute_avg_shortest_path_length Tests
-# ===========================================================================
 
 
 def test_avg_path_length_empty_graph() -> None:
@@ -329,7 +293,6 @@ def test_avg_path_length_chain_graph() -> None:
     graph = chain_graph(4)
     result = compute_avg_shortest_path_length(graph)
 
-    # For directed chain A->B->C->D, avg = (1+2+3+1+2+1)/6 = 10/6 = 5/3
     expect_true(result is not None)
     if result is not None:
         expect_true(abs(result - AVG_PATH_CHAIN_FOUR) < TOLERANCE)
@@ -351,11 +314,6 @@ def test_avg_path_length_disconnected_uses_largest() -> None:
     result = compute_avg_shortest_path_length(graph)
 
     expect_true(result is not None)
-
-
-# ===========================================================================
-# compute_condensation_layer_count Tests
-# ===========================================================================
 
 
 def test_condensation_layers_empty_graph() -> None:
@@ -392,7 +350,6 @@ def test_condensation_layers_diamond_graph() -> None:
     graph = diamond_graph()
     result = compute_condensation_layer_count(graph)
 
-    # A -> {B, C} -> D = 3 layers
     expect_equal(result, EXPECTED_LAYER_COUNT_THREE)
 
 
@@ -402,7 +359,6 @@ def test_condensation_layers_mixed_graph() -> None:
 
     result = compute_condensation_layer_count(graph)
 
-    # SCC {A,B,C} -> D -> E = 3 layers
     expect_equal(result, EXPECTED_LAYER_COUNT_THREE)
 
 
@@ -417,11 +373,6 @@ def test_condensation_layers_tree_graphs(depth: int, branching: int) -> None:
     result = compute_condensation_layer_count(graph)
 
     expect_equal(result, depth + 1)
-
-
-# ===========================================================================
-# compute_graph_statistics Tests
-# ===========================================================================
 
 
 def test_statistics_empty_graph() -> None:
@@ -460,7 +411,7 @@ def test_statistics_chain_graph() -> None:
     expect_equal(result.node_count, EXPECTED_NODE_COUNT_FOUR)
     expect_equal(result.edge_count, EXPECTED_EDGE_COUNT_THREE)
     expect_true(abs(result.density - DENSITY_CHAIN_FOUR) < TOLERANCE)
-    expect_equal(result.strongly_connected_components, EXPECTED_NODE_COUNT_FOUR)  # Each node is SCC
+    expect_equal(result.strongly_connected_components, EXPECTED_NODE_COUNT_FOUR)
     expect_equal(result.weakly_connected_components, EXPECTED_WCC_ONE)
     expect_true(result.is_dag)
 
@@ -472,7 +423,7 @@ def test_statistics_cyclic_graph() -> None:
 
     expect_equal(result.node_count, EXPECTED_NODE_COUNT_FOUR)
     expect_equal(result.edge_count, EXPECTED_EDGE_COUNT_FOUR)
-    expect_equal(result.strongly_connected_components, EXPECTED_SCC_ONE)  # All in one SCC
+    expect_equal(result.strongly_connected_components, EXPECTED_SCC_ONE)
     expect_equal(result.weakly_connected_components, EXPECTED_WCC_ONE)
     expect_true(not result.is_dag)
 
@@ -483,7 +434,7 @@ def test_statistics_complete_graph() -> None:
     result = compute_graph_statistics(graph)
 
     expect_equal(result.node_count, EXPECTED_NODE_COUNT_FOUR)
-    expect_equal(result.edge_count, EXPECTED_EDGE_COUNT_TWELVE)  # n*(n-1)
+    expect_equal(result.edge_count, EXPECTED_EDGE_COUNT_TWELVE)
     expect_true(abs(result.density - DENSITY_COMPLETE_FOUR) < TOLERANCE)
     expect_equal(result.strongly_connected_components, EXPECTED_SCC_ONE)
     expect_true(not result.is_dag)
@@ -527,21 +478,12 @@ def test_statistics_returns_dataclass() -> None:
 
 def test_statistics_avg_degrees() -> None:
     """Average degree calculations."""
-    graph = star_graph(4)  # hub with 4 spokes
+    graph = star_graph(4)
     result = compute_graph_statistics(graph)
 
-    # Hub has out-degree 4, spokes have 0 each
-    # Avg out-degree: 4 / 5 = 0.8
     expect_true(abs(result.avg_out_degree - 0.8) < TOLERANCE)
 
-    # Hub has in-degree 0, spokes have 1 each
-    # Avg in-degree: 4 / 5 = 0.8
     expect_true(abs(result.avg_in_degree - 0.8) < TOLERANCE)
-
-
-# ===========================================================================
-# Dataclass Frozen Tests
-# ===========================================================================
 
 
 def test_graph_statistics_frozen() -> None:
@@ -559,15 +501,10 @@ def test_graph_statistics_frozen() -> None:
     assert_cannot_setattr(stats, "node_count", 100)
 
 
-# ===========================================================================
-# Parametrized Tests
-# ===========================================================================
-
-
 @pytest.mark.parametrize(
     ("node_count", "expected_scc_count"),
     [
-        (2, 2),  # Chain: each node is SCC
+        (2, 2),
         (5, 5),
         (10, 10),
     ],

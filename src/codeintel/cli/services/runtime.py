@@ -45,8 +45,8 @@ class RuntimeService:
     Examples
     --------
     >>> service = RuntimeService.from_dict({"project_root": Path(".")})
-    >>> runtime = service.runtime  # Lazily resolved
-    >>> runtime.db_path  # doctest: +SKIP
+    >>> runtime = service.runtime
+    >>> runtime.db_path
     PosixPath('build/db/codeintel.duckdb')
     """
 
@@ -66,7 +66,6 @@ class RuntimeService:
         else:
             self._params = dict(params)
 
-        # Apply explicit overrides
         if project_root is not None:
             self._params["project_root"] = project_root
         if db_path is not None:

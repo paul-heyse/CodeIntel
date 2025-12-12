@@ -138,7 +138,6 @@ class PluginTestHarness:
             with PluginSandbox(self._manifest, config) as sandbox:
                 module = sandbox.load_plugin()
 
-                # Check for required attributes
                 warnings: list[str] = []
                 if not hasattr(module, "register"):
                     warnings.append("Plugin has no 'register' function")
@@ -185,7 +184,6 @@ class PluginTestHarness:
                         warnings=["Plugin has no 'register' function"],
                     )
 
-                # Create mock registry that captures registered operations
                 registered: list[object] = []
 
                 def mock_register(spec: object) -> object:
@@ -209,10 +207,8 @@ class PluginTestHarness:
 
                     register = staticmethod(mock_register)
 
-                # Register operations
                 module.register(MockRegistry())
 
-                # Validate registered operations
                 for spec in registered:
                     if not isinstance(spec, OperationSpecProtocol):
                         errors.append("Operation missing operation_id")
@@ -305,7 +301,6 @@ def create_plugin_scaffold(
     plugin_dir = output_dir / name
     plugin_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create manifest
     manifest = {
         "name": name,
         "version": "0.1.0",
@@ -320,11 +315,9 @@ def create_plugin_scaffold(
     manifest_path = plugin_dir / "plugin.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-    # Create package
     pkg_dir = plugin_dir / name
     pkg_dir.mkdir(exist_ok=True)
 
-    # Create __init__.py
     init_content = f'''"""
 {name.title()} plugin for CodeIntel CLI.
 """
@@ -335,7 +328,6 @@ __all__ = ["register"]
 '''
     (pkg_dir / "__init__.py").write_text(init_content, encoding="utf-8")
 
-    # Create main.py - uses current CLI architecture patterns
     main_content = f'''"""
 Main module for {name} plugin.
 
@@ -366,8 +358,8 @@ def _example_handler(ctx: CommandContext) -> CliResult[dict[str, str]]:
     CliResult[dict[str, str]]
         Result with greeting message.
     """
-    # Access params via ctx.params.get_str(), ctx.params.get_int(), etc.
-    _ = ctx  # Acknowledge context (remove when adding real logic)
+
+    _ = ctx
     return CliResult.ok({{"message": "Hello from {name}!"}})
 
 
@@ -400,12 +392,10 @@ def register(registry: object) -> None:
 '''
     (pkg_dir / "main.py").write_text(main_content, encoding="utf-8")
 
-    # Create tests directory
     tests_dir = plugin_dir / "tests"
     tests_dir.mkdir(exist_ok=True)
     (tests_dir / "__init__.py").write_text("", encoding="utf-8")
 
-    # Create test file
     test_content = f'''"""
 Tests for {name} plugin.
 """
@@ -448,12 +438,11 @@ def test_operations_register(manifest: PluginManifest) -> None:
 '''
     (tests_dir / f"test_{name}.py").write_text(test_content, encoding="utf-8")
 
-    # Create README
-    readme_content = f"""# {name.title()} Plugin
+    readme_content = f"""
 
 A plugin for CodeIntel CLI.
 
-## Installation
+
 
 Copy this plugin to your plugins directory:
 
@@ -461,13 +450,13 @@ Copy this plugin to your plugins directory:
 cp -r {name} ~/.codeintel/plugins/
 ```
 
-## Usage
+
 
 ```bash
 codeintel op call {name}.hello
 ```
 
-## Development
+
 
 Run tests:
 

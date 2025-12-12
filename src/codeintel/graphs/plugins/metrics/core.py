@@ -55,7 +55,7 @@ class CoreMetricsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         cfg = GraphMetricsStepConfig(snapshot=ctx.snapshot)
 
@@ -66,19 +66,16 @@ class CoreMetricsPlugin(TargetPlugin):
                 cfg.commit,
             )
 
-            # Build graph runtime with GPU support
             backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
             runtime_options = GraphRuntimeOptions(snapshot=ctx.snapshot, backend=backend_config)
             runtime = build_graph_runtime(ctx.gateway, runtime_options)
 
-            # Compute core graph metrics (functions and modules)
             deps = GraphMetricsDeps(
                 catalog_provider=ctx.resources.catalog,
                 runtime=runtime,
             )
             compute_graph_metrics(ctx.gateway, cfg, deps=deps)
 
-            # Compute extended function metrics
             compute_graph_metrics_functions_ext(
                 ctx.gateway,
                 repo=cfg.repo,
@@ -86,7 +83,6 @@ class CoreMetricsPlugin(TargetPlugin):
                 runtime=runtime,
             )
 
-            # Compute extended module metrics
             compute_graph_metrics_modules_ext(
                 ctx.gateway,
                 repo=cfg.repo,
@@ -94,7 +90,6 @@ class CoreMetricsPlugin(TargetPlugin):
                 runtime=runtime,
             )
 
-            # Compute global graph statistics
             compute_graph_stats(
                 ctx.gateway,
                 repo=cfg.repo,
@@ -102,7 +97,6 @@ class CoreMetricsPlugin(TargetPlugin):
                 runtime=runtime,
             )
 
-            # Get row counts
             row_counts: dict[str, int] = {}
             for table in [
                 "analytics.graph_metrics_functions",
@@ -114,7 +108,9 @@ class CoreMetricsPlugin(TargetPlugin):
                 expr = ctx.gateway.ibis.table(table)
                 filtered = expr.filter((expr.repo == cfg.repo) & (expr.commit == cfg.commit))
                 result_df = filtered.aggregate(row_count=expr.repo.count()).execute()
-                row_counts[table] = int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
+                row_counts[table] = (
+                    int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
+                )
 
             log.info("core_metrics.complete row_counts=%s", row_counts)
             return TargetResult.succeeded(row_counts=row_counts)

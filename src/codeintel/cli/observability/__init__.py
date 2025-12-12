@@ -9,14 +9,11 @@ This package provides:
 
 from __future__ import annotations
 
-# Re-export from observability module
 from codeintel.cli.observability._observability import (
     ObservabilityConfig,
     StructuredLogFormatter,
     configure_structured_logging,
 )
-
-# Re-export from telemetry module
 from codeintel.cli.observability._telemetry import (
     OperationMetrics,
     TelemetryConfig,

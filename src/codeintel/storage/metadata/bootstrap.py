@@ -14,7 +14,6 @@ from codeintel.config.datasets import (
 )
 from codeintel.storage.macros.generation import render_macro
 from codeintel.storage.sql import safe_macro_call
-from codeintel.storage.views import create_all_views
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -185,8 +184,7 @@ NORMALIZED_MACROS: dict[str, str] = {
     "analytics.behavioral_coverage": "metadata.normalized_behavioral_coverage",
 }
 
-# Auto-generate normalized macros for any remaining datasets to keep bootstrap resilient
-# when new tables are added. Tables explicitly marked dataset-rows-only are skipped.
+
 AUTO_NORMALIZED_MACRO_DDLS: list[str] = []
 for _table_key, _contract in sorted(DATASET_CONTRACTS_BY_TABLE_KEY.items()):
     if _table_key.startswith("metadata."):
@@ -779,7 +777,7 @@ METADATA_SCHEMA_DDL: tuple[str, ...] = (
     METADATA_SCHEMA_DDL_BASE + INGEST_MACRO_DDLS + METADATA_SCHEMA_DDL_REST
 )
 
-# Pipeline run tracking tables (Epic 8)
+
 PIPELINE_RUNS_DDL = """
 CREATE TABLE IF NOT EXISTS metadata.pipeline_runs (
     run_id              TEXT PRIMARY KEY,
@@ -871,7 +869,7 @@ def apply_metadata_ddl(con: DuckDBPyConnection) -> None:
         )
         """
     )
-    # Pipeline run tracking tables
+
     con.execute(PIPELINE_RUNS_DDL)
     con.execute(PIPELINE_STEPS_DDL)
     for index_stmt in PIPELINE_INDEXES_DDL.strip().split(";"):
@@ -1205,8 +1203,6 @@ def bootstrap_metadata_datasets(
 
     Safe to run repeatedly; uses idempotent upserts to refresh filenames and view flags.
     """
-    if include_views:
-        create_all_views(con)
     _assert_macro_coverage()
     apply_metadata_ddl(con)
     _register_macros(con)
@@ -1218,7 +1214,7 @@ def bootstrap_metadata_datasets(
         warning_message = "dataset_rows-only datasets (no normalized macro): " + ", ".join(
             dataset_rows_list
         )
-        # Use DuckDB's warning log for visibility during bootstrap.
+
         con.execute("SELECT ? AS warning", [warning_message])
 
     jsonl_mapping = dict(jsonl_filenames or {})

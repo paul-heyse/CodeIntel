@@ -258,7 +258,6 @@ def compute_config_graph_metrics(
 
     _clear_config_tables(gateway, repo, commit)
 
-    # Write rows using Ibis
     if key_rows:
         gateway.ibis.write(
             "analytics.config_graph_metrics_keys",

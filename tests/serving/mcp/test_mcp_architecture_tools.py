@@ -36,10 +36,6 @@ if TYPE_CHECKING:
     from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.plugins.mcp import McpBackendComponents
 
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
 
 def _build_arch_backend(
     architecture_gateway: StorageGateway,
@@ -83,21 +79,14 @@ def architecture_samples(architecture_gateway: StorageGateway) -> AnalyticsSampl
     return architecture_seed_selector(architecture_gateway)
 
 
-# =============================================================================
-# register_architecture_tools Tests
-# =============================================================================
-
-
 def test_register_architecture_tools_success(
     mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_architecture_tools registers tools successfully."""
     mcp = wrap_fastmcp("Test Architecture")
 
-    # Should not raise
     register_architecture_tools(mcp, mcp_backend.backend)
 
-    # Server should be configured
     expect_equal(mcp.name, "Test Architecture")
 
 
@@ -113,10 +102,8 @@ def test_register_architecture_tools_with_config(
         api_base_url="http://test",
     )
 
-    # Should not raise with config
     register_architecture_tools(mcp, mcp_backend.backend, config=config)
 
-    # Server should be configured
     expect_equal(mcp.name, "Test Architecture Config")
 
 
@@ -132,7 +119,6 @@ def test_register_architecture_tools_with_architecture_gateway(
         commit="deadbeef",
     ).backend
 
-    # Should not raise
     register_architecture_tools(mcp, backend)
 
     expect_equal(mcp.name, "Test Architecture Gateway")
@@ -144,7 +130,6 @@ def test_register_architecture_tools_without_config(
     """Verify register_architecture_tools works without config."""
     mcp = wrap_fastmcp("Test No Config")
 
-    # Should work with config=None (default)
     register_architecture_tools(mcp, mcp_backend.backend, config=None)
 
     expect_equal(mcp.name, "Test No Config")
@@ -156,27 +141,19 @@ def test_register_architecture_tools_with_local_query_service(
     """Verify register_architecture_tools works with LocalQueryService directly."""
     mcp = wrap_fastmcp("Test Local Service")
 
-    # Should work with service directly
     register_architecture_tools(mcp, mcp_backend_components.service)
 
     expect_equal(mcp.name, "Test Local Service")
-
-
-# =============================================================================
-# Multiple Registration Tests
-# =============================================================================
 
 
 def test_register_architecture_tools_different_servers(
     mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify tools can be registered on different servers."""
-    # Register on first server
     mcp1 = wrap_fastmcp("Server One")
     register_architecture_tools(mcp1, mcp_backend.backend)
     expect_equal(mcp1.name, "Server One")
 
-    # Register on second server
     mcp2 = wrap_fastmcp("Server Two")
     register_architecture_tools(mcp2, mcp_backend.backend)
     expect_equal(mcp2.name, "Server Two")
@@ -192,7 +169,6 @@ def test_register_architecture_tools_different_backends(
     register_architecture_tools(mcp1, mcp_backend.backend)
     expect_equal(mcp1.name, "Test Backend 1")
 
-    # Register with architecture gateway backend
     mcp2 = wrap_fastmcp("Test Backend 2")
     backend2 = mcp_backend_factory(
         gateway=architecture_gateway,
@@ -203,18 +179,12 @@ def test_register_architecture_tools_different_backends(
     expect_equal(mcp2.name, "Test Backend 2")
 
 
-# =============================================================================
-# Backend Type Tests
-# =============================================================================
-
-
 def test_register_architecture_tools_duckdb_backend(
     mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify register_architecture_tools works with DuckDBBackend."""
     mcp = wrap_fastmcp("Test DuckDB Backend")
 
-    # Verify backend is DuckDBBackend
     expect_is_instance(mcp_backend.backend, DuckDBBackend)
 
     register_architecture_tools(mcp, mcp_backend.backend)
@@ -231,11 +201,6 @@ def test_register_architecture_tools_service_with_repo_info(
 
     register_architecture_tools(mcp, mcp_backend_components.service)
     expect_equal(mcp.name, "Test Service Repo")
-
-
-# =============================================================================
-# Config Variants Tests
-# =============================================================================
 
 
 def test_register_architecture_tools_local_db_config(
@@ -270,11 +235,6 @@ def test_register_architecture_tools_remote_api_config(
     expect_equal(mcp.name, "Test Remote API Config")
 
 
-# =============================================================================
-# Limits Tests
-# =============================================================================
-
-
 def test_register_architecture_tools_custom_limits(
     mcp_backend: McpBackendComponents,
     mcp_backend_factory: Callable[..., McpBackendComponents],
@@ -296,11 +256,6 @@ def test_register_architecture_tools_custom_limits(
     expect_equal(mcp.name, "Test Custom Limits")
     expect_equal(backend.limits.default_limit, custom_limit)
     expect_equal(backend.limits.max_rows_per_call, custom_max)
-
-
-# =============================================================================
-# Backend Operations via Architecture Tools Tests
-# =============================================================================
 
 
 def test_backend_list_subsystems_via_tools(
@@ -486,14 +441,8 @@ def test_architecture_tools_emit_problem_detail_and_logs(
     assert_logged(caplog.records, level="WARNING", containing="MCP tool error")
 
 
-# =============================================================================
-# Graph Plugin Plan Tests
-# =============================================================================
-
-
 def test_graph_plugin_plan_basic() -> None:
     """Verify graph plugin plan can be computed."""
-    # Test the underlying planning function directly
     plan = plan_graph_plugins(plan_options=PlanningOptions.for_lenient_requests())
     expect_is_not_none(plan)
     expect_is_not_none(plan.plan_id)
@@ -501,21 +450,18 @@ def test_graph_plugin_plan_basic() -> None:
 
 def test_graph_plugin_plan_with_enable() -> None:
     """Verify graph plugin plan with enable parameter."""
-    # Test with enable parameter
     plan = plan_graph_plugins(enabled=("pagerank",))
     expect_is_not_none(plan)
 
 
 def test_graph_plugin_plan_with_disable() -> None:
     """Verify graph plugin plan with disable parameter."""
-    # Test with disable parameter
     plan = plan_graph_plugins(disabled=("pagerank",))
     expect_is_not_none(plan)
 
 
 def test_graph_plugin_plan_with_names() -> None:
     """Verify graph plugin plan with explicit names."""
-    # Test with explicit plugin names
     plan = plan_graph_plugins(
         plugin_names=("pagerank",),
         plan_options=PlanningOptions.for_lenient_requests(

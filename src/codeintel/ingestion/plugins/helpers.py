@@ -160,7 +160,6 @@ def filter_modules(
             try:
                 size_bytes = module.file_path.stat().st_size
             except OSError:
-                # If we cannot stat, skip this module to keep ingestion stable.
                 continue
             if size_bytes > options.max_file_size_kb * 1024:
                 continue

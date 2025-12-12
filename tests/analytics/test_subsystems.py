@@ -83,7 +83,6 @@ def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> 
         for row in subsystems
     }
 
-    # Identify clusters by risk level rather than ID (clustering assigns new IDs)
     high_cluster = next(
         (modules, risk, high_count)
         for modules, risk, high_count in subs_by_id.values()

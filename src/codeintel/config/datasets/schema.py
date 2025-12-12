@@ -31,7 +31,7 @@ __all__ = [
     "DatasetSchema",
 ]
 
-# Module-level cache for generated row models
+
 _ROW_MODEL_CACHE: dict[str, type[Any]] = {}
 
 
@@ -204,11 +204,9 @@ class DatasetSchema:
         if self.row_model is not None:
             return self.row_model
 
-        # Check cache first
         if self.name in _ROW_MODEL_CACHE:
             return _ROW_MODEL_CACHE[self.name]
 
-        # Generate and cache
         model = typed_dict_from_pandera(
             f"{_to_class_name(self.name)}Row",
             self.pandera_schema,

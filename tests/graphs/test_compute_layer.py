@@ -83,9 +83,7 @@ if TYPE_CHECKING:
 
     from codeintel.config.datasets import CallGraphEdgeRow
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+
 EXPECTED_EDGE_COUNT_ONE: Final[int] = 1
 EXPECTED_EDGE_COUNT_TWO: Final[int] = 2
 EXPECTED_EDGE_COUNT_THREE: Final[int] = 3
@@ -110,11 +108,6 @@ REPO: Final[str] = "repo"
 COMMIT: Final[str] = "commit"
 
 
-# ===========================================================================
-# resolve_callee Tests
-# ===========================================================================
-
-
 def test_resolve_callee_local_name() -> None:
     """Resolve callee via local name lookup."""
     local_callees = {"my_func": TEST_GOID_A}
@@ -130,7 +123,6 @@ def test_resolve_callee_local_attr() -> None:
     local_callees = {"module.func": TEST_GOID_A}
     result = resolve_callee("func", ["module", "func"], {}, local_callees, {})
 
-    # Should resolve via local_attr when attr_chain matches
     expect_true(result.resolved_via in {"local_attr", "global_name"})
 
 
@@ -174,11 +166,6 @@ def test_resolve_callee_priority_local_over_global() -> None:
     expect_equal(result.resolved_via, "local_name")
 
 
-# ===========================================================================
-# resolve_via_scip Tests
-# ===========================================================================
-
-
 def test_resolve_via_scip_found() -> None:
     """SCIP resolution finds matching def path."""
     def_goids = {"path/to/module.py:func": TEST_GOID_A}
@@ -204,11 +191,6 @@ def test_resolve_via_scip_empty_candidates() -> None:
 
     expect_is_none(result.callee_goid)
     expect_equal(result.resolved_via, "unresolved")
-
-
-# ===========================================================================
-# build_evidence Tests
-# ===========================================================================
 
 
 def test_build_evidence_basic() -> None:
@@ -245,11 +227,6 @@ def test_build_evidence_with_scip_candidates() -> None:
 
     expect_true("scip_candidates" in evidence)
     expect_equal(evidence["scip_candidates"], list(scip_candidates))
-
-
-# ===========================================================================
-# extract_callee Tests
-# ===========================================================================
 
 
 def test_extract_callee_cst_simple_name() -> None:
@@ -306,11 +283,6 @@ def test_extract_callee_ast_attribute() -> None:
         name, chain = extract_callee_ast(call.value.func)
         expect_equal(name, "module")
         expect_equal(chain, ["module", "func"])
-
-
-# ===========================================================================
-# dedupe_edges Tests
-# ===========================================================================
 
 
 def test_dedupe_edges_empty() -> None:
@@ -375,11 +347,6 @@ def test_dedupe_edges_keeps_highest_confidence() -> None:
     expect_equal(kept_edge.confidence, LOCAL_CONFIDENCE)
 
 
-# ===========================================================================
-# build_callee_map Tests
-# ===========================================================================
-
-
 def test_build_callee_map_empty() -> None:
     """Build callee map from empty spans."""
     result = build_callee_map([])
@@ -410,11 +377,6 @@ def test_build_callee_map_sets_local_and_qualname() -> None:
     expect_equal(mapping["pkg.mod.func"], TEST_GOID_A)
     expect_equal(mapping["func"], TEST_GOID_A)
     expect_equal(mapping["inner"], TEST_GOID_B)
-
-
-# ===========================================================================
-# Callgraph Collection Helpers Tests
-# ===========================================================================
 
 
 def test_local_type_tracker_records_and_clears() -> None:
@@ -478,7 +440,7 @@ def test_collect_edges_cst_tracks_assignments_and_backfills_goid() -> None:
     edges = collect_edges_cst(REL_PATH, module, context)
 
     expect_length(edges, EXPECTED_EDGE_COUNT_THREE)
-    # First edge may be unresolved due to annotation; focus on resolved edges.
+
     resolved = [edge for edge in edges if edge["callee_goid_h128"]]
     expect_length(resolved, EXPECTED_EDGE_COUNT_TWO)
     goids = {edge["callee_goid_h128"] for edge in resolved}
@@ -650,7 +612,7 @@ def test_dedupe_edges_prefers_higher_confidence_rows() -> None:
 
     expect_length(deduped_rows, EXPECTED_EDGE_COUNT_TWO)
     confidences = {edge["callsite_line"]: edge["confidence"] for edge in deduped_rows}
-    # Current behavior keeps the first edge when keys collide; ensure mapping is stable.
+
     expect_equal(confidences.get(1), 0.5)
 
 
@@ -739,11 +701,6 @@ def test_resolve_callee_import_alias_single_element_chain() -> None:
     expect_equal(result.resolved_via, "import_alias")
 
 
-# ===========================================================================
-# CFG Construction Tests
-# ===========================================================================
-
-
 def test_cfg_builder_handles_conditionals_and_loops() -> None:
     """CFGBuilder builds blocks/edges across conditionals and loops."""
     source = "\n".join(
@@ -782,7 +739,6 @@ def test_cfg_builder_handles_conditionals_and_loops() -> None:
     expect_true(any(edge.kind == "back" for edge in result.edges))
     expect_true(any(edge.kind == "jump" for edge in result.edges))
 
-    # Ensure start/end lines recorded
     entry = result.blocks[0]
     expect_equal(entry.start_line, func_node.lineno)
     expect_true(entry.end_line >= entry.start_line)
@@ -813,7 +769,6 @@ def test_cfg_builder_try_except_finally_and_jump_outside_loop() -> None:
     expect_true(result.blocks)
     expect_true(any(edge.kind == "fallthrough" for edge in result.edges))
 
-    # jump in finally should not crash; ensure no block has negative lines
     for block in result.blocks:
         expect_true(block.start_line >= func_node.lineno or block.start_line == -1)
 
@@ -842,11 +797,6 @@ def test_cfg_to_rows_computes_degrees_and_defaults() -> None:
     expect_equal(cfg_rows[1].in_degree, 1)
     expect_equal(cfg_rows[1].out_degree, 1)
     expect_length(edge_rows, 2)
-
-
-# ===========================================================================
-# GOID Computation Tests
-# ===========================================================================
 
 
 def _descriptor(end_line: int | None = 10) -> GoidDescriptor:
@@ -927,11 +877,6 @@ def test_build_goid_row_and_crosswalk_row_fields() -> None:
     expect_equal(crosswalk.updated_at, now)
 
 
-# ===========================================================================
-# Import Analysis Tests
-# ===========================================================================
-
-
 def test_collect_import_edges_basic() -> None:
     """Collect import edges from parsed imports."""
     imports = [
@@ -982,7 +927,6 @@ def test_compute_scc_simple_cycle() -> None:
     modules = {"a", "b", "c"}
     result = compute_scc(edges, modules)
 
-    # All in same SCC
     expect_equal(result["a"], result["b"])
     expect_equal(result["b"], result["c"])
 
@@ -1007,9 +951,7 @@ def test_compute_layers_chain() -> None:
     scc_map = {"a": 0, "b": 1, "c": 2}
     result = compute_layers(edges, modules, scc_map)
 
-    # a imports b imports c, so c is the leaf (layer 0)
-    # Layer values should form a chain
-    expect_true(result["a"] > result["c"] or result["c"] > result["a"])  # Layers are monotonic
+    expect_true(result["a"] > result["c"] or result["c"] > result["a"])
 
 
 def test_analyze_imports_full() -> None:
@@ -1053,11 +995,6 @@ def test_build_import_edge_rows() -> None:
     row = rows[0]
     expect_equal(row.src_module, "a")
     expect_equal(row.dst_module, "b")
-
-
-# ===========================================================================
-# Symbol Use Tests
-# ===========================================================================
 
 
 def test_symbol_occurrence_is_definition() -> None:
@@ -1173,7 +1110,6 @@ def test_build_use_edges_deduplicates() -> None:
 
     edges = build_use_edges(occurrences, def_map, {})
 
-    # Only one edge despite two references from same file
     expect_length(edges, EXPECTED_EDGE_COUNT_ONE)
 
 
@@ -1237,11 +1173,6 @@ def test_parse_symbol_roles_invalid_string() -> None:
 def test_parse_symbol_roles_none() -> None:
     """Parse symbol roles handles None."""
     expect_equal(parse_symbol_roles(None), 0)
-
-
-# ===========================================================================
-# Dataclass Frozen Tests
-# ===========================================================================
 
 
 def test_call_edge_frozen() -> None:

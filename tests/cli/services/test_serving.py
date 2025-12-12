@@ -13,10 +13,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# ---------------------------------------------------------------------------
-# Creation
-# ---------------------------------------------------------------------------
-
 
 def test_init() -> None:
     """Create service with runtime and storage."""
@@ -25,11 +21,6 @@ def test_init() -> None:
     service = ServingService(runtime, storage)
     expect_true(service.runtime_service is runtime)
     expect_true(service.storage_service is storage)
-
-
-# ---------------------------------------------------------------------------
-# Invocation
-# ---------------------------------------------------------------------------
 
 
 def test_invoke_unknown_operation() -> None:
@@ -130,11 +121,6 @@ def test_invoke_backend_method_not_found() -> None:
         expect_in("Backend method not found", str(exc_info.value))
 
 
-# ---------------------------------------------------------------------------
-# Batch invocation
-# ---------------------------------------------------------------------------
-
-
 def test_invoke_batch_success() -> None:
     """Batch invoke returns success results."""
     runtime = MagicMock()
@@ -181,11 +167,6 @@ def test_invoke_batch_partial_failure() -> None:
         expect_equal(len(results), 2)
         expect_true(not any(r["success"] for r in results))
         expect_true(all("error" in r for r in results))
-
-
-# ---------------------------------------------------------------------------
-# Serialization
-# ---------------------------------------------------------------------------
 
 
 def test_serialize_pydantic_model() -> None:

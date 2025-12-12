@@ -10,7 +10,6 @@ This package provides:
 
 from __future__ import annotations
 
-# Job management
 from codeintel.cli.jobs._jobs import (
     JobInfo,
     JobManager,

@@ -83,7 +83,7 @@ JsonFlag = Annotated[
     ),
 ]
 
-# Reusable path aliases (no runtime validator to avoid heavy dependency).
+
 ExistingPath = Annotated[
     Path,
     Parameter(
@@ -224,7 +224,7 @@ class SharedFlags:
                 default=SharedFlags(),
                 metadata=SHARED_FLAGS_METADATA,
             )
-            # Command-specific fields
+
             name: str = "default"
     """
 
@@ -234,7 +234,6 @@ class SharedFlags:
     verbose: Verbose = 0
 
 
-# Default instance for use in field() declarations
 _DEFAULT_SHARED_FLAGS = SharedFlags()
 
 SHARED_FLAGS_METADATA: dict[str, Parameter] = {"parameter": Parameter(name="*")}
@@ -258,7 +257,7 @@ def shared_flags_field() -> SharedFlags:
     >>> from codeintel.cli.commands._common import SharedFlags, shared_flags_field
     >>> @dataclass
     ... class MyCommand:
-    ...     flags: SharedFlags = shared_flags_field()  # doctest: +SKIP
+    ...     flags: SharedFlags = shared_flags_field()
     """
     return field(default=_DEFAULT_SHARED_FLAGS, metadata=SHARED_FLAGS_METADATA)
 

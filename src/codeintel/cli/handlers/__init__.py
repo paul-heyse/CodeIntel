@@ -22,25 +22,18 @@ Examples
 >>> from codeintel.cli.context import CommandContext
 >>> from codeintel.cli.handlers.build import build_status_handler
 >>> from codeintel.cli.execution.bootstrap import bootstrap_cli
->>> bootstrap_cli(verbosity=1)  # doctest: +SKIP
+>>> bootstrap_cli(verbosity=1)
 <codeintel.cli.config.model.CliConfig object at ...>
 """
 
 from __future__ import annotations
 
-# Context types - use CommandContext from codeintel.cli.context
 from codeintel.cli.context import CommandContext
-
-# Bootstrap for logging/signal setup
 from codeintel.cli.execution.bootstrap import bootstrap_cli
-
-# Utilities
 from codeintel.cli.handlers._utilities import (
     get_handler_logger,
     open_handler_gateway,
 )
-
-# Domain handlers and result types
 from codeintel.cli.handlers.build import (
     BuildHistoryResult,
     BuildRunResult,
@@ -149,11 +142,9 @@ from codeintel.cli.handlers.subsystem import (
 )
 
 __all__ = [
-    # Result types
     "BuildHistoryResult",
     "BuildRunResult",
     "BuildStatusResult",
-    # Context types
     "CommandContext",
     "DatasetDescribeResult",
     "DatasetDiffResult",
@@ -193,7 +184,6 @@ __all__ = [
     "SubsystemShowResult",
     "ValidateMacrosResult",
     "bootstrap_cli",
-    # Handler functions
     "build_history_handler",
     "build_run_handler",
     "build_status_handler",
@@ -207,7 +197,6 @@ __all__ = [
     "docs_export_handler",
     "docs_validate_handler",
     "generate_macros_handler",
-    # Utilities
     "get_handler_logger",
     "graph_plugins_list_handler",
     "graph_plugins_plan_handler",

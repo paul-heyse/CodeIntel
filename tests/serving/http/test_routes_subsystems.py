@@ -48,11 +48,6 @@ def test_list_subsystems_endpoint(
     expect_in("subsystems", data)
 
 
-# =============================================================================
-# module_subsystems Tests
-# =============================================================================
-
-
 def test_module_subsystems_endpoint(
     architecture_route_client: TestClient,
     architecture_samples: AnalyticsSamples,
@@ -75,11 +70,6 @@ def test_module_subsystems_missing_module(
         response,
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
     )
-
-
-# =============================================================================
-# subsystem_detail Tests
-# =============================================================================
 
 
 def test_subsystem_detail_endpoint(
@@ -117,11 +107,6 @@ def test_subsystem_detail_nonexistent(
     assert_ok_or_not_found(response)
 
 
-# =============================================================================
-# subsystem_profiles Tests
-# =============================================================================
-
-
 def test_subsystem_profiles_endpoint(
     architecture_route_client: TestClient,
     architecture_samples: AnalyticsSamples,
@@ -150,11 +135,6 @@ def test_subsystem_profiles_with_options(
     assert_ok_or_not_found(response)
 
 
-# =============================================================================
-# subsystem_coverage Tests
-# =============================================================================
-
-
 def test_subsystem_coverage_endpoint(
     architecture_route_client: TestClient,
     architecture_samples: AnalyticsSamples,
@@ -181,11 +161,6 @@ def test_subsystem_coverage_with_options(
     response = architecture_route_client.get(path)
 
     assert_ok_or_not_found(response)
-
-
-# =============================================================================
-# Router Options Tests
-# =============================================================================
 
 
 @pytest.mark.skip(reason="auto_pipeline mode not fully configured for subsystem routes")

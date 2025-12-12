@@ -116,7 +116,7 @@ class TargetExecution:
     >>> execution = TargetExecution(
     ...     cpu_intensive=True,
     ...     io_intensive=True,
-    ...     max_runtime_ms=300000,  # 5 minutes
+    ...     max_runtime_ms=300000,
     ...     isolation="process",
     ...     supports_incremental=True,
     ... )
@@ -125,7 +125,7 @@ class TargetExecution:
     cpu_intensive: bool = False
     io_intensive: bool = False
     memory_intensive: bool = False
-    max_runtime_ms: int = 60000  # 1 minute default
+    max_runtime_ms: int = 60000
     isolation: IsolationKind = "thread"
     supports_incremental: bool = True
     max_parallelism: int | None = None
@@ -141,7 +141,7 @@ class TargetExecution:
         int
             Estimated duration in milliseconds.
         """
-        base = 5000  # 5 second base
+        base = 5000
         if self.cpu_intensive:
             base *= 4
         if self.io_intensive:
@@ -151,24 +151,23 @@ class TargetExecution:
         return min(base, self.max_runtime_ms)
 
 
-# Default instances for common patterns
 DEFAULT_RESOURCES = TargetResources()
 DEFAULT_EXECUTION = TargetExecution()
 
-# For CPU-intensive targets like AST parsing
+
 CPU_INTENSIVE_EXECUTION = TargetExecution(
     cpu_intensive=True,
     isolation="process",
     max_runtime_ms=120000,
 )
 
-# For I/O-intensive targets like git history
+
 IO_INTENSIVE_EXECUTION = TargetExecution(
     io_intensive=True,
     max_runtime_ms=180000,
 )
 
-# For external tool targets like SCIP
+
 TOOL_EXECUTION = TargetExecution(
     cpu_intensive=True,
     io_intensive=True,

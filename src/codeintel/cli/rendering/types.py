@@ -81,7 +81,7 @@ class RenderContext:
     Examples
     --------
     >>> ctx = RenderContext.auto_detect()
-    >>> ctx.format  # doctest: +SKIP
+    >>> ctx.format
     <OutputFormat.TEXT: 'text'>
 
     >>> ctx, out, err = RenderContext.for_testing()

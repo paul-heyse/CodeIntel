@@ -21,10 +21,8 @@ if TYPE_CHECKING:
     from codeintel.ingestion.engine.service import ToolService
     from codeintel.storage.gateway import StorageGateway
 
-# Import constants from central module
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
-# Import canonical GatewayOptions from env_options
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.env_options import GatewayOptions
 
 

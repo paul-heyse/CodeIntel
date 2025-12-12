@@ -127,11 +127,6 @@ __all__ = [
 ]
 
 
-# ============================================================================
-# New Harness-Based Fixtures (Charter-Compliant)
-# ============================================================================
-
-
 @pytest.fixture
 def cli() -> CliTestHarness:
     """Provide CLI test harness.
@@ -231,19 +226,3 @@ def _cleanup_gateways() -> Iterator[None]:
         yield
     finally:
         close_gateways()
-
-
-# NOTE: The following fixtures have been removed as they violate the Testing Charter:
-#
-# - _disable_contract_validation: Used runtime patching to disable contract validation.
-#   Tests should use real validation. If a test needs to skip validation, it should
-#   use the proper configuration options instead.
-#
-# - _track_and_close_gateways: Used runtime patching to wrap open_gateway. Gateway
-#   lifecycle should be managed through proper test context (CliTestContext) and
-#   the _cleanup_gateways fixture above.
-#
-# New tests should use the fixtures from tests/cli/handlers/conftest.py:
-# - cli_handler_ctx: CliTestContext with CORE_PACK seeds
-# - graph_cli_ctx: CliTestContext with CORE_PACK and GRAPH_PACK seeds
-# - cli_handler_harness_fixture: CliHandlerHarness for handler testing

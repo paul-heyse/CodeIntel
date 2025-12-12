@@ -54,7 +54,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 
-# Test constants (non-repo/commit)
+
 EXPECTED_COMMIT_COUNT = 2
 EXPECTED_AUTHOR_COUNT = 2
 EXPECTED_AUTHOR_COUNT_MULTI = 3
@@ -242,7 +242,7 @@ def test_file_churn_duplicate_commits() -> None:
     """Duplicate commits are deduplicated."""
     churn = FileChurn()
     churn.commits.add("abc123")
-    churn.commits.add("abc123")  # Duplicate
+    churn.commits.add("abc123")
 
     summary = churn.to_summary()
 
@@ -276,10 +276,8 @@ def test_build_hotspots_empty_ast_metrics(
     hotspots_config: HotspotsStepConfig,
 ) -> None:
     """Build hotspots with empty AST metrics produces no rows."""
-    # AST metrics table is empty by default
     build_hotspots(memory_gateway, hotspots_config)
 
-    # Should have no hotspot rows
     result = memory_gateway.con.execute("SELECT COUNT(*) FROM analytics.hotspots").fetchone()
     expect_is_not_none(result)
     if result is None:
@@ -294,13 +292,11 @@ def test_build_hotspots_with_ast_data(
     """Build hotspots with AST metrics data."""
     _insert_ast_metrics(memory_gateway, [AstMetricSeed(rel_path="test_file.py", complexity=5.0)])
 
-    # Create config with max_commits=0 to skip git log
     snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
 
     build_hotspots(memory_gateway, cfg)
 
-    # Should have one hotspot row
     result = memory_gateway.con.execute(
         "SELECT rel_path, score FROM analytics.hotspots WHERE rel_path = ?",
         ["test_file.py"],
@@ -311,7 +307,7 @@ def test_build_hotspots_with_ast_data(
 
     rel_path, score = result
     expect_equal(rel_path, "test_file.py")
-    expect_true(score > HOTSPOT_SCORE_THRESHOLD)  # Score should be positive
+    expect_true(score > HOTSPOT_SCORE_THRESHOLD)
 
 
 def test_build_hotspots_multiple_files(
@@ -333,7 +329,6 @@ def test_build_hotspots_multiple_files(
 
     build_hotspots(memory_gateway, cfg)
 
-    # Should have three hotspot rows
     result = memory_gateway.con.execute("SELECT COUNT(*) FROM analytics.hotspots").fetchone()
 
     expect_is_not_none(result)
@@ -370,10 +365,10 @@ def test_build_hotspots_score_calculation(
 
     complexity, score, commit_count, author_count = result
     expect_equal(complexity, EXPECTED_COMPLEXITY)
-    # With no git stats, commit_count and author_count should be 0
+
     expect_equal(commit_count, 0)
     expect_equal(author_count, 0)
-    # Score should still be positive due to complexity component
+
     expect_true(score > HOTSPOT_SCORE_THRESHOLD)
 
 
@@ -403,7 +398,7 @@ def test_build_hotspots_high_complexity(
 
     complexity, score = result
     expect_equal(complexity, high_complexity)
-    # Higher complexity should result in higher score
+
     expect_true(score > HOTSPOT_SCORE_THRESHOLD)
 
 
@@ -420,11 +415,9 @@ def test_build_hotspots_idempotent(
     snapshot = make_snapshot(repo_root=tmp_path)
     cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
 
-    # Run twice
     build_hotspots(memory_gateway, cfg)
     build_hotspots(memory_gateway, cfg)
 
-    # Should still have only one row
     result = memory_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.hotspots WHERE rel_path = ?",
         ["idempotent.py"],
@@ -473,7 +466,6 @@ def test_build_hotspots_windows_path_handling(
 
     build_hotspots(memory_gateway, cfg)
 
-    # Path should exist in hotspots table
     result = memory_gateway.con.execute(
         "SELECT rel_path FROM analytics.hotspots WHERE rel_path LIKE '%file.py'"
     ).fetchone()
@@ -507,7 +499,7 @@ def test_build_hotspots_zero_complexity(
     complexity, score_obj = result
     score = float(score_obj)
     expect_equal(complexity, 0.0)
-    # Score should still be non-negative
+
     expect_true(score >= HOTSPOT_SCORE_THRESHOLD)
 
 
@@ -536,7 +528,7 @@ def test_build_hotspots_negative_complexity(
 
     _, score_obj = result
     score = float(score_obj)
-    # Score should be non-negative due to max(complexity, 0.0)
+
     expect_true(score >= HOTSPOT_SCORE_THRESHOLD)
 
 
@@ -664,11 +656,6 @@ def test_ast_lookup_matches_canonical_functions(
     expect_equal(node.rel_path, rel_path)
     expect_equal(node.start_line, expected_start)
     expect_equal(node.end_line, expected_end)
-
-
-# =============================================================================
-# parse_git_log_lines Tests
-# =============================================================================
 
 
 def test_parse_git_log_empty_lines() -> None:

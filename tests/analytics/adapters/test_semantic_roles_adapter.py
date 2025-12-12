@@ -36,9 +36,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEMO_REPO = "demo/repo"
 DEMO_COMMIT = "abc123def456"
@@ -52,11 +49,6 @@ TEST_GOID_11111 = 11111
 CONFIDENCE_0_85 = 0.85
 CONFIDENCE_0_90 = 0.9
 CONFIDENCE_0_75 = 0.75
-
-
-# =============================================================================
-# Fixtures
-# =============================================================================
 
 
 @pytest.fixture
@@ -92,11 +84,6 @@ def snapshot(ctx: TestContext) -> SnapshotRef:
         Snapshot associated with the shared test context.
     """
     return ctx.snapshot
-
-
-# =============================================================================
-# SemanticRolesFunctionsAdapter Tests
-# =============================================================================
 
 
 def test_functions_adapter_table_name(
@@ -143,7 +130,6 @@ def test_functions_adapter_persist_single(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.semantic_roles_functions WHERE repo = ? AND commit = ?",
@@ -208,7 +194,6 @@ def test_functions_adapter_persist_verifies_data(
     )
     adapter.persist([row])
 
-    # Query and verify
     result = ctx.gateway.con.execute(
         """
         SELECT role, role_confidence
@@ -256,11 +241,6 @@ def test_functions_adapter_rejects_bad_length(
         adapter.persist([(DEMO_REPO, DEMO_COMMIT, TEST_GOID_12345, "api_handler")])
 
 
-# =============================================================================
-# SemanticRolesModulesAdapter Tests
-# =============================================================================
-
-
 def test_modules_adapter_table_name(
     ctx: TestContext,
 ) -> None:
@@ -305,7 +285,6 @@ def test_modules_adapter_persist_single(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.semantic_roles_modules WHERE repo = ? AND commit = ?",
@@ -370,7 +349,6 @@ def test_modules_adapter_persist_verifies_data(
     )
     adapter.persist([row])
 
-    # Query and verify
     result = ctx.gateway.con.execute(
         """
         SELECT module, role, role_confidence

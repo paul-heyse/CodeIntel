@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
-# Runtime type for command dataclass instances (legacy pattern)
+
 CommandInstance = object
 
 
@@ -86,23 +86,20 @@ class CommandConfig:
     description: str | None = None
 
 
-# Default configuration
 DEFAULT_CONFIG = CommandConfig()
 
-# Fields that are standard infrastructure, not command params
-# Note: repo, repo_root, commit are NOT excluded because some commands
-# (like history.timeseries) use them as actual parameters
+
 _INFRASTRUCTURE_FIELDS = frozenset(
     {
         "output_format",
         "verbose",
         "json",
         "project",
-        "project_root",  # Used for runtime resolution
+        "project_root",
         "db_path",
         "database_path",
         "index_path",
-        "flags",  # SharedFlags mixin field
+        "flags",
     }
 )
 
@@ -152,24 +149,23 @@ def cli_command[T, R](
     >>> from codeintel.cli.core import CliResult
     >>> def my_handler(ctx: CommandContext) -> CliResult[dict[str, str]]:
     ...     return CliResult.ok({"status": "done"})
-    >>> # @cli_command("my.op", handler=my_handler)
-    >>> # @dataclass
-    >>> # class MyCommand:
-    >>> #     name: str = "default"
+    >>>
+    >>>
+    >>>
+    >>>
 
     Command[T] pattern:
 
-    >>> # @cli_command("jobs.list", require_storage=False)
-    >>> # @dataclass(frozen=True)
-    >>> # class ListJobs(Command[ListResult[JobInfo]]):
-    >>> #     limit: int = 20
-    >>> #
-    >>> #     def execute(self, ctx: CommandContext) -> CliResult[ListResult[JobInfo]]:
-    >>> #         ...
+    >>>
+    >>>
+    >>>
+    >>>
+    >>>
+    >>>
+    >>>
     """
 
     def decorator(cls: type[T]) -> type[T]:
-        # Detect pattern based on whether class is Command subclass
         is_new_pattern = _is_command_subclass(cls)
 
         if is_new_pattern and handler is None:
@@ -208,8 +204,6 @@ def _is_command_subclass(cls: type[object]) -> bool:
         True if cls extends Command[T].
     """
     try:
-        # Check if it's a subclass of Command
-        # Use __mro__ to avoid issues with generics
         return any(
             getattr(base, "__name__", "") == "Command"
             and getattr(base, "__module__", "").startswith("codeintel.cli")
@@ -246,14 +240,11 @@ def _decorate_handler_based[T, R](
     """
     effective_config = config or DEFAULT_CONFIG
 
-    # Extract description from docstring if not provided
     op_description = effective_config.description or cls.__doc__ or f"Execute {operation_id}"
     op_description = op_description.strip().split("\n", maxsplit=1)[0].strip()
 
-    # Extract group from operation_id (e.g., "jobs.list" -> "jobs")
     group = operation_id.split(".", maxsplit=1)[0]
 
-    # Register operation
     register_operation(
         OperationSpec(
             operation_id=operation_id,
@@ -267,7 +258,6 @@ def _decorate_handler_based[T, R](
         )
     )
 
-    # Generate __call__ method
     def generated_call(command_self: CommandInstance, *args: object, **kwargs: object) -> None:
         del args, kwargs
         _execute_handler_command(
@@ -306,7 +296,6 @@ def _decorate_new_style(
     type[CommandT]
         Decorated class.
     """
-    # Set class attributes if not already defined
     if not hasattr(cls, "__operation_id__"):
         cls.__operation_id__ = operation_id
     if not hasattr(cls, "__require_storage__"):
@@ -314,20 +303,15 @@ def _decorate_new_style(
     if not hasattr(cls, "__require_serving__"):
         cls.__require_serving__ = require_serving
 
-    # Extract description
     op_description = cls.__doc__ or f"Execute {operation_id}"
     op_description = op_description.strip().split("\n", maxsplit=1)[0].strip()
 
     group = operation_id.split(".", maxsplit=1)[0]
 
-    # Create a wrapper handler for registry compatibility
     def command_handler(ctx: CommandContext) -> CliResult[object]:
-        # This is called if someone uses execute_operation() from registry
-        # Reconstruct the command and call execute() with context
         cmd = _reconstruct_command_from_context(cls, ctx)
         return cmd.execute(ctx)
 
-    # Register operation
     register_operation(
         OperationSpec(
             operation_id=operation_id,
@@ -341,7 +325,6 @@ def _decorate_new_style(
         )
     )
 
-    # Generate __call__ method for CLI invocation
     def generated_call(command_self: Command[Any], *args: object, **kwargs: object) -> None:
         del args, kwargs
         _execute_new_command(
@@ -385,7 +368,6 @@ def _reconstruct_command_from_context(
     dataclass_cls = cast("Any", cls)
     for fld in dataclasses.fields(dataclass_cls):
         if fld.name == "flags":
-            # Create SharedFlags from context
             kwargs["flags"] = SharedFlags(
                 output_format=ctx.output_format,
                 verbose=ctx.verbosity,
@@ -418,14 +400,11 @@ def _execute_new_command[T](
     require_serving
         Whether serving is required.
     """
-    # Extract infrastructure from command
     infra = _extract_infrastructure(command)
     params = _extract_params(command)
 
-    # Bootstrap CLI
     bootstrap_cli(verbosity=infra.verbosity)
 
-    # Build CommandContext using the new unified builder
     builder = (
         CommandContextBuilder()
         .with_params(params)
@@ -440,11 +419,9 @@ def _execute_new_command[T](
     if require_serving:
         builder = builder.with_serving()
 
-    # Execute with unified context
     with builder.build() as ctx:
         result = command.execute(ctx)
 
-    # Render result
     renderer = get_renderer(infra.output_format)
     exit_code = renderer.render_result(result)
 
@@ -471,14 +448,11 @@ def _execute_handler_command[R](
     config
         Command configuration.
     """
-    # Extract standard infrastructure from SharedFlags mixin or inline fields
     infra = _extract_infrastructure(command)
     params = _extract_params(command)
 
-    # Bootstrap CLI
     bootstrap_cli(verbosity=infra.verbosity)
 
-    # Build unified CommandContext
     builder = (
         CommandContextBuilder()
         .with_params(params)
@@ -487,14 +461,12 @@ def _execute_handler_command[R](
         .with_operation_id(operation_id)
     )
 
-    # Apply resource requirements from config
     if config.require_runtime:
         builder = builder.with_runtime(project_root=infra.project_root)
 
     if config.require_gateway:
         builder = builder.with_storage(db_path=infra.database_path)
 
-    # Execute with unified context
     with builder.build() as ctx:
         try:
             result = handler(ctx)
@@ -502,7 +474,6 @@ def _execute_handler_command[R](
             LOG.exception("Handler %s raised exception", operation_id)
             raise
 
-    # Render result
     renderer = get_renderer(infra.output_format)
     exit_code = renderer.render_result(result)
 
@@ -536,11 +507,9 @@ def _extract_infrastructure(command: CommandInstance) -> _InfrastructureValues:
     _InfrastructureValues
         Extracted infrastructure values.
     """
-    # Check for SharedFlags mixin
     flags = getattr(command, "flags", None)
 
     if flags is not None and hasattr(flags, "verbose"):
-        # Extract from SharedFlags mixin
         verbosity = getattr(flags, "verbose", 0)
         output_format = _resolve_output_format_from_attrs(
             getattr(flags, "output_format", None),
@@ -548,12 +517,10 @@ def _extract_infrastructure(command: CommandInstance) -> _InfrastructureValues:
         )
         project_root = _convert_to_path(getattr(flags, "project_root", None))
     else:
-        # Extract from inline fields
         verbosity = getattr(command, "verbose", 0)
         output_format = _get_output_format(command)
         project_root = _get_path_field(command, "project", "project_root")
 
-    # These fields are always extracted from command directly
     database_path = _get_path_field(command, "db_path", "database_path")
     index_path = _get_path_field(command, "index_path")
 
@@ -627,14 +594,12 @@ def _get_output_format(command: CommandInstance) -> OutputFormat:
     OutputFormat
         Resolved output format.
     """
-    # Check for explicit format field
     fmt = getattr(command, "output_format", None)
     if fmt is not None:
         if isinstance(fmt, OutputFormat):
             return fmt
         return OutputFormat(str(fmt))
 
-    # Check for --json flag
     json_flag = getattr(command, "json", False)
     if json_flag:
         return OutputFormat.JSON
@@ -666,7 +631,6 @@ def _extract_params(command: CommandInstance) -> dict[str, object]:
     for field_info in dataclasses.fields(command):
         name = field_info.name
 
-        # Skip infrastructure fields
         if name in _INFRASTRUCTURE_FIELDS:
             continue
 
@@ -704,7 +668,6 @@ def _get_path_field(command: CommandInstance, *field_names: str) -> Path | None:
 __all__ = [
     "CommandConfig",
     "cli_command",
-    # Exported for testing
     "extract_infrastructure",
     "extract_params",
     "get_output_format",
@@ -712,7 +675,6 @@ __all__ = [
 ]
 
 
-# Public aliases for testing (avoiding underscore prefix)
 extract_infrastructure = _extract_infrastructure
 extract_params = _extract_params
 get_output_format = _get_output_format

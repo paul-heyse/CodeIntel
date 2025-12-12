@@ -177,9 +177,6 @@ class ProgressConfig:
     format_string: str = "{message} [{current}/{total}]"
 
 
-# Type aliases for handlers
-# Note: These are defined as string annotations to avoid runtime evaluation issues
-# with generic type subscripting. Use them in type hints, not as runtime values.
 type SyncHandler[T] = Callable[..., CliResult[T]]
 """Synchronous handler type."""
 
@@ -209,7 +206,6 @@ def is_async_handler(handler: object) -> bool:
     if asyncio.iscoroutinefunction(handler):
         return True
 
-    # For callable objects, check if their type's __call__ is async
     if callable(handler):
         call_method = type(handler).__call__
         return asyncio.iscoroutinefunction(call_method)
@@ -233,7 +229,6 @@ def is_streaming_handler(handler: object) -> bool:
     if inspect.isasyncgenfunction(handler):
         return True
 
-    # For callable objects, check if their type's __call__ is an async generator
     if callable(handler):
         call_method = type(handler).__call__
         return inspect.isasyncgenfunction(call_method)

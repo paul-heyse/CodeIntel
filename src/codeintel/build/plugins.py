@@ -23,13 +23,10 @@ Example
 ...     plugin_version = "1.0.0"
 ...
 ...     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
-...         # Get parameters from build config
 ...         max_items = ctx.parameters.get("max_items", int, default=100)
 ...
-...         # Use resources
 ...         data = await ctx.resources.gateway.query(...)
 ...
-...         # Write to tables (validated against contract)
 ...         ctx.write_table("analytics.my_table", rows)
 ...
 ...         return TargetResult.succeeded(row_counts={"analytics.my_table": len(rows)})
@@ -86,7 +83,7 @@ class TargetPlugin(Protocol):
     ...         max_commits = ctx.parameters.get("max_commits", int, default=2000)
     ...         git = ctx.resources.git_history
     ...         entries = await git.log(ctx.repo_root, max_count=max_commits)
-    ...         # ... compute hotspots ...
+    ...
     ...         ctx.write_table("analytics.hotspots", hotspots)
     ...         return TargetResult.succeeded()
     """
@@ -117,11 +114,6 @@ class TargetPlugin(Protocol):
             by the BuildExecutor.
         """
         ...
-
-
-# =============================================================================
-# Plugin Registry (for discovery)
-# =============================================================================
 
 
 class PluginCatalog:

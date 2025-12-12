@@ -50,7 +50,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# Constants for tests
 LIMIT_VALUE = 10
 OFFSET_VALUE = 0
 GOID_VALUE = 12345
@@ -61,11 +60,6 @@ COUNT_TWO = 2
 COUNT_THREE = 3
 OFFSET_FIVE = 5
 RISK_SCORE_HIGH = 0.9
-
-
-# =============================================================================
-# Message Tests
-# =============================================================================
 
 
 def test_message_with_all_fields() -> None:
@@ -98,11 +92,6 @@ def test_message_severity_types() -> None:
     for severity in ("info", "warning", "error"):
         msg = Message(code="TEST", severity=severity)
         expect_equal(msg.severity, severity)
-
-
-# =============================================================================
-# ResponseMeta Tests
-# =============================================================================
 
 
 def test_response_meta_defaults() -> None:
@@ -169,24 +158,17 @@ def test_response_meta_model_dump_with_messages() -> None:
     expect_true(dumped["truncated"])
     expect_length(dumped["messages"], COUNT_TWO)
 
-    # First message fully populated
     msg1 = dumped["messages"][0]
     expect_equal(msg1["code"], "WARN")
     expect_equal(msg1["severity"], "warning")
     expect_equal(msg1["detail"], "Test detail")
     expect_equal(msg1["context"], {"key": "value"})
 
-    # Second message minimal
     msg2 = dumped["messages"][1]
     expect_equal(msg2["code"], "INFO")
     expect_equal(msg2["severity"], "info")
     expect_true(msg2["detail"] is None)
     expect_equal(msg2["context"], {})
-
-
-# =============================================================================
-# DatasetRows Tests
-# =============================================================================
 
 
 def test_dataset_rows_construction() -> None:
@@ -222,13 +204,11 @@ def test_dataset_rows_model_dump() -> None:
 
     dumped = rows.model_dump()
 
-    # Top-level fields use expected keys
     expect_equal(dumped["dataset"], "test.dataset")
     expect_equal(dumped["limit"], LIMIT_VALUE)
     expect_equal(dumped["offset"], OFFSET_FIVE)
     expect_equal(dumped["rows"], [{"col": "val"}])
 
-    # Nested meta is fully dumped
     expect_in("meta", dumped)
     expect_equal(dumped["meta"]["applied_limit"], LIMIT_VALUE)
     expect_true(dumped["meta"]["truncated"])
@@ -250,11 +230,6 @@ def test_dataset_rows_empty() -> None:
 
     expect_equal(dumped["rows"], [])
     expect_false(dumped["meta"]["truncated"])
-
-
-# =============================================================================
-# FunctionSummary Tests
-# =============================================================================
 
 
 def test_function_summary_construction() -> None:
@@ -299,11 +274,6 @@ def test_function_summary_nullable_summaries() -> None:
     expect_true(summary.is_test)
 
 
-# =============================================================================
-# HighRiskFunction Tests
-# =============================================================================
-
-
 def test_high_risk_function_construction() -> None:
     """Verify HighRiskFunction construction."""
     func = HighRiskFunction(
@@ -337,11 +307,6 @@ def test_high_risk_functions_collection() -> None:
     expect_length(result.functions, COUNT_TWO)
     expect_equal(result.functions[0].risk_score, RISK_SCORE_HIGH)
     expect_equal(result.meta.applied_limit, COUNT_TWO)
-
-
-# =============================================================================
-# FileSummary Tests
-# =============================================================================
 
 
 def test_file_summary_construction() -> None:
@@ -384,11 +349,6 @@ def test_file_summary_no_module() -> None:
     expect_equal(file_summary.functions, [])
 
 
-# =============================================================================
-# DatasetDescriptorDomain Tests
-# =============================================================================
-
-
 def test_dataset_descriptor_full() -> None:
     """Verify DatasetDescriptorDomain with all fields."""
     desc = DatasetDescriptorDomain(
@@ -424,11 +384,6 @@ def test_dataset_descriptor_minimal() -> None:
     expect_is_none(desc.schema_version)
     expect_false(desc.is_docs_view)
     expect_false(desc.is_read_only)
-
-
-# =============================================================================
-# DatasetSchema Tests
-# =============================================================================
 
 
 def test_dataset_schema_construction() -> None:
@@ -479,11 +434,6 @@ def test_dataset_schema_minimal() -> None:
     expect_is_none(schema.meta)
 
 
-# =============================================================================
-# GraphPlan Tests
-# =============================================================================
-
-
 def test_graph_plan_construction() -> None:
     """Verify GraphPlan construction."""
     plan = GraphPlan(
@@ -512,11 +462,6 @@ def test_graph_plan_empty() -> None:
     expect_equal(plan.skipped_plugins, [])
     expect_equal(plan.dep_graph, {})
     expect_equal(plan.plugin_metadata, {})
-
-
-# =============================================================================
-# Result Dataclasses Tests
-# =============================================================================
 
 
 def test_function_summary_result() -> None:

@@ -26,7 +26,7 @@ from tests._helpers.builders import (
 if TYPE_CHECKING:
     from tests._helpers import TestContext
 
-# Test constants
+
 EXPECTED_SYMBOL_ROW_COUNT = 2
 
 
@@ -186,7 +186,6 @@ def test_symbol_and_config_metrics_populate_and_views_create(
     if modules != {"pkg.a", "pkg.b"}:
         pytest.fail(f"Unexpected config modules: {modules}")
 
-    # Verify views are created successfully
     test_ctx.con.execute("SELECT * FROM docs.v_symbol_module_graph")
     test_ctx.con.execute("SELECT * FROM analytics.config_graph_metrics_keys")
     test_ctx.con.execute("SELECT * FROM analytics.config_projection_module_edges")

@@ -36,10 +36,6 @@ if TYPE_CHECKING:
 
 INT_PROVIDER_VALUE = 42
 
-# =============================================================================
-# Test Implementations
-# =============================================================================
-
 
 class StringProvider(ResourceProviderBase[str]):
     """Provider that returns a string value."""
@@ -134,11 +130,6 @@ class SimpleValue:
         self.value = value
 
 
-# =============================================================================
-# ResourceNotFoundError Tests
-# =============================================================================
-
-
 def test_resource_not_found_error_with_type() -> None:
     """Verify ResourceNotFoundError message with type."""
     error = ResourceNotFoundError(StringProvider)
@@ -155,11 +146,6 @@ def test_resource_not_found_error_with_string() -> None:
     expect_true(error.resource_type is None)
     expect_equal(error.resource_name, "custom_resource")
     expect_in("custom_resource", str(error))
-
-
-# =============================================================================
-# ResourceRegistry Registration Tests
-# =============================================================================
 
 
 def test_registry_register(resource_registry: ResourceRegistry) -> None:
@@ -242,11 +228,6 @@ def test_registry_register_with_custom_name(resource_registry: ResourceRegistry)
     expect_true(resource_registry.has_by_name("custom_name"))
 
 
-# =============================================================================
-# Registry Factory Tests
-# =============================================================================
-
-
 def test_registry_register_factory(resource_registry: ResourceRegistry) -> None:
     """Verify register_factory() registers lazy factory."""
     call_count = [0]
@@ -257,10 +238,8 @@ def test_registry_register_factory(resource_registry: ResourceRegistry) -> None:
 
     resource_registry.register_factory("lazy_provider", factory)
 
-    # Factory not called yet
     expect_equal(call_count[0], 0)
 
-    # Access triggers factory
     provider = resource_registry.get_by_name("lazy_provider")
 
     expect_equal(call_count[0], 1)
@@ -291,11 +270,6 @@ def test_registry_has_by_name_includes_factories(
     resource_registry.register_factory("pending", lambda: StringProvider("x"))
 
     expect_true(resource_registry.has_by_name("pending"))
-
-
-# =============================================================================
-# Registry Get Tests
-# =============================================================================
 
 
 def test_registry_get(resource_registry: ResourceRegistry) -> None:
@@ -347,11 +321,6 @@ def test_registry_get_by_name_missing_raises(resource_registry: ResourceRegistry
         resource_registry.get_by_name("nonexistent")
 
 
-# =============================================================================
-# Registry Require Tests
-# =============================================================================
-
-
 def test_registry_require(resource_registry: ResourceRegistry) -> None:
     """Verify require() returns provider value."""
     provider = StringProvider("test_value")
@@ -392,7 +361,6 @@ def test_registry_require_non_gettable(resource_registry: ResourceRegistry) -> N
 
     result = resource_registry.require(SimpleValue)
 
-    # Returns the provider itself since it has no get() method
     expect_true(isinstance(result, SimpleValue))
 
 
@@ -404,11 +372,6 @@ def test_registry_require_by_name(resource_registry: ResourceRegistry) -> None:
     result = resource_registry.require_by_name("named")
 
     expect_equal(result, "named_value")
-
-
-# =============================================================================
-# Registry Has Tests
-# =============================================================================
 
 
 def test_registry_has_true(resource_registry: ResourceRegistry) -> None:
@@ -443,24 +406,16 @@ def test_registry_contains(resource_registry: ResourceRegistry) -> None:
     expect_true(IntProvider not in resource_registry)
 
 
-# =============================================================================
-# Registry Invalidate Tests
-# =============================================================================
-
-
 def test_registry_invalidate_single(resource_registry: ResourceRegistry) -> None:
     """Verify invalidate() invalidates single resource."""
     provider = CountingProvider()
     resource_registry.register(CountingProvider, provider)
 
-    # Load and capture count
     resource_registry.require(CountingProvider)
     first_count = provider.load_count
 
-    # Invalidate
     resource_registry.invalidate(CountingProvider)
 
-    # Reload
     resource_registry.require(CountingProvider)
     second_count = provider.load_count
 
@@ -474,15 +429,12 @@ def test_registry_invalidate_all(resource_registry: ResourceRegistry) -> None:
     resource_registry.register(CountingProvider, provider1)
     resource_registry.register(IntProvider, provider2)
 
-    # Load values
     resource_registry.require(CountingProvider)
     first_count = provider1.load_count
     resource_registry.require(IntProvider)
 
-    # Invalidate all
     resource_registry.invalidate()
 
-    # Reload
     resource_registry.require(CountingProvider)
     refreshed_count = provider1.load_count
     expect_equal(refreshed_count, first_count + 1)
@@ -493,13 +445,7 @@ def test_registry_invalidate_missing_no_error(
     resource_registry: ResourceRegistry,
 ) -> None:
     """Verify invalidate() doesn't raise for missing resource."""
-    # Should not raise
     resource_registry.invalidate(StringProvider)
-
-
-# =============================================================================
-# Registry Clear and Cleanup Tests
-# =============================================================================
 
 
 def test_registry_clear(resource_registry: ResourceRegistry) -> None:
@@ -527,11 +473,6 @@ def test_registry_cleanup(resource_registry: ResourceRegistry) -> None:
     reloaded_value = provider.get()
     expect_equal(reloaded_value, first_count + 1)
     expect_equal(len(resource_registry), 0)
-
-
-# =============================================================================
-# Registry Properties Tests
-# =============================================================================
 
 
 def test_registry_registered_names(resource_registry: ResourceRegistry) -> None:
@@ -570,51 +511,38 @@ def test_registry_len(resource_registry: ResourceRegistry) -> None:
     expect_equal(len(resource_registry), initial_count + 2)
 
 
-# =============================================================================
-# Integration Tests
-# =============================================================================
-
-
 def test_registry_with_lazy_resource(resource_registry: ResourceRegistry) -> None:
     """Verify registry works with LazyResource."""
     lazy = LazyStringResource("test", "lazy_value")
     resource_registry.register(LazyStringResource, lazy)
 
-    # Get provider
     provider = resource_registry.get(LazyStringResource)
     expect_true(provider is lazy)
 
-    # Require value
     value = resource_registry.require(LazyStringResource)
     expect_equal(value, "lazy_value")
 
 
 def test_registry_full_lifecycle(resource_registry: ResourceRegistry) -> None:
     """Verify full registry lifecycle."""
-    # Register
     provider = CountingProvider()
     resource_registry.register(CountingProvider, provider, name="lifecycle_test")
 
-    # Verify present
     expect_true(resource_registry.has(CountingProvider))
     expect_true(resource_registry.has_by_name("lifecycle_test"))
     expect_true(CountingProvider in resource_registry)
 
-    # Get and require
     expect_true(resource_registry.get(CountingProvider) is provider)
     resource_registry.require(CountingProvider)
     first_count = provider.load_count
 
-    # Invalidate
     resource_registry.invalidate(CountingProvider)
     resource_registry.require(CountingProvider)
     expect_equal(provider.load_count, first_count + 1)
 
-    # Replace
     new_provider = StringProvider("replaced")
     resource_registry.register_or_replace(StringProvider, new_provider)
     expect_equal(resource_registry.require(StringProvider), "replaced")
 
-    # Cleanup
     resource_registry.cleanup()
     expect_equal(len(resource_registry), 0)

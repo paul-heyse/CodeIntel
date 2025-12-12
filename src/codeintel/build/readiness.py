@@ -29,17 +29,17 @@ Usage
 -----
 >>> from codeintel.build.readiness import DatabaseReadinessView
 >>> view = DatabaseReadinessView(graph, gateway, snapshot)
->>> # Check a specific target
+>>>
 >>> view["function_profile"].is_ready
 False
 >>> view["function_profile"].action_needed
 ActionNeeded(kind='run_first', target='ast', reason='data missing')
 >>>
->>> # Find all ready-to-run targets
+>>>
 >>> view.ready_targets()
 ('ast', 'typing', 'coverage')
 >>>
->>> # Find all blocked targets with explanations
+>>>
 >>> for name, readiness in view.blocked_targets():
 ...     print(f"{name}: {readiness.fix_command}")
 """
@@ -61,11 +61,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Type Definitions
-# =============================================================================
 
 
 SelfStatus = Literal["current", "stale", "never_computed", "data_missing"]
@@ -221,11 +216,6 @@ class TargetReadiness:
         return self.action_needed.command
 
 
-# =============================================================================
-# Target Readiness View
-# =============================================================================
-
-
 class TargetReadinessView:
     """Computed readiness view for a single target.
 
@@ -265,7 +255,6 @@ class TargetReadinessView:
         self._snapshot = snapshot
         self._manifest_cache = manifest_cache or {}
 
-        # Lazy computation cache
         self._readiness: TargetReadiness | None = None
 
     @property
@@ -333,19 +322,14 @@ class TargetReadinessView:
         TargetReadiness
             Complete readiness state for this target.
         """
-        # Step 1: Compute self status
         self_status = self._compute_self_status()
 
-        # Step 2: Compute dependency status
         dep_status = self._compute_dependency_status()
 
-        # Step 3: Build blocker chain and find ultimate bottleneck
         blocker_chain, ultimate_bottleneck = self._compute_blocker_chain(self_status, dep_status)
 
-        # Step 4: Determine action needed
         action_needed = self._compute_action_needed(self_status, dep_status, ultimate_bottleneck)
 
-        # Step 5: Estimate time to ready
         estimated_time = self._estimate_time_to_ready(blocker_chain)
 
         return TargetReadiness(
@@ -371,7 +355,6 @@ class TargetReadinessView:
         if manifest is None:
             return "never_computed"
 
-        # Check input hash
         current_hash = compute_input_hash(self._target, self._snapshot, self._gateway)
         if manifest.input_hash != current_hash:
             return "stale"
@@ -398,7 +381,6 @@ class TargetReadinessView:
                 self._manifest_cache,
             )
 
-            # A dependency blocks us if it's not current
             if (
                 dep_view.self_status != "current"
                 or dep_view._compute_dependency_status().is_blocked
@@ -432,10 +414,8 @@ class TargetReadinessView:
         chain: list[BlockerInfo] = []
         ultimate_bottleneck: str | None = None
 
-        # If we're not current, we need to run
         if self_status != "current":
             if dep_status.is_satisfied:
-                # We can run - we are the bottleneck
                 chain.append(
                     BlockerInfo(
                         target=self.name,
@@ -445,7 +425,6 @@ class TargetReadinessView:
                 )
                 ultimate_bottleneck = self.name
             else:
-                # We're blocked by dependencies
                 chain.append(
                     BlockerInfo(
                         target=self.name,
@@ -454,7 +433,6 @@ class TargetReadinessView:
                     )
                 )
 
-                # Recurse to find the ultimate bottleneck
                 if dep_status.first_blocker:
                     dep_target = self._graph.get(dep_status.first_blocker)
                     dep_view = TargetReadinessView(
@@ -490,14 +468,12 @@ class TargetReadinessView:
             return ActionNeeded(kind="none")
 
         if ultimate_bottleneck is None:
-            # Should not happen, but handle gracefully
             return ActionNeeded(
                 kind="blocked_external",
                 reason="Unable to determine bottleneck",
             )
 
         if ultimate_bottleneck == self.name:
-            # We can run now
             return ActionNeeded(
                 kind="run",
                 target=self.name,
@@ -505,7 +481,6 @@ class TargetReadinessView:
                 command=f"codeintel build run {self.name}",
             )
 
-        # Something else must run first
         return ActionNeeded(
             kind="run_first",
             target=ultimate_bottleneck,
@@ -532,7 +507,7 @@ class TargetReadinessView:
             target = self._graph.get(info.target)
             duration = target.estimated_duration_ms
             if duration is None:
-                return None  # Unknown if any step is unknown
+                return None
             total_ms += duration
 
         return total_ms
@@ -572,11 +547,6 @@ class TargetReadinessView:
         return reasons.get(status, str(status))
 
 
-# =============================================================================
-# Database Readiness View
-# =============================================================================
-
-
 class DatabaseReadinessView:
     """System-wide readiness view for all targets.
 
@@ -603,10 +573,8 @@ class DatabaseReadinessView:
         self._gateway = gateway
         self._snapshot = snapshot
 
-        # Pre-load all manifests for efficiency
         self._manifest_cache = self._load_manifests()
 
-        # Cache target views
         self._views: dict[str, TargetReadinessView] = {}
 
     def __getitem__(self, name: str) -> TargetReadinessView:
@@ -803,7 +771,6 @@ class DatabaseReadinessView:
         lines.append(f"Blocked: {summary['blocked']} targets")
         lines.append("")
 
-        # Show bottlenecks
         bottlenecks = self.bottlenecks()
         if bottlenecks:
             lines.append("Bottlenecks (run these to unblock):")

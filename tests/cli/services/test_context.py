@@ -19,10 +19,6 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# CommandContextBuilder
-# ---------------------------------------------------------------------------
-
 
 def test_build_creates_context() -> None:
     """Build creates a valid context."""
@@ -74,11 +70,6 @@ def test_with_operation_id() -> None:
         builder = CommandContextBuilder().with_operation_id("test.op")
         with builder.build() as ctx:
             expect_equal(ctx.operation_id, "test.op")
-
-
-# ---------------------------------------------------------------------------
-# CommandContext
-# ---------------------------------------------------------------------------
 
 
 def test_has_runtime_without_config() -> None:
@@ -136,11 +127,6 @@ def test_serving_raises_without_config() -> None:
         pytest.raises(RuntimeError, match="Serving not available"),
     ):
         _ = ctx.serving
-
-
-# ---------------------------------------------------------------------------
-# CommandContext with storage
-# ---------------------------------------------------------------------------
 
 
 def test_with_storage_enables_runtime(tmp_path: Path) -> None:

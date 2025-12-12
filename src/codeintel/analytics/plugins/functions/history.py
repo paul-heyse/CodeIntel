@@ -74,9 +74,8 @@ class FunctionHistoryPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Build config from context
         max_history_days = ctx.parameters.get("max_history_days", int, default=365)
 
         cfg = FunctionHistoryStepConfig(
@@ -84,8 +83,6 @@ class FunctionHistoryPlugin(TargetPlugin):
             max_history_days=max_history_days,
         )
 
-        # Note: ToolRunner type mismatch between build.protocols and ingestion.engine.infrastructure
-        # Passing None for now as runner is optional
         try:
             compute_function_history(
                 ctx.gateway,

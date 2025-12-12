@@ -29,17 +29,17 @@ Register an operation:
 >>> from codeintel.cli.context import CommandContext
 >>> from codeintel.cli.core import CliResult
 >>>
->>> def my_handler(ctx: CommandContext) -> CliResult:  # doctest: +SKIP
+>>> def my_handler(ctx: CommandContext) -> CliResult:
 ...     return CliResult.ok({"status": "done"})
 >>>
->>> spec = OperationSpec(  # doctest: +SKIP
+>>> spec = OperationSpec(
 ...     operation_id="my.operation",
 ...     name="My Operation",
 ...     description="Does something",
 ...     handler=my_handler,
 ...     group="my",
 ... )
->>> register_operation(spec)  # doctest: +SKIP
+>>> register_operation(spec)
 """
 
 from codeintel.cli.execution.middleware import (

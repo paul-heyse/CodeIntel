@@ -30,11 +30,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-# =============================================================================
-# Result Protocol - Common interface for plugin results
-# =============================================================================
-
-
 @runtime_checkable
 class ResultLike(Protocol):
     """Protocol for plugin results supporting common assertions.
@@ -57,11 +52,6 @@ class ResultLike(Protocol):
     def row_counts(self) -> Mapping[str, int] | None:
         """Return row counts per table."""
         ...
-
-
-# =============================================================================
-# Base Result Assertions
-# =============================================================================
 
 
 @dataclass
@@ -199,11 +189,6 @@ class BaseResultAssertions[TResult: ResultLike](ABC):
             exact=exact,
         )
         return self
-
-
-# =============================================================================
-# Base Test Harness
-# =============================================================================
 
 
 @dataclass

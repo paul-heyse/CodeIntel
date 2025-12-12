@@ -40,6 +40,7 @@ from codeintel.build.hamilton.io.ibis_adapter import IbisIOConfig
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.naming import dataset_node, target_node
 from codeintel.build.hamilton.nodes.node_factory import (
+    GenerationOptions,
     build_target_module,
     clear_generated_module_cache,
     get_generated_module,
@@ -56,11 +57,6 @@ UPDATED_ROW_COUNT = 100
 EXPECTED_REF_COUNT = 2
 CLOSURE_LENGTH_PHASE0 = 5
 SAMPLE_DURATION_MS = 1234.5
-
-
-# =============================================================================
-# PR-01: HamiltonNodeMode and Target-Node Mappings
-# =============================================================================
 
 
 class TestHamiltonNodeMode:
@@ -130,11 +126,6 @@ class TestHamiltonNodeMode:
             pytest.fail("Generated mode should have target mappings")
 
 
-# =============================================================================
-# PR-02: Closure Execution and Result Tracking
-# =============================================================================
-
-
 class TestHamiltonBuildResult:
     """Tests for PR-02: HamiltonBuildResult fields."""
 
@@ -191,11 +182,6 @@ class TestHamiltonBuildResult:
             pytest.fail(f"run_id format incorrect: {result.run_id}")
 
 
-# =============================================================================
-# PR-03: Upstream Failure Gating
-# =============================================================================
-
-
 class TestUpstreamFailureGating:
     """Tests for PR-03: Upstream failure gating in _run_target."""
 
@@ -213,11 +199,6 @@ class TestUpstreamFailureGating:
             pytest.fail("Should be skipped when upstream fails")
         if not record.error or "upstream_failed:" not in record.error:
             pytest.fail("Error should contain upstream_failed prefix")
-
-
-# =============================================================================
-# PR-04: Force Flag Support
-# =============================================================================
 
 
 class TestForceFlag:
@@ -239,20 +220,13 @@ class TestForceFlag:
     @staticmethod
     def test_force_targets_default_empty() -> None:
         """Verify force_targets defaults to empty frozenset."""
-        # We can't easily create a full BuildEnv without dependencies,
-        # but we can check the field default
         fields = getattr(BuildEnv, "__dataclass_fields__", {})
         force_field = fields.get("force_targets")
         if force_field is None:
             pytest.fail("force_targets field not found")
-        # Check if it has a default factory
+
         if force_field.default_factory is None:
             pytest.fail("force_targets should have default_factory")
-
-
-# =============================================================================
-# PR-05: Run Tracking
-# =============================================================================
 
 
 class TestRunTracking:
@@ -264,11 +238,6 @@ class TestRunTracking:
         fields = getattr(HamiltonBuildResult, "__dataclass_fields__", {})
         if "run_id" not in fields:
             pytest.fail("HamiltonBuildResult missing run_id field")
-
-
-# =============================================================================
-# PR-06: Dataset Lineage
-# =============================================================================
 
 
 class TestDatasetRef:
@@ -318,7 +287,7 @@ class TestDatasetRef:
         """Verify DatasetRef is immutable."""
         ref = DatasetRef(table_key="test.table")
         with pytest.raises(AttributeError):
-            ref.table_key = "other.table"  # type: ignore[misc]
+            object.__setattr__(ref, "table_key", "other.table")  # noqa: PLC2801
 
 
 class TestRefsFromTargetResult:
@@ -399,11 +368,6 @@ class TestTargetRunRecordDatasets:
             pytest.fail("get_dataset returned wrong ref")
 
 
-# =============================================================================
-# PR-07: Observability
-# =============================================================================
-
-
 class TestObservability:
     """Tests for PR-07: Observability functions."""
 
@@ -448,11 +412,6 @@ class TestObservability:
             pytest.fail("JSON missing 'nodes' field")
 
 
-# =============================================================================
-# Node Factory Tests
-# =============================================================================
-
-
 class TestNodeFactory:
     """Tests for dynamic node generation."""
 
@@ -486,7 +445,9 @@ class TestNodeFactory:
     def test_build_target_module_respects_exclude() -> None:
         """Verify exclude_targets filters out targets."""
         clear_generated_module_cache()
-        module = build_target_module(exclude_targets={"modules"})
+        module = build_target_module(
+            options=GenerationOptions(exclude_targets={"modules"}),
+        )
         if hasattr(module, target_node("modules")):
             pytest.fail("Excluded target should not be in module")
 
@@ -512,11 +473,6 @@ class TestDriverWithGeneratedNodes:
             pytest.fail("Driver runtime missing dr")
         if runtime.mode != "generated":
             pytest.fail(f"Expected mode='generated', got {runtime.mode}")
-
-
-# =============================================================================
-# Dataset Naming Tests
-# =============================================================================
 
 
 class TestDatasetNodeNaming:
@@ -548,11 +504,6 @@ class TestDatasetNodeNaming:
             pytest.fail("Target node should use t__ prefix")
         if not dataset_name.startswith("d__"):
             pytest.fail("Dataset node should use d__ prefix")
-
-
-# =============================================================================
-# Ibis and Pandera Integration Tests
-# =============================================================================
 
 
 class TestIbisIOConfig:

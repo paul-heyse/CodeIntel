@@ -46,9 +46,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEMO_REPO = "demo/repo"
 DEMO_COMMIT = "abc123def456"
@@ -64,11 +61,6 @@ FUNCTION_COUNT_3 = 3
 RISK_SCORE_0_75 = 0.75
 CRITICALITY_0_5 = 0.5
 DEP_ID_LENGTH = 16
-
-
-# =============================================================================
-# Test Data
-# =============================================================================
 
 
 class DependencyCallOverrides(TypedDict, total=False):
@@ -152,11 +144,6 @@ def _aggregate_seed(
     return replace(base, **overrides)
 
 
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-
 @pytest.fixture
 def ctx(tmp_path: Path) -> Iterator[TestContext]:
     """
@@ -192,11 +179,6 @@ def snapshot(ctx: TestContext) -> SnapshotRef:
     return ctx.snapshot
 
 
-# =============================================================================
-# Helper Function Tests
-# =============================================================================
-
-
 def test_compute_dep_id_deterministic() -> None:
     """Compute dependency ID is deterministic for same inputs."""
     dep_id_1 = compute_dep_id(DEMO_REPO, DEMO_COMMIT, "requests")
@@ -208,7 +190,7 @@ def test_compute_dep_id_length() -> None:
     """Compute dependency ID returns 16-character hex string."""
     dep_id = compute_dep_id(DEMO_REPO, DEMO_COMMIT, "sqlalchemy")
     expect_length(dep_id, DEP_ID_LENGTH)
-    # Verify it's a valid hex string
+
     int(dep_id, 16)
 
 
@@ -251,11 +233,6 @@ def test_to_decimal_handles_large_int() -> None:
     large_int = 2**127 - 1
     result = to_decimal(large_int)
     expect_equal(result, Decimal(large_int))
-
-
-# =============================================================================
-# DependencyCallRow Tests
-# =============================================================================
 
 
 def test_dependency_call_row_from_payload_creation() -> None:
@@ -314,11 +291,6 @@ def test_dependency_call_row_from_payload_is_frozen() -> None:
     row = dependency_call_row_from_payload(seed)
 
     assert_frozen(row, "library", "other")
-
-
-# =============================================================================
-# DependencyAggregateRow Tests
-# =============================================================================
 
 
 def test_dependency_aggregate_row_from_payload_creation() -> None:
@@ -399,11 +371,6 @@ def test_dependency_aggregate_row_from_payload_is_frozen() -> None:
     assert_frozen(row, "library", "other")
 
 
-# =============================================================================
-# DependencyCallAdapter Tests
-# =============================================================================
-
-
 def test_call_adapter_table_name(
     ctx: TestContext,
 ) -> None:
@@ -446,7 +413,6 @@ def test_call_adapter_persist_single_row(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependency_calls WHERE repo = ? AND commit = ?",
@@ -491,7 +457,6 @@ def test_call_adapter_persist_multiple_rows(
     count = adapter.persist(rows)
     expect_equal(count, EXPECTED_COUNT_3)
 
-    # Verify rows were inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependency_calls WHERE repo = ? AND commit = ?",
@@ -515,7 +480,6 @@ def test_call_adapter_persist_verifies_data(
     row = dependency_call_row_from_payload(seed)
     adapter.persist([row])
 
-    # Query and verify
     result = ctx.gateway.con.execute(
         """
         SELECT library, service_name, qualname, callsite_count
@@ -530,11 +494,6 @@ def test_call_adapter_persist_verifies_data(
     expect_equal(row[1], "Redis Cache")
     expect_equal(row[2], "cache.client.get_value")
     expect_equal(row[3], CALLSITE_COUNT_5)
-
-
-# =============================================================================
-# DependencyAggregateAdapter Tests
-# =============================================================================
 
 
 def test_aggregate_adapter_table_name(
@@ -579,7 +538,6 @@ def test_aggregate_adapter_persist_single_row(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
@@ -614,7 +572,6 @@ def test_aggregate_adapter_persist_multiple_rows(
     count = adapter.persist(rows)
     expect_equal(count, EXPECTED_COUNT_2)
 
-    # Verify rows were inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
@@ -640,7 +597,6 @@ def test_aggregate_adapter_persist_verifies_data(
     row = dependency_aggregate_row_from_payload(seed)
     adapter.persist([row])
 
-    # Query and verify
     result = ctx.gateway.con.execute(
         """
         SELECT library, category, severity, risk_level, function_count, callsite_count
@@ -677,7 +633,6 @@ def test_aggregate_adapter_persist_with_null_fields(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify null fields
     result = ctx.gateway.con.execute(
         """
         SELECT category, severity, criticality, risk_score
@@ -688,7 +643,7 @@ def test_aggregate_adapter_persist_with_null_fields(
     ).fetchone()
 
     row = expect_is_not_none(result)
-    expect_is_none(row[0])  # category
-    expect_is_none(row[1])  # severity
-    expect_is_none(row[2])  # criticality
-    expect_is_none(row[3])  # risk_score
+    expect_is_none(row[0])
+    expect_is_none(row[1])
+    expect_is_none(row[2])
+    expect_is_none(row[3])

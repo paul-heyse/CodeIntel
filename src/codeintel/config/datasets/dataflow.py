@@ -24,9 +24,6 @@ from codeintel.storage.views import ALIAS_DOCS_VIEWS
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
-# ---------------------------------------------------------------------------
-# Dataflow Graph Primitives
-# ---------------------------------------------------------------------------
 
 NodeKind = Literal["table", "view", "operation", "graph"]
 EdgeType = Literal["builds", "reads", "exposes", "depends_on"]
@@ -74,11 +71,6 @@ class DataflowEdge:
     src: str
     dst: str
     edge_type: EdgeType
-
-
-# ---------------------------------------------------------------------------
-# Dataflow Graph Builders
-# ---------------------------------------------------------------------------
 
 
 def iter_dataset_nodes() -> Iterator[DataflowNode]:
@@ -215,12 +207,10 @@ def build_contract_dataflow_graph() -> tuple[list[DataflowNode], list[DataflowEd
 
 
 __all__ = [
-    # Types
     "DataflowEdge",
     "DataflowNode",
     "EdgeType",
     "NodeKind",
-    # Graph builders
     "build_contract_dataflow_graph",
     "iter_composite_edges",
     "iter_dataset_nodes",

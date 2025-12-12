@@ -26,32 +26,22 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Span Test Constants
-# =============================================================================
-
-# Repository identifiers (consistent with graph_env.py)
 SPAN_REPO = "demo/repo"
 SPAN_COMMIT = "deadbeef"
 
-# Module paths for span tests
+
 SPAN_MOD_A_PATH = "pkg/a.py"
 SPAN_MOD_B_PATH = "pkg/b.py"
 SPAN_MOD_A_FQN = "pkg.a"
 SPAN_MOD_B_FQN = "pkg.b"
 
-# GOID for the caller function in pkg/b.py
+
 SPAN_CALLER_GOID = 200
 SPAN_CALLER_START = 3
 SPAN_CALLER_END = 4
 
-# Test identifier
+
 SPAN_TEST_ID = "tests/test_sample.py::test_caller"
-
-
-# =============================================================================
-# Span Pack Implementation
-# =============================================================================
 
 
 @dataclass
@@ -102,13 +92,10 @@ class SpanPack:
         """
         now = datetime.now(UTC)
 
-        # Seed modules
         self._seed_modules(ctx)
 
-        # Seed GOIDs
         self._seed_goids(ctx, now)
 
-        # Seed test catalog
         self._seed_test_catalog(ctx, now)
 
     @staticmethod
@@ -188,7 +175,6 @@ class SpanPack:
         insert_rows(ctx.gateway, rows)
 
 
-# Default instance for common usage
 SPAN_PACK = SpanPack()
 
 

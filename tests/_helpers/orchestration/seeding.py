@@ -28,8 +28,7 @@ from tests._helpers.fakes import utcnow
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Import for seed_docs_export_invalid_profile - not circular because seeding_docs
-# doesn't import from this module
+
 from tests._helpers.orchestration.seeding_docs import (
     seed_docs_export_minimal as _seed_docs_export_minimal,
 )

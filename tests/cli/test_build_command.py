@@ -15,7 +15,7 @@ def test_build_run_success(cli_project_harness: CLIProjectHarness) -> None:
     """Build run should emit success text when executor succeeds."""
     result = cli_project_harness.invoke(["build", "run", "ast"])
     assert_success(result)
-    # Verify structured output contains executed targets
+
     expect_in("executed:", result.stdout)
     expect_in("ast", result.stdout)
 
@@ -26,7 +26,7 @@ def test_build_run_dry_run(
     """Dry-run should output plan summary without executing targets."""
     result = cli_project_harness.invoke(["build", "run", "ast", "--dry-run"])
     assert_success(result)
-    # New handler returns structured result for dry-run
+
     expect_in("executed:", result.stdout)
     expect_in("duration_seconds:", result.stdout)
 
@@ -37,11 +37,6 @@ def test_build_run_unknown_target(
     """Unknown targets should exit with code 1."""
     result = cli_project_harness.invoke(["build", "run", "unknown-target"])
     assert_exit(result, 1)
-
-
-# ---------------------------------------------------------------------------
-# Parse-time validation tests for build run selection
-# ---------------------------------------------------------------------------
 
 
 def test_build_run_no_targets_raises(

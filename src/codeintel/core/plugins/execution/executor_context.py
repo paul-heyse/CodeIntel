@@ -57,9 +57,9 @@ class BaseExecutorContext:
     >>> from codeintel.storage.gateway import StorageGateway
     >>> from codeintel.config.primitives import SnapshotRef
     >>> from pathlib import Path
-    >>> # gateway = StorageGateway(...)
-    >>> # snapshot = SnapshotRef(repo="org/repo", commit="abc123", repo_root=Path("/tmp"))
-    >>> # ctx = BaseExecutorContext(gateway=gateway, snapshot=snapshot)
+    >>>
+    >>>
+    >>>
     """
 
     gateway: StorageGateway

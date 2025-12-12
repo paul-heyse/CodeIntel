@@ -156,7 +156,6 @@ class ProgressTracker:
             description=description,
         )
 
-        # Also emit event if queue is available
         if self._queue is not None:
             total_val = progress.tasks[rich_task_id].total or 100
             current_completed = progress.tasks[rich_task_id].completed
@@ -171,7 +170,6 @@ class ProgressTracker:
             with contextlib.suppress(asyncio.QueueFull):
                 self._queue.put_nowait(event)
 
-        # Call callbacks
         for callback in self._callbacks:
             total_val = progress.tasks[rich_task_id].total or 100
             current_completed = progress.tasks[rich_task_id].completed

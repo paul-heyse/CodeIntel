@@ -330,7 +330,7 @@ def _extract_entities_from_file(
 
     module_name = context.module_name
     normalized_path = context.normalized_path
-    # Process module itself
+
     module_descriptor = goid_compute.GoidDescriptor(
         repo=context.repo,
         commit=context.commit,
@@ -507,9 +507,8 @@ class GoidBuilderPlugin(TargetPlugin):
         TargetResult
             Execution result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Build config
         cfg = GoidBuilderStepConfig(snapshot=ctx.snapshot)
         opts = self.resolve_options()
 
@@ -517,7 +516,6 @@ class GoidBuilderPlugin(TargetPlugin):
         commit = cfg.commit
 
         try:
-            # Step 1: Get source root (prefer snapshot, then db, then cwd)
             source_root = ctx.snapshot.repo_root
             if not source_root:
                 source_root = _get_source_root(ctx.gateway, repo, commit)
@@ -525,7 +523,6 @@ class GoidBuilderPlugin(TargetPlugin):
                 source_root = Path.cwd()
                 log.warning("goid_builder: No source root found, using current directory")
 
-            # Step 2: Get tracked files
             tracked_files = _filter_tracked_files(
                 _get_tracked_files(ctx.gateway, repo, commit), opts
             )
@@ -539,7 +536,6 @@ class GoidBuilderPlugin(TargetPlugin):
                     }
                 )
 
-            # Step 3: Process each file
             now = datetime.now(UTC)
             all_goid_rows: list[GoidRow] = []
             all_crosswalk_rows: list[GoidCrosswalkRow] = []
@@ -566,7 +562,6 @@ class GoidBuilderPlugin(TargetPlugin):
                 len(tracked_files),
             )
 
-            # Step 4: Persist
             goid_count = _persist_goid_rows(ctx.gateway, all_goid_rows, repo, commit)
             crosswalk_count = _persist_crosswalk_rows(ctx.gateway, all_crosswalk_rows, repo, commit)
 

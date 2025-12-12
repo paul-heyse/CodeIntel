@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from tests._helpers import TestContext
 
-# Test constants
+
 EXPECTED_STABILITY_BUCKETS = {"new_hot", "stable", "churning", "legacy_hot"}
 MIN_EXPECTED_LINES_ADDED = 2
 GOID_TEST_FUNC_1 = 1
@@ -89,12 +89,10 @@ def test_function_history_populates_rows(
     tmp_path: Path,
 ) -> None:
     """Verify compute_function_history persists metrics for touched functions."""
-    # Initialize git repo with history
     git_ctx = init_git_repo_with_history(tmp_path)
     repo_root = git_ctx.repo_root
     commit = git_ctx.commits[0]
 
-    # Create test context with specific repo root
     ctx = TestScenario.minimal().with_repo("demo/repo").with_commit(commit).build(repo_root)
 
     try:
@@ -133,12 +131,10 @@ def test_function_history_respects_min_threshold(
     tmp_path: Path,
 ) -> None:
     """Verify minimum line threshold is respected when populating function history."""
-    # Initialize git repo with history
     git_ctx = init_git_repo_with_history(tmp_path)
     repo_root = git_ctx.repo_root
     commit = git_ctx.commits[0]
 
-    # Create test context with specific repo root
     ctx = TestScenario.minimal().with_repo("demo/repo").with_commit(commit).build(repo_root)
 
     try:

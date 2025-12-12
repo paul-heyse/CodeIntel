@@ -29,9 +29,7 @@ if TYPE_CHECKING:
     from codeintel.core.resources import ResourceRegistry
     from tests.graphs.conftest import CatalogSampleData
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+
 RESOURCE_NAME: Final[str] = "catalog"
 
 
@@ -57,11 +55,6 @@ def empty_catalog_resource(empty_catalog: FunctionCatalog) -> CatalogResource:
         Resource wrapping empty catalog.
     """
     return CatalogResource(catalog=empty_catalog)
-
-
-# ===========================================================================
-# Resource Protocol Tests
-# ===========================================================================
 
 
 def test_catalog_resource_name_constant() -> None:
@@ -105,11 +98,6 @@ def test_catalog_resource_require_returns_registered(
     expect_true(required is catalog_resource)
 
 
-# ===========================================================================
-# Function Spans Tests
-# ===========================================================================
-
-
 def test_function_spans_returns_all_spans(
     catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
 ) -> None:
@@ -150,11 +138,6 @@ def test_function_spans_empty_catalog(empty_catalog_resource: CatalogResource) -
     expect_length(spans, 0)
 
 
-# ===========================================================================
-# Caching Tests
-# ===========================================================================
-
-
 def test_function_spans_caches_result(catalog_resource: CatalogResource) -> None:
     """function_spans caches the result."""
     spans1 = catalog_resource.function_spans
@@ -164,7 +147,7 @@ def test_function_spans_caches_result(catalog_resource: CatalogResource) -> None
 
 def test_invalidate_clears_cache(catalog_resource: CatalogResource) -> None:
     """invalidate() clears the cached spans."""
-    _ = catalog_resource.function_spans  # Populate cache
+    _ = catalog_resource.function_spans
     catalog_resource.invalidate()
     expect_true(catalog_resource.cached_spans is None)
 
@@ -176,14 +159,9 @@ def test_function_spans_repopulates_after_invalidate(
     spans1 = catalog_resource.function_spans
     catalog_resource.invalidate()
     spans2 = catalog_resource.function_spans
-    # New tuple is created but with same content
+
     expect_true(spans1 is not spans2)
     expect_equal(len(spans1), len(spans2))
-
-
-# ===========================================================================
-# Paths Tests
-# ===========================================================================
 
 
 def test_paths_returns_all_paths(
@@ -201,11 +179,6 @@ def test_paths_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
     expect_length(paths, 0)
 
 
-# ===========================================================================
-# Module By Path Tests
-# ===========================================================================
-
-
 def test_module_by_path_returns_mapping(
     catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
 ) -> None:
@@ -218,11 +191,6 @@ def test_module_by_path_empty_catalog(empty_catalog_resource: CatalogResource) -
     """module_by_path returns empty for empty catalog."""
     mapping = empty_catalog_resource.module_by_path
     expect_length(mapping, 0)
-
-
-# ===========================================================================
-# Spans For Path Tests
-# ===========================================================================
 
 
 def test_spans_for_path_returns_file_spans(
@@ -276,11 +244,6 @@ def test_spans_for_path_includes_urns(
     expect_equal(urns, expected_urns)
 
 
-# ===========================================================================
-# Local Name Map Tests
-# ===========================================================================
-
-
 def test_local_name_map_returns_mapping(
     catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
 ) -> None:
@@ -297,11 +260,6 @@ def test_local_name_map_nonexistent_file(catalog_resource: CatalogResource) -> N
     """local_name_map returns empty for nonexistent file."""
     name_map = catalog_resource.local_name_map("nonexistent/file.py")
     expect_length(name_map, 0)
-
-
-# ===========================================================================
-# Lookup GOID Tests
-# ===========================================================================
 
 
 def test_lookup_goid_finds_function(
@@ -344,11 +302,6 @@ def test_lookup_goid_empty_catalog(empty_catalog_resource: CatalogResource) -> N
     expect_true(goid is None)
 
 
-# ===========================================================================
-# URN For GOID Tests
-# ===========================================================================
-
-
 def test_urn_for_goid_returns_urn(
     catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
 ) -> None:
@@ -378,11 +331,6 @@ def test_urn_for_goid_empty_catalog(empty_catalog_resource: CatalogResource) -> 
     expect_true(urn is None)
 
 
-# ===========================================================================
-# FunctionSpanData Properties Tests
-# ===========================================================================
-
-
 def test_span_data_has_all_properties(
     catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
 ) -> None:
@@ -397,11 +345,6 @@ def test_span_data_has_all_properties(
     expect_equal(span.start_line, target_meta.start_line)
     expect_equal(span.end_line, target_meta.end_line)
     expect_equal(span.urn, target_meta.urn)
-
-
-# ===========================================================================
-# Parametrized Tests
-# ===========================================================================
 
 
 def test_urn_lookup_parametrized(

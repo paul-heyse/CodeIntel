@@ -62,7 +62,6 @@ class TestTargetRegistry:
     def test_all_targets_have_tables() -> None:
         """All non-export targets specify at least one output table."""
         for target in ALL_TARGETS:
-            # Export targets produce files, not tables
             if target.module == "export":
                 continue
             expect_true(len(target.tables) > 0, message=f"No tables for {target.name}")
@@ -78,10 +77,8 @@ class TestTargetRegistry:
         """Topological sort includes all transitive dependencies."""
         graph = get_target_graph()
 
-        # Get order for profiles (has many deps)
         order = graph.topological_order(["profiles"])
 
-        # All transitive deps should be included
         trans_deps = graph.transitive_deps("profiles")
         for dep in trans_deps:
             expect_in(dep, order)
@@ -91,10 +88,8 @@ class TestTargetRegistry:
         """Ingestion targets precede graph targets in topological order."""
         graph = get_target_graph()
 
-        # Get order for call_graph (depends on ingestion)
         order = graph.topological_order(["call_graph"])
 
-        # Ingestion deps should come before call_graph
         call_graph_idx = order.index("call_graph")
         for dep in graph.transitive_deps("call_graph"):
             dep_target = graph.get(dep)
@@ -106,7 +101,6 @@ class TestTargetRegistry:
         """Registry has no cyclic dependencies."""
         graph = get_target_graph()
 
-        # If we can get topological order of all, no cycles
         order = graph.topological_order(list(graph))
         expect_equal(len(order), len(ALL_TARGETS))
 
@@ -144,13 +138,10 @@ class TestTargetsByModule:
         graphs = graph.targets_for_module("graphs")
         analytics = graph.targets_for_module("analytics")
 
-        # Ingestion should have several targets
         expect_true(len(ingestion) >= MIN_INGESTION_TARGETS)
 
-        # Graphs should have several targets
         expect_true(len(graphs) >= MIN_GRAPHS_TARGETS)
 
-        # Analytics should have the most targets
         expect_true(len(analytics) >= MIN_ANALYTICS_TARGETS)
 
 

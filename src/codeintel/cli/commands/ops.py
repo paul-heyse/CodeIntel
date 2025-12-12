@@ -80,12 +80,7 @@ op_app = App(
     help="Operation invocation commands.",
 )
 
-# -----------------------------------------------------------------------------
-# Operation Aliases for Progressive Disclosure
-# -----------------------------------------------------------------------------
 
-# Short aliases for frequently used operations.
-# Maps short alias to full CLI command name.
 OPERATION_ALIASES: dict[str, str] = {
     "hr": "functions-high-risk",
     "fs": "function-summary",
@@ -179,7 +174,7 @@ def app_proxy(
     Parse-only invocation returning kwargs:
 
     >>> ns = app_proxy(["op", "list"], result_action="return_value")
-    >>> category = ns.kwargs.get("category")  # Access parsed values
+    >>> category = ns.kwargs.get("category")
 
     See Also
     --------
@@ -190,7 +185,6 @@ def app_proxy(
     return cast("types.SimpleNamespace", result)
 
 
-# Track dynamically registered operation command names to avoid duplicates
 _REGISTERED_OP_COMMANDS: set[str] = set()
 _GROUPS_BY_ROLE: dict[str, Group] = {
     "selector": Group(
@@ -218,13 +212,8 @@ class OperationCliArgs(Protocol):
     dry_run: bool
 
 
-# -----------------------------------------------------------------------------
-# op commands
-# -----------------------------------------------------------------------------
-
-# Config for op commands - no runtime needed for listing
 _OP_NO_RUNTIME_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
-# Config for op call - requires runtime
+
 _OP_RUNTIME_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
 
@@ -273,11 +262,6 @@ class OpCallCommand:
         ),
     ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
-
-
-# -----------------------------------------------------------------------------
-# Dynamic operation helpers
-# -----------------------------------------------------------------------------
 
 
 def _extract_base_type(type_hint: type[Any] | None) -> type[Any] | None:
@@ -588,8 +572,6 @@ def _runtime_from_cli(cli: RuntimeCLI) -> ResolvedRuntime:
         If runtime resolution fails.
     """
     try:
-        # Pass ALL RuntimeCLI fields to enable fallback to explicit params
-        # when no project file exists
         params: dict[str, object] = {
             "project_root": cli.project_root,
             "repo": cli.repo,
@@ -702,7 +684,6 @@ def _invoke_operation_for_result(
 
             result = method(**params)
 
-            # Convert result to dict
             if hasattr(result, "model_dump"):
                 return result.model_dump(mode="json")
             if hasattr(result, "__dict__"):
@@ -734,12 +715,10 @@ def _execute_from_stdin(
     """
     cli_args = _build_params_dict(cfg, metadata.params)
 
-    # Read all records first to get count for progress (if needed later)
     records = list(iter_stdin_records())
     results: list[dict[str, object]] = []
 
     for stdin_record in records:
-        # CLI args override stdin values
         merged_params = merge_stdin_with_args(stdin_record, cli_args)
 
         try:
@@ -760,7 +739,6 @@ def _execute_from_stdin(
                 }
             )
 
-    # Output all results as JSON array
     output_format = get_output_format(
         getattr(cfg, "output", None) or OutputFormatCLI(),
         default=OutputFormat.JSON,
@@ -810,7 +788,6 @@ def _register_dynamic_operation(metadata: OperationCliMetadata) -> None:
         verbose = bool(get_verbose(runtime_cli))
         params = _build_params_dict(typed_cfg, metadata.params)
 
-        # Handle dry-run mode
         if typed_cfg.dry_run:
             plan = plan_dry_run(
                 metadata.operation.id,
@@ -826,12 +803,10 @@ def _register_dynamic_operation(metadata: OperationCliMetadata) -> None:
 
         runtime = _runtime_from_cli(runtime_cli)
 
-        # Handle stdin input for pipeable composition
         if typed_cfg.from_stdin:
             _execute_from_stdin(metadata, typed_cfg, runtime, verbose=verbose)
             return
 
-        # Normal execution
         _invoke_operation_with_prereqs(
             metadata.operation.id,
             params,
@@ -842,7 +817,6 @@ def _register_dynamic_operation(metadata: OperationCliMetadata) -> None:
 
     dynamic_op.__annotations__["cfg"] = cfg_annotation
 
-    # Get aliases for this operation (if any)
     aliases = _get_aliases_for_operation(command_name)
 
     op_app.command(
@@ -940,9 +914,8 @@ def register_dynamic_operation_for_tests(metadata: OperationCliMetadata) -> None
     Always call `unregister_dynamic_operation_for_tests()` to clean up
     after tests to avoid polluting the catalog.
     """
-    # Register in the operations catalog so get_operation() finds it
     register_test_operation(metadata.operation)
-    # Register the Cyclopts CLI command
+
     _register_dynamic_operation(metadata)
 
 
@@ -967,7 +940,6 @@ def unregister_dynamic_operation_for_tests(op_id: str) -> bool:
     return unregister_test_operation(op_id)
 
 
-# Register dynamic operations on module import
 register_dynamic_operations()
 
 

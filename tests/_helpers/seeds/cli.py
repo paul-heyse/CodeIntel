@@ -21,11 +21,6 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# CLI Core Pack
-# =============================================================================
-
-
 @dataclass
 class CliCorePack:
     """Seed pack extending CORE_PACK with CLI-specific metadata.
@@ -64,14 +59,6 @@ class CliCorePack:
         ctx
             Test context to seed.
         """
-        # CLI core pack extends CORE_PACK with any CLI-specific setup
-        # Currently a no-op since CORE_PACK provides sufficient base data
-        # This pack exists to allow future CLI-specific extensions
-
-
-# =============================================================================
-# Storage Profile Pack
-# =============================================================================
 
 
 @dataclass
@@ -112,14 +99,6 @@ class StorageProfilePack:
         ctx
             Test context to seed.
         """
-        # Storage profile pack prepares storage-specific test data
-        # The actual macro validation uses real storage routines
-        # so minimal seeding is needed beyond CORE_PACK
-
-
-# =============================================================================
-# Operation Registry Pack
-# =============================================================================
 
 
 @dataclass
@@ -156,13 +135,6 @@ class OperationRegistryPack:
         ctx
             Test context to seed.
         """
-        # Operation registry data is typically in-memory
-        # This pack exists for future persistence needs
-
-
-# =============================================================================
-# Graph Handler Pack
-# =============================================================================
 
 
 @dataclass
@@ -200,13 +172,6 @@ class GraphHandlerPack:
         ctx
             Test context to seed.
         """
-        # Graph handler pack combines core and graph data
-        # Dependencies handle the actual seeding
-
-
-# =============================================================================
-# Subsystem Handler Pack
-# =============================================================================
 
 
 @dataclass
@@ -244,13 +209,7 @@ class SubsystemHandlerPack:
         ctx
             Test context to seed.
         """
-        # Subsystem handler pack combines core and subsystem data
-        # Dependencies handle the actual seeding
 
-
-# =============================================================================
-# Default Instances
-# =============================================================================
 
 CLI_CORE_PACK = CliCorePack()
 STORAGE_PROFILE_PACK = StorageProfilePack()

@@ -14,7 +14,7 @@ from codeintel.storage.gateway.factory import open_memory_gateway
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
 
-# Test constants
+
 FAN_OUT_TWO = 2
 FAN_IN_ZERO = 0
 FAN_IN_ONE = 1

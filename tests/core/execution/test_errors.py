@@ -27,10 +27,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# =============================================================================
-# PLUGIN_CATCHABLE_ERRORS Tests
-# =============================================================================
-
 
 def test_plugin_catchable_errors_is_tuple() -> None:
     """Verify PLUGIN_CATCHABLE_ERRORS is a tuple of exception types."""
@@ -45,7 +41,6 @@ def test_plugin_catchable_errors_contains_exception_types() -> None:
 
 def test_plugin_catchable_errors_includes_common_exceptions() -> None:
     """Verify PLUGIN_CATCHABLE_ERRORS includes common exception types."""
-    # These are the exceptions explicitly listed in errors.py
     expected = {
         AttributeError,
         LookupError,
@@ -74,11 +69,6 @@ def test_plugin_catchable_errors_can_catch() -> None:
         caught = True
 
     expect_true(caught)
-
-
-# =============================================================================
-# PluginFatalError Tests
-# =============================================================================
 
 
 @pytest.fixture
@@ -167,11 +157,6 @@ def test_plugin_fatal_error_preserves_record(
     expect_equal(error.record.duration_ms, 100.0)
 
 
-# =============================================================================
-# PluginTimeoutError Tests
-# =============================================================================
-
-
 def test_plugin_timeout_error_basic() -> None:
     """Verify PluginTimeoutError basic construction."""
     error = PluginTimeoutError("my.plugin", 5000)
@@ -219,11 +204,6 @@ def test_plugin_timeout_error_can_be_raised() -> None:
 
     expect_equal(exc_info.value.plugin_name, "slow.plugin")
     expect_equal(exc_info.value.timeout_ms, 10000)
-
-
-# =============================================================================
-# PluginSkippedError Tests
-# =============================================================================
 
 
 def test_plugin_skipped_error_basic() -> None:

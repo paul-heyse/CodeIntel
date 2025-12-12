@@ -99,35 +99,6 @@ def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
-def _strip__comments(repo_root: Path) -> None:
-    """Remove any -style suppressions from Python sources in-place.
-
-    This enforces a zero-suppression policy before running lint/type checks.
-    """
-    for path in repo_root.rglob("*.py"):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        if "" not in text:
-            continue
-        lines = []
-        changed = False
-        for raw_line in text.splitlines():
-            processed_line = raw_line
-            if "" in raw_line:
-                comment_pos = raw_line.find("#")
-                if comment_pos != -1 and "" in processed_line[comment_pos:]:
-                    processed_line = processed_line[:comment_pos].rstrip()
-                    changed = True
-                elif "" in raw_line:
-                    processed_line = raw_line.replace("", "")
-                    changed = True
-            lines.append(processed_line)
-        if changed:
-            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
 async def run_command(spec: CommandSpec, workdir: Path) -> CommandResult:
     """Run a command and capture its outputs.
 
@@ -250,8 +221,6 @@ def main() -> int:
     if not (repo_root / "pyproject.toml").exists():
         sys.stderr.write("Error: run this script from the repository context.\n")
         return 1
-
-    _strip__comments(repo_root)
 
     commands = [
         CommandSpec(

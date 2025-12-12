@@ -33,11 +33,6 @@ LOG = logging.getLogger(__name__)
 jobs_app = App(name="jobs", help="Manage background jobs")
 
 
-# =============================================================================
-# Result Types
-# =============================================================================
-
-
 @result_type
 @dataclass(frozen=True)
 class JobInfo:
@@ -88,11 +83,6 @@ class JobOutputResult:
     job_id: str
     has_output: bool
     output: dict[str, Any] | None = None
-
-
-# =============================================================================
-# Commands
-# =============================================================================
 
 
 @cli_command("jobs.list", require_storage=False)

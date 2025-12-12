@@ -139,12 +139,10 @@ def op_call_handler(ctx: CommandContext) -> CliResult[OperationCallResult]:
     params_list = ctx.params.get_list("params")
     skip_prereqs = ctx.params.get_bool("skip_prereqs", default=False)
 
-    # Validate operation exists first
     op = get_operation(op_id)
     if op is None:
         return fail_unknown_operation(op_id)
 
-    # Parse params list into kwargs
     kwargs: dict[str, object] = {}
     for param_str in params_list:
         if "=" not in param_str:
@@ -152,7 +150,6 @@ def op_call_handler(ctx: CommandContext) -> CliResult[OperationCallResult]:
         key, value = param_str.split("=", 1)
         kwargs[key] = parse_cli_value(value)
 
-    # Use unified serving operation invocation via serving service
     result = ctx.serving.invoke(op_id, kwargs, skip_prereqs=skip_prereqs)
     return CliResult.ok(OperationCallResult(operation_id=op_id, result=result))
 
@@ -297,7 +294,6 @@ def _metadata_to_dict(metadata: object) -> dict[str, object]:
     }
     result = {k: v for k, v in field_map.items() if v}
 
-    # Handle tuple/frozenset fields that need list conversion
     if metadata.upstream_dependencies:
         result["upstream_dependencies"] = list(metadata.upstream_dependencies)
     if metadata.downstream_consumers:
@@ -367,7 +363,6 @@ def dataset_flow_structured(*, table_key: str) -> CliResult[DatasetFlowResult]:
     CliResult[DatasetFlowResult]
         Flow result with producers and consumers.
     """
-    # Verify the dataset exists
     schema = SCHEMA_REGISTRY.get(table_key)
     if schema is None:
         return fail_dataset_not_found(table_key)
@@ -547,7 +542,6 @@ def serve_mcp_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
 
     LOG.info("Starting MCP server (auto_pipeline=%s)", auto_pipeline)
 
-    # MCP server runs and exits
     sys.exit(run_mcp_server())
 
 

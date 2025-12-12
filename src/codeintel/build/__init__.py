@@ -16,39 +16,39 @@ Key concepts:
 
 Import patterns::
 
-    # Basic imports (no heavy dependencies)
+
     from codeintel.build import get_target_graph, OutputTarget, TargetGraph
 
-    # Contracts and resources
+
     from codeintel.build.contracts import OutputContract, ArtifactSpec, TableSchema
     from codeintel.build.resources import TargetResources, TargetExecution
     from codeintel.build.parameters import TargetParameters
 
-    # Context and results
+
     from codeintel.build.context import TargetExecutionContext, TargetResult
 
-    # Protocols and providers (for DI)
+
     from codeintel.build.protocols import ToolRunner, ScipIndexer, TypeChecker
     from codeintel.build.providers import create_default_providers
 
-    # Errors
+
     from codeintel.build.errors import BuildError, BuildErrorCollection
 
-    # For execution (import from submodules to avoid circular imports)
+
     from codeintel.build.executor import BuildExecutor, BuildResult
     from codeintel.build.plan import BuildPlan, PlanGenerator
     from codeintel.build.resolver import BuildResolver
     from codeintel.build.state import StateValidator
     from codeintel.build.readiness import DatabaseReadinessView
 
-    # Configuration
+
     from codeintel.build.config import load_build_config, BuildConfig
 
 CLI usage::
 
-    codeintel build run --all          # Build all targets
-    codeintel build status             # Show target status
-    codeintel build history            # Show run history
+    codeintel build run --all
+    codeintel build status
+    codeintel build history
 
 Use ``get_target_graph()`` to access the singleton target graph instance.
 """
@@ -56,16 +56,12 @@ Use ``get_target_graph()`` to access the singleton target graph instance.
 from __future__ import annotations
 
 from codeintel.build.context import TargetExecutionContext, TargetResult
-
-# Core types that have minimal dependencies (see docstring for full import patterns)
 from codeintel.build.contracts import EMPTY_CONTRACT, ArtifactSpec, OutputContract
 from codeintel.build.errors import BuildError, BuildErrorCollection
 from codeintel.build.hashing import compute_input_hash, compute_options_hash
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.build.operations import OperationTargets, get_targets_for_operation
 from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
-
-# Plugin support
 from codeintel.build.plugin import TargetPlugin, TargetPluginProtocol
 from codeintel.build.plugin_registry import (
     get_all_plugins,

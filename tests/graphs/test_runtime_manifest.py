@@ -38,7 +38,7 @@ from tests._helpers.fakes.graph_plugins import make_graph_plugin
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Constants
+
 EXPECTED_HASH_LENGTH: Final = 16
 
 

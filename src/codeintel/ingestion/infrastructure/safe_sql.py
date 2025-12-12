@@ -13,7 +13,7 @@
 
     >>> from codeintel.ingestion.infrastructure.safe_sql import SafeTableRef
     >>> ref = SafeTableRef.from_key("analytics.function_metrics")
-    >>> sql = f"SELECT * FROM {ref.full_name}"  # Manual SQL construction
+    >>> sql = f"SELECT * FROM {ref.full_name}"
 
     **After (recommended):**
 
@@ -37,7 +37,6 @@ import warnings
 from dataclasses import dataclass
 from typing import ClassVar
 
-# Emit deprecation warning on import
 warnings.warn(
     "codeintel.ingestion.infrastructure.safe_sql is deprecated. "
     "Use DuckDBPolicyBackend from codeintel.storage.duckdb_policy_backend instead.",

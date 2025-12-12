@@ -35,13 +35,12 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
-# Environment variable prefix (canonical location)
 CONFIG_ENV_PREFIX = "CODEINTEL_"
 
-# Environment variable for explicit config path
+
 CONFIG_PATH_ENV_VAR = "CODEINTEL_CONFIG_PATH"
 
-# TOML config file search paths
+
 TOML_CONFIG_PATHS = [
     Path("codeintel.toml"),
     Path.home() / ".codeintel" / "config.toml",
@@ -58,14 +57,12 @@ def _resolve_toml_config_path() -> Path | None:
     Path | None
         Path to the config file if found, None otherwise.
     """
-    # Check environment override
     env_path = os.environ.get(CONFIG_PATH_ENV_VAR)
     if env_path:
         path = Path(env_path)
         if path.exists():
             return path
 
-    # Search default locations
     for path in TOML_CONFIG_PATHS:
         if path.exists():
             return path
@@ -174,7 +171,6 @@ class ConfigService:
         >>> service.config.color
         True
         """
-        # Use the existing load_config with its precedence
         config = load_config(
             config_file=config_path,
             env_prefix=env_prefix,
@@ -258,11 +254,6 @@ class ConfigService:
             config=new_config,
             sources=(*self.sources, "overrides"),
         )
-
-
-# -----------------------------------------------------------------------------
-# CodeIntelConfig Building Utilities
-# -----------------------------------------------------------------------------
 
 
 def build_graph_backend_config(flags: BackendFlags) -> GraphBackendConfig:

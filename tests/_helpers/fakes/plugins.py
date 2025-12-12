@@ -25,7 +25,7 @@ if TYPE_CHECKING:
         GraphPluginProtocol,
     )
 
-# Type alias for plugin execute functions
+
 ExecuteFn = Callable[[GraphPluginExecutionContext], PluginResult]
 
 
@@ -114,7 +114,6 @@ class GraphPluginPack:
                 register_graph_plugin(plugin)
                 self._registered.add(plugin.metadata.name)
             except ValueError:
-                # Already registered
                 pass
 
     def register_all(self) -> None:

@@ -27,7 +27,7 @@ def test_function_profile_tuple_length_matches_columns() -> None:
         If the serializer returns a tuple of unexpected length.
     """
     row: FunctionProfileRowModel = blank_function_profile_row()
-    # Populate required non-null fields with minimal placeholders.
+
     row["function_goid_h128"] = 1
     row["repo"] = "r"
     row["commit"] = "c"

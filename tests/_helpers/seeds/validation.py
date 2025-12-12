@@ -16,19 +16,10 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Validation Data Constants
-# =============================================================================
-
 REPO: str = "demo/repo"
 COMMIT: str = "deadbeef"
 CALLER_GOID: int = 1
 ORPHAN_GOID: int = 999
-
-
-# =============================================================================
-# Validation Pack Implementation
-# =============================================================================
 
 
 @dataclass

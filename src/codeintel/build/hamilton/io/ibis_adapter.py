@@ -95,7 +95,6 @@ def load_ibis_table(
     >>> metadata["table_key"]
     'analytics.function_metrics'
     """
-    # Use IbisGateway.table() for reads - handles qualified names correctly
     table = io_config.gateway.ibis.table(dataset_ref.table_key)
 
     metadata: dict[str, Any] = {
@@ -136,7 +135,7 @@ def load_table_as_dataframe(
     'pandas'
     """
     table, metadata = load_ibis_table(dataset_ref, io_config)
-    # Ibis execute() returns DataFrame for table expressions
+
     df = cast("pd.DataFrame", table.execute())
     metadata["format"] = "pandas"
     return df, metadata
@@ -171,8 +170,6 @@ def save_ibis_expression(
     >>> result["saved_to"]
     'duckdb'
     """
-    # Use IbisGateway.write() for Ibis expression writes
-    # This generates INSERT...SELECT via SQLGlot internally
     result: WriteResult = io_config.gateway.ibis.write(
         dataset_ref.table_key,
         output,
@@ -216,8 +213,6 @@ def save_dataframe(
     >>> result["operation"]
     'insert_values'
     """
-    # IbisGateway.write() accepts DataFrames directly
-    # Internally uses DuckDBPolicyBackend.bulk_insert()
     result: WriteResult = io_config.gateway.ibis.write(
         dataset_ref.table_key,
         df,
@@ -266,8 +261,6 @@ def save_rows(
     >>> result["operation"]
     'insert_values'
     """
-    # IbisGateway.write() accepts tuples directly
-    # Internally uses DuckDBPolicyBackend.bulk_insert()
     result: WriteResult = io_config.gateway.ibis.write(
         dataset_ref.table_key,
         rows,
@@ -324,8 +317,6 @@ def upsert_dataframe(
     >>> result["operation"]
     'upsert'
     """
-    # IbisGateway.upsert() handles ON CONFLICT semantics
-    # Internally uses DuckDBPolicyBackend.upsert()
     result: WriteResult = io_config.gateway.ibis.upsert(
         dataset_ref.table_key,
         df,
@@ -376,7 +367,6 @@ def load_dataset_ibis(
     t = gateway.ibis.table(ref.table_key)
     cols = set(t.columns)
 
-    # Apply repo/commit filtering if columns exist and ref has values
     if ref.repo and ref.commit and "repo" in cols and "commit" in cols:
         predicate = cast("ir.BooleanValue", (t.repo == ref.repo) & (t.commit == ref.commit))
         t = t.filter(predicate)

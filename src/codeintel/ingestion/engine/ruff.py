@@ -146,7 +146,6 @@ class RuffPlugin(ToolPlugin):
                 parsed=DiagnosticReport.empty("ruff"),
             )
 
-        # ruff returns 0 on success, 1 when there are linting errors
         if result.returncode not in {0, 1}:
             err = ToolExecutionError(result)
             return ToolPluginResult(
@@ -158,7 +157,6 @@ class RuffPlugin(ToolPlugin):
                 parsed=DiagnosticReport.empty("ruff"),
             )
 
-        # Parse diagnostics from stdout
         parsed = _parse_ruff_output(result.stdout, repo_root)
 
         return ToolPluginResult(

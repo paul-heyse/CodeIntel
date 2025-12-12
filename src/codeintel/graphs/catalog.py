@@ -42,10 +42,6 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
 
-# =============================================================================
-# Function Span Types (from function_index.py)
-# =============================================================================
-
 
 @dataclass(frozen=True)
 class FunctionSpan:
@@ -240,11 +236,6 @@ def load_function_index(gateway: StorageGateway, *, repo: str, commit: str) -> F
     return FunctionSpanIndex(load_function_spans(gateway, repo=repo, commit=commit))
 
 
-# =============================================================================
-# Function Metadata and Catalog (from function_catalog.py)
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class FunctionMeta:
     """Function metadata used across graph builders."""
@@ -415,11 +406,6 @@ def load_function_catalog(
 
     module_by_path = load_module_map(gateway, repo, commit)
     return FunctionCatalog(functions=functions, module_by_path=module_by_path)
-
-
-# =============================================================================
-# Catalog Provider and Service (from function_catalog_service.py)
-# =============================================================================
 
 
 class FunctionCatalogProvider(Protocol):

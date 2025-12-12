@@ -12,10 +12,6 @@ from tests._helpers.assertions import expect_equal, expect_is_not_none, expect_t
 if TYPE_CHECKING:
     from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# JobService creation
-# ---------------------------------------------------------------------------
-
 
 def test_default_uses_global_manager() -> None:
     """Default service uses global JobManager."""
@@ -36,11 +32,6 @@ def test_with_store(tmp_path: Path) -> None:
     store = JobStore(base_dir=tmp_path)
     service = JobService.with_store(store)
     expect_is_not_none(service.manager)
-
-
-# ---------------------------------------------------------------------------
-# JobService operations
-# ---------------------------------------------------------------------------
 
 
 def test_list_jobs_delegates() -> None:
@@ -118,22 +109,13 @@ def test_cleanup_delegates() -> None:
     manager.cleanup.assert_called_once_with(max_age_days=14)
 
 
-# ---------------------------------------------------------------------------
-# JobService integration
-# ---------------------------------------------------------------------------
-
-
 def test_full_job_lifecycle(tmp_path: Path) -> None:
     """Test complete job lifecycle with real store."""
     store = JobStore(base_dir=tmp_path)
     service = JobService.with_store(store)
 
-    # List should be empty initially
     jobs = service.list_jobs()
     expect_equal(len(jobs), 0)
-
-    # Note: submit starts a background process, so we don't test it here
-    # Just verify the service methods work
 
     cleanup_count = service.cleanup(max_age_days=30)
     expect_equal(cleanup_count, 0)

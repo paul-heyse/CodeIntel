@@ -12,7 +12,6 @@ to ensure consistent behavior across:
 
 from __future__ import annotations
 
-# Canonical truthy string values for boolean parsing
 _TRUTHY_VALUES = frozenset({"true", "1", "yes", "on", "y"})
 _FALSY_VALUES = frozenset({"false", "0", "no", "off", "n"})
 
@@ -127,25 +126,21 @@ def parse_cli_value(value: str) -> str | int | float | bool:
     """
     lowered = value.lower()
 
-    # Check boolean first
     if lowered in _TRUTHY_VALUES:
         return True
     if lowered in _FALSY_VALUES:
         return False
 
-    # Try integer
     try:
         return int(value)
     except ValueError:
         pass
 
-    # Try float
     try:
         return float(value)
     except ValueError:
         pass
 
-    # Fall back to string
     return value
 
 

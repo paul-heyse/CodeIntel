@@ -38,7 +38,6 @@ class SelectionStrategy(Enum):
     HOTSPOT_SCORE = "hotspot_score"
 
 
-# Config for history commands - no runtime required (uses explicit paths)
 _HISTORY_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 
 

@@ -42,8 +42,8 @@ class StorageService:
     Examples
     --------
     >>> service = StorageService.from_path(Path("build/db/codeintel.duckdb"))
-    >>> gateway = service.gateway  # Lazy open
-    >>> service.close()  # Cleanup
+    >>> gateway = service.gateway
+    >>> service.close()
     """
 
     def __init__(
@@ -185,7 +185,7 @@ class StorageService:
 
         Examples
         --------
-        >>> with service.gateway_scope(read_only=False) as gw:  # doctest: +SKIP
+        >>> with service.gateway_scope(read_only=False) as gw:
         ...     gw.execute("INSERT INTO test VALUES (1)")
         """
         gateway = self._open_gateway(read_only=read_only)
@@ -207,7 +207,7 @@ class StorageService:
 
         Examples
         --------
-        >>> with service.write_gateway() as gw:  # doctest: +SKIP
+        >>> with service.write_gateway() as gw:
         ...     gw.execute("CREATE TABLE test (id INT)")
         """
         with self.gateway_scope(read_only=False) as gw:

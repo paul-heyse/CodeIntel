@@ -163,11 +163,6 @@ def _write_synthetic_history_rows(
     )
 
 
-# -----------------------------------------------------------------------------
-# Handler
-# -----------------------------------------------------------------------------
-
-
 def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseriesResult]:
     """Aggregate analytics.history_timeseries across multiple commits.
 
@@ -194,7 +189,6 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
     """
     bootstrap_cli(verbosity=ctx.verbosity)
 
-    # Check commits first since it's a command-specific required parameter
     commits = ctx.params.get_list("commits")
 
     if not commits:
@@ -220,7 +214,6 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
         ),
     )
 
-    # Use dedicated output gateway (separate from runtime's database)
     with _output_gateway(output_db) as gateway:
         snapshot_resolver = build_snapshot_gateway_resolver(
             db_dir=db_dir,

@@ -78,7 +78,7 @@ class SubsystemAgreementPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         repo = ctx.snapshot.repo
         commit = ctx.snapshot.commit
@@ -89,7 +89,6 @@ class SubsystemAgreementPlugin(TargetPlugin):
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Subsystem agreement computation failed: {e}")
 
-        # Count rows written
         row = ctx.gateway.con.execute(
             """
             SELECT COUNT(*) FROM analytics.subsystem_agreement

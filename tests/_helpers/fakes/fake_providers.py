@@ -9,7 +9,7 @@ Example
 ...     symbols=[ScipSymbol("my_func", "my_func", "function")],
 ... )
 >>> result = await fake_scip.index(Path("/repo"), Path("/output/index.scip"))
->>> result.success  # True
+>>> result.success
 """
 
 from __future__ import annotations
@@ -56,11 +56,6 @@ __all__ = [
     "FakeToolRunner",
     "FakeTypeChecker",
 ]
-
-
-# =============================================================================
-# Fake Tool Runner
-# =============================================================================
 
 
 @dataclass
@@ -141,11 +136,6 @@ class FakeToolRunner:
             True if in available_tools.
         """
         return tool in self.available_tools
-
-
-# =============================================================================
-# Fake SCIP Indexer
-# =============================================================================
 
 
 @dataclass
@@ -251,11 +241,6 @@ class FakeScipIndexer:
         )
 
 
-# =============================================================================
-# Fake Type Checker
-# =============================================================================
-
-
 @dataclass
 class FakeTypeChecker:
     """Fake type checker that returns pre-configured diagnostics.
@@ -308,11 +293,6 @@ class FakeTypeChecker:
         )
 
 
-# =============================================================================
-# Fake Coverage Collector
-# =============================================================================
-
-
 @dataclass
 class FakeCoverageCollector:
     """Fake coverage collector that returns pre-configured data.
@@ -346,11 +326,6 @@ class FakeCoverageCollector:
         return self.coverage_data
 
 
-# =============================================================================
-# Fake Test Reporter
-# =============================================================================
-
-
 @dataclass
 class FakeTestReporter:
     """Fake test reporter that returns pre-configured results.
@@ -382,11 +357,6 @@ class FakeTestReporter:
         """
         self.collect_calls.record(CollectCall(path=report_path))
         return self.test_results
-
-
-# =============================================================================
-# Fake Git History Provider
-# =============================================================================
 
 
 @dataclass
@@ -484,11 +454,6 @@ class FakeGitHistoryProvider:
             )
         )
         return self.blame_data.get(str(path), {})
-
-
-# =============================================================================
-# Fake Providers Container
-# =============================================================================
 
 
 @dataclass

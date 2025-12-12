@@ -65,13 +65,13 @@ def _make_app() -> App:
     @local_app.command
     def cmd(
         options: Annotated[Options | None, Parameter(name="*")] = None,
-    ) -> None:  # pragma: no cover - help only
+    ) -> None:
         _ = options or Options()
 
     @local_app.command
     def positional(
         arg: Annotated[int | None, Parameter(help="Positional argument.")] = None,
-    ) -> None:  # pragma: no cover - help only
+    ) -> None:
         _ = arg
 
     @local_app.command
@@ -79,13 +79,13 @@ def _make_app() -> App:
         mode: Annotated[
             Mode, Parameter(name="--mode", help="Enum mode.", show_choices=True)
         ] = Mode.FAST,
-    ) -> None:  # pragma: no cover - help only
+    ) -> None:
         _ = mode
 
     @local_app.command
     def nested(
         outer: Annotated[OuterOptions | None, Parameter(name="*")] = None,
-    ) -> None:  # pragma: no cover - help only
+    ) -> None:
         _ = outer or OuterOptions()
 
     @local_app.command
@@ -98,7 +98,7 @@ def _make_app() -> App:
                 show_default=lambda current: f"custom-default ({current})",
             ),
         ] = None,
-    ) -> None:  # pragma: no cover - help only
+    ) -> None:
         _ = False if flag is None else flag
 
     return local_app
@@ -173,19 +173,11 @@ def test_argument_collection_type_preserved() -> None:
 
     stdout = StringIO()
     with redirect_stdout(stdout):
-        # Trigger help_print directly to exercise collection creation
         app.help_print()
 
-    # The patched renderer should still use ArgumentCollection rather than tuple fallback
-    # (implicit assertion: no crash and no tuple artifacts in output)
     output = stdout.getvalue().lower()
     expect_in("usage", output)
     expect_not_in("simplenamespace", output)
-
-
-# ============================================================================
-# Regression Tests for Cyclopts Patch
-# ============================================================================
 
 
 def test_all_cyclopts_locations_are_patched() -> None:
@@ -196,10 +188,8 @@ def test_all_cyclopts_locations_are_patched() -> None:
     Python import aliasing issue where some code paths would use the
     unpatched original function.
     """
-    # Apply patch (idempotent if already applied)
     apply_help_patch()
 
-    # Verify all locations point to our function
     expect_true(help_mod.create_parameter_help_panel is create_parameter_help_panel)
     expect_true(help_pkg.create_parameter_help_panel is create_parameter_help_panel)
 
@@ -213,19 +203,14 @@ def test_display_default_repr_is_clean() -> None:
     """
     none_default = DISPLAY_DEFAULT_CLS("(none)")
 
-    # Clean repr for help output
     expect_equal(repr(none_default), "(none)")
     expect_equal(str(none_default), "(none)")
     expect_equal(none_default.name, "(none)")
 
-    # Falsy like None (for boolean contexts)
     expect_false(bool(none_default))
 
-    # NOT equal to None (important for Cyclopts show_default logic)
-    # Cyclopts checks: default not in (None, empty)
-    # If we equaled None, defaults wouldn't be shown
     expect_not_equal(none_default, None)
-    # Note: Use tuple not set because _DisplayDefault is unhashable
+
     expect_not_in(none_default, (None, "empty"))
 
 
@@ -235,13 +220,10 @@ def test_display_default_equality() -> None:
     dd2 = DISPLAY_DEFAULT_CLS("(none)")
     dd3 = DISPLAY_DEFAULT_CLS("other")
 
-    # Same name means equal
     expect_equal(dd1, dd2)
 
-    # Different names are not equal
     expect_not_equal(dd1, dd3)
 
-    # Not equal to arbitrary objects
     expect_not_equal(dd1, "some string")
     arbitrary_int = 123
     expect_not_equal(dd1, arbitrary_int)

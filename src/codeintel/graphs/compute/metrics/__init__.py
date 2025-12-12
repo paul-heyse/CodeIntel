@@ -23,7 +23,7 @@ import networkx as nx
 from codeintel.graphs.compute.metrics import centrality, components, structural
 
 graph = nx.DiGraph()
-# ... populate graph ...
+
 
 pagerank = centrality.compute_pagerank(graph)
 sccs = components.find_strongly_connected(graph)

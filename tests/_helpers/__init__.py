@@ -270,7 +270,7 @@ __all__ = [
     "write_build_config",
 ]
 
-# Avoid eager imports of heavy fixtures/modules; pytest/ruff TYPE_CHECKING covers annotation use.
+
 if TYPE_CHECKING:
     from tests._helpers.context import TestContext
     from tests._helpers.plugin_harness import PluginHarnessFactory

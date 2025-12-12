@@ -19,15 +19,10 @@ from tests._helpers.datasets_assertions import (
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants
+
 SAMPLE_LIMIT_FIVE: Final = 5
 CUSTOM_DEFAULT_LIMIT: Final = 10
 CUSTOM_MAX_LIMIT: Final = 50
-
-
-# -----------------------------------------------------------------------------
-# Tests for list_datasets
-# -----------------------------------------------------------------------------
 
 
 def test_list_datasets_returns_descriptors(architecture_gateway: StorageGateway) -> None:
@@ -54,14 +49,9 @@ def test_list_datasets_has_name_and_table(architecture_gateway: StorageGateway) 
 
     datasets = backend.list_datasets()
 
-    for ds in datasets[:3]:  # Check first few
+    for ds in datasets[:3]:
         expect_true(ds.name is not None and bool(ds.name))
         expect_true(ds.table is not None and bool(ds.table))
-
-
-# -----------------------------------------------------------------------------
-# Tests for dataset_specs
-# -----------------------------------------------------------------------------
 
 
 def test_dataset_specs_returns_sorted_list(architecture_gateway: StorageGateway) -> None:
@@ -89,7 +79,6 @@ def test_dataset_specs_includes_schema_columns(architecture_gateway: StorageGate
 
     specs = backend.dataset_specs()
 
-    # At least some specs should have schema_columns
     spec_with_columns = next((spec for spec in specs if spec.schema_columns), None)
     if spec_with_columns is not None:
         expect_spec_has_columns(spec_with_columns)
@@ -109,11 +98,6 @@ def test_dataset_specs_includes_capabilities(architecture_gateway: StorageGatewa
 
     for spec in specs[:3]:
         expect_spec_has_capabilities(spec)
-
-
-# -----------------------------------------------------------------------------
-# Tests for read_dataset_rows
-# -----------------------------------------------------------------------------
 
 
 def test_read_dataset_rows_success(architecture_gateway: StorageGateway) -> None:
@@ -190,11 +174,6 @@ def test_read_dataset_rows_with_custom_limits(architecture_gateway: StorageGatew
     expect_true(isinstance(rows, (list, tuple)))
 
 
-# -----------------------------------------------------------------------------
-# Tests for dataset_schema
-# -----------------------------------------------------------------------------
-
-
 def test_dataset_schema_includes_columns(architecture_gateway: StorageGateway) -> None:
     """Return schema details with DuckDB columns populated."""
     components = build_backend_components(architecture_gateway)
@@ -250,11 +229,6 @@ def test_dataset_schema_includes_table_key(architecture_gateway: StorageGateway)
     expect_true(schema.table_key is not None and bool(schema.table_key))
 
 
-# -----------------------------------------------------------------------------
-# Tests for backend properties
-# -----------------------------------------------------------------------------
-
-
 def test_backend_datasets_property(architecture_gateway: StorageGateway) -> None:
     """Verify datasets property returns repository."""
     components = build_backend_components(architecture_gateway)
@@ -294,11 +268,6 @@ def test_backend_con_property(architecture_gateway: StorageGateway) -> None:
     expect_true(con is not None)
 
 
-# -----------------------------------------------------------------------------
-# Tests for schema column properties via public API
-# -----------------------------------------------------------------------------
-
-
 def test_dataset_schema_columns_have_properties(architecture_gateway: StorageGateway) -> None:
     """Schema columns accessed via dataset_schema have proper properties."""
     components = build_backend_components(architecture_gateway)
@@ -321,11 +290,6 @@ def test_dataset_schema_columns_have_properties(architecture_gateway: StorageGat
         expect_true(isinstance(col_nullable, bool))
 
 
-# -----------------------------------------------------------------------------
-# Tests for validation profile normalization via public API
-# -----------------------------------------------------------------------------
-
-
 def test_dataset_specs_validation_profile_normalized(architecture_gateway: StorageGateway) -> None:
     """Validation profiles in dataset specs are normalized to valid literals."""
     components = build_backend_components(architecture_gateway)
@@ -337,5 +301,4 @@ def test_dataset_specs_validation_profile_normalized(architecture_gateway: Stora
     specs = backend.dataset_specs()
 
     for spec in specs:
-        # Validation profile should be None, "strict", or "lenient"
         expect_true(spec.validation_profile in {None, "strict", "lenient"})

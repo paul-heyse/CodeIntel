@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from importlib import import_module
 from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from codeintel.build.context import ContextResources, TargetExecutionContext
@@ -66,7 +67,6 @@ from codeintel.core.plugins.execution.context import (
     PluginScratch,
 )
 from codeintel.core.resources import ResourceRegistry
-from tests._helpers.context import create_test_context
 from tests._helpers.defaults import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
 from tests._helpers.env_options import EnvOptions
 
@@ -87,11 +87,6 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-# =============================================================================
-# Standalone Helper Functions
-# =============================================================================
-
-
 def make_test_output_target(plugin: TargetPlugin) -> OutputTarget:
     """Create a minimal OutputTarget for testing a plugin.
 
@@ -107,17 +102,12 @@ def make_test_output_target(plugin: TargetPlugin) -> OutputTarget:
     """
     return OutputTarget(
         name=plugin.plugin_name,
-        module="analytics",  # Default module for testing
+        module="analytics",
         plugin=plugin.plugin_name,
         contract=EMPTY_CONTRACT,
         dependencies=(),
         description=plugin.plugin_description,
     )
-
-
-# =============================================================================
-# Recording Gateway
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -300,6 +290,8 @@ class ExecutionContextBuilder:
         snapshot: SnapshotRef | None
         build_paths: BuildPaths | None
         if gateway is None:
+            create_test_context = import_module("tests._helpers.context").create_test_context
+
             env_ctx = create_test_context(
                 base_path,
                 options=EnvOptions(

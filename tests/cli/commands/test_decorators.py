@@ -35,11 +35,6 @@ def _force_setattr(target: object, name: str, value: object) -> None:
     setattr(target, name, value)
 
 
-# -----------------------------------------------------------------------------
-# Test Fixtures
-# -----------------------------------------------------------------------------
-
-
 @pytest.fixture(autouse=True)
 def _reset_registries() -> None:
     """Reset registry before each test to ensure isolation."""
@@ -59,13 +54,9 @@ def _dummy_handler(ctx: CommandContext) -> CliResult[dict[str, bool]]:
     CliResult[dict[str, bool]]
         Success result with test data.
     """
-    _ = ctx.operation_id  # Acknowledge ctx usage
+    _ = ctx.operation_id
     return CliResult.ok({"test": True})
 
-
-# -----------------------------------------------------------------------------
-# Helper Functions for Assertions (to avoid S101)
-# -----------------------------------------------------------------------------
 
 EXPECTED_COUNT_ZERO = 0
 EXPECTED_COUNT_ONE = 1
@@ -176,11 +167,6 @@ def _verify_is_not_none(value: object, message: str) -> None:
         raise AssertionError(message)
 
 
-# -----------------------------------------------------------------------------
-# Tests: Decorator Registration
-# -----------------------------------------------------------------------------
-
-
 def test_cli_command_generates_call_method() -> None:
     """Verify decorator generates __call__ method on the class."""
     cfg = CommandConfig(require_runtime=False, require_gateway=False)
@@ -212,7 +198,6 @@ def test_cli_command_registers_operation() -> None:
         output_format: OutputFormat = OutputFormat.TEXT
         verbose: int = 0
 
-    # Suppress unused variable warning
     _ = TestCommand
 
     registry = get_registry()
@@ -235,7 +220,6 @@ def test_cli_command_uses_docstring_as_description() -> None:
         output_format: OutputFormat = OutputFormat.TEXT
         verbose: int = 0
 
-    # Suppress unused variable warning
     _ = TestCommand
 
     registry = get_registry()
@@ -263,7 +247,6 @@ def test_cli_command_uses_first_line_of_multiline_docstring() -> None:
         output_format: OutputFormat = OutputFormat.TEXT
         verbose: int = 0
 
-    # Suppress unused variable warning
     _ = TestCommand
 
     registry = get_registry()
@@ -288,7 +271,6 @@ def test_cli_command_extracts_group_from_operation_id() -> None:
         output_format: OutputFormat = OutputFormat.TEXT
         verbose: int = 0
 
-    # Suppress unused variable warning
     _ = TestCommand
 
     registry = get_registry()
@@ -317,7 +299,6 @@ def test_cli_command_with_custom_description() -> None:
         output_format: OutputFormat = OutputFormat.TEXT
         verbose: int = 0
 
-    # Suppress unused variable warning
     _ = TestCommand
 
     registry = get_registry()
@@ -346,7 +327,6 @@ def test_cli_command_sets_resource_requirements() -> None:
         output_format: OutputFormat = OutputFormat.TEXT
         verbose: int = 0
 
-    # Suppress unused variable warning
     _ = TestCommand
 
     registry = get_registry()
@@ -365,11 +345,6 @@ def test_cli_command_sets_resource_requirements() -> None:
             condition=spec.require_graph_runtime,
             message="require_graph_runtime should be True",
         )
-
-
-# -----------------------------------------------------------------------------
-# Tests: Parameter Extraction
-# -----------------------------------------------------------------------------
 
 
 def test_extract_params_from_dataclass() -> None:
@@ -436,11 +411,6 @@ def test_extract_params_from_non_dataclass() -> None:
     _verify_equal(params, {}, "Non-dataclass should return empty dict")
 
 
-# -----------------------------------------------------------------------------
-# Tests: Output Format Resolution
-# -----------------------------------------------------------------------------
-
-
 def test_get_output_format_from_field() -> None:
     """Get output format from explicit field."""
 
@@ -490,11 +460,6 @@ def test_get_output_format_prefers_field_over_flag() -> None:
     _verify_equal(fmt, OutputFormat.JSONL, "output_format should take precedence")
 
 
-# -----------------------------------------------------------------------------
-# Tests: Path Field Extraction
-# -----------------------------------------------------------------------------
-
-
 def test_get_path_field_returns_path() -> None:
     """Get Path value from command field."""
 
@@ -539,7 +504,7 @@ def test_get_path_field_tries_multiple_names() -> None:
         project_root: Path | None = Path("/root/path")
 
     cmd = TestCommand()
-    # First try "project" (doesn't exist), then "project_root" (exists)
+
     path = get_path_field(cmd, "project", "project_root")
     _verify_equal(path, Path("/root/path"), "Should find project_root")
 
@@ -554,9 +519,6 @@ def test_get_path_field_returns_none_for_none_value() -> None:
     cmd = TestCommand()
     path = get_path_field(cmd, "project")
     _verify_equal(path, None, "Should return None for None value")
-
-
-## CommandConfig Tests ##
 
 
 def test_command_config_defaults() -> None:

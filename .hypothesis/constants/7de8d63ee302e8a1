@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/compute/scip_ingest.py
+# hypothesis_version: 6.148.7
+
+[100, '.py', '.scip.json', 'ScipIngestConfig', 'ScipIngestResult', 'ScipIngestStep', 'core.scip_symbols', 'documentation', 'documents', 'failed', 'index.json', 'index.scip.json', 'occurrences', 'range', 'relativePath', 'relative_path', 'success', 'symbol', 'symbolRoles', 'symbol_roles', 'symbols', 'unavailable', 'utf-8']

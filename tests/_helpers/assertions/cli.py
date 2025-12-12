@@ -47,7 +47,7 @@ def expect_handler_success[T](result: CliResult[T], *, message: str | None = Non
 
     Examples
     --------
-    >>> result = my_handler(ctx)  # doctest: +SKIP
+    >>> result = my_handler(ctx)
     >>> data = expect_handler_success(result)
     """
     msg = message or "Expected handler to succeed"
@@ -85,7 +85,7 @@ def expect_handler_failure(result: CliResult[Any], *, message: str | None = None
 
     Examples
     --------
-    >>> result = my_handler(ctx)  # doctest: +SKIP
+    >>> result = my_handler(ctx)
     >>> error = expect_handler_failure(result)
     """
     msg = message or "Expected handler to fail"
@@ -132,7 +132,7 @@ def expect_handler_error(
 
     Examples
     --------
-    >>> result = my_handler(ctx)  # doctest: +SKIP
+    >>> result = my_handler(ctx)
     >>> error = expect_handler_error(result, status=400)
     """
     error = expect_handler_failure(result, message=message)
@@ -182,7 +182,7 @@ def expect_handler_data_count[T](
 
     Examples
     --------
-    >>> result = list_handler(ctx)  # doctest: +SKIP
+    >>> result = list_handler(ctx)
     >>> expect_handler_data_count(result, "count", 5)
     """
     data = expect_handler_success(result, message=message)

@@ -46,18 +46,14 @@ def load_builtin_plugins() -> None:
 
     registry = get_graph_registry()
 
-    # Define all plugins to register with their instances
     target_plugins = [
-        # Builders
         GoidBuilderPlugin(),
         CallGraphPlugin(),
         ImportGraphPlugin(),
         CfgDfgPlugin(),
         SymbolUsesPlugin(),
-        # Metrics
         CoreMetricsPlugin(),
         SecondaryMetricsPlugin(),
-        # Validation
         GraphValidationPlugin(),
     ]
 
@@ -67,13 +63,11 @@ def load_builtin_plugins() -> None:
             registry.register(adapted)
             _log.debug("Registered graph plugin adapter: %s", plugin.plugin_name)
         except ValueError:
-            # Plugin already registered (e.g., from entry points)
             _log.debug("Plugin already registered: %s", plugin.plugin_name)
 
     _PLUGIN_STATE["registered"] = True
 
 
-# Eagerly load built-in plugins so registry has them by default.
 load_builtin_plugins()
 
 

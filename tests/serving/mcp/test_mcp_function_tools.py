@@ -32,20 +32,12 @@ if TYPE_CHECKING:
 
     from tests._helpers.plugins.mcp import McpBackendComponents
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100
 
-# Categories for function-related tools
+
 FUNCTION_TOOL_CATEGORIES: set[str] = {"functions", "graph", "files", "function"}
-
-
-# =============================================================================
-# register_function_tools Tests
-# =============================================================================
 
 
 def test_register_function_tools_success(
@@ -54,10 +46,8 @@ def test_register_function_tools_success(
     """Verify function tool registration works successfully."""
     mcp = wrap_fastmcp("Test Function Tools")
 
-    # Should not raise
     register_tools_for_category(mcp, mcp_backend.backend, FUNCTION_TOOL_CATEGORIES)
 
-    # Server should be configured
     expect_equal(mcp.name, "Test Function Tools")
 
 
@@ -97,11 +87,6 @@ def test_register_function_tools_on_multiple_servers(
     expect_equal(mcp2.name, "Server 2")
 
 
-# =============================================================================
-# Category Tests
-# =============================================================================
-
-
 def test_function_tool_categories_contains_functions() -> None:
     """Verify FUNCTION_TOOL_CATEGORIES contains functions category."""
     expect_in("functions", FUNCTION_TOOL_CATEGORIES)
@@ -122,11 +107,6 @@ def test_function_tool_categories_contains_function() -> None:
     expect_in("function", FUNCTION_TOOL_CATEGORIES)
 
 
-# =============================================================================
-# Operation Tests
-# =============================================================================
-
-
 def test_iter_operations_yields_function_operations() -> None:
     """Verify iter_operations yields function category operations."""
     function_ops = [spec for spec in iter_operations() if spec.category in FUNCTION_TOOL_CATEGORIES]
@@ -142,7 +122,6 @@ def test_function_operations_have_tool_name() -> None:
         if spec.category in FUNCTION_TOOL_CATEGORIES and spec.tool_name is not None
     ]
 
-    # Should have at least some operations with tools
     expect_true(len(function_ops) > 0)
 
 
@@ -160,11 +139,6 @@ def test_function_operations_have_output_model() -> None:
 
     for spec in function_ops:
         expect_is_not_none(spec.output_model_name)
-
-
-# =============================================================================
-# Backend Method Tests
-# =============================================================================
 
 
 def test_backend_list_high_risk_functions(
@@ -234,11 +208,6 @@ def test_backend_get_callgraph_neighborhood(
     expect_is_not_none(result)
 
 
-# =============================================================================
-# Error Handling Tests
-# =============================================================================
-
-
 def test_backend_get_function_summary_not_found(
     mcp_backend: McpBackendComponents,
 ) -> None:
@@ -246,7 +215,7 @@ def test_backend_get_function_summary_not_found(
     nonexistent_goid = 99999999999999999
 
     result = mcp_backend.backend.get_function_summary(goid_h128=nonexistent_goid)
-    # Should return a result (may have not_found message)
+
     expect_is_not_none(result)
 
 
@@ -259,13 +228,8 @@ def test_backend_get_callgraph_neighbors_not_found(
     result = mcp_backend.backend.get_callgraph_neighbors(
         goid_h128=nonexistent_goid, direction="both", limit=DEFAULT_LIMIT
     )
-    # Should return a result (may be empty)
+
     expect_is_not_none(result)
-
-
-# =============================================================================
-# Limits Tests
-# =============================================================================
 
 
 def test_backend_with_custom_limits(
@@ -287,11 +251,6 @@ def test_backend_with_custom_limits(
     expect_equal(backend.limits.max_rows_per_call, custom_max)
 
 
-# =============================================================================
-# State Preservation Tests
-# =============================================================================
-
-
 def test_register_function_tools_preserves_backend_state(
     mcp_backend: McpBackendComponents,
 ) -> None:
@@ -306,11 +265,6 @@ def test_register_function_tools_preserves_backend_state(
     expect_equal(mcp_backend.backend.repo, original_repo)
     expect_equal(mcp_backend.backend.commit, original_commit)
     expect_equal(mcp_backend.backend.limits, original_limits)
-
-
-# =============================================================================
-# Service as Backend Tests
-# =============================================================================
 
 
 def test_local_query_service_as_backend(
@@ -414,18 +368,12 @@ def test_function_tools_log_problem_detail(caplog: pytest.LogCaptureFixture) -> 
     )
 
 
-# =============================================================================
-# Direction Parameter Tests
-# =============================================================================
-
-
 def test_backend_get_callgraph_neighbors_incoming(
     mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.get_callgraph_neighbors works with incoming direction."""
     backend = mcp_backend.backend
 
-    # Get a valid goid from the backend
     result_obj = backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
@@ -448,7 +396,6 @@ def test_backend_get_callgraph_neighbors_outgoing(
     """Verify backend.get_callgraph_neighbors works with outgoing direction."""
     backend = mcp_backend.backend
 
-    # Get a valid goid from the backend
     result_obj = backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
@@ -463,11 +410,6 @@ def test_backend_get_callgraph_neighbors_outgoing(
         goid_h128=int(goid), direction="outgoing", limit=DEFAULT_LIMIT
     )
     expect_is_not_none(result)
-
-
-# =============================================================================
-# Response Structure Tests
-# =============================================================================
 
 
 def test_high_risk_functions_response_structure(
@@ -490,7 +432,6 @@ def test_function_summary_response_structure(
     """Verify function summary response contains expected fields."""
     backend = mcp_backend.backend
 
-    # Get a valid goid from the backend
     result_obj = backend.list_high_risk_functions(limit=1)
     if not result_obj.functions:
         pytest.skip("No functions available")
@@ -504,5 +445,5 @@ def test_function_summary_response_structure(
     result = backend.get_function_summary(goid_h128=int(goid))
 
     expect_is_not_none(result)
-    # Should have goid_h128 or a message
+
     expect_true(hasattr(result, "goid_h128") or hasattr(result, "message"))

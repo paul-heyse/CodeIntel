@@ -93,10 +93,6 @@ if TYPE_CHECKING:
         TableSchema,
     )
 
-# ---------------------------------------------------------------------------
-# RowBinding and DatasetContract dataclasses
-# ---------------------------------------------------------------------------
-
 
 @dataclass(frozen=True)
 class RowBinding:
@@ -254,31 +250,19 @@ class DatasetContract:
         return tuple(self.schema.column_names())
 
 
-# ---------------------------------------------------------------------------
-# Metadata Dictionaries
-# ---------------------------------------------------------------------------
-
-# Dataset-level JSON Schema metadata.
-# Keys: dataset logical names (Dataset.name).
-# Values: JSON Schema identifiers (filenames without .json) under
-# src/codeintel/config/schemas/export/.
 _JSON_SCHEMA_BY_DATASET_NAME: Final[dict[str, str]] = {
-    # Profiles
     "function_profile": "function_profile",
     "file_profile": "file_profile",
     "module_profile": "module_profile",
-    # Graph edges
     "call_graph_edges": "call_graph_edges",
     "symbol_use_edges": "symbol_use_edges",
     "test_coverage_edges": "test_coverage_edges",
-    # Tests
     "test_profile": "test_profile",
     "behavioral_coverage": "behavioral_coverage",
     "v_subsystem_profile": "v_subsystem_profile",
     "v_subsystem_coverage": "v_subsystem_coverage",
     "subsystem_profile_cache": "subsystem_profile_cache",
     "subsystem_coverage_cache": "subsystem_coverage_cache",
-    # Data models
     "data_model_fields": "data_model_fields",
     "data_model_relationships": "data_model_relationships",
 }
@@ -414,25 +398,19 @@ _DEPENDENCIES_BY_DATASET_NAME: Final[dict[str, tuple[str, ...]]] = {
 }
 
 _DEFAULT_JSONL_FILENAMES: Final[dict[str, str]] = {
-    # GOIDs / crosswalk
     "core.goids": "goids.jsonl",
     "core.goid_crosswalk": "goid_crosswalk.jsonl",
-    # Call graph
     "graph.call_graph_nodes": "call_graph_nodes.jsonl",
     "graph.call_graph_edges": "call_graph_edges.jsonl",
-    # CFG / DFG
     "graph.cfg_blocks": "cfg_blocks.jsonl",
     "graph.cfg_edges": "cfg_edges.jsonl",
     "graph.dfg_edges": "dfg_edges.jsonl",
-    # Import / symbol uses
     "graph.import_graph_edges": "import_graph_edges.jsonl",
     "graph.symbol_use_edges": "symbol_use_edges.jsonl",
-    # AST / CST
     "core.ast_nodes": "ast_nodes.jsonl",
     "core.ast_metrics": "ast_metrics.jsonl",
     "core.cst_nodes": "cst_nodes.jsonl",
     "core.docstrings": "docstrings.jsonl",
-    # Modules / config / diagnostics
     "core.modules": "modules.jsonl",
     "analytics.config_values": "config_values.jsonl",
     "analytics.data_models": "data_models.jsonl",
@@ -441,10 +419,8 @@ _DEFAULT_JSONL_FILENAMES: Final[dict[str, str]] = {
     "analytics.data_model_usage": "data_model_usage.jsonl",
     "analytics.config_data_flow": "config_data_flow.jsonl",
     "analytics.static_diagnostics": "static_diagnostics.jsonl",
-    # AST analytics / typing
     "analytics.hotspots": "hotspots.jsonl",
     "analytics.typedness": "typedness.jsonl",
-    # Function analytics
     "analytics.function_metrics": "function_metrics.jsonl",
     "analytics.function_types": "function_types.jsonl",
     "analytics.function_effects": "function_effects.jsonl",
@@ -452,7 +428,6 @@ _DEFAULT_JSONL_FILENAMES: Final[dict[str, str]] = {
     "analytics.function_ast_features": "function_ast_features.jsonl",
     "analytics.semantic_roles_functions": "semantic_roles_functions.jsonl",
     "analytics.semantic_roles_modules": "semantic_roles_modules.jsonl",
-    # Coverage + tests
     "analytics.coverage_lines": "coverage_lines.jsonl",
     "analytics.coverage_functions": "coverage_functions.jsonl",
     "analytics.test_catalog": "test_catalog.jsonl",
@@ -463,7 +438,6 @@ _DEFAULT_JSONL_FILENAMES: Final[dict[str, str]] = {
     "analytics.external_dependency_calls": "external_dependency_calls.jsonl",
     "analytics.graph_validation": "graph_validation.jsonl",
     "analytics.function_validation": "function_validation.jsonl",
-    # Risk factors
     "analytics.goid_risk_factors": "goid_risk_factors.jsonl",
     "analytics.function_profile": "function_profile.jsonl",
     "analytics.function_history": "function_history.jsonl",
@@ -493,30 +467,23 @@ _DEFAULT_JSONL_FILENAMES: Final[dict[str, str]] = {
     "analytics.dfg_function_metrics": "dfg_function_metrics.jsonl",
     "analytics.subsystems": "subsystems.jsonl",
     "analytics.subsystem_modules": "subsystem_modules.jsonl",
-    # Docs views
     "docs.v_validation_summary": "validation_summary.jsonl",
 }
 
 _DEFAULT_PARQUET_FILENAMES: Final[dict[str, str]] = {
-    # GOIDs / crosswalk
     "core.goids": "goids.parquet",
     "core.goid_crosswalk": "goid_crosswalk.parquet",
-    # Call graph
     "graph.call_graph_nodes": "call_graph_nodes.parquet",
     "graph.call_graph_edges": "call_graph_edges.parquet",
-    # CFG / DFG
     "graph.cfg_blocks": "cfg_blocks.parquet",
     "graph.cfg_edges": "cfg_edges.parquet",
     "graph.dfg_edges": "dfg_edges.parquet",
-    # Import / symbol uses
     "graph.import_graph_edges": "import_graph_edges.parquet",
     "graph.symbol_use_edges": "symbol_use_edges.parquet",
-    # AST / CST
     "core.ast_nodes": "ast_nodes.parquet",
     "core.ast_metrics": "ast_metrics.parquet",
     "core.cst_nodes": "cst_nodes.parquet",
     "core.docstrings": "docstrings.parquet",
-    # Modules / config / diagnostics
     "core.modules": "modules.parquet",
     "analytics.config_values": "config_values.parquet",
     "analytics.data_models": "data_models.parquet",
@@ -525,10 +492,8 @@ _DEFAULT_PARQUET_FILENAMES: Final[dict[str, str]] = {
     "analytics.data_model_usage": "data_model_usage.parquet",
     "analytics.config_data_flow": "config_data_flow.parquet",
     "analytics.static_diagnostics": "static_diagnostics.parquet",
-    # AST analytics / typing
     "analytics.hotspots": "hotspots.parquet",
     "analytics.typedness": "typedness.parquet",
-    # Function analytics
     "analytics.function_metrics": "function_metrics.parquet",
     "analytics.function_types": "function_types.parquet",
     "analytics.function_effects": "function_effects.parquet",
@@ -536,7 +501,6 @@ _DEFAULT_PARQUET_FILENAMES: Final[dict[str, str]] = {
     "analytics.function_ast_features": "function_ast_features.parquet",
     "analytics.semantic_roles_functions": "semantic_roles_functions.parquet",
     "analytics.semantic_roles_modules": "semantic_roles_modules.parquet",
-    # Coverage + tests
     "analytics.coverage_lines": "coverage_lines.parquet",
     "analytics.coverage_functions": "coverage_functions.parquet",
     "analytics.test_catalog": "test_catalog.parquet",
@@ -547,7 +511,6 @@ _DEFAULT_PARQUET_FILENAMES: Final[dict[str, str]] = {
     "analytics.external_dependency_calls": "external_dependency_calls.parquet",
     "analytics.graph_validation": "graph_validation.parquet",
     "analytics.function_validation": "function_validation.parquet",
-    # Risk factors
     "analytics.goid_risk_factors": "goid_risk_factors.parquet",
     "analytics.function_profile": "function_profile.parquet",
     "analytics.function_history": "function_history.parquet",
@@ -577,11 +540,10 @@ _DEFAULT_PARQUET_FILENAMES: Final[dict[str, str]] = {
     "analytics.dfg_function_metrics": "dfg_function_metrics.parquet",
     "analytics.subsystems": "subsystems.parquet",
     "analytics.subsystem_modules": "subsystem_modules.parquet",
-    # Docs views
     "docs.v_validation_summary": "validation_summary.parquet",
 }
 
-# Datasets that should bypass normalized macros and use dataset_rows-only access.
+
 _DATASET_ROWS_ONLY: Final[set[str]] = {
     "analytics.config_graph_metrics_keys",
     "analytics.config_graph_metrics_modules",
@@ -624,11 +586,6 @@ _DATASET_ROWS_ONLY: Final[set[str]] = {
     "graph.import_graph_edges",
     "graph.import_modules",
 }
-
-
-# ---------------------------------------------------------------------------
-# Helper Functions
-# ---------------------------------------------------------------------------
 
 
 def _metadata_for_name(name: str) -> dict[str, object]:
@@ -703,11 +660,6 @@ def _row_binding(
         The configured row binding.
     """
     return RowBinding(row_type=row_type, to_tuple=cast("RowToTuple", to_tuple))
-
-
-# ---------------------------------------------------------------------------
-# ROW_BINDINGS_BY_TABLE_KEY
-# ---------------------------------------------------------------------------
 
 
 def _build_row_bindings() -> dict[str, RowBinding]:
@@ -872,11 +824,6 @@ def _build_row_bindings() -> dict[str, RowBinding]:
             to_tuple=subsystem_coverage_cache_to_tuple,
         ),
     }
-
-
-# ---------------------------------------------------------------------------
-# Contract Building
-# ---------------------------------------------------------------------------
 
 
 def _table_contract(
@@ -1068,10 +1015,8 @@ def _dataset_contracts_by_table_key_cache() -> dict[str, DatasetContract]:
 
 
 __all__ = [
-    # Classes (sorted alphabetically)
     "DatasetContract",
     "RowBinding",
-    # Accessor functions (sorted alphabetically)
     "get_composite_schemas",
     "get_dataset_contracts",
     "get_dataset_contracts_by_table_key",

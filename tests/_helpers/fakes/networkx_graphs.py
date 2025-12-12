@@ -11,7 +11,7 @@ Example
 -------
 >>> from tests._helpers.fakes.networkx_graphs import chain_graph, star_graph
 >>>
->>> g = chain_graph(4)  # A -> B -> C -> D
+>>> g = chain_graph(4)
 >>> g.number_of_nodes()
 4
 """
@@ -22,13 +22,12 @@ from typing import Final
 
 import networkx as nx
 
-# Constants for default graph sizes
 DEFAULT_CHAIN_LENGTH: Final[int] = 4
 DEFAULT_SPOKES: Final[int] = 3
 DEFAULT_CYCLE_SIZE: Final[int] = 3
 DEFAULT_COMPLETE_SIZE: Final[int] = 5
 
-# Internal constants
+
 _ALPHABET_SIZE: Final[int] = 26
 _MIN_CYCLE_SIZE: Final[int] = 2
 _MIN_LAYER_SPAN: Final[int] = 3
@@ -102,7 +101,6 @@ def chain_graph(length: int = DEFAULT_CHAIN_LENGTH) -> nx.DiGraph:
     if length < 1:
         return g
 
-    # Generate node labels A, B, C, ... (wraps for long chains)
     def node_label(i: int) -> str:
         return chr(ord("A") + i % _ALPHABET_SIZE) if i < _ALPHABET_SIZE else f"N{i}"
 
@@ -136,11 +134,11 @@ def star_graph(spokes: int = DEFAULT_SPOKES, *, inward: bool = False) -> nx.DiGr
 
     Example
     -------
-    >>> g = star_graph(3)  # Outward
+    >>> g = star_graph(3)
     >>> list(g.edges())
     [('hub', 'spoke1'), ('hub', 'spoke2'), ('hub', 'spoke3')]
 
-    >>> g = star_graph(3, inward=True)  # Inward
+    >>> g = star_graph(3, inward=True)
     >>> list(g.edges())
     [('spoke1', 'hub'), ('spoke2', 'hub'), ('spoke3', 'hub')]
     """
@@ -238,7 +236,6 @@ def cyclic_graph(size: int = DEFAULT_CYCLE_SIZE) -> nx.DiGraph:
     nodes = [node_label(i) for i in range(size)]
     g.add_nodes_from(nodes)
 
-    # Add cycle edges
     for i in range(size):
         g.add_edge(nodes[i], nodes[(i + 1) % size])
 
@@ -266,9 +263,9 @@ def disconnected_graph() -> nx.DiGraph:
     2
     """
     g = nx.DiGraph()
-    # Component 1
+
     g.add_edges_from([("A", "B"), ("B", "C")])
-    # Component 2
+
     g.add_edges_from([("X", "Y"), ("Y", "Z")])
     return g
 
@@ -564,7 +561,7 @@ def tree_graph(depth: int = 3, branching: int = 2) -> nx.DiGraph:
 
     Example
     -------
-    >>> g = tree_graph(2, 2)  # Binary tree of depth 2
+    >>> g = tree_graph(2, 2)
     >>> g.number_of_nodes()
     7
     """
@@ -654,7 +651,6 @@ def layered_graph(layers: tuple[int, ...] = (2, 3, 2)) -> nx.DiGraph:
         current_nodes = [f"L{layer_idx}N{i}" for i in range(size)]
         g.add_nodes_from(current_nodes)
 
-        # Connect all nodes in previous layer to all nodes in current layer
         for prev in prev_layer_nodes:
             for curr in current_nodes:
                 g.add_edge(prev, curr)
@@ -731,14 +727,14 @@ def bridged_cliques_graph(
     clique2_nodes = [f"b{i}" for i in range(clique2_size)]
 
     g.add_nodes_from(clique1_nodes + clique2_nodes)
-    # Add full cliques
+
     for i, src in enumerate(clique1_nodes):
         for dst in clique1_nodes[i + 1 :]:
             g.add_edge(src, dst)
     for i, src in enumerate(clique2_nodes):
         for dst in clique2_nodes[i + 1 :]:
             g.add_edge(src, dst)
-    # Bridge
+
     g.add_edge(bridge_from, bridge_to)
     return g
 
@@ -844,9 +840,9 @@ def nested_loop_graph() -> nx.DiGraph:
         Directed graph containing outer and inner cycles.
     """
     g = nx.DiGraph()
-    # Outer loop: A -> B -> C -> A
+
     g.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
-    # Inner loop: B -> D -> B
+
     g.add_edges_from([("B", "D"), ("D", "B")])
     return g
 
@@ -949,9 +945,9 @@ def scc_with_tail_graph() -> nx.DiGraph:
         Graph containing an SCC connected to a linear tail.
     """
     g = nx.DiGraph()
-    # SCC: A -> B -> C -> A
+
     g.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
-    # Tail: C -> D -> E
+
     g.add_edges_from([("C", "D"), ("D", "E")])
     return g
 

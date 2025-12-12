@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
     from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
-# Test constants
+
 EXPECTED_PLUGIN_COUNT = 2
 EXPECTED_PLAN_PLUGINS = 3
 EXPECTED_INDEPENDENT_COUNT = 3
@@ -55,11 +55,6 @@ class PluginMetadataOverrides(TypedDict, total=False):
     requires: tuple[str, ...]
     depends_on: tuple[str, ...]
     produces_tables: tuple[str, ...]
-
-
-# =============================================================================
-# Test Plugin Implementation
-# =============================================================================
 
 
 @dataclass
@@ -106,11 +101,6 @@ def make_plugin(
     )
 
 
-# =============================================================================
-# Test Registry Implementation
-# =============================================================================
-
-
 class TestRegistry(BasePluginRegistry[MockPlugin]):
     """Concrete test registry for unit tests."""
 
@@ -148,11 +138,6 @@ def registry() -> TestRegistry:
     return TestRegistry()
 
 
-# =============================================================================
-# PluginSkip Tests
-# =============================================================================
-
-
 def test_plugin_skip_construction() -> None:
     """Verify PluginSkip can be constructed."""
     skip = PluginSkip(name="test.plugin", reason="disabled")
@@ -175,11 +160,6 @@ def test_plugin_skip_common_reasons() -> None:
     for reason in reasons:
         skip = PluginSkip(name="test", reason=reason)
         expect_equal(skip.reason, reason)
-
-
-# =============================================================================
-# PluginPlan Tests
-# =============================================================================
 
 
 def test_plugin_plan_empty() -> None:
@@ -244,11 +224,6 @@ def test_plugin_plan_unique_ids() -> None:
     expect_true(plan1.plan_id != plan2.plan_id)
 
 
-# =============================================================================
-# BasePluginRegistry Registration Tests
-# =============================================================================
-
-
 def test_register_plugin(registry: TestRegistry) -> None:
     """Verify register() adds a plugin."""
     plugin = make_plugin("test.plugin")
@@ -279,13 +254,7 @@ def test_unregister_removes_plugin(registry: TestRegistry) -> None:
 
 def test_unregister_nonexistent_no_error(registry: TestRegistry) -> None:
     """Verify unregister() doesn't raise for missing plugin."""
-    # Should not raise
     registry.unregister("nonexistent")
-
-
-# =============================================================================
-# Index Building Tests
-# =============================================================================
 
 
 def test_index_by_capability(registry: TestRegistry) -> None:
@@ -356,11 +325,6 @@ def test_unindex_on_unregister(registry: TestRegistry) -> None:
 
     expect_length(registry.list_providing("cap"), 0)
     expect_length(registry.list_by_table("table"), 0)
-
-
-# =============================================================================
-# Lookup Tests
-# =============================================================================
 
 
 def test_get_returns_plugin(registry: TestRegistry) -> None:
@@ -464,11 +428,6 @@ def test_dependency_graph(registry: TestRegistry) -> None:
     )
 
 
-# =============================================================================
-# Selection Resolution Tests
-# =============================================================================
-
-
 def test_resolve_selection_with_enabled(registry: TestRegistry) -> None:
     """Verify _resolve_selection uses enabled list."""
     registry.register(make_plugin("a"))
@@ -536,11 +495,6 @@ def test_resolve_selection_missing_plugin(registry: TestRegistry) -> None:
     expect_equal(skipped[0].reason, "missing_dependency")
 
 
-# =============================================================================
-# Dependency Resolution Tests
-# =============================================================================
-
-
 def test_resolve_dependencies_explicit(registry: TestRegistry) -> None:
     """Verify _resolve_dependencies handles explicit depends_on."""
     a = make_plugin("a", depends_on=("b",))
@@ -571,7 +525,6 @@ def test_resolve_dependencies_missing_capability(registry: TestRegistry) -> None
     selected = {"consumer": consumer}
     deps = registry.resolve_dependencies_debug(selected)
 
-    # Should not raise, just logs warning
     expect_equal(deps["consumer"], set())
 
 
@@ -589,11 +542,6 @@ def test_resolve_dependencies_self_provide(registry: TestRegistry) -> None:
     expect_false("self_sufficient" in deps["self_sufficient"])
 
 
-# =============================================================================
-# Topological Sort Tests
-# =============================================================================
-
-
 def test_topological_sort_linear(registry: TestRegistry) -> None:
     """Verify _topological_sort handles linear dependencies."""
     a = make_plugin("a")
@@ -606,14 +554,12 @@ def test_topological_sort_linear(registry: TestRegistry) -> None:
     result = registry.topological_sort_debug(selected, deps)
     names = [p.metadata.name for p in result]
 
-    # c must come before b, b before a
     expect_true(names.index("c") < names.index("b"))
     expect_true(names.index("b") < names.index("a"))
 
 
 def test_topological_sort_diamond(registry: TestRegistry) -> None:
     """Verify _topological_sort handles diamond dependencies."""
-    # d depends on b and c, which both depend on a
     a = make_plugin("a")
     b = make_plugin("b")
     c = make_plugin("c")
@@ -625,7 +571,6 @@ def test_topological_sort_diamond(registry: TestRegistry) -> None:
     result = registry.topological_sort_debug(selected, deps)
     names = [p.metadata.name for p in result]
 
-    # a must come first, d must come last
     expect_equal(names[0], "a")
     expect_equal(names[-1], "d")
 
@@ -636,7 +581,7 @@ def test_topological_sort_cycle_detection(registry: TestRegistry) -> None:
     b = make_plugin("b")
 
     selected = {"a": a, "b": b}
-    deps = {"a": {"b"}, "b": {"a"}}  # Cycle!
+    deps = {"a": {"b"}, "b": {"a"}}
 
     with pytest.raises(ValueError, match=r"[Cc]ycle"):
         registry.topological_sort_debug(selected, deps)
@@ -653,13 +598,7 @@ def test_topological_sort_independent(registry: TestRegistry) -> None:
 
     result = registry.topological_sort_debug(selected, deps)
 
-    # All plugins should be in result
     expect_length(result, EXPECTED_INDEPENDENT_COUNT)
-
-
-# =============================================================================
-# RegistrablePlugin Protocol Tests
-# =============================================================================
 
 
 def test_mock_plugin_implements_registrable() -> None:

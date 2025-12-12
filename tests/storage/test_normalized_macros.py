@@ -87,11 +87,8 @@ def test_render_macro_with_custom_limit() -> None:
 
 def test_render_macro_includes_date_cast() -> None:
     """Verify render_macro correctly casts DATE columns through internal _cast_expression."""
-    # Find a table with DATE columns (core.file_state likely has date columns)
-    # We test the output DDL to verify DATE handling
     result = render_macro("analytics.function_history")
 
-    # The DDL should contain proper casting for timestamp columns
     expect_in("CAST", result.ddl)
 
 
@@ -99,7 +96,6 @@ def test_render_macro_includes_goid_cast() -> None:
     """Verify render_macro casts goid_h128 columns to BIGINT."""
     result = render_macro("analytics.function_profile")
 
-    # Should include BIGINT cast for goid columns
     expect_in("AS BIGINT", result.ddl)
     expect_in("goid_h128", result.ddl.lower())
 
@@ -115,11 +111,6 @@ def test_render_macro_outputs_ddl_to_buffer() -> None:
     output = buffer.getvalue()
     expect_in("metadata.normalized_ast_nodes", output)
     expect_in("metadata.normalized_goids", output)
-
-
-# =============================================================================
-# Dataset Rows Macro Tests (merged from test_metadata_dataset_rows_macro.py)
-# =============================================================================
 
 
 def test_dataset_rows_macro_handles_registry_datasets(
@@ -150,14 +141,9 @@ def test_dataset_rows_macro_handles_registry_datasets(
         pytest.fail(message)
 
 
-# =============================================================================
-# Drift Detection Tests (merged from test_normalized_macros_helper.py)
-# =============================================================================
-
-
 def test_normalized_macros_defined(fresh_gateway: StorageGateway) -> None:
     """Ensure every macro referenced in NORMALIZED_MACROS exists in DuckDB."""
-    _ = fresh_gateway  # Gateway ensures bootstrap runs.
+    _ = fresh_gateway
 
     ddl_text = "\n".join(METADATA_SCHEMA_DDL)
     defined = {
@@ -197,9 +183,9 @@ def test_normalized_macros_match_expected_sets() -> None:
 def test_normalized_macro_schema_validation(fresh_gateway: StorageGateway) -> None:
     """Ensure schema validation helper raises on drift (no drift expected)."""
     con = fresh_gateway.con
-    # Provide a sanity check that the helper executes successfully.
+
     validate_normalized_macro_schemas(con)
-    # Keep export mapping aligned with bootstrap mapping.
+
     if set(BOOTSTRAP_MACROS) != set(NORMALIZED_MACROS):
         pytest.fail("Export and bootstrap macro mappings diverged")
 
@@ -218,11 +204,6 @@ def test_dataset_rows_only_tables_parse(fresh_gateway: StorageGateway) -> None:
             failures.append(f"{table_key}: {exc}")
     if failures:
         pytest.fail("; ".join(failures))
-
-
-# =============================================================================
-# Schema Validation Tests (merged from test_macro_schemas.py)
-# =============================================================================
 
 
 def _canonical_type(type_str: str) -> str:
@@ -276,11 +257,6 @@ def test_macro_schemas_match_table_definitions(fresh_gateway: StorageGateway) ->
                 failures.append(f"{table_key}.{col_name}: {actual_type} != {expected_type}")
     if failures:
         pytest.fail("; ".join(failures))
-
-
-# =============================================================================
-# Performance Tests (merged from test_macro_performance.py)
-# =============================================================================
 
 
 @pytest.mark.parametrize("table_key", ["graph.call_graph_edges", "analytics.function_metrics"])

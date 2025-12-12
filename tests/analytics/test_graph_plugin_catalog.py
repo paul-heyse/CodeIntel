@@ -20,7 +20,7 @@ def test_build_plugin_catalog_includes_expected_fields() -> None:
         message = "Catalog should include at least one plugin entry"
         pytest.fail(message)
     first_meta = next(iter(plugins.values()))
-    # TargetPlugin exposes these fields
+
     required = (
         "name",
         "description",

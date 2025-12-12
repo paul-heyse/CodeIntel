@@ -75,7 +75,6 @@ def _check_file_exists(path: Path) -> bool:
     return path.is_file()
 
 
-# Constants for SCIP range indices
 _RANGE_START_LINE = 0
 _RANGE_START_COL = 1
 _RANGE_END_LINE = 2
@@ -367,7 +366,6 @@ class ToolRunnerAdapter:
 
             documents = _convert_scip_documents(scip_result.documents or [])
 
-            # Check file existence - stored as variables to avoid async path check
             scip_exists = _check_file_exists(output_scip)
             json_exists = _check_file_exists(output_json)
 
@@ -412,7 +410,6 @@ class ToolRunnerAdapter:
             await self._service.run_pytest_report(repo_root, json_report_path=json_report_path)
             duration = time.perf_counter() - start
 
-            # Parse the JSON report if available (sync file read)
             if _check_file_exists(json_report_path):
                 return _parse_pytest_report(json_report_path, duration)
 

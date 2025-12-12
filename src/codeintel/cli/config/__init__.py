@@ -17,7 +17,7 @@ True
 >>> config.telemetry.service_name
 'codeintel-cli'
 
->>> # Generate JSON Schema
+>>>
 >>> from codeintel.cli.config import generate_schema
 >>> schema = generate_schema(CliConfig)
 >>> schema["$schema"]

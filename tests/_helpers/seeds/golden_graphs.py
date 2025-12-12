@@ -36,57 +36,45 @@ from tests._helpers.builders import (
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+
 GOLDEN_REPO: Final = "golden/repo"
 GOLDEN_COMMIT: Final = "golden123"
 
-# Module structure simulating a layered architecture
-# Layer 0: core utilities (no internal deps)
-# Layer 1: services (depend on core)
-# Layer 2: handlers (depend on services, core)
-# Layer 3: api (depend on handlers, services)
+
 GOLDEN_MODULES: Final = {
-    # Layer 0 - Core utilities
     "core/__init__.py": "core",
     "core/utils.py": "core.utils",
     "core/types.py": "core.types",
     "core/errors.py": "core.errors",
     "core/config.py": "core.config",
-    # Layer 1 - Services
     "services/__init__.py": "services",
     "services/auth.py": "services.auth",
     "services/cache.py": "services.cache",
     "services/database.py": "services.database",
     "services/queue.py": "services.queue",
     "services/storage.py": "services.storage",
-    # Layer 2 - Handlers
     "handlers/__init__.py": "handlers",
     "handlers/user.py": "handlers.user",
     "handlers/product.py": "handlers.product",
     "handlers/order.py": "handlers.order",
     "handlers/payment.py": "handlers.payment",
-    # Layer 3 - API
     "api/__init__.py": "api",
     "api/routes.py": "api.routes",
     "api/middleware.py": "api.middleware",
     "api/schemas.py": "api.schemas",
-    # Standalone utilities
     "utils/logging.py": "utils.logging",
     "utils/metrics.py": "utils.metrics",
     "utils/helpers.py": "utils.helpers",
-    # Tests (separate package)
     "tests/__init__.py": "tests",
     "tests/test_user.py": "tests.test_user",
     "tests/test_auth.py": "tests.test_auth",
     "tests/conftest.py": "tests.conftest",
 }
 
-# Number of golden nodes for reference
+
 GOLDEN_MODULE_COUNT: Final = len(GOLDEN_MODULES)
-GOLDEN_FUNCTION_COUNT: Final = 60  # Approximate
-GOLDEN_CALL_EDGE_COUNT: Final = 80  # Approximate
+GOLDEN_FUNCTION_COUNT: Final = 60
+GOLDEN_CALL_EDGE_COUNT: Final = 80
 
 
 @dataclass(frozen=True)
@@ -154,10 +142,9 @@ def _build_goids(repo: str, commit: str) -> list[GoidRow]:
         GOID rows for insertion.
     """
     goids: list[GoidRow] = []
-    goid_counter = 1000  # Start at 1000 for easy identification
+    goid_counter = 1000
     now = datetime.now(UTC)
 
-    # Core utilities - many small functions
     core_functions = [
         (
             "core/utils.py",
@@ -169,7 +156,6 @@ def _build_goids(repo: str, commit: str) -> list[GoidRow]:
         ("core/config.py", "core.config", ["load_config", "get_setting", "validate_config"]),
     ]
 
-    # Services - medium complexity
     service_functions = [
         (
             "services/auth.py",
@@ -190,7 +176,6 @@ def _build_goids(repo: str, commit: str) -> list[GoidRow]:
         ("services/storage.py", "services.storage", ["upload", "download", "delete", "list_files"]),
     ]
 
-    # Handlers - business logic
     handler_functions = [
         (
             "handlers/user.py",
@@ -214,7 +199,6 @@ def _build_goids(repo: str, commit: str) -> list[GoidRow]:
         ),
     ]
 
-    # API layer
     api_functions = [
         ("api/routes.py", "api.routes", ["register_routes", "handle_request", "error_handler"]),
         (
@@ -225,7 +209,6 @@ def _build_goids(repo: str, commit: str) -> list[GoidRow]:
         ("api/schemas.py", "api.schemas", ["validate_request", "serialize_response"]),
     ]
 
-    # Utilities
     util_functions = [
         (
             "utils/logging.py",
@@ -283,7 +266,7 @@ def _build_call_graph_nodes(goids: list[GoidRow]) -> list[CallGraphNodeRow]:
             goid_h128=goid.goid_h128,
             language=goid.language,
             kind=goid.kind,
-            arity=2,  # Typical function arity
+            arity=2,
             is_public=not goid.qualname.startswith("_"),
             rel_path=goid.rel_path,
         )
@@ -318,9 +301,7 @@ def _build_call_graph_edges(repo: str, commit: str, goids: list[GoidRow]) -> lis
     goid_by_name: dict[str, int] = {g.qualname.split(".")[-1]: g.goid_h128 for g in goids}
     goid_by_qualname: dict[str, GoidRow] = {g.qualname: g for g in goids}
 
-    # Define call patterns: (caller_func, callee_func, callsite_offset)
     call_patterns = [
-        # Handlers call auth
         ("create_user", "authenticate", 5),
         ("get_user", "authenticate", 3),
         ("update_user", "authenticate", 4),
@@ -328,41 +309,32 @@ def _build_call_graph_edges(repo: str, commit: str, goids: list[GoidRow]) -> lis
         ("create_order", "authenticate", 5),
         ("process_order", "authenticate", 3),
         ("create_product", "authenticate", 4),
-        # Handlers call database
         ("create_user", "query", 10),
         ("get_user", "query", 8),
         ("update_user", "execute", 12),
         ("delete_user", "execute", 8),
         ("create_order", "transaction", 15),
         ("process_order", "transaction", 10),
-        # Auth calls cache
         ("authenticate", "get_cached", 5),
         ("authenticate", "set_cached", 15),
         ("validate_session", "get_cached", 3),
-        # Handlers call cache
         ("get_user", "get_cached", 5),
         ("get_product", "get_cached", 4),
         ("search_products", "get_cached", 3),
-        # Core utility chains
         ("validate_input", "format_string", 5),
         ("parse_json", "validate_input", 8),
         ("load_config", "parse_json", 3),
         ("get_setting", "load_config", 5),
-        # Queue processing (recursive pattern - calls itself indirectly)
         ("process_batch", "dequeue", 5),
-        ("process_batch", "enqueue", 20),  # Re-enqueue failures
-        # Storage calls
+        ("process_batch", "enqueue", 20),
         ("upload", "validate_input", 3),
         ("download", "get_cached", 5),
-        # API calls handlers
         ("handle_request", "create_user", 10),
         ("handle_request", "get_user", 15),
         ("handle_request", "create_order", 20),
         ("handle_request", "process_payment", 25),
-        # Middleware chains
         ("auth_middleware", "validate_session", 5),
         ("rate_limit", "get_cached", 3),
-        # Logging calls (hub - called by many)
         ("authenticate", "log_info", 20),
         ("authorize", "log_info", 15),
         ("process_order", "log_info", 25),
@@ -370,17 +342,14 @@ def _build_call_graph_edges(repo: str, commit: str, goids: list[GoidRow]) -> lis
         ("create_user", "log_info", 18),
         ("upload", "log_info", 12),
         ("download", "log_info", 10),
-        # Metrics (another hub)
         ("authenticate", "record_metric", 22),
         ("process_order", "record_metric", 28),
         ("process_payment", "record_metric", 25),
         ("query", "record_metric", 15),
         ("execute", "record_metric", 12),
-        # Error handling
         ("authenticate", "log_error", 25),
         ("query", "log_error", 20),
         ("process_payment", "log_error", 30),
-        # Helper usage
         ("query", "retry", 5),
         ("upload", "retry", 8),
         ("download", "timeout", 3),
@@ -393,7 +362,6 @@ def _build_call_graph_edges(repo: str, commit: str, goids: list[GoidRow]) -> lis
         if caller_goid is None or callee_goid is None:
             continue
 
-        # Find caller's path for callsite
         caller_qualname = next((q for q in goid_by_qualname if q.endswith(f".{caller_name}")), None)
         if caller_qualname is None:
             continue
@@ -440,8 +408,6 @@ def _build_import_edges(repo: str, commit: str) -> list[ImportGraphEdgeRow]:
     """
     edges: list[ImportGraphEdgeRow] = []
 
-    # Layer 0 -> nothing (core has no internal deps)
-    # Layer 1 (services) -> Layer 0 (core)
     service_to_core = [
         ("services.auth", "core.utils"),
         ("services.auth", "core.errors"),
@@ -456,7 +422,6 @@ def _build_import_edges(repo: str, commit: str) -> list[ImportGraphEdgeRow]:
         ("services.storage", "core.errors"),
     ]
 
-    # Layer 2 (handlers) -> Layer 1 (services) and Layer 0 (core)
     handler_imports = [
         ("handlers.user", "services.auth"),
         ("handlers.user", "services.database"),
@@ -473,7 +438,6 @@ def _build_import_edges(repo: str, commit: str) -> list[ImportGraphEdgeRow]:
         ("handlers.payment", "core.errors"),
     ]
 
-    # Layer 3 (api) -> Layer 2 (handlers) and below
     api_imports = [
         ("api.routes", "handlers.user"),
         ("api.routes", "handlers.product"),
@@ -485,7 +449,6 @@ def _build_import_edges(repo: str, commit: str) -> list[ImportGraphEdgeRow]:
         ("api.schemas", "core.types"),
     ]
 
-    # Utils are cross-cutting (imported by many)
     utils_imports = [
         ("services.auth", "utils.logging"),
         ("services.database", "utils.logging"),
@@ -497,15 +460,13 @@ def _build_import_edges(repo: str, commit: str) -> list[ImportGraphEdgeRow]:
         ("handlers.payment", "utils.metrics"),
     ]
 
-    # Intentional cycle for testing (services.auth <-> services.cache)
     cycle_imports = [
-        ("services.auth", "services.cache"),  # Auth uses cache for sessions
-        ("services.cache", "services.auth"),  # Cache validates with auth (cycle!)
+        ("services.auth", "services.cache"),
+        ("services.cache", "services.auth"),
     ]
 
     all_imports = service_to_core + handler_imports + api_imports + utils_imports + cycle_imports
 
-    # Assign fan-out/fan-in based on import counts
     fan_out_counts: dict[str, int] = {}
     fan_in_counts: dict[str, int] = {}
 
@@ -513,7 +474,6 @@ def _build_import_edges(repo: str, commit: str) -> list[ImportGraphEdgeRow]:
         fan_out_counts[src] = fan_out_counts.get(src, 0) + 1
         fan_in_counts[dst] = fan_in_counts.get(dst, 0) + 1
 
-    # Detect cycle group (services.auth <-> services.cache)
     cycle_modules = {"services.auth", "services.cache"}
 
     for src, dst in all_imports:
@@ -549,7 +509,6 @@ def _build_symbol_use_edges(goids: list[GoidRow]) -> list[SymbolUseEdgeRow]:
     edges: list[SymbolUseEdgeRow] = []
     goid_by_qualname: dict[str, GoidRow] = {g.qualname: g for g in goids}
 
-    # Define symbol uses: (symbol_name, def_module, use_modules)
     symbol_uses = [
         ("ValidationError", "core.errors", ["services.auth", "handlers.user", "handlers.payment"]),
         ("NotFoundError", "core.errors", ["handlers.user", "handlers.product", "handlers.order"]),
@@ -567,7 +526,6 @@ def _build_symbol_use_edges(goids: list[GoidRow]) -> list[SymbolUseEdgeRow]:
             continue
 
         for use_module in use_modules:
-            # Find a function in the use_module
             use_funcs = [g for g in goids if g.qualname.startswith(f"{use_module}.")]
             if not use_funcs:
                 continue
@@ -696,7 +654,6 @@ def seed_golden_graphs(
     GoldenGraphStats
         Statistics about the seeded data.
     """
-    # Build all data
     modules = _build_modules(repo, commit)
     goids = _build_goids(repo, commit)
     call_nodes = _build_call_graph_nodes(goids)
@@ -705,7 +662,6 @@ def seed_golden_graphs(
     symbol_edges = _build_symbol_use_edges(goids)
     config_values = _build_config_values(repo, commit)
 
-    # Insert data
     insert_rows(gateway, modules)
     insert_rows(gateway, goids)
     insert_rows(gateway, call_nodes)

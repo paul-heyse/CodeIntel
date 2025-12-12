@@ -90,7 +90,6 @@ def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) 
 
 def test_scip_ingest_result_factory() -> None:
     """Verify ScipIngestResult factory methods work correctly."""
-    # Test success result
     success = ScipIngestResult(
         status="success",
         index_scip=Path("build/scip/index.scip"),
@@ -101,7 +100,6 @@ def test_scip_ingest_result_factory() -> None:
     if success.index_scip is None:
         pytest.fail("Expected index_scip to be set")
 
-    # Test unavailable result
     unavail = ScipIngestResult(
         status="unavailable",
         index_scip=None,

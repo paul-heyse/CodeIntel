@@ -17,29 +17,22 @@ with the graphs package structure (compute/ vs infrastructure concerns).
 
 from __future__ import annotations
 
-# SCIP resolver utilities (re-exported from tools for backwards compat)
 from codeintel.ingestion.engine._scip_resolver import (
     ResolvedScipConfig,
     ScipPathConfig,
     ScipResolverInput,
     resolve_scip_inputs,
 )
-
-# AST utilities
 from codeintel.ingestion.infrastructure.ast_utils import (
     AstSpanIndex,
     parse_python_module,
     timed_parse,
 )
-
-# CST utilities
 from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureConfig,
     CstCaptureVisitor,
     LineIndexedSource,
 )
-
-# Database query helpers
 from codeintel.ingestion.infrastructure.db_queries import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
@@ -58,22 +51,16 @@ from codeintel.ingestion.infrastructure.db_queries import (
     safe_not_null_fraction,
     safe_table_exists,
 )
-
-# Macro utilities
 from codeintel.ingestion.infrastructure.macros import (
     INGEST_MACRO_TABLES,
     macro_exists,
 )
-
-# Path utilities
 from codeintel.ingestion.infrastructure.paths import (
     ensure_repo_root,
     normalize_rel_path,
     relpath_to_module,
     repo_relpath,
 )
-
-# Safe SQL utilities
 from codeintel.ingestion.infrastructure.safe_sql import (
     InvalidIdentifierError,
     SafeColumnRef,
@@ -81,8 +68,6 @@ from codeintel.ingestion.infrastructure.safe_sql import (
     validate_column_name,
     validate_table_key,
 )
-
-# Source scanning utilities
 from codeintel.ingestion.infrastructure.scanning import (
     DEFAULT_IGNORE_DIRS,
     IGNORES,
@@ -92,8 +77,6 @@ from codeintel.ingestion.infrastructure.scanning import (
     default_config_profile,
     profile_from_env,
 )
-
-# Worker pool utilities
 from codeintel.ingestion.infrastructure.workers import (
     AST_WORKER_CONFIG,
     CST_WORKER_CONFIG,

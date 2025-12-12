@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Column definitions for bulk_insert (derived from table schema)
+
 _DEPENDENCY_CALL_COLUMNS: tuple[str, ...] = (
     "repo",
     "commit",

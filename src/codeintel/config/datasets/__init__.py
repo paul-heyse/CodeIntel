@@ -251,10 +251,6 @@ _EXPORTS_FOR_API: dict[str, object] = {
     "validate_row_model_compatibility": validate_row_model_compatibility,
 }
 
-# ---------------------------------------------------------------------------
-# Eagerly-initialized dictionaries with proper types for type checkers
-# ---------------------------------------------------------------------------
-# These are initialized at import time for proper type inference.
 
 TABLE_SCHEMAS: dict[str, TableSchema] = get_table_schemas()
 COMPOSITE_SCHEMAS: dict[str, CompositeSchema] = get_composite_schemas()
@@ -264,10 +260,6 @@ ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = get_row_bindings()
 INSERT_SQL_BY_TABLE: dict[str, str] = get_insert_sql_by_table()
 DELETE_SQL_BY_TABLE: dict[str, str] = get_delete_sql_by_table()
 
-
-# ---------------------------------------------------------------------------
-# Derived dictionaries (built from DATASET_CONTRACTS)
-# ---------------------------------------------------------------------------
 
 JSON_SCHEMA_BY_DATASET_NAME: dict[str, str] = {
     name: contract.json_schema_id

@@ -33,11 +33,6 @@ P = TypeVar("P", bound="RegistrablePlugin")
 P_co = TypeVar("P_co", bound="RegistrablePlugin", covariant=True)
 
 
-# =============================================================================
-# Hooks Protocol
-# =============================================================================
-
-
 class RegistryHooks(Protocol[P_co]):
     """Hook contract for registry-specific behaviors."""
 
@@ -59,11 +54,6 @@ class RegistryHooks(Protocol[P_co]):
         ...
 
 
-# =============================================================================
-# Plugin Protocol (minimal for registry purposes)
-# =============================================================================
-
-
 @runtime_checkable
 class RegistrablePlugin(Protocol):
     """Minimal protocol for plugins that can be registered.
@@ -82,11 +72,6 @@ class RegistrablePlugin(Protocol):
             Metadata describing the plugin.
         """
         ...
-
-
-# =============================================================================
-# Default Hooks
-# =============================================================================
 
 
 class DefaultRegistryHooks(RegistryHooks[P]):
@@ -127,11 +112,6 @@ class DefaultRegistryHooks(RegistryHooks[P]):
         """
         _ = self._entrypoint_group
         return isinstance(obj, RegistrablePlugin)
-
-
-# =============================================================================
-# Registry Entries and Provider Index
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -339,11 +319,6 @@ class _ProviderRegistry[P: RegistrablePlugin]:
                 self._by_table[table].discard(meta.name)
 
 
-# =============================================================================
-# Plan and Skip Dataclasses
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class PluginSkip:
     """Skip metadata for plugins excluded from execution.
@@ -398,11 +373,6 @@ class PluginPlan[P: RegistrablePlugin]:
         return tuple(p.metadata.name for p in self.plugins)
 
 
-# =============================================================================
-# Base Registry Class
-# =============================================================================
-
-
 class BasePluginRegistry[P: RegistrablePlugin](ABC):
     """Abstract base class for plugin registries.
 
@@ -422,10 +392,6 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         self._providers: _ProviderRegistry[P] = _ProviderRegistry()
         self._entrypoints_loaded: bool = False
         self._builtins_loaded: bool = False
-
-    # -------------------------------------------------------------------------
-    # Registration
-    # -------------------------------------------------------------------------
 
     def register(self, plugin: P) -> RegistryEntry[P]:
         """Register a plugin instance.
@@ -453,10 +419,6 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
             Plugin name to remove.
         """
         self._providers.unregister(name)
-
-    # -------------------------------------------------------------------------
-    # Lookup
-    # -------------------------------------------------------------------------
 
     def get(self, name: str) -> P:
         """Return a plugin by name.
@@ -610,13 +572,6 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         self._ensure_loaded()
         return self._providers.dependency_graph()
 
-    # -------------------------------------------------------------------------
-    # Planning Utilities
-    # -------------------------------------------------------------------------
-    # Subclasses implement their own plan() method using these utilities.
-    # This avoids return type incompatibility issues with domain-specific
-    # plan types (e.g., GraphPluginPlan vs PluginPlan).
-
     @staticmethod
     @abstractmethod
     def _get_default_plugins() -> Sequence[str]:
@@ -644,7 +599,6 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         tuple[dict[str, P], tuple[PluginSkip, ...]]
             Selected plugins and skipped plugins.
         """
-        # Determine base selection
         if enabled:
             names = list(enabled)
         elif plugin_names:
@@ -715,7 +669,6 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         """
         dependencies: dict[str, set[str]] = {name: set() for name in selected}
 
-        # Explicit depends_on
         for name, plugin in selected.items():
             for dep in plugin.metadata.depends_on:
                 if dep in selected:
@@ -723,7 +676,6 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
                 else:
                     log.debug("Skipping unmet dependency %s for plugin %s", dep, name)
 
-        # Capability-based dependencies using shared utility
         provider_index = build_provider_index_from_metadata(
             selected,
             lambda p: p.metadata.provides,
@@ -738,7 +690,7 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
                         cap_name,
                     )
                     continue
-                # Add first provider as dependency (unless self-provided)
+
                 for provider in providers:
                     if provider != name:
                         dependencies[name].add(provider)
@@ -804,10 +756,6 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         ordered = self._topological_sort(dict(selected), dict(dependencies))
         return tuple(ordered)
 
-    # -------------------------------------------------------------------------
-    # Loading
-    # -------------------------------------------------------------------------
-
     def _ensure_loaded(self) -> None:
         """Ensure plugins are loaded (builtins + entry points)."""
         self._ensure_builtins_loaded()
@@ -825,10 +773,6 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         if self._entrypoints_loaded:
             return
         self.load_from_entrypoints()
-
-    # -------------------------------------------------------------------------
-    # Entry Point Discovery
-    # -------------------------------------------------------------------------
 
     def load_from_entrypoints(
         self,

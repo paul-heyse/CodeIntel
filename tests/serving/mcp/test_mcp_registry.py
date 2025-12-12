@@ -21,11 +21,6 @@ if TYPE_CHECKING:
 MIN_TOOL_COUNT = 6
 
 
-# =============================================================================
-# register_tools Tests
-# =============================================================================
-
-
 def test_register_tools_with_backend(
     provisioned_repo: TestContext,
 ) -> None:
@@ -54,10 +49,8 @@ def test_register_tools_with_backend(
 
     registrar = RecordingMcpRegistrar("TestServer")
 
-    # Should not raise
     register_tools(registrar, backend)
 
-    # Server should be configured
     expect_equal(registrar.app_name, "TestServer")
     tools = registrar.list_tools()
     expect_not_empty(tools)
@@ -86,7 +79,6 @@ def test_register_tools_with_service(
 
     registrar = RecordingMcpRegistrar("TestServer")
 
-    # Should not raise - accepts QueryService directly
     register_tools(registrar, service)
 
     expect_equal(registrar.app_name, "TestServer")
@@ -123,7 +115,6 @@ def test_register_tools_with_config(
 
     registrar = RecordingMcpRegistrar("TestServer")
 
-    # Should not raise
     register_tools(registrar, service, config)
 
     expect_equal(registrar.app_name, "TestServer")

@@ -99,30 +99,24 @@ def insert_rows(
     ... ]
     >>> count = insert_rows(gateway, rows)
     """
-    # Materialize to list if needed for length check and iteration
     row_list: Sequence[InsertableRow] = rows if isinstance(rows, Sequence) else list(rows)
 
     if not row_list:
         return 0
 
-    # Extract metadata from first row's class
     sample = row_list[0]
     row_type = type(sample)
 
-    # Access class variables - these are defined on the class, not instance
     table: str = row_type.__table__
     columns: tuple[str, ...] = row_type.__columns__
 
-    # Validate identifiers to prevent SQL injection
     validate_identifier(table, kind="table")
     validated_columns = [validate_identifier(col, kind="column") for col in columns]
 
-    # Build parameterized SQL by joining validated parts (avoids S608 false positive)
     col_names = ", ".join(validated_columns)
     placeholders = ", ".join("?" for _ in validated_columns)
     sql = " ".join(["INSERT INTO", table, "(", col_names, ")", "VALUES", "(", placeholders, ")"])
 
-    # Execute batch insert
     gateway.con.executemany(sql, [r.to_tuple() for r in row_list])
     return len(row_list)
 

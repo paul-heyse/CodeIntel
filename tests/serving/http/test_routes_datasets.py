@@ -15,10 +15,6 @@ from tests._helpers.assertions.http_responses import assert_problem_detail_respo
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
 
-# =============================================================================
-# Dataset Listing Tests
-# =============================================================================
-
 
 def test_datasets_list_endpoint(
     datasets_http_client: TestClient,
@@ -42,11 +38,6 @@ def test_datasets_specs_endpoint(
     expect_is_instance(data, list)
 
 
-# =============================================================================
-# Dataset Row Access Tests
-# =============================================================================
-
-
 def test_dataset_rows_not_found(
     datasets_http_client: TestClient,
 ) -> None:
@@ -63,11 +54,6 @@ def test_dataset_schema_not_found(
     response = datasets_http_client.get("/datasets/nonexistent_dataset/schema")
 
     assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
-
-
-# =============================================================================
-# Dataset Pagination Tests
-# =============================================================================
 
 
 def test_dataset_rows_with_limit(

@@ -12,7 +12,6 @@ Subpackages
 
 from __future__ import annotations
 
-# Execution
 from codeintel.core.plugins.execution.context import (
     ConfigProvider,
     PluginExecutionContext,
@@ -36,8 +35,6 @@ from codeintel.core.plugins.execution.tracking import (
     complete_run_from_records,
     record_plugin_steps,
 )
-
-# Registry
 from codeintel.core.plugins.registry.base import (
     BasePluginRegistry,
     DefaultRegistryHooks,
@@ -53,8 +50,6 @@ from codeintel.core.plugins.registry.sorting import (
     build_provider_index_from_metadata,
     topological_sort,
 )
-
-# Types
 from codeintel.core.plugins.types.protocol import (
     CapabilityKind,
     InputSource,
@@ -81,8 +76,6 @@ from codeintel.core.plugins.types.result import (
     PluginResult,
     PluginStatus,
 )
-
-# Re-export from resources (for backwards compatibility)
 from codeintel.core.resources.registry import (
     ResourceNotFoundError,
     ResourceRegistry,

@@ -35,13 +35,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Collection
 
-# Type aliases for clarity
+
 type SqlParams = Sequence[object]
 
-# Valid identifier pattern: alphanumeric with underscores and dots (for schema.table)
+
 _IDENTIFIER_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?$")
 
-# Maximum identifier length (DuckDB limit)
+
 _MAX_IDENTIFIER_LENGTH = 128
 
 
@@ -205,7 +205,7 @@ class SafeColumn:
             DeprecationWarning,
             stacklevel=2,
         )
-        # Column names shouldn't have dots (no schema prefix)
+
         if "." in self.name:
             raise InvalidIdentifierError(self.name, "column names cannot contain dots")
         validate_identifier(self.name)
@@ -477,10 +477,6 @@ class PreparedStatements:
     select_params: list[object] | None = None
 
 
-# --------------------------------------------------------------------------
-# Quoting helpers
-# --------------------------------------------------------------------------
-
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 TABLE_KEY_PARTS = 2
 
@@ -560,11 +556,6 @@ def quote_macro_name(macro_name: str) -> str:
     return ".".join(parts)
 
 
-# --------------------------------------------------------------------------
-# Macro helpers
-# --------------------------------------------------------------------------
-
-
 def macro_select_sql(macro_name: str, placeholders: str) -> str:
     """Build a validated SELECT statement invoking a macro.
 
@@ -636,11 +627,6 @@ def safe_macro_call(
     placeholders = ", ".join("?" for _ in args)
     sql = macro_select_sql(macro_name, placeholders)
     return sql, args
-
-
-# --------------------------------------------------------------------------
-# Insert SQL builder
-# --------------------------------------------------------------------------
 
 
 def build_insert_sql(

@@ -62,7 +62,6 @@ def _detect_style(raw: str) -> str | None:
         try:
             parsed = parse(raw, style=style)
             if parsed.params or parsed.returns or parsed.raises:
-                # Return canonical name ("numpy" instead of "numpydoc")
                 name = style.name.lower()
                 return "numpy" if name == "numpydoc" else name
         except ParseError:
@@ -323,7 +322,6 @@ class DocstringsExtractStep:
             docstrings = _extract_module_docstrings(module, source, ctx)
             all_rows.extend(list(docstring_row_to_tuple(ds)) for ds in docstrings)
 
-        # Delete existing docstrings for processed modules (idempotent re-ingest)
         if processed_paths:
             self._storage.delete_by_paths(
                 "core.docstrings",
@@ -333,7 +331,6 @@ class DocstringsExtractStep:
                 commit=commit,
             )
 
-        # Persist rows
         table_counts: dict[str, int] = {}
         total_rows = 0
 

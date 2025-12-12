@@ -193,7 +193,6 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
     _seed_test_modules(graph_ctx)
     now = datetime.now(UTC)
 
-    # Seed symbol metrics table with a large community id (all same community)
     insert_rows(
         graph_ctx.gateway,
         [

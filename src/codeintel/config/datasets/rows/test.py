@@ -43,11 +43,6 @@ def _serialize_row(
     return tuple(row[column] for column in columns)
 
 
-# ---------------------------------------------------------------------------
-# Test Catalog
-# ---------------------------------------------------------------------------
-
-
 class TestCatalogRowModel(TypedDict):
     """Row shape for analytics.test_catalog inserts.
 
@@ -130,10 +125,6 @@ def serialize_test_catalog_row(row: TestCatalogRowModel) -> tuple[object, ...]:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test Coverage Edges
-# ---------------------------------------------------------------------------
-
 TEST_COVERAGE_EDGE_COLUMNS: Final[tuple[str, ...]] = (
     "test_id",
     "test_goid_h128",
@@ -214,10 +205,6 @@ def serialize_test_coverage_edge(row: TestCoverageEdgeRow) -> tuple[object, ...]
     """
     return _serialize_row(row, TEST_COVERAGE_EDGE_COLUMNS)
 
-
-# ---------------------------------------------------------------------------
-# Test Profile
-# ---------------------------------------------------------------------------
 
 TEST_PROFILE_COLUMNS: Final[tuple[str, ...]] = (
     "repo",
@@ -408,10 +395,6 @@ def serialize_test_profile_row(row: ProfileRowModel) -> tuple[object, ...]:
     return _serialize_row(row, TEST_PROFILE_COLUMNS)
 
 
-# ---------------------------------------------------------------------------
-# Behavioral Coverage
-# ---------------------------------------------------------------------------
-
 BEHAVIORAL_COVERAGE_COLUMNS: Final[tuple[str, ...]] = (
     "repo",
     "commit",
@@ -488,10 +471,6 @@ def behavioral_coverage_row_to_tuple(row: BehavioralCoverageRowModel) -> tuple[o
     """
     return _serialize_row(row, BEHAVIORAL_COVERAGE_COLUMNS)
 
-
-# ---------------------------------------------------------------------------
-# Subsystem Profile Cache
-# ---------------------------------------------------------------------------
 
 SUBSYSTEM_PROFILE_COLUMNS: Final[tuple[str, ...]] = (
     "repo",
@@ -617,10 +596,6 @@ def subsystem_profile_cache_to_tuple(row: SubsystemProfileCacheRow) -> tuple[obj
     """
     return _serialize_row(row, SUBSYSTEM_PROFILE_COLUMNS)
 
-
-# ---------------------------------------------------------------------------
-# Subsystem Coverage Cache
-# ---------------------------------------------------------------------------
 
 SUBSYSTEM_COVERAGE_COLUMNS: Final[tuple[str, ...]] = (
     "repo",

@@ -50,7 +50,6 @@ def build_ide_router(options: RouterOptions | None = None) -> APIRouter:
         raise ValueError(message)
     path = spec.http_path
 
-    # Build dependencies based on options
     auto_pipeline = options is not None and options.auto_pipeline
     ide_deps = [Depends(make_op_prereq_dependency("ide.hints"))] if auto_pipeline else []
 

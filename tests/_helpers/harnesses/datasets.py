@@ -50,7 +50,6 @@ class DatasetHandlerHarness:
             CommandContext configured for dataset handlers.
         """
         with self.ctx.command_context(params) as cmd_ctx:
-            # Attach runtime stub for handlers that expect ctx.runtime
             cmd_ctx.__dict__["_runtime"] = _Runtime(
                 gateway=self.ctx.gateway,
                 root=self.ctx.repo_root,

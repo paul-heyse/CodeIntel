@@ -60,8 +60,7 @@ def _seed_api_data(gateway: StorageGateway) -> None:
     function_qualname = seed.function_qualname or ""
     now = datetime.now(tz=UTC)
     con = gateway.con
-    # Insert test coverage edge linking the test to the function
-    # This is required by docs.v_test_to_function view
+
     con.execute(
         """
         INSERT INTO analytics.test_coverage_edges (
@@ -80,9 +79,9 @@ def _seed_api_data(gateway: StorageGateway) -> None:
             seed.commit,
             rel_path,
             function_qualname,
-            10,  # covered_lines
-            10,  # executable_lines
-            1.0,  # coverage_ratio (100%)
+            10,
+            10,
+            1.0,
             "passed",
             now,
         ],
@@ -202,10 +201,8 @@ def app(api_config: ServingConfig, backend: DuckDBBackend, gateway: StorageGatew
         return api_config
 
     def _backend_factory(_: ServingConfig, *, _gateway: StorageGateway) -> BackendResource:
-        # Use the provided backend/gateway; do not reopen connections.
         return BackendResource(backend=backend, service=backend.service, close=lambda: None)
 
-    # Pass the seeded gateway so create_app does not reopen with conflicting flags.
     return create_app(
         config_loader=_config_loader, backend_factory=_backend_factory, gateway=gateway
     )

@@ -39,11 +39,6 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Result Types
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class SubsystemListResult:
     """Result from subsystem list operation.
@@ -197,11 +192,6 @@ class SubsystemMembershipResult:
         }
 
 
-# =============================================================================
-# Private Helpers
-# =============================================================================
-
-
 def _build_backend(ctx: CommandContext) -> DuckDBBackend:
     """Build a DuckDBBackend from context.
 
@@ -251,7 +241,6 @@ def _build_backend(ctx: CommandContext) -> DuckDBBackend:
         else SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
     )
 
-    # Build graph runtime for this operation
     graph_runtime = build_graph_runtime(
         gateway=ctx.gateway,
         options=GraphRuntimeOptions(snapshot=snapshot),
@@ -279,11 +268,6 @@ def _build_backend(ctx: CommandContext) -> DuckDBBackend:
         msg = "Expected DuckDBBackend for local_db mode"
         raise TypeError(msg)
     return backend
-
-
-# =============================================================================
-# Handlers
-# =============================================================================
 
 
 def subsystem_list_handler(ctx: CommandContext) -> CliResult[SubsystemListResult]:

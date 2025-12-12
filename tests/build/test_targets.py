@@ -60,7 +60,7 @@ class TestOutputTarget:
         expect_equal(target.tables, ("core.test_table",))
         expect_equal(target.dependencies, ())
         expect_true(not target.description)
-        # estimated_duration_ms is now computed from TargetExecution (default: 5000ms)
+
         expect_equal(target.estimated_duration_ms, 5000)
 
     @staticmethod
@@ -79,7 +79,7 @@ class TestOutputTarget:
         expect_equal(target.name, "test_target")
         expect_equal(target.dependencies, ("dep1", "dep2"))
         expect_equal(target.description, "Test target description")
-        # estimated_duration_ms is computed from default TargetExecution
+
         expect_equal(target.estimated_duration_ms, 5000)
 
     @staticmethod
@@ -288,7 +288,7 @@ class TestTargetGraph:
         graph.register(t3)
 
         order = graph.topological_order(["target3"])
-        # target1 must come before target2, target2 before target3
+
         expect_true(order.index("target1") < order.index("target2"))
         expect_true(order.index("target2") < order.index("target3"))
 
@@ -320,7 +320,7 @@ class TestTargetGraph:
         graph.register(t3)
 
         order = graph.topological_order(["target3"])
-        # Both target1 and target2 must come before target3
+
         expect_true(order.index("target1") < order.index("target3"))
         expect_true(order.index("target2") < order.index("target3"))
 
@@ -328,7 +328,7 @@ class TestTargetGraph:
     def test_topological_order_cycle_raises() -> None:
         """Topological sort with cycle raises ValueError."""
         graph = TargetGraph()
-        # Create a cycle: t1 -> t2 -> t3 -> t1
+
         t1 = _make_target(
             name="target1",
             module="ingestion",

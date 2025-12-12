@@ -21,10 +21,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# =============================================================================
-# Test Configuration Classes
-# =============================================================================
-
 
 @dataclass
 class TestConfig:
@@ -38,11 +34,6 @@ class AnotherConfig:
     """Another test configuration class."""
 
     number: int
-
-
-# =============================================================================
-# Protocol Conformance Tests
-# =============================================================================
 
 
 def test_config_provider_implements_accessor() -> None:
@@ -61,21 +52,14 @@ def test_config_registry_implements_accessor() -> None:
 
 def test_config_accessor_is_runtime_checkable() -> None:
     """Verify that ConfigAccessor is a runtime_checkable protocol."""
-    # The protocol should be checkable at runtime
     expect_true(
         hasattr(ConfigAccessor, "__protocol_attrs__") or hasattr(ConfigAccessor, "__subclasshook__")
     )
 
-    # Non-conforming classes should not pass isinstance check
     class NotAnAccessor:
         pass
 
     expect_true(not isinstance(NotAnAccessor(), ConfigAccessor))
-
-
-# =============================================================================
-# ConfigProvider Implementation Tests
-# =============================================================================
 
 
 def test_config_provider_get_registered(config_provider: ConfigProvider) -> None:
@@ -158,18 +142,12 @@ def test_config_provider_initialized_with_configs() -> None:
     expect_true(provider.get(AnotherConfig) is another)
 
 
-# =============================================================================
-# ConfigRegistry Implementation Tests (Protocol Compliance)
-# =============================================================================
-
-
 def test_config_registry_get_as_accessor() -> None:
     """Verify that ConfigRegistry.get() works through ConfigAccessor interface."""
     registry = ConfigRegistry()
     config = TestConfig(value="test")
     registry.register(TestConfig, config)
 
-    # Access through protocol type hint
     accessor: ConfigAccessor = registry
     result = accessor.get(TestConfig)
 
@@ -208,11 +186,6 @@ def test_config_registry_register_as_accessor() -> None:
     expect_true(accessor.has(TestConfig))
 
 
-# =============================================================================
-# Polymorphic Usage Tests
-# =============================================================================
-
-
 def test_function_accepting_accessor_with_provider() -> None:
     """Verify that functions can accept ConfigAccessor and use ConfigProvider."""
 
@@ -249,15 +222,12 @@ def test_optional_config_retrieval_polymorphic() -> None:
         config = accessor.get_optional(AnotherConfig)
         return config.number if config else None
 
-    # With provider that has the config
     provider_with = ConfigProvider({AnotherConfig: AnotherConfig(number=42)})
     expect_equal(get_optional_number(provider_with), 42)
 
-    # With provider that doesn't have the config
     provider_without = ConfigProvider()
     expect_true(get_optional_number(provider_without) is None)
 
-    # With registry
     registry = ConfigRegistry()
     expect_true(get_optional_number(registry) is None)
 

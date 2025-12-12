@@ -21,10 +21,6 @@ from codeintel.graphs.compute.metrics.statistics import (
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import expect_equal, expect_false, expect_true
 
-# =============================================================================
-# Constants
-# =============================================================================
-
 TOLERANCE = 0.001
 EXPECTED_NODES_10 = 10
 EXPECTED_EDGES_15 = 15
@@ -45,10 +41,6 @@ EXPECTED_WCC_3 = 3
 HUB_OUT_DEGREE = 4
 TRIANGLE_DEGREE = 2
 PATH_MIDDLE_DEGREE = 2
-
-# =============================================================================
-# Test Data: Realistic Graph Structures
-# =============================================================================
 
 
 def _make_empty_graph() -> nx.DiGraph:
@@ -146,11 +138,11 @@ def _make_multiple_components() -> nx.DiGraph:
         A graph with three disconnected components.
     """
     graph = nx.DiGraph()
-    # Component 1: A -> B
+
     graph.add_edge("A", "B")
-    # Component 2: X -> Y -> Z
+
     graph.add_edges_from([("X", "Y"), ("Y", "Z")])
-    # Component 3: isolated
+
     graph.add_node("Isolated")
     return graph
 
@@ -165,13 +157,13 @@ def _make_strongly_connected() -> nx.DiGraph:
         A strongly connected directed graph.
     """
     graph = nx.DiGraph()
-    # All nodes can reach each other
+
     graph.add_edges_from(
         [
             ("A", "B"),
             ("B", "C"),
             ("C", "D"),
-            ("D", "A"),  # Back edge to form strong component
+            ("D", "A"),
         ]
     )
     return graph
@@ -209,11 +201,6 @@ def _make_undirected_test() -> nx.Graph:
     return graph
 
 
-# =============================================================================
-# GraphStatistics Dataclass Tests
-# =============================================================================
-
-
 def test_statistics_create_all_fields() -> None:
     """Create statistics dataclass with all fields."""
     stats = GraphStatistics(
@@ -244,11 +231,6 @@ def test_statistics_is_frozen() -> None:
         is_dag=True,
     )
     assert_frozen(stats, "node_count", 10)
-
-
-# =============================================================================
-# compute_graph_statistics Tests
-# =============================================================================
 
 
 def test_stats_empty_graph() -> None:
@@ -289,17 +271,16 @@ def test_stats_node_and_edge_counts() -> None:
     """Correct node and edge counts."""
     graph = _make_call_graph()
     stats = compute_graph_statistics(graph)
-    # main, init, process, cleanup, validate, execute, helper1, helper2
+
     expect_equal(stats.node_count, EXPECTED_NODES_8)
     expect_equal(stats.edge_count, EXPECTED_EDGES_8)
 
 
 def test_stats_density_calculation() -> None:
     """Density is calculated correctly."""
-    graph = _make_complete_graph()  # 4 nodes, 12 edges
+    graph = _make_complete_graph()
     stats = compute_graph_statistics(graph)
-    # For directed graph: density = edges / (nodes * (nodes - 1))
-    # 12 / (4 * 3) = 1.0
+
     expect_true(abs(stats.density - DENSITY_1_0) < TOLERANCE)
 
 
@@ -307,8 +288,7 @@ def test_stats_average_degrees() -> None:
     """Average in-degree equals average out-degree."""
     graph = _make_call_graph()
     stats = compute_graph_statistics(graph)
-    # In a directed graph, sum of in-degrees = sum of out-degrees = edge count
-    # Therefore avg_in_degree = avg_out_degree = edges / nodes
+
     expected_avg = stats.edge_count / stats.node_count
     expect_true(abs(stats.avg_in_degree - expected_avg) < TOLERANCE)
     expect_true(abs(stats.avg_out_degree - expected_avg) < TOLERANCE)
@@ -318,10 +298,9 @@ def test_stats_multiple_components() -> None:
     """Multiple components are counted correctly."""
     graph = _make_multiple_components()
     stats = compute_graph_statistics(graph)
-    # 3 weakly connected components
+
     expect_equal(stats.weakly_connected_components, EXPECTED_WCC_3)
-    # Each component is its own strongly connected component
-    # A->B (2 SCCs), X->Y->Z (3 SCCs), Isolated (1 SCC) = 6 SCCs total
+
     expect_true(stats.strongly_connected_components >= EXPECTED_SCC_3)
 
 
@@ -336,15 +315,10 @@ def test_stats_realistic_call_graph() -> None:
     """Statistics for realistic call graph."""
     graph = _make_call_graph()
     stats = compute_graph_statistics(graph)
-    # Call graph should be DAG (no recursion)
+
     expect_true(stats.is_dag)
-    # Should have 1 weakly connected component
+
     expect_equal(stats.weakly_connected_components, EXPECTED_WCC_1)
-
-
-# =============================================================================
-# nx_types Tests: get_in_degrees, get_out_degrees
-# =============================================================================
 
 
 def test_in_degrees_empty_graph() -> None:
@@ -369,10 +343,10 @@ def test_in_degrees_star_graph() -> None:
     """In-degrees for star graph (hub points to spokes)."""
     graph = nx.DiGraph()
     for i in range(1, 5):
-        graph.add_edge(0, i)  # Hub (0) -> spokes (1-4)
+        graph.add_edge(0, i)
     result = get_in_degrees(graph)
     result_dict = dict(result)
-    # Hub has 0 in-degree, spokes have 1
+
     expect_equal(result_dict[0], 0)
     for i in range(1, 5):
         expect_equal(result_dict[i], 1)
@@ -403,7 +377,7 @@ def test_out_degrees_star_graph() -> None:
         graph.add_edge(0, i)
     result = get_out_degrees(graph)
     result_dict = dict(result)
-    # Hub has out_degree=4, spokes have 0
+
     expect_equal(result_dict[0], HUB_OUT_DEGREE)
     for i in range(1, 5):
         expect_equal(result_dict[i], 0)
@@ -433,14 +407,9 @@ def test_degrees_triangle() -> None:
     graph.add_edges_from([(1, 2), (2, 3), (3, 1)])
     result = get_degrees(graph)
     result_dict = dict(result)
-    # All nodes should have degree 2 in triangle
+
     for node in [1, 2, 3]:
         expect_equal(result_dict[node], TRIANGLE_DEGREE)
-
-
-# =============================================================================
-# nx_types Tests: get_*_degree_values (values only)
-# =============================================================================
 
 
 def test_in_degree_values_empty_graph() -> None:
@@ -455,7 +424,7 @@ def test_in_degree_values_only() -> None:
     graph = nx.DiGraph()
     graph.add_edges_from([(1, 2), (2, 3), (1, 3)])
     result = get_in_degree_values(graph)
-    # Node 1: in_degree=0, Node 2: in_degree=1, Node 3: in_degree=2
+
     expect_equal(sorted(result), [0, 1, 2])
 
 
@@ -471,7 +440,7 @@ def test_out_degree_values_only() -> None:
     graph = nx.DiGraph()
     graph.add_edges_from([(1, 2), (1, 3), (2, 3)])
     result = get_out_degree_values(graph)
-    # Node 1: out_degree=2, Node 2: out_degree=1, Node 3: out_degree=0
+
     expect_equal(sorted(result), [0, 1, 2])
 
 
@@ -484,22 +453,17 @@ def test_degree_values_empty_graph() -> None:
 
 def test_degree_values_only() -> None:
     """Returns only values, not tuples."""
-    graph = _make_undirected_test()  # A-B, B-C, A-C, C-D
+    graph = _make_undirected_test()
     result = get_degree_values(graph)
-    # A: degree=2, B: degree=2, C: degree=3, D: degree=1
+
     expect_equal(sorted(result), [1, 2, 2, 3])
-
-
-# =============================================================================
-# Integration Tests
-# =============================================================================
 
 
 def test_statistics_consistency() -> None:
     """Statistics are internally consistent."""
     graph = _make_call_graph()
     stats = compute_graph_statistics(graph)
-    # avg_in_degree = avg_out_degree for any directed graph
+
     expect_true(abs(stats.avg_in_degree - stats.avg_out_degree) < TOLERANCE)
 
 
@@ -509,7 +473,7 @@ def test_degree_functions_match_statistics() -> None:
     stats = compute_graph_statistics(graph)
     in_values = get_in_degree_values(graph)
     out_values = get_out_degree_values(graph)
-    # Sum of in-degrees = sum of out-degrees = edge count
+
     expect_equal(sum(in_values), stats.edge_count)
     expect_equal(sum(out_values), stats.edge_count)
 

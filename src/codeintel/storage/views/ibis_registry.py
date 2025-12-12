@@ -15,7 +15,7 @@ Example
 ...     ft = ibis_gw.table("analytics.function_types")
 ...     return fm.left_join(ft, ["function_goid_h128"])
 >>>
->>> # All registered views
+>>>
 >>> for name, builder in VIEW_BUILDERS.items():
 ...     print(f"View: {name}")
 """
@@ -75,7 +75,6 @@ class ViewBuilder(Protocol):
         ...
 
 
-# Global registry mapping view names to builder functions
 VIEW_BUILDERS: dict[str, ViewBuilder] = {}
 
 

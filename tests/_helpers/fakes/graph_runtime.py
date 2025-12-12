@@ -196,7 +196,6 @@ class GraphRuntimeDouble(GraphRuntimeLike):
             copy_graphs=copy_graphs,
         )
 
-    # ------------------------------------------------------------------ GraphRuntimeLike
     @property
     def call_graph(self) -> nx.DiGraph | None:
         self._recorder.record("call_graph")
@@ -341,7 +340,6 @@ class GraphRuntimeDouble(GraphRuntimeLike):
             return_default_on_missing=False,
         )
 
-    # ------------------------------------------------------------------ Internal helpers
     def _graph_or_db(
         self,
         attr: str,
@@ -615,11 +613,6 @@ def runtime_with_graphs(
     return options, engine
 
 
-# ---------------------------------------------------------------------------
-# Convenience factory functions (migrated from deprecated graph_runtimes.py)
-# ---------------------------------------------------------------------------
-
-
 def create_mock_runtime_with_call_graph(
     edges: list[tuple[str, str]] | None = None,
 ) -> GraphRuntimeDouble:
@@ -706,7 +699,6 @@ def create_mock_runtime_with_standard_graphs(
         Runtime seeded with standard fixtures.
     """
     if fixtures is None:
-        # Use lazy import to avoid circular dependency with graphs.py
         graphs_module = import_module("tests._helpers.graphs")
         graphs = graphs_module.standard_graph_fixtures()
     else:
@@ -714,7 +706,6 @@ def create_mock_runtime_with_standard_graphs(
     return GraphRuntimeDouble.from_fixtures(graphs)
 
 
-# Alias for backward compatibility during migration
 MockGraphRuntime = GraphRuntimeDouble
 
 
@@ -723,7 +714,7 @@ __all__ = [
     "GraphCallRecord",
     "GraphEngineAdapter",
     "GraphRuntimeDouble",
-    "MockGraphRuntime",  # Alias for backward compatibility
+    "MockGraphRuntime",
     "build_graph_engine_double",
     "create_mock_runtime_all_graphs",
     "create_mock_runtime_with_call_graph",

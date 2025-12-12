@@ -9,9 +9,10 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+import sqlglot.expressions as exp
+
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.errors import DUCKDB_ERRORS
-from codeintel.storage.sql import build_insert_sql, quote_identifier
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -82,7 +83,7 @@ def macro_insert_rows(
         message = f"Cannot insert into {table_key}: missing DatasetContract schema"
         raise ValueError(message)
     columns = [col.name for col in contract.schema.columns if col.name is not None]
-    _, table_name = table_key.split(".", maxsplit=1)
+    schema_name, table_name = table_key.split(".", maxsplit=1)
     col_count = len(columns)
     normalized: list[tuple[object, ...]] = []
     for row in rows_list:
@@ -91,15 +92,30 @@ def macro_insert_rows(
             raise ValueError(message)
         padded = tuple(row) + (None,) * (col_count - len(row))
         normalized.append(padded)
-    view_name = f"temp_ingest_values_{table_name}"
-    view_sql = quote_identifier(view_name)
-    con.execute(f"DROP TABLE IF EXISTS {view_sql}")
-    con.table(table_key).limit(0).create(view_sql)
-    insert_sql = build_insert_sql(
-        view_sql,
-        columns,
-        identifier_is_quoted=True,
-    )
+
+    insert_sql = _build_insert_sql(schema_name, table_name, columns)
     con.executemany(insert_sql, normalized)
-    con.table(view_name).insert_into(table_key)
-    con.execute(f"DROP TABLE IF EXISTS {view_sql}")
+
+
+def _build_insert_sql(schema: str, table: str, columns: Sequence[str]) -> str:
+    """Build an INSERT statement with placeholders using SQLGlot.
+
+    Parameters
+    ----------
+    schema
+        Target schema name.
+    table
+        Target table name.
+    columns
+        Columns to insert in order.
+
+    Returns
+    -------
+    str
+        DuckDB SQL string for executemany insertion.
+    """
+    table_expr = exp.Table(this=exp.to_identifier(table), db=exp.to_identifier(schema))
+    schema_expr = exp.Schema(this=table_expr, expressions=[exp.to_identifier(c) for c in columns])
+    placeholders = [exp.Placeholder() for _ in columns]
+    values = exp.Values(expressions=[exp.Tuple(expressions=placeholders)])
+    return exp.Insert(this=schema_expr, expression=values).sql(dialect="duckdb")

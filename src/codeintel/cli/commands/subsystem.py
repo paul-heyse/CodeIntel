@@ -25,7 +25,7 @@ subsystem_app = App(
     help="Subsystem exploration commands.",
 )
 
-# Config for subsystem commands - requires runtime and gateway
+
 _SUBSYSTEM_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
 

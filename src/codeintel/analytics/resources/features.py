@@ -97,7 +97,6 @@ class FeaturesProvider(LazyResource[dict[int, "FunctionAstFeatures"]]):
         >>> provider = FeaturesProvider.from_features(existing_features)
         >>> registry.register(FeaturesProvider, provider)
         """
-        # Create provider with None - valid since we set preloaded
         provider = cls(gateway=None, snapshot=None)
         provider.set_preloaded(features)
         return provider

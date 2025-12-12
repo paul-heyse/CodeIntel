@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
     from cyclopts import App
 
-# Optional imports for initialization - may not be available during packaging
+
 _init_plugins: Callable[..., object] | None
 try:
     from codeintel.cli.plugins import initialize_plugins as _init_plugins
@@ -42,19 +42,19 @@ except ImportError:
 app: App = build_patched_app(make_root_app)
 set_root_app(app)
 
-# Shell completion support
+
 app.register_install_completion_command(
     name="--install-completion",
     help="Install shell completion for bash/zsh/fish.",
 )
 
-# Core
+
 app.command(build_app, name="build")
 app.command(op_app, name="op")
 app.command(dataset_app, name="dataset")
 app.command(serve_app, name="serve")
 
-# Domain
+
 app.command(graphs_app, name="graph")
 app.command(docs_app, name="docs")
 app.command(storage_app, name="storage")
@@ -63,7 +63,7 @@ app.command(datasets_ext_app, name="datasets")
 app.command(ide_app, name="ide")
 app.command(subsystem_app, name="subsystem")
 
-# Utilities
+
 app.command(config_app, name="config")
 app.command(health_app, name="health")
 app.command(jobs_app, name="jobs")
@@ -84,16 +84,13 @@ def _detect_output_format() -> OutputFormat:
     OutputFormat
         Detected output format preference.
     """
-    # Check environment variable first
     env_format = os.environ.get("CODEINTEL_OUTPUT_FORMAT", "").lower()
     if env_format == "json":
         return OutputFormat.JSON
 
-    # Check for --json flag in argv
     if "--json" in sys.argv:
         return OutputFormat.JSON
 
-    # Check for --output-format json
     for i, arg in enumerate(sys.argv[:-1]):
         if arg == "--output-format" and sys.argv[i + 1].lower() == "json":
             return OutputFormat.JSON
@@ -106,7 +103,6 @@ def _initialize_cli() -> None:
 
     Register operations and load plugins before running commands.
     """
-    # Load plugins from plugin directories
     if _init_plugins is not None:
         _init_plugins()
 
@@ -121,7 +117,6 @@ def main() -> None:
     """
     output_format = _detect_output_format()
 
-    # Initialize CLI infrastructure
     _initialize_cli()
 
     try:

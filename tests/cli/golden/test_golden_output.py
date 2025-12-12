@@ -21,7 +21,6 @@ def test_build_status_text_output(
     """Build status text output is non-empty."""
     result = cli.invoke(["build", "status", "--output-format=text"])
 
-    # Command may fail if no project configured, but should not crash
     expect_true(result.exit_code in {0, 1})
 
 
@@ -31,7 +30,6 @@ def test_build_status_json_structure(
     """Build status JSON mode doesn't crash."""
     result = cli.invoke(["build", "status", "--output-format=json"])
 
-    # Command may fail if no project configured, but should not crash
     expect_true(result.exit_code in {0, 1})
 
 
@@ -41,9 +39,8 @@ def test_op_list_text_output(
     """Op list text output contains expected elements."""
     result = cli.invoke(["op", "list", "--output-format=text"])
 
-    # Command should succeed and produce output
     expect_true(result.exit_code in {0, 1})
-    # Output may be in stdout or stderr depending on handler
+
     output = result.stdout + result.stderr
     expect_true(bool(output.strip()))
 
@@ -52,13 +49,10 @@ def test_validation_error_format(
     cli: CliTestHarness,
 ) -> None:
     """Validation errors have stable format."""
-    # Trigger a validation error
     result = cli.invoke(["build", "run", "--invalid-option=test"])
 
-    # Should fail with an error message
     expect_true(result.exit_code != 0)
 
-    # Error should contain helpful text
     output = result.stdout + result.stderr
     expect_true(bool(output.strip()))
 
@@ -70,10 +64,9 @@ def test_not_found_error_json(
     result = cli.invoke(["op", "call", "nonexistent.op", "--output-format=json"])
 
     if result.exit_code != 0:
-        # Try to parse as JSON
         with contextlib.suppress(json.JSONDecodeError):
             error_data = json.loads(result.stdout)
-            # Problem Detail should have type field
+
             if "type" in error_data:
                 expect_is_instance(error_data["type"], str)
 
@@ -85,7 +78,6 @@ def test_normalize_whitespace(
     test_text = "  hello\n\n  world  \n"
     normalized = golden.normalize_text(test_text)
 
-    # Should have normalized whitespace
     expect_in("hello", normalized)
     expect_in("world", normalized)
 
@@ -106,7 +98,6 @@ def test_json_ignore_keys(
         "data": {"value": 42, "id": "different-id"},
     }
 
-    # Should match when ignoring timestamp and id
     filtered_actual = golden.filter_json(actual, {"timestamp", "id"})
     filtered_expected = golden.filter_json(expected, {"timestamp", "id"})
 
@@ -117,5 +108,4 @@ def test_update_mode_creates_file(
     golden: GoldenFileAssertion,
 ) -> None:
     """Update mode creates missing golden files."""
-    # Just verify the assertion object has update capability
     expect_true(hasattr(golden, "update_mode"))

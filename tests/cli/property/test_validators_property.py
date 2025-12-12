@@ -16,15 +16,9 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# Constraint constants
 MIN_LENGTH_CONSTRAINT = 5
 MAX_LENGTH_CONSTRAINT = 5
 MAX_VALUE_CONSTRAINT = 50
-
-
-# ---------------------------------------------------------------------------
-# StringValidator tests
-# ---------------------------------------------------------------------------
 
 
 def test_valid_strings_pass() -> None:
@@ -40,11 +34,9 @@ def test_min_length_constraint() -> None:
     """Strings shorter than min_length fail."""
     validator = StringValidator(min_length=MIN_LENGTH_CONSTRAINT)
 
-    # Short string fails
     result = validator.validate("ab", "test_field")
     expect_false(result.is_valid)
 
-    # Long string passes
     result = validator.validate("hello world", "test_field")
     expect_true(result.is_valid)
 
@@ -53,18 +45,11 @@ def test_max_length_constraint() -> None:
     """Strings longer than max_length fail."""
     validator = StringValidator(max_length=MAX_LENGTH_CONSTRAINT)
 
-    # Long string fails
     result = validator.validate("hello world", "test_field")
     expect_false(result.is_valid)
 
-    # Short string passes
     result = validator.validate("hi", "test_field")
     expect_true(result.is_valid)
-
-
-# ---------------------------------------------------------------------------
-# IntValidator tests
-# ---------------------------------------------------------------------------
 
 
 def test_integers_validate_correctly() -> None:
@@ -80,11 +65,9 @@ def test_min_value_constraint() -> None:
     """Values below min_value fail."""
     validator = IntValidator(min_value=0)
 
-    # Negative fails
     result = validator.validate(-10, "test_field")
     expect_false(result.is_valid)
 
-    # Positive passes
     result = validator.validate(10, "test_field")
     expect_true(result.is_valid)
 
@@ -93,18 +76,11 @@ def test_max_value_constraint() -> None:
     """Values above max_value fail."""
     validator = IntValidator(max_value=MAX_VALUE_CONSTRAINT)
 
-    # High value fails
     result = validator.validate(100, "test_field")
     expect_false(result.is_valid)
 
-    # Low value passes
     result = validator.validate(25, "test_field")
     expect_true(result.is_valid)
-
-
-# ---------------------------------------------------------------------------
-# ConfigSchema tests
-# ---------------------------------------------------------------------------
 
 
 def test_unknown_keys_handled() -> None:
@@ -112,7 +88,6 @@ def test_unknown_keys_handled() -> None:
     config: dict[str, object] = {"unknown_key": "value", "another_unknown": 123}
     errors = validate_with_json_schema(config)
 
-    # Should validate without crashing
     expect_true(isinstance(errors, list))
 
 
@@ -122,13 +97,7 @@ def test_boolean_config_values(*, colors_enabled: bool) -> None:
     config: dict[str, object] = {"output": {"colors": colors_enabled}}
     errors = validate_with_json_schema(config)
 
-    # Should validate without type errors
     expect_true(isinstance(errors, list))
-
-
-# ---------------------------------------------------------------------------
-# CliResult tests
-# ---------------------------------------------------------------------------
 
 
 def test_ok_result_is_valid() -> None:
@@ -142,7 +111,6 @@ def test_ok_result_is_valid() -> None:
 
 def test_fail_result_is_invalid() -> None:
     """CliResult.fail creates valid error result."""
-    # Create a ProblemDetail from the ErrorCode
     error_detail = ProblemDetail(
         type=INTERNAL_ERROR.type_uri,
         title=INTERNAL_ERROR.title,

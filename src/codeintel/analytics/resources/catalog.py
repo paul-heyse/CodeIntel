@@ -81,7 +81,6 @@ class CatalogProvider(LazyResource["FunctionCatalogProvider"]):
         >>> provider = CatalogProvider.from_catalog(existing_catalog)
         >>> registry.register(CatalogProvider, provider)
         """
-        # Create provider with None - valid since we set preloaded
         provider = cls(gateway=None, snapshot=None)
         provider.set_preloaded(catalog)
         return provider
@@ -161,9 +160,7 @@ class CatalogQueryProvider(LazyResource[dict[int, object]]):
         dict[int, object]
             Mapping of GOID to catalog data.
         """
-        _ = (
-            self._gateway.con
-        )  # ensure gateway is accessible for subclasses relying on the connection
+        _ = self._gateway.con
         return {}
 
 

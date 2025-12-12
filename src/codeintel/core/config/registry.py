@@ -176,11 +176,9 @@ class ConfigRegistry:
         ConfigValidationError
             If the config has a validator that fails.
         """
-        # Runtime safety: verify the invariant
         if not isinstance(config, config_type):
             raise ConfigTypeError(config_type, type(config))
 
-        # Run validator if registered
         if config_type in self._validators:
             try:
                 self._validators[config_type](config)
@@ -215,7 +213,7 @@ class ConfigRegistry:
         """
         if config_type not in self._store:
             raise ConfigNotFoundError(config_type)
-        # Safe cast: register() guarantees isinstance(value, key)
+
         return cast("T", self._store[config_type])
 
     def get_optional(self, config_type: type[T]) -> T | None:
@@ -234,7 +232,7 @@ class ConfigRegistry:
         value = self._store.get(config_type)
         if value is None:
             return None
-        # Safe cast: register() guarantees isinstance(value, key)
+
         return cast("T", value)
 
     def has(self, config_type: type[object]) -> bool:
@@ -290,7 +288,6 @@ class ConfigRegistry:
         validator
             Function that raises on invalid config.
         """
-        # Safe cast: register() enforces isinstance before calling validator
         self._validators[config_type] = cast("Callable[[object], None]", validator)
 
     def validate_all(self) -> None:

@@ -88,13 +88,11 @@ def check_row_count(
     """
     violations: list[ContractViolation] = []
 
-    # Get row count (scoped if possible)
     row_count = safe_count_with_scope(gateway, contract.table, snapshot)
     if row_count is None:
         count = safe_count(gateway, contract.table)
         row_count = count if count is not None else 0
 
-    # Check minimum rows
     if contract.min_rows is not None and row_count < contract.min_rows:
         violations.append(
             ContractViolation(
@@ -108,7 +106,6 @@ def check_row_count(
             )
         )
 
-    # Check maximum rows
     if contract.max_rows is not None and row_count > contract.max_rows:
         violations.append(
             ContractViolation(
@@ -294,12 +291,10 @@ def validate_contract(
     """
     violations: list[ContractViolation] = []
 
-    # Check table exists
     table_violation = check_table_exists(gateway, contract)
     if table_violation is not None:
         return [table_violation]
 
-    # Get row count for skip_if_empty check
     row_count = safe_count_with_scope(gateway, contract.table, snapshot)
     if row_count is None:
         count = safe_count(gateway, contract.table)
@@ -308,16 +303,12 @@ def validate_contract(
     if contract.skip_if_empty and row_count == 0:
         return violations
 
-    # Check row count constraints
     violations.extend(check_row_count(gateway, contract, snapshot))
 
-    # Check required columns
     violations.extend(check_required_columns(gateway, contract))
 
-    # Check column constraints
     violations.extend(check_column_constraints(gateway, contract))
 
-    # Check foreign keys
     violations.extend(check_foreign_keys(gateway, contract))
 
     return violations

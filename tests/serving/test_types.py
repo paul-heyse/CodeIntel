@@ -42,16 +42,11 @@ if TYPE_CHECKING:
         SubsystemRepositoryProtocol,
     )
 
-# Constants for test values
+
 LIMIT_TEN = 10
 LIMIT_FIFTY = 50
 VALUE_FORTY_TWO = 42
 LIST_LENGTH_TWO = 2
-
-
-# =============================================================================
-# Test HasModelDump Protocol
-# =============================================================================
 
 
 def test_has_model_dump_protocol_with_response_meta() -> None:
@@ -63,7 +58,6 @@ def test_has_model_dump_protocol_with_response_meta() -> None:
         messages=[Message(code="INFO", severity="info", detail="Test message")],
     )
 
-    # Verify it has model_dump method
     result = meta.model_dump()
 
     expect_is_instance(result, dict)
@@ -115,22 +109,16 @@ def test_has_model_dump_protocol_structural_check() -> None:
             return {"value": self.value}
 
     model = CustomModel(value=VALUE_FORTY_TWO)
-    # Structural subtyping - no explicit inheritance needed
+
     dumped: dict[str, object] = model.model_dump()
 
     expect_equal(dumped, {"value": VALUE_FORTY_TWO})
 
-    # Verify it can be used where HasModelDump is expected
     def accepts_model_dump(obj: HasModelDump) -> dict[str, object]:
         return obj.model_dump()
 
     result = accepts_model_dump(model)
     expect_equal(result, {"value": VALUE_FORTY_TWO})
-
-
-# =============================================================================
-# Test HasModelValidate Protocol (runtime_checkable)
-# =============================================================================
 
 
 def test_has_model_validate_protocol_with_pydantic() -> None:
@@ -142,10 +130,8 @@ def test_has_model_validate_protocol_with_pydantic() -> None:
         name: str
         value: int
 
-    # Runtime check should pass for Pydantic models
     expect_is_instance(SampleModel, type)
 
-    # Verify model_validate works (cast to Any for pyrefly compatibility)
     validated = cast("Any", SampleModel).model_validate({"name": "test", "value": VALUE_FORTY_TWO})
     expect_equal(validated.name, "test")
     expect_equal(validated.value, VALUE_FORTY_TWO)
@@ -174,15 +160,9 @@ def test_has_model_validate_runtime_checkable() -> None:
             """
             return cls()
 
-    # Since HasModelValidate is runtime_checkable, isinstance should work
     expect_is_instance(ValidatableClass, type)
     instance = cast("Any", ValidatableClass).model_validate({})
     expect_is_instance(instance, ValidatableClass)
-
-
-# =============================================================================
-# Test HasClose Protocol (runtime_checkable)
-# =============================================================================
 
 
 def test_has_close_protocol_runtime_checkable() -> None:
@@ -201,7 +181,6 @@ def test_has_close_protocol_runtime_checkable() -> None:
 
     resource = CloseableResource()
 
-    # HasClose is runtime_checkable
     expect_is_instance(resource, HasClose)
     expect_true(not resource.closed)
 
@@ -250,11 +229,6 @@ def test_has_close_protocol_with_context_manager() -> None:
     expect_true(res.closed)
 
 
-# =============================================================================
-# Test ResponseMetaLike Protocol
-# =============================================================================
-
-
 def test_response_meta_like_protocol() -> None:
     """Verify ResponseMeta has attributes matching ResponseMetaLike protocol."""
     meta = ResponseMeta(
@@ -263,20 +237,13 @@ def test_response_meta_like_protocol() -> None:
         messages=[Message(code="WARN", severity="warning")],
     )
 
-    # Verify ResponseMeta has the required attributes
     expect_true(hasattr(meta, "applied_limit"))
     expect_true(hasattr(meta, "truncated"))
     expect_true(hasattr(meta, "messages"))
 
-    # Verify values
     expect_equal(meta.applied_limit, LIMIT_FIFTY)
     expect_true(meta.truncated is True)
     expect_length(meta.messages, 1)
-
-
-# =============================================================================
-# Test ServiceResult Protocol
-# =============================================================================
 
 
 def test_service_result_protocol() -> None:
@@ -292,18 +259,11 @@ def test_service_result_protocol() -> None:
     meta = ResponseMeta(applied_limit=LIMIT_TEN, truncated=False, messages=[])
     result = SampleResult(found=True, meta=meta)
 
-    # Verify SampleResult has the required attributes
     expect_true(hasattr(result, "found"))
     expect_true(hasattr(result, "meta"))
 
-    # Verify values
     expect_true(result.found is True)
     expect_equal(result.meta.applied_limit, LIMIT_TEN)
-
-
-# =============================================================================
-# Test Repository Protocols
-# =============================================================================
 
 
 def test_repository_protocol_structural() -> None:
@@ -391,7 +351,7 @@ def test_function_repository_protocol_structural() -> None:
             RowDict | None
                 Always None in this stub.
             """
-            _ = goid_h128, self.repo  # Use self to satisfy PLR6301
+            _ = goid_h128, self.repo
             return None
 
         def get_function_architecture(self, goid_h128: int) -> RowDict | None:
@@ -408,7 +368,7 @@ def test_function_repository_protocol_structural() -> None:
             RowDict | None
                 Minimal row dictionary.
             """
-            _ = self.commit  # Use self to satisfy PLR6301
+            _ = self.commit
             return {"goid_h128": goid_h128}
 
     repo = FunctionRepo()
@@ -474,7 +434,7 @@ def test_module_repository_protocol_structural() -> None:
             RowDict | None
                 Always None in this stub.
             """
-            _ = rel_path, self._data  # Use self to satisfy PLR6301
+            _ = rel_path, self._data
             return None
 
         def get_file_hints(self, rel_path: str) -> list[RowDict]:
@@ -491,7 +451,7 @@ def test_module_repository_protocol_structural() -> None:
             list[RowDict]
                 List of hint rows.
             """
-            _ = rel_path, self.repo  # Use self to satisfy PLR6301
+            _ = rel_path, self.repo
             return [{"hint": "unused_import", "line": 1}]
 
     repo = ModuleRepo()
@@ -541,7 +501,7 @@ def test_subsystem_repository_protocol_structural() -> None:
             RowDict | None
                 Subsystem summary row.
             """
-            _ = self._subsystems  # Use self to satisfy PLR6301
+            _ = self._subsystems
             return {"subsystem_id": subsystem_id, "name": "Core"}
 
         def list_subsystems(
@@ -568,7 +528,7 @@ def test_subsystem_repository_protocol_structural() -> None:
             list[RowDict]
                 Filtered subsystem rows.
             """
-            _ = limit, query, self._subsystems  # Use self to satisfy PLR6301
+            _ = limit, query, self._subsystems
             return [{"subsystem_id": "core", "role": role or "any"}]
 
     repo = SubsystemRepo()
@@ -580,11 +540,6 @@ def test_subsystem_repository_protocol_structural() -> None:
 
     expect_length(result, 1)
     expect_equal(result[0]["role"], "server")
-
-
-# =============================================================================
-# Test Query Backend/Service Protocols
-# =============================================================================
 
 
 def test_query_backend_protocol_structural() -> None:
@@ -639,11 +594,6 @@ def test_query_service_protocol_structural() -> None:
     expect_equal(result, "demo/repo@deadbeef")
 
 
-# =============================================================================
-# Test Storage Gateway Protocol
-# =============================================================================
-
-
 def test_storage_gateway_protocol_structural() -> None:
     """Verify a class can satisfy StorageGatewayProtocol structurally."""
 
@@ -673,11 +623,6 @@ def test_storage_gateway_protocol_structural() -> None:
 
     expect_true(result is True)
     expect_true(gateway.is_closed is True)
-
-
-# =============================================================================
-# Test Graph Engine Protocol
-# =============================================================================
 
 
 def test_graph_engine_protocol_structural() -> None:
@@ -724,11 +669,6 @@ def test_graph_engine_protocol_structural() -> None:
     expect_equal(import_g, {"nodes": [], "edges": []})
 
 
-# =============================================================================
-# Test Type Aliases
-# =============================================================================
-
-
 def test_row_dict_type_alias() -> None:
     """Verify RowDict type alias works correctly."""
     row: RowDict = {"id": 1, "name": "test", "active": True, "count": None}
@@ -754,11 +694,6 @@ def test_json_payload_type_alias_list() -> None:
 
     expect_is_instance(payload, list)
     expect_length(payload, LIST_LENGTH_TWO)
-
-
-# =============================================================================
-# Test Factory Type Aliases
-# =============================================================================
 
 
 def test_service_factory_type_alias() -> None:

@@ -61,11 +61,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Type Definitions
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class ExecutorEnv:
     """Bundled execution dependencies for the build executor."""
@@ -227,11 +222,6 @@ class BuildResult:
         }
 
 
-# =============================================================================
-# Build Executor
-# =============================================================================
-
-
 class BuildExecutor:
     """Execute build plans via the domain module system.
 
@@ -288,9 +278,9 @@ class BuildExecutor:
         self._tools = env.tools
         self._fail_fast = fail_fast
         self._export_options: ExportCallOptions | None = None
-        # Initialize providers for protocol-based DI
+
         self._providers: Providers = create_default_providers(env.tools)
-        # Load build config for target parameters
+
         self._config: BuildConfig = load_build_config(env.snapshot.repo_root)
 
     @property
@@ -377,14 +367,11 @@ class BuildExecutor:
             dry_run,
         )
 
-        # Phase A: Start run tracking
         self._start_run(run_id, plan)
 
-        # Phase B: Handle dry run
         if dry_run:
             return self._complete_dry_run(run_id, plan, start_time)
 
-        # Phase C: Execute stages with continue-and-collect semantics
         completed: list[str] = []
         failed: list[str] = []
         error_collection = BuildErrorCollection()
@@ -394,7 +381,6 @@ class BuildExecutor:
             for stage in plan.stages:
                 stage_result = self._execute_stage(stage, run_id)
 
-                # Record manifests for completed targets
                 for target_name in stage_result.completed:
                     self._record_manifest(
                         target_name=target_name,
@@ -405,7 +391,6 @@ class BuildExecutor:
                 completed.extend(stage_result.completed)
                 failed.extend(stage_result.failed)
 
-                # Collect errors for failed targets
                 if stage_result.error:
                     for target_name in stage_result.failed:
                         error_collection.add(
@@ -416,7 +401,6 @@ class BuildExecutor:
                             )
                         )
 
-                # Check fail-fast mode
                 if not stage_result.success:
                     status = "failed"
                     if self._fail_fast:
@@ -426,7 +410,7 @@ class BuildExecutor:
                             stage_result.failed,
                         )
                         break
-                    # Continue-and-collect: keep going with other stages
+
                     log.info(
                         "build.executor.continue_after_failure run_id=%s failed=%s continuing=True",
                         run_id,
@@ -444,12 +428,10 @@ class BuildExecutor:
                 )
             )
 
-        # Generate error summary from collection
         error_summary: str | None = None
         if error_collection.has_errors:
             error_summary = f"{len(error_collection)} error(s) during build"
 
-        # Phase D: Complete run tracking
         duration_ms = (datetime.now(tz=UTC) - start_time).total_seconds() * 1000
         self._complete_run(
             run_id=run_id,
@@ -479,10 +461,6 @@ class BuildExecutor:
             errors=error_collection,
         )
 
-    # =========================================================================
-    # Run ID Generation
-    # =========================================================================
-
     @staticmethod
     def _generate_run_id() -> str:
         """Generate a unique run ID.
@@ -495,10 +473,6 @@ class BuildExecutor:
         timestamp = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
         suffix = uuid.uuid4().hex[:8]
         return f"build-{timestamp}-{suffix}"
-
-    # =========================================================================
-    # Run Tracking
-    # =========================================================================
 
     def _start_run(self, run_id: str, plan: BuildPlan) -> None:
         """Record the start of a build run.
@@ -577,7 +551,6 @@ class BuildExecutor:
         """
         duration_ms = (datetime.now(tz=UTC) - start_time).total_seconds() * 1000
 
-        # Mark run as succeeded (dry run is always successful)
         self._complete_run(
             run_id=run_id,
             status="succeeded",
@@ -586,7 +559,6 @@ class BuildExecutor:
             error_summary=None,
         )
 
-        # Collect all targets that would be computed
         would_compute = tuple(step.target for stage in plan.stages for step in stage.steps)
 
         log.info(
@@ -605,10 +577,6 @@ class BuildExecutor:
             duration_ms=duration_ms,
             error_summary=None,
         )
-
-    # =========================================================================
-    # Manifest Recording
-    # =========================================================================
 
     def _record_manifest(
         self,
@@ -648,10 +616,6 @@ class BuildExecutor:
             input_hash,
         )
 
-    # =========================================================================
-    # Direct Plugin Execution
-    # =========================================================================
-
     def _execute_target_direct(
         self,
         target_name: str,
@@ -672,18 +636,15 @@ class BuildExecutor:
             (success, error_message, row_counts)
         """
         try:
-            # Get target and plugin
             target = self._graph.get(target_name)
             plugin = get_plugin_for_target(target_name)
 
-            # Build execution context
             resources = ContextResources(
                 providers=self._providers,
                 gateway=self._gateway,
-                modules=(),  # Will be loaded from DB if needed
+                modules=(),
             )
 
-            # Get parameters from config
             params = self._config.parameters_for(target_name)
 
             ctx = TargetExecutionContext(
@@ -694,11 +655,9 @@ class BuildExecutor:
                 parameters=params,
             )
 
-            # Execute plugin
             result = asyncio.run(plugin.execute(ctx))
 
         except KeyError as e:
-            # No plugin registered for this target
             log.warning("No plugin for target '%s', falling back to legacy", target_name)
             return False, f"No plugin registered: {e}", {}
         except Exception as e:
@@ -708,10 +667,6 @@ class BuildExecutor:
             if result.success:
                 return True, None, dict(result.row_counts)
             return False, result.error_message, {}
-
-    # =========================================================================
-    # Stage Execution
-    # =========================================================================
 
     def _execute_stage(
         self,
@@ -749,7 +704,6 @@ class BuildExecutor:
         if stage.module == "export":
             return self._execute_export_stage(stage, run_id)
 
-        # Should never happen - TargetModule is a literal type
         message = f"Unknown stage module: {stage.module}"
         return StageExecutionResult(
             module=stage.module,
@@ -867,8 +821,6 @@ class BuildExecutor:
         )
 
         try:
-            # Create planning context with available fields
-            # Note: GraphPlanContext uses cfg/runtime_snapshot/target for inputs
             graph_policy = GraphPluginPolicy()
             plan_context = GraphPlanContext(
                 runtime_snapshot=self._snapshot,
@@ -876,19 +828,16 @@ class BuildExecutor:
                 policy=graph_policy,
             )
 
-            # Plan the graph plugin run
             plan = plan_graph_plugin_run(
                 plugin_names=plugin_names if plugin_names else None,
                 context=plan_context,
             )
 
-            # Create execution context and executor
             exec_context = GraphExecutorContext(
                 gateway=self._gateway,
                 snapshot=self._snapshot,
             )
 
-            # Convert GraphPluginPolicy to BaseExecutionPolicy
             base_policy = BaseExecutionPolicy(
                 fail_fast=graph_policy.fail_fast,
                 default_severity=graph_policy.default_severity,
@@ -898,7 +847,6 @@ class BuildExecutor:
                 timeouts_by_plugin=graph_policy.timeouts_ms,
             )
 
-            # Execute using the new GraphPluginExecutor
             executor = GraphPluginExecutor(
                 policy=base_policy,
                 prior_manifest=plan.prior_manifest,
@@ -912,14 +860,12 @@ class BuildExecutor:
                 settings_by_plugin=plan.settings_by_plugin,
             )
 
-            # Extract results from report
             completed: list[str] = []
             failed: list[str] = []
             durations: dict[str, float] = {}
             row_counts: dict[str, int | None] = {}
 
             for record in report.records:
-                # Map plugin name back to target name
                 target_name = self._plugin_to_target(record.plugin_name, target_names)
                 if target_name is None:
                     continue
@@ -927,7 +873,7 @@ class BuildExecutor:
                 if record.status == "succeeded":
                     completed.append(target_name)
                     durations[target_name] = record.duration_ms
-                    # PluginExecutionRecord doesn't have row_count; use None
+
                     row_counts[target_name] = None
                 else:
                     failed.append(target_name)
@@ -982,7 +928,6 @@ class BuildExecutor:
             run_id,
         )
 
-        # Build plugin lookup from ALL_PLUGINS
         plugin_lookup = {p.plugin_name: p for p in ALL_PLUGINS}
 
         completed: list[str] = []
@@ -1049,15 +994,12 @@ class BuildExecutor:
         try:
             target = self._graph.get(target_name)
 
-            # Create catalog provider for analytics plugins
             catalog = FunctionCatalogService.from_db(
                 self._gateway,
                 repo=self._snapshot.repo,
                 commit=self._snapshot.commit,
             )
 
-            # Create graph runtime for analytics plugins that need call graphs
-            # Enable GPU backend if available (auto-detection with use_gpu=True)
             backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
             runtime_options = GraphRuntimeOptions(snapshot=self._snapshot, backend=backend_config)
             graph_runtime = build_graph_runtime(self._gateway, runtime_options)
@@ -1194,13 +1136,9 @@ class BuildExecutor:
             completed=tuple(completed),
             failed=tuple(failed),
             durations_ms=durations,
-            row_counts={},  # Exports produce files, not rows
+            row_counts={},
             error=None if not failed else f"Failed targets: {', '.join(failed)}",
         )
-
-    # =========================================================================
-    # Helper Methods
-    # =========================================================================
 
     def _get_plugin_names_for_stage(self, stage: PlanStage) -> list[str]:
         """Get plugin names for all targets in a stage.
@@ -1218,7 +1156,7 @@ class BuildExecutor:
         return [
             self._graph.get(step.target).plugin
             for step in stage.steps
-            if self._graph.get(step.target).plugin  # Filter out empty plugin names
+            if self._graph.get(step.target).plugin
         ]
 
     def _plugin_to_target(

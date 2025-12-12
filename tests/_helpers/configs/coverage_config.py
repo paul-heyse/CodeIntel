@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from codeintel.config import ConfigBuilder
     from codeintel.storage.gateway import StorageGateway
 
-# Default constants for coverage tests
+
 REPO = "demo/repo"
 COMMIT = "deadbeef"
 MODULE_IMPORT = "pkg.mod"

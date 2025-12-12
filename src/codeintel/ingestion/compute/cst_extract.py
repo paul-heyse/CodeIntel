@@ -27,13 +27,13 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Define the async function definition type for compatibility
+
 ASYNC_FUNC_DEF = getattr(cst, "AsyncFunctionDef", cst.FunctionDef)
 
-# Row type for CST nodes
+
 CstRow = tuple[str, str, str, dict[str, list[int]], str, tuple[str, ...], tuple[str, ...]]
 
-# Default CST capture configuration
+
 CST_CAPTURE_CONFIG = CstCaptureConfig(
     kinds=(
         cst.Module,
@@ -204,7 +204,6 @@ class CstExtractStep:
                 log.warning("Failed to parse %s: %s", module.rel_path, result.error)
                 continue
 
-            # Normalize rows for storage
             for row in result.rows:
                 rel_path, node_id, kind, span, snippet, parents, qnames = row
                 all_rows.append(
@@ -219,7 +218,6 @@ class CstExtractStep:
                     ]
                 )
 
-        # Persist rows
         table_counts: dict[str, int] = {}
         total_rows = 0
 

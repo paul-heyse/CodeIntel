@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Threshold for incremental vs full indexing
+
 INCREMENTAL_INDEX_THRESHOLD = 100
 
 
@@ -131,12 +131,10 @@ class ScipIngestStep:
         """
         created_at = datetime.now(UTC)
 
-        # Determine if doing incremental (specific files) or full index
         rel_paths = None
         if len(modules) < INCREMENTAL_INDEX_THRESHOLD:
             rel_paths = [m.rel_path for m in modules if m.rel_path.endswith(".py")]
 
-        # Run SCIP indexing
         result = await self._tools.run_scip(
             config.repo_root,
             output_scip=config.output_scip,
@@ -149,19 +147,15 @@ class ScipIngestStep:
             log.warning("SCIP indexing failed: %s", result.error)
             return StepResult.fail(f"SCIP indexing failed: {result.error}")
 
-        # Get documents from result or parse from JSON file
         documents = result.documents
         if not documents:
-            # Try to parse documents from JSON file if it exists
             documents = _parse_scip_json_file(config.output_json, config.output_scip)
             if documents:
                 log.info("SCIP documents loaded from JSON file: %d", len(documents))
 
-        # Build rows
         symbol_rows = _build_symbol_rows(documents, config.repo, config.commit, created_at)
         occurrence_rows = _build_occurrence_rows(documents, config.repo, config.commit, created_at)
 
-        # Delete existing data for this repo/commit before inserting
         self._storage.execute_query(
             "DELETE FROM core.scip_symbols WHERE repo = ? AND commit = ?",
             [config.repo, config.commit],
@@ -171,7 +165,6 @@ class ScipIngestStep:
             [config.repo, config.commit],
         )
 
-        # Persist rows
         table_counts: dict[str, int] = {}
         total_rows = 0
 
@@ -197,7 +190,6 @@ class ScipIngestStep:
         return StepResult(rows_written=total_rows, table_counts=table_counts)
 
 
-# SCIP range array indices
 _SCIP_RANGE_END_CHAR_IDX = 3
 
 
@@ -255,7 +247,7 @@ def _parse_scip_occurrences(raw_occurrences: list[Any]) -> list[ScipOccurrence]:
         rng = occ.get("range", [])
         if not isinstance(rng, list) or not rng:
             continue
-        # Try both camelCase and snake_case field names
+
         roles = occ.get("symbolRoles") or occ.get("symbol_roles", 0)
         role_int = roles if isinstance(roles, int) else 0
         occurrences.append(
@@ -325,7 +317,6 @@ def _parse_scip_json_file(output_json: Path, output_scip: Path) -> list[ScipDocu
         log.warning("Failed to parse SCIP JSON file %s: %s", json_path, exc)
         return []
 
-    # Extract documents from payload
     docs: list[Any] = []
     if isinstance(payload, dict):
         docs_field = payload.get("documents", [])
@@ -333,7 +324,6 @@ def _parse_scip_json_file(output_json: Path, output_scip: Path) -> list[ScipDocu
     elif isinstance(payload, list):
         docs = payload
 
-    # Convert to ScipDocument objects
     documents: list[ScipDocument] = []
     for doc in docs:
         if isinstance(doc, dict):
@@ -371,7 +361,6 @@ def _build_symbol_rows(
     list[list[object]]
         Symbol rows for storage (deduplicated).
     """
-    # Use dict to deduplicate by (rel_path, symbol) - keep first occurrence
     seen: dict[tuple[str, str], list[object]] = {}
     for doc in documents:
         for sym in doc.symbols:
@@ -415,7 +404,6 @@ def _build_occurrence_rows(
     list[list[object]]
         Occurrence rows for storage (deduplicated).
     """
-    # Use dict to deduplicate by primary key fields - keep first occurrence
     seen: dict[tuple[str, str, int, int], list[object]] = {}
     for doc in documents:
         for occ in doc.occurrences:

@@ -36,7 +36,7 @@ __all__ = ["IbisGateway", "OnConflict", "WriteResult"]
 
 log = logging.getLogger(__name__)
 
-# DuckDB dialect for SQLGlot
+
 DUCKDB_DIALECT = "duckdb"
 
 
@@ -48,11 +48,9 @@ def _convert_numpy_types(value: object) -> object:
     object
         Native Python type or original value if not a numpy type.
     """
-    # Handle numpy integer types
     item = getattr(value, "item", None)
     dtype = getattr(value, "dtype", None)
     if callable(item) and dtype is not None:
-        # This is a numpy scalar - convert to native Python type
         return item()
     return value
 
@@ -185,10 +183,8 @@ def _build_insert_select(
     str
         Generated INSERT...SELECT SQL.
     """
-    # Parse the SELECT statement
     select_ast = parse_one(select_sql, dialect=DUCKDB_DIALECT)
 
-    # Build INSERT...SELECT
     insert_stmt = exp.Insert(
         this=exp.Schema(
             this=exp.Table(
@@ -373,10 +369,9 @@ class IbisGateway:
         TypeError
             If data type is not supported.
         """
-        schema, table = _split_table_key(table_key)  # Raises ValueError if invalid
+        schema, table = _split_table_key(table_key)
         write_ctx = _WriteContext(schema=schema, table=table, table_key=table_key)
 
-        # Dispatch based on data type
         if isinstance(data, it.Table):
             return self._write_ibis_expression(
                 write_ctx, expr=data, columns=columns, on_conflict=on_conflict
@@ -470,27 +465,22 @@ class IbisGateway:
         WriteResult
             Write operation result.
         """
-        # Get column names from the expression if not provided
         resolved_columns = list(expr.columns) if columns is None else list(columns)
 
-        # Generate SQL from Ibis expression
         select_sql = ibis.to_sql(expr, dialect=DUCKDB_DIALECT)
 
         if on_conflict is not None:
-            # For UPSERT with Ibis expression, materialize to DataFrame first
             log.warning("UPSERT with Ibis expression not yet optimized; using temp table")
             df = expr.to_pandas()
             return self._write_dataframe(
                 write_ctx, df=df, columns=resolved_columns, on_conflict=on_conflict
             )
 
-        # Build INSERT...SELECT
         insert_sql = _build_insert_select(
             write_ctx.schema, write_ctx.table, resolved_columns, select_sql
         )
         log.debug("write INSERT...SELECT: %s", insert_sql[:200])
 
-        # Execute
         self._gateway.con.execute(insert_sql)
 
         return WriteResult(table_key=write_ctx.table_key, rows_affected=-1, method="insert_select")
@@ -636,4 +626,4 @@ class IbisGateway:
         log.debug("delete: %s", sql[:200])
         self._gateway.con.execute(sql)
 
-        return -1  # DuckDB doesn't return affected count easily
+        return -1

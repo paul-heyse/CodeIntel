@@ -97,7 +97,7 @@ def runtime_gateway(
 
     Examples
     --------
-    >>> with runtime_gateway(ctx.runtime) as gateway:  # doctest: +SKIP
+    >>> with runtime_gateway(ctx.runtime) as gateway:
     ...     gateway.execute("SELECT 1")
     """
     gateway = open_handler_gateway(runtime.paths.db_path, read_only=read_only)

@@ -44,11 +44,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Data Structures
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class OperationTargets:
     """Build targets required for a serving operation.
@@ -76,11 +71,6 @@ class OperationTargets:
     data_targets: frozenset[str]
 
 
-# =============================================================================
-# Lazy Module Access (avoids circular imports)
-# =============================================================================
-
-
 class _LazyRegistry:
     """Lazy accessor for build registry to avoid circular imports."""
 
@@ -98,10 +88,9 @@ class _LazyRegistry:
         if cls._all_targets is None:
             registry = importlib.import_module("codeintel.build.registry")
             cls._all_targets = registry.ALL_TARGETS
-        # Return value - the if-block above guarantees _all_targets is set
+
         result = cls._all_targets
         if result is None:
-            # This should never happen - defensive guard for type checker
             return ()
         return result
 
@@ -152,11 +141,6 @@ class _LazyCatalog:
         """
         module = cls._get_module()
         yield from module.iter_operations()
-
-
-# =============================================================================
-# Index Building
-# =============================================================================
 
 
 def _build_table_to_target_index() -> dict[str, str]:
@@ -218,11 +202,6 @@ def _get_graph_index() -> dict[str, str]:
         Mapping from graph runtime name to target name.
     """
     return _build_graph_to_target_index()
-
-
-# =============================================================================
-# Target Resolution
-# =============================================================================
 
 
 def _resolve_datasets_to_targets(required_datasets: tuple[str, ...]) -> frozenset[str]:

@@ -147,14 +147,9 @@ def has_successful_prereq_run(
     bool
         True if prerequisites have already been run, False otherwise.
     """
-    _ = op_id  # Future: could check requested_operation or requested_datasets
+    _ = op_id
     existing_run = _has_successful_recent_run(runs, repo=repo, commit=commit)
     return existing_run is not None
-
-
-# -----------------------------------------------------------------------------
-# Data-Aware Prerequisite Checks
-# -----------------------------------------------------------------------------
 
 
 def dataset_has_rows_for_snapshot(
@@ -206,12 +201,10 @@ def get_required_table_keys_for_operation(op_id: str) -> frozenset[str]:
     if op is None:
         return frozenset()
 
-    # Get the targets required for this operation
     op_targets = get_targets_for_operation(op_id)
     if not op_targets.required_targets:
         return frozenset(op.required_datasets)
 
-    # Get all tables from the targets and their transitive dependencies
     graph = get_target_graph()
     table_keys: set[str] = set()
 
@@ -219,14 +212,11 @@ def get_required_table_keys_for_operation(op_id: str) -> frozenset[str]:
         if target_name not in graph:
             continue
 
-        # Get target and all its dependencies
         target = graph.get(target_name)
         deps = graph.transitive_deps(target_name)
 
-        # Add tables from this target
         table_keys.update(target.table_keys)
 
-        # Add tables from all dependencies
         for dep_name in deps:
             dep_target = graph.get(dep_name)
             table_keys.update(dep_target.table_keys)
@@ -265,10 +255,8 @@ def has_required_data_for_operation(
     expanded_tables = get_required_table_keys_for_operation(op_id)
 
     if not expanded_tables:
-        # No declared datasets - cannot verify data-aware
         return False
 
-    # Check each required dataset
     for table_key in expanded_tables:
         contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
         if contract is None:
@@ -313,10 +301,8 @@ def operation_prereqs_satisfied(
     bool
         True if prerequisites are satisfied, False otherwise.
     """
-    # Get required targets for operation
     op_targets = get_targets_for_operation(op_id)
     if not op_targets.required_targets:
-        # Operation has no declared requirements - check fallback
         op = get_operation(op_id)
         if op is not None and op.required_datasets:
             return has_required_data_for_operation(
@@ -325,18 +311,15 @@ def operation_prereqs_satisfied(
                 repo=repo,
                 commit=commit,
             )
-        # No requirements declared - consider satisfied
+
         return True
 
-    # Construct snapshot if not provided
     if snapshot is None:
         snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path.cwd())
 
-    # Create readiness view
     graph = get_target_graph()
     view = DatabaseReadinessView(graph, gateway, snapshot)
 
-    # Check if all required targets are ready
     for target_name in op_targets.required_targets:
         if target_name not in view:
             LOG.debug("prereqs: unknown target %s for %s", target_name, op_id)
@@ -347,11 +330,6 @@ def operation_prereqs_satisfied(
             return False
 
     return True
-
-
-# =============================================================================
-# Error Diagnosis
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -419,15 +397,13 @@ def diagnose_prereq_failure(
         readiness = view[target_name]
         if not readiness.is_ready:
             missing.append(target_name)
-            # Track the ultimate bottleneck (root cause)
+
             if readiness.ultimate_bottleneck:
                 bottleneck = readiness.ultimate_bottleneck
 
-    # Use bottleneck or first missing as fix target
     fix_target = bottleneck or (missing[0] if missing else None)
     fix_command = f"codeintel build run {fix_target}" if fix_target else "codeintel build run --all"
 
-    # Build human message
     if missing:
         missing_str = ", ".join(sorted(missing))
         human_message = (
@@ -447,11 +423,6 @@ def diagnose_prereq_failure(
         fix_command=fix_command,
         human_message=human_message,
     )
-
-
-# -----------------------------------------------------------------------------
-# Debug Information
-# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -574,14 +545,12 @@ def build_prereq_debug_info(
     """
     op = get_operation(op_id)
 
-    # Get required and expanded datasets
     required_datasets: tuple[str, ...] = ()
     if op is not None:
         required_datasets = op.required_datasets
 
     expanded_tables = get_required_table_keys_for_operation(op_id)
 
-    # Check each dataset
     dataset_statuses: list[DatasetDebugInfo] = []
     for table_key in sorted(expanded_tables):
         contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
@@ -620,7 +589,6 @@ def build_prereq_debug_info(
                 )
             )
 
-    # Get recent runs
     recent_runs = gateway.runs.fetch_recent_runs(limit=10)
     runs_considered = [
         RunDebugInfo(
@@ -634,7 +602,6 @@ def build_prereq_debug_info(
         if run.repo == repo and run.commit == commit
     ]
 
-    # Compute satisfaction flags
     data_satisfied = has_required_data_for_operation(gateway, op_id, repo=repo, commit=commit)
     run_satisfied = has_successful_prereq_run(gateway.runs, repo=repo, commit=commit, op_id=op_id)
     overall_satisfied = operation_prereqs_satisfied(gateway, op_id, repo=repo, commit=commit)
@@ -674,15 +641,12 @@ def should_run_auto_pipeline(
         A tuple of (should_run, gateway, skip_reason).
         If should_run is False, skip_reason explains why.
     """
-    # Only run for local_db mode
     if config.mode != "local_db":
         return False, None, f"mode={config.mode} is not local_db"
 
-    # Check if auto-pipeline is enabled
     if not is_auto_pipeline_enabled():
         return False, None, "not enabled"
 
-    # Get gateway from backend (DuckDBBackend has it)
     gateway: StorageGateway | None = getattr(backend, "gateway", None)
     if gateway is None:
         return False, None, "backend has no gateway"
@@ -721,30 +685,24 @@ def run_operation_prereqs(
     BuildResult | None
         The build result if executed, None if all targets are current.
     """
-    # Get required targets for the operation
     op_targets = get_targets_for_operation(op_id)
     if not op_targets.required_targets:
         LOG.debug("run_operation_prereqs: op=%s has no required targets", op_id)
         return None
 
-    # Convert to list for the build system
     goal_targets = list(op_targets.required_targets)
 
-    # Get target graph and validate state
     graph = get_target_graph()
     validator = StateValidator(graph, gateway, snapshot)
     state = validator.validate()
 
-    # Resolve minimal work needed
     resolver = BuildResolver(graph, state)
     resolution = resolver.resolve(goals=goal_targets)
 
-    # If nothing to compute, return early
     if not resolution.to_compute:
         LOG.debug("run_operation_prereqs: all targets current for op=%s", op_id)
         return None
 
-    # Generate build plan
     planner = PlanGenerator(graph)
     plan = planner.generate(resolution)
 
@@ -754,7 +712,6 @@ def run_operation_prereqs(
         resolution.to_compute,
     )
 
-    # Execute via build system
     env = ExecutorEnv(
         gateway=gateway,
         snapshot=snapshot,
@@ -789,7 +746,6 @@ def _run_prereqs_build(
     BuildResult | None
         The build result if executed, None if all targets are current.
     """
-    # Build snapshot and paths from config
     paths = build_paths_for_serving(config)
     snapshot = SnapshotRef(
         repo=config.repo,
@@ -838,7 +794,6 @@ def ensure_prereqs_for_http(
         LOG.debug("auto_pipeline skipped: %s", skip_reason)
         return None
 
-    # Check if prereqs have already been satisfied
     if has_successful_prereq_run(gateway.runs, repo=config.repo, commit=config.commit, op_id=op_id):
         LOG.debug("auto_pipeline skipped: prereqs already satisfied for %s", op_id)
         return None
@@ -877,7 +832,6 @@ def ensure_prereqs_for_mcp(
         LOG.debug("auto_pipeline skipped: %s", skip_reason)
         return None
 
-    # Check if prereqs have already been satisfied
     if has_successful_prereq_run(gateway.runs, repo=config.repo, commit=config.commit, op_id=op_id):
         LOG.debug("auto_pipeline skipped: prereqs already satisfied for %s", op_id)
         return None

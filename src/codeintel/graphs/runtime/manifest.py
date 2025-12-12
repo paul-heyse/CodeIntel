@@ -37,11 +37,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Graph-specific InputHashPayload (uses GraphRunScope)
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class InputHashPayload:
     """Inputs contributing to a plugin's content hash.
@@ -135,11 +130,6 @@ def compute_options_hash(
         return None
 
 
-# =============================================================================
-# Graph-specific ManifestState (extended fields)
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class ManifestState:
     """State used for manifest-based skip decisions.
@@ -191,18 +181,12 @@ def is_unchanged(
     bool
         True if inputs are unchanged and execution can be skipped.
     """
-    # Use core implementation with just the fields it needs
     core_state = CoreManifestState(
         plugin_name=state.plugin_name,
         input_hash=state.input_hash,
         options_hash=state.options_hash,
     )
     return core_is_unchanged(prior_manifest, core_state)
-
-
-# =============================================================================
-# GraphPluginManifest (extends core with record() method)
-# =============================================================================
 
 
 class GraphPluginManifest(PluginExecutionManifest):

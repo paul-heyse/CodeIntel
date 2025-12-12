@@ -113,11 +113,9 @@ def read_stdin_records() -> list[dict[str, object]]:
     if not content:
         return []
 
-    # Try JSONL first (one JSON object per line)
     if "\n" in content:
         return _parse_jsonl(content)
 
-    # Fall back to single JSON array/object
     data = json.loads(content)
     if isinstance(data, list):
         return [_ensure_dict(item) for item in data]
@@ -192,7 +190,7 @@ def merge_stdin_with_args(
         Merged arguments.
     """
     result = dict(stdin_record)
-    # CLI args override stdin values (filter out None values)
+
     result.update({k: v for k, v in cli_args.items() if v is not None})
     return result
 

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from codeintel.cli.execution.registry import OperationSpec
     from tests.cli._harness import CliTestHarness, OperationTestHarness
 
-# Performance budgets (in seconds)
+
 FAST_OPERATION_BUDGET = 0.5
 MEDIUM_OPERATION_BUDGET = 2.0
 MAX_VERSION_TIME = 0.3
@@ -92,7 +92,6 @@ def test_read_operations_are_fast(
         result = op_harness.execute(op_id)
         elapsed = time.perf_counter() - start
 
-        # Only check timing on successful operations
         if result.success:
             expect_true(
                 elapsed < FAST_OPERATION_BUDGET,
@@ -105,10 +104,8 @@ def test_operation_registry_lookup_fast() -> None:
     """Test operation registry lookup is fast."""
     registry = get_registry()
 
-    # Warm up
     _ = registry.get("build.status")
 
-    # Measure lookup time
     start = time.perf_counter()
     for _ in range(LOOKUP_ITERATIONS):
         registry.get("build.status")
@@ -125,17 +122,14 @@ def test_operation_registry_lookup_fast() -> None:
 @pytest.mark.benchmark
 def test_json_output_overhead(cli: CliTestHarness) -> None:
     """Test JSON output doesn't add significant overhead."""
-    # Text output
     start = time.perf_counter()
     cli.invoke(["build", "status", "--format=text"])
     text_time = time.perf_counter() - start
 
-    # JSON output
     start = time.perf_counter()
     cli.invoke(["build", "status", "--format=json"])
     json_time = time.perf_counter() - start
 
-    # JSON should be within 2x of text plus buffer
     buffer = 0.1
     expect_true(
         json_time < text_time * 2 + buffer,
@@ -165,10 +159,8 @@ def test_middleware_overhead_acceptable() -> None:
         group="test",
     )
 
-    # Warm up
     _execute_spec(spec)
 
-    # Measure
     start = time.perf_counter()
     for _ in range(MIDDLEWARE_ITERATIONS):
         _execute_spec(spec)
@@ -187,13 +179,10 @@ def test_repeated_operations_no_memory_leak(
     op_harness: OperationTestHarness,
 ) -> None:
     """Test repeated operations don't leak memory."""
-    # Run many operations
     for _ in range(MEMORY_TEST_ITERATIONS):
         op_harness.execute("op.list")
 
-    # Force garbage collection
     gc.collect()
-    # If we get here without OOM, basic memory cleanup is working
 
 
 @pytest.mark.benchmark
@@ -218,12 +207,10 @@ def test_executor_cleanup() -> None:
         group="test",
     )
 
-    # Create and destroy many executors
     for _ in range(EXECUTOR_CLEANUP_ITERATIONS):
         _execute_spec(spec)
 
     gc.collect()
-    # If we get here without OOM, cleanup is working
 
 
 @pytest.mark.benchmark
@@ -236,10 +223,8 @@ def test_sequential_operations(
         op_harness.execute("op.list")
     total_time = time.perf_counter() - start
 
-    # Average time per operation
     avg_time = total_time / SEQUENTIAL_OPS_COUNT
 
-    # Should be relatively consistent
     max_avg_time = FAST_OPERATION_BUDGET
     expect_true(
         avg_time < max_avg_time,

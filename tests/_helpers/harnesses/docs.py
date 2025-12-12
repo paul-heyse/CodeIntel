@@ -50,7 +50,7 @@ class DocsHandlerHarness:
                 gateway=self.ctx.gateway,
                 root=self.ctx.repo_root,
             )
-            # Disable storage to skip expensive validation while keeping runtime available.
+
             cmd_ctx.__dict__["_storage"] = None
             yield cmd_ctx
 

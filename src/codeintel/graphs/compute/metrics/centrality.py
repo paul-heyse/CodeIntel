@@ -96,7 +96,6 @@ def compute_pagerank(
             ).items()
         }
     except nx.PowerIterationFailedConvergence:
-        # Fall back to uniform distribution
         n = graph.number_of_nodes()
         return dict.fromkeys(graph.nodes(), 1.0 / n)
 
@@ -273,7 +272,6 @@ def compute_eigenvector_centrality(
     if graph.number_of_nodes() == 0:
         return {}
 
-    # Convert directed to undirected for eigenvector centrality
     work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
 
     try:
@@ -332,7 +330,6 @@ def compute_all_centralities(
 
     result: dict[Any, CentralityMetrics] = {}
     for node in graph.nodes():
-        # Cast needed due to imprecise NetworkX stubs
         in_degree = cast("int", graph.in_degree(node))
         out_degree = cast("int", graph.out_degree(node))
         result[node] = CentralityMetrics(

@@ -14,18 +14,15 @@ if TYPE_CHECKING:
     from codeintel.core.plugins.execution.context import PluginExecutionContext
     from codeintel.core.plugins.types.result import PluginResult
 
-# Plugin kind covers both graph and analytics plugins
+
 PluginKind = Literal["builder", "metric", "validation", "analytics"]
 
-# Plugin stage covers all stages from both systems
+
 PluginStage = Literal[
-    # Graph builder stages
     "goid",
     "edges",
     "structure",
-    # Graph metric stages
     "core",
-    # Analytics stages
     "graph",
     "function",
     "function_history",
@@ -40,7 +37,6 @@ PluginStage = Literal[
     "semantic",
     "hotspots",
     "risk",
-    # Shared stages
     "cfg",
     "dfg",
     "symbol",
@@ -48,7 +44,6 @@ PluginStage = Literal[
     "stats",
     "validation",
     "other",
-    # Pipeline step stages (for unified registry)
     "pipeline_ingestion",
     "pipeline_graphs",
     "pipeline_analytics",

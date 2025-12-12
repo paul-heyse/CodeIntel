@@ -122,7 +122,7 @@ class StorageResource:
                 result = self.gateway.con.execute(sql, list(params))
             else:
                 result = self.gateway.con.execute(sql)
-            # DuckDB returns rowcount for mutations
+
             row = result.fetchone()
             return row[0] if row else 0
         except (RuntimeError, OSError, TypeError, ValueError) as exc:

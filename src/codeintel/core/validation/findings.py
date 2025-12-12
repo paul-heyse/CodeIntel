@@ -66,7 +66,7 @@ def apply_severity_overrides[T: Mapping[str, object]](
         if override is None:
             normalized.append(finding)
             continue
-        # Create updated copy
+
         updated = dict(finding)
         updated["severity"] = override
         normalized.append(cast("T", updated))

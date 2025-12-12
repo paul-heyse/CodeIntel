@@ -96,7 +96,7 @@ def apply_severity_overrides[T](
     result: list[T] = []
     for finding in findings:
         key = get_key(finding)
-        # Check specific override first, then wildcard
+
         override = overrides.get(key) or overrides.get("*")
         if override is None:
             result.append(finding)

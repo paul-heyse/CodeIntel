@@ -64,7 +64,6 @@ def make_build_env(
 
     paths = BuildPaths.from_explicit(build_dir=resolved_build)
 
-    # Create tool config with defaults
     tools_config = ToolsConfig.default()
 
     providers = create_default_providers(tools_config)

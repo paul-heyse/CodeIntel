@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 MANIFEST_TABLE = "core.plugin_execution_manifest"
 
-# Column names for bulk insert
+
 _MANIFEST_COLUMNS: tuple[str, ...] = (
     "plugin_name",
     "repo",
@@ -84,8 +84,6 @@ class DuckDBManifestStore(ManifestStore):
         backend = DuckDBPolicyBackend(self._gateway)
         backend.create_schema_if_not_exists("core")
 
-        # Create table using raw SQL via policy backend (no TableSchema yet)
-        # This is acceptable as an infrastructure table
         self._gateway.con.execute(
             """
             CREATE TABLE IF NOT EXISTS core.plugin_execution_manifest (

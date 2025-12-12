@@ -29,10 +29,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# =============================================================================
-# Fixtures
-# =============================================================================
-
 
 @pytest.fixture
 def snapshot() -> SnapshotRef:
@@ -48,11 +44,6 @@ def snapshot() -> SnapshotRef:
         commit="abc123",
         repo_root=Path.cwd(),
     )
-
-
-# =============================================================================
-# PrerequisiteError Tests
-# =============================================================================
 
 
 def test_prerequisite_error_structure() -> None:
@@ -87,38 +78,24 @@ def test_prerequisite_error_frozen() -> None:
         cast("Any", error).op_id = "other"
 
 
-# =============================================================================
-# operation_prereqs_satisfied Tests (Unit)
-# =============================================================================
-
-
 def test_prereqs_satisfied_no_requirements() -> None:
     """Verify operations with no requirements are considered satisfied.
 
     Operations like datasets.list have no required_datasets or required_graphs,
     so they should always be considered satisfied.
     """
-    # datasets.list has no requirements
-    # We can't fully test without a gateway, but we can verify the structure
     targets = get_targets_for_operation("datasets.list")
     expect_equal(len(targets.required_targets), 0)
 
 
 def test_prereqs_satisfied_with_requirements() -> None:
     """Verify operations with requirements map to targets."""
-    # function.summary requires callgraph
     targets = get_targets_for_operation("function.summary")
     expect_in("call_graph", targets.graph_targets)
 
 
-# =============================================================================
-# diagnose_prereq_failure Tests (Unit)
-# =============================================================================
-
-
 def test_diagnose_returns_prerequisite_error() -> None:
     """Verify diagnose_prereq_failure returns PrerequisiteError type."""
-    # We verify the function exists and has the right signature
     sig = inspect.signature(diagnose_prereq_failure)
     params = list(sig.parameters.keys())
 
@@ -129,7 +106,6 @@ def test_diagnose_returns_prerequisite_error() -> None:
 
 def test_diagnose_prereq_failure_command_format() -> None:
     """Verify the fix command has the correct format."""
-    # The fix command should be 'codeintel build run <target>'
     error = PrerequisiteError(
         op_id="test.op",
         missing_targets=("ast",),
@@ -141,21 +117,13 @@ def test_diagnose_prereq_failure_command_format() -> None:
     expect_true(error.fix_command.startswith("codeintel build run"))
 
 
-# =============================================================================
-# Integration with Build System Tests
-# =============================================================================
-
-
 def test_operation_targets_integration() -> None:
     """Verify operation targets correctly integrate with build system."""
     graph = get_target_graph()
 
-    # Get targets for function.summary
     targets = get_targets_for_operation("function.summary")
 
-    # Verify all targets exist in the build system
     for target_name in targets.required_targets:
-        # This should not raise
         target = graph.get(target_name)
         expect_equal(target.name, target_name)
 
@@ -167,7 +135,6 @@ def test_all_operations_have_valid_targets() -> None:
 
     for op_id, op_targets in all_op_targets.items():
         for target_name in op_targets.required_targets:
-            # All targets should exist in the graph
             try:
                 target = graph.get(target_name)
                 expect_equal(target.name, target_name)
@@ -175,23 +142,16 @@ def test_all_operations_have_valid_targets() -> None:
                 pytest.fail(f"Operation {op_id} requires unknown target: {target_name}")
 
 
-# =============================================================================
-# Edge Cases
-# =============================================================================
-
-
 def test_unknown_operation_prereqs() -> None:
     """Verify unknown operations are handled gracefully."""
     targets = get_targets_for_operation("completely.unknown.operation")
 
-    # Should return empty targets, not raise
     expect_equal(len(targets.required_targets), 0)
     expect_equal(targets.operation_id, "completely.unknown.operation")
 
 
 def test_multiple_graph_requirements() -> None:
     """Verify operations with multiple graph requirements."""
-    # architecture.function requires both callgraph and importgraph
     targets = get_targets_for_operation("architecture.function")
 
     expect_in("call_graph", targets.graph_targets)

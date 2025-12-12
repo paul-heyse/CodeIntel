@@ -24,7 +24,7 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants
+
 EXPECTED_COUNT_1 = 1
 EXPECTED_COUNT_2 = 2
 EXPECTED_GOID_CALLER = 1001
@@ -47,7 +47,6 @@ def _seed_call_graph_data(
     con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    # Insert GOIDs for functions
     con.execute(
         """
         INSERT INTO core.goids (
@@ -91,7 +90,6 @@ def _seed_call_graph_data(
         ],
     )
 
-    # Insert call graph nodes
     fresh_gateway.graph.insert_call_graph_nodes(
         [
             (EXPECTED_GOID_CALLER, "python", "function", 0, True, "caller.py"),
@@ -99,7 +97,6 @@ def _seed_call_graph_data(
         ]
     )
 
-    # Insert call graph edge (caller -> callee)
     fresh_gateway.graph.insert_call_graph_edges(
         [
             (
@@ -215,10 +212,8 @@ def test_get_outgoing_callgraph_neighbors_filters_by_repo_commit(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify get_outgoing_callgraph_neighbors filters by repo/commit."""
-    # Seed data for one repo/commit
     _seed_call_graph_data(fresh_gateway, "repo1", "commit1")
 
-    # Query for different repo/commit should return empty
     graph_repo = GraphRepository(
         gateway=fresh_gateway,
         repo="other/repo",
@@ -237,7 +232,6 @@ def test_get_outgoing_callgraph_neighbors_respects_limit(
     commit = "abc123"
     now = datetime.now(tz=UTC)
 
-    # Insert caller
     con.execute(
         """
         INSERT INTO core.goids (
@@ -265,7 +259,6 @@ def test_get_outgoing_callgraph_neighbors_respects_limit(
         ]
     )
 
-    # Insert multiple callees
     for i in range(5):
         callee_goid = EXPECTED_GOID_CALLEE + i
         con.execute(
@@ -322,5 +315,4 @@ def test_get_outgoing_callgraph_neighbors_respects_limit(
         EXPECTED_GOID_CALLER, limit=EXPECTED_COUNT_2
     )
 
-    # Should only return 2 even though 5 exist
     expect_length(result, EXPECTED_COUNT_2)

@@ -53,7 +53,6 @@ def _get_policy_backend(con: DuckDBPyConnection) -> DuckDBPolicyBackend:
         Policy backend instance wrapping the connection.
     """
 
-    # Create a minimal gateway-like wrapper
     class _MinimalGateway:
         analytics: Any
         build: Any

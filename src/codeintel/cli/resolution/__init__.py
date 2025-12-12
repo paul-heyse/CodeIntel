@@ -11,8 +11,8 @@ This package provides:
 Examples
 --------
 >>> from codeintel.cli.resolution import resolve_from_params
->>> runtime = resolve_from_params({"project_root": "."})  # doctest: +SKIP
->>> runtime.db_path  # doctest: +SKIP
+>>> runtime = resolve_from_params({"project_root": "."})
+>>> runtime.db_path
 PosixPath('build/db/codeintel.duckdb')
 """
 

@@ -82,7 +82,6 @@ def _to_path_with_default(value: object, default: Path) -> Path:
     return Path(str(value))
 
 
-# Error message constants
 _MSG_NO_PROJECT_NO_FALLBACK = "No codeintel.yaml found and fallback disabled"
 _MSG_MISSING_PARAMS = "No codeintel.yaml found. Provide --repo and --commit explicitly"
 
@@ -130,21 +129,19 @@ def resolve_from_params(
 
     Examples
     --------
-    >>> runtime = resolve_from_params({"project_root": Path(".")})  # doctest: +SKIP
-    >>> runtime.db_path  # doctest: +SKIP
+    >>> runtime = resolve_from_params({"project_root": Path(".")})
+    >>> runtime.db_path
     PosixPath('build/db/codeintel.duckdb')
     """
     project_root_raw = params.get("project_root")
     project_root = _to_path_or_none(project_root_raw)
 
-    # Try project file discovery first
     try:
         return _resolve_from_project(project_root)
     except ProjectNotFoundError as exc:
         if not allow_fallback:
             raise ResolutionError(_MSG_NO_PROJECT_NO_FALLBACK) from exc
 
-    # Fall back to explicit params
     return _resolve_from_params_dict(params)
 
 
@@ -166,8 +163,6 @@ def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
     This function propagates ProjectNotFoundError from find_project_root
     when no project file is found.
     """
-    # Discover project root and load config
-    # May raise ProjectNotFoundError if no project file found
     resolved_root = find_project_root(project_root)
     project = load_project_config(resolved_root)
 
@@ -195,7 +190,6 @@ def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
     )
     paths = cfg.build_paths
 
-    # Ensure database directory exists
     paths.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     serving = ServingConfig(
@@ -246,12 +240,10 @@ def _resolve_from_params_dict(params: Mapping[str, object] | Mapping[str, str]) 
     repo, commit = _extract_required_params_dict(params)
     repo_root = _to_path_with_default(params.get("repo_root"), Path.cwd())
 
-    # Normalize other path params from string or Path
     db_path = _to_path_with_default(params.get("db_path"), Path("build/db/codeintel.duckdb"))
     build_dir = _to_path_with_default(params.get("build_dir"), Path("build"))
     document_output_dir = _to_path_or_none(params.get("document_output_dir"))
 
-    # Build configuration from params
     use_gpu_raw = params.get("use_gpu", False)
     use_gpu = bool(use_gpu_raw) if use_gpu_raw is not None else False
     config = _build_config(
@@ -266,7 +258,6 @@ def _resolve_from_params_dict(params: Mapping[str, object] | Mapping[str, str]) 
         )
     )
 
-    # Ensure database directory exists
     config.build_paths.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     return ResolvedRuntime(

@@ -212,7 +212,6 @@ def test_datasets_snapshot_handler_success(
         expect_equal(data.datasets_count, 1)
     expect_true(output_path.exists())
 
-    # Verify file content
     content = json.loads(output_path.read_text(encoding="utf-8"))
     expect_equal(len(content), 1)
     expect_equal(content[0]["name"], "test_dataset")

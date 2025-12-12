@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    ClassVar,
     Protocol,
     TypeGuard,
     TypeVar,
@@ -35,10 +34,6 @@ T_co = TypeVar("T_co", covariant=True)
 
 class _DataclassInstance(Protocol):
     __dataclass_fields__: dict[str, object]
-
-
-class _ResultTypeMarker(Protocol):
-    RESULT_TYPE_GENERATED: ClassVar[bool]
 
 
 def result_type[T](cls: type[T]) -> type[T]:
@@ -92,19 +87,18 @@ def result_type[T](cls: type[T]) -> type[T]:
         dict[str, object]
             Dictionary with non-None field values.
         """
-        # self is a dataclass instance verified by the decorator
         return _serialize_dataclass(self)
 
-    result_cls = cast("type[_ResultTypeMarker]", cls)
-    # Avoid overwriting existing to_dict implementations
-    if not hasattr(result_cls, "RESULT_TYPE_GENERATED"):
-        setattr(result_cls, "RESULT_TYPE_GENERATED", False)
+    result_cls = cast("type[Any]", cls)
 
-    if not hasattr(result_cls, "to_dict") or result_cls.RESULT_TYPE_GENERATED:
-        setattr(result_cls, "to_dict", to_dict)
+    if not hasattr(result_cls, "RESULT_TYPE_GENERATED"):
+        result_cls.RESULT_TYPE_GENERATED = False
+
+    if not hasattr(result_cls, "to_dict") or getattr(result_cls, "RESULT_TYPE_GENERATED", False):
+        result_cls.to_dict = to_dict
         result_cls.RESULT_TYPE_GENERATED = True
 
-    return result_cls
+    return cls
 
 
 def _is_dataclass_instance(value: object) -> TypeGuard[_DataclassInstance]:
@@ -132,7 +126,7 @@ def _serialize_dataclass(value: object) -> dict[str, object]:
         Dictionary with non-None, non-private field values.
     """
     result: dict[str, object] = {}
-    # Cast to Any to satisfy type checker for dataclass fields access
+
     for fld in get_fields(cast("Any", value)):
         if fld.name.startswith("_"):
             continue
@@ -192,11 +186,9 @@ def _serialize_primitive(value: object) -> object:
     if isinstance(value, Enum):
         return value.value
 
-    # Handle Path
     if isinstance(value, Path):
         return str(value)
 
-    # Primitives pass through
     return value
 
 
@@ -224,13 +216,13 @@ def ensure_serializable[T](cls: type[T]) -> type[T]:
     ...     value: int
     ...
     ...     def to_dict(self) -> dict[str, object]:
-    ...         return {"val": self.value}  # Custom serialization
+    ...         return {"val": self.value}
     >>> ensure_serializable(ExistingResult)(1).to_dict()
     {'val': 1}
     """
     if hasattr(cls, "to_dict"):
-        return cls  # Already has to_dict, keep it
-    return result_type(cls)  # Add auto-generated
+        return cls
+    return result_type(cls)
 
 
 @runtime_checkable
@@ -293,19 +285,15 @@ def auto_serialize(data: object) -> object:
     >>> auto_serialize(Simple(42))
     {'x': 42}
     """
-    # SerializableResult protocol takes precedence
     if isinstance(data, SerializableResult):
         return data.to_dict()
 
-    # Dataclass serialization
     if is_dataclass(data) and not isinstance(data, type):
         return serialize_result(data)
 
-    # Objects with __dict__
     if hasattr(data, "__dict__") and not isinstance(data, type):
         return data.__dict__
 
-    # Return as-is (primitives, lists, dicts)
     return data
 
 

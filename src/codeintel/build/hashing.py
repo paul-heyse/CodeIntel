@@ -117,22 +117,17 @@ def compute_input_hash_with_deps(
     """
     hasher = hashlib.sha256()
 
-    # Include repo and commit
     hasher.update(snapshot.repo.encode("utf-8"))
     hasher.update(b":")
     hasher.update(snapshot.commit.encode("utf-8"))
     hasher.update(b"|")
 
-    # Include target name
     hasher.update(target.name.encode("utf-8"))
     hasher.update(b"|")
 
-    # Include dependency hashes (sorted for determinism)
-    # Use input_hash for cascade (more robust than output_hash)
     dep_hash_list: list[str] = []
     dep_hashes: dict[str, str] = {}
     for dep_name in sorted(target.dependencies):
-        # Use pre-loaded manifests if available, otherwise load from DB
         if manifests is not None:
             manifest = manifests.get(dep_name)
         else:
@@ -141,23 +136,20 @@ def compute_input_hash_with_deps(
                 repo=snapshot.repo,
                 commit=snapshot.commit,
             )
-        # Cascade on input_hash for proper propagation of changes
+
         if manifest is not None and manifest.input_hash is not None:
             dep_hash_list.append(f"{dep_name}:{manifest.input_hash}")
             dep_hashes[dep_name] = manifest.input_hash
         else:
-            # Dependency not computed or no input hash - use sentinel
             dep_hash_list.append(f"{dep_name}:MISSING")
             dep_hashes[dep_name] = "MISSING"
 
     hasher.update(",".join(dep_hash_list).encode("utf-8"))
     hasher.update(b"|")
 
-    # Include options hash if provided
     if options_hash is not None:
         hasher.update(options_hash.encode("utf-8"))
 
-    # Return first 16 hex characters and the dependency hashes
     return hasher.hexdigest()[:16], dep_hashes
 
 
@@ -188,11 +180,9 @@ def compute_options_hash(options: object | None) -> str | None:
     if options is None:
         return None
 
-    # Serialize to JSON with sorted keys for determinism
     try:
         serialized = json.dumps(options, sort_keys=True, default=str)
     except (TypeError, ValueError):
-        # Fall back to str representation if not JSON-serializable
         serialized = str(options)
 
     hasher = hashlib.sha256()

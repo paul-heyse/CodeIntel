@@ -37,7 +37,7 @@ if TYPE_CHECKING:
         ScipIngestContext,
     )
 
-# Test constants for magic values
+
 EXPECTED_START_LINE = 1
 EXPECTED_END_LINE = 1
 
@@ -47,9 +47,6 @@ def _scip_context(tmp_path: Path) -> Iterator[ScipIngestContext]:
     context = build_scip_repo_fixture(tmp_path)
     with closing_gateway(context.gateway):
         yield context
-
-
-# --- ResolvedScipConfig Tests ---
 
 
 def test_resolved_scip_config_create_minimal(tmp_path: Path) -> None:
@@ -116,9 +113,6 @@ def test_resolved_scip_config_frozen_dataclass(tmp_path: Path) -> None:
     )
 
     assert_cannot_setattr(config, "repo", "new-repo")
-
-
-# --- ScipResolverInput Tests ---
 
 
 def test_scip_resolver_input_create_empty() -> None:
@@ -188,9 +182,6 @@ def test_scip_resolver_input_frozen_dataclass() -> None:
     inputs = ScipResolverInput(repo="test-repo")
 
     assert_cannot_setattr(inputs, "repo", "new-repo")
-
-
-# --- resolve_scip_inputs Tests ---
 
 
 def test_resolve_scip_inputs_with_explicit_params(tmp_path: Path) -> None:
@@ -276,7 +267,7 @@ def test_resolve_scip_inputs_with_modules_in_input(tmp_path: Path) -> None:
         modules = module_records_for_paths(["pkg/mod.py"], repo_root)
 
         result = resolve_scip_inputs(
-            [],  # Empty, modules in input takes precedence
+            [],
             ScipResolverInput.build(
                 repo="demo/repo",
                 commit="deadbeef",
@@ -388,9 +379,6 @@ def test_resolve_scip_inputs_uses_inputs_values(tmp_path: Path) -> None:
 
         expect_equal(result.repo, "inputs-repo")
         expect_equal(result.commit, "inputs-commit")
-
-
-# --- ModuleRecord Tests ---
 
 
 def test_module_record_create(tmp_path: Path) -> None:

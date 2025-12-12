@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
 from tests.build.hamilton.snapshots._snapshot import TextReplace
 
 if TYPE_CHECKING:
@@ -192,7 +197,7 @@ def _get_kind(d: Mapping[str, Any], key: str, *, default: SnapshotKind) -> Snaps
     if v not in {"json", "text"}:
         msg = f"Invalid kind: {v!r}"
         raise ValueError(msg)
-    return v  # type: ignore[return-value]
+    return v
 
 
 def _get_output(d: Mapping[str, Any], key: str, *, default: OutputSelect) -> OutputSelect:
@@ -221,7 +226,7 @@ def _get_output(d: Mapping[str, Any], key: str, *, default: OutputSelect) -> Out
     if v not in {"stdout", "stderr", "both"}:
         msg = f"Invalid output: {v!r}"
         raise ValueError(msg)
-    return v  # type: ignore[return-value]
+    return v
 
 
 def _get_env(d: Mapping[str, Any], key: str) -> Mapping[str, str] | None:
@@ -408,11 +413,9 @@ def _load_manifest_data(path: Path) -> dict[str, Any]:
     if suffix == ".json":
         data = json.loads(text)
     elif suffix in {".yaml", ".yml"}:
-        try:
-            import yaml  # noqa: PLC0415
-        except ImportError as e:
+        if yaml is None:
             msg = "PyYAML is required to load YAML manifests. Install with: pip install pyyaml"
-            raise RuntimeError(msg) from e
+            raise RuntimeError(msg)
         data = yaml.safe_load(text)
     else:
         msg = f"Unsupported manifest extension: {suffix} (use .json, .yaml, or .yml)"
@@ -451,12 +454,10 @@ def _parse_case(c: Mapping[str, Any], defaults: SnapshotDefaults) -> SnapshotCas
     name = _get_str(c, "name")
     kind = _get_kind(c, "kind", default=defaults.kind)
 
-    # Merge env (defaults overridden by case)
     env_default = dict(defaults.env or {})
     env_case = dict(_get_env(c, "env") or {})
     env = {**env_default, **env_case} if (env_default or env_case) else None
 
-    # Snapshot path inference
     snapshot = c.get("snapshot")
     if snapshot is None:
         snapshot = f"{name}.json" if kind == "json" else f"{name}.txt"

@@ -21,11 +21,6 @@ def _require(*, condition: bool, message: str) -> None:
         pytest.fail(message)
 
 
-# ---------------------------------------------------------------------------
-# CompositeSchema Validation Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "profile_key",
     list(get_composite_schemas().keys()),
@@ -87,17 +82,11 @@ def test_composite_schema_validation_passes(profile_key: str) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Source Column Tracking Tests
-# ---------------------------------------------------------------------------
-
-
 def test_get_source_for_column_shared() -> None:
     """Test that shared columns return the first source."""
     composite = get_composite_schemas()["analytics.function_profile"]
     table_schemas = get_table_schemas()
 
-    # function_goid_h128 is in FUNCTION_ENTITY_COLS (shared)
     source = composite.get_source_for_column("function_goid_h128", table_schemas)
 
     _require(
@@ -111,7 +100,6 @@ def test_get_source_for_column_unique() -> None:
     composite = get_composite_schemas()["analytics.function_profile"]
     table_schemas = get_table_schemas()
 
-    # is_pure is from function_effects
     source = composite.get_source_for_column("is_pure", table_schemas)
 
     _require(
@@ -125,10 +113,8 @@ def test_get_source_for_column_additional() -> None:
     composite = get_composite_schemas()["analytics.function_profile"]
     table_schemas = get_table_schemas()
 
-    # risk_component_coverage is an additional column (profile-specific)
     source = composite.get_source_for_column("risk_component_coverage", table_schemas)
 
-    # None means profile-specific with no source table
     _require(
         condition=source is None,
         message=f"Expected source None for additional column, got {source!r}",
@@ -140,19 +126,12 @@ def test_get_source_for_column_mapped() -> None:
     composite = get_composite_schemas()["analytics.function_profile"]
     table_schemas = get_table_schemas()
 
-    # keyword_params is the profile name, keyword_only_params is the source name
     source = composite.get_source_for_column("keyword_params", table_schemas)
 
-    # Should find keyword_only_params in function_metrics
     _require(
         condition=source == "analytics.function_metrics",
         message=f"Expected source 'analytics.function_metrics', got {source!r}",
     )
-
-
-# ---------------------------------------------------------------------------
-# Source Column Name Generation Tests
-# ---------------------------------------------------------------------------
 
 
 def test_source_column_names_includes_shared() -> None:
@@ -162,7 +141,6 @@ def test_source_column_names_includes_shared() -> None:
 
     col_names = composite.source_column_names(table_schemas)
 
-    # FUNCTION_ENTITY_COLS includes these
     _require(
         condition="function_goid_h128" in col_names,
         message="Expected 'function_goid_h128' in source columns",
@@ -184,7 +162,6 @@ def test_source_column_names_excludes_excluded() -> None:
 
     col_names = composite.source_column_names(table_schemas)
 
-    # These are in excluded_columns
     _require(
         condition="effects_json" not in col_names,
         message="Expected 'effects_json' to be excluded from source columns",
@@ -202,7 +179,6 @@ def test_source_column_names_applies_mappings() -> None:
 
     col_names = composite.source_column_names(table_schemas)
 
-    # keyword_only_params should be mapped to keyword_params
     _require(
         condition="keyword_params" in col_names,
         message="Expected mapped column 'keyword_params' in source columns",
@@ -211,11 +187,6 @@ def test_source_column_names_applies_mappings() -> None:
         condition="keyword_only_params" not in col_names,
         message="Expected original 'keyword_only_params' to be mapped out",
     )
-
-
-# ---------------------------------------------------------------------------
-# CompositeSchema Completeness Tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -265,11 +236,6 @@ def test_all_profiles_have_composite_schemas() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# DatasetContract Integration Tests
-# ---------------------------------------------------------------------------
-
-
 def test_profile_contracts_have_composition() -> None:
     """Verify profile DatasetContracts have composition field set."""
     dataset_contracts = get_dataset_contracts()
@@ -286,7 +252,7 @@ def test_profile_contracts_have_composition() -> None:
             condition=contract is not None,
             message=f"Missing DatasetContract for {name}",
         )
-        # Use 'contract is not None' check above, now safe to access
+
         if contract is not None:
             _require(
                 condition=contract.composition is not None,
@@ -310,7 +276,7 @@ def test_non_profile_contracts_no_composition() -> None:
             condition=contract is not None,
             message=f"Missing DatasetContract for {name}",
         )
-        # Use 'contract is not None' check above, now safe to access
+
         if contract is not None:
             _require(
                 condition=contract.composition is None,
@@ -329,7 +295,7 @@ def test_composition_matches_composite_schemas() -> None:
             condition=contract is not None,
             message=f"Missing DatasetContract for {name}",
         )
-        # Use 'contract is not None' check above, now safe to access
+
         if contract is not None:
             _require(
                 condition=contract.composition is composite,

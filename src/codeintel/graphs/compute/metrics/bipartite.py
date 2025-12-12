@@ -79,7 +79,6 @@ def compute_bipartite_degrees(
     for node, deg in weighted_view:
         weighted_degree[node] = float(deg)
 
-    # Handle empty partitions to avoid division by zero in bipartite.degree_centrality
     if not primary or not secondary:
         return BipartiteDegreeMetrics(
             degree=degree,
@@ -88,7 +87,6 @@ def compute_bipartite_degrees(
             secondary_degree_centrality={},
         )
 
-    # NetworkX bipartite.degree_centrality takes the opposite partition
     primary_dc = nx_bipartite.degree_centrality(graph, secondary)
     secondary_dc = nx_bipartite.degree_centrality(graph, primary)
 

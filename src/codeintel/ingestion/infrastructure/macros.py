@@ -8,13 +8,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-# Import directly from protocol module to avoid circular import
 from codeintel.storage.gateway.protocol import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import DuckDBConnection
 
-# Table keys that have ingest macros defined (must be in DATASET_CONTRACTS_BY_TABLE_KEY with schema)
+
 INGEST_MACRO_TABLES: frozenset[str] = frozenset(
     {
         "analytics.coverage_lines",
@@ -60,7 +59,6 @@ def macro_exists(con: DuckDBConnection, table_key: str) -> bool:
     bool
         True if macro exists.
     """
-    # Macros are named metadata.ingest_{table_name} where table_name is the part after the dot
     _, table_name = table_key.split(".", maxsplit=1)
     macro_name = f"ingest_{table_name}"
     try:

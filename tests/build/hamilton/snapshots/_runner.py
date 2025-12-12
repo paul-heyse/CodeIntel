@@ -57,7 +57,6 @@ def run_case(*, case: SnapshotCase, env: Mapping[str, str] | None = None) -> Cli
     CliResult
         CLI execution result with stdout, stderr, and exit_code.
     """
-    # Merge case env with provided env (case takes precedence)
     merged_env: dict[str, str] = {}
     if env is not None:
         merged_env.update(env)
@@ -92,7 +91,6 @@ def select_output(run: CliResult, mode: str) -> str:
     if mode == "stderr":
         return run.stderr
     if mode == "both":
-        # Deterministic separator for combined output
         return f"{run.stdout}\n--- STDERR ---\n{run.stderr}"
     msg = f"Unknown output selection: {mode}"
     raise ValueError(msg)
@@ -119,7 +117,6 @@ def render_expected_content(*, case: SnapshotCase, raw_text: str) -> str:
     if case.kind == "text":
         return normalize_text(raw_text, replaces=case.replace)
 
-    # JSON kind - normalize and format
     strip_keys = frozenset(DEFAULT_DYNAMIC_KEYS).union(case.strip_keys)
     return normalize_and_format_json(raw_text, strip_keys=strip_keys)
 
@@ -150,12 +147,10 @@ def execute_and_assert_snapshot(
         If exit code doesn't match expected.
         If snapshot comparison fails (when not updating).
     """
-    # Suppress unused manifest parameter warning - kept for future expansion
     _ = manifest
 
     run = run_case(case=case)
 
-    # Check exit code first
     if run.exit_code != case.exit_code:
         msg = (
             f"Exit code mismatch for {case.name}: "

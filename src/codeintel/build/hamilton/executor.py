@@ -174,7 +174,9 @@ def _complete_build_run(params: _RunCompletionParams) -> None:
             error_summary=params.error_summary,
         )
     except StorageError as exc:
-        log.warning("build.hamilton.executor.complete_run_failed run_id=%s error=%s", params.run_id, exc)
+        log.warning(
+            "build.hamilton.executor.complete_run_failed run_id=%s error=%s", params.run_id, exc
+        )
 
 
 def _persist_run_targets(
@@ -194,10 +196,9 @@ def _persist_run_targets(
         Outputs from Hamilton execution.
     """
     try:
-        records: list[TargetRunRecord] = []
-        for value in outputs.values():
-            if isinstance(value, TargetRunRecord):
-                records.append(value)
+        records: list[TargetRunRecord] = [
+            value for value in outputs.values() if isinstance(value, TargetRunRecord)
+        ]
 
         if records:
             env.gateway.build.save_run_targets(
@@ -351,7 +352,6 @@ class HamiltonBuildExecutor:
         duration_ms = context.duration_ms
         success = not failed and error is None
 
-        # Persist per-target execution records
         _persist_run_targets(context.env, context.run_id, outputs)
 
         error_summary = error or (f"{len(failed)} targets failed" if failed else None)

@@ -105,14 +105,14 @@ class OutputTarget:
     name: str
     module: TargetModule
     plugin: str
-    # New: Full contract (authoritative)
+
     contract: OutputContract = field(default_factory=lambda: EMPTY_CONTRACT)
     dependencies: tuple[str, ...] = ()
-    # New: Resource requirements
+
     resources: TargetResources = field(default_factory=lambda: DEFAULT_RESOURCES)
-    # New: Execution configuration
+
     execution: TargetExecution = field(default_factory=lambda: DEFAULT_EXECUTION)
-    # New: Tuning parameters
+
     parameters: TargetParameters = field(default_factory=lambda: EMPTY_PARAMETERS)
     description: str = ""
 
@@ -260,10 +260,10 @@ class TargetGraph:
             msg = f"Target '{target.name}' is already registered"
             raise ValueError(msg)
         self._targets[target.name] = target
-        # Initialize dependents set for this target
+
         if target.name not in self._dependents:
             self._dependents[target.name] = set()
-        # Register as dependent for each of its dependencies
+
         for dep in target.dependencies:
             if dep not in self._dependents:
                 self._dependents[dep] = set()
@@ -412,25 +412,21 @@ class TargetGraph:
         ValueError
             If a cycle is detected in the dependencies.
         """
-        # Expand to include all transitive dependencies
         all_names: set[str] = set()
         for name in names:
             all_names.add(name)
             all_names.update(self.transitive_deps(name))
 
-        # Build in-degree map for the subgraph
         in_degree: dict[str, int] = dict.fromkeys(all_names, 0)
         for name in all_names:
             for dep in self.get(name).dependencies:
                 if dep in all_names:
                     in_degree[name] += 1
 
-        # Kahn's algorithm
         queue = [name for name, degree in in_degree.items() if degree == 0]
         result: list[str] = []
 
         while queue:
-            # Sort queue for deterministic output
             queue.sort()
             current = queue.pop(0)
             result.append(current)
@@ -476,7 +472,6 @@ class TargetGraph:
         tuple[str, ...]
             Error messages (empty if valid).
         """
-        # Check for missing dependencies
         errors: list[str] = [
             f"Target '{target.name}' depends on unknown target '{dep}'"
             for target in self._targets.values()
@@ -484,7 +479,6 @@ class TargetGraph:
             if dep not in self._targets
         ]
 
-        # Check for cycles using topological sort
         if not errors:
             try:
                 self.topological_order(self._targets.keys())

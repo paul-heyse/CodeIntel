@@ -152,7 +152,6 @@ class ErrorCode:
         return f"urn:codeintel:cli:{self.category.value}/{self.code}"
 
 
-# Validation Error Codes
 MISSING_REQUIRED = ErrorCode(
     ErrorCategory.VALIDATION, "missing-required", 400, "Missing Required Parameter"
 )
@@ -165,7 +164,7 @@ CONSTRAINT_VIOLATION = ErrorCode(
     ErrorCategory.VALIDATION, "constraint-violation", 400, "Constraint Violation"
 )
 
-# Operation Error Codes
+
 NOT_FOUND = ErrorCode(ErrorCategory.OPERATION, "not-found", 404, "Resource Not Found")
 ALREADY_EXISTS = ErrorCode(
     ErrorCategory.OPERATION, "already-exists", 409, "Resource Already Exists"
@@ -177,7 +176,7 @@ DEPENDENCY_FAILED = ErrorCode(
 CANCELLED = ErrorCode(ErrorCategory.OPERATION, "cancelled", 499, "Operation Cancelled")
 INTERNAL_ERROR = ErrorCode(ErrorCategory.OPERATION, "internal-error", 500, "Internal Error")
 
-# Storage Error Codes
+
 CONNECTION_FAILED = ErrorCode(
     ErrorCategory.STORAGE, "connection-failed", 503, "Storage Connection Failed"
 )
@@ -187,7 +186,7 @@ CORRUPTION_DETECTED = ErrorCode(
     ErrorCategory.STORAGE, "corruption-detected", 500, "Data Corruption Detected"
 )
 
-# Config Error Codes
+
 CONFIG_FILE_NOT_FOUND = ErrorCode(
     ErrorCategory.CONFIG, "file-not-found", 404, "Configuration File Not Found"
 )
@@ -201,7 +200,7 @@ CONFIG_SCHEMA_VIOLATION = ErrorCode(
     ErrorCategory.CONFIG, "schema-violation", 400, "Configuration Schema Violation"
 )
 
-# Service Error Codes
+
 SERVICE_UNAVAILABLE = ErrorCode(ErrorCategory.SERVICE, "unavailable", 503, "Service Unavailable")
 RATE_LIMITED = ErrorCode(ErrorCategory.SERVICE, "rate-limited", 429, "Rate Limited")
 AUTH_FAILED = ErrorCode(
@@ -209,13 +208,13 @@ AUTH_FAILED = ErrorCode(
 )
 PERMISSION_DENIED = ErrorCode(ErrorCategory.SERVICE, "permission-denied", 403, "Permission Denied")
 
-# Job Error Codes
+
 JOB_NOT_FOUND = ErrorCode(ErrorCategory.JOB, "not-found", 404, "Job Not Found")
 JOB_ALREADY_RUNNING = ErrorCode(ErrorCategory.JOB, "already-running", 409, "Job Already Running")
 JOB_FAILED = ErrorCode(ErrorCategory.JOB, "failed", 500, "Job Execution Failed")
 JOB_EXPIRED = ErrorCode(ErrorCategory.JOB, "expired", 410, "Job Results Expired")
 
-# HTTP status code mappings for error code enums
+
 _STATUS_CODES: dict[str, int] = {
     ValidationErrorCode.MISSING_REQUIRED.value: 400,
     ValidationErrorCode.INVALID_TYPE.value: 400,
@@ -295,7 +294,7 @@ def validation_error(
     """
     extensions: dict[str, Any] = {"field": field_name}
     if value is not None:
-        extensions["value"] = str(value)[:100]  # Truncate for safety
+        extensions["value"] = str(value)[:100]
     if suggestion:
         extensions["suggestion"] = suggestion
 
@@ -379,7 +378,7 @@ def storage_error(
     """
     extensions: dict[str, Any] = {}
     if query:
-        extensions["query"] = query[:200]  # Truncate
+        extensions["query"] = query[:200]
     if table:
         extensions["table"] = table
 
@@ -677,9 +676,6 @@ class StructuredOperationError(StructuredCliError):
             suggestion=suggestion,
             cause=cause,
         )
-
-
-# Factory functions for common errors
 
 
 def missing_required_error(

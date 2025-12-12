@@ -27,10 +27,6 @@ if TYPE_CHECKING:
     from codeintel.build.targets import TargetModule
     from codeintel.storage.gateway import StorageGateway
 
-# =============================================================================
-# Test Fixtures
-# =============================================================================
-
 
 def _create_test_graph() -> TargetGraph:
     """Create a minimal test graph for executor tests.
@@ -191,7 +187,6 @@ class FakeBuildTracking:
         OutputManifest | None
             Manifest if found.
         """
-        # Use all parameters to avoid unused warnings
         _ = (repo, commit)
         return self.manifests.get(target)
 
@@ -228,9 +223,7 @@ class FakeBuildTracking:
         error_summary
             Error summary (optional).
         """
-        # Store the completion data in the run record
         if run_id in self.runs:
-            # In a real impl, we'd update the record
             _ = (status, computed_targets, skipped_targets, error_summary)
 
 
@@ -362,11 +355,6 @@ def _make_step(
     )
 
 
-# =============================================================================
-# StageExecutionResult Tests
-# =============================================================================
-
-
 class TestStageExecutionResult:
     """Tests for StageExecutionResult dataclass."""
 
@@ -414,11 +402,6 @@ class TestStageExecutionResult:
             error="Something went wrong",
         )
         expect_true(result.success is False)
-
-
-# =============================================================================
-# BuildResult Tests
-# =============================================================================
 
 
 class TestBuildResult:
@@ -502,11 +485,6 @@ class TestBuildResult:
         expect_in("plan", data)
 
 
-# =============================================================================
-# BuildExecutor Tests
-# =============================================================================
-
-
 class TestBuildExecutorInit:
     """Tests for BuildExecutor initialization."""
 
@@ -521,7 +499,7 @@ class TestBuildExecutorInit:
         """Create a build executor."""
         env = _make_env(fake_gateway, test_snapshot, test_paths, test_tools)
         executor = _make_executor(graph=executor_graph, env=env)
-        # Verify executor was created (access public behavior)
+
         plan = _make_plan(requested=(), stages=())
         result = executor.execute(plan, dry_run=True)
         expect_true(result.success is True)
@@ -548,9 +526,9 @@ class TestBuildExecutorRunId:
         expect_true(run_id.startswith("build-"))
         parts = run_id.split("-")
         expect_length(parts, 4)
-        expect_length(parts[1], 8)  # YYYYMMDD
-        expect_length(parts[2], 6)  # HHMMSS
-        expect_length(parts[3], 8)  # hex suffix
+        expect_length(parts[1], 8)
+        expect_length(parts[2], 6)
+        expect_length(parts[3], 8)
 
     @staticmethod
     def test_run_ids_unique(
@@ -623,7 +601,7 @@ class TestBuildExecutorDryRun:
         result = executor.execute(plan, dry_run=True)
 
         expect_true(result.success is True)
-        expect_equal(result.completed_targets, ())  # Nothing actually computed
+        expect_equal(result.completed_targets, ())
         expect_equal(result.status, "succeeded")
 
     @staticmethod
@@ -641,13 +619,7 @@ class TestBuildExecutorDryRun:
         plan = _make_plan(requested=(), stages=())
         executor.execute(plan, dry_run=True)
 
-        # Should have recorded a run
         expect_length(fake_gateway.build.runs, 1)
-
-
-# =============================================================================
-# Integration Tests
-# =============================================================================
 
 
 class TestBuildExecutorIntegration:
@@ -665,7 +637,6 @@ class TestBuildExecutorIntegration:
         env = _make_env(fake_gw, snapshot, paths, tools)
         executor = _make_executor(graph=graph, env=env)
 
-        # Empty plan should work
         plan = _make_plan(requested=(), stages=())
         result = executor.execute(plan)
 
@@ -680,20 +651,17 @@ class TestBuildExecutorIntegration:
         paths = _make_paths()
         tools = ToolsConfig.default()
 
-        # Create a resolution result
         resolution = ResolutionResult(
             requested=("function_metrics",),
-            to_compute=(),  # Empty - nothing to compute
+            to_compute=(),
             to_skip=("function_metrics",),
             blocked=(),
             reasons={},
         )
 
-        # Generate plan
         generator = PlanGenerator(graph)
         plan = generator.generate(resolution)
 
-        # Execute
         env = _make_env(fake_gw, snapshot, paths, tools)
         executor = _make_executor(graph=graph, env=env)
         result = executor.execute(plan)

@@ -99,7 +99,7 @@ class ConfigDataFlowPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         cfg = ConfigDataFlowStepConfig(
             snapshot=ctx.snapshot,
@@ -107,7 +107,6 @@ class ConfigDataFlowPlugin(TargetPlugin):
 
         graph_runtime = ctx.resources.graph_runtime
 
-        # Get the call graph from graph runtime
         call_graph: nx.DiGraph = nx.DiGraph()
         if graph_runtime is not None:
             try:
@@ -115,7 +114,6 @@ class ConfigDataFlowPlugin(TargetPlugin):
             except (RuntimeError, ValueError, OSError) as e:
                 log.warning("Failed to load call graph: %s", e)
 
-        # Get AST data from catalog if available
         ast_by_goid: dict[int, FunctionAst] = {}
         missing_goids: set[int] = set()
         catalog_provider = ctx.resources.catalog
@@ -129,7 +127,6 @@ class ConfigDataFlowPlugin(TargetPlugin):
             ast_by_goid, missing_goids = load_function_asts(ctx.gateway, request)
 
         try:
-            # Compute config data flow
             compute_config_data_flow(
                 ctx.gateway,
                 cfg,
@@ -138,7 +135,6 @@ class ConfigDataFlowPlugin(TargetPlugin):
                 missing_goids=missing_goids,
             )
 
-            # Compute config graph metrics (keys, modules, projections)
             compute_config_graph_metrics(
                 ctx.gateway,
                 repo=ctx.repo,

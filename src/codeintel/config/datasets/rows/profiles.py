@@ -45,10 +45,6 @@ def _serialize_row(
     return tuple(row[column] for column in columns)
 
 
-# ---------------------------------------------------------------------------
-# Function Profile
-# ---------------------------------------------------------------------------
-
 FUNCTION_PROFILE_COLUMNS: Final[tuple[str, ...]] = (
     "function_goid_h128",
     "urn",
@@ -272,10 +268,6 @@ def function_profile_row_to_tuple(row: FunctionProfileRowModel) -> tuple[object,
     return _serialize_row(row, FUNCTION_PROFILE_COLUMNS)
 
 
-# ---------------------------------------------------------------------------
-# Function AST Features
-# ---------------------------------------------------------------------------
-
 _FUNCTION_AST_FEATURES_COLUMNS: Final[tuple[str, ...]] = (
     "repo",
     "commit",
@@ -344,10 +336,6 @@ def function_ast_features_row_to_tuple(row: FunctionAstFeaturesRow) -> tuple[obj
     """
     return _serialize_row(row, _FUNCTION_AST_FEATURES_COLUMNS)
 
-
-# ---------------------------------------------------------------------------
-# File Profile
-# ---------------------------------------------------------------------------
 
 FILE_PROFILE_COLUMNS: Final[tuple[str, ...]] = (
     "repo",
@@ -450,10 +438,6 @@ def file_profile_row_to_tuple(row: FileProfileRowModel) -> tuple[object, ...]:
     return _serialize_row(row, FILE_PROFILE_COLUMNS)
 
 
-# ---------------------------------------------------------------------------
-# Module Profile
-# ---------------------------------------------------------------------------
-
 MODULE_PROFILE_COLUMNS: Final[tuple[str, ...]] = (
     "repo",
     "commit",
@@ -539,10 +523,6 @@ def module_profile_row_to_tuple(row: ModuleProfileRowModel) -> tuple[object, ...
     return _serialize_row(row, MODULE_PROFILE_COLUMNS)
 
 
-# ---------------------------------------------------------------------------
-# Graph Metrics - Functions
-# ---------------------------------------------------------------------------
-
 GRAPH_METRICS_FUNCTIONS_COLUMNS: Final[tuple[str, ...]] = (
     "repo",
     "commit",
@@ -597,10 +577,6 @@ def graph_metrics_functions_row_to_tuple(
     """
     return _serialize_row(row, GRAPH_METRICS_FUNCTIONS_COLUMNS)
 
-
-# ---------------------------------------------------------------------------
-# Graph Metrics - Modules
-# ---------------------------------------------------------------------------
 
 GRAPH_METRICS_MODULES_COLUMNS: Final[tuple[str, ...]] = (
     "repo",
@@ -660,10 +636,6 @@ def graph_metrics_modules_row_to_tuple(
     """
     return _serialize_row(row, GRAPH_METRICS_MODULES_COLUMNS)
 
-
-# ---------------------------------------------------------------------------
-# Graph Metrics - Functions Extended
-# ---------------------------------------------------------------------------
 
 GRAPH_METRICS_FUNCTIONS_EXT_COLUMNS: Final[tuple[str, ...]] = (
     "repo",
@@ -733,10 +705,6 @@ def graph_metrics_functions_ext_row_to_tuple(
     """
     return _serialize_row(row, GRAPH_METRICS_FUNCTIONS_EXT_COLUMNS)
 
-
-# ---------------------------------------------------------------------------
-# Graph Metrics - Modules Extended
-# ---------------------------------------------------------------------------
 
 GRAPH_METRICS_MODULES_EXT_COLUMNS: Final[tuple[str, ...]] = (
     "repo",

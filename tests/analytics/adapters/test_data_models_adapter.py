@@ -32,9 +32,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEMO_REPO = "demo/repo"
 DEMO_COMMIT = "abc123def456"
@@ -45,11 +42,6 @@ EXPECTED_COUNT_3 = 3
 TEST_GOID_12345 = Decimal(12345)
 TEST_GOID_67890 = Decimal(67890)
 TEST_GOID_11111 = Decimal(11111)
-
-
-# =============================================================================
-# Fixtures
-# =============================================================================
 
 
 @pytest.fixture
@@ -85,11 +77,6 @@ def snapshot(ctx: TestContext) -> SnapshotRef:
         Snapshot associated with the shared test context.
     """
     return ctx.snapshot
-
-
-# =============================================================================
-# DataModelUsageAdapter Tests
-# =============================================================================
 
 
 def test_adapter_table_name(
@@ -145,7 +132,6 @@ def test_adapter_persist_single(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.data_model_usage WHERE repo = ? AND commit = ?",
@@ -241,7 +227,6 @@ def test_adapter_persist_verifies_data(
     )
     adapter.persist([row])
 
-    # Query and verify
     result = ctx.gateway.con.execute(
         """
         SELECT model_id

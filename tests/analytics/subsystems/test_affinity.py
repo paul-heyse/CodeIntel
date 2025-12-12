@@ -36,17 +36,11 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# Test constants
 DEFAULT_WEIGHT = 1.0
 CUSTOM_WEIGHT = 2.5
 MIN_CLUSTER_SIZE = 3
 CLUSTER_SIZE_TWO = 2
 CLUSTER_SIZE_THREE = 3
-
-
-# =============================================================================
-# parse_tags Tests
-# =============================================================================
 
 
 def test_parse_tags_none() -> None:
@@ -96,11 +90,6 @@ def test_parse_tags_mixed_list() -> None:
     result = parse_tags([1, "two", 3.0])
 
     expect_equal(result, ["1", "two", "3.0"])
-
-
-# =============================================================================
-# add_graph_weight Tests
-# =============================================================================
 
 
 def test_add_graph_weight_new_edge() -> None:
@@ -155,11 +144,6 @@ def test_add_graph_weight_ignores_negative_weight() -> None:
     expect_false(graph.has_edge("A", "B"))
 
 
-# =============================================================================
-# graph_to_adjacency Tests
-# =============================================================================
-
-
 def test_graph_to_adjacency_empty() -> None:
     """graph_to_adjacency returns empty dict for empty graph."""
     graph = nx.Graph()
@@ -190,7 +174,7 @@ def test_graph_to_adjacency_multiple_edges() -> None:
     result = graph_to_adjacency(graph)
 
     expected_edges = 3
-    # Each undirected edge creates 2 entries in adjacency
+
     total_entries = sum(len(neighbors) for neighbors in result.values())
     expect_equal(total_entries, expected_edges * 2)
 
@@ -198,16 +182,11 @@ def test_graph_to_adjacency_multiple_edges() -> None:
 def test_graph_to_adjacency_default_weight() -> None:
     """graph_to_adjacency uses default weight of 1.0 if not specified."""
     graph = nx.Graph()
-    graph.add_edge("A", "B")  # No weight specified
+    graph.add_edge("A", "B")
 
     result = graph_to_adjacency(graph)
 
     expect_equal(result["A"]["B"], DEFAULT_WEIGHT)
-
-
-# =============================================================================
-# seed_labels_from_tags Tests
-# =============================================================================
 
 
 def test_seed_labels_from_tags_empty() -> None:
@@ -245,19 +224,12 @@ def test_seed_labels_from_tags_empty_tags_skipped() -> None:
 
 def test_seed_labels_from_tags_none_first_tag_skipped() -> None:
     """seed_labels_from_tags skips modules where first tag is None."""
-    # Intentionally pass invalid data to test defensive handling.
-    # Cast to expected type since we're testing edge case behavior.
     invalid_tags = {"module.a": [None, "valid"]}
     tags = cast("dict[str, list[str]]", invalid_tags)
 
     result = seed_labels_from_tags(tags)
 
     expect_not_in("module.a", result)
-
-
-# =============================================================================
-# label_propagation_nx Tests
-# =============================================================================
 
 
 def test_label_propagation_nx_preserves_seeds() -> None:
@@ -280,7 +252,6 @@ def test_label_propagation_nx_propagates_to_neighbors() -> None:
 
     result = label_propagation_nx(graph, seed_labels)
 
-    # B and C should adopt A's label through propagation
     expect_equal(result["A"], "group")
 
 
@@ -288,12 +259,11 @@ def test_label_propagation_nx_selects_heaviest_neighbor() -> None:
     """label_propagation_nx selects label from heaviest weighted neighbor."""
     graph = nx.Graph()
     graph.add_edge("A", "B", weight=1.0)
-    graph.add_edge("A", "C", weight=5.0)  # Heavier edge to C
+    graph.add_edge("A", "C", weight=5.0)
     seed_labels = {"B": "light", "C": "heavy"}
 
     result = label_propagation_nx(graph, seed_labels)
 
-    # A should adopt C's label due to heavier weight
     expect_equal(result["A"], "heavy")
 
 
@@ -305,11 +275,6 @@ def test_label_propagation_nx_isolated_nodes_keep_fallback() -> None:
     result = label_propagation_nx(graph, {})
 
     expect_equal(result["isolated"], "isolated")
-
-
-# =============================================================================
-# reassign_small_clusters Tests
-# =============================================================================
 
 
 def test_reassign_small_clusters_no_change_when_all_large() -> None:
@@ -334,19 +299,12 @@ def test_reassign_small_clusters_min_size_one_no_change() -> None:
 
 def test_reassign_small_clusters_reassigns_small() -> None:
     """reassign_small_clusters reassigns nodes from small clusters."""
-    # c1 has 3 nodes (large), c2 has 1 node (small)
     labels = {"A": "c1", "B": "c1", "C": "c1", "D": "c2"}
-    adjacency = {"D": {"A": 2.0, "B": 1.0}}  # D connected to A and B
+    adjacency = {"D": {"A": 2.0, "B": 1.0}}
 
     result = reassign_small_clusters(labels, adjacency, min_size=MIN_CLUSTER_SIZE)
 
-    # D should be reassigned to c1 since it's the only stable cluster
     expect_equal(result["D"], "c1")
-
-
-# =============================================================================
-# best_neighbor_label Tests
-# =============================================================================
 
 
 def test_best_neighbor_label_no_neighbors() -> None:
@@ -380,11 +338,6 @@ def test_best_neighbor_label_selects_heaviest() -> None:
     result = best_neighbor_label("A", adjacency, labels, allowed)
 
     expect_equal(result, "heavy")
-
-
-# =============================================================================
-# cluster_sizes_map Tests
-# =============================================================================
 
 
 def test_cluster_sizes_map_empty() -> None:

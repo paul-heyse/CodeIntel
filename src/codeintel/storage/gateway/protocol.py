@@ -36,7 +36,7 @@ __all__ = [
     "StorageGateway",
 ]
 
-# DuckDB type aliases for consistent usage across the codebase
+
 DuckDBConnection = duckdb.DuckDBPyConnection
 DuckDBRelation = duckdb.DuckDBPyRelation
 DuckDBError = duckdb.Error

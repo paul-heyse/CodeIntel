@@ -404,7 +404,6 @@ def cfg_to_rows(
     tuple[Sequence[CFGBlockRow], Sequence[CFGEdgeRow]]
         Block and edge rows for persistence.
     """
-    # Compute degrees
     in_degree: dict[int, int] = {}
     out_degree: dict[int, int] = {}
     for edge in result.edges:

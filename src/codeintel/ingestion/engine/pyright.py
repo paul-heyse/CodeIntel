@@ -166,7 +166,6 @@ class PyrightPlugin(ToolPlugin):
                 parsed=DiagnosticReport.empty("pyright"),
             )
 
-        # pyright returns 0 on success, 1 when there are errors
         if result.returncode not in {0, 1}:
             return ToolPluginResult(
                 tool=result.tool,
@@ -177,7 +176,6 @@ class PyrightPlugin(ToolPlugin):
                 parsed=DiagnosticReport.empty("pyright"),
             )
 
-        # Parse diagnostics from stdout
         parsed = _parse_pyright_output(result.stdout, repo_root)
 
         return ToolPluginResult(

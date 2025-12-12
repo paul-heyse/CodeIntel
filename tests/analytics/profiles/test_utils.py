@@ -29,7 +29,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# Test constants
 DEFAULT_INT_VALUE = 0
 CUSTOM_DEFAULT_INT = 42
 TEST_INT_VALUE = 123

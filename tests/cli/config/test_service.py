@@ -41,7 +41,7 @@ def test_config_service_with_overrides() -> None:
     modified = service.with_overrides(color=not original_color)
 
     expect_not_equal(modified.config.color, original_color)
-    # Original unchanged
+
     expect_equal(service.config.color, original_color)
 
 
@@ -49,7 +49,6 @@ def test_config_service_sources_tracking() -> None:
     """Verify sources are tracked correctly."""
     service = ConfigService.load(validate=False)
 
-    # Should at least have defaults
     expect_true(len(service.sources) >= 1)
 
 
@@ -58,7 +57,7 @@ def test_config_service_cyclopts_config_chain() -> None:
     chain = ConfigService.get_cyclopts_config_chain()
 
     expect_is_instance(chain, list)
-    # Should have TOML config loader and Env config loader
+
     expect_equal(len(chain), 2)
 
 
@@ -73,7 +72,6 @@ def test_config_service_get_toml_config_path_returns_path_or_none() -> None:
     """Verify get_toml_config_path returns Path or None."""
     path = ConfigService.get_toml_config_path()
 
-    # Should be None or a Path
     if path is not None:
         expect_is_instance(path, Path)
 
@@ -87,6 +85,6 @@ def test_config_service_load_from_explicit_path(tmp_path: Path) -> None:
 
     expect_true(not service.config.color)
     expect_equal(service.config.log_level, "DEBUG")
-    # Should include file source
+
     sources_str = " ".join(service.sources)
     expect_in("file:", sources_str)

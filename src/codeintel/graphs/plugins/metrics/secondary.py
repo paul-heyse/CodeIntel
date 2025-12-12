@@ -44,19 +44,11 @@ class SecondaryMetricsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         cfg = GraphMetricsStepConfig(snapshot=ctx.snapshot)
 
         try:
-            # Secondary metrics computation requires:
-            # 1. Loading CFG/DFG data from database
-            # 2. Computing CFG metrics using metrics.cfg module
-            # 3. Computing DFG metrics using metrics.dfg module
-            # 4. Computing community metrics using metrics.community module
-            # 5. Persisting results
-            #
-            # For now, return success with zero row counts as placeholder.
             log.debug(
                 "secondary_metrics.execute repo=%s commit=%s",
                 cfg.repo,

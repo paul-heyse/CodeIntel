@@ -5,14 +5,20 @@ Validates that generated modules include query and dataframe loader nodes.
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
+
 import pytest
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.naming import dataframe_node, query_node
 from codeintel.build.hamilton.nodes.node_factory import (
+    GenerationOptions,
     build_target_module,
     clear_generated_module_cache,
 )
+from codeintel.cli.commands.build import BuildRunCommand
 
 
 class TestLoaderNodeNaming:
@@ -53,9 +59,10 @@ class TestGeneratedModuleLoaderNodes:
     def test_generated_module_has_query_nodes() -> None:
         """Verify generated module includes q__* nodes."""
         clear_generated_module_cache()
-        module = build_target_module(include_loader_nodes=True)
+        module = build_target_module(
+            options=GenerationOptions(include_loader_nodes=True),
+        )
 
-        # Check for QUERY_TO_NODE mapping
         if not hasattr(module, "QUERY_TO_NODE"):
             pytest.fail("Module missing QUERY_TO_NODE mapping")
 
@@ -67,9 +74,10 @@ class TestGeneratedModuleLoaderNodes:
     def test_generated_module_has_dataframe_nodes() -> None:
         """Verify generated module includes df__* nodes."""
         clear_generated_module_cache()
-        module = build_target_module(include_loader_nodes=True)
+        module = build_target_module(
+            options=GenerationOptions(include_loader_nodes=True),
+        )
 
-        # Check for DATAFRAME_TO_NODE mapping
         if not hasattr(module, "DATAFRAME_TO_NODE"):
             pytest.fail("Module missing DATAFRAME_TO_NODE mapping")
 
@@ -81,12 +89,13 @@ class TestGeneratedModuleLoaderNodes:
     def test_loader_nodes_disabled_by_default() -> None:
         """Verify loader nodes are not generated when flag is False."""
         clear_generated_module_cache()
-        module = build_target_module(include_loader_nodes=False)
+        module = build_target_module(
+            options=GenerationOptions(include_loader_nodes=False),
+        )
 
         query_map = getattr(module, "QUERY_TO_NODE", {})
         df_map = getattr(module, "DATAFRAME_TO_NODE", {})
 
-        # With loader nodes disabled, these should be empty
         if query_map:
             pytest.fail("QUERY_TO_NODE should be empty when include_loader_nodes=False")
         if df_map:
@@ -101,9 +110,8 @@ class TestBuildEnvValidateOutputsFlag:
         """Verify BuildEnv has validate_outputs field."""
         fields = getattr(BuildEnv, "__dataclass_fields__", {})
         if "validate_outputs" not in fields:
-            # Field may be added as part of optional enhancement
             pytest.skip("validate_outputs field not yet implemented")
-        # If field exists, verify default
+
         field_info = fields["validate_outputs"]
         if field_info.default is not False:
             pytest.fail("validate_outputs should default to False")
@@ -115,8 +123,6 @@ class TestValidateOutputsBehavior:
     @staticmethod
     def test_validate_outputs_flag_exists_in_build_run_command() -> None:
         """Verify BuildRunCommand has validate_outputs option."""
-        from codeintel.cli.commands.build import BuildRunCommand  # noqa: PLC0415
-
         fields = getattr(BuildRunCommand, "__dataclass_fields__", {})
         if "validate_outputs" not in fields:
             pytest.skip("validate_outputs option not yet implemented")
@@ -131,19 +137,12 @@ class TestValidateOutputsBehavior:
         This test checks for the existence of the ValidationResult type
         which is part of the optional --validate-outputs feature.
         """
-        import importlib  # noqa: PLC0415
-        import importlib.util  # noqa: PLC0415
-
-        # Check if the validation module exists
         spec = importlib.util.find_spec("codeintel.build.hamilton.validation")
         if spec is None:
             pytest.skip("ValidationResult not yet implemented")
 
-        # Dynamically import the module
         try:
-            validation_mod = importlib.import_module(
-                "codeintel.build.hamilton.validation"
-            )
+            validation_mod = importlib.import_module("codeintel.build.hamilton.validation")
         except ImportError:
             pytest.skip("ValidationResult not yet implemented")
 
@@ -169,11 +168,6 @@ class TestValidateOutputsBehavior:
         running if upstream validation fails. This test verifies the
         conceptual model rather than full integration.
         """
-        from codeintel.build.hamilton.manifest_hook import (  # noqa: PLC0415
-            TargetRunRecord,
-        )
-
-        # A record with validation_errors indicates failure
         record = TargetRunRecord(
             target="function_metrics",
             plugin_name="analytics.function_metrics",
@@ -182,19 +176,12 @@ class TestValidateOutputsBehavior:
             error="Validation failed: Column 'loc' has wrong type",
         )
 
-        # Downstream targets should check upstream status
-        # If any upstream has status="failed", downstream should not execute
         if record.status != "failed":
             pytest.fail("Record with validation error should have status='failed'")
 
     @staticmethod
     def test_target_run_record_has_validation_fields() -> None:
         """Verify TargetRunRecord can capture validation state."""
-        from codeintel.build.hamilton.manifest_hook import (  # noqa: PLC0415
-            TargetRunRecord,
-        )
-
-        # Check that record can hold validation-related data
         record = TargetRunRecord(
             target="function_metrics",
             plugin_name="analytics.function_metrics",
@@ -202,6 +189,5 @@ class TestValidateOutputsBehavior:
             input_hash="hash123",
         )
 
-        # Status field should support standard values
         if record.status not in {"succeeded", "failed", "skipped"}:
             pytest.fail(f"Unexpected status: {record.status}")

@@ -37,9 +37,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEMO_REPO = "demo/repo"
 DEMO_COMMIT = "abc123def456"
@@ -50,11 +47,6 @@ TEST_GOID_12345 = Decimal(12345)
 TEST_GOID_67890 = Decimal(67890)
 TEST_DURATION_MS_150 = 150.0
 TEST_COVERAGE_RATIO_0_85 = 0.85
-
-
-# =============================================================================
-# Fixtures
-# =============================================================================
 
 
 @pytest.fixture
@@ -90,11 +82,6 @@ def snapshot(ctx: TestContext) -> SnapshotRef:
         Snapshot associated with the shared test context.
     """
     return ctx.snapshot
-
-
-# =============================================================================
-# EntrypointsAdapter Tests
-# =============================================================================
 
 
 def test_entrypoints_adapter_table_name(
@@ -150,7 +137,6 @@ def test_entrypoints_adapter_persist_http_endpoint(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.entrypoints WHERE repo = ? AND commit = ?",
@@ -193,7 +179,6 @@ def test_entrypoints_adapter_persist_cli_command(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify CLI-specific fields
     result = ctx.gateway.con.execute(
         """
         SELECT kind, command_name, http_method
@@ -205,7 +190,7 @@ def test_entrypoints_adapter_persist_cli_command(
     row = expect_is_not_none(result)
     expect_equal(row[0], "cli_command")
     expect_equal(row[1], "migrate")
-    expect_is_none(row[2])  # http_method is null for CLI
+    expect_is_none(row[2])
 
 
 def test_entrypoints_adapter_persist_multiple(
@@ -248,11 +233,6 @@ def test_entrypoints_adapter_persist_multiple(
 
     count = adapter.persist(rows)
     expect_equal(count, EXPECTED_COUNT_2)
-
-
-# =============================================================================
-# EntrypointTestsAdapter Tests
-# =============================================================================
 
 
 def test_entrypoint_tests_adapter_table_name(
@@ -302,7 +282,6 @@ def test_entrypoint_tests_adapter_persist_single(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.entrypoint_tests WHERE repo = ? AND commit = ?",
@@ -367,7 +346,6 @@ def test_entrypoint_tests_adapter_persist_verifies_data(
     )
     adapter.persist([row])
 
-    # Query and verify
     result = ctx.gateway.con.execute(
         """
         SELECT entrypoint_id, test_id, status, coverage_ratio

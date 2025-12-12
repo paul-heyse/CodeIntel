@@ -39,7 +39,7 @@ def test_get_table_schemas_returns_dict() -> None:
 def test_get_table_schemas_contains_expected_keys() -> None:
     """Verify TABLE_SCHEMAS contains known table keys."""
     schemas = get_table_schemas()
-    # Check for some known table keys
+
     require(condition="core.goids" in schemas, message="core.goids table schema missing")
     require(
         condition="analytics.function_metrics" in schemas,
@@ -55,12 +55,11 @@ def test_get_table_schemas_values_are_table_schema() -> None:
     """Verify TABLE_SCHEMAS values are TableSchema instances."""
     schemas = get_table_schemas()
     for key, value in schemas.items():
-        # Check by class name since TableSchema may come from legacy or new module
         require(
             condition=value.__class__.__name__ == "TableSchema",
             message=f"{key} is not a TableSchema",
         )
-        # Verify it has the expected attributes
+
         require(
             condition=hasattr(value, "schema"),
             message=f"{key} TableSchema missing schema attribute",
@@ -138,7 +137,7 @@ def test_row_binding_dataclass() -> None:
 def test_dataset_contract_capabilities() -> None:
     """Verify DatasetContract.capabilities method returns expected flags."""
     contracts = get_dataset_contracts()
-    # Find a contract with a schema to test
+
     test_contract = None
     for contract in contracts.values():
         if contract.schema is not None and contract.jsonl_filename is not None:
@@ -167,7 +166,7 @@ def test_dataset_contract_capabilities() -> None:
 def test_dataset_contract_column_names() -> None:
     """Verify DatasetContract.column_names method works."""
     contracts = get_dataset_contracts()
-    # Find a contract with a schema
+
     for contract in contracts.values():
         if contract.schema is not None:
             cols = contract.column_names()
@@ -176,7 +175,7 @@ def test_dataset_contract_column_names() -> None:
                 message="column_names should return a tuple",
             )
             require(condition=len(cols) > 0, message="column_names should not be empty")
-            # Column names should be strings
+
             for col in cols:
                 require(condition=isinstance(col, str), message="column names must be strings")
             break
@@ -189,7 +188,6 @@ def test_dataset_contract_has_row_binding() -> None:
     contracts = get_dataset_contracts()
     bindings = get_row_bindings()
 
-    # Find a contract with a row binding
     for contract in contracts.values():
         if contract.table_key in bindings:
             require(
@@ -208,7 +206,6 @@ def test_dataset_contract_has_row_binding() -> None:
 
 def test_dataset_contract_without_row_binding_raises() -> None:
     """Verify require_row_binding raises for contracts without bindings."""
-    # Create a contract without row_binding
     contract = DatasetContract(
         table_key="test.table",
         name="test_table",
@@ -221,7 +218,6 @@ def test_dataset_contract_without_row_binding_raises() -> None:
 
 def test_dataset_contract_deprecation_fields_exist() -> None:
     """Verify DatasetContract has deprecation fields."""
-    # Check that the fields exist in the dataclass
     contract = DatasetContract(
         table_key="test.table",
         name="test_table",
