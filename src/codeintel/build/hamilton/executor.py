@@ -30,6 +30,7 @@ from codeintel.build.hamilton.driver_factory import (
 )
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.manifest import BuildRunRecord
+from codeintel.storage.exceptions import StorageError
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
@@ -145,8 +146,8 @@ def _start_build_run(
             status="running",
         )
         env.gateway.build.start_run(record)
-    except Exception:
-        log.warning("build.hamilton.executor.start_run_failed run_id=%s", run_id)
+    except StorageError as exc:
+        log.warning("build.hamilton.executor.start_run_failed run_id=%s error=%s", run_id, exc)
 
 
 @dataclass(frozen=True)
@@ -172,15 +173,14 @@ def _complete_build_run(params: _RunCompletionParams) -> None:
             skipped_targets=params.skipped,
             error_summary=params.error_summary,
         )
-    except Exception:
-        log.warning("build.hamilton.executor.complete_run_failed run_id=%s", params.run_id)
+    except StorageError as exc:
+        log.warning("build.hamilton.executor.complete_run_failed run_id=%s error=%s", params.run_id, exc)
 
 
 def _persist_run_targets(
     env: BuildEnv,
     run_id: str,
     outputs: dict[str, Any],
-    runtime: HamiltonRuntime,
 ) -> None:
     """Persist per-target execution records.
 
@@ -192,12 +192,10 @@ def _persist_run_targets(
         Run identifier.
     outputs
         Outputs from Hamilton execution.
-    runtime
-        Hamilton runtime for node mapping.
     """
     try:
         records: list[TargetRunRecord] = []
-        for node_name, value in outputs.items():
+        for value in outputs.values():
             if isinstance(value, TargetRunRecord):
                 records.append(value)
 
@@ -213,8 +211,8 @@ def _persist_run_targets(
                 run_id,
                 len(records),
             )
-    except Exception:
-        log.warning("build.hamilton.executor.run_targets_failed run_id=%s", run_id)
+    except StorageError as exc:
+        log.warning("build.hamilton.executor.run_targets_failed run_id=%s error=%s", run_id, exc)
 
 
 @dataclass(frozen=True)
@@ -354,7 +352,7 @@ class HamiltonBuildExecutor:
         success = not failed and error is None
 
         # Persist per-target execution records
-        _persist_run_targets(context.env, context.run_id, outputs, context.runtime)
+        _persist_run_targets(context.env, context.run_id, outputs)
 
         error_summary = error or (f"{len(failed)} targets failed" if failed else None)
         completion_params = _RunCompletionParams(

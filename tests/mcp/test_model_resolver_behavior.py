@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
@@ -52,8 +53,9 @@ def test_build_tool_raises_when_model_resolver_missing_output_model() -> None:
     )
 
     result = tool(value=1)
-    expect_true(isinstance(result, dict))
-    expect_equal(result["value"], 1)
+    expect_true(isinstance(result, Mapping))
+    result_mapping = cast("Mapping[str, object]", result)
+    expect_equal(result_mapping["value"], 1)
 
 
 def test_build_tool_requires_tool_name_for_registration() -> None:

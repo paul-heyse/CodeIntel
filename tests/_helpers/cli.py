@@ -16,6 +16,16 @@ from typing import TYPE_CHECKING, Protocol
 
 from codeintel.cli import app
 from codeintel.cli.errors import handle_cli_error
+from codeintel.storage.exceptions import (
+    QueryError as StorageQueryError,
+)
+from codeintel.storage.exceptions import (
+    SchemaError as StorageSchemaError,
+)
+from codeintel.storage.exceptions import (
+    StorageConnectionError,
+    StorageError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -126,7 +136,16 @@ def run_cli(
                     print_error=False,
                 )
                 exit_code = 0
-            except BaseException as exc:
+            except (
+                StorageConnectionError,
+                StorageError,
+                StorageQueryError,
+                StorageSchemaError,
+                RuntimeError,
+                ValueError,
+                KeyboardInterrupt,
+                SystemExit,
+            ) as exc:
                 exit_code = handle_cli_error(exc, stderr_buf)
     finally:
         os.environ.clear()

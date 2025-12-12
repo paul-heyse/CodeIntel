@@ -25,6 +25,12 @@ Phase 2 transforms Hamilton into the **source of truth** for the CodeIntel build
 - **`build history --run-id`** with per-target breakdown for run debugging
 - **`a__*` artifact nodes** for artifact lineage in the Hamilton DAG
 
+### Validation Suite Infrastructure
+
+- **CLI Golden Snapshot Framework** with manifest-driven test cases and dynamic field normalization
+- **Extended PR test coverage** with dry-run parity, manifest prefetch, skipped targets, and validation tests
+- **Phase 3 Migration Scaffolding** with `impl_kind` field for native/wrapper implementation tracking
+
 ---
 
 ## Phase 2 Implementation Summary
@@ -39,6 +45,9 @@ Phase 2 transforms Hamilton into the **source of truth** for the CodeIntel build
 | PR-13 | Run Targets Persistence | `schemas.py`, `build_tracking.py`, `executor.py` |
 | PR-14 | Graph Exports | `observability.py`, `cli/handlers/build.py` |
 | PR-15 | Explain Staleness | `planner.py`, `cli/commands/build.py`, `cli/handlers/build.py` |
+| VS | Validation Suite | `tests/build/hamilton/snapshots/` (new), `conftest.py`, `test_cli_snapshots.py` (new) |
+| VS | Extended PR Tests | `test_pr09_planner.py`, `test_pr10_manifest_index.py`, `test_pr11_datasetref_v2.py`, `test_pr12_loader_nodes.py` |
+| VS | Phase 3 Scaffolding | `planner.py` (impl_kind field) |
 
 ---
 
@@ -1182,15 +1191,235 @@ Phase 2 includes a comprehensive test suite in `tests/build/hamilton/`:
 | File | Tests | Coverage |
 |------|-------|----------|
 | `test_pr08_defaults.py` | 8 | Default mode verification |
-| `test_pr09_planner.py` | 8 | Plan status matrix, closure order |
-| `test_pr10_manifest_index.py` | 5 | Hash cascade, skip logic |
-| `test_pr11_datasetref_v2.py` | 10 | DatasetRef/ArtifactRef fields |
-| `test_pr12_loader_nodes.py` | 6 | q__/df__ node generation |
+| `test_pr09_planner.py` | 11 | Plan status matrix, closure order, dry-run parity |
+| `test_pr10_manifest_index.py` | 8 | Hash cascade, skip logic, prefetch validation |
+| `test_pr11_datasetref_v2.py` | 14 | DatasetRef/ArtifactRef fields, skipped targets |
+| `test_pr12_loader_nodes.py` | 10 | q__/df__ node generation, validate-outputs behavior |
 | `test_pr13_run_targets.py` | 5 | Schema, persistence, history |
 | `test_pr14_graph_exports.py` | 7 | Mermaid/DOT export |
 | `test_pr15_explain.py` | 9 | Staleness explanation |
+| `test_cli_snapshots.py` | 7 | CLI golden snapshot tests |
 
 All tests follow the Testing Charter: real components, no monkeypatching, production-parity execution.
+
+---
+
+## CLI Golden Snapshot Framework
+
+### Problem
+
+CLI output validation was manual and inconsistent. There was no systematic way to ensure CLI commands produced stable, expected output across releases.
+
+### Solution
+
+Created a manifest-driven CLI snapshot testing framework with automatic normalization of dynamic fields (timestamps, durations, run IDs).
+
+### Implementation
+
+#### 1. Snapshot Directory Structure
+
+```
+tests/build/hamilton/snapshots/
+├── __init__.py           # Package documentation
+├── _snapshot.py          # JSON/text normalization helpers
+├── _manifest.py          # Typed manifest loader (JSON + YAML)
+├── _runner.py            # CLI execution and snapshot comparison
+├── manifest.yaml         # Test case definitions
+├── README.md             # Contributor documentation
+└── *.txt / *.json        # Golden snapshot files
+```
+
+#### 2. Snapshot Helpers (`_snapshot.py`)
+
+```python
+DEFAULT_DYNAMIC_KEYS: frozenset[str] = frozenset({
+    "run_id", "duration_ms", "duration_seconds",
+    "started_at", "completed_at", "recorded_at",
+    "computed_at", "timestamp", "total_duration_ms", "now",
+})
+
+@dataclass(frozen=True)
+class TextReplace:
+    """Regex-based text replacement for snapshot normalization."""
+    pattern: str
+    repl: str
+
+def normalize_json_obj(obj: object, *, strip_keys: frozenset[str]) -> object:
+    """Remove dynamic fields from an object for snapshot comparison."""
+
+def normalize_text(text: str, *, replaces: Iterable[TextReplace]) -> str:
+    """Normalize text output (line endings, whitespace, replacements)."""
+
+def assert_or_update_snapshot(
+    *, actual: str, snapshot_path: Path, update: bool
+) -> None:
+    """Assert content matches snapshot or update the snapshot file."""
+```
+
+#### 3. Manifest Loader (`_manifest.py`)
+
+```python
+@dataclass(frozen=True)
+class SnapshotCase:
+    """Individual snapshot test case definition."""
+    name: str
+    args: tuple[str, ...]
+    kind: SnapshotKind          # "json" or "text"
+    output: OutputSelect        # "stdout", "stderr", or "both"
+    exit_code: int
+    env: Mapping[str, str] | None
+    snapshot: str
+    strip_keys: tuple[str, ...]
+    replace: tuple[TextReplace, ...]
+    tags: tuple[str, ...]
+
+@dataclass(frozen=True)
+class SnapshotManifest:
+    """Complete snapshot test manifest."""
+    app_import: str
+    defaults: SnapshotDefaults
+    cases: tuple[SnapshotCase, ...]
+
+def load_snapshot_manifest(path: Path) -> SnapshotManifest:
+    """Load and validate a snapshot test manifest (JSON or YAML)."""
+```
+
+#### 4. Test Runner (`_runner.py`)
+
+```python
+def run_case(*, case: SnapshotCase, env: Mapping[str, str] | None) -> CliResult:
+    """Execute a CLI command for a snapshot case."""
+
+def render_expected_content(*, case: SnapshotCase, raw_text: str) -> str:
+    """Normalize output based on case kind (JSON or text)."""
+
+def execute_and_assert_snapshot(
+    *, manifest: SnapshotManifest, snapshots_dir: Path,
+    case: SnapshotCase, update: bool
+) -> None:
+    """Execute CLI command and compare/update snapshot."""
+```
+
+#### 5. Pytest Integration (`conftest.py`)
+
+```python
+# CLI options added
+--update-cli-snapshots     # Update snapshots instead of asserting
+--cli-snapshot-manifest    # Custom manifest path
+--cli-snapshot-tags        # Comma-separated tag filter
+--cli-snapshot-pattern     # Glob pattern for case names
+--cli-snapshot-fail-fast   # Stop on first failure
+--list-cli-snapshots       # List cases and exit
+```
+
+#### 6. Parametrized Test (`test_cli_snapshots.py`)
+
+```python
+@pytest.mark.cli_snapshot
+def test_cli_snapshot(
+    snapshot_case: SnapshotCase,
+    cli_snapshot_context: tuple[Path, SnapshotManifest],
+    request: pytest.FixtureRequest,
+) -> None:
+    """Execute CLI command and compare output to golden snapshot."""
+```
+
+#### 7. YAML Manifest (`manifest.yaml`)
+
+```yaml
+app_import: "codeintel.cli:app"
+
+defaults:
+  kind: "json"
+  output: "stdout"
+  exit_code: 0
+  env:
+    CODEINTEL_LOG_LEVEL: "WARNING"
+
+cases:
+  - name: "pr08_graph_default_mode"
+    tags: ["pr08", "graph", "json", "generated", "tiny"]
+    args: ["build", "graph", "modules", "--format", "json", "--help"]
+    kind: "text"
+
+  - name: "pr09_plan_help"
+    tags: ["pr09", "plan", "text", "tiny"]
+    args: ["build", "plan", "--help"]
+    kind: "text"
+```
+
+### Tag Taxonomy
+
+- **PR tags**: `pr08`, `pr09`, `pr10`, `pr11`, `pr12`, `pr13`, `pr14`, `pr15`
+- **Command tags**: `graph`, `plan`, `explain`, `history`, `status`, `run`
+- **Format tags**: `json`, `dot`, `mermaid`, `text`
+- **Scope tags**: `tiny`, `integration`
+- **Mode tags**: `generated`, `phase0`
+
+### Usage Examples
+
+```bash
+# Run all CLI snapshot tests
+pytest -m cli_snapshot
+
+# Update snapshots after intentional changes
+pytest -m cli_snapshot --update-cli-snapshots
+
+# Filter by tags
+pytest -m cli_snapshot --cli-snapshot-tags pr14,graph
+
+# Filter by pattern
+pytest -m cli_snapshot --cli-snapshot-pattern "pr14_*"
+
+# List available cases
+pytest -m cli_snapshot --list-cli-snapshots
+```
+
+---
+
+## Phase 3 Migration Scaffolding
+
+### Problem
+
+Phase 3 will migrate targets from wrapper-based execution to native Hamilton pipelines. The planning infrastructure needs to distinguish between implementation types.
+
+### Solution
+
+Added `ImplKind` type and `impl_kind` field to `PlanEntry` for forward compatibility with Phase 3.
+
+### Implementation
+
+#### 1. ImplKind Type (`planner.py`)
+
+```python
+# Implementation kind for Phase 3 migration
+ImplKind = Literal["wrapper", "native"]
+```
+
+#### 2. PlanEntry Extension (`planner.py`)
+
+```python
+@dataclass(frozen=True)
+class PlanEntry:
+    # ... existing fields ...
+    impl_kind: ImplKind = "wrapper"  # Defaults to wrapper for backward compat
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            # ... existing fields ...
+            "impl_kind": self.impl_kind,
+        }
+```
+
+### Attributes
+
+- **`wrapper`**: Target uses generated module wrapping the plugin (current behavior)
+- **`native`**: Target uses native Hamilton pipeline (Phase 3)
+
+This field enables:
+- Gradual migration of targets to native implementations
+- Plan output showing which targets use which implementation
+- Filtering builds by implementation type
 
 ---
 
@@ -1210,6 +1439,9 @@ All tests follow the Testing Charter: real components, no monkeypatching, produc
 | 10. --validate-outputs flag implemented | ✅ |
 | 11. build history --run-id includes targets | ✅ |
 | 12. a__* artifact nodes generated | ✅ |
+| 13. CLI golden snapshot framework implemented | ✅ |
+| 14. PR test coverage extended (dry-run, prefetch, skipped) | ✅ |
+| 15. Phase 3 impl_kind scaffolding in PlanEntry | ✅ |
 
 ---
 
@@ -1248,6 +1480,7 @@ codeintel build run risk_factors --force risk_factors
 - [Phase 0 Specification](Hamilton_apache_phase0.md)
 - [Phase 1 Specification](Hamilton_apache_phase1.md)
 - [Phase 2 Specification](Hamilton_apache_phase2.md)
+- [Phase 2 Validation Suite](Phase2_validation_suite.md)
 - [Phase 1 Implementation Report](Hamilton_phase1_implementation_report.md)
 - [Hamilton Documentation](https://hamilton.dagworks.io/)
 

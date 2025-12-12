@@ -5,6 +5,8 @@ Validates build.run_targets schema exists and persistence works.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import pytest
 
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
@@ -17,11 +19,7 @@ class TestRunTargetsSchema:
     def test_run_targets_schema_exists() -> None:
         """Verify build.run_targets schema is registered."""
         schema_key = "build.run_targets"
-        try:
-            schema = SCHEMA_REGISTRY.get(schema_key)
-        except Exception:
-            pytest.skip("SCHEMA_REGISTRY.get() not available or schema not registered")
-
+        schema = SCHEMA_REGISTRY.get(schema_key)
         if schema is None:
             pytest.skip(f"Schema '{schema_key}' not registered")
 
@@ -29,11 +27,7 @@ class TestRunTargetsSchema:
     def test_run_targets_schema_has_required_columns() -> None:
         """Verify build.run_targets has required columns."""
         schema_key = "build.run_targets"
-        try:
-            schema = SCHEMA_REGISTRY.get(schema_key)
-        except Exception:
-            pytest.skip("SCHEMA_REGISTRY.get() not available")
-
+        schema = SCHEMA_REGISTRY.get(schema_key)
         if schema is None:
             pytest.skip("Schema not registered")
 
@@ -51,9 +45,10 @@ class TestRunTargetsSchema:
         # column_names might be a method or property
         column_names_attr = getattr(schema, "column_names", None)
         if callable(column_names_attr):
-            actual_columns = set(column_names_attr())
+            columns = column_names_attr()
         else:
-            actual_columns = set(column_names_attr)
+            columns = column_names_attr if column_names_attr is not None else ()
+        actual_columns = set(columns if isinstance(columns, Iterable) else (columns,))
 
         missing = expected_columns - actual_columns
         if missing:

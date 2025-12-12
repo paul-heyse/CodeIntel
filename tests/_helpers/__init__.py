@@ -50,6 +50,7 @@ Additional Utilities
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
 
 from tests._helpers.build import (
@@ -276,15 +277,15 @@ if TYPE_CHECKING:
 else:
     PluginHarnessFactory = cast("Any", None)
 
-_LAZY_HELPERS = {
+_LAZY_HELPERS: dict[str, str] = {
     "PluginHarnessFactory": "tests._helpers.plugin_harness",
 }
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> object:
     if name in _LAZY_HELPERS:
         module_name = _LAZY_HELPERS[name]
-        module = __import__(module_name, fromlist=[name])
+        module = import_module(module_name)
         return getattr(module, name)
     msg = f"module {__name__} has no attribute {name}"
     raise AttributeError(msg)

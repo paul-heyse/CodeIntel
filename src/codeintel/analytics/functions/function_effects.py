@@ -320,7 +320,7 @@ def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> 
                 and_predicates(
                     edges.repo == repo,
                     edges.commit == commit,
-                    edges.callee_goid_h128.isnull(),
+                    edges.callee_goid_h128.isna(),
                 )
             )
             .group_by(edges.caller_goid_h128)

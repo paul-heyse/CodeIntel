@@ -153,7 +153,7 @@ def _should_skip_target(
         return False
     if input_hash is None:
         return False
-    return should_skip(
+    request = SkipCheckRequest(
         gateway=env.gateway,
         target=target_name,
         repo=env.snapshot.repo,
@@ -161,6 +161,7 @@ def _should_skip_target(
         input_hash=input_hash,
         manifest_index=env.manifest_index,
     )
+    return should_skip(request)
 
 
 def _execute_plugin(

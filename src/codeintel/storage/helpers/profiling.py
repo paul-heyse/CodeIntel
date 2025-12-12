@@ -86,6 +86,9 @@ def run_profile(
         Directory to write profiling artifacts.
     analyze
         Whether to use EXPLAIN ANALYZE.
+    con
+        Optional DuckDB connection to reuse. When omitted, a temporary
+        connection is created from ``db_path`` and closed after profiling.
 
     Raises
     ------

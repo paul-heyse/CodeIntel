@@ -14,6 +14,7 @@ Design Principles
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -26,8 +27,6 @@ from codeintel.build.hashing import (
 from codeintel.build.manifest import OutputManifest
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
     from codeintel.build.hamilton.io.dataset_ref import DatasetRef
     from codeintel.build.targets import OutputTarget
@@ -235,14 +234,20 @@ def compute_target_options_hash(options: object | None) -> str | None:
     return compute_options_hash(options)
 
 
+@dataclass(frozen=True)
+class SkipCheckRequest:
+    """Input parameters for manifest skip evaluation."""
+
+    gateway: StorageGateway
+    target: str
+    repo: str
+    commit: str
+    input_hash: str
+    manifest_index: Mapping[str, OutputManifest] | None = None
+
+
 def should_skip(
-    *,
-    gateway: StorageGateway,
-    target: str,
-    repo: str,
-    commit: str,
-    input_hash: str,
-    manifest_index: Mapping[str, OutputManifest] | None = None,
+    request: SkipCheckRequest,
 ) -> bool:
     """Check if a target can be skipped based on existing manifest.
 
@@ -281,13 +286,17 @@ def should_skip(
     ...     print("Skipping - output is still valid")
     """
     # Use manifest_index if available, otherwise load from DB
-    if manifest_index is not None:
-        prior = manifest_index.get(target)
+    if request.manifest_index is not None:
+        prior = request.manifest_index.get(request.target)
     else:
-        prior = gateway.build.load_manifest(target=target, repo=repo, commit=commit)
+        prior = request.gateway.build.load_manifest(
+            target=request.target,
+            repo=request.repo,
+            commit=request.commit,
+        )
     if prior is None:
         return False
-    return prior.input_hash == input_hash
+    return prior.input_hash == request.input_hash
 
 
 @dataclass(frozen=True)
