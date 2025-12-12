@@ -644,6 +644,7 @@ def build_backend_resource(
     cfg: ServingConfig,
     *,
     gateway: StorageGateway | None = None,
+    owns_gateway: bool = True,
     http_client: httpx.Client | httpx.AsyncClient | None = None,
     options: BackendResourceOptions | None = None,
 ) -> BackendResource:
@@ -658,6 +659,8 @@ def build_backend_resource(
         Validated serving configuration.
     gateway
         StorageGateway supplying connection and dataset registry for local_db mode.
+    owns_gateway
+        When True, the returned resource ``close()`` hook will close the gateway.
     http_client
         Optional pre-built HTTPX client for remote_api mode.
     options
@@ -682,6 +685,7 @@ def build_backend_resource(
         return _build_local_resource(
             cfg,
             gateway=gateway,
+            owns_gateway=owns_gateway,
             options=BackendResourceOptions(
                 registry=registry_opts,
                 observability=resolved_observability,
@@ -707,6 +711,7 @@ def _build_local_resource(
     cfg: ServingConfig,
     *,
     gateway: StorageGateway | None,
+    owns_gateway: bool,
     limits: BackendLimits,
     options: BackendResourceOptions,
 ) -> BackendResource:
@@ -796,7 +801,7 @@ def _build_local_resource(
         )
 
     def _close() -> None:
-        if gateway is not None:
+        if owns_gateway:
             gateway.close()
 
     return BackendResource(backend=backend, service=backend.service, close=_close)

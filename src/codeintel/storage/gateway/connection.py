@@ -106,4 +106,8 @@ def _ensure_macros_and_schema(con: DuckDBConnection, config: StorageConfig) -> N
             stacklevel=2,
         )
     if config.validate_schema:
-        assert_schema_alignment(con, strict=True)
+        assert_schema_alignment(
+            con,
+            include_views=config.ensure_views and not config.read_only,
+            strict=True,
+        )

@@ -62,6 +62,11 @@ def _resolve_requested_plan_plugins(
     enabled-by-default. When ``names`` are provided, those plugins are planned
     (and ``enable`` is treated as additive). When ``enable`` is provided with no
     ``names``, it overrides the default selection.
+
+    Returns
+    -------
+    list[str] | None
+        Ordered plugin names to include in the plan, or None for defaults.
     """
     if names:
         return _dedupe_preserve_order([*names, *(enable or ())])
@@ -69,7 +74,9 @@ def _resolve_requested_plan_plugins(
         return list(enable)
 
     enabled_by_default_names = [
-        plugin.metadata.name for plugin in list_graph_plugins() if plugin.metadata.enabled_by_default
+        plugin.metadata.name
+        for plugin in list_graph_plugins()
+        if plugin.metadata.enabled_by_default
     ]
     return enabled_by_default_names or None
 

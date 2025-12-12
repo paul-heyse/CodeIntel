@@ -384,7 +384,8 @@ class BaseRepository:
             List of row dictionaries.
         """
         df = self._ibis_to_df(expr, table_key)
-        return df.to_dict(orient="records")
+        sanitized = df.astype("object").where(pd.notna(df), None)
+        return sanitized.to_dict(orient="records")
 
     def _ibis_to_one(
         self,

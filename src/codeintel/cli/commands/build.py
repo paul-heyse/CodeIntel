@@ -17,6 +17,7 @@ from cyclopts import App, Parameter
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.build import (
+    build_graph_handler,
     build_history_handler,
     build_run_handler,
     build_status_handler,
@@ -123,6 +124,52 @@ class BuildHistoryCommand:
             help="Number of recent runs to show.",
         ),
     ] = 10
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("build.graph", handler=build_graph_handler, config=_BUILD_CONFIG)
+@build_app.command(name="graph")
+@dataclass
+class BuildGraphCommand:
+    """Export Hamilton DAG for specified targets."""
+
+    targets: Annotated[
+        list[str] | None,
+        Parameter(
+            name=None,
+            help="Target names to show DAG for (e.g., function_metrics, call_graph).",
+        ),
+    ] = None
+    module: Annotated[
+        str | None,
+        Parameter(
+            name=["--module", "-m"],
+            help="Show DAG for all targets in a module (ingestion, graphs, analytics).",
+            show_choices=True,
+        ),
+    ] = None
+    all_targets: Annotated[
+        bool,
+        Parameter(
+            name=["--all", "-a"],
+            help="Show DAG for all targets across all modules.",
+            negative=(),
+        ),
+    ] = False
+    output_format: Annotated[
+        str,
+        Parameter(
+            name=["--format", "-f"],
+            help="Output format: json (default) or text.",
+        ),
+    ] = "json"
+    output_file: Annotated[
+        str | None,
+        Parameter(
+            name=["--output", "-o"],
+            help="Output file path (stdout if not specified).",
+        ),
+    ] = None
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

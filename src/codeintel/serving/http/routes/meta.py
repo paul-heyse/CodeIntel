@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from codeintel.serving.auto_pipeline import build_prereq_debug_info
 from codeintel.serving.backend import BackendLimits
+from codeintel.serving.http.dependencies import BackendDep, ConfigDep, ServiceDep
 from codeintel.serving.mcp.models import (
     DataflowEdgePayload,
     DataflowGraphResponse,
@@ -26,11 +27,6 @@ from codeintel.serving.operations.catalog import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.serving.http.dependencies import (
-        BackendDep,
-        ConfigDep,
-        ServiceDep,
-    )
     from codeintel.storage.gateway import StorageGateway
 
 LOG_ROUTE_PREFIX = "/meta"

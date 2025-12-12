@@ -24,11 +24,14 @@ from codeintel.build.resources import (
     TargetResources,
 )
 from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.config.datasets.contracts import get_table_schemas
 
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import TableSchema
 
 log = logging.getLogger(__name__)
+
+_DATASET_TABLE_SCHEMAS = get_table_schemas()
 
 # =============================================================================
 # Ingestion Targets
@@ -134,6 +137,12 @@ GOIDS_TARGET = OutputTarget(
     name="goids",
     module="graphs",
     plugin="goid_builder",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["core.goids"],
+            _DATASET_TABLE_SCHEMAS["core.goid_crosswalk"],
+        )
+    ),
     dependencies=("scip", "ast"),
     description="GOID resolution and crosswalk construction.",
 )
@@ -142,6 +151,12 @@ CALL_GRAPH_TARGET = OutputTarget(
     name="call_graph",
     module="graphs",
     plugin="callgraph",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["graph.call_graph_nodes"],
+            _DATASET_TABLE_SCHEMAS["graph.call_graph_edges"],
+        )
+    ),
     dependencies=("goids", "scip"),
     description="Function call graph construction.",
 )
@@ -150,6 +165,12 @@ IMPORT_GRAPH_TARGET = OutputTarget(
     name="import_graph",
     module="graphs",
     plugin="import_graph",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["graph.import_modules"],
+            _DATASET_TABLE_SCHEMAS["graph.import_graph_edges"],
+        )
+    ),
     dependencies=("modules",),
     description="Module import graph construction.",
 )
@@ -158,6 +179,13 @@ CFG_TARGET = OutputTarget(
     name="cfg",
     module="graphs",
     plugin="cfg_dfg",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["graph.cfg_blocks"],
+            _DATASET_TABLE_SCHEMAS["graph.cfg_edges"],
+            _DATASET_TABLE_SCHEMAS["graph.dfg_edges"],
+        )
+    ),
     dependencies=("goids", "ast"),
     description="Control flow graph construction per function.",
 )
@@ -166,6 +194,7 @@ DFG_TARGET = OutputTarget(
     name="dfg",
     module="graphs",
     plugin="",  # No separate plugin - CFG target runs cfg_dfg which produces both
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["graph.dfg_edges"],)),
     dependencies=("cfg",),
     description="Data flow graph construction per function.",
 )
@@ -182,6 +211,7 @@ SYMBOL_USES_TARGET = OutputTarget(
     name="symbol_uses",
     module="graphs",
     plugin="symbol_uses",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["graph.symbol_use_edges"],)),
     dependencies=("scip",),
     description="Symbol definition-to-use edge extraction.",
 )
@@ -303,6 +333,14 @@ GRAPH_METRICS_TARGET = OutputTarget(
     name="graph_metrics",
     module="graphs",
     plugin="graph_metrics",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.graph_metrics_functions"],
+            _DATASET_TABLE_SCHEMAS["analytics.graph_metrics_functions_ext"],
+            _DATASET_TABLE_SCHEMAS["analytics.graph_metrics_modules"],
+            _DATASET_TABLE_SCHEMAS["analytics.graph_metrics_modules_ext"],
+        )
+    ),
     dependencies=("call_graph", "import_graph"),
     description="Graph topology metrics for functions and modules.",
 )

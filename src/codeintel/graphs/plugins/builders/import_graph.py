@@ -52,7 +52,7 @@ IMPORT_GRAPH_METADATA = CorePluginMetadata(
     provides=("graph.import_graph",),
     requires=("core.modules",),
     produces_tables=(
-        "graph.import_graph_nodes",
+        "graph.import_modules",
         "graph.import_graph_edges",
     ),
     consumes_tables=("core.modules",),

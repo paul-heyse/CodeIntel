@@ -757,7 +757,9 @@ class FunctionEffectsRow(TypedDict):
     created_at: datetime
 
 
-FUNCTION_EFFECTS_COLUMNS: Final[tuple[str, ...]] = _get_contract_columns("analytics.function_effects")
+FUNCTION_EFFECTS_COLUMNS: Final[tuple[str, ...]] = _get_contract_columns(
+    "analytics.function_effects"
+)
 
 
 def function_effects_row_to_tuple(row: FunctionEffectsRow) -> tuple[object, ...]:
@@ -819,7 +821,9 @@ class FunctionContractsRow(TypedDict):
     created_at: datetime
 
 
-FUNCTION_CONTRACTS_COLUMNS: Final[tuple[str, ...]] = _get_contract_columns("analytics.function_contracts")
+FUNCTION_CONTRACTS_COLUMNS: Final[tuple[str, ...]] = _get_contract_columns(
+    "analytics.function_contracts"
+)
 
 
 def function_contracts_row_to_tuple(row: FunctionContractsRow) -> tuple[object, ...]:

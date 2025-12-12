@@ -15,6 +15,12 @@ The initial chain covers a vertical slice through all modules:
 - function_metrics (analytics) - depends on goids, ast
 - risk_factors (analytics) - depends on function_metrics, call_graph
 
+Features
+--------
+- Upstream failure gating: downstream targets skip if upstream fails
+- Force bypass: targets in env.force_targets skip manifest checks
+- Dataset population: successful targets populate TargetRunRecord.datasets
+
 Later phases will generate nodes from the TargetGraph rather than
 defining them explicitly.
 """
@@ -24,12 +30,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from hamilton.function_modifiers import tag
 
+from codeintel.build.parameters import EMPTY_PARAMETERS
+
+if TYPE_CHECKING:
+    from codeintel.build.parameters import TargetParameters
+    from codeintel.build.plugin import TargetPluginProtocol
+    from codeintel.build.result import TargetResult
+
 from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.io.dataset_ref import refs_from_target_result, refs_to_tuple
 from codeintel.build.hamilton.manifest_hook import (
     ManifestSaveRequest,
     TargetRunRecord,
@@ -40,13 +55,223 @@ from codeintel.build.hamilton.manifest_hook import (
 )
 from codeintel.build.hamilton.metadata_bridge import from_plugin_or_target
 from codeintel.build.plugin_registry import get_plugin_for_target
-from codeintel.build.targets import TargetGraph
+from codeintel.build.targets import OutputTarget, TargetGraph
 
 log = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Internal Execution Helper
+# Internal Helpers
+# =============================================================================
+
+
+def _check_upstream_failures(upstream: tuple[TargetRunRecord, ...]) -> tuple[str, ...]:
+    """Return names of upstream targets that failed.
+
+    Parameters
+    ----------
+    upstream
+        Records from upstream nodes.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Target names with status="failed".
+    """
+    return tuple(r.target for r in upstream if r.status == "failed")
+
+
+@dataclass(frozen=True)
+class HashComputation:
+    """Hashes and raw parameters for a target execution."""
+
+    input_hash: str | None
+    options_hash: str | None
+    raw_params: TargetParameters | None
+
+
+def _compute_hashes(
+    env: BuildEnv,
+    target: OutputTarget,
+    target_name: str,
+) -> HashComputation:
+    """Compute options and input hashes for a target.
+
+    Parameters
+    ----------
+    env
+        Build environment containing snapshot and gateway.
+    target
+        Target metadata.
+    target_name
+        Human-readable target name.
+
+    Returns
+    -------
+    HashComputation
+        Input hash, options hash, and raw parameters used for execution.
+    """
+    raw_params = env.config.parameters_for(target_name)
+    options_hash = compute_target_options_hash(raw_params) if raw_params else None
+    input_hash = compute_target_input_hash(
+        target=target,
+        snapshot=env.snapshot,
+        gateway=env.gateway,
+        options_hash=options_hash,
+    )
+    return HashComputation(
+        input_hash=input_hash,
+        options_hash=options_hash,
+        raw_params=raw_params,
+    )
+
+
+def _should_skip_target(
+    env: BuildEnv,
+    target_name: str,
+    input_hash: str | None,
+) -> bool:
+    """Check if target should be skipped based on manifest.
+
+    Parameters
+    ----------
+    env
+        Build environment with manifest access.
+    target_name
+        Target under evaluation.
+    input_hash
+        Computed input hash for the target.
+
+    Returns
+    -------
+    bool
+        True if target has already been computed with the same hash.
+    """
+    if env.is_forced(target_name):
+        log.info("build.hamilton.force target=%s input_hash=%s", target_name, input_hash)
+        return False
+    if input_hash is None:
+        return False
+    return should_skip(
+        gateway=env.gateway,
+        target=target_name,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        input_hash=input_hash,
+    )
+
+
+def _execute_plugin(
+    env: BuildEnv,
+    target: OutputTarget,
+    raw_params: TargetParameters | None,
+    plugin: TargetPluginProtocol,
+) -> tuple[TargetResult, float]:
+    """Execute the plugin and return (result, duration_ms).
+
+    Parameters
+    ----------
+    env
+        Build environment passed into plugin.
+    target
+        Target metadata used to build the execution context.
+    raw_params
+        Raw parameters resolved from configuration.
+    plugin
+        Plugin implementing TargetPluginProtocol.
+
+    Returns
+    -------
+    tuple[TargetResult, float]
+        Plugin result and elapsed duration in milliseconds.
+    """
+    resources = ContextResources(
+        providers=env.providers,
+        gateway=env.gateway,
+        modules=(),
+    )
+    ctx = TargetExecutionContext(
+        target=target,
+        snapshot=env.snapshot,
+        paths=env.paths,
+        resources=resources,
+        parameters=raw_params or EMPTY_PARAMETERS,
+    )
+    start = time.perf_counter()
+    result = asyncio.run(plugin.execute(ctx))
+    duration_ms = (time.perf_counter() - start) * 1000
+    return result, duration_ms
+
+
+@dataclass(frozen=True)
+class _SuccessRecordParams:
+    """Parameters for building a success record."""
+
+    env: BuildEnv
+    target: OutputTarget
+    target_name: str
+    meta_name: str
+    input_hash: str | None
+    options_hash: str | None
+    duration_ms: float
+    row_counts: dict[str, int]
+
+
+def _build_success_record(params: _SuccessRecordParams) -> TargetRunRecord:
+    """Build record and save manifest for successful execution.
+
+    Parameters
+    ----------
+    params
+        Aggregated parameters for manifest persistence and record creation.
+
+    Returns
+    -------
+    TargetRunRecord
+        Execution record for the successfully completed target.
+    """
+    if params.input_hash is not None:
+        request = ManifestSaveRequest(
+            target=params.target_name,
+            repo=params.env.snapshot.repo,
+            commit=params.env.snapshot.commit,
+            plugin=params.target.plugin,
+            duration_ms=params.duration_ms,
+            input_hash=params.input_hash,
+            row_count=sum(params.row_counts.values()) if params.row_counts else None,
+            options_hash=params.options_hash,
+        )
+        save_manifest(gateway=params.env.gateway, request=request)
+
+    table_keys = params.target.contract.table_keys or params.target.table_keys
+    refs = refs_from_target_result(
+        target_name=params.target_name,
+        table_keys=table_keys,
+        row_counts=params.row_counts,
+    )
+    datasets = refs_to_tuple(refs)
+
+    log.info(
+        "build.hamilton.complete target=%s duration_ms=%.1f rows=%d datasets=%d",
+        params.target_name,
+        params.duration_ms,
+        sum(params.row_counts.values()) if params.row_counts else 0,
+        len(datasets),
+    )
+    return TargetRunRecord(
+        target=params.target_name,
+        plugin_name=params.meta_name,
+        status="succeeded",
+        input_hash=params.input_hash,
+        options_hash=params.options_hash,
+        duration_ms=params.duration_ms,
+        row_counts=params.row_counts,
+        datasets=datasets,
+    )
+
+
+# =============================================================================
+# Main Execution Helper
 # =============================================================================
 
 
@@ -55,16 +280,9 @@ def _run_target(
     env: BuildEnv,
     graph: TargetGraph,
     target_name: str,
+    upstream: tuple[TargetRunRecord, ...] = (),
 ) -> TargetRunRecord:
     """Execute a target plugin and return execution record.
-
-    This helper encapsulates the shared logic for running any target:
-    1. Retrieve target metadata from graph and plugin
-    2. Compute options hash and input hash
-    3. Check if target can be skipped (output still valid)
-    4. Build execution context matching BuildExecutor
-    5. Execute plugin and record timing
-    6. Persist manifest on success
 
     Parameters
     ----------
@@ -74,15 +292,16 @@ def _run_target(
         Target graph for looking up target metadata.
     target_name
         Name of the target to execute.
+    upstream
+        Tuple of upstream TargetRunRecord objects for failure gating.
 
     Returns
     -------
     TargetRunRecord
-        Execution record with status, timing, and row counts.
+        Execution record with status, timing, row counts, and datasets.
     """
     target = graph.get(target_name)
 
-    # Get plugin for this target
     try:
         plugin = get_plugin_for_target(target_name)
     except KeyError as exc:
@@ -95,123 +314,75 @@ def _run_target(
             error=f"No plugin registered: {exc}",
         )
 
-    # Extract metadata from plugin or target
     meta = from_plugin_or_target(plugin=plugin, target=target)
 
-    # Compute options hash from config parameters
-    raw_params = env.config.parameters_for(target_name)
-    options_hash = compute_target_options_hash(raw_params) if raw_params else None
+    # Check upstream failures
+    failed_upstream = _check_upstream_failures(upstream)
+    if failed_upstream:
+        log.info("build.hamilton.upstream_failed target=%s", target_name)
+        return TargetRunRecord(
+            target=target_name,
+            plugin_name=meta.name,
+            status="skipped",
+            input_hash=None,
+            error=f"upstream_failed:{','.join(failed_upstream)}",
+        )
 
-    # Compute input hash including upstream hashes
-    input_hash = compute_target_input_hash(
-        target=target,
-        snapshot=env.snapshot,
-        gateway=env.gateway,
-        options_hash=options_hash,
-    )
+    # Compute hashes
+    hashes = _compute_hashes(env, target, target_name)
 
-    # Check if we can skip this target
-    if should_skip(
-        gateway=env.gateway,
-        target=target_name,
-        repo=env.snapshot.repo,
-        commit=env.snapshot.commit,
-        input_hash=input_hash,
-    ):
+    # Check skip
+    if _should_skip_target(env, target_name, hashes.input_hash):
         log.info(
             "build.hamilton.skip target=%s input_hash=%s",
             target_name,
-            input_hash,
+            hashes.input_hash,
         )
         return TargetRunRecord(
             target=target_name,
             plugin_name=meta.name,
             status="skipped",
-            input_hash=input_hash,
-            options_hash=options_hash,
+            input_hash=hashes.input_hash,
+            options_hash=hashes.options_hash,
             duration_ms=0.0,
         )
 
-    # Build execution context exactly like BuildExecutor
-    resources = ContextResources(
-        providers=env.providers,
-        gateway=env.gateway,
-        modules=(),  # Will be loaded from DB if needed
-    )
-
-    ctx = TargetExecutionContext(
-        target=target,
-        snapshot=env.snapshot,
-        paths=env.paths,
-        resources=resources,
-        parameters=raw_params,
-    )
-
-    # Execute the plugin
-    start = time.perf_counter()
+    # Execute plugin
     try:
-        result = asyncio.run(plugin.execute(ctx))
+        result, duration_ms = _execute_plugin(env, target, hashes.raw_params, plugin)
     except Exception as exc:
-        duration_ms = (time.perf_counter() - start) * 1000
-        log.exception(
-            "build.hamilton.error target=%s duration_ms=%.1f",
-            target_name,
-            duration_ms,
-        )
+        log.exception("build.hamilton.error target=%s", target_name)
         return TargetRunRecord(
             target=target_name,
             plugin_name=meta.name,
             status="failed",
-            input_hash=input_hash,
-            options_hash=options_hash,
-            duration_ms=duration_ms,
+            input_hash=hashes.input_hash,
+            options_hash=hashes.options_hash,
             error=str(exc),
         )
 
-    duration_ms = (time.perf_counter() - start) * 1000
     row_counts = dict(result.row_counts or {})
 
-    # Persist manifest on success
     if result.success:
-        request = ManifestSaveRequest(
-            target=target_name,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-            plugin=target.plugin,
-            duration_ms=duration_ms,
-            input_hash=input_hash,
-            row_count=sum(row_counts.values()) if row_counts else None,
-            options_hash=options_hash,
-        )
-        save_manifest(gateway=env.gateway, request=request)
-        log.info(
-            "build.hamilton.complete target=%s duration_ms=%.1f rows=%d",
-            target_name,
-            duration_ms,
-            sum(row_counts.values()) if row_counts else 0,
-        )
-        return TargetRunRecord(
-            target=target_name,
-            plugin_name=meta.name,
-            status="succeeded",
-            input_hash=input_hash,
-            options_hash=options_hash,
+        params = _SuccessRecordParams(
+            env=env,
+            target=target,
+            target_name=target_name,
+            meta_name=meta.name,
+            input_hash=hashes.input_hash,
+            options_hash=hashes.options_hash,
             duration_ms=duration_ms,
             row_counts=row_counts,
         )
+        return _build_success_record(params)
 
-    # Plugin execution failed
-    log.warning(
-        "build.hamilton.failed target=%s error=%s",
-        target_name,
-        result.error_message,
-    )
+    log.warning("build.hamilton.failed target=%s error=%s", target_name, result.error_message)
     return TargetRunRecord(
         target=target_name,
         plugin_name=meta.name,
         status="failed",
-        input_hash=input_hash,
-        options_hash=options_hash,
+        input_hash=hashes.input_hash,
+        options_hash=hashes.options_hash,
         duration_ms=duration_ms,
         row_counts=row_counts,
         error=result.error_message,
@@ -245,7 +416,7 @@ def t__modules(env: BuildEnv, graph: TargetGraph) -> TargetRunRecord:
     TargetRunRecord
         Execution record for the modules target.
     """
-    return _run_target(env=env, graph=graph, target_name="modules")
+    return _run_target(env=env, graph=graph, target_name="modules", upstream=())
 
 
 @tag(domain="ingestion", target="scip")
@@ -272,9 +443,12 @@ def t__scip(
     TargetRunRecord
         Execution record for the scip target.
     """
-    # t__modules is received to establish Hamilton DAG dependency
-    _ = t__modules  # Used for dependency tracking
-    return _run_target(env=env, graph=graph, target_name="scip")
+    return _run_target(
+        env=env,
+        graph=graph,
+        target_name="scip",
+        upstream=(t__modules,),
+    )
 
 
 @tag(domain="ingestion", target="ast")
@@ -301,9 +475,12 @@ def t__ast(
     TargetRunRecord
         Execution record for the ast target.
     """
-    # t__modules is received to establish Hamilton DAG dependency
-    _ = t__modules  # Used for dependency tracking
-    return _run_target(env=env, graph=graph, target_name="ast")
+    return _run_target(
+        env=env,
+        graph=graph,
+        target_name="ast",
+        upstream=(t__modules,),
+    )
 
 
 @tag(domain="graphs", target="goids")
@@ -333,9 +510,12 @@ def t__goids(
     TargetRunRecord
         Execution record for the goids target.
     """
-    # Upstream params establish Hamilton DAG dependencies
-    _ = (t__scip, t__ast)  # Used for dependency tracking
-    return _run_target(env=env, graph=graph, target_name="goids")
+    return _run_target(
+        env=env,
+        graph=graph,
+        target_name="goids",
+        upstream=(t__scip, t__ast),
+    )
 
 
 @tag(domain="graphs", target="call_graph")
@@ -365,9 +545,12 @@ def t__call_graph(
     TargetRunRecord
         Execution record for the call_graph target.
     """
-    # Upstream params establish Hamilton DAG dependencies
-    _ = (t__goids, t__scip)  # Used for dependency tracking
-    return _run_target(env=env, graph=graph, target_name="call_graph")
+    return _run_target(
+        env=env,
+        graph=graph,
+        target_name="call_graph",
+        upstream=(t__goids, t__scip),
+    )
 
 
 @tag(domain="analytics", target="function_metrics")
@@ -397,9 +580,12 @@ def t__function_metrics(
     TargetRunRecord
         Execution record for the function_metrics target.
     """
-    # Upstream params establish Hamilton DAG dependencies
-    _ = (t__goids, t__ast)  # Used for dependency tracking
-    return _run_target(env=env, graph=graph, target_name="function_metrics")
+    return _run_target(
+        env=env,
+        graph=graph,
+        target_name="function_metrics",
+        upstream=(t__goids, t__ast),
+    )
 
 
 @tag(domain="analytics", target="risk_factors")
@@ -429,9 +615,12 @@ def t__risk_factors(
     TargetRunRecord
         Execution record for the risk_factors target.
     """
-    # Upstream params establish Hamilton DAG dependencies
-    _ = (t__function_metrics, t__call_graph)  # Used for dependency tracking
-    return _run_target(env=env, graph=graph, target_name="risk_factors")
+    return _run_target(
+        env=env,
+        graph=graph,
+        target_name="risk_factors",
+        upstream=(t__function_metrics, t__call_graph),
+    )
 
 
 # =============================================================================
@@ -466,6 +655,7 @@ TARGET_TO_NODE: dict[str, str] = {
 __all__ = [
     "PHASE0_NODES",
     "TARGET_TO_NODE",
+    "_run_target",
     "t__ast",
     "t__call_graph",
     "t__function_metrics",

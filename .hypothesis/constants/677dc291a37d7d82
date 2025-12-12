@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/ibis_adapter.py
+# hypothesis_version: 6.148.7
+
+[200, '.', 'IbisGateway', 'OnConflict', 'WriteResult', 'delete: %s', 'dtype', 'duckdb', 'from', 'from_', 'insert_select', 'insert_values', 'item', 'noop', 'upsert', 'where']

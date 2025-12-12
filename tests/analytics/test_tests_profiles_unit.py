@@ -104,7 +104,19 @@ class _FakeIbis:
     """Fake IbisGateway for testing without real DB."""
 
     def __init__(self) -> None:
+        self.delete_calls: list[tuple[str, object | None]] = []
+        self.table_calls: list[str] = []
         self.write_calls: list[tuple[str, list[tuple[object, ...]], list[str] | None]] = []
+
+    def table(self, table_key: str) -> SimpleNamespace:
+        """Return a fake table object with repo/commit columns."""
+        self.table_calls.append(table_key)
+        return SimpleNamespace(repo=_FakeIbisColumn("repo"), commit=_FakeIbisColumn("commit"))
+
+    def delete(self, table_key: str, *, where: object | None = None) -> int:
+        """Record delete call and return a fake deleted row count."""
+        self.delete_calls.append((table_key, where))
+        return -1
 
     def write(
         self,
@@ -122,6 +134,16 @@ class _FakeIbis:
         """
         self.write_calls.append((table_key, data, columns))
         return SimpleNamespace(rows_affected=len(data), method="insert_values")
+
+
+class _FakeIbisColumn:
+    """Fake Ibis column expression used by _FakeIbis.table()."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __eq__(self, _other: object) -> bool:
+        return True
 
 
 def _snapshot_cfg() -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]:

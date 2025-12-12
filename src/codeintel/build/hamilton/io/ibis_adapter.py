@@ -313,7 +313,8 @@ def upsert_dataframe(
     Examples
     --------
     >>> result = upsert_dataframe(
-    ...     df, ref,
+    ...     df,
+    ...     ref,
     ...     conflict_columns=["goid"],
     ...     update_columns=["loc"],
     ...     io_config=io_config,

@@ -176,9 +176,7 @@ def from_plugin_or_target(
             name=str(meta.get("name", f"{target.module}.{target.name}")),
             version=str(meta.get("version", "0.0.0")),
             domain=str(meta.get("domain", target.module)),
-            description=str(
-                meta.get("description", target.description or f"Plugin {target.name}")
-            ),
+            description=str(meta.get("description", target.description or f"Plugin {target.name}")),
             requires=tuple(meta.get("requires", ())),
             provides=tuple(meta.get("provides", (f"{target.module}.{target.name}",))),
             produces_tables=tuple(meta.get("produces_tables", ())),
@@ -191,9 +189,7 @@ def from_plugin_or_target(
         name=getattr(meta, "name", f"{target.module}.{target.name}"),
         version=getattr(meta, "version", "0.0.0"),
         domain=getattr(meta, "domain", target.module),
-        description=getattr(
-            meta, "description", target.description or f"Plugin {target.name}"
-        ),
+        description=getattr(meta, "description", target.description or f"Plugin {target.name}"),
         requires=tuple(getattr(meta, "requires", ())),
         provides=tuple(getattr(meta, "provides", (f"{target.module}.{target.name}",))),
         produces_tables=tuple(getattr(meta, "produces_tables", ())),

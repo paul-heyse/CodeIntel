@@ -49,14 +49,18 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
     try:
         con = connect(config)
         if not config.read_only:
+            include_views = config.ensure_views and config.apply_schema
             bootstrap_metadata_datasets(
                 con,
-                include_views=config.ensure_views and config.apply_schema,
-                validate_macros=config.apply_schema,
+                include_views=include_views,
+                validate_macros=include_views,
             )
         datasets = load_dataset_registry(con)
         if config.validate_schema:
-            validate_contract_or_raise(con)
+            validate_contract_or_raise(
+                con,
+                include_views=config.ensure_views and not config.read_only,
+            )
         gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
         if config.ensure_views and not config.read_only:
             create_all_ibis_views(gateway)
@@ -144,13 +148,15 @@ def open_memory_gateway(
     StorageGateway
         Gateway backed by an in-memory DuckDB connection.
     """
+    repo_value = repo if repo is not None else "demo/repo"
+    commit_value = commit if commit is not None else "deadbeef"
     cfg = StorageConfig(
         db_path=Path(":memory:"),
         read_only=False,
         apply_schema=apply_schema,
         ensure_views=ensure_views,
         validate_schema=validate_schema,
-        repo=repo,
-        commit=commit,
+        repo=repo_value,
+        commit=commit_value,
     )
     return open_gateway(cfg)

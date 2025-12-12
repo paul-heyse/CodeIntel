@@ -12,6 +12,8 @@ production-parity execution paths.
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from codeintel.build.hamilton.driver_factory import (
@@ -29,6 +31,7 @@ from codeintel.build.hamilton.naming import (
     target_node,
     to_node_name,
 )
+from codeintel.build.hamilton.nodes import targets_phase0
 from codeintel.build.registry import MODULES_TARGET
 
 
@@ -191,9 +194,6 @@ class TestDriverFactory:
 
         # Verify dependency structure by checking the actual function signatures
         # The node functions have parameters that match their dependencies
-        import inspect
-
-        from codeintel.build.hamilton.nodes import targets_phase0
 
         # modules should have no t__ dependencies (only env, graph)
         modules_sig = inspect.signature(targets_phase0.t__modules)

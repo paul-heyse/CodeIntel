@@ -56,7 +56,7 @@ class TestImportGraphMetadata:
     @staticmethod
     def test_metadata_tables() -> None:
         """Verify tables are set."""
-        expect_in("graph.import_graph_nodes", IMPORT_GRAPH_METADATA.produces_tables)
+        expect_in("graph.import_modules", IMPORT_GRAPH_METADATA.produces_tables)
         expect_in("graph.import_graph_edges", IMPORT_GRAPH_METADATA.produces_tables)
         expect_in("core.modules", IMPORT_GRAPH_METADATA.consumes_tables)
 

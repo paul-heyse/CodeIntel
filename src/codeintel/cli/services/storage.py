@@ -56,6 +56,7 @@ class StorageService:
         self._runtime = runtime
         self._explicit_db_path = db_path
         self._gateway: StorageGateway | None = None
+        self._owns_gateway = True
         self._closed = False
 
     @classmethod
@@ -106,6 +107,7 @@ class StorageService:
         """
         service = cls()
         service._gateway = gateway
+        service._owns_gateway = False
         return service
 
     @property
@@ -220,12 +222,12 @@ class StorageService:
         if self._closed:
             return
 
-        if self._gateway is not None:
+        if self._gateway is not None and self._owns_gateway:
             try:
                 self._gateway.close()
             except Exception:
                 LOG.exception("Error closing gateway")
-            self._gateway = None
+        self._gateway = None
 
         self._closed = True
 

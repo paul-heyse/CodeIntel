@@ -33,6 +33,9 @@ from codeintel.config.datasets import (
     serialize_test_profile_row,
 )
 from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.sql.builder import (
+    prepared_statements_dynamic as _prepared_statements_dynamic,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -48,6 +51,18 @@ if TYPE_CHECKING:
     )
     from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
     from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.gateway.protocol import DuckDBConnection
+
+
+def prepared_statements_dynamic(con: object, table_key: str) -> object:
+    """Compatibility shim for tests patching prepared statement generation.
+
+    Returns
+    -------
+    object
+        Prepared statements object for the given table.
+    """
+    return _prepared_statements_dynamic(cast("DuckDBConnection", con), table_key)
 
 
 def build_test_profile_context(

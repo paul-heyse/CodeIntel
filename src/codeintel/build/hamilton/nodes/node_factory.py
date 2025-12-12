@@ -10,6 +10,7 @@ Design Principles
 2. Dependencies are derived from the TargetGraph.
 3. Generated nodes reuse _run_target from targets_phase0.py.
 4. The generated module can replace explicit Phase 0 nodes.
+5. Dataset nodes (d__*) are generated for all contract tables.
 """
 
 from __future__ import annotations
@@ -18,20 +19,21 @@ import inspect
 import logging
 from collections.abc import Callable
 from types import ModuleType
-from typing import Any
 
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.metadata_bridge import from_target
-from codeintel.build.hamilton.naming import target_node
+from codeintel.build.hamilton.naming import dataset_node, target_node
 from codeintel.build.hamilton.nodes.targets_phase0 import _run_target
 from codeintel.build.registry import get_target_graph
 from codeintel.build.targets import OutputTarget, TargetGraph
 
 __all__ = [
     "build_target_module",
+    "clear_generated_module_cache",
     "get_generated_module",
 ]
 
@@ -64,11 +66,18 @@ def _create_node_function(
     def node_fn(
         env: BuildEnv,
         graph: TargetGraph,
-        **kwargs: Any,
+        **dependencies: TargetRunRecord,
     ) -> TargetRunRecord:
-        # kwargs contains dependency records; used for DAG ordering
-        _ = kwargs  # Dependencies establish ordering, not used directly
-        return _run_target(env=env, graph=graph, target_name=target_name)
+        # Extract upstream records for failure gating
+        upstream = tuple(
+            rec for rec in dependencies.values() if isinstance(rec, TargetRunRecord)
+        )
+        return _run_target(
+            env=env,
+            graph=graph,
+            target_name=target_name,
+            upstream=upstream,
+        )
 
     # Build signature that Hamilton can inspect
     # Types are imported at runtime so Hamilton can resolve them
@@ -86,14 +95,16 @@ def _create_node_function(
     ]
 
     # Add dependency parameters
-    for dep_name in dep_node_names:
-        params.append(
+    params.extend(
+        [
             inspect.Parameter(
                 dep_name,
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
                 annotation=TargetRunRecord,
             )
-        )
+            for dep_name in dep_node_names
+        ]
+    )
 
     node_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
     node_fn.__name__ = target_node(target_name)
@@ -103,10 +114,65 @@ def _create_node_function(
     return tag(domain=domain, target=target_name)(node_fn)
 
 
+def _create_dataset_node_function(
+    *,
+    table_key: str,
+    target_name: str,
+) -> Callable[..., DatasetRef]:
+    """Create a Hamilton node function for a dataset extraction.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table name (e.g., "analytics.function_metrics").
+    target_name
+        Target that produces this dataset.
+
+    Returns
+    -------
+    Callable[..., DatasetRef]
+        Node function that extracts DatasetRef from TargetRunRecord.
+    """
+    d_name = dataset_node(table_key)
+    t_name = target_node(target_name)
+
+    def dataset_fn(**kwargs: object) -> DatasetRef:
+        rec = kwargs.get(t_name)
+        if not isinstance(rec, TargetRunRecord):
+            msg = f"Expected TargetRunRecord for {t_name}, got {type(rec)}"
+            raise TypeError(msg)
+        ds = rec.get_dataset(table_key)
+        if ds is None:
+            msg = f"Missing DatasetRef for {table_key} from {target_name}"
+            raise ValueError(msg)
+        return ds
+
+    # Build signature with single parameter for the target node
+    params = [
+        inspect.Parameter(
+            t_name,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=TargetRunRecord,
+        ),
+    ]
+
+    dataset_fn.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+        params,
+        return_annotation=DatasetRef,
+    )
+    dataset_fn.__name__ = d_name
+    dataset_fn.__doc__ = f"Extract {table_key} dataset from {target_name} target."
+
+    # Apply tag decorator for Hamilton observability
+    domain = table_key.split(".", 1)[0] if "." in table_key else "main"
+    return tag(domain=domain, table=table_key)(dataset_fn)
+
+
 def build_target_module(
     *,
     include_targets: set[str] | None = None,
     exclude_targets: set[str] | None = None,
+    include_dataset_nodes: bool = True,
 ) -> ModuleType:
     """Generate a module containing Hamilton nodes for all targets.
 
@@ -119,6 +185,9 @@ def build_target_module(
         If provided, only generate nodes for these targets.
     exclude_targets
         If provided, exclude these targets from generation.
+    include_dataset_nodes
+        If True (default), also generate d__* dataset nodes for
+        all tables in target contracts.
 
     Returns
     -------
@@ -142,6 +211,7 @@ def build_target_module(
 
     # Track generated node names for TARGET_TO_NODE mapping
     target_to_node: dict[str, str] = {}
+    dataset_to_node: dict[str, str] = {}
 
     for target in graph.all_targets:
         if target.name not in include or target.name in exclude:
@@ -153,7 +223,7 @@ def build_target_module(
         # Map dependencies to node names
         dep_node_names = [target_node(dep) for dep in target.dependencies]
 
-        # Create and register node function
+        # Create and register target node function
         node_fn = _create_node_function(
             target=target,
             dep_node_names=dep_node_names,
@@ -164,12 +234,26 @@ def build_target_module(
         setattr(module, node_name, node_fn)
         target_to_node[target.name] = node_name
 
-    # Attach mapping for executor lookups
+        # Generate dataset nodes for all contract tables
+        if include_dataset_nodes:
+            table_keys = target.contract.table_keys or target.table_keys
+            for table_key in table_keys:
+                dataset_fn = _create_dataset_node_function(
+                    table_key=table_key,
+                    target_name=target.name,
+                )
+                d_name = dataset_node(table_key)
+                setattr(module, d_name, dataset_fn)
+                dataset_to_node[table_key] = d_name
+
+    # Attach mappings for executor lookups
     module.TARGET_TO_NODE = target_to_node  # type: ignore[attr-defined]
+    module.DATASET_TO_NODE = dataset_to_node  # type: ignore[attr-defined]
 
     log.debug(
-        "build_target_module: generated %d nodes from %d targets",
+        "build_target_module: generated %d target nodes and %d dataset nodes from %d targets",
         len(target_to_node),
+        len(dataset_to_node),
         len(all_target_names),
     )
 

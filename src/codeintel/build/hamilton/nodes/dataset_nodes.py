@@ -48,9 +48,7 @@ def extract_datasets_from_record(
 
     Examples
     --------
-    >>> refs = extract_datasets_from_record(
-    ...     record, ("analytics.function_metrics",)
-    ... )
+    >>> refs = extract_datasets_from_record(record, ("analytics.function_metrics",))
     >>> refs["d__analytics__function_metrics"]
     DatasetRef(table_key='analytics.function_metrics', ...)
     """

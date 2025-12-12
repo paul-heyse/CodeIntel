@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
     from codeintel.storage.gateway import StorageGateway
+    from tests._helpers.orchestration.tooling import ToolingOutputs
 
 
 @pytest.fixture
@@ -81,9 +82,22 @@ def ingestion_ctx_bundle(
         yield ctx_ns
 
 
+@pytest.fixture
+def tooling_outputs(tooling_outputs_session: ToolingOutputs) -> ToolingOutputs:
+    """Alias tooling outputs for ingestion tests (session-scoped under the hood).
+
+    Returns
+    -------
+    ToolingOutputs
+        Session-scoped tooling outputs fixture.
+    """
+    return tooling_outputs_session
+
+
 __all__ = [
     "ingestion_ctx_bundle",
     "ingestion_gateway",
     "ingestion_gateway_factory",
+    "tooling_outputs",
     "tooling_outputs_session",
 ]

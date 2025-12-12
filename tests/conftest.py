@@ -8,6 +8,7 @@ production-parity.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import duckdb
@@ -27,11 +28,11 @@ from tests._helpers.orchestration.graph_orchestration import (
     generate_span_coverage,
 )
 from tests._helpers.orchestration.provisioning import (
-    docs_views_ready_gateway,
     provision_docs_export_ready,
     provision_graph_ready_repo,
 )
 from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
+from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -43,6 +44,19 @@ if TYPE_CHECKING:
 
 
 pytest_plugins = ("tests._helpers.plugins.mcp",)
+
+
+@pytest.fixture
+def codeintel_env() -> Iterator[None]:
+    """Save and restore CODEINTEL_* environment variables."""
+    prefix = "CODEINTEL_"
+    saved = {key: value for key, value in os.environ.items() if key.startswith(prefix)}
+    try:
+        yield None
+    finally:
+        for key in [name for name in os.environ if name.startswith(prefix)]:
+            os.environ.pop(key, None)
+        os.environ.update(saved)
 
 
 @pytest.fixture
@@ -219,7 +233,7 @@ def provisioned_repo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestC
 
 
 @pytest.fixture(scope="session")
-def architecture_gateway(tmp_path_factory: pytest.TempPathFactory) -> Iterator[StorageGateway]:
+def architecture_gateway() -> Iterator[StorageGateway]:
     """Provision an architecture-focused gateway (docs views + realistic seeds).
 
     Yields
@@ -227,10 +241,9 @@ def architecture_gateway(tmp_path_factory: pytest.TempPathFactory) -> Iterator[S
     StorageGateway
         Gateway configured for architecture tests; closed after the session.
     """
-    repo_root = tmp_path_factory.mktemp("architecture")
-    provisioned = docs_views_ready_gateway(repo_root, repo=DEFAULT_REPO, commit=DEFAULT_COMMIT)
+    provisioned = open_seeded_architecture_gateway(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT)
     try:
-        yield provisioned.gateway
+        yield provisioned
     finally:
         provisioned.close()
 
