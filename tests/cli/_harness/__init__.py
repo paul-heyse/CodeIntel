@@ -28,6 +28,16 @@ from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.core import CliResult
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.rendering.types import OutputFormat
+from codeintel.storage.exceptions import (
+    QueryError as StorageQueryError,
+)
+from codeintel.storage.exceptions import (
+    SchemaError as StorageSchemaError,
+)
+from codeintel.storage.exceptions import (
+    StorageConnectionError,
+    StorageError,
+)
 from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
@@ -547,7 +557,14 @@ class OperationTestHarness:
                 with builder.build() as ctx:
                     try:
                         result = spec.handler(ctx)
-                    except Exception as exc:
+                    except (
+                        StorageConnectionError,
+                        StorageError,
+                        StorageQueryError,
+                        StorageSchemaError,
+                        ValueError,
+                        RuntimeError,
+                    ) as exc:
                         return CliInvocationResult(
                             exit_code=1,
                             stdout="",

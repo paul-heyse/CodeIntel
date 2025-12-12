@@ -378,7 +378,8 @@ def load_dataset_ibis(
 
     # Apply repo/commit filtering if columns exist and ref has values
     if ref.repo and ref.commit and "repo" in cols and "commit" in cols:
-        t = t.filter((t.repo == ref.repo) & (t.commit == ref.commit))
+        predicate = cast("ir.BooleanValue", (t.repo == ref.repo) & (t.commit == ref.commit))
+        t = t.filter(predicate)
 
     return t
 

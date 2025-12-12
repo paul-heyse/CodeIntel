@@ -801,7 +801,7 @@ def _build_local_resource(
         )
 
     def _close() -> None:
-        if owns_gateway:
+        if owns_gateway and gateway is not None:
             gateway.close()
 
     return BackendResource(backend=backend, service=backend.service, close=_close)

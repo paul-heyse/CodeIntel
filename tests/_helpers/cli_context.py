@@ -157,8 +157,6 @@ class CliTestContext:
         >>> with ctx.command_context({"key": "value"}) as cmd_ctx:  # doctest: +SKIP
         ...     result = handler(cmd_ctx)
         """
-        from codeintel.cli.context import CommandContextBuilder
-
         builder = (
             CommandContextBuilder()
             .with_params(params or {})
@@ -191,8 +189,6 @@ class CliTestContext:
         CommandContext
             Configured command context for handler execution.
         """
-        from codeintel.cli.context import CommandContextBuilder
-
         builder = (
             CommandContextBuilder()
             .with_params(params or {})
@@ -266,6 +262,10 @@ def create_cli_test_context(
         Default operation ID for command contexts.
     write_repo
         Whether to write canonical repository files.
+    options
+        Optional environment options applied when creating the test context.
+    gateway_options
+        Optional gateway options forwarded to gateway factory.
 
     Returns
     -------

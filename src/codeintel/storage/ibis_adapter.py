@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from functools import cached_property
 from typing import TYPE_CHECKING
 
 import ibis
@@ -215,8 +214,8 @@ class IbisGateway:
 
     def __init__(self, gateway: StorageGateway) -> None:
         self._gateway = gateway
+        self._con: DuckDBBackend | None = None
 
-    @cached_property
     def con(self) -> DuckDBBackend:
         """
         Return an Ibis backend that reuses the gateway DuckDB connection.
@@ -226,7 +225,9 @@ class IbisGateway:
         DuckDBBackend
             Ibis backend bound to the DuckDB connection.
         """
-        return ibis.duckdb.from_connection(self._gateway.con)
+        if self._con is None:
+            self._con = ibis.duckdb.from_connection(self._gateway.con)
+        return self._con
 
     def table(self, table_name: str) -> it.Table:
         """
@@ -606,33 +607,32 @@ class IbisGateway:
         -------
         int
             Number of rows deleted (estimated, may be -1 if unknown).
+
+        Raises
+        ------
+        ValueError
+            If the WHERE clause cannot be derived from the provided filter.
         """
         schema, table = _split_table_key(table_key)
-        quoted = f'"{schema}"."{table}"'
+        table_expr = exp.Table(
+            this=exp.to_identifier(table),
+            db=exp.to_identifier(schema),
+        )
 
         if where is None:
-            # Delete all
-            sql = f"DELETE FROM {quoted}"
+            delete_expr = exp.Delete(this=table_expr)
         else:
             t = self.table(table_key)
             filter_expr = t.filter(where).limit(0)
             filter_sql = ibis.to_sql(filter_expr, dialect=DUCKDB_DIALECT)
             select_ast = parse_one(filter_sql, dialect=DUCKDB_DIALECT)
-            from_ast = select_ast.args.get("from_") or select_ast.args.get("from")
-            alias: str | None = None
-            if isinstance(from_ast, exp.From) and isinstance(from_ast.this, exp.Table):
-                alias = from_ast.this.alias
             where_ast = select_ast.args.get("where")
-            where_sql = (
-                where_ast.sql(dialect=DUCKDB_DIALECT) if isinstance(where_ast, exp.Where) else ""
-            )
-            if alias:
-                sql = f"DELETE FROM {quoted} AS {alias} {where_sql}"
-            elif where_sql:
-                sql = f"DELETE FROM {quoted} {where_sql}"
-            else:
-                sql = f"DELETE FROM {quoted}"
+            if not isinstance(where_ast, exp.Where):
+                message = "Unable to derive WHERE clause for delete()"
+                raise ValueError(message)
+            delete_expr = exp.Delete(this=table_expr, where=where_ast)
 
+        sql = delete_expr.sql(dialect=DUCKDB_DIALECT)
         log.debug("delete: %s", sql[:200])
         self._gateway.con.execute(sql)
 

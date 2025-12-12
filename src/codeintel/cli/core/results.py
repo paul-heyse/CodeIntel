@@ -13,7 +13,16 @@ from dataclasses import dataclass, field, is_dataclass
 from dataclasses import fields as get_fields
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, TypeVar, cast, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Protocol,
+    TypeGuard,
+    TypeVar,
+    cast,
+    runtime_checkable,
+)
 
 from codeintel.cli.core.serialization import serialize_result
 
@@ -26,6 +35,10 @@ T_co = TypeVar("T_co", covariant=True)
 
 class _DataclassInstance(Protocol):
     __dataclass_fields__: dict[str, object]
+
+
+class _ResultTypeMarker(Protocol):
+    RESULT_TYPE_GENERATED: ClassVar[bool]
 
 
 def result_type[T](cls: type[T]) -> type[T]:
@@ -82,13 +95,16 @@ def result_type[T](cls: type[T]) -> type[T]:
         # self is a dataclass instance verified by the decorator
         return _serialize_dataclass(self)
 
+    result_cls = cast("type[_ResultTypeMarker]", cls)
     # Avoid overwriting existing to_dict implementations
-    if not hasattr(cls, "to_dict") or getattr(cls, "_result_type_generated", False):
-        cls_with_attrs = cast("type[object]", cls)
-        cls_with_attrs.to_dict = to_dict  # type: ignore[assignment]
-        cls_with_attrs._result_type_generated = True
+    if not hasattr(result_cls, "RESULT_TYPE_GENERATED"):
+        setattr(result_cls, "RESULT_TYPE_GENERATED", False)
 
-    return cls
+    if not hasattr(result_cls, "to_dict") or result_cls.RESULT_TYPE_GENERATED:
+        setattr(result_cls, "to_dict", to_dict)
+        result_cls.RESULT_TYPE_GENERATED = True
+
+    return result_cls
 
 
 def _is_dataclass_instance(value: object) -> TypeGuard[_DataclassInstance]:

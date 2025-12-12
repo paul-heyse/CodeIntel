@@ -106,6 +106,12 @@ class CfgDfgMetricsPlugin(TargetPlugin):
 
         row_counts: dict[str, int] = {}
 
+        def _count_rows(table_key: str) -> int:
+            table = ctx.gateway.ibis.table(table_key)
+            filtered = table.filter((table.repo == repo) & (table.commit == commit))
+            result_df = filtered.aggregate(row_count=table.repo.count()).execute()
+            return int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
+
         # Compute CFG metrics
         try:
             log.info("Computing CFG metrics for %s@%s", repo, commit)
@@ -117,11 +123,7 @@ class CfgDfgMetricsPlugin(TargetPlugin):
                 "analytics.cfg_block_metrics",
                 "analytics.cfg_function_metrics_ext",
             ):
-                row = ctx.gateway.con.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",
-                    [repo, commit],
-                ).fetchone()
-                row_counts[table] = int(row[0]) if row else 0
+                row_counts[table] = _count_rows(table)
         except (RuntimeError, ValueError, OSError) as e:
             log.warning("CFG metrics computation failed: %s", e)
 
@@ -136,11 +138,7 @@ class CfgDfgMetricsPlugin(TargetPlugin):
                 "analytics.dfg_block_metrics",
                 "analytics.dfg_function_metrics_ext",
             ):
-                row = ctx.gateway.con.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",
-                    [repo, commit],
-                ).fetchone()
-                row_counts[table] = int(row[0]) if row else 0
+                row_counts[table] = _count_rows(table)
         except (RuntimeError, ValueError, OSError) as e:
             log.warning("DFG metrics computation failed: %s", e)
 

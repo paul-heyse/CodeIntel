@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
 
+from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
 
 if TYPE_CHECKING:
@@ -417,10 +418,19 @@ def _build_upsert(
         SQL string for upsert operation.
     """
     # Build qualified table with validated identifiers
-    qualified_table = f"{_quote_identifier(table_schema)}.{_quote_identifier(table_name)}"
-    cols_sql = ", ".join(_quote_identifier(col) for col in columns)
-    placeholders = ", ".join("?" for _ in columns)
-    conflict_cols = ", ".join(_quote_identifier(col) for col in conflict_columns)
+    table_expr = exp.Table(
+        this=exp.to_identifier(table_name),
+        db=exp.to_identifier(table_schema),
+    )
+    column_exprs = [exp.to_identifier(col) for col in columns]
+    placeholder_row = exp.Tuple(expressions=[exp.Parameter()] * len(columns))
+    values_expr = exp.Values(expressions=[placeholder_row])
+    base_insert = exp.Insert(
+        this=table_expr,
+        columns=column_exprs,
+        expression=values_expr,
+    )
+    conflict_cols_sql = ", ".join(_quote_identifier(col) for col in conflict_columns)
 
     # Determine which columns to update
     cols_to_update = (
@@ -431,15 +441,26 @@ def _build_upsert(
 
     if cols_to_update:
         updates = ", ".join(
-            f"{_quote_identifier(col)} = EXCLUDED.{_quote_identifier(col)}"
+            f"{_quote_identifier(col)} = excluded.{_quote_identifier(col)}"
             for col in cols_to_update
         )
-        on_conflict = f"ON CONFLICT ({conflict_cols}) DO UPDATE SET {updates}"
+        conflict_action = exp.parse_one(f"DO UPDATE SET {updates}")
     else:
-        on_conflict = f"ON CONFLICT ({conflict_cols}) DO NOTHING"
+        conflict_action = exp.parse_one("DO NOTHING")
 
-    # Build complete statement - S608 is a false positive since all identifiers are validated
-    return f"INSERT INTO {qualified_table} ({cols_sql}) VALUES ({placeholders}) {on_conflict}"
+    on_conflict_expr = exp.OnConflict(
+        expressions=[exp.to_identifier(col) for col in conflict_columns],
+        action=conflict_action,
+    )
+
+    return " ".join(
+        (
+            base_insert.sql(dialect=DUCKDB_DIALECT),
+            on_conflict_expr.sql(dialect=DUCKDB_DIALECT).replace(
+                "ON CONFLICT()", f"ON CONFLICT ({conflict_cols_sql})"
+            ),
+        )
+    )
 
 
 @dataclass
@@ -712,8 +733,6 @@ class DuckDBPolicyBackend:
             self.create_schema_if_not_exists(schema_name)
 
         # Create all tables from dataset contracts
-        from codeintel.config.datasets import get_dataset_contracts_by_table_key
-
         contracts = get_dataset_contracts_by_table_key()
         for table_key, contract in contracts.items():
             if contract.schema is None:
@@ -827,8 +846,6 @@ class DuckDBPolicyBackend:
 
         # Determine columns
         if columns is None:
-            from codeintel.config.datasets import get_dataset_contracts_by_table_key
-
             contracts = get_dataset_contracts_by_table_key()
             contract = contracts.get(table_key)
             if contract is None or contract.schema is None:

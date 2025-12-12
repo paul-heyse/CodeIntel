@@ -111,11 +111,10 @@ class CoreMetricsPlugin(TargetPlugin):
                 "analytics.graph_metrics_modules_ext",
                 "analytics.graph_stats",
             ]:
-                row = ctx.gateway.con.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?",
-                    [cfg.repo, cfg.commit],
-                ).fetchone()
-                row_counts[table] = int(row[0]) if row else 0
+                expr = ctx.gateway.ibis.table(table)
+                filtered = expr.filter((expr.repo == cfg.repo) & (expr.commit == cfg.commit))
+                result_df = filtered.aggregate(row_count=expr.repo.count()).execute()
+                row_counts[table] = int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
 
             log.info("core_metrics.complete row_counts=%s", row_counts)
             return TargetResult.succeeded(row_counts=row_counts)

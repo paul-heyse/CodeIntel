@@ -157,6 +157,9 @@ class _FakeIbisColumn:
     def __eq__(self, _other: object) -> bool:
         return True
 
+    def __hash__(self) -> int:
+        return hash(self.name)
+
 
 def _snapshot_cfg() -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]:
     """Create test and behavioral coverage configs from a snapshot.

@@ -217,7 +217,7 @@ def load_symbol_module_edges(
             .filter(
                 cast(
                     "Any",
-                    m_def.module.notnull() & m_use.module.notnull(),
+                    m_def.module.notna() & m_use.module.notna(),
                 )
             )
             .select(

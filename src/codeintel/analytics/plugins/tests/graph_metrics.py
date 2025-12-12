@@ -109,13 +109,10 @@ class TestGraphMetricsPlugin(TargetPlugin):
             "analytics.test_graph_metrics_tests",
             "analytics.test_graph_metrics_functions",
         ):
-            relation = ctx.gateway.con.table(table)
-            row = (
-                relation.filter("repo = ? AND commit = ?", [repo, commit])
-                .aggregate("count(*)")
-                .fetchone()
-            )
-            row_counts[table] = int(row[0]) if row else 0
+            expr = ctx.gateway.ibis.table(table)
+            filtered = expr.filter((expr.repo == repo) & (expr.commit == commit))
+            result_df = filtered.aggregate(row_count=expr.repo.count()).execute()
+            row_counts[table] = int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
 
         log.info("Test graph metrics completed: %s", row_counts)
         return TargetResult.succeeded(row_counts=row_counts)

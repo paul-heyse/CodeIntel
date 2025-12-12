@@ -6,6 +6,7 @@ import logging
 import warnings
 from collections.abc import MutableMapping
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 import pandas as pd
@@ -1185,10 +1186,7 @@ def _docs_view_schemas() -> dict[str, DataFrameSchema]:
     return view_schemas
 
 
-# Lazily-initialized schema registry (avoids circular import at module load)
-_DATASET_SCHEMAS_CACHE: dict[str, DataFrameSchema] | None = None
-
-
+@lru_cache(maxsize=1)
 def _get_dataset_schemas() -> dict[str, DataFrameSchema]:
     """Lazily build and return the dataset schemas registry.
 
@@ -1197,14 +1195,12 @@ def _get_dataset_schemas() -> dict[str, DataFrameSchema]:
     dict[str, DataFrameSchema]
         All registered dataset schemas.
     """
-    global _DATASET_SCHEMAS_CACHE
-    if _DATASET_SCHEMAS_CACHE is None:
-        _DATASET_SCHEMAS_CACHE = _materialize_schemas()
-        _DATASET_SCHEMAS_CACHE.update(_analytics_view_schemas())
-        _DATASET_SCHEMAS_CACHE.update(_graph_view_schemas())
-        _DATASET_SCHEMAS_CACHE.update(_core_view_schemas())
-        _DATASET_SCHEMAS_CACHE.update(_docs_view_schemas())
-    return _DATASET_SCHEMAS_CACHE
+    schemas = _materialize_schemas()
+    schemas.update(_analytics_view_schemas())
+    schemas.update(_graph_view_schemas())
+    schemas.update(_core_view_schemas())
+    schemas.update(_docs_view_schemas())
+    return schemas
 
 
 class _LazySchemaDict(MutableMapping[str, DataFrameSchema]):

@@ -153,10 +153,7 @@ def _normalize_flag(value: object | None) -> str | None:
     """
     if value is None:
         return None
-    if isinstance(value, Enum):
-        normalized = str(value.value).lower()
-    else:
-        normalized = str(value).lower()
+    normalized = str(value.value if isinstance(value, Enum) else value).lower()
     if "." in normalized:
         normalized = normalized.rsplit(".", maxsplit=1)[-1]
     return normalized

@@ -95,7 +95,8 @@ class HotspotsPlugin(TargetPlugin):
         row_counts = self._compute_row_counts(ctx)
         return TargetResult.succeeded(row_counts=row_counts)
 
-    def _compute_row_counts(self, ctx: TargetExecutionContext) -> dict[str, int]:
+    @staticmethod
+    def _compute_row_counts(ctx: TargetExecutionContext) -> dict[str, int]:
         """Compute row counts for output tables.
 
         Parameters
@@ -108,21 +109,14 @@ class HotspotsPlugin(TargetPlugin):
         dict[str, int]
             Row counts per table.
         """
-        _ = self  # Instance method for future extension
         row_counts: dict[str, int] = {}
         for table_key in ctx.contract.table_keys:
             try:
-                relation = ctx.gateway.con.table(table_key)
-                count_row = (
-                    relation.filter(
-                        "repo = ? AND commit = ?",
-                        [ctx.repo, ctx.commit],
-                    )
-                    .aggregate("count(*)")
-                    .fetchone()
-                )
-                count = int(count_row[0]) if count_row else 0
-                row_counts[table_key] = count
+                table = ctx.gateway.ibis.table(table_key)
+                filtered = table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
+                result_df = filtered.aggregate(row_count=table.repo.count()).execute()
+                row_count = int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
+                row_counts[table_key] = row_count
             except (RuntimeError, OSError):
                 row_counts[table_key] = 0
         return row_counts
