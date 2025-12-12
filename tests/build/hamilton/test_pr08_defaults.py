@@ -84,9 +84,7 @@ class TestHamiltonModeConsistency:
         runtime = build_driver()
         executor = HamiltonBuildExecutor(profile="default")
         if runtime.mode != executor._mode:
-            pytest.fail(
-                f"Mode mismatch: driver={runtime.mode}, executor={executor._mode}"
-            )
+            pytest.fail(f"Mode mismatch: driver={runtime.mode}, executor={executor._mode}")
 
     @staticmethod
     def test_explicit_mode_propagates() -> None:

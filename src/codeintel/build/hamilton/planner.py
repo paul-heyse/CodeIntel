@@ -44,6 +44,9 @@ PlanReason = Literal[
     "no_plugin",
 ]
 
+# Implementation kind for Phase 3 migration
+ImplKind = Literal["wrapper", "native"]
+
 
 @dataclass(frozen=True)
 class PlanEntry:
@@ -82,6 +85,10 @@ class PlanEntry:
         Tuple of table keys this target produces.
     artifact_keys
         Tuple of artifact keys this target produces (future use).
+    impl_kind
+        Implementation kind: "wrapper" (generated module wrapping plugin)
+        or "native" (native Hamilton pipeline). Used for Phase 3 migration.
+        Defaults to "wrapper" for backward compatibility.
 
     Examples
     --------
@@ -113,6 +120,7 @@ class PlanEntry:
     artifact_keys: tuple[str, ...] = ()
     dep_hashes: dict[str, str] = field(default_factory=dict)
     prior_dep_hashes: dict[str, str] = field(default_factory=dict)
+    impl_kind: ImplKind = "wrapper"
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -136,6 +144,7 @@ class PlanEntry:
             "artifact_keys": list(self.artifact_keys),
             "dep_hashes": dict(self.dep_hashes),
             "prior_dep_hashes": dict(self.prior_dep_hashes),
+            "impl_kind": self.impl_kind,
         }
 
     def explain_staleness(self) -> StalenessExplanation:
@@ -150,21 +159,13 @@ class PlanEntry:
             Detailed explanation of staleness, including changed dependencies.
         """
         # Use set comprehensions for cleaner categorization
-        added_deps = [
-            dep
-            for dep in self.dep_hashes
-            if dep not in self.prior_dep_hashes
-        ]
+        added_deps = [dep for dep in self.dep_hashes if dep not in self.prior_dep_hashes]
         changed_deps = [
             dep
             for dep, current_hash in self.dep_hashes.items()
             if dep in self.prior_dep_hashes and self.prior_dep_hashes[dep] != current_hash
         ]
-        removed_deps = [
-            dep
-            for dep in self.prior_dep_hashes
-            if dep not in self.dep_hashes
-        ]
+        removed_deps = [dep for dep in self.prior_dep_hashes if dep not in self.dep_hashes]
 
         return StalenessExplanation(
             target=self.target,
@@ -665,6 +666,7 @@ def explain_plan(plan: HamiltonBuildPlan) -> list[StalenessExplanation]:
 
 __all__ = [
     "HamiltonBuildPlan",
+    "ImplKind",
     "PlanEntry",
     "PlanReason",
     "PlanStatus",

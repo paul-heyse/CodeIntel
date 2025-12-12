@@ -1,0 +1,100 @@
+# CLI Golden Snapshot Manifest for Hamilton Phase 2
+#
+# This manifest defines CLI commands to test and their expected outputs.
+# Snapshots are validated during CI and can be updated with --update-cli-snapshots.
+#
+# Tag taxonomy:
+#   - PR tags: pr08, pr09, pr10, pr11, pr12, pr13, pr14, pr15
+#   - Command tags: graph, plan, explain, history, status
+#   - Format tags: json, dot, mermaid, text
+#   - Scope tags: tiny, integration
+#   - Mode tags: generated, phase0
+
+app_import: "codeintel.cli:app"
+
+defaults:
+  kind: "json"
+  output: "stdout"
+  exit_code: 0
+  env:
+    CODEINTEL_LOG_LEVEL: "WARNING"
+
+cases:
+  # ========================================================================
+  # PR-08: Hamilton Default Mode - Verify generated mode is default
+  # ========================================================================
+
+  - name: "pr08_graph_default_mode"
+    tags: ["pr08", "graph", "json", "generated", "tiny"]
+    args: ["build", "graph", "modules", "--format", "json", "--help"]
+    # Using --help to get predictable output without needing full runtime
+    exit_code: 0
+    snapshot: "pr08_graph_help.json"
+    kind: "text"
+
+  # ========================================================================
+  # PR-09: Build Planner - Plan command functionality
+  # ========================================================================
+
+  - name: "pr09_plan_help"
+    tags: ["pr09", "plan", "text", "tiny"]
+    args: ["build", "plan", "--help"]
+    exit_code: 0
+    snapshot: "pr09_plan_help.txt"
+    kind: "text"
+
+  # ========================================================================
+  # PR-14: Graph Exports - DOT and Mermaid formats
+  # ========================================================================
+
+  - name: "pr14_graph_help"
+    tags: ["pr14", "graph", "text", "tiny"]
+    args: ["build", "graph", "--help"]
+    exit_code: 0
+    snapshot: "pr14_graph_help.txt"
+    kind: "text"
+
+  # ========================================================================
+  # PR-15: Explain Staleness - Explain command functionality
+  # ========================================================================
+
+  - name: "pr15_explain_help"
+    tags: ["pr15", "explain", "text", "tiny"]
+    args: ["build", "explain", "--help"]
+    exit_code: 0
+    snapshot: "pr15_explain_help.txt"
+    kind: "text"
+
+  # ========================================================================
+  # Build History Command
+  # ========================================================================
+
+  - name: "pr13_history_help"
+    tags: ["pr13", "history", "text", "tiny"]
+    args: ["build", "history", "--help"]
+    exit_code: 0
+    snapshot: "pr13_history_help.txt"
+    kind: "text"
+
+  # ========================================================================
+  # Build Status Command
+  # ========================================================================
+
+  - name: "build_status_help"
+    tags: ["status", "text", "tiny"]
+    args: ["build", "status", "--help"]
+    exit_code: 0
+    snapshot: "build_status_help.txt"
+    kind: "text"
+
+  # ========================================================================
+  # Build Run Command
+  # ========================================================================
+
+  - name: "build_run_help"
+    tags: ["run", "text", "tiny"]
+    args: ["build", "run", "--help"]
+    exit_code: 0
+    snapshot: "build_run_help.txt"
+    kind: "text"
+

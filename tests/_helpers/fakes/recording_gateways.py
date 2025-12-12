@@ -168,19 +168,43 @@ class _FailingIbisProxy:
         self._error_message = error_message
 
     def table(self, _table_name: str) -> object:
-        """Raise RuntimeError to simulate database failure."""
+        """Raise RuntimeError to simulate database failure.
+
+        Raises
+        ------
+        RuntimeError
+            Always raised to simulate a failing gateway.
+        """
         raise RuntimeError(self._error_message)
 
     def read(self, _table_name: str) -> object:
-        """Alias for table() to match IbisGateway surface."""
+        """Alias for table() to match IbisGateway surface.
+
+        Raises
+        ------
+        RuntimeError
+            Always raised to simulate a failing gateway.
+        """
         raise RuntimeError(self._error_message)
 
     def view(self, _view_name: str) -> object:
-        """Alias for table() to match IbisGateway surface."""
+        """Alias for table() to match IbisGateway surface.
+
+        Raises
+        ------
+        RuntimeError
+            Always raised to simulate a failing gateway.
+        """
         raise RuntimeError(self._error_message)
 
     def delete(self, _table_key: str, *, where: object | None = None) -> int:
-        """Raise RuntimeError to simulate database failure."""
+        """Raise RuntimeError to simulate database failure.
+
+        Raises
+        ------
+        RuntimeError
+            Always raised to simulate a failing gateway.
+        """
         _ = where
         raise RuntimeError(self._error_message)
 
@@ -192,7 +216,13 @@ class _FailingIbisProxy:
         columns: object | None = None,
         on_conflict: object | None = None,
     ) -> object:
-        """Raise RuntimeError to simulate database failure."""
+        """Raise RuntimeError to simulate database failure.
+
+        Raises
+        ------
+        RuntimeError
+            Always raised to simulate a failing gateway.
+        """
         _ = columns, on_conflict
         raise RuntimeError(self._error_message)
 

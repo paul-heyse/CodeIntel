@@ -10,16 +10,18 @@ from __future__ import annotations
 import json
 
 # Fields that vary between runs and should be removed for comparison
-DYNAMIC_KEYS: frozenset[str] = frozenset({
-    "run_id",
-    "duration_ms",
-    "duration_seconds",
-    "started_at",
-    "completed_at",
-    "recorded_at",
-    "computed_at",
-    "total_duration_ms",
-})
+DYNAMIC_KEYS: frozenset[str] = frozenset(
+    {
+        "run_id",
+        "duration_ms",
+        "duration_seconds",
+        "started_at",
+        "completed_at",
+        "recorded_at",
+        "computed_at",
+        "total_duration_ms",
+    }
+)
 
 
 def normalize(obj: object) -> object:

@@ -69,6 +69,11 @@ def _coerce_enum_param(value: object | None, *, default: str) -> str:
 
     Cyclopts may supply Enum instances for typed parameters; downstream config
     expects the Enum's `.value` string, not `EnumClass.MEMBER`.
+
+    Returns
+    -------
+    str
+        String representation of the enum or default when None.
     """
     if value is None:
         return default
