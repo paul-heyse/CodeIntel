@@ -317,12 +317,12 @@ def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> 
         edges = gateway.ibis.table("graph.call_graph_edges")
         expr = (
             edges.filter(
-                and_predicates(
-                    edges.repo == repo,
-                    edges.commit == commit,
-                    edges.callee_goid_h128.isna(),
+                    and_predicates(
+                        edges.repo == repo,
+                        edges.commit == commit,
+                        edges.callee_goid_h128.isnull(),
+                    )
                 )
-            )
             .group_by(edges.caller_goid_h128)
             .aggregate(unresolved_count=edges.caller_goid_h128.count())
         )

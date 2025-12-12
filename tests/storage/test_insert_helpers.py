@@ -1,50 +1,51 @@
-"""Tests for registry-backed insert helper utilities."""
+"""Tests for insert helper utilities."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from datetime import UTC, datetime
 
 import pytest
 
 from codeintel.storage.gateway import insert_helpers
+from codeintel.storage.gateway.protocol import StorageGateway
 from tests._helpers.assertions import expect_equal
-from tests._helpers.storage import capture_executor
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
-def test_insert_rows_normalizes_mapping() -> None:
-    """Ensure mapping rows are normalized into schema order and dispatched."""
-    executor, calls = capture_executor()
-
+def test_insert_rows_normalizes_mapping(fresh_gateway: StorageGateway) -> None:
+    """Ensure mapping rows are normalized into schema order and inserted."""
+    now = datetime.now(tz=UTC)
     row = {
         "repo": "r1",
         "commit": "c1",
         "modules": "[]",
         "overlays": None,
-        "generated_at": "now",
+        "generated_at": now,
     }
 
     insert_helpers.insert_rows(
-        cast("DuckDBConnection", object()),
+        fresh_gateway,
         "core.repo_map",
         [row],
-        executor=executor,
     )
 
-    expect_equal(len(calls), 1)
-    expect_equal(calls[0].table, "core.repo_map")
-    expect_equal(calls[0].rows, [("r1", "c1", "[]", None, "now")])
+    result = fresh_gateway.con.execute(
+        (
+            "SELECT repo, commit, CAST(modules AS VARCHAR), overlays, generated_at "
+            "FROM core.repo_map WHERE repo = ? AND commit = ?"
+        ),
+        ["r1", "c1"],
+    ).fetchone()
+    if result is None:
+        pytest.fail("Expected inserted core.repo_map row")
+    expect_equal(result[0], "r1")
+    expect_equal(result[1], "c1")
 
 
-def test_insert_rows_raises_on_missing_column() -> None:
-    """Validate missing required columns raise before hitting the macro."""
-    executor, calls = capture_executor()
-
+def test_insert_rows_raises_on_missing_column(fresh_gateway: StorageGateway) -> None:
+    """Validate missing required columns raise before insert."""
     with pytest.raises(ValueError, match="Missing column generated_at"):
         insert_helpers.insert_rows(
-            cast("DuckDBConnection", object()),
+            fresh_gateway,
             "core.repo_map",
             [
                 {
@@ -54,6 +55,4 @@ def test_insert_rows_raises_on_missing_column() -> None:
                     "overlays": None,
                 },
             ],
-            executor=executor,
         )
-    expect_equal(len(calls), 0)

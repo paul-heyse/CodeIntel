@@ -1,1 +1,206 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="2" time="13.037" timestamp="2025-12-12T18:30:28.903972-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.storage.test_ibis_write" name="test_upsert_selective_update_columns" time="2.957" /><testcase classname="tests.storage.test_ibis_write" name="test_upsert_updates_on_conflict" time="3.034" /></testsuite></testsuites>
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="9.283" timestamp="2025-12-12T18:54:16.127222-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.analytics.functions.test_function_effects_runtime" name="test_compute_function_effects_with_transitive_and_missing" time="1.818"><failure message="AttributeError: 'DecimalColumn' object has no attribute 'isna'">tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-182/test_compute_function_effects_0')
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x706cb2e67b60&gt;
+
+    def test_compute_function_effects_with_transitive_and_missing(
+        tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -&gt; None:
+        """compute_function_effects records direct, transitive, and missing AST effects."""
+        ctx = create_test_context(tmp_path)
+        ctx.require(CORE_PACK)
+        repo_root = ctx.repo_root
+        source = """
+        import os
+        import random
+        import time
+        import threading
+    
+        GLOBAL_STATE = 0
+    
+        def impure(target: str) -&gt; int:
+            os.getenv("HOME")
+            random.random()
+            time.time()
+            threading.Thread(target=print).start()
+            global GLOBAL_STATE
+            GLOBAL_STATE += 1
+            return 1
+    
+        def caller() -&gt; int:
+            return impure("x")
+    
+        def wrapper() -&gt; int:
+            return caller()
+    
+        def naive_unicode(name: str | None = None) -&gt; str | None:
+            return name
+    
+        def uses_nonlocal() -&gt; int:
+            value = 0
+    
+            def inner() -&gt; int:
+                nonlocal value
+                value += 1
+                return value
+    
+            return inner()
+        """
+        goids = {
+            "impure": 1001,
+            "caller": 1002,
+            "uses_nonlocal": 1003,
+            "missing": 1004,
+            "wrapper": 1005,
+            "naive_unicode": 1006,
+        }
+        ast_map, module_path = _build_function_ast_map(
+            repo_root, source, {k: v for k, v in goids.items() if k != "missing"}
+        )
+        snapshot = ctx.to_snapshot_ref()
+        gateway = ctx.gateway
+        engine = build_graph_engine_double(
+            gateway,
+            snapshot,
+            call_graph=nx.DiGraph(
+                [
+                    (goids["caller"], goids["impure"]),
+                    (goids["wrapper"], goids["caller"]),
+                ]
+            ),
+            copy_graphs=False,
+        )
+        runtime = GraphRuntime(GraphRuntimeOptions(snapshot=snapshot), engine)
+        runtime.ensure_call_graph()
+        cfg = FunctionEffectsStepConfig(
+            snapshot=snapshot,
+            max_call_depth=2,
+            io_apis={"os": ["getenv"]},
+            db_apis={},
+            time_apis={"time": ["time"]},
+            random_apis={"random": ["random"]},
+            threading_apis={"threading": ["Thread"]},
+        )
+    
+        ensure_schema(gateway.con, "graph.call_graph_edges")
+        insert_rows(
+            gateway,
+            [
+                CallGraphEdgeRow(
+                    repo=snapshot.repo,
+                    commit=snapshot.commit,
+                    caller_goid_h128=goids["caller"],
+                    callee_goid_h128=None,
+                    callsite_path=ast_map[goids["caller"]].rel_path,
+                    callsite_line=ast_map[goids["caller"]].start_line,
+                    callsite_col=0,
+                    language="python",
+                    kind="call",
+                    resolved_via="static",
+                    confidence=1.0,
+                )
+            ],
+        )
+    
+        inputs = FunctionEffectsInputs(
+            catalog_provider=MockFunctionCatalog(
+                functions=[
+                    function_meta(
+                        goid=goids["impure"],
+                        rel_path=module_path.relative_to(repo_root).as_posix(),
+                        qualname="impure",
+                        snapshot=(snapshot.repo, snapshot.commit),
+                        line_span=(
+                            ast_map[goids["impure"]].start_line,
+                            ast_map[goids["impure"]].end_line,
+                        ),
+                    ),
+                    function_meta(
+                        goid=goids["caller"],
+                        rel_path=module_path.relative_to(repo_root).as_posix(),
+                        qualname="caller",
+                        snapshot=(snapshot.repo, snapshot.commit),
+                        line_span=(
+                            ast_map[goids["caller"]].start_line,
+                            ast_map[goids["caller"]].end_line,
+                        ),
+                    ),
+                    function_meta(
+                        goid=goids["uses_nonlocal"],
+                        rel_path=module_path.relative_to(repo_root).as_posix(),
+                        qualname="uses_nonlocal",
+                        snapshot=(snapshot.repo, snapshot.commit),
+                        line_span=(
+                            ast_map[goids["uses_nonlocal"]].start_line,
+                            ast_map[goids["uses_nonlocal"]].end_line,
+                        ),
+                    ),
+                    function_meta(
+                        goid=goids["missing"],
+                        rel_path=module_path.relative_to(repo_root).as_posix(),
+                        qualname="missing",
+                        snapshot=(snapshot.repo, snapshot.commit),
+                        line_span=(1, 1),
+                    ),
+                    function_meta(
+                        goid=goids["wrapper"],
+                        rel_path=module_path.relative_to(repo_root).as_posix(),
+                        qualname="wrapper",
+                        snapshot=(snapshot.repo, snapshot.commit),
+                        line_span=(
+                            ast_map[goids["wrapper"]].start_line,
+                            ast_map[goids["wrapper"]].end_line,
+                        ),
+                    ),
+                    function_meta(
+                        goid=goids["naive_unicode"],
+                        rel_path=module_path.relative_to(repo_root).as_posix(),
+                        qualname="naïve_unicode",
+                        snapshot=(snapshot.repo, snapshot.commit),
+                        line_span=(
+                            ast_map[goids["naive_unicode"]].start_line,
+                            ast_map[goids["naive_unicode"]].end_line,
+                        ),
+                    ),
+                ],
+                module_by_path={module_path.relative_to(repo_root).as_posix(): "pkg.effects"},
+            ),
+            runtime=runtime,
+            ast_map=ast_map,
+            missing_goids={goids["missing"]},
+        )
+    
+        caplog.set_level("INFO")
+        try:
+&gt;           compute_function_effects(gateway, cfg, inputs=inputs)
+
+tests/analytics/functions/test_function_effects_runtime.py:228: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/codeintel/analytics/functions/function_effects.py:170: in compute_function_effects
+    rows = _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/analytics/functions/function_effects.py:221: in _build_effect_rows
+    unresolved_calls = _unresolved_call_counts(inputs.gateway, inputs.cfg.repo, inputs.cfg.commit)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+gateway = DuckDBGateway(config=StorageConfig(db_path=PosixPath(':memory:'), read_only=False, apply_schema=True, ensure_views=Tru...ge_kind', 'via_phi', 'use_kind')), runs=PipelineRunTracking(con=&lt;_duckdb.DuckDBPyConnection object at 0x706cb2dfbd70&gt;))
+repo = 'demo/repo', commit = 'deadbeef'
+
+    def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -&gt; dict[int, int]:
+        counts: dict[int, int] = {}
+        try:
+            edges = gateway.ibis.table("graph.call_graph_edges")
+            expr = (
+                edges.filter(
+                    and_predicates(
+                        edges.repo == repo,
+                        edges.commit == commit,
+&gt;                       edges.callee_goid_h128.isna(),
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    )
+                )
+                .group_by(edges.caller_goid_h128)
+                .aggregate(unresolved_count=edges.caller_goid_h128.count())
+            )
+E           AttributeError: 'DecimalColumn' object has no attribute 'isna'
+
+src/codeintel/analytics/functions/function_effects.py:323: AttributeError</failure></testcase></testsuite></testsuites>

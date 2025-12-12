@@ -14,8 +14,11 @@ from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from cyclopts.exceptions import CoercionError, UnknownCommandError, UnknownOptionError
+
 from codeintel.cli import app
 from codeintel.cli.errors import handle_cli_error
+from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.storage.exceptions import (
     QueryError as StorageQueryError,
 )
@@ -137,6 +140,10 @@ def run_cli(
                 )
                 exit_code = 0
             except (
+                CoercionError,
+                UnknownCommandError,
+                UnknownOptionError,
+                ResolutionError,
                 StorageConnectionError,
                 StorageError,
                 StorageQueryError,

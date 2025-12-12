@@ -6,12 +6,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.config.datasets import DatasetContract
 from codeintel.storage.datasets.catalog import (
     SamplingConfig,
     build_catalog,
     write_html_catalog,
     write_markdown_catalog,
 )
+from codeintel.storage.datasets.registry import DatasetRegistry
 from tests._helpers.dataset_factories import sample_dataset_registry
 
 if TYPE_CHECKING:
@@ -79,8 +81,14 @@ def test_catalog_sampling_gracefully_falls_back(
 
 
 def test_catalog_sampling_strict_raises(fresh_gateway: StorageGateway) -> None:
-    """Strict sampling should raise when macros are unavailable."""
-    registry = sample_dataset_registry(tmp_path=None)
+    """Strict sampling should raise when the target table is missing."""
+    contract = DatasetContract(table_key="core.this_table_does_not_exist", name="missing", schema=None)
+    registry = DatasetRegistry(
+        by_name={"missing": contract},
+        by_table_key={contract.table_key: contract},
+        jsonl_datasets={},
+        parquet_datasets={},
+    )
     with pytest.raises(RuntimeError):
         build_catalog(
             registry,

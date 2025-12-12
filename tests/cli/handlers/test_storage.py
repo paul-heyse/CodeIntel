@@ -47,20 +47,22 @@ def test_validate_macros_handler_returns_ok_when_valid(
 def test_generate_macros_handler_fails_when_no_tables(
     storage_macro_harness_fixture: StorageHandlerHarness,
 ) -> None:
-    """Handler returns error when no tables provided."""
+    """Deprecated handler returns empty result when no tables provided."""
     with storage_macro_harness_fixture.command_context({}) as ctx:
         result = generate_macros_handler(ctx)
 
-    expect_true(not result.success)
-    expect_is_not_none(result.error)
-    if result.error is not None:
-        expect_equal(result.error.status, HTTP_BAD_REQUEST)
+    expect_true(result.success)
+    expect_is_not_none(result.data)
+    expect_is_instance(result.data, GenerateMacrosResult)
+    if result.data is not None:
+        expect_equal(result.data.count, 0)
+        expect_equal(result.data.macros, [])
 
 
 def test_generate_macros_handler_returns_ok_with_tables(
     storage_macro_harness_fixture: StorageHandlerHarness,
 ) -> None:
-    """Handler returns success when tables are provided."""
+    """Deprecated handler succeeds but emits no macros."""
     with storage_macro_harness_fixture.command_context({"tables": ["core.modules"]}) as ctx:
         result = generate_macros_handler(ctx)
 
@@ -68,7 +70,8 @@ def test_generate_macros_handler_returns_ok_with_tables(
     expect_is_not_none(result.data)
     expect_is_instance(result.data, GenerateMacrosResult)
     if result.data is not None:
-        expect_equal(result.data.count, 1)
+        expect_equal(result.data.count, 0)
+        expect_equal(result.data.macros, [])
 
 
 def test_profile_storage_handler_fails_when_no_output_dir(

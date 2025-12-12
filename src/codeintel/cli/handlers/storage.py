@@ -24,7 +24,6 @@ from codeintel.cli.core.result_types import (
 from codeintel.cli.errors.results import (
     fail_macro_validation,
     fail_missing_output_path,
-    fail_no_tables,
 )
 from codeintel.storage.gateway import StorageConfig, StorageConnectionError, open_gateway
 from codeintel.storage.helpers.profiling import run_profile
