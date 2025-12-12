@@ -274,7 +274,6 @@ if TYPE_CHECKING:
     from tests._helpers.context import TestContext
     from tests._helpers.plugin_harness import PluginHarnessFactory
 else:
-    TestContext = cast("Any", None)
     PluginHarnessFactory = cast("Any", None)
 
 _LAZY_HELPERS = {
@@ -287,4 +286,5 @@ def __getattr__(name: str):
         module_name = _LAZY_HELPERS[name]
         module = __import__(module_name, fromlist=[name])
         return getattr(module, name)
-    raise AttributeError(f"module {__name__} has no attribute {name}")
+    msg = f"module {__name__} has no attribute {name}"
+    raise AttributeError(msg)

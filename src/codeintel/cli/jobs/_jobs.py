@@ -7,6 +7,7 @@ tracking their status, and retrieving results.
 from __future__ import annotations
 
 import contextlib
+import importlib
 import json
 import os
 import signal
@@ -17,10 +18,31 @@ from datetime import UTC, datetime
 from enum import Enum
 from multiprocessing import Process
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-import codeintel.cli.execution.registry as execution_registry
 from codeintel.core.singleton import SingletonHolder
+
+if TYPE_CHECKING:
+    from codeintel.cli.core import CliResult
+    from codeintel.cli.execution.registry import OperationRegistry, OperationSpec
+
+
+class _ExecutionRegistryModule(Protocol):
+    """Minimal interface for lazy-loading the execution registry."""
+
+    def get_registry(self) -> OperationRegistry:
+        """Return the global operation registry."""
+        ...
+
+    def execute_operation(self, spec: OperationSpec, params: dict[str, Any]) -> CliResult[Any]:
+        """Execute a registered operation and return its result."""
+        ...
+
+
+def _load_execution_registry() -> _ExecutionRegistryModule:
+    """Import the execution registry lazily to avoid import cycles."""
+    module = importlib.import_module("codeintel.cli.execution.registry")
+    return cast("_ExecutionRegistryModule", module)
 
 
 class JobStatus(Enum):
@@ -497,6 +519,7 @@ def run_job(job_id: str) -> int:
 
     if job is None:
         return 1
+    execution_registry = _load_execution_registry()
     registry = execution_registry.get_registry()
     spec = registry.get(job.operation_id)
 

@@ -6,7 +6,6 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-import ibis
 from ibis.common.exceptions import IbisError
 
 from codeintel.config.datasets import (
@@ -218,7 +217,7 @@ def load_symbol_module_edges(
             .filter(
                 cast(
                     "Any",
-                    (~ibis.isnull(m_def.module)) & (~ibis.isnull(m_use.module)),
+                    m_def.module.notnull() & m_use.module.notnull(),
                 )
             )
             .select(

@@ -6,6 +6,7 @@ Handlers for graph plugin listing and execution planning.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -25,6 +26,52 @@ if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)
+
+
+def _dedupe_preserve_order(names: Sequence[str]) -> list[str]:
+    """Return names de-duplicated while preserving order.
+
+    Parameters
+    ----------
+    names
+        Plugin names.
+
+    Returns
+    -------
+    list[str]
+        Names without duplicates, preserving first-seen order.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
+
+
+def _resolve_requested_plan_plugins(
+    *,
+    names: Sequence[str] | None,
+    enable: Sequence[str] | None,
+) -> list[str] | None:
+    """Resolve which plugins the plan should start from.
+
+    The CLI plan defaults to planning the currently registered plugins that are
+    enabled-by-default. When ``names`` are provided, those plugins are planned
+    (and ``enable`` is treated as additive). When ``enable`` is provided with no
+    ``names``, it overrides the default selection.
+    """
+    if names:
+        return _dedupe_preserve_order([*names, *(enable or ())])
+    if enable:
+        return list(enable)
+
+    enabled_by_default_names = [
+        plugin.metadata.name for plugin in list_graph_plugins() if plugin.metadata.enabled_by_default
+    ]
+    return enabled_by_default_names or None
 
 
 class PlanMode(Enum):
@@ -249,7 +296,7 @@ def graph_plugins_plan_handler(
     enable: tuple[str, ...] | None = enable_tuple if enable_tuple else None
     disable = ctx.params.get_tuple("disable") or ()
     selection_policy_str = ctx.params.get_str("selection_policy", "lenient")
-    dependency_policy_str = ctx.params.get_str("dependency_policy", "strict")
+    dependency_policy_str = ctx.params.get_str("dependency_policy", "skip")
 
     # Parse policies
     try:
@@ -274,10 +321,11 @@ def graph_plugins_plan_handler(
         selection_policy=selection_policy,
     )
 
+    requested_plugins = _resolve_requested_plan_plugins(names=names, enable=enable)
+
     # Call with the correct API signature
     plan = plan_graph_plugins(
-        plugin_names=list(names) if names else None,
-        enabled=list(enable) if enable else None,
+        plugin_names=requested_plugins,
         disabled=list(disable) if disable else None,
         plan_options=options,
     )

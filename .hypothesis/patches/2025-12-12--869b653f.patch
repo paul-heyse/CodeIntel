@@ -1,6 +1,6 @@
 From HEAD Mon Sep 17 00:00:00 2001
 From: Hypothesis 6.148.7 <no-reply@hypothesis.works>
-Date: Fri, 12 Dec 2025 13:33:07
+Date: Fri, 12 Dec 2025 15:12:37
 Subject: [PATCH] Hypothesis: add explicit examples
 
 ---

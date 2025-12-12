@@ -14,6 +14,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
+from codeintel.cli.context import CommandContextBuilder
 from tests._helpers.context import create_test_context
 from tests._helpers.repo import write_canonical_repo
 
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from codeintel.cli.context import CommandContext, CommandContextBuilder
+    from codeintel.cli.context import CommandContext
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import SeedPack, TestContext
 

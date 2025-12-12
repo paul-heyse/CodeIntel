@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/build.py
+# hypothesis_version: 6.148.7
+
+[0.0, 1000.0, 100, 'BuildHistoryResult', 'BuildRunResult', 'BuildStatusResult', 'RunMode', 'TargetModule', 'TargetScope', 'all', 'all_targets', 'analytics', 'blocked', 'build', 'build_run_handler', 'build_status_handler', 'computed', 'default', 'dry_run', 'engine', 'execute', 'force', 'fresh', 'graphs', 'hamilton', 'ingestion', 'legacy', 'limit', 'missing', 'module', 'name', 'requested', 'run_id', 'skipped', 'stale', 'status', 'succeeded', 'targets']

@@ -16,7 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.bootstrap import build_backend_resource
+from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.context import (
     RequestContext,
     reset_current_request_context,
@@ -42,7 +42,6 @@ if TYPE_CHECKING:
     from fastapi import Request
     from starlette.responses import Response
 
-    from codeintel.serving.bootstrap import BackendResource
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger("codeintel.serving.http.fastapi")

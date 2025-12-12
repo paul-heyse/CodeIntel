@@ -5,6 +5,8 @@ This module provides TypedDict definitions for analytics DuckDB tables:
 - TypednessRow for analytics.typedness
 - StaticDiagnosticRow for analytics.static_diagnostics
 - FunctionValidationRow for analytics.function_validation
+- FunctionEffectsRow for analytics.function_effects
+- FunctionContractsRow for analytics.function_contracts
 - GraphValidationRow for analytics.graph_validation
 - HotspotRow for analytics.hotspots
 - FunctionMetricsRow for analytics.function_metrics
@@ -14,13 +16,15 @@ This module provides TypedDict definitions for analytics DuckDB tables:
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import TYPE_CHECKING, Final, TypedDict, TypeVar
 
 from codeintel.config.datasets.schemas import TABLE_SCHEMAS
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from datetime import datetime
+
+_DATETIME = datetime
 
 _Column = TypeVar("_Column", bound=str)
 
@@ -699,10 +703,160 @@ def function_types_row_to_tuple(row: FunctionTypesRow) -> tuple[object, ...]:
     return _serialize_row(normalized, FUNCTION_TYPES_COLUMNS)
 
 
+class FunctionEffectsRow(TypedDict):
+    """Row shape for analytics.function_effects inserts.
+
+    Parameters
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    function_goid_h128
+        128-bit hash of the function GOID.
+    is_pure
+        Whether the function has no detected effects.
+    uses_io
+        True when file/network I/O is detected.
+    touches_db
+        True when database access is detected.
+    uses_time
+        True when time access is detected.
+    uses_randomness
+        True when randomness sources are detected.
+    modifies_globals
+        True when global variables are mutated.
+    modifies_closure
+        True when nonlocal variables are mutated.
+    spawns_threads_or_tasks
+        True when concurrency is initiated.
+    has_transitive_effects
+        True when callees are effectful within the configured depth.
+    purity_confidence
+        Confidence score for the purity classification.
+    effects_json
+        Structured evidence payload (JSON).
+    created_at
+        Creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    function_goid_h128: int
+    is_pure: bool
+    uses_io: bool
+    touches_db: bool
+    uses_time: bool
+    uses_randomness: bool
+    modifies_globals: bool
+    modifies_closure: bool
+    spawns_threads_or_tasks: bool
+    has_transitive_effects: bool
+    purity_confidence: float | None
+    effects_json: object | None
+    created_at: datetime
+
+
+FUNCTION_EFFECTS_COLUMNS: Final[tuple[str, ...]] = _get_contract_columns("analytics.function_effects")
+
+
+def function_effects_row_to_tuple(row: FunctionEffectsRow) -> tuple[object, ...]:
+    """Serialize a FunctionEffectsRow into INSERT column order.
+
+    Parameters
+    ----------
+    row
+        The function effects row to serialize.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values aligned with analytics.function_effects columns.
+    """
+    normalized = dict(row)
+    effects_json = normalized.get("effects_json")
+    if isinstance(effects_json, (dict, list)):
+        normalized["effects_json"] = json.dumps(effects_json)
+    return _serialize_row(normalized, FUNCTION_EFFECTS_COLUMNS)
+
+
+class FunctionContractsRow(TypedDict):
+    """Row shape for analytics.function_contracts inserts.
+
+    Parameters
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    function_goid_h128
+        128-bit hash of the function GOID.
+    preconditions_json
+        Extracted preconditions (JSON).
+    postconditions_json
+        Derived postconditions (JSON).
+    raises_json
+        Raised exception patterns (JSON).
+    param_nullability_json
+        Per-parameter nullability inference (JSON).
+    return_nullability
+        Return nullability inference label.
+    contract_confidence
+        Confidence score for inferred contracts.
+    created_at
+        Creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    function_goid_h128: int
+    preconditions_json: object | None
+    postconditions_json: object | None
+    raises_json: object | None
+    param_nullability_json: object | None
+    return_nullability: str | None
+    contract_confidence: float | None
+    created_at: datetime
+
+
+FUNCTION_CONTRACTS_COLUMNS: Final[tuple[str, ...]] = _get_contract_columns("analytics.function_contracts")
+
+
+def function_contracts_row_to_tuple(row: FunctionContractsRow) -> tuple[object, ...]:
+    """Serialize a FunctionContractsRow into INSERT column order.
+
+    Parameters
+    ----------
+    row
+        The function contracts row to serialize.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values aligned with analytics.function_contracts columns.
+    """
+    normalized = dict(row)
+    json_cols = (
+        "preconditions_json",
+        "postconditions_json",
+        "raises_json",
+        "param_nullability_json",
+    )
+    for col in json_cols:
+        value = normalized.get(col)
+        if isinstance(value, (dict, list)):
+            normalized[col] = json.dumps(value)
+    return _serialize_row(normalized, FUNCTION_CONTRACTS_COLUMNS)
+
+
 __all__ = [
+    "FUNCTION_CONTRACTS_COLUMNS",
+    "FUNCTION_EFFECTS_COLUMNS",
     "FUNCTION_METRICS_COLUMNS",
     "FUNCTION_TYPES_COLUMNS",
     "CoverageLineRow",
+    "FunctionContractsRow",
+    "FunctionEffectsRow",
     "FunctionMetricsRow",
     "FunctionTypesRow",
     "FunctionValidationRow",
@@ -711,6 +865,8 @@ __all__ = [
     "StaticDiagnosticRow",
     "TypednessRow",
     "coverage_line_to_tuple",
+    "function_contracts_row_to_tuple",
+    "function_effects_row_to_tuple",
     "function_metrics_row_to_tuple",
     "function_types_row_to_tuple",
     "function_validation_row_to_tuple",

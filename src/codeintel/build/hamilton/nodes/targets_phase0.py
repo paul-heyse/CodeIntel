@@ -11,7 +11,9 @@ The initial chain covers a vertical slice through all modules:
 - scip (ingestion) - depends on modules
 - ast (ingestion) - depends on modules
 - goids (graphs) - depends on scip, ast
+- call_graph (graphs) - depends on goids, scip
 - function_metrics (analytics) - depends on goids, ast
+- risk_factors (analytics) - depends on function_metrics, call_graph
 
 Later phases will generate nodes from the TargetGraph rather than
 defining them explicitly.
@@ -22,11 +24,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from hamilton.function_modifiers import tag
 
 from codeintel.build.context import ContextResources, TargetExecutionContext
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import (
     ManifestSaveRequest,
     TargetRunRecord,
@@ -37,10 +40,7 @@ from codeintel.build.hamilton.manifest_hook import (
 )
 from codeintel.build.hamilton.metadata_bridge import from_plugin_or_target
 from codeintel.build.plugin_registry import get_plugin_for_target
-
-if TYPE_CHECKING:
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetGraph
+from codeintel.build.targets import TargetGraph
 
 log = logging.getLogger(__name__)
 
@@ -338,6 +338,38 @@ def t__goids(
     return _run_target(env=env, graph=graph, target_name="goids")
 
 
+@tag(domain="graphs", target="call_graph")
+def t__call_graph(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__goids: TargetRunRecord,
+    t__scip: TargetRunRecord,
+) -> TargetRunRecord:
+    """Execute the call_graph target (function call graph construction).
+
+    Depends on goids and scip being computed.
+
+    Parameters
+    ----------
+    env
+        Build environment.
+    graph
+        Target graph.
+    t__goids
+        Execution record from the goids node.
+    t__scip
+        Execution record from the scip node.
+
+    Returns
+    -------
+    TargetRunRecord
+        Execution record for the call_graph target.
+    """
+    # Upstream params establish Hamilton DAG dependencies
+    _ = (t__goids, t__scip)  # Used for dependency tracking
+    return _run_target(env=env, graph=graph, target_name="call_graph")
+
+
 @tag(domain="analytics", target="function_metrics")
 def t__function_metrics(
     env: BuildEnv,
@@ -370,6 +402,38 @@ def t__function_metrics(
     return _run_target(env=env, graph=graph, target_name="function_metrics")
 
 
+@tag(domain="analytics", target="risk_factors")
+def t__risk_factors(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__function_metrics: TargetRunRecord,
+    t__call_graph: TargetRunRecord,
+) -> TargetRunRecord:
+    """Execute the risk_factors target (composite risk factors per function).
+
+    Depends on function_metrics and call_graph being computed.
+
+    Parameters
+    ----------
+    env
+        Build environment.
+    graph
+        Target graph.
+    t__function_metrics
+        Execution record from the function_metrics node.
+    t__call_graph
+        Execution record from the call_graph node.
+
+    Returns
+    -------
+    TargetRunRecord
+        Execution record for the risk_factors target.
+    """
+    # Upstream params establish Hamilton DAG dependencies
+    _ = (t__function_metrics, t__call_graph)  # Used for dependency tracking
+    return _run_target(env=env, graph=graph, target_name="risk_factors")
+
+
 # =============================================================================
 # Node Registry
 # =============================================================================
@@ -382,7 +446,9 @@ PHASE0_NODES: tuple[Any, ...] = (
     t__scip,
     t__ast,
     t__goids,
+    t__call_graph,
     t__function_metrics,
+    t__risk_factors,
 )
 
 # Mapping from target name to node name for executor lookups
@@ -391,7 +457,9 @@ TARGET_TO_NODE: dict[str, str] = {
     "scip": "t__scip",
     "ast": "t__ast",
     "goids": "t__goids",
+    "call_graph": "t__call_graph",
     "function_metrics": "t__function_metrics",
+    "risk_factors": "t__risk_factors",
 }
 
 
@@ -399,8 +467,10 @@ __all__ = [
     "PHASE0_NODES",
     "TARGET_TO_NODE",
     "t__ast",
+    "t__call_graph",
     "t__function_metrics",
     "t__goids",
     "t__modules",
+    "t__risk_factors",
     "t__scip",
 ]
