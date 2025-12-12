@@ -23,11 +23,6 @@ def _require(*, condition: bool, message: str) -> None:
         pytest.fail(message)
 
 
-# ------------------------------------------------------------------
-# typed_dict_from_pandera tests
-# ------------------------------------------------------------------
-
-
 def test_typeddict_simple_schema() -> None:
     """Generate TypedDict from simple schema."""
     schema = DataFrameSchema(
@@ -58,8 +53,7 @@ def test_typeddict_nullable_columns_become_optional() -> None:
 
     hints = get_type_hints(result)
     _require(condition=hints["required_col"] is str, message="required_col type mismatch")
-    # Check that optional_col allows None
-    # The type will be int | None which is a UnionType
+
     optional_hint = hints["optional_col"]
     _require(
         condition=hasattr(optional_hint, "__args__"), message="optional_col should be Union type"
@@ -114,15 +108,9 @@ def test_typeddict_column_order_preserved() -> None:
 
     result = typed_dict_from_pandera("OrderedRow", schema)
 
-    # TypedDict annotations maintain insertion order
     hints = get_type_hints(result)
     keys = list(hints.keys())
     _require(condition=keys == ["z_col", "a_col", "m_col"], message=f"key order mismatch: {keys}")
-
-
-# ------------------------------------------------------------------
-# row_serializer_from_pandera tests
-# ------------------------------------------------------------------
 
 
 def test_serializer_simple() -> None:
@@ -153,7 +141,6 @@ def test_serializer_column_order_matches_schema() -> None:
     serialize = row_serializer_from_pandera(schema)
     result = serialize({"a_col": "A", "m_col": "M", "z_col": "Z"})
 
-    # Order should match schema: z_col, a_col, m_col
     _require(condition=result == ("Z", "A", "M"), message=f"result mismatch: {result}")
 
 
@@ -184,12 +171,7 @@ def test_serializer_missing_key_raises_error() -> None:
     serialize = row_serializer_from_pandera(schema)
 
     with pytest.raises(KeyError):
-        serialize({"a": "hello"})  # Missing "b"
-
-
-# ------------------------------------------------------------------
-# _pandera_dtype_to_python tests (via integration)
-# ------------------------------------------------------------------
+        serialize({"a": "hello"})
 
 
 @pytest.mark.parametrize(

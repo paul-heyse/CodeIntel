@@ -46,11 +46,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Graphs-Specific Executor Context (extends BaseExecutorContext)
-# =============================================================================
-
-
 @dataclass
 class GraphExecutorContext(BaseExecutorContext):
     """Context for graph plugin execution.
@@ -210,7 +205,6 @@ class GraphPluginExecutor:
         shared_scratch = scratch or PluginScratch()
         fatal_error = False
 
-        # Reset manifest for this run
         self._manifest = {}
 
         log.info(
@@ -223,27 +217,22 @@ class GraphPluginExecutor:
             for plugin in plugins:
                 settings = self._get_settings(plugin, settings_by_plugin)
 
-                # Check for skip conditions
                 skip_reason = self._should_skip(plugin, settings)
                 if skip_reason is not None:
                     record = self._create_skip_record(plugin, skip_reason, settings)
                     records.append(record)
                     continue
 
-                # Build plugin context
                 plugin_ctx = self._build_context(executor_ctx, plugin, shared_scratch)
 
-                # Execute the plugin
                 record = self._execute_plugin(plugin, plugin_ctx, settings)
                 records.append(record)
 
-                # Build manifest entry for successful plugins
                 if record.status == "succeeded":
                     self._manifest[plugin.metadata.name] = self._build_manifest_entry(
                         record, settings
                     )
 
-                # Check for fail-fast condition
                 if record.status == "failed":
                     severity = (
                         settings.severity
@@ -263,7 +252,6 @@ class GraphPluginExecutor:
         ended_at = utc_now()
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-        # Record run-level telemetry
         self._telemetry.record_run_metrics(
             run_id=effective_run_id,
             success_count=sum(1 for r in records if r.status == "succeeded"),
@@ -336,7 +324,6 @@ class GraphPluginExecutor:
         if self._policy.dry_run:
             return "dry_run"
 
-        # Check manifest-based skip
         if (
             self._policy.skip_on_unchanged
             and self._prior_manifest is not None
@@ -423,14 +410,12 @@ class GraphPluginExecutor:
         started_at = utc_now()
         start_time = time.perf_counter()
 
-        # Build record metadata
         record_meta: dict[str, object] = {}
         if settings is not None:
             record_meta["input_hash"] = settings.input_hash
             record_meta["options_hash"] = settings.options_hash
             record_meta["version_hash"] = settings.version_hash
 
-        # Start telemetry span
         span = self._telemetry.start_span(
             meta.name,
             ctx.run_id or "unknown",
@@ -443,7 +428,6 @@ class GraphPluginExecutor:
             meta.stage,
         )
 
-        # Execute plugin
         result = None
         error: str | None = None
         try:
@@ -461,7 +445,6 @@ class GraphPluginExecutor:
         ended_at = utc_now()
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-        # Determine status
         severity = (
             settings.severity if settings is not None else self._policy.get_severity(meta.name)
         )

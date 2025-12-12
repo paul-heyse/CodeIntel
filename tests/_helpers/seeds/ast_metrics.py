@@ -26,26 +26,16 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# AST Metrics Constants
-# =============================================================================
-
-# Complexity values for different module types
 LOW_COMPLEXITY = 3.0
 MEDIUM_COMPLEXITY = 7.0
 HIGH_COMPLEXITY = 15.0
 UTILITY_COMPLEXITY = 2.0
 
-# Node counts for realistic AST structures
+
 SMALL_NODE_COUNT = 50
 MEDIUM_NODE_COUNT = 150
 LARGE_NODE_COUNT = 300
 UTILITY_NODE_COUNT = 30
-
-
-# =============================================================================
-# AST Metrics Pack Implementation
-# =============================================================================
 
 
 @dataclass
@@ -94,7 +84,6 @@ class AstMetricsPack:
         now = datetime.now(UTC)
         rows: list[AstMetricsRow] = []
 
-        # Module A: medium complexity, typical Python module
         rows.append(
             AstMetricsRow(
                 rel_path=MOD_A_PATH,
@@ -108,7 +97,6 @@ class AstMetricsPack:
             )
         )
 
-        # Module B: high complexity if enabled, otherwise medium
         b_complexity = HIGH_COMPLEXITY if self.include_high_complexity else MEDIUM_COMPLEXITY
         rows.append(
             AstMetricsRow(
@@ -123,7 +111,6 @@ class AstMetricsPack:
             )
         )
 
-        # Module C: low complexity, simple module
         rows.append(
             AstMetricsRow(
                 rel_path=MOD_C_PATH,
@@ -137,7 +124,6 @@ class AstMetricsPack:
             )
         )
 
-        # Utility module: minimal complexity
         rows.append(
             AstMetricsRow(
                 rel_path=MOD_UTIL_PATH,
@@ -154,7 +140,6 @@ class AstMetricsPack:
         insert_rows(ctx.gateway, rows)
 
 
-# Default instance for common usage
 AST_METRICS_PACK = AstMetricsPack()
 
 

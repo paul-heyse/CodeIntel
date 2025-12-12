@@ -86,8 +86,6 @@ class RuntimeParams:
     document_output_dir: Path | None = None
     backend: BackendFlags = field(default_factory=BackendFlags)
 
-    # --- Factory Methods ---
-
     @classmethod
     def from_cyclopts(cls, runtime_cli: RuntimeCLI) -> RuntimeParams:
         """Convert Cyclopts RuntimeCLI to canonical RuntimeParams.
@@ -121,7 +119,7 @@ class RuntimeParams:
             build_dir=runtime_cli.build_dir,
             repo_root=runtime_cli.repo_root,
             document_output_dir=runtime_cli.document_output_dir,
-            backend=BackendFlags(),  # RuntimeCLI doesn't include backend
+            backend=BackendFlags(),
         )
 
     @classmethod
@@ -222,9 +220,6 @@ class RuntimeParams:
                 "strict": self.backend.strict,
             },
         }
-
-
-# --- Helper Functions ---
 
 
 def _to_path(value: object) -> Path | None:

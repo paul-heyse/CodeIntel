@@ -35,10 +35,6 @@ if TYPE_CHECKING:
         SeverityLevel,
     )
 
-# =============================================================================
-# Test Fixtures and Helpers
-# =============================================================================
-
 
 @dataclass
 class TestFinding:
@@ -82,11 +78,6 @@ def set_severity(finding: TestFinding, severity: SeverityLevel) -> TestFinding:
     return replace(finding, severity=severity)
 
 
-# =============================================================================
-# BaseValidationOptions Tests
-# =============================================================================
-
-
 def test_base_validation_options_defaults() -> None:
     """Verify BaseValidationOptions default values."""
     options = BaseValidationOptions()
@@ -114,11 +105,6 @@ def test_base_validation_options_is_frozen() -> None:
     options = BaseValidationOptions()
 
     assert_frozen(options, "hard_fail", new_value=True)
-
-
-# =============================================================================
-# apply_severity_overrides Tests
-# =============================================================================
 
 
 def test_apply_severity_overrides_no_overrides() -> None:
@@ -168,8 +154,8 @@ def test_apply_severity_overrides_specific_rule() -> None:
         set_severity=set_severity,
     )
 
-    expect_equal(result[0].severity, "error")  # A overridden
-    expect_equal(result[1].severity, "info")  # B unchanged
+    expect_equal(result[0].severity, "error")
+    expect_equal(result[1].severity, "info")
 
 
 def test_apply_severity_overrides_wildcard() -> None:
@@ -204,8 +190,8 @@ def test_apply_severity_overrides_specific_over_wildcard() -> None:
         set_severity=set_severity,
     )
 
-    expect_equal(result[0].severity, "error")  # Specific override
-    expect_equal(result[1].severity, "warning")  # Wildcard override
+    expect_equal(result[0].severity, "error")
+    expect_equal(result[1].severity, "warning")
 
 
 def test_apply_severity_overrides_preserves_message() -> None:
@@ -220,11 +206,6 @@ def test_apply_severity_overrides_preserves_message() -> None:
     )
 
     expect_equal(result[0].message, "original_message")
-
-
-# =============================================================================
-# cap_findings Tests
-# =============================================================================
 
 
 def test_cap_findings_no_limit() -> None:
@@ -298,11 +279,6 @@ def test_cap_findings_preserves_order() -> None:
     expect_equal(result[1].message, "second")
 
 
-# =============================================================================
-# has_error_findings Tests
-# =============================================================================
-
-
 def test_has_error_findings_empty() -> None:
     """Verify has_error_findings returns False for empty list."""
     result = has_error_findings([], get_severity)
@@ -340,11 +316,6 @@ def test_has_error_findings_all_errors() -> None:
 
     result = has_error_findings(findings, get_severity)
     expect_true(result)
-
-
-# =============================================================================
-# filter_by_severity Tests
-# =============================================================================
 
 
 def test_filter_by_severity_info_threshold() -> None:
@@ -404,11 +375,6 @@ def test_filter_by_severity_preserves_order() -> None:
     expect_equal(result[0].message, "first")
     expect_equal(result[1].message, "second")
     expect_equal(result[2].message, "third")
-
-
-# =============================================================================
-# group_findings_by_key Tests
-# =============================================================================
 
 
 def test_group_findings_by_key_empty() -> None:
@@ -479,11 +445,6 @@ def test_group_findings_by_key_with_severity() -> None:
     expect_equal(len(result["error"]), 1)
 
 
-# =============================================================================
-# Integration Tests
-# =============================================================================
-
-
 def test_combined_override_and_filter() -> None:
     """Verify overrides and filtering work together."""
     findings = [
@@ -492,7 +453,6 @@ def test_combined_override_and_filter() -> None:
         TestFinding(rule="important", message="msg3", severity="warning"),
     ]
 
-    # First apply overrides
     overridden = apply_severity_overrides(
         findings,
         overrides={"important": "error"},
@@ -500,10 +460,9 @@ def test_combined_override_and_filter() -> None:
         set_severity=set_severity,
     )
 
-    # Then filter by severity
     filtered = filter_by_severity(overridden, "warning", get_severity)
 
-    expect_equal(len(filtered), 2)  # Both "important" findings (now error level)
+    expect_equal(len(filtered), 2)
     expect_true(all(f.rule == "important" for f in filtered))
 
 
@@ -513,10 +472,8 @@ def test_combined_cap_and_group() -> None:
         TestFinding(rule="B", message=f"b{i}") for i in range(5)
     ]
 
-    # First cap findings
     capped = cap_findings(findings, max_per_rule=2, get_key=get_rule)
 
-    # Then group by key
     grouped = group_findings_by_key(capped, get_rule)
 
     expect_equal(len(grouped["A"]), 2)
@@ -533,7 +490,6 @@ def test_full_pipeline() -> None:
         TestFinding(rule="minor", message="m2", severity="info"),
     ]
 
-    # 1. Apply severity overrides (make critical -> error)
     step1 = apply_severity_overrides(
         findings,
         overrides={"critical": "error"},
@@ -541,16 +497,12 @@ def test_full_pipeline() -> None:
         set_severity=set_severity,
     )
 
-    # 2. Cap findings per rule
     step2 = cap_findings(step1, max_per_rule=2, get_key=get_rule)
 
-    # 3. Filter to warning+
     step3 = filter_by_severity(step2, "warning", get_severity)
 
-    # 4. Check for errors
     has_errors = has_error_findings(step3, get_severity)
 
-    # Verify pipeline results
-    expect_equal(len(step3), 2)  # Only critical findings (capped to 2)
+    expect_equal(len(step3), 2)
     expect_true(all(f.severity == "error" for f in step3))
     expect_true(has_errors)

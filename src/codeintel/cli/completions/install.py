@@ -20,10 +20,9 @@ class Shell(Enum):
     FISH = "fish"
 
 
-# Bash completion script template
 BASH_COMPLETION_TEMPLATE = """
-# CodeIntel CLI completion for Bash
-# Generated automatically - do not edit
+
+
 
 _codeintel_completions() {
     local cur prev opts
@@ -31,10 +30,10 @@ _codeintel_completions() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    # Top-level commands
+
     local commands="op dataset build graph docs config storage"
 
-    # Subcommands by parent
+
     local op_commands="list call"
     local dataset_commands="list describe verify"
     local build_commands="status run clean"
@@ -43,7 +42,7 @@ _codeintel_completions() {
     local config_commands="show set"
     local storage_commands="init migrate status"
 
-    # Dynamic completions
+
     case "${prev}" in
         codeintel)
             COMPREPLY=( $(compgen -W "${commands}" -- ${cur}) )
@@ -54,7 +53,7 @@ _codeintel_completions() {
             return 0
             ;;
         call)
-            # Complete operation IDs dynamically
+
             local ops=$(codeintel op list --format=json 2>/dev/null | jq -r '.[].id' 2>/dev/null)
             COMPREPLY=( $(compgen -W "${ops}" -- ${cur}) )
             return 0
@@ -64,7 +63,7 @@ _codeintel_completions() {
             return 0
             ;;
         describe|verify)
-            # Complete table keys dynamically
+
             local tables=$(codeintel dataset list --format=json 2>/dev/null | jq -r '.[].table_key' 2>/dev/null)
             COMPREPLY=( $(compgen -W "${tables}" -- ${cur}) )
             return 0
@@ -90,7 +89,7 @@ _codeintel_completions() {
             return 0
             ;;
         --db-path|--repo-root|--build-dir)
-            # Path completion
+
             COMPREPLY=( $(compgen -f -- ${cur}) )
             return 0
             ;;
@@ -100,7 +99,7 @@ _codeintel_completions() {
             ;;
     esac
 
-    # Global options
+
     local global_opts="--help --version --format --verbose --quiet"
     if [[ ${cur} == -* ]]; then
         COMPREPLY=( $(compgen -W "${global_opts}" -- ${cur}) )
@@ -111,11 +110,11 @@ _codeintel_completions() {
 complete -F _codeintel_completions codeintel
 """
 
-# Zsh completion script template
-ZSH_COMPLETION_TEMPLATE = """#compdef codeintel
 
-# CodeIntel CLI completion for Zsh
-# Generated automatically - do not edit
+ZSH_COMPLETION_TEMPLATE = """
+
+
+
 
 _codeintel() {
     local -a commands
@@ -179,13 +178,13 @@ _codeintel() {
         argument)
             case $words[2]:$words[3] in
                 op:call)
-                    # Dynamic operation completion
+
                     local -a operations
                     operations=(${(f)"$(codeintel op list --format=json 2>/dev/null | jq -r '.[].id' 2>/dev/null)"})
                     _describe -t operations 'operation' operations
                     ;;
                 dataset:describe|dataset:verify)
-                    # Dynamic table completion
+
                     local -a tables
                     tables=(${(f)"$(codeintel dataset list --format=json 2>/dev/null | jq -r '.[].table_key' 2>/dev/null)"})
                     _describe -t tables 'table' tables
@@ -198,14 +197,14 @@ _codeintel() {
 _codeintel "$@"
 """
 
-# Fish completion script template
-FISH_COMPLETION_TEMPLATE = """# CodeIntel CLI completion for Fish
-# Generated automatically - do not edit
 
-# Disable file completion by default
+FISH_COMPLETION_TEMPLATE = """
+
+
+
 complete -c codeintel -f
 
-# Top-level commands
+
 complete -c codeintel -n "__fish_use_subcommand" -a "op" -d "Operation management"
 complete -c codeintel -n "__fish_use_subcommand" -a "dataset" -d "Dataset inspection"
 complete -c codeintel -n "__fish_use_subcommand" -a "build" -d "Build management"
@@ -214,28 +213,28 @@ complete -c codeintel -n "__fish_use_subcommand" -a "docs" -d "Documentation"
 complete -c codeintel -n "__fish_use_subcommand" -a "config" -d "Configuration"
 complete -c codeintel -n "__fish_use_subcommand" -a "storage" -d "Storage management"
 
-# Op subcommands
+
 complete -c codeintel -n "__fish_seen_subcommand_from op" -a "list" -d "List operations"
 complete -c codeintel -n "__fish_seen_subcommand_from op" -a "call" -d "Call an operation"
 
-# Dataset subcommands
+
 complete -c codeintel -n "__fish_seen_subcommand_from dataset" -a "list" -d "List datasets"
 complete -c codeintel -n "__fish_seen_subcommand_from dataset" -a "describe" -d "Describe dataset"
 complete -c codeintel -n "__fish_seen_subcommand_from dataset" -a "verify" -d "Verify dataset"
 
-# Build subcommands
+
 complete -c codeintel -n "__fish_seen_subcommand_from build" -a "status" -d "Build status"
 complete -c codeintel -n "__fish_seen_subcommand_from build" -a "run" -d "Run build"
 complete -c codeintel -n "__fish_seen_subcommand_from build" -a "clean" -d "Clean build"
 
-# Dynamic operation completion for 'op call'
+
 complete -c codeintel -n "__fish_seen_subcommand_from call" -a "(codeintel op list --format=json 2>/dev/null | jq -r '.[].id' 2>/dev/null)"
 
-# Dynamic table completion for 'dataset describe/verify'
+
 complete -c codeintel -n "__fish_seen_subcommand_from describe" -a "(codeintel dataset list --format=json 2>/dev/null | jq -r '.[].table_key' 2>/dev/null)"
 complete -c codeintel -n "__fish_seen_subcommand_from verify" -a "(codeintel dataset list --format=json 2>/dev/null | jq -r '.[].table_key' 2>/dev/null)"
 
-# Global options
+
 complete -c codeintel -l help -d "Show help"
 complete -c codeintel -l version -d "Show version"
 complete -c codeintel -l format -d "Output format" -a "text json"

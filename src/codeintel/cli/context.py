@@ -65,7 +65,7 @@ class CommandContext:
 
     Examples
     --------
-    >>> with CommandContextBuilder().with_storage().build() as ctx:  # doctest: +SKIP
+    >>> with CommandContextBuilder().with_storage().build() as ctx:
     ...     gateway = ctx.storage.gateway
     ...     result = gateway.query("SELECT * FROM modules")
     """
@@ -78,12 +78,10 @@ class CommandContext:
     output_format: OutputFormat = OutputFormat.TEXT
     verbosity: int = 0
 
-    # Lazy services (initialized on first access)
     _runtime: RuntimeService | None = field(default=None, repr=False)
     _storage: StorageService | None = field(default=None, repr=False)
     _serving: ServingService | None = field(default=None, repr=False)
 
-    # Track if we own resources (for cleanup)
     _owns_storage: bool = field(default=False, repr=False)
 
     @property
@@ -217,7 +215,7 @@ class CommandContextBuilder:
 
     Examples
     --------
-    >>> builder = CommandContextBuilder()  # doctest: +SKIP
+    >>> builder = CommandContextBuilder()
     >>> builder = builder.with_storage().with_params({"name": "test"})
     >>> with builder.build() as ctx:
     ...     result = ctx.gateway.query("SELECT * FROM modules")
@@ -396,28 +394,21 @@ class CommandContextBuilder:
         CommandContext
             Configured command context.
         """
-        # Load configuration
         config = load_config(validate=False)
 
-        # Create logger
         logger = self._logger or logging.getLogger("codeintel.cli")
 
-        # Create param service
         param_service = ParamService(self._params)
 
-        # Create job service
         job_service = JobService()
 
-        # Generate operation ID if not provided
         operation_id = self._operation_id or str(uuid.uuid4())[:8]
 
-        # Create services based on requirements
         runtime_service: RuntimeService | None = None
         storage_service: StorageService | None = None
         serving_service: ServingService | None = None
 
         try:
-            # Build runtime if required
             if self._require_runtime:
                 runtime_service = RuntimeService(
                     param_service,
@@ -425,14 +416,11 @@ class CommandContextBuilder:
                     db_path=self._db_path,
                 )
 
-            # Build storage if required
             if self._require_storage and runtime_service is not None:
                 storage_service = StorageService.from_runtime(runtime_service)
             elif self._injected_gateway is not None:
-                # Use injected gateway (for testing)
                 storage_service = StorageService.from_gateway(self._injected_gateway)
 
-            # Build serving if required
             if (
                 self._require_serving
                 and runtime_service is not None
@@ -457,7 +445,6 @@ class CommandContextBuilder:
             yield ctx
 
         finally:
-            # Cleanup resources
             if storage_service is not None:
                 storage_service.close()
 

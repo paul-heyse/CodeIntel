@@ -25,10 +25,6 @@ from tests._helpers.cli import run_cli
 if TYPE_CHECKING:
     from pathlib import Path
 
-# -----------------------------------------------------------------------------
-# Fixtures
-# -----------------------------------------------------------------------------
-
 
 @pytest.fixture
 def temp_project(tmp_path: Path) -> Path:
@@ -51,15 +47,9 @@ def temp_project(tmp_path: Path) -> Path:
     config_path = tmp_path / PROJECT_FILE
     config_path.write_text(f"repo: {config.repo}\ndefault_profile: {config.default_profile}\n")
 
-    # Create .codeintel directory for database
     (tmp_path / ".codeintel").mkdir(exist_ok=True)
 
     return tmp_path
-
-
-# -----------------------------------------------------------------------------
-# Project Discovery Tests
-# -----------------------------------------------------------------------------
 
 
 def test_find_project_root_raises_without_config(tmp_path: Path) -> None:
@@ -70,11 +60,9 @@ def test_find_project_root_raises_without_config(tmp_path: Path) -> None:
 
 def test_find_project_root_finds_config(temp_project: Path) -> None:
     """Verify project root is found when config exists."""
-    # Create a nested directory
     nested = temp_project / "src" / "subdir"
     nested.mkdir(parents=True)
 
-    # Should find the project root from nested directory
     root = find_project_root(nested)
     expect_equal(root, temp_project)
 
@@ -86,17 +74,12 @@ def test_load_project_config_parses_yaml(temp_project: Path) -> None:
     expect_equal(config.default_profile, "default")
 
 
-# -----------------------------------------------------------------------------
-# Operation Commands Tests
-# -----------------------------------------------------------------------------
-
-
 def test_op_list_shows_operations() -> None:
     """Verify op list shows available operations."""
     result = run_cli(["op", "list"])
 
     expect_equal(result.exit_code, 0)
-    # New output format uses structured CliResult
+
     expect_in("operations:", result.stdout)
     expect_in("function.summary", result.stdout)
 
@@ -107,14 +90,14 @@ def test_op_list_json_output() -> None:
 
     expect_equal(result.exit_code, 0)
     output = json.loads(result.stdout)
-    # New handler wraps data: {"data": {"operations": [...], "count": N}}
+
     expect_in("data", output)
     data = output["data"]
     expect_in("operations", data)
     operations = data["operations"]
     expect_is_instance(operations, list)
     expect_true(len(operations) > 0)
-    # Check structure
+
     expect_in("id", operations[0])
     expect_in("category", operations[0])
 
@@ -127,17 +110,12 @@ def test_op_list_filter_by_category() -> None:
     expect_in("function.summary", result.stdout)
 
 
-# -----------------------------------------------------------------------------
-# Dataset Commands Tests
-# -----------------------------------------------------------------------------
-
-
 def test_dataset_describe_known_dataset() -> None:
     """Verify dataset describe shows contract details."""
     result = run_cli(["dataset", "describe", "core.goids"])
 
     expect_equal(result.exit_code, 0)
-    # New handler uses structured output
+
     expect_in("core.goids", result.stdout)
 
 
@@ -146,14 +124,9 @@ def test_dataset_describe_unknown_dataset() -> None:
     result = run_cli(["dataset", "describe", "nonexistent.table"])
 
     expect_equal(result.exit_code, 1)
-    # Error message may be in stdout, stderr, or combined output
+
     output = result.output or result.stdout
     expect_true("not found" in output.lower() or "error" in output.lower())
-
-
-# -----------------------------------------------------------------------------
-# Serve Commands Tests
-# -----------------------------------------------------------------------------
 
 
 def test_serve_http_help() -> None:
@@ -174,11 +147,6 @@ def test_serve_mcp_help() -> None:
     expect_in("--auto-pipeline", result.stdout)
 
 
-# -----------------------------------------------------------------------------
-# Help and Version Tests
-# -----------------------------------------------------------------------------
-
-
 def test_main_help() -> None:
     """Verify main help shows all command groups."""
     result = run_cli(["--help"])
@@ -188,14 +156,12 @@ def test_main_help() -> None:
     expect_in("op", result.stdout)
     expect_in("dataset", result.stdout)
     expect_in("serve", result.stdout)
-    # Note: "pipeline" is intentionally removed (replaced by "build")
 
 
 def test_pipeline_removed() -> None:
     """Verify pipeline command has been removed (replaced by build)."""
     result = run_cli(["pipeline"])
 
-    # pipeline command should not exist anymore
     expect_equal(result.exit_code, 2)
     expect_true("No such command" in result.stderr)
 
@@ -217,11 +183,6 @@ def test_dataset_help() -> None:
     expect_in("list", result.stdout)
     expect_in("describe", result.stdout)
     expect_in("verify", result.stdout)
-
-
-# -----------------------------------------------------------------------------
-# Build Commands Tests
-# -----------------------------------------------------------------------------
 
 
 def test_build_help() -> None:

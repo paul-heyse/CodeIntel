@@ -59,17 +59,12 @@ __all__ = [
 ]
 
 
-# =============================================================================
-# Constants for parsing
-# =============================================================================
-
-# Minimum parts in a SCIP symbol identifier
 _SCIP_SYMBOL_MIN_PARTS = 4
 
-# Expected parts in a git log record (hash, author_email, author_date, subject, files)
+
 _GIT_LOG_RECORD_PARTS = 5
 
-# Length of a git commit hash
+
 _GIT_COMMIT_HASH_LENGTH = 40
 
 
@@ -95,7 +90,6 @@ def _parse_git_stat_line(lines: list[str], current_idx: int) -> tuple[bool, int,
     if "file" not in stat_line:
         return (False, 0, 0, 0)
 
-    # Parse "1 file changed, 10 insertions(+), 5 deletions(-)"
     files_match = re.search(r"(\d+) files? changed", stat_line)
     ins_match = re.search(r"(\d+) insertions?", stat_line)
     del_match = re.search(r"(\d+) deletions?", stat_line)
@@ -173,7 +167,6 @@ def _parse_blame_field(line: str, state: _BlameParseState) -> None:
     value = parts[1] if len(parts) > 1 else ""
 
     if len(key) == _GIT_COMMIT_HASH_LENGTH:
-        # SHA line: "sha orig_line final_line [count]"
         state.current_sha = key
         line_parts = value.split()
         state.current_line = int(line_parts[1]) if len(line_parts) > 1 else 0
@@ -185,11 +178,6 @@ def _parse_blame_field(line: str, state: _BlameParseState) -> None:
         state.author_time = value
     elif key == "summary":
         state.summary = value
-
-
-# =============================================================================
-# Subprocess Tool Runner
-# =============================================================================
 
 
 @dataclass
@@ -231,7 +219,6 @@ class SubprocessToolRunner:
         str
             Path to executable.
         """
-        # Map tool names to config attributes
         tool_map: dict[str, str] = {
             "scip-python": self.tools_config.scip_python_bin,
             "scip": self.tools_config.scip_bin,
@@ -276,7 +263,6 @@ class SubprocessToolRunner:
         tool_path = self._resolve_tool_path(tool)
         timeout = (timeout_ms or self.default_timeout_ms) / 1000.0
 
-        # Build environment with tool-specific settings
         run_env = self.tools_config.build_env(tool)
         if env:
             run_env.update(env)
@@ -355,11 +341,6 @@ class SubprocessToolRunner:
         return self.which_resolver(tool_path) is not None
 
 
-# =============================================================================
-# SCIP Indexer
-# =============================================================================
-
-
 @dataclass
 class RealScipIndexer:
     """Production SCIP indexer using scip-python and scip tools.
@@ -398,12 +379,10 @@ class RealScipIndexer:
         ScipIndexResult
             Result with success status.
         """
-        # Ensure output directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         args = ["index", str(repo_root), "--output", str(output_path)]
 
-        # Add patterns if provided
         if include_patterns:
             for pattern in include_patterns:
                 args.extend(["--include", pattern])
@@ -415,7 +394,7 @@ class RealScipIndexer:
             "scip-python",
             args,
             repo_root,
-            timeout_ms=300000,  # 5 minutes
+            timeout_ms=300000,
         )
 
         path_exists = await asyncio.to_thread(output_path.exists)
@@ -451,7 +430,6 @@ class RealScipIndexer:
         ScipParseResult
             Result with extracted symbols and occurrences.
         """
-        # Ensure output directory exists
         await asyncio.to_thread(output_json_path.parent.mkdir, parents=True, exist_ok=True)
 
         result = await self.tool_runner.run(
@@ -467,11 +445,9 @@ class RealScipIndexer:
                 error_message=result.stderr or "SCIP parsing failed",
             )
 
-        # Write JSON output
         try:
             await asyncio.to_thread(output_json_path.write_text, result.stdout, encoding="utf-8")
 
-            # Parse symbols and occurrences from JSON
             data = json.loads(result.stdout)
             symbols = self._extract_symbols(data)
             occurrences = self._extract_occurrences(data)
@@ -503,7 +479,7 @@ class RealScipIndexer:
             Extracted symbols.
         """
         symbols: list[ScipSymbol] = []
-        # SCIP JSON format varies; this handles common structures
+
         documents = data.get("documents", [])
         if not isinstance(documents, list):
             return ()
@@ -567,11 +543,6 @@ class RealScipIndexer:
         return tuple(occurrences)
 
 
-# =============================================================================
-# Type Checker
-# =============================================================================
-
-
 @dataclass
 class RealTypeChecker:
     """Production type checker using pyright.
@@ -619,7 +590,7 @@ class RealTypeChecker:
             "pyright",
             args,
             repo_root,
-            timeout_ms=180000,  # 3 minutes
+            timeout_ms=180000,
         )
 
         try:
@@ -698,11 +669,6 @@ class RealTypeChecker:
         return tuple(diagnostics)
 
 
-# =============================================================================
-# Coverage Collector
-# =============================================================================
-
-
 @dataclass
 class RealCoverageCollector:
     """Production coverage collector using coverage.py.
@@ -731,7 +697,6 @@ class RealCoverageCollector:
         Mapping[str, CoverageData]
             Coverage data by file path.
         """
-        # Use coverage json to export
         json_path = coverage_file.with_suffix(".json")
 
         result = await self.tool_runner.run(
@@ -789,11 +754,6 @@ class RealCoverageCollector:
         return result
 
 
-# =============================================================================
-# Test Reporter
-# =============================================================================
-
-
 @dataclass
 class RealTestReporter:
     """Production test reporter using pytest JSON reports."""
@@ -814,7 +774,6 @@ class RealTestReporter:
         tuple[TestResult, ...]
             Collected test results.
         """
-        # Use self to satisfy linter (protocol pattern requires instance method)
         _ = self
         exists = await asyncio.to_thread(report_path.exists)
         if not exists:
@@ -855,7 +814,6 @@ class RealTestReporter:
                 continue
             node_id = str(test.get("nodeid", ""))
 
-            # Extract path and name from node_id
             if "::" in node_id:
                 path, name = node_id.rsplit("::", 1)
             else:
@@ -879,11 +837,6 @@ class RealTestReporter:
             )
 
         return tuple(results)
-
-
-# =============================================================================
-# Git History Provider
-# =============================================================================
 
 
 @dataclass
@@ -927,7 +880,6 @@ class RealGitHistoryProvider:
         tuple[GitLogEntry, ...]
             Log entries.
         """
-        # Git log format: sha, author, email, date, message (pipe-separated)
         format_str = "%H|%an|%ae|%aI|%s"
 
         args = [
@@ -984,7 +936,7 @@ class RealGitHistoryProvider:
 
             sha, author, email, date, message = parts
             stat_info = _parse_git_stat_line(lines, idx)
-            if stat_info[0]:  # Has stat line
+            if stat_info[0]:
                 idx += 1
 
             entries.append(
@@ -1059,11 +1011,6 @@ class RealGitHistoryProvider:
             Line to commit mapping.
         """
         return _parse_blame_output(output.strip().split("\n"))
-
-
-# =============================================================================
-# Provider Container
-# =============================================================================
 
 
 @dataclass

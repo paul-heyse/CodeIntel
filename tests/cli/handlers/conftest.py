@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from tests._helpers.harnesses.storage import StorageHandlerHarness
     from tests.serving.mcp.conftest import McpBackendComponents
 
-# Type aliases exported for use by test modules
+
 type CommandContextBuilder_ = Callable[
     [ProvisionedServiceContext, str, dict[str, object]],
     CommandContext,
@@ -114,7 +114,6 @@ def handler_context_builder() -> Iterator[HandlerContextBuilder]:
         operation_id: str,
         params: dict[str, object],
     ) -> CommandContext:
-        # Build CommandContext using the unified builder with injected gateway
         merged_params = dict(params)
         merged_params["_backend_override"] = service_ctx.backend
         builder = (
@@ -179,11 +178,6 @@ def command_context_factory(
             yield ctx
 
     return _build
-
-
-# =============================================================================
-# New Charter-Compliant Fixtures (Preferred for new tests)
-# =============================================================================
 
 
 @pytest.fixture

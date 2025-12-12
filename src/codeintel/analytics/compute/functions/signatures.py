@@ -136,7 +136,6 @@ def _extract_parameters(args: ast.arguments) -> tuple[ParameterInfo, ...]:
     """
     params: list[ParameterInfo] = []
 
-    # Positional-only parameters (Python 3.8+)
     posonlyargs = getattr(args, "posonlyargs", [])
     num_posonly_defaults = len(args.defaults) - (len(args.args) - len(posonlyargs))
     posonly_defaults_start = max(0, len(posonlyargs) - max(0, num_posonly_defaults))
@@ -152,7 +151,6 @@ def _extract_parameters(args: ast.arguments) -> tuple[ParameterInfo, ...]:
             )
         )
 
-    # Regular positional/keyword parameters
     num_args_defaults = len(args.defaults) - max(0, num_posonly_defaults)
     args_defaults_start = len(args.args) - num_args_defaults
 
@@ -167,7 +165,6 @@ def _extract_parameters(args: ast.arguments) -> tuple[ParameterInfo, ...]:
             )
         )
 
-    # *args
     if args.vararg is not None:
         params.append(
             ParameterInfo(
@@ -178,7 +175,6 @@ def _extract_parameters(args: ast.arguments) -> tuple[ParameterInfo, ...]:
             )
         )
 
-    # Keyword-only parameters
     for i, param in enumerate(args.kwonlyargs):
         default = args.kw_defaults[i] if i < len(args.kw_defaults) else None
         params.append(
@@ -190,7 +186,6 @@ def _extract_parameters(args: ast.arguments) -> tuple[ParameterInfo, ...]:
             )
         )
 
-    # **kwargs
     if args.kwarg is not None:
         params.append(
             ParameterInfo(
@@ -257,7 +252,6 @@ def extract_signature(
     resolved_qualname = qualname or name
     is_async = isinstance(node, ast.AsyncFunctionDef)
 
-    # Extract decorators
     decorators = tuple(_decorator_name(d) for d in node.decorator_list)
     decorator_names = {d.split(".")[0] for d in decorators}
 
@@ -265,10 +259,8 @@ def extract_signature(
     is_staticmethod = "staticmethod" in decorator_names
     is_property = "property" in decorator_names
 
-    # Extract parameters
     parameters = _extract_parameters(node.args)
 
-    # Determine if method (has self/cls as first param)
     is_method = False
     if parameters and not is_staticmethod:
         first_param = parameters[0].name

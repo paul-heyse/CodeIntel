@@ -22,15 +22,6 @@ if TYPE_CHECKING:
     from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_apps import ServiceApp
 
-# =============================================================================
-# Constants
-# =============================================================================
-
-
-# =============================================================================
-# get_function_profile Tests (via HTTP)
-# =============================================================================
-
 
 def test_get_function_profile_with_goid_h128(
     provisioned_service_app: ServiceApp,
@@ -48,7 +39,6 @@ def test_get_function_profile_with_goid_h128(
     with provisioned_service_app.client() as client:
         response = client.get(f"/profiles/function?goid_h128={analytics_samples.goid_h128}")
 
-    # May return 404 if profile doesn't exist, or 200 if found
     assert_ok_or_not_found(response)
 
 
@@ -79,16 +69,9 @@ def test_get_function_profile_invalid_goid_h128(
         Provisioned service app fixture.
     """
     with provisioned_service_app.client() as client:
-        # Use a very large number that's unlikely to exist
         response = client.get("/profiles/function?goid_h128=999999999999")
 
-    # Should return 404 or empty result
     assert_ok_or_not_found(response)
-
-
-# =============================================================================
-# get_file_profile Tests (via HTTP)
-# =============================================================================
 
 
 def test_get_file_profile_with_rel_path(
@@ -107,7 +90,6 @@ def test_get_file_profile_with_rel_path(
     with provisioned_service_app.client() as client:
         response = client.get(f"/profiles/file?rel_path={analytics_samples.rel_path}")
 
-    # May return 404 if profile doesn't exist, or 200 if found
     assert_ok_or_not_found(response)
 
 
@@ -140,13 +122,7 @@ def test_get_file_profile_nonexistent_file(
     with provisioned_service_app.client() as client:
         response = client.get("/profiles/file?rel_path=nonexistent/path/file.py")
 
-    # Should return 404 or empty result
     assert_ok_or_not_found(response)
-
-
-# =============================================================================
-# get_module_profile Tests (via HTTP)
-# =============================================================================
 
 
 def test_get_module_profile_with_module(
@@ -165,7 +141,6 @@ def test_get_module_profile_with_module(
     with provisioned_service_app.client() as client:
         response = client.get(f"/profiles/module?module={analytics_samples.module}")
 
-    # May return 404 if profile doesn't exist, or 200 if found
     assert_ok_or_not_found(response)
 
 
@@ -182,7 +157,6 @@ def test_get_module_profile_missing_module(
     with provisioned_service_app.client() as client:
         response = client.get("/profiles/module")
 
-    # Should return 422 validation error (missing required param)
     assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
@@ -199,13 +173,7 @@ def test_get_module_profile_nonexistent_module(
     with provisioned_service_app.client() as client:
         response = client.get("/profiles/module?module=nonexistent.module.name")
 
-    # Should return 404 or empty result
     assert_ok_or_not_found(response)
-
-
-# =============================================================================
-# get_function_architecture Tests (via HTTP)
-# =============================================================================
 
 
 def test_get_function_architecture_with_goid_h128(
@@ -224,7 +192,6 @@ def test_get_function_architecture_with_goid_h128(
     with provisioned_service_app.client() as client:
         response = client.get(f"/architecture/function?goid_h128={analytics_samples.goid_h128}")
 
-    # May return 404 if architecture doesn't exist, or 200 if found
     assert_ok_or_not_found(response)
 
 
@@ -241,7 +208,6 @@ def test_get_function_architecture_missing_goid_h128(
     with provisioned_service_app.client() as client:
         response = client.get("/architecture/function")
 
-    # Should return 422 validation error (missing required param)
     assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
@@ -258,13 +224,7 @@ def test_get_function_architecture_invalid_goid_h128(
     with provisioned_service_app.client() as client:
         response = client.get("/architecture/function?goid_h128=999999999999")
 
-    # Should return 404 or empty result
     assert_ok_or_not_found(response)
-
-
-# =============================================================================
-# get_module_architecture Tests (via HTTP)
-# =============================================================================
 
 
 def test_get_module_architecture_with_module(
@@ -283,7 +243,6 @@ def test_get_module_architecture_with_module(
     with provisioned_service_app.client() as client:
         response = client.get(f"/architecture/module?module={analytics_samples.module}")
 
-    # May return 404 if architecture doesn't exist, or 200 if found
     assert_ok_or_not_found(response)
 
 
@@ -300,7 +259,6 @@ def test_get_module_architecture_missing_module(
     with provisioned_service_app.client() as client:
         response = client.get("/architecture/module")
 
-    # Should return 422 validation error (missing required param)
     assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
@@ -317,13 +275,7 @@ def test_get_module_architecture_nonexistent_module(
     with provisioned_service_app.client() as client:
         response = client.get("/architecture/module?module=nonexistent.module.name")
 
-    # Should return 404 or empty result
     assert_ok_or_not_found(response)
-
-
-# =============================================================================
-# Direct LocalQueryService Tests
-# =============================================================================
 
 
 def test_local_query_service_get_function_profile(
@@ -379,12 +331,10 @@ def test_local_query_service_get_module_profile(
     """
     service = provisioned_service_app.service
 
-    # Module profile may not exist for all modules - handle gracefully
     try:
         profile = service.get_module_profile(module=analytics_samples.module)
         expect_is_not_none(profile)
     except McpError:
-        # Expected when module profile doesn't exist in test data
         pass
 
 
@@ -422,18 +372,11 @@ def test_local_query_service_get_module_architecture(
     """
     service = provisioned_service_app.service
 
-    # Module architecture may not exist for all modules - handle gracefully
     try:
         architecture = service.get_module_architecture(module=analytics_samples.module)
         expect_is_not_none(architecture)
     except McpError:
-        # Expected when module architecture doesn't exist in test data
         pass
-
-
-# =============================================================================
-# Response Structure Tests
-# =============================================================================
 
 
 def test_function_profile_response_structure(
@@ -454,7 +397,7 @@ def test_function_profile_response_structure(
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
-        # Check that response is a dict (profile structure)
+
         expect_is_instance(data, dict)
 
 
@@ -476,7 +419,7 @@ def test_file_profile_response_structure(
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
-        # Check that response is a dict (profile structure)
+
         expect_is_instance(data, dict)
 
 
@@ -498,7 +441,7 @@ def test_module_profile_response_structure(
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
-        # Check that response is a dict (profile structure)
+
         expect_is_instance(data, dict)
 
 
@@ -520,7 +463,7 @@ def test_function_architecture_response_structure(
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
-        # Check that response is a dict (architecture structure)
+
         expect_is_instance(data, dict)
 
 
@@ -542,5 +485,5 @@ def test_module_architecture_response_structure(
 
     if response.status_code == status.HTTP_200_OK:
         data = response.json()
-        # Check that response is a dict (architecture structure)
+
         expect_is_instance(data, dict)

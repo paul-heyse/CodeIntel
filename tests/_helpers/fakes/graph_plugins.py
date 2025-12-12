@@ -15,7 +15,6 @@ Example
 >>>
 >>> plugin = GraphPluginBuilder(name="test.plugin").with_row_counts({"t": 5}).build()
 >>> with plugin_registrar([plugin]):
-...     # Plugin is registered during this block
 ...     pass
 """
 
@@ -424,7 +423,6 @@ class GraphPluginBuilder:
         GraphPluginProtocol
             Configured plugin instance.
         """
-        # Capture values for closure
         succeed = self.succeed
         row_counts = self.row_counts
         exception_type = self.exception_type
@@ -490,13 +488,11 @@ def plugin_registrar(
     -------
     >>> plugin = GraphPluginBuilder(name="test").build()
     >>> with plugin_registrar([plugin]):
-    ...     # Plugin is registered
     ...     pass
-    >>> # Plugin is unregistered
+    >>>
     """
     registry = get_graph_registry()
 
-    # Register all plugins
     for plugin in plugins:
         if registry.contains(plugin.metadata.name):
             registry.unregister(plugin.metadata.name)
@@ -505,7 +501,6 @@ def plugin_registrar(
     try:
         yield
     finally:
-        # Unregister all plugins, suppressing KeyError if already removed
         for plugin in plugins:
             with contextlib.suppress(KeyError):
                 registry.unregister(plugin.metadata.name)

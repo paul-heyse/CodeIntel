@@ -109,10 +109,10 @@ class CliPathsInput(BaseModel):
 
     Example
     -------
-        # CLI input parsing
+
         paths = CliPathsInput(repo_root=Path("."))
 
-        # Convert to internal type
+
         build_paths = paths.to_build_paths()
     """
 
@@ -347,7 +347,7 @@ class ToolsConfig(BaseModel):
 
         Inherits the current process environment (including PATH) and overlays
         any tool-specific settings. This ensures that scripts using shebangs
-        like ``#!/usr/bin/env node`` can find their interpreters.
+        like ``
 
         Parameters
         ----------
@@ -363,9 +363,9 @@ class ToolsConfig(BaseModel):
             Environment variables to supply to the subprocess call.
         """
         _ = tool
-        # Start with current environment to preserve PATH and other settings
+
         env: dict[str, str] = dict(os.environ)
-        # Overlay any base_env settings
+
         if base_env:
             env.update(base_env)
         env.setdefault("CODEINTEL_TOOL_TIMEOUT", str(int(self.default_timeout_s)))

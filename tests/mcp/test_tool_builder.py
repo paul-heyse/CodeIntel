@@ -104,7 +104,7 @@ def test_build_tool_from_operation_model_serialization() -> None:
     )
     response = tool(payload="hello", extra=1)
     expect_equal(response, {"value": "hello"})
-    # Request context set/reset around call
+
     ctx = get_current_request_context()
     expect_true(ctx is None)
 
@@ -134,7 +134,7 @@ def test_register_tools_for_category_registers_expected_tools() -> None:
     names = {reg.name for reg in ctx.mcp.registrations.calls}
     expect_equal(names, {"tool_fn.one"})
     expect_true("tool_datasets.list" not in ctx.mcp.registry)
-    # Tool executes and serializes dict payloads
+
     registered_callable = ctx.mcp.registry["tool_fn.one"]
     result = registered_callable(message="hi")
     expect_is_instance(result, dict)

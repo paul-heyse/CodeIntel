@@ -185,7 +185,6 @@ def _encode_record(record: PluginExecutionRecord) -> dict[str, object]:
     dict[str, object]
         Serialized record payload.
     """
-    # Extract kind from meta if present (analytics steps store it there)
     kind = record.meta.get("kind", "") if record.meta else ""
 
     payload: dict[str, object] = {

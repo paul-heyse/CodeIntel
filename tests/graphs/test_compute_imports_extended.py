@@ -32,7 +32,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# Constants
 EXPECTED_SIMPLE_EDGE_COUNT: Final = 2
 EXPECTED_SCC_DAG_NODES: Final = 4
 EXPECTED_CYCLE_NODE_COUNT: Final = 3
@@ -44,8 +43,6 @@ EDGE_SRC_FAN_OUT: Final = 3
 EDGE_DST_FAN_IN: Final = 5
 IMPORT_ANALYSIS_EDGE_COUNT: Final = 1
 IMPORT_ANALYSIS_MODULE_COUNT: Final = 2
-
-# Tests: ImportEdge dataclass
 
 
 def test_import_edge_attributes() -> None:
@@ -119,9 +116,8 @@ def test_compute_scc_no_cycles() -> None:
 
     scc_map = compute_scc(edges, modules)
 
-    # Each node is its own SCC in a DAG
     expect_length(scc_map, EXPECTED_SCC_DAG_NODES)
-    # All different SCC IDs
+
     ids = set(scc_map.values())
     expect_length(ids, EXPECTED_SCC_DAG_NODES)
 
@@ -131,13 +127,12 @@ def test_compute_scc_with_cycle() -> None:
     edges = [
         ImportEdge("a", "b"),
         ImportEdge("b", "c"),
-        ImportEdge("c", "a"),  # Creates cycle
+        ImportEdge("c", "a"),
     ]
     modules = {"a", "b", "c"}
 
     scc_map = compute_scc(edges, modules)
 
-    # All nodes in same SCC
     expect_length(scc_map, EXPECTED_CYCLE_NODE_COUNT)
     ids = set(scc_map.values())
     expect_length(ids, 1)
@@ -147,15 +142,14 @@ def test_compute_scc_multiple_components() -> None:
     """Compute SCCs with multiple disconnected cycles."""
     edges = [
         ImportEdge("a", "b"),
-        ImportEdge("b", "a"),  # Cycle 1
+        ImportEdge("b", "a"),
         ImportEdge("c", "d"),
-        ImportEdge("d", "c"),  # Cycle 2
+        ImportEdge("d", "c"),
     ]
     modules = {"a", "b", "c", "d"}
 
     scc_map = compute_scc(edges, modules)
 
-    # Two SCCs
     ids = set(scc_map.values())
     expect_length(ids, EXPECTED_TWO_SCCS)
 
@@ -178,9 +172,6 @@ def test_compute_layers_linear() -> None:
 
     layers = compute_layers(edges, modules, scc_map)
 
-    # a has no incoming -> layer 0
-    # b is downstream of a -> layer 1
-    # c is downstream of b -> layer 2
     expect_true(layers["a"] < layers["b"])
     expect_true(layers["b"] < layers["c"])
 
@@ -198,12 +189,11 @@ def test_compute_layers_diamond() -> None:
 
     layers = compute_layers(edges, modules, scc_map)
 
-    # a is at top (no incoming) -> layer 0
     expect_true(layers["a"] < layers["b"])
     expect_true(layers["a"] < layers["c"])
-    # b and c at same layer (both downstream of a)
+
     expect_equal(layers["b"], layers["c"])
-    # d is at bottom (downstream of b and c)
+
     expect_true(layers["d"] > layers["b"])
 
 
@@ -226,7 +216,6 @@ def test_compute_layers_cycle() -> None:
 
     layers = compute_layers(edges, modules, scc_map)
 
-    # Cycle members might have layer=0 or all same
     expect_length(layers, EXPECTED_CYCLE_NODE_COUNT)
 
 
@@ -252,16 +241,15 @@ def test_analyze_imports_scc_map() -> None:
     """Analyze imports includes SCC mapping."""
     edges = [
         ImportEdge("a", "b"),
-        ImportEdge("b", "a"),  # Cycle
+        ImportEdge("b", "a"),
         ImportEdge("b", "c"),
     ]
     modules = {"a", "b", "c"}
 
     result = analyze_imports(edges, modules)
 
-    # a and b should be in same SCC
     expect_equal(result.scc_map["a"], result.scc_map["b"])
-    # c should be in different SCC
+
     expect_true(result.scc_map["c"] != result.scc_map["a"])
 
 
@@ -286,9 +274,6 @@ def test_analyze_imports_empty() -> None:
 
     expect_length(result.edges, 0)
     expect_length(result.modules, 0)
-
-
-# Tests: ImportModuleRow dataclass
 
 
 def test_import_module_row_attributes() -> None:
@@ -326,9 +311,6 @@ def test_import_module_row_frozen() -> None:
     assert_cannot_setattr(row, "module", "changed")
 
 
-# Tests: ImportEdgeRow dataclass
-
-
 def test_import_edge_row_attributes() -> None:
     """ImportEdgeRow has correct attributes."""
     row = ImportEdgeRow(
@@ -363,9 +345,6 @@ def test_import_edge_row_frozen() -> None:
     )
 
     assert_cannot_setattr(row, "src_module", "changed")
-
-
-# Tests: ImportAnalysisResult dataclass
 
 
 def test_import_analysis_result_attributes() -> None:

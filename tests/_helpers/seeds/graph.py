@@ -40,19 +40,9 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Graph Data Constants
-# =============================================================================
-
-# CFG block identifiers
 CFG_ENTRY = "entry"
 CFG_BODY = "body"
 CFG_EXIT = "exit"
-
-
-# =============================================================================
-# Graph Pack Implementation
-# =============================================================================
 
 
 @dataclass
@@ -125,7 +115,6 @@ class GraphPack:
         ctx
             Test context with gateway.
         """
-        # Call graph nodes for each function
         nodes = [
             CallGraphNodeRow(
                 goid_h128=GOID_FUNC_A,
@@ -162,7 +151,6 @@ class GraphPack:
         ]
         insert_rows(ctx.gateway, nodes)
 
-        # Call graph edges: func_a -> func_b, func_a -> helper, func_b -> func_c
         edges = [
             CallGraphEdgeRow(
                 repo=ctx.repo,
@@ -215,7 +203,6 @@ class GraphPack:
         ctx
             Test context with gateway.
         """
-        # Import relationships: mod_a imports mod_b, mod_b imports mod_c and util
         edges = [
             ImportGraphEdgeRow(
                 repo=ctx.repo,
@@ -256,7 +243,6 @@ class GraphPack:
         ctx
             Test context with gateway.
         """
-        # CFG blocks for func_a: entry -> body -> exit
         blocks = [
             CFGBlockRow(
                 function_goid_h128=GOID_FUNC_A,
@@ -300,7 +286,6 @@ class GraphPack:
         ]
         insert_rows(ctx.gateway, blocks)
 
-        # CFG edges: entry -> body -> exit
         edges = [
             CFGEdgeRow(
                 function_goid_h128=GOID_FUNC_A,
@@ -326,7 +311,6 @@ class GraphPack:
         ctx
             Test context with gateway.
         """
-        # DFG edges: data flow from entry to body to exit
         edges = [
             DFGEdgeRow(
                 function_goid_h128=GOID_FUNC_A,
@@ -352,7 +336,6 @@ class GraphPack:
         insert_rows(ctx.gateway, edges)
 
 
-# Default instance for common usage
 GRAPH_PACK = GraphPack()
 
 

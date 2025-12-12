@@ -442,7 +442,6 @@ def provision_ingested_repo(
         profile=code_profile,
     )
 
-    # Insert repo_map entry needed for serving layer verification
     modules_map = {mod.rel_path: mod.module_name for mod in modules}
     insert_rows(
         setup.gateway,
@@ -728,7 +727,6 @@ def graph_metrics_ready_gateway(
     )
     gateway = ctx.gateway
     if opts.run_metrics:
-        # Clear any prior seeds for these deterministic ids/paths to avoid PK clashes.
         gateway.con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1001, 1002)")
         gateway.con.execute(
             "DELETE FROM core.modules WHERE path IN ('pkg/mod_a.py', 'pkg/mod_b.py')"
@@ -803,10 +801,7 @@ def graph_metrics_ready_gateway(
             ],
         )
     if opts.build_callgraph_enabled and not opts.run_metrics:
-        # Note: Callgraph building via plugin system has been migrated to TargetPlugin.
-        # Use BuildExecutor with CallGraphPlugin for full callgraph construction.
-        # For now, this code path is a no-op until test infrastructure is updated.
-        _ = CallGraphPlugin()  # Suppress unused import warning
+        _ = CallGraphPlugin()
     if opts.include_symbol_edges:
         insert_rows(
             gateway,
@@ -983,7 +978,6 @@ def build_callgraph_fixture_repo(
         gateway.con.execute("DELETE FROM core.modules WHERE path IN ('pkg/a.py', 'pkg/b.py')")
         seed_callgraph_goids(gateway, repo=opts.repo, commit=opts.commit, entries=opts.goid_entries)
 
-    # Build callgraph using the plugin system
     snapshot = SnapshotRef(
         repo=opts.repo,
         commit=opts.commit,
@@ -1012,11 +1006,6 @@ def build_callgraph_fixture_repo(
         raise RuntimeError(msg)
 
     return ctx
-
-
-# =============================================================================
-# Provisioning Builder
-# =============================================================================
 
 
 class ProvisioningBuilder:

@@ -233,9 +233,6 @@ def test_render_result_with_warnings() -> None:
     expect_in("Warning 2", err.getvalue())
 
 
-# --- Tests for get_renderer factory function ---
-
-
 def test_get_renderer_returns_unified_renderer() -> None:
     """Verify get_renderer returns a UnifiedRenderer instance."""
     renderer = get_renderer()
@@ -282,9 +279,6 @@ def test_get_renderer_uses_custom_err_writer() -> None:
     expect_in("Test Error", err.getvalue())
 
 
-# --- Tests for render_cli_result function ---
-
-
 def test_render_cli_result_success_returns_zero() -> None:
     """Verify render_cli_result returns 0 for success."""
     result: CliResult[dict[str, str]] = CliResult.ok({"status": "done"})
@@ -329,7 +323,7 @@ def test_render_cli_result_failure_returns_nonzero() -> None:
 def test_render_cli_result_creates_renderer() -> None:
     """Verify render_cli_result creates renderer if None provided."""
     result: CliResult[dict[str, str]] = CliResult.ok({"key": "value"})
-    # Should not raise, even without a renderer
+
     exit_code = render_cli_result(result, output_format=OutputFormat.TEXT)
     expect_equal(exit_code, 0)
 

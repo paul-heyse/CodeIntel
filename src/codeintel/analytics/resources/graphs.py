@@ -178,7 +178,7 @@ class GraphProvider(LazyResource[GraphResources]):
         super().__init__("GraphResources")
         self._gateway = gateway
         self._snapshot = snapshot
-        # Store as the wider type internally, but expose as GraphRuntime via property
+
         self._runtime_internal: GraphRuntime | GraphRuntimeLike | None = runtime
         self._options = options
 
@@ -212,10 +212,10 @@ class GraphProvider(LazyResource[GraphResources]):
         >>> from codeintel.analytics.runtime import GraphRuntimeOptions
         >>> from codeintel.graphs.engine import GraphKind
         >>>
-        >>> # With default options
+        >>>
         >>> provider = GraphProvider.from_gateway(gateway, snapshot)
         >>>
-        >>> # With custom options
+        >>>
         >>> opts = GraphRuntimeOptions(snapshot=snapshot, graphs=GraphKind.CALL)
         >>> provider = GraphProvider.from_gateway(gateway, snapshot, options=opts)
         """
@@ -256,7 +256,6 @@ class GraphProvider(LazyResource[GraphResources]):
         """
         runtime = self._get_or_build_runtime()
 
-        # Load graphs with type narrowing for DiGraph fields
         call_graph = _ensure_graph(runtime, "call_graph")
         import_graph = _ensure_graph(runtime, "import_graph")
         symbol_module_graph = _ensure_graph(runtime, "symbol_module_graph")
@@ -265,7 +264,6 @@ class GraphProvider(LazyResource[GraphResources]):
         test_function_bipartite = _ensure_graph(runtime, "test_function_bipartite")
         cfg_graph = _ensure_graph(runtime, "cfg_graph")
 
-        # Type narrow: directed graphs must be DiGraph or None
         if call_graph is not None and not isinstance(call_graph, nx.DiGraph):
             log.warning("call_graph is not a DiGraph, setting to None")
             call_graph = None

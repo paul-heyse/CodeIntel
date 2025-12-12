@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from codeintel.cli.rendering.table import ColumnSpec, TableSpec
 
-# Operations listing
 OPERATIONS_TABLE = TableSpec(
     columns=(
         ColumnSpec("id", "Operation ID", style="cyan"),
@@ -18,7 +17,7 @@ OPERATIONS_TABLE = TableSpec(
     title="Available Operations",
 )
 
-# Dataset listing
+
 DATASETS_TABLE = TableSpec(
     columns=(
         ColumnSpec("table_key", "Table", style="cyan"),
@@ -29,7 +28,7 @@ DATASETS_TABLE = TableSpec(
     title="Datasets",
 )
 
-# Build targets
+
 BUILD_TARGETS_TABLE = TableSpec(
     columns=(
         ColumnSpec("name", "Target", style="cyan"),
@@ -40,7 +39,7 @@ BUILD_TARGETS_TABLE = TableSpec(
     title="Build Targets",
 )
 
-# Plugin listing
+
 PLUGINS_TABLE = TableSpec(
     columns=(
         ColumnSpec("name", "Plugin", style="cyan"),
@@ -51,7 +50,7 @@ PLUGINS_TABLE = TableSpec(
     title="Installed Plugins",
 )
 
-# Jobs listing
+
 JOBS_TABLE = TableSpec(
     columns=(
         ColumnSpec("job_id", "Job ID", style="cyan"),
@@ -62,7 +61,7 @@ JOBS_TABLE = TableSpec(
     title="Jobs",
 )
 
-# Health checks
+
 HEALTH_TABLE = TableSpec(
     columns=(
         ColumnSpec("component", "Component", style="cyan"),
@@ -73,7 +72,7 @@ HEALTH_TABLE = TableSpec(
     title="Health Status",
 )
 
-# Subsystem info
+
 SUBSYSTEMS_TABLE = TableSpec(
     columns=(
         ColumnSpec("name", "Subsystem", style="cyan"),

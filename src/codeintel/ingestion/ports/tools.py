@@ -26,7 +26,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-# Import canonical ToolStatus from tools.plugins
 from codeintel.ingestion.engine.plugins import ToolStatus
 
 if TYPE_CHECKING:

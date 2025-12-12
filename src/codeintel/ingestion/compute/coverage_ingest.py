@@ -85,7 +85,6 @@ class CoverageIngestStep:
         """
         created_at = datetime.now(UTC)
 
-        # Run coverage export
         result = await self._tools.run_coverage(
             repo_root,
             coverage_file=coverage_file,
@@ -95,7 +94,6 @@ class CoverageIngestStep:
             log.warning("Coverage export failed: %s", result.error)
             return StepResult.fail(f"Coverage export failed: {result.error}")
 
-        # Build per-line rows matching analytics.coverage_lines schema
         all_rows: list[list[object]] = []
         file_count = 0
 
@@ -103,21 +101,16 @@ class CoverageIngestStep:
             file_count += 1
             rel_path = file_data.rel_path
 
-            # Covered lines: executable and covered (hits=1 since we don't track actual hits)
             all_rows.extend(
                 [repo, commit, rel_path, line_num, True, True, 1, 0, created_at]
                 for line_num in file_data.executed_lines
             )
 
-            # Missing lines: executable but not covered
             all_rows.extend(
                 [repo, commit, rel_path, line_num, True, False, 0, 0, created_at]
                 for line_num in file_data.missing_lines
             )
 
-            # Excluded lines are intentionally not written (they are not executable)
-
-        # Persist rows
         table_counts: dict[str, int] = {}
         total_rows = 0
 

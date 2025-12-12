@@ -25,10 +25,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# =============================================================================
-# OperationTargets Dataclass Tests
-# =============================================================================
-
 
 def test_operation_targets_empty() -> None:
     """Verify empty OperationTargets is valid."""
@@ -74,11 +70,6 @@ def test_operation_targets_frozen() -> None:
         cast("Any", targets).operation_id = "other"
 
 
-# =============================================================================
-# Target Resolution Tests
-# =============================================================================
-
-
 def test_get_targets_for_unknown_operation() -> None:
     """Verify unknown operation returns empty targets."""
     targets = get_targets_for_operation("nonexistent.operation")
@@ -101,7 +92,7 @@ def test_get_targets_for_dataset_list() -> None:
     targets = get_targets_for_operation("datasets.list")
 
     expect_equal(targets.operation_id, "datasets.list")
-    # datasets.list has no required_datasets or required_graphs
+
     expect_length(targets.required_targets, 0)
 
 
@@ -111,7 +102,7 @@ def test_get_targets_for_graph_call_neighborhood() -> None:
 
     expect_equal(targets.operation_id, "graph.call_neighborhood")
     expect_true("call_graph" in targets.graph_targets)
-    # Also has call_graph_nodes in required_datasets
+
     expect_true("call_graph" in targets.data_targets or "call_graph" in targets.graph_targets)
 
 
@@ -128,12 +119,7 @@ def test_get_targets_caching() -> None:
     targets1 = get_targets_for_operation("function.summary")
     targets2 = get_targets_for_operation("function.summary")
 
-    expect_true(targets1 is targets2)  # Same object due to lru_cache
-
-
-# =============================================================================
-# Graph to Target Mapping Tests
-# =============================================================================
+    expect_true(targets1 is targets2)
 
 
 def test_callgraph_maps_to_call_graph() -> None:
@@ -146,11 +132,6 @@ def test_importgraph_maps_to_import_graph() -> None:
     """Verify 'importgraph' graph runtime maps to 'import_graph' target."""
     targets = get_targets_for_operation("graph.import_boundary")
     expect_true("import_graph" in targets.graph_targets)
-
-
-# =============================================================================
-# resolve_targets_for_operation Tests
-# =============================================================================
 
 
 def test_resolve_targets_for_operation_with_graphs() -> None:
@@ -172,13 +153,8 @@ def test_resolve_targets_for_operation_with_datasets() -> None:
     targets = resolve_targets_for_operation(op)
 
     expect_equal(targets.operation_id, "graph.call_neighborhood")
-    # call_graph_nodes is in required_datasets
+
     expect_true(len(targets.data_targets) >= 1 or len(targets.graph_targets) >= 1)
-
-
-# =============================================================================
-# get_all_operation_targets Tests
-# =============================================================================
 
 
 def test_get_all_operation_targets_returns_dict() -> None:
@@ -207,18 +183,10 @@ def test_get_all_operation_targets_values_are_operation_targets() -> None:
         expect_equal(targets.operation_id, op_id)
 
 
-# =============================================================================
-# Table to Target Mapping Tests
-# =============================================================================
-
-
 def test_table_to_target_mapping_exists() -> None:
     """Verify table to target mapping is built correctly."""
-    # Force index building by resolving an operation
     targets = get_targets_for_operation("graph.call_neighborhood")
 
-    # call_graph_nodes table should map to call_graph target
-    # This is verified by checking graph.call_neighborhood has data_targets
     expect_true("call_graph" in targets.required_targets)
 
 
@@ -230,16 +198,10 @@ def test_required_targets_is_union_of_graph_and_data() -> None:
     expect_equal(targets.required_targets, expected_union)
 
 
-# =============================================================================
-# Edge Cases
-# =============================================================================
-
-
 def test_operation_with_multiple_graph_requirements() -> None:
     """Verify operation with multiple graph requirements maps correctly."""
     targets = get_targets_for_operation("architecture.function")
 
-    # architecture.function requires both callgraph and importgraph
     expect_true("call_graph" in targets.graph_targets)
     expect_true("import_graph" in targets.graph_targets)
 

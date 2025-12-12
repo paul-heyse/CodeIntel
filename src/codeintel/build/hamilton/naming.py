@@ -56,16 +56,16 @@ def to_node_name(logical_name: str, *, prefix: str) -> str:
     'p__some__path__name'
     """
     cleaned = logical_name.strip()
-    # Replace hyphens with single underscores first
+
     cleaned = cleaned.replace("-", "_")
-    # Replace dots and slashes with double underscores (structural separators)
+
     cleaned = cleaned.replace(".", "__")
     cleaned = cleaned.replace("/", "__")
-    # Remove any remaining non-identifier characters
+
     cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", cleaned)
-    # Collapse 3+ underscores to double underscores (preserve intentional __)
+
     cleaned = re.sub(r"_{3,}", "__", cleaned)
-    # Remove leading/trailing underscores from the cleaned part
+
     cleaned = cleaned.strip("_")
     return f"{prefix}__{cleaned}"
 
@@ -216,11 +216,11 @@ def node_to_target(node_name: str) -> str | None:
     >>> node_to_target("t__risk_factors")
     'risk_factors'
 
-    >>> node_to_target("d__some_dataset")  # Not a target node
+    >>> node_to_target("d__some_dataset")
     """
     if not node_name.startswith("t__"):
         return None
-    return node_name[3:]  # Remove "t__" prefix
+    return node_name[3:]
 
 
 __all__ = [

@@ -38,10 +38,6 @@ from tests._helpers.assertions import (
 
 SECOND_ATTEMPT = 2
 
-# =============================================================================
-# RetryPolicy Construction Tests
-# =============================================================================
-
 
 def test_retry_policy_defaults() -> None:
     """Verify RetryPolicy default values."""
@@ -84,11 +80,6 @@ def test_retry_policy_is_frozen() -> None:
     assert_frozen(policy, "max_attempts", 10)
 
 
-# =============================================================================
-# Wait Strategy Tests
-# =============================================================================
-
-
 def test_get_wait_strategy_with_jitter() -> None:
     """Verify wait strategy with jitter enabled."""
     policy = RetryPolicy(use_jitter=True)
@@ -105,24 +96,12 @@ def test_get_wait_strategy_without_jitter() -> None:
     expect_is_instance(strategy, wait_exponential)
 
 
-# =============================================================================
-# Stop Strategy Tests
-# =============================================================================
-
-
 def test_get_stop_strategy() -> None:
     """Verify stop strategy combines attempts and delay."""
     policy = RetryPolicy(max_attempts=3, max_delay_s=30.0)
     strategy = policy.get_stop_strategy()
 
-    # Strategy should be a combination (stop_after_attempt | stop_after_delay)
-    # We can't easily inspect the combined strategy, but we can verify it works
     expect_is_not_none(strategy)
-
-
-# =============================================================================
-# Create Retrying Tests
-# =============================================================================
 
 
 def test_create_retrying_returns_retrying() -> None:
@@ -142,7 +121,7 @@ def test_create_retrying_respects_max_attempts() -> None:
         retryable_exceptions=(ValueError,),
         log_retries=False,
         use_jitter=False,
-        backoff_multiplier=0.01,  # Fast backoff for tests
+        backoff_multiplier=0.01,
     )
 
     def always_fails() -> None:
@@ -200,22 +179,12 @@ def test_create_retrying_success_after_retry() -> None:
     expect_equal(call_count, SECOND_ATTEMPT)
 
 
-# =============================================================================
-# Async Retrying Tests
-# =============================================================================
-
-
 def test_create_async_retrying_returns_async_retrying() -> None:
     """Verify create_async_retrying returns an AsyncRetrying instance."""
     policy = RetryPolicy()
     async_retrying = policy.create_async_retrying()
 
     expect_is_instance(async_retrying, AsyncRetrying)
-
-
-# =============================================================================
-# Decorator Tests
-# =============================================================================
 
 
 def test_as_decorator() -> None:
@@ -252,11 +221,6 @@ def test_as_decorator_application() -> None:
     expect_equal(call_count, SECOND_ATTEMPT)
 
 
-# =============================================================================
-# Immutable Copy Tests
-# =============================================================================
-
-
 def test_with_max_attempts() -> None:
     """Verify with_max_attempts creates a new policy."""
     original = RetryPolicy(max_attempts=3)
@@ -276,11 +240,6 @@ def test_with_exceptions() -> None:
     expect_equal(original.retryable_exceptions, (ValueError,))
     expect_equal(modified.retryable_exceptions, (TypeError, RuntimeError))
     expect_equal(modified.max_attempts, original.max_attempts)
-
-
-# =============================================================================
-# Pre-configured Policy Tests
-# =============================================================================
 
 
 def test_plugin_retry_policy() -> None:
@@ -310,11 +269,6 @@ def test_database_retry_policy() -> None:
     expect_equal(DATABASE_RETRY_POLICY.max_attempts, 3)
     expect_equal(DATABASE_RETRY_POLICY.max_delay_s, 15.0)
     expect_equal(DATABASE_RETRY_POLICY.backoff_max_s, 3.0)
-
-
-# =============================================================================
-# with_retry Helper Tests
-# =============================================================================
 
 
 def test_with_retry_success() -> None:
@@ -391,19 +345,9 @@ def test_with_retry_raises_after_exhaustion() -> None:
         with_retry(policy, always_fails)
 
 
-# =============================================================================
-# with_retry_async Helper Tests (sync assertions only - async tests need pytest-asyncio config)
-# =============================================================================
-
-
 def test_with_retry_async_is_coroutine_function() -> None:
     """Verify with_retry_async is available as an async helper."""
     expect_true(inspect.iscoroutinefunction(with_retry_async))
-
-
-# =============================================================================
-# get_retry_policy_for_retryable Tests
-# =============================================================================
 
 
 def test_get_retry_policy_for_retryable() -> None:
@@ -415,7 +359,7 @@ def test_get_retry_policy_for_retryable() -> None:
     )
 
     expect_equal(policy.max_attempts, 5)
-    expect_equal(policy.backoff_multiplier, 0.5)  # 500ms / 1000
+    expect_equal(policy.backoff_multiplier, 0.5)
     expect_equal(policy.retryable_exceptions, (ValueError, TypeError))
 
 

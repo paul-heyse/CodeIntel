@@ -68,7 +68,7 @@ def _find_existing_json(output_scip: Path, output_json: Path) -> Path | None:
     """
     if output_json.is_file() and output_json.stat().st_size > 0:
         return output_json
-    # Check for alternate filename pattern (index.scip.json)
+
     alt_json = output_scip.with_suffix(".scip.json")
     if alt_json.is_file() and alt_json.stat().st_size > 0:
         return alt_json
@@ -158,7 +158,7 @@ class ScipPlugin(ToolPlugin):
         TypeError
             If required arguments are missing or of wrong type.
         """
-        _ = self  # Required by interface
+        _ = self
         output_scip_obj = kwargs.get("output_scip")
         output_json_obj = kwargs.get("output_json")
         target_dir_obj = kwargs.get("target_dir")
@@ -202,7 +202,6 @@ class ScipPlugin(ToolPlugin):
         """
         output_scip, output_json, target_dir, rel_paths = self._validate_kwargs(dict(kwargs))
 
-        # Check for existing output - skip SCIP execution if already present
         existing_result = await self._try_use_existing(output_scip, output_json)
         if existing_result is not None:
             return existing_result
@@ -256,7 +255,6 @@ class ScipPlugin(ToolPlugin):
                 parsed=ScipIndexResult.empty(),
             )
 
-        # Parse the JSON output
         def _parse() -> ScipIndexResult:
             return _parse_scip_json(output_json, output_scip)
 
@@ -294,22 +292,19 @@ class ScipPlugin(ToolPlugin):
         ToolPluginResult | None
             Parsed result if existing files found, None otherwise.
         """
-        _ = self  # Required by interface
+        _ = self
         existing_json = await to_thread.run_sync(_find_existing_json, output_scip, output_json)
         if existing_json is None:
             return None
 
-        # Check SCIP index exists too
         scip_exists = await to_thread.run_sync(_path_is_file, output_scip)
         if not scip_exists:
             return None
 
         log.info("SCIP JSON exists at %s; reusing", existing_json)
 
-        # Capture non-None path for closure (pyrefly type narrowing)
         json_path: Path = existing_json
 
-        # Parse existing JSON and return without running tools
         def _parse_existing() -> ScipIndexResult:
             return _parse_scip_json(json_path, output_scip)
 

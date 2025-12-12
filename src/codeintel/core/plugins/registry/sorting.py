@@ -15,11 +15,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Protocol for plugins with capability metadata
-# =============================================================================
-
-
 class CapabilityProvider(Protocol):
     """Protocol for objects that provide capabilities.
 
@@ -37,11 +32,6 @@ class CapabilityProvider(Protocol):
             Capability names provided by this plugin.
         """
         ...
-
-
-# =============================================================================
-# Sorting Utilities
-# =============================================================================
 
 
 def topological_sort[T](
@@ -81,12 +71,10 @@ def topological_sort[T](
     permanent: set[str] = set()
     temporary: set[str] = set()
 
-    # Iterative DFS with explicit stack
     for start in selected:
         if start in permanent:
             continue
 
-        # Stack entries: (name, deps_list, is_processing)
         stack: list[tuple[str, list[str], bool]] = [
             (start, list(dependencies.get(start, set())), False)
         ]
@@ -95,7 +83,6 @@ def topological_sort[T](
             name, deps, processing = stack.pop()
 
             if processing:
-                # Finished processing all deps, mark permanent
                 temporary.discard(name)
                 permanent.add(name)
                 ordered.append(selected[name])
@@ -105,15 +92,13 @@ def topological_sort[T](
                 continue
 
             if name in temporary:
-                # Cycle detected
                 message = f"Dependency cycle detected involving plugin: {name}"
                 raise ValueError(message)
 
             temporary.add(name)
-            # Push back with processing=True to finalize after deps
+
             stack.append((name, [], True))
 
-            # Push dependencies to process (filter for unvisited)
             unvisited_deps = [
                 (dep, list(dependencies.get(dep, set())), False)
                 for dep in deps

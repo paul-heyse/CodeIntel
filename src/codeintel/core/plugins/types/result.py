@@ -161,7 +161,6 @@ class PluginResult(BasePluginResult):
         Additional metadata about the execution.
     """
 
-    # Additional fields beyond BasePluginResult
     artifacts: Mapping[str, object] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
     meta: Mapping[str, Any] = field(default_factory=dict)

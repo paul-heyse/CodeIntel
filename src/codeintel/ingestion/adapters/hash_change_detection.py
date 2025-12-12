@@ -76,13 +76,10 @@ class HashChangeDetectionAdapter:
         ChangeSet
             Detected changes (added, modified, deleted).
         """
-        # Build current state from modules
         current_state = self._build_current_state(current_modules)
 
-        # Load previous state from storage
         previous_state = self.load_previous_state(request.repo, request.language)
 
-        # Compute differences
         added: list[ModuleRecord] = []
         modified: list[ModuleRecord] = []
         current_paths = set()
@@ -102,7 +99,6 @@ class HashChangeDetectionAdapter:
             elif current_digest.content_hash != previous_digest.content_hash:
                 modified.append(module)
 
-        # Find deleted modules
         deleted: list[ModuleRecord] = []
         deleted = [
             ModuleRecord(
@@ -116,7 +112,6 @@ class HashChangeDetectionAdapter:
             if rel_path not in current_paths
         ]
 
-        # Save current state for next comparison
         self.save_current_state(request.repo, request.commit, request.language, current_state)
 
         log.info(
@@ -148,7 +143,6 @@ class HashChangeDetectionAdapter:
         Mapping[str, FileDigest]
             Mapping from relative path to file digest.
         """
-        # Prefer ibis when a gateway is available on the storage adapter.
         gateway = getattr(self._storage, "_gateway", None)
         if gateway is not None:
             file_state = gateway.ibis.table("core.file_state")
@@ -252,7 +246,6 @@ class HashChangeDetectionAdapter:
             backend.bulk_insert("core.file_state", rows, columns=columns)
             return
 
-        # Fallback to storage port operations when gateway is unavailable.
         self._storage.ensure_schema("core.file_state")
         for rel_path in state:
             self._storage.execute_query(

@@ -31,9 +31,6 @@ public symbols from primitives. For schema-aware functions like
 
 from __future__ import annotations
 
-# Only re-export from primitives to avoid circular imports with config.datasets
-# Schema-aware functions in builder.py should be imported directly from
-# codeintel.storage.sql.builder
 from codeintel.storage.sql.primitives import (
     TABLE_KEY_PARTS,
     InvalidIdentifierError,

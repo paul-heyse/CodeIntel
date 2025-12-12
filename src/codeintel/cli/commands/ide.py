@@ -24,7 +24,7 @@ ide_app = App(
     help="IDE helper commands.",
 )
 
-# Config for IDE commands - requires runtime and gateway
+
 _IDE_CONFIG = CommandConfig(require_runtime=True, require_gateway=True, require_graph_runtime=True)
 
 

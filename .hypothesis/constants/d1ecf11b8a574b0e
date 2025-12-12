@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/adapters/hash_change_detection.py
+# hypothesis_version: 6.148.7
+
+['<deleted>', 'StorageGateway', '_gateway', 'content_hash', 'core.file_state', 'mtime_ns', 'records', 'rel_path', 'size_bytes']

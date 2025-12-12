@@ -288,11 +288,6 @@ def decorator_names(decorators: list[ast.expr]) -> list[str]:
     return names
 
 
-# =============================================================================
-# Internal scoring functions
-# =============================================================================
-
-
 def _score_tests(context: FunctionContext, accumulator: RoleAccumulator) -> None:
     if context.rel_path_lower.startswith("tests") or "/tests/" in context.rel_path_lower:
         accumulator.bump("test", 0.6, "path:tests")

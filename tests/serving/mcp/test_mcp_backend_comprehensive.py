@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from tests._helpers.context import TestContext
     from tests._helpers.plugins.mcp import McpBackendComponents
 
-# Test constants
+
 CUSTOM_DEFAULT_LIMIT = 25
 CUSTOM_MAX_ROWS = 250
 
@@ -81,11 +81,6 @@ def architecture_samples(
         Sample identifiers loaded from the architecture gateway.
     """
     return architecture_seed_selector(architecture_gateway)
-
-
-# =============================================================================
-# DuckDBBackend Construction Tests
-# =============================================================================
 
 
 def test_duckdb_backend_creation(
@@ -137,11 +132,6 @@ def test_duckdb_backend_with_service(
     expect_true(backend.service is service)
 
 
-# =============================================================================
-# Dataset Operations Tests
-# =============================================================================
-
-
 def test_duckdb_backend_list_datasets(
     mcp_backend_components: McpBackendComponents,
 ) -> None:
@@ -158,11 +148,6 @@ def test_duckdb_backend_dataset_specs(
     specs = mcp_backend_components.backend.dataset_specs()
 
     expect_is_instance(specs, list)
-
-
-# =============================================================================
-# Function Operations Tests
-# =============================================================================
 
 
 def test_duckdb_backend_list_high_risk_functions(
@@ -183,11 +168,6 @@ def test_duckdb_backend_list_high_risk_functions_with_tested_only(
     )
 
     expect_true(hasattr(response, "functions"))
-
-
-# =============================================================================
-# Subsystem Operations Tests
-# =============================================================================
 
 
 def test_duckdb_backend_list_subsystems(
@@ -250,11 +230,6 @@ def test_duckdb_backend_search_subsystems(
     expect_true(hasattr(response, "results") or hasattr(response, "subsystems"))
 
 
-# =============================================================================
-# Service Access Tests
-# =============================================================================
-
-
 def test_duckdb_backend_service_attribute(
     mcp_backend_components: McpBackendComponents,
 ) -> None:
@@ -273,18 +248,12 @@ def test_duckdb_backend_limits_attribute(
     expect_true(hasattr(backend.limits, "max_rows_per_call"))
 
 
-# =============================================================================
-# Extended Function Operations Tests
-# =============================================================================
-
-
 def test_duckdb_backend_get_function_summary(
     mcp_backend_components: McpBackendComponents,
 ) -> None:
     """Verify get_function_summary works with goid_h128."""
     backend = mcp_backend_components.backend
 
-    # Get a valid goid_h128
     result = mcp_backend_components.gateway.con.execute(
         "SELECT goid_h128 FROM core.goids LIMIT 1"
     ).fetchone()
@@ -298,7 +267,6 @@ def test_duckdb_backend_get_function_summary(
         response = backend.get_function_summary(goid_h128=goid_h128)
         expect_is_not_none(response)
     except McpError:
-        # Expected when function summary is not found
         pass
 
 
@@ -398,13 +366,7 @@ def test_duckdb_backend_get_file_summary(
         response = backend.get_file_summary(rel_path=rel_path)
         expect_is_not_none(response)
     except McpError:
-        # Expected when file summary is not found
         pass
-
-
-# =============================================================================
-# Profile Operations Tests
-# =============================================================================
 
 
 def test_duckdb_backend_get_function_profile(
@@ -426,7 +388,6 @@ def test_duckdb_backend_get_function_profile(
         response = backend.get_function_profile(goid_h128=goid_h128)
         expect_is_not_none(response)
     except McpError:
-        # Expected when profile is not found
         pass
 
 
@@ -449,7 +410,6 @@ def test_duckdb_backend_get_file_profile(
         response = backend.get_file_profile(rel_path=rel_path)
         expect_is_not_none(response)
     except McpError:
-        # Expected when profile is not found
         pass
 
 
@@ -472,7 +432,6 @@ def test_duckdb_backend_get_module_profile(
         response = backend.get_module_profile(module=module)
         expect_is_not_none(response)
     except McpError:
-        # Expected when profile is not found
         pass
 
 
@@ -495,7 +454,6 @@ def test_duckdb_backend_get_function_architecture(
         response = backend.get_function_architecture(goid_h128=goid_h128)
         expect_is_not_none(response)
     except McpError:
-        # Expected when architecture is not found
         pass
 
 
@@ -518,13 +476,7 @@ def test_duckdb_backend_get_module_architecture(
         response = backend.get_module_architecture(module=module)
         expect_is_not_none(response)
     except McpError:
-        # Expected when architecture is not found
         pass
-
-
-# =============================================================================
-# Extended Subsystem Operations Tests
-# =============================================================================
 
 
 def test_duckdb_backend_get_module_subsystems(
@@ -545,7 +497,6 @@ def test_duckdb_backend_get_module_subsystems(
         response = backend.get_module_subsystems(module=module)
         expect_is_not_none(response)
     except McpError:
-        # Expected when subsystems not found
         pass
 
 
@@ -567,7 +518,6 @@ def test_duckdb_backend_get_file_hints(
         response = backend.get_file_hints(rel_path=rel_path)
         expect_is_not_none(response)
     except McpError:
-        # Expected when hints not found
         pass
 
 
@@ -591,7 +541,6 @@ def test_duckdb_backend_get_subsystem_modules(
         response = backend.get_subsystem_modules(subsystem_id=subsystem_id)
         expect_is_not_none(response)
     except McpError:
-        # Expected when subsystem not found
         pass
 
 
@@ -615,13 +564,7 @@ def test_duckdb_backend_summarize_subsystem(
         response = backend.summarize_subsystem(subsystem_id=subsystem_id)
         expect_is_not_none(response)
     except McpError:
-        # Expected when subsystem not found
         pass
-
-
-# =============================================================================
-# Direction Validation via Public API Tests
-# =============================================================================
 
 
 def test_callgraph_neighbors_direction_incoming(
@@ -638,7 +581,7 @@ def test_callgraph_neighbors_direction_incoming(
         pytest.skip("No goids available in test data")
 
     goid_h128 = result[0]
-    # Should not raise - direction is normalized internally
+
     response = backend.get_callgraph_neighbors(goid_h128=goid_h128, direction="incoming")
     expect_is_not_none(response)
 
@@ -657,14 +600,9 @@ def test_callgraph_neighbors_direction_outgoing(
         pytest.skip("No goids available in test data")
 
     goid_h128 = result[0]
-    # Should not raise - direction is normalized internally
+
     response = backend.get_callgraph_neighbors(goid_h128=goid_h128, direction="outgoing")
     expect_is_not_none(response)
-
-
-# =============================================================================
-# DuckDBBackend Error Handling Tests
-# =============================================================================
 
 
 def test_duckdb_backend_get_function_summary_missing_identifier(
@@ -704,7 +642,6 @@ def test_duckdb_backend_get_import_boundary(
     """Verify get_import_boundary returns response."""
     backend = mcp_backend_components.backend
 
-    # Test with nonexistent subsystem - should return empty boundary
     response = backend.get_import_boundary(subsystem_id="nonexistent_subsystem")
     expect_is_not_none(response)
 
@@ -759,11 +696,6 @@ def test_duckdb_backend_dataset_schema_nonexistent(
         backend.dataset_schema(dataset_name="nonexistent_dataset_xyz")
 
 
-# =============================================================================
-# Build Backend Resource Factory Tests
-# =============================================================================
-
-
 def test_build_backend_resource_local_db_mode(
     provisioned_repo: TestContext,
 ) -> None:
@@ -790,11 +722,6 @@ def test_serving_config_remote_api_missing_url_raises(
             commit=provisioned_repo.commit,
             api_base_url=None,
         )
-
-
-# =============================================================================
-# DatasetBackendMixin normalization and error handling
-# =============================================================================
 
 
 class _DatasetService(LocalQueryService):
@@ -1057,11 +984,6 @@ def test_dataset_backend_problem_error_translated() -> None:
     backend_handle.close()
 
 
-# =============================================================================
-# Validation helpers
-# =============================================================================
-
-
 def test_duckdb_backend_identifier_validation(
     mcp_backend_components: McpBackendComponents,
 ) -> None:
@@ -1073,11 +995,6 @@ def test_duckdb_backend_identifier_validation(
 
     with pytest.raises(errors.McpError):
         _ = backend.get_callgraph_neighbors(goid_h128=1, direction="sideways")
-
-
-# =============================================================================
-# Domain conversion coverage on real gateway
-# =============================================================================
 
 
 def test_duckdb_backend_domain_conversions(mcp_backend_components: McpBackendComponents) -> None:
@@ -1183,11 +1100,6 @@ def test_duckdb_backend_domain_conversions(mcp_backend_components: McpBackendCom
     )
 
 
-# =============================================================================
-# HttpBackend coverage
-# =============================================================================
-
-
 def test_http_backend_health_and_request_success() -> None:
     """Verify HttpBackend health check and successful JSON request."""
     backend = make_http_backend_with_responses(
@@ -1235,7 +1147,7 @@ def test_http_backend_problem_detail_response(caplog: pytest.LogCaptureFixture) 
     """Ensure 4xx responses raise McpError with ProblemDetail payload and logs warning."""
     backend = make_http_backend_with_responses(
         [
-            (200, {"ok": True}),  # health
+            (200, {"ok": True}),
             (404, make_problem_detail_payload()),
         ]
     )

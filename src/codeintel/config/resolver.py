@@ -32,7 +32,7 @@ if TYPE_CHECKING:
         ScanProfile,
     )
 
-# Binary names that should be resolved to full paths
+
 _BINARY_FIELDS = (
     "scip_python_bin",
     "scip_bin",
@@ -73,7 +73,6 @@ def resolve_tools_config(
     >>> cfg.git_bin
     '/usr/bin/git'
     """
-    # Start with default values from ToolsConfig
     default_config = ToolsConfig.default()
     data = base.model_dump() if base is not None else default_config.model_dump()
     env_map = {
@@ -93,7 +92,6 @@ def resolve_tools_config(
         if value:
             data[field] = value
 
-    # Resolve binary names to full paths for subprocess compatibility
     if resolve_paths:
         for field in _BINARY_FIELDS:
             bin_name = data.get(field)

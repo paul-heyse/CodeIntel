@@ -55,7 +55,6 @@ def build_architecture_router(options: RouterOptions | None = None) -> APIRouter
         raise ValueError(message)
     module_path = spec_module.http_path
 
-    # Build dependencies based on options
     auto_pipeline = options is not None and options.auto_pipeline
     func_deps = (
         [Depends(make_op_prereq_dependency("architecture.function"))] if auto_pipeline else []

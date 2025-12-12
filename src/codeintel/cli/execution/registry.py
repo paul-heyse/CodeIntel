@@ -13,11 +13,11 @@ Examples
 >>> from codeintel.cli.context import CommandContext
 >>> from codeintel.cli.core import CliResult
 >>>
->>> def my_handler(ctx: CommandContext) -> CliResult:  # doctest: +SKIP
+>>> def my_handler(ctx: CommandContext) -> CliResult:
 ...     return CliResult.ok({"status": "done"})
 >>>
 >>> spec = register_operation(
-...     OperationSpec(  # doctest: +SKIP
+...     OperationSpec(
 ...         operation_id="my.operation",
 ...         name="My Operation",
 ...         description="Does something useful",
@@ -116,10 +116,10 @@ class OperationSpec:
     >>> from codeintel.cli.context import CommandContext
     >>> from codeintel.cli.core import CliResult
     >>>
-    >>> def example_handler(ctx: CommandContext) -> CliResult:  # doctest: +SKIP
+    >>> def example_handler(ctx: CommandContext) -> CliResult:
     ...     return CliResult.ok({})
     >>>
-    >>> spec = OperationSpec(  # doctest: +SKIP
+    >>> spec = OperationSpec(
     ...     operation_id="jobs.list",
     ...     name="List Jobs",
     ...     description="List background jobs",
@@ -129,28 +129,23 @@ class OperationSpec:
     ... )
     """
 
-    # Core identification (required)
     operation_id: str
     name: str
     description: str
     handler: Callable[[CommandContext], CliResult[Any]]
     group: str
 
-    # Resource requirements (explicitly declare what each operation needs)
     require_runtime: bool = False
     require_gateway: bool = False
     require_graph_runtime: bool = False
 
-    # Metadata
     tags: tuple[str, ...] = ()
     hidden: bool = False
 
-    # Execution hints (optional, for future middleware integration)
     timeout: float | None = None
     retryable: bool = False
     estimated_duration: float | None = None
 
-    # Serving integration (optional, for bridged operations)
     serving_op_id: str | None = None
     http_path: str | None = None
     tool_name: str | None = None
@@ -175,15 +170,15 @@ class OperationSpec:
         Examples
         --------
         >>> from codeintel.cli.execution.registry import OperationSpec
-        >>> spec = OperationSpec(  # doctest: +SKIP
+        >>> spec = OperationSpec(
         ...     operation_id="test.op",
         ...     name="Test",
         ...     description="Test operation",
         ...     handler=lambda ctx: None,
         ...     group="test",
         ... )
-        >>> d = spec.to_dict()  # doctest: +SKIP
-        >>> "handler" in d  # doctest: +SKIP
+        >>> d = spec.to_dict()
+        >>> "handler" in d
         False
         """
         result: dict[str, object] = {
@@ -198,7 +193,6 @@ class OperationSpec:
             "hidden": self.hidden,
         }
 
-        # Add optional execution hints if set
         if self.timeout is not None:
             result["timeout"] = self.timeout
         if self.retryable:
@@ -206,7 +200,6 @@ class OperationSpec:
         if self.estimated_duration is not None:
             result["estimated_duration"] = self.estimated_duration
 
-        # Add serving integration fields if set
         if self.serving_op_id is not None:
             result["serving_op_id"] = self.serving_op_id
         if self.http_path is not None:
@@ -216,7 +209,6 @@ class OperationSpec:
         if self.backend_method is not None:
             result["backend_method"] = self.backend_method
 
-        # Include handler reference if requested
         if include_handler:
             handler_name = getattr(self.handler, "__name__", repr(self.handler))
             result["handler"] = handler_name
@@ -237,19 +229,19 @@ class OperationRegistry:
     >>> from codeintel.cli.context import CommandContext
     >>> from codeintel.cli.core import CliResult
     >>>
-    >>> def dummy_handler(ctx: CommandContext) -> CliResult:  # doctest: +SKIP
+    >>> def dummy_handler(ctx: CommandContext) -> CliResult:
     ...     return CliResult.ok({})
     >>>
     >>> registry = OperationRegistry()
-    >>> spec = OperationSpec(  # doctest: +SKIP
+    >>> spec = OperationSpec(
     ...     operation_id="test.op",
     ...     name="Test",
     ...     description="Test operation",
     ...     handler=dummy_handler,
     ...     group="test",
     ... )
-    >>> registry.register(spec)  # doctest: +SKIP
-    >>> registry.get("test.op")  # doctest: +SKIP
+    >>> registry.register(spec)
+    >>> registry.get("test.op")
     """
 
     _operations: dict[str, OperationSpec] = field(default_factory=dict)
@@ -421,11 +413,6 @@ class OperationRegistry:
         return iter(self._operations.keys())
 
 
-# -----------------------------------------------------------------------------
-# Global Registry
-# -----------------------------------------------------------------------------
-
-
 class OperationRegistryHolder(SingletonHolder[OperationRegistry]):
     """Singleton holder for the CLI OperationRegistry."""
 
@@ -442,7 +429,6 @@ def get_registry() -> OperationRegistry:
     """
     registry = OperationRegistryHolder.get(OperationRegistry)
     if not registry.list_operations():
-        # Import command modules to trigger registration side effects.
         importlib.import_module("codeintel.cli.commands")
 
     return registry
@@ -470,11 +456,11 @@ def register_operation(spec: OperationSpec) -> OperationSpec:
     >>> from codeintel.cli.context import CommandContext
     >>> from codeintel.cli.core import CliResult
     >>>
-    >>> def my_handler(ctx: CommandContext) -> CliResult:  # doctest: +SKIP
+    >>> def my_handler(ctx: CommandContext) -> CliResult:
     ...     return CliResult.ok({})
     >>>
     >>> register_operation(
-    ...     OperationSpec(  # doctest: +SKIP
+    ...     OperationSpec(
     ...         operation_id="my.op",
     ...         name="My Operation",
     ...         description="Does something",
@@ -531,7 +517,7 @@ def create_spec_from_serving_operation(
     Examples
     --------
     >>> from codeintel.cli.execution.registry import create_spec_from_serving_operation
-    >>> spec = create_spec_from_serving_operation(  # doctest: +SKIP
+    >>> spec = create_spec_from_serving_operation(
     ...     "function.summary",
     ...     my_handler,
     ... )
@@ -587,19 +573,18 @@ def execute_operation(
     Examples
     --------
     >>> from codeintel.cli.execution.registry import get_registry, execute_operation
-    >>> spec = get_registry().get("some.operation")  # doctest: +SKIP
-    >>> result = execute_operation(spec, {"param": "value"})  # doctest: +SKIP
+    >>> spec = get_registry().get("some.operation")
+    >>> result = execute_operation(spec, {"param": "value"})
     """
     builder = (
         _load_context_module()
         .CommandContextBuilder()
         .with_params(params)
-        .with_output_format(OutputFormat.JSON)  # Default to JSON for programmatic use
+        .with_output_format(OutputFormat.JSON)
         .with_verbosity(0)
         .with_operation_id(spec.operation_id)
     )
 
-    # Apply resource requirements from spec
     if spec.require_runtime:
         builder = builder.with_runtime()
 

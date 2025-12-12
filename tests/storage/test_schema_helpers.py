@@ -16,10 +16,6 @@ from codeintel.storage.schema.json_schema import (
 if typing.TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# =============================================================================
-# Test Data
-# =============================================================================
-
 
 class SampleRow(TypedDict):
     """Minimal row model for schema generation tests."""
@@ -27,11 +23,6 @@ class SampleRow(TypedDict):
     name: str
     count: int
     flag: bool
-
-
-# =============================================================================
-# JSON Schema Generation Tests
-# =============================================================================
 
 
 def test_json_schema_from_typeddict_round_trip() -> None:
@@ -55,11 +46,6 @@ def test_json_schema_from_typeddict_round_trip() -> None:
     validate_row_with_schema({"name": "x", "count": 1, "flag": True}, schema)
 
 
-# =============================================================================
-# Validator Factory Tests
-# =============================================================================
-
-
 def test_build_validator_accepts_mapping() -> None:
     """Validator factory should accept mapping schema and expose schema attribute."""
     schema: dict[str, object] = {"type": "object", "properties": {"a": {"type": "string"}}}
@@ -72,11 +58,6 @@ def test_validate_row_with_schema_passes_valid_data() -> None:
     """Row validation should pass for conforming data."""
     schema = {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}
     validate_row_with_schema({"a": "ok"}, schema)
-
-
-# =============================================================================
-# Schema Table Creation Tests
-# =============================================================================
 
 
 def test_apply_all_schemas_creates_function_validation(schema_gateway: StorageGateway) -> None:

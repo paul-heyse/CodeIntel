@@ -65,7 +65,6 @@ if TYPE_CHECKING:
     from codeintel.core.plugins.types.metadata import CorePluginMetadata
 
 ALL_PLUGIN_METADATA: tuple[CorePluginMetadata, ...] = (
-    # Analytics
     BEHAVIORAL_COVERAGE_METADATA,
     CFG_DFG_METRICS_METADATA,
     CONFIG_DATA_FLOW_METADATA,
@@ -92,13 +91,11 @@ ALL_PLUGIN_METADATA: tuple[CorePluginMetadata, ...] = (
     TEST_GRAPH_METRICS_METADATA,
     TEST_PROFILE_METADATA,
     TYPE_COVERAGE_METADATA,
-    # Graphs
     CALLGRAPH_METADATA,
     GRAPH_CFG_DFG_METADATA,
     GOID_BUILDER_METADATA,
     IMPORT_GRAPH_METADATA,
     SYMBOL_USES_METADATA,
-    # Ingestion
     REPO_SCAN_METADATA,
     MODULE_INGEST_METADATA,
     AST_EXTRACT_METADATA,

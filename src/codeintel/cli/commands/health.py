@@ -55,8 +55,7 @@ class HealthCheck(Command[HealthCheckResult]):
         CliResult[HealthCheckResult]
             Health check results.
         """
-        # Acknowledge self for method signature compatibility
-        _ = self.flags  # Access flags for potential future use
+        _ = self.flags
         _ = ctx
         LOG.info("Running health checks")
 

@@ -112,7 +112,6 @@ def test_list_datasets_serializes_mixed_inputs() -> None:
         },
     )
 
-    # Simulate serialization failure
     def _raise_validation(*_: object, **__: object) -> DatasetDescriptor:
         message = "fail"
         raise errors.backend_failure(message)
@@ -173,7 +172,6 @@ def test_dataset_rows_and_schema_forwarding() -> None:
     expect_equal(schema.table_key, "docs.v_functions")
     expect_equal(schema.sample_rows[0].model_dump()["goid"], 1)
 
-    # Force service error
     service.enable_rows_failure()
     with pytest.raises(errors.McpError):
         backend.read_dataset_rows(dataset_name="docs.functions", limit=1, offset=0)

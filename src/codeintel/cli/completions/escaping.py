@@ -45,7 +45,6 @@ def escape_for_shell(text: str, shell: ShellType) -> str:
         case "powershell":
             return escape_powershell(text)
         case _:
-            # This case should never be reached due to ShellType literal
             return text
 
 
@@ -72,7 +71,6 @@ def escape_bash(text: str) -> str:
     >>> escape_bash("path with $var")
     'path with \\$var'
     """
-    # In double-quoted strings, escape: $ ` \ "
     return text.replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`").replace('"', '\\"')
 
 
@@ -99,7 +97,6 @@ def escape_zsh(text: str) -> str:
     >>> escape_zsh("it's a test")
     "it'\\''s a test"
     """
-    # In single-quoted strings, escape single quotes: ' -> '\''
     return text.replace("'", "'\\''")
 
 
@@ -126,7 +123,6 @@ def escape_fish(text: str) -> str:
     >>> escape_fish("it's a test")
     "it\\'s a test"
     """
-    # In single-quoted strings, escape single quotes: ' -> \'
     return text.replace("'", "\\'")
 
 
@@ -153,7 +149,6 @@ def escape_powershell(text: str) -> str:
     >>> escape_powershell("it's a test")
     "it''s a test"
     """
-    # In single-quoted strings, escape single quotes: ' -> ''
     return text.replace("'", "''")
 
 

@@ -451,7 +451,6 @@ def test_register_architecture_tools_registers_and_executes() -> None:
     }
     expect_true(expected.issubset(set(mcp.registry)))
 
-    # Execute a couple of tools to ensure serialization and context reset
     result_fn = cast("Callable[..., dict[str, object]]", mcp.registry["get_function_architecture"])(
         goid_h128="1"
     )

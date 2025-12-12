@@ -23,19 +23,11 @@ if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
 
 
-# -----------------------------------------------------------------------------
-# Test Constants
-# -----------------------------------------------------------------------------
 EXPECTED_COUNT_ZERO = 0
 EXPECTED_COUNT_ONE = 1
 EXPECTED_COUNT_TWO = 2
 EXPECTED_COUNT_FOUR = 4
 EXPECTED_COUNT_FIVE = 5
-
-
-# -----------------------------------------------------------------------------
-# Test Fixtures and Helpers
-# -----------------------------------------------------------------------------
 
 
 class _StrContainer(Protocol):
@@ -55,7 +47,7 @@ def _dummy_handler(ctx: CommandContext) -> CliResult[dict[str, bool]]:
     CliResult[dict[str, bool]]
         Success result with test data.
     """
-    _ = ctx  # Acknowledge unused parameter
+    _ = ctx
     return CliResult.ok({"test": True})
 
 
@@ -94,7 +86,6 @@ def _create_test_spec(
     tags = tags_val if isinstance(tags_val, tuple) else ()
     hidden_val = kwargs.get("hidden")
 
-    # Convert to proper boolean values
     require_runtime_bool = bool(require_runtime) if require_runtime is not None else True
     require_gateway_bool = bool(require_gateway) if require_gateway is not None else True
     require_graph_runtime_bool = bool(require_graph_runtime) if require_graph_runtime else False
@@ -296,11 +287,6 @@ def _reset_global_registry() -> None:
     reset_registry()
 
 
-# -----------------------------------------------------------------------------
-# OperationSpec Tests
-# -----------------------------------------------------------------------------
-
-
 def test_spec_creation_required_fields() -> None:
     """Create operation spec with required fields only."""
     spec = _create_test_spec(
@@ -356,11 +342,6 @@ def test_spec_immutability() -> None:
     attr = "operation_id"
     with pytest.raises(AttributeError):
         setattr(spec, attr, "other.op")
-
-
-# -----------------------------------------------------------------------------
-# OperationRegistry Tests
-# -----------------------------------------------------------------------------
 
 
 def test_registry_register_operation() -> None:
@@ -508,11 +489,6 @@ def test_registry_contains() -> None:
     _verify_not_in("other.op", registry)
 
 
-# -----------------------------------------------------------------------------
-# Global Registry Tests
-# -----------------------------------------------------------------------------
-
-
 def test_global_get_registry_returns_same_instance() -> None:
     """get_registry returns same instance on repeated calls."""
     r1 = get_registry()
@@ -543,11 +519,6 @@ def test_global_register_operation_returns_spec() -> None:
     spec = _create_test_spec(operation_id="global.test")
     result = register_operation(spec)
     _verify_is(result, spec)
-
-
-# -----------------------------------------------------------------------------
-# Group and Tag Filtering Tests
-# -----------------------------------------------------------------------------
 
 
 @pytest.fixture

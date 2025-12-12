@@ -130,7 +130,6 @@ class GatewayCache:
             }
 
 
-# Module-level singleton cache instance
 _cache = GatewayCache()
 
 
@@ -169,7 +168,7 @@ def close_gateways() -> None:
 
     Examples
     --------
-    >>> close_gateways()  # Releases all cached connections
+    >>> close_gateways()
     """
     _cache.close_all()
 

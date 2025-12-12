@@ -88,7 +88,7 @@ def test_iter_dataset_nodes_returns_iterator() -> None:
 def test_iter_composite_edges_returns_iterator() -> None:
     """Verify iter_composite_edges returns an iterator of DataflowEdges."""
     edges = list(iter_composite_edges())
-    # May be empty if no composite schemas, but should be iterable
+
     for edge in edges:
         require(isinstance(edge, DataflowEdge), "iterator should yield DataflowEdge")
         require(edge.edge_type == "builds", "composite edges should be type builds")
@@ -97,7 +97,7 @@ def test_iter_composite_edges_returns_iterator() -> None:
 def test_iter_dependency_edges_returns_iterator() -> None:
     """Verify iter_dependency_edges returns an iterator of DataflowEdges."""
     edges = list(iter_dependency_edges())
-    # May be empty if no dependencies, but should be iterable
+
     for edge in edges:
         require(isinstance(edge, DataflowEdge), "iterator should yield DataflowEdge")
         require(edge.edge_type == "builds", "dependency edges should be type builds")
@@ -136,7 +136,6 @@ def test_dataflow_graph_contains_expected_tables() -> None:
     nodes, _ = build_contract_dataflow_graph()
     node_ids = {node.id for node in nodes}
 
-    # Check for some known tables
     require("core.goids" in node_ids, "core.goids should appear in dataflow graph")
     require(
         "analytics.function_metrics" in node_ids,

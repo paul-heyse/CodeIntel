@@ -57,15 +57,8 @@ def extract_datasets_from_record(
         table_keys=table_keys,
         row_counts=dict(record.row_counts),
     )
-    # Map to dataset node names
+
     return {dataset_node(key): ref for key, ref in refs.items()}
-
-
-# =============================================================================
-# Dataset Extraction Nodes
-# =============================================================================
-# These nodes expose individual datasets from Phase 0 targets.
-# Each returns a single DatasetRef for Hamilton lineage tracking.
 
 
 @tag(domain="graphs", dataset="call_graph_edges")
@@ -168,7 +161,6 @@ def d__analytics__risk_factors(
     return refs[table_key]
 
 
-# Registry of dataset nodes for discovery
 DATASET_NODES = (
     d__graph__call_graph_edges,
     d__graph__call_graph_nodes,

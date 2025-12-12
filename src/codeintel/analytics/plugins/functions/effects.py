@@ -82,22 +82,19 @@ class FunctionEffectsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Build config from context
         cfg = FunctionEffectsStepConfig(
             snapshot=ctx.snapshot,
         )
 
-        # Get resources
         catalog_provider = ctx.resources.catalog
         graph_runtime = ctx.resources.graph_runtime
 
-        # Get AST data if available
         ast_map = None
         missing_goids = None
         if catalog_provider is not None:
-            ast_data = None  # Resources not yet populated via build context
+            ast_data = None
             if ast_data is not None:
                 ast_map = ast_data.function_ast_map
                 missing_goids = ast_data.missing_function_goids

@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
-# Modules that plugins can always import
 ALLOWED_MODULES: frozenset[str] = frozenset(
     {
         "abc",
@@ -46,7 +45,7 @@ ALLOWED_MODULES: frozenset[str] = frozenset(
     },
 )
 
-# Modules that require specific capabilities
+
 CAPABILITY_MODULES: dict[PluginCapability, frozenset[str]] = {
     PluginCapability.NETWORK_ACCESS: frozenset({"urllib", "http", "socket"}),
     PluginCapability.FILE_READ: frozenset({"io", "os.path"}),
@@ -203,7 +202,6 @@ class PluginSandbox:
             msg = "Sandbox already active"
             raise RuntimeError(msg)
 
-        # Install custom importer
         sys.meta_path.insert(0, self._importer)
         self._active = True
         LOG.debug("Entered sandbox for plugin: %s", self._manifest.name)
@@ -217,7 +215,6 @@ class PluginSandbox:
         *args
             Exception info (unused).
         """
-        # Remove custom importer
         with contextlib.suppress(ValueError):
             sys.meta_path.remove(self._importer)
         self._active = False

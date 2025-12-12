@@ -45,7 +45,7 @@ def _registered_macros(con: DuckDBPyConnection) -> set[str]:
             names.add(fn_lower)
             if isinstance(schema_name, str) and schema_name:
                 names.add(f"{schema_name.lower()}.{fn_lower}")
-            # If function_name contains a catalog/schema prefix, keep schema.fn and fn variants.
+
             parts = fn_lower.split(".")
             if len(parts) > 1:
                 schema_part, fn_part = parts[-2], parts[-1]

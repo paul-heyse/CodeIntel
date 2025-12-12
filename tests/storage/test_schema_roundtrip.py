@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
 
-# Constants
+
 MAX_HYPOTHESIS_EXAMPLES = 15
 
 

@@ -316,7 +316,7 @@ def test_resource_registry_require_or_none_not_found() -> None:
 def test_resource_registry_require_or_none_not_loaded() -> None:
     """Require or None returns None when resource cannot load."""
     registry = ResourceRegistry()
-    provider = MockProvider(_resource=None)  # Will raise on get()
+    provider = MockProvider(_resource=None)
     registry.register(MockResourceType, provider)
 
     result = registry.require_or_none(MockResourceType)
@@ -330,11 +330,9 @@ def test_resource_registry_invalidate_specific() -> None:
     provider = MockProvider(_resource="test")
     registry.register(MockResourceType, provider)
 
-    # Load the resource
     registry.require(MockResourceType)
     expect_true(provider.is_loaded)
 
-    # Invalidate
     registry.invalidate(MockResourceType)
     expect_false(provider.is_loaded)
 
@@ -347,13 +345,11 @@ def test_resource_registry_invalidate_all() -> None:
     registry.register(MockResourceType, provider1)
     registry.register(AnotherResourceType, provider2)
 
-    # Load both
     registry.require(MockResourceType)
     registry.require(AnotherResourceType)
     expect_true(provider1.is_loaded)
     expect_true(provider2.is_loaded)
 
-    # Invalidate all
     registry.invalidate()
     expect_false(provider1.is_loaded)
     expect_false(provider2.is_loaded)
@@ -363,7 +359,6 @@ def test_resource_registry_invalidate_not_registered() -> None:
     """Invalidate non-existent type does nothing."""
     registry = ResourceRegistry()
 
-    # Should not raise
     registry.invalidate(MockResourceType)
 
 

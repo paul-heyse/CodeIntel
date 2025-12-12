@@ -29,10 +29,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# =============================================================================
-# Test Implementations
-# =============================================================================
-
 
 class StringProvider(ResourceProviderBase[str]):
     """Provider that returns a string value."""
@@ -140,11 +136,6 @@ class LazyFailer(LazyResource[str]):
         raise ValueError(self._error_msg)
 
 
-# =============================================================================
-# ResourceError Tests
-# =============================================================================
-
-
 def test_resource_error_is_exception() -> None:
     """Verify ResourceError is an Exception."""
     error = ResourceError("Test error")
@@ -166,11 +157,6 @@ def test_resource_error_can_be_raised() -> None:
         raise ResourceError(msg)
 
     expect_in("Test message", str(exc_info.value))
-
-
-# =============================================================================
-# ResourceNotLoadedError Tests
-# =============================================================================
 
 
 def test_resource_not_loaded_error_message() -> None:
@@ -199,11 +185,6 @@ def test_resource_not_loaded_error_inheritance() -> None:
     expect_is_instance(error, Exception)
 
 
-# =============================================================================
-# ResourceProvider Protocol Tests
-# =============================================================================
-
-
 def test_resource_provider_protocol_conformance() -> None:
     """Verify ResourceProviderBase implements ResourceProvider protocol."""
     provider = StringProvider("test")
@@ -220,7 +201,6 @@ def test_resource_provider_protocol_requires_get() -> None:
         def invalidate(self) -> None:
             pass
 
-    # Missing get() method should not satisfy protocol
     expect_true(not isinstance(MissingGet(), ResourceProvider))
 
 
@@ -235,13 +215,7 @@ def test_resource_provider_protocol_requires_invalidate() -> None:
             self.called = True
             return "test"
 
-    # Missing invalidate() method should not satisfy protocol
     expect_true(not isinstance(MissingInvalidate(), ResourceProvider))
-
-
-# =============================================================================
-# ResourceProviderBase Tests
-# =============================================================================
 
 
 def test_provider_base_get_returns_value() -> None:
@@ -257,13 +231,12 @@ def test_provider_base_get_caches_value() -> None:
     """Verify get() caches the loaded value."""
     provider = CountingProvider()
 
-    # Multiple calls should return same value
     result1 = provider.get()
     result2 = provider.get()
     result3 = provider.get()
 
     expect_true(result1 == result2 == result3 == 1)
-    expect_equal(provider.load_count, 1)  # Only loaded once
+    expect_equal(provider.load_count, 1)
 
 
 def test_provider_base_invalidate_clears_cache() -> None:
@@ -298,11 +271,6 @@ def test_provider_base_resource_name() -> None:
 def test_provider_base_default_resource_name() -> None:
     """Verify default RESOURCE_NAME is empty string."""
     expect_true(not ResourceProviderBase.RESOURCE_NAME)
-
-
-# =============================================================================
-# LazyResource Tests
-# =============================================================================
 
 
 def test_lazy_resource_get() -> None:
@@ -388,7 +356,6 @@ def test_lazy_resource_get_raises_on_repeated_failure() -> None:
     with pytest.raises(ResourceNotLoadedError):
         resource.get()
 
-    # Second call should also raise (cached error)
     with pytest.raises(ResourceNotLoadedError):
         resource.get()
 
@@ -413,7 +380,6 @@ def test_lazy_resource_invalidate_clears_error() -> None:
 
     resource.invalidate()
 
-    # After invalidate, should try to load again (and fail again)
     with pytest.raises(ResourceNotLoadedError):
         resource.get()
 
@@ -444,7 +410,6 @@ def test_lazy_resource_resource_name_property() -> None:
     """Verify resource_name property."""
     resource = LazyString("instance_name", "value")
 
-    # Should prefer RESOURCE_NAME class var if set
     expect_equal(resource.resource_name, "lazy_string")
 
 
@@ -462,11 +427,6 @@ def test_lazy_resource_resource_name_fallback() -> None:
     expect_equal(resource.resource_name, "fallback_name")
 
 
-# =============================================================================
-# Integration Tests
-# =============================================================================
-
-
 def test_provider_implements_protocol() -> None:
     """Verify custom providers implement ResourceProvider protocol."""
     providers: list[ResourceProviderBase[int] | ResourceProviderBase[str]] = [
@@ -475,7 +435,6 @@ def test_provider_implements_protocol() -> None:
     ]
 
     for provider in providers:
-        # Check protocol compliance via interface presence (avoids generic protocol runtime check)
         expect_true(hasattr(provider, "get"))
         expect_true(callable(provider.get))
         expect_true(hasattr(provider, "invalidate"))
@@ -488,7 +447,6 @@ def test_lazy_resource_as_provider() -> None:
     """Verify LazyResource can be used where ResourceProvider is expected."""
     resource = LazyString("test", "value")
 
-    # Should have the required interface
     expect_true(hasattr(resource, "get"))
     expect_true(hasattr(resource, "invalidate"))
     expect_true(hasattr(resource, "RESOURCE_NAME"))

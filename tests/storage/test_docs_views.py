@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
 
-# Constants
+
 EXPECTED_MODULE_COUNT_42 = 42
 EXPECTED_FUNCTION_COUNT_4 = 4
 EXPECTED_TEST_COUNT_99 = 99
@@ -42,11 +42,6 @@ def _require(*, condition: bool, message: str) -> None:
     """Fail test if condition is not met."""
     if not condition:
         pytest.fail(message)
-
-
-# =============================================================================
-# Performance Index Tests
-# =============================================================================
 
 
 def test_test_profile_has_primary_subsystem_index(docs_views_gateway: StorageGateway) -> None:
@@ -63,11 +58,6 @@ def test_subsystems_has_repo_commit_index(docs_views_gateway: StorageGateway) ->
     expected = "idx_analytics_subsystems_repo_commit_id"
     if expected not in index_names:
         pytest.fail(f"Missing index {expected} on analytics.subsystems")
-
-
-# =============================================================================
-# Docs Views as Datasets Tests
-# =============================================================================
 
 
 def test_docs_views_registered_in_metadata(docs_views_gateway: StorageGateway) -> None:
@@ -113,11 +103,6 @@ def test_docs_views_expose_capabilities(docs_views_gateway: StorageGateway) -> N
         pytest.fail("Cache tables should allow writes for refreshes")
 
 
-# =============================================================================
-# View Scoping Tests
-# =============================================================================
-
-
 def test_call_graph_view_scopes_edges_to_repo_commit(tmp_path: Path) -> None:
     """Edges from other snapshots should not join into v_call_graph_enriched."""
     ctx = docs_views_ready_gateway(tmp_path / "docs_scoping", repo="r1", commit="c1")
@@ -136,11 +121,6 @@ def test_call_graph_view_scopes_edges_to_repo_commit(tmp_path: Path) -> None:
     if rows_r2 != [("r2",)]:
         pytest.fail(f"Unexpected caller_repo rows for r2: {rows_r2}")
     ctx.close()
-
-
-# =============================================================================
-# Subsystem Docs View Schema Tests
-# =============================================================================
 
 
 def test_subsystem_profile_columns(docs_views_gateway: StorageGateway) -> None:
@@ -219,11 +199,6 @@ def test_subsystem_coverage_columns(docs_views_gateway: StorageGateway) -> None:
         condition=not missing,
         message=f"Missing columns in v_subsystem_coverage: {sorted(missing)}",
     )
-
-
-# =============================================================================
-# Subsystem Cache Behavior Tests
-# =============================================================================
 
 
 def test_subsystem_profile_view_prefers_cache(docs_views_gateway: StorageGateway) -> None:

@@ -95,13 +95,11 @@ class RepoScanStep:
         tuple[StepResult, Sequence[ModuleRecord], ChangeSet]
             Execution result, discovered modules, and change set.
         """
-        # Discover modules
         modules = self._discovery.discover_modules(repo_root, profile)
         if self._module_filter is not None:
             modules = list(self._module_filter(modules))
         log.info("Discovered %d modules in %s", len(modules), repo_root)
 
-        # Compute changes
         change_request = ChangeRequest(
             repo=repo,
             commit=commit,
@@ -112,17 +110,11 @@ class RepoScanStep:
         )
         change_set = self._change_detection.compute_changes(change_request, modules)
 
-        # Build module rows - columns: module, path, repo, commit, language, tags, owners
         module_rows: list[list[object]] = [
             [module.module_name, module.rel_path, repo, commit, "python", "[]", "[]"]
             for module in modules
         ]
 
-        # Note: file_state is persisted by change_detection.compute_changes() via save_current_state()
-        # We don't write it here to avoid duplicate key violations that would trigger
-        # apply_all_schemas() and drop existing data.
-
-        # Persist module rows
         table_counts: dict[str, int] = {}
         total_rows = 0
 

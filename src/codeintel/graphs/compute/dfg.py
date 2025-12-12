@@ -97,7 +97,6 @@ class DFGBuilder:
         self.cfg_edges = list(cfg_edges)
         self.dfg_edges: list[DFGEdge] = []
 
-        # Precompute predecessors
         self.preds: dict[int, list[int]] = defaultdict(list)
         for e in cfg_edges:
             self.preds[e.dst].append(e.src)

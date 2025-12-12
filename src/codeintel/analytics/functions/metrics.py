@@ -726,7 +726,6 @@ def compute_function_metrics_and_types(
     reporter = opts.validation_reporter or FunctionValidationReporter(cfg.repo, cfg.commit)
     span_index = _build_span_index(goids_by_file, cfg.repo_root)
 
-    # Use pre-loaded AST data if available (from context or direct data)
     if opts.has_ast_data():
         result = _build_function_analytics_from_ast_data(
             goids_by_file=goids_by_file,

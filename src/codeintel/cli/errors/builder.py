@@ -34,37 +34,31 @@ if TYPE_CHECKING:
         ErrorCode,
     )
 
-# HTTP status codes for each error code
+
 _STATUS_CODES: dict[str, int] = {
-    # Validation
     ValidationErrorCode.MISSING_REQUIRED.value: 400,
     ValidationErrorCode.INVALID_TYPE.value: 400,
     ValidationErrorCode.INVALID_FORMAT.value: 400,
     ValidationErrorCode.OUT_OF_RANGE.value: 400,
     ValidationErrorCode.CONSTRAINT_VIOLATION.value: 400,
-    # Operation
     OperationErrorCode.NOT_FOUND.value: 404,
     OperationErrorCode.ALREADY_EXISTS.value: 409,
     OperationErrorCode.TIMEOUT.value: 504,
     OperationErrorCode.DEPENDENCY_FAILED.value: 424,
     OperationErrorCode.CANCELLED.value: 499,
     OperationErrorCode.INTERNAL_ERROR.value: 500,
-    # Storage
     StorageErrorCode.CONNECTION_FAILED.value: 503,
     StorageErrorCode.QUERY_FAILED.value: 500,
     StorageErrorCode.SCHEMA_MISMATCH.value: 500,
     StorageErrorCode.CORRUPTION_DETECTED.value: 500,
-    # Config
     ConfigErrorCode.FILE_NOT_FOUND.value: 404,
     ConfigErrorCode.PARSE_ERROR.value: 400,
     ConfigErrorCode.INVALID_VALUE.value: 400,
     ConfigErrorCode.SCHEMA_VIOLATION.value: 400,
-    # Service
     ServiceErrorCode.UNAVAILABLE.value: 503,
     ServiceErrorCode.RATE_LIMITED.value: 429,
     ServiceErrorCode.AUTHENTICATION_FAILED.value: 401,
     ServiceErrorCode.PERMISSION_DENIED.value: 403,
-    # Job
     JobErrorCode.NOT_FOUND.value: 404,
     JobErrorCode.ALREADY_RUNNING.value: 409,
     JobErrorCode.FAILED.value: 500,

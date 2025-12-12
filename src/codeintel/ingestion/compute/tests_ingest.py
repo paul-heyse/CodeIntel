@@ -76,7 +76,6 @@ class TestsIngestStep:
         """
         created_at = datetime.now(UTC)
 
-        # Parse JSON report
         if not json_report_path.exists():
             log.warning("Test report not found: %s", json_report_path)
             return StepResult.skip("Test report not found")
@@ -87,7 +86,6 @@ class TestsIngestStep:
             log.warning("Failed to read test report: %s", exc)
             return StepResult.fail(f"Failed to read test report: {exc}")
 
-        # Build rows
         all_rows: list[list[object]] = []
         tests = data.get("tests", [])
 
@@ -97,7 +95,6 @@ class TestsIngestStep:
             duration = test.get("duration", 0.0)
             longrepr = test.get("longrepr")
 
-            # Extract file path from nodeid
             rel_path = nodeid.split("::")[0] if "::" in nodeid else nodeid
 
             all_rows.append(
@@ -108,12 +105,11 @@ class TestsIngestStep:
                     rel_path,
                     outcome,
                     duration,
-                    longrepr[:1000] if longrepr else None,  # Truncate long repr
+                    longrepr[:1000] if longrepr else None,
                     created_at,
                 ]
             )
 
-        # Persist rows
         table_counts: dict[str, int] = {}
         total_rows = 0
 
@@ -123,7 +119,6 @@ class TestsIngestStep:
             table_counts["core.test_results"] = result.rows_written
             total_rows = result.rows_written
 
-        # Also persist summary
         summary = data.get("summary", {})
         summary_rows: list[list[object]] = [
             [

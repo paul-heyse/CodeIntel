@@ -28,10 +28,6 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
-# -----------------------------------------------------------------------------
-# Health Check Infrastructure
-# -----------------------------------------------------------------------------
-
 
 class CheckStatus(Enum):
     """Health check status."""
@@ -116,13 +112,7 @@ class HealthReport:
         }
 
 
-# Type alias for check functions
 CheckFunction = Callable[[], CheckResult]
-
-
-# -----------------------------------------------------------------------------
-# Individual Health Checks
-# -----------------------------------------------------------------------------
 
 
 def _check_python_version() -> CheckResult:
@@ -222,7 +212,6 @@ def _check_project() -> CheckResult:
     CheckResult
         Check result.
     """
-    # Look for codeintel.yaml in current directory or parents
     cwd = Path.cwd()
     search_paths = [cwd, *cwd.parents]
 
@@ -235,7 +224,7 @@ def _check_project() -> CheckResult:
                 message=f"Project found: {path}",
                 details={"project_root": str(path)},
             )
-        # Also check for codeintel.toml
+
         toml_path = path / "codeintel.toml"
         if toml_path.exists():
             return CheckResult(
@@ -301,7 +290,6 @@ def _check_telemetry() -> CheckResult:
     )
 
 
-# List of check functions with names
 _HEALTH_CHECKS: list[tuple[str, CheckFunction]] = [
     ("python_version", _check_python_version),
     ("config_file", _check_config_file),
@@ -310,11 +298,6 @@ _HEALTH_CHECKS: list[tuple[str, CheckFunction]] = [
     ("operation_registry", _check_registry),
     ("telemetry", _check_telemetry),
 ]
-
-
-# -----------------------------------------------------------------------------
-# Health Checker
-# -----------------------------------------------------------------------------
 
 
 class HealthChecker:
@@ -351,7 +334,6 @@ class HealthChecker:
 
         total_duration = (time.monotonic() - start) * 1000
 
-        # Determine overall status
         if any(r.status == CheckStatus.FAIL for r in results):
             overall = CheckStatus.FAIL
         elif any(r.status == CheckStatus.WARN for r in results):
@@ -377,11 +359,6 @@ def get_health_checker() -> HealthChecker:
     return HealthChecker()
 
 
-# -----------------------------------------------------------------------------
-# Handler Result and Functions
-# -----------------------------------------------------------------------------
-
-
 def health_check_handler(
     ctx: CommandContext,
 ) -> CliResult[HealthCheckResult]:
@@ -397,8 +374,7 @@ def health_check_handler(
     CliResult[HealthCheckResult]
         Health check results.
     """
-    # Use ctx for logging context
-    _ = ctx.params.raw  # Acknowledge params even if empty
+    _ = ctx.params.raw
     LOG.info("Running health checks")
 
     checker = get_health_checker()

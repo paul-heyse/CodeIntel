@@ -53,10 +53,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
-# ---------------------------------------------------------------------------
-# Gateway Fixtures
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture
 def graph_gateway() -> Iterator[StorageGateway]:
@@ -98,11 +94,6 @@ def graph_snapshot(tmp_path: Path) -> SnapshotRef:
     return create_test_snapshot(tmp_path)
 
 
-# ---------------------------------------------------------------------------
-# Combined Environment Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def graph_executor_env(tmp_path: Path) -> Iterator[GraphTestEnv]:
     """Provide a combined gateway + snapshot environment for executor tests.
@@ -123,11 +114,6 @@ def graph_executor_env(tmp_path: Path) -> Iterator[GraphTestEnv]:
         yield env
     finally:
         env.close()
-
-
-# ---------------------------------------------------------------------------
-# Execution Context Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -159,11 +145,6 @@ def graph_plugin_context(
         plugin_name="test_plugin",
         run_id="test-run-123",
     )
-
-
-# ---------------------------------------------------------------------------
-# Golden Dataset Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -202,11 +183,6 @@ def golden_snapshot(tmp_path: Path) -> SnapshotRef:
         Snapshot reference for the golden repo and commit.
     """
     return make_snapshot(repo=GOLDEN_REPO, commit=GOLDEN_COMMIT, repo_root=tmp_path)
-
-
-# ---------------------------------------------------------------------------
-# Resource Fixtures
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -339,11 +315,6 @@ def storage_registry(storage_resource: StorageResource) -> ResourceRegistry:
     registry = ResourceRegistry()
     registry.register_provider(storage_resource)
     return registry
-
-
-# ---------------------------------------------------------------------------
-# Mock Graph Runtime Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture

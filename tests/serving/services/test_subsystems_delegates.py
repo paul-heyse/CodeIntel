@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_contexts import ProvisionedServiceContext
 
-# Test constants
+
 LIMIT_FIVE: Final = 5
 
 
@@ -37,11 +37,6 @@ def _build_local_service(
         Service instance wired to the provisioned gateway snapshot.
     """
     return service_ctx.service
-
-
-# =============================================================================
-# Tests for _SubsystemQueryDelegates through LocalQueryService
-# =============================================================================
 
 
 def test_list_subsystems_returns_domain_result(

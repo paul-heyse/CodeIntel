@@ -106,10 +106,6 @@ class DatasetRegistry:
             raise KeyError(message)
         return ds.table_key
 
-    # -------------------------------------------------------------------------
-    # Compatibility properties (migrated from registry_helpers.DatasetRegistry)
-    # -------------------------------------------------------------------------
-
     @property
     def mapping(self) -> Mapping[str, str]:
         """

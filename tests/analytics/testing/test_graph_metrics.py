@@ -37,16 +37,13 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from tests._helpers import TestContext
 
-# =============================================================================
-# Test Constants
-# =============================================================================
 
 EXPECTED_ROW_COUNT_MINIMUM = 0
 EXPECTED_TUPLE_LENGTH = 12
 EXPECTED_TEST_COUNT_TWO = 2
 EXPECTED_FUNC_COUNT_TWO = 2
 
-# Test data values for BipartiteDegrees tests
+
 TEST_DEGREE_VALUE = 5
 FUNC_DEGREE_VALUE = 3
 TEST_WEIGHTED_DEGREE = 2.5
@@ -90,7 +87,7 @@ class TestTestMetricsContext:
         expect_equal(ctx.repo, "test_repo")
         expect_equal(ctx.commit, "abc123")
         expect_equal(ctx.risk_by_goid, {1: 0.5, 2: 0.8})
-        # Verify frozen - should raise AttributeError on mutation
+
         assert_frozen(ctx, "repo", "modified")
 
     @staticmethod
@@ -156,7 +153,7 @@ class TestTestMetricsContext:
             graph_ctx=graph_ctx,
         )
         expect_equal(ctx.now, now)
-        expect_is_not_none(ctx.now.tzinfo)  # Timezone aware
+        expect_is_not_none(ctx.now.tzinfo)
 
 
 class TestComputeTestGraphMetrics:
@@ -165,17 +162,14 @@ class TestComputeTestGraphMetrics:
     @staticmethod
     def test_creates_empty_tables_when_no_coverage(test_ctx: TestContext) -> None:
         """Verify tables are created even with no coverage data."""
-        # Don't seed any coverage data - just ensure core tables exist
         test_ctx.require(METRICS_PACK)
 
-        # Should not raise - creates empty tables
         compute_test_graph_metrics(
             test_ctx.gateway,
             repo=test_ctx.repo,
             commit=test_ctx.commit,
         )
 
-        # Tables should exist (even if empty)
         test_count = test_ctx.query_count(
             "analytics.test_graph_metrics_tests",
             f"repo = '{test_ctx.repo}' AND commit = '{test_ctx.commit}'",
@@ -184,15 +178,14 @@ class TestComputeTestGraphMetrics:
             "analytics.test_graph_metrics_functions",
             f"repo = '{test_ctx.repo}' AND commit = '{test_ctx.commit}'",
         )
-        # May be 0 if no coverage data is seeded
+
         expect_true(test_count >= EXPECTED_ROW_COUNT_MINIMUM)
         expect_true(func_count >= EXPECTED_ROW_COUNT_MINIMUM)
 
     @staticmethod
     def test_computes_metrics_with_seeded_coverage(coverage_ctx: TestContext) -> None:
         """Verify metrics are computed when coverage data exists."""
-        # coverage_ctx has COVERAGE_PACK which seeds test catalog and edges
-        coverage_ctx.require(METRICS_PACK)  # For risk factors
+        coverage_ctx.require(METRICS_PACK)
 
         compute_test_graph_metrics(
             coverage_ctx.gateway,
@@ -200,7 +193,6 @@ class TestComputeTestGraphMetrics:
             commit=coverage_ctx.commit,
         )
 
-        # Verify metrics tables are populated
         test_count = coverage_ctx.query_count(
             "analytics.test_graph_metrics_tests",
             f"repo = '{coverage_ctx.repo}' AND commit = '{coverage_ctx.commit}'",
@@ -209,7 +201,7 @@ class TestComputeTestGraphMetrics:
             "analytics.test_graph_metrics_functions",
             f"repo = '{coverage_ctx.repo}' AND commit = '{coverage_ctx.commit}'",
         )
-        # At least some metrics should be computed if coverage data exists
+
         expect_true(test_count >= EXPECTED_ROW_COUNT_MINIMUM)
         expect_true(func_count >= EXPECTED_ROW_COUNT_MINIMUM)
 
@@ -218,7 +210,6 @@ class TestComputeTestGraphMetrics:
         """Verify previous metrics are cleared when recomputing."""
         test_ctx.require(COVERAGE_PACK, METRICS_PACK)
 
-        # Compute twice
         compute_test_graph_metrics(
             test_ctx.gateway,
             repo=test_ctx.repo,
@@ -239,7 +230,6 @@ class TestComputeTestGraphMetrics:
             f"repo = '{test_ctx.repo}' AND commit = '{test_ctx.commit}'",
         )
 
-        # Counts should be equal (not doubled)
         expect_equal(first_test_count, second_test_count)
 
     @staticmethod
@@ -247,21 +237,18 @@ class TestComputeTestGraphMetrics:
         """Verify metrics are correctly scoped to repo/commit."""
         test_ctx.require(COVERAGE_PACK, METRICS_PACK)
 
-        # Compute for default context
         compute_test_graph_metrics(
             test_ctx.gateway,
             repo=test_ctx.repo,
             commit=test_ctx.commit,
         )
 
-        # Query for a different commit should return 0
         other_commit_count = test_ctx.query_count(
             "analytics.test_graph_metrics_tests",
             f"repo = '{test_ctx.repo}' AND commit = 'nonexistent_commit'",
         )
         expect_equal(other_commit_count, EXPECTED_ROW_COUNT_MINIMUM)
 
-        # Query for a different repo should return 0
         other_repo_count = test_ctx.query_count(
             "analytics.test_graph_metrics_tests",
             f"repo = 'nonexistent_repo' AND commit = '{test_ctx.commit}'",
@@ -274,7 +261,7 @@ class TestComputeTestGraphMetrics:
         test_ctx.require(COVERAGE_PACK, METRICS_PACK)
 
         options = GraphRuntimeOptions()
-        # Should not raise when passed options
+
         compute_test_graph_metrics(
             test_ctx.gateway,
             repo=test_ctx.repo,

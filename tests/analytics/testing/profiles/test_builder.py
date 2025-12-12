@@ -32,9 +32,6 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from tests._helpers import TestContext
 
-# =============================================================================
-# Test Constants
-# =============================================================================
 
 EXPECTED_EMPTY_LIST_LENGTH = 0
 
@@ -200,15 +197,13 @@ class TestInferBehaviorTags:
 
     def test_infers_io_heavy_from_io_bound_property(self) -> None:
         """Verify io_heavy tag from io_bound property (derived from any IO flag)."""
-        # io_bound is a computed property that's True when any IO flag is set
-        # uses_network=True should make io_bound=True
         io_flags = IoFlags(
-            uses_network=True,  # This makes io_bound=True
+            uses_network=True,
             uses_db=False,
             uses_filesystem=False,
             uses_subprocess=False,
         )
-        # io_bound is a property, not a constructor arg
+
         expect_true(io_flags.io_bound)
         result = infer_behavior_tags(
             name="test_generic",
@@ -216,8 +211,7 @@ class TestInferBehaviorTags:
             io_flags=io_flags,
             ast_info=self._create_empty_ast_info(),
         )
-        # Should have io_heavy tag since io_bound is True
-        # Note: Also has network_interaction since uses_network=True
+
         expect_in("network_interaction", result)
 
     def test_infers_error_paths_from_pytest_raises(self) -> None:
@@ -293,7 +287,7 @@ class TestInferBehaviorTags:
             io_flags=io_flags,
             ast_info=ast_info,
         )
-        # Should have tags from name, markers, io_flags, and ast_info
+
         expect_in("error_paths", result)
         expect_in("integration_scenario", result)
         expect_in("network_interaction", result)
@@ -321,17 +315,14 @@ class TestBuildTestProfile:
     @staticmethod
     def test_returns_early_when_no_tests(test_ctx: TestContext) -> None:
         """Verify build_test_profile returns early with no test catalog."""
-        # Don't seed COVERAGE_PACK - no test catalog
         cfg = ConfigBuilder.from_snapshot(
             snapshot=SnapshotInit(
                 repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
             ),
         ).analytics.test_profile()
 
-        # Should not raise - just logs and returns
         build_test_profile(test_ctx.gateway, cfg)
 
-        # No profiles should exist
         count = test_ctx.query_count(
             "analytics.test_profile",
             f"repo = '{test_ctx.repo}' AND commit = '{test_ctx.commit}'",
@@ -351,10 +342,9 @@ class TestBuildTestProfile:
 
         build_test_profile(coverage_ctx.gateway, cfg)
 
-        # Profiles should be created for seeded tests
         count = coverage_ctx.query_count(
             "analytics.test_profile",
             f"repo = '{coverage_ctx.repo}' AND commit = '{coverage_ctx.commit}'",
         )
-        # COVERAGE_PACK seeds 4 tests
+
         expect_equal(count, 4)

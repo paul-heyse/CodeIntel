@@ -33,7 +33,7 @@ def assert_frozen(obj: object, attr: str, new_value: object) -> None:
     ...     x: int
     ...     y: int
     >>> p = Point(1, 2)
-    >>> assert_frozen(p, "x", 10)  # Passes - field is frozen
+    >>> assert_frozen(p, "x", 10)
     """
     with pytest.raises(AttributeError):
         setattr(obj, attr, new_value)
@@ -59,7 +59,7 @@ def assert_all_frozen(obj: object, **attrs: object) -> None:
     ...     x: int
     ...     y: int
     >>> p = Point(1, 2)
-    >>> assert_all_frozen(p, x=10, y=20)  # Passes - all fields frozen
+    >>> assert_all_frozen(p, x=10, y=20)
     """
     for attr, value in attrs.items():
         assert_frozen(obj, attr, value)

@@ -24,11 +24,11 @@ class ResolutionError(Exception):
 
     Examples
     --------
-    >>> raise ResolutionError("No codeintel.yaml found")  # doctest: +SKIP
+    >>> raise ResolutionError("No codeintel.yaml found")
     >>> raise ResolutionError(
     ...     "Missing required parameters",
     ...     missing_params=["repo", "commit"],
-    ... )  # doctest: +SKIP
+    ... )
     """
 
     def __init__(

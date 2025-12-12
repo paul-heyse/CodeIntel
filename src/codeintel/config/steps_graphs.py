@@ -19,7 +19,7 @@ Example
 >>> builder = ConfigBuilder.from_snapshot(
 ...     snapshot=SnapshotInit(repo="org/repo", commit="abc123", repo_root=Path("/repo")),
 ... )
->>> config = builder.call_graph()  # Preferred
+>>> config = builder.call_graph()
 """
 
 from __future__ import annotations

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
 
-# Test constants (non-repo/commit)
+
 CONFIDENCE_FULL = 0.9
 CONFIDENCE_TYPES_ONLY = 0.3
 CONTEXT_LINE = 5
@@ -190,7 +190,6 @@ def test_compute_function_contracts_with_simple_function(
         [DEFAULT_REPO, DEFAULT_COMMIT, goid],
     ).fetchone()
 
-    # With no catalog, no rows written for the function
     expect_is_none(result)
 
 
@@ -220,7 +219,6 @@ def test_compute_function_contracts_with_assert_guard(
         catalog=None,
     )
 
-    # With no catalog, contracts aren't computed
     total = count_rows(
         memory_gateway.con,
         "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
@@ -256,7 +254,6 @@ def test_compute_function_contracts_with_raise(
         catalog=None,
     )
 
-    # No contracts should be recorded when catalog is absent
     result = count_rows(memory_gateway.con, "SELECT COUNT(*) FROM analytics.function_contracts", [])
     expect_equal(result, 0)
 
@@ -321,7 +318,6 @@ def test_compute_function_contracts_with_len_guard(
         catalog=None,
     )
 
-    # Basic verification that function runs without error
     expect_equal(len(ast_map), 1)
 
 
@@ -356,7 +352,6 @@ def test_compute_function_contracts_multiple_functions(
         catalog=None,
     )
 
-    # Verify function completed
     expect_equal(len(ast_map), MULTI_FUNC_COUNT)
 
 
@@ -386,7 +381,6 @@ def test_compute_function_contracts_async_function(
         catalog=None,
     )
 
-    # Verify no exception raised
     expect_equal(len(ast_map), 1)
 
 
@@ -402,7 +396,6 @@ def test_compute_function_contracts_table_exists(
         catalog=None,
     )
 
-    # Verify table was created
     total = count_rows(
         memory_gateway.con,
         "SELECT COUNT(*) FROM analytics.function_contracts",
@@ -437,7 +430,6 @@ def test_compute_function_contracts_typed_function(
         catalog=None,
     )
 
-    # Function runs without error for typed functions
     expect_equal(len(ast_map), 1)
 
 
@@ -468,7 +460,6 @@ def test_compute_function_contracts_nullable_return(
         catalog=None,
     )
 
-    # Verify completes successfully
     expect_equal(len(ast_map), 1)
 
 
@@ -499,7 +490,6 @@ def test_compute_function_contracts_numeric_guards(
         catalog=None,
     )
 
-    # Verify completes successfully
     expect_equal(len(ast_map), 1)
 
 
@@ -528,7 +518,6 @@ def test_compute_function_contracts_varargs(
         catalog=None,
     )
 
-    # Verify completes successfully
     expect_equal(len(ast_map), 1)
 
 
@@ -557,7 +546,6 @@ def test_compute_function_contracts_keyword_only_params(
         catalog=None,
     )
 
-    # Verify completes successfully
     expect_equal(len(ast_map), 1)
 
 
@@ -589,7 +577,6 @@ def test_compute_function_contracts_chained_exceptions(
         catalog=None,
     )
 
-    # Verify completes successfully
     expect_equal(len(ast_map), 1)
 
 
@@ -624,7 +611,6 @@ def test_compute_function_contracts_complex_guards(
         catalog=None,
     )
 
-    # Verify completes successfully
     expect_equal(len(ast_map), 1)
 
 
@@ -656,7 +642,6 @@ def test_compute_function_contracts_nested_conditions(
         catalog=None,
     )
 
-    # Verify completes successfully
     expect_equal(len(ast_map), 1)
 
 
@@ -685,7 +670,6 @@ def test_compute_function_contracts_bool_predicate_name(
         catalog=None,
     )
 
-    # Verify completes successfully
     expect_equal(len(ast_map), 1)
 
 
@@ -715,7 +699,6 @@ def test_compute_function_contracts_method_with_self(
         catalog=None,
     )
 
-    # Verify completes successfully
     expect_equal(len(ast_map), 1)
 
 
@@ -745,7 +728,6 @@ def test_compute_function_contracts_classmethod_with_cls(
         catalog=None,
     )
 
-    # Verify completes successfully
     expect_equal(len(ast_map), 1)
 
 
@@ -768,7 +750,6 @@ def test_compute_function_contracts_idempotent(
 
     ast_map = {goid: func_ast}
 
-    # Run twice
     compute_function_contracts(
         memory_gateway,
         contracts_config,
@@ -782,7 +763,6 @@ def test_compute_function_contracts_idempotent(
         catalog=None,
     )
 
-    # Should not error and should be idempotent
     total = count_rows(
         memory_gateway.con,
         "SELECT COUNT(*) FROM analytics.function_contracts",
@@ -819,5 +799,4 @@ def test_compute_function_contracts_complex_assertions(
         catalog=None,
     )
 
-    # Function executed without error
     expect_equal(len(ast_map), 1)

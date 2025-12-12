@@ -59,7 +59,7 @@ def _load_subsystem_specs() -> tuple[dict[str, Operation], dict[str, str]]:
     return specs, paths
 
 
-RouteDeps = Sequence[Any]  # FastAPI dependencies list
+RouteDeps = Sequence[Any]
 
 
 def _build_prereq_deps(

@@ -349,13 +349,12 @@ class ImportGraphPlugin(TargetPlugin):
         TargetResult
             Execution result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
         opts = self.resolve_options()
         config = ImportGraphStepConfig(snapshot=ctx.snapshot)
         gateway, repo, commit = ctx.gateway, config.repo, config.commit
 
         try:
-            # Use snapshot repo_root directly, fall back to db or cwd
             source_root = (
                 ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
             )
@@ -370,7 +369,6 @@ class ImportGraphPlugin(TargetPlugin):
                     row_counts={"graph.import_modules": 0, "graph.import_graph_edges": 0}
                 )
 
-            # Collect edges and analyze
             edges: list[imports_compute.ImportEdge] = []
             for rel_path, module_name in module_by_path.items():
                 edges.extend(
@@ -385,7 +383,6 @@ class ImportGraphPlugin(TargetPlugin):
                 "import_graph: %d edges, %d SCCs", len(edges), len(set(result.scc_map.values()))
             )
 
-            # Persist
             mc = _persist_import_modules(
                 gateway,
                 imports_compute.build_import_module_rows(repo, commit, result),

@@ -114,14 +114,12 @@ def test_run_profile_creates_artifacts(docs_profile_db: Path, tmp_path: Path) ->
 
     run_profile(db_path=docs_profile_db, output_dir=output_dir, analyze=False)
 
-    # Check profile_meta.json is created
     meta_file = output_dir / "profile_meta.json"
     expect_true(meta_file.exists())
     meta = json.loads(meta_file.read_text())
     expect_false(meta["analyze"])
     expect_in("docs.v_subsystem_profile", meta["views"])
 
-    # Check explain files are created
     profile_explain = output_dir / "docs_v_subsystem_profile.explain.txt"
     coverage_explain = output_dir / "docs_v_subsystem_coverage.explain.txt"
     expect_true(profile_explain.exists())
@@ -136,12 +134,10 @@ def test_run_profile_analyze_mode_creates_artifacts(docs_profile_db: Path, tmp_p
 
     run_profile(db_path=docs_profile_db, output_dir=output_dir, analyze=True)
 
-    # Check meta shows analyze mode
     meta_file = output_dir / "profile_meta.json"
     meta = json.loads(meta_file.read_text())
     expect_true(meta["analyze"])
 
-    # Check analyze files are created (not explain files)
     profile_analyze = output_dir / "docs_v_subsystem_profile.analyze.txt"
     coverage_analyze = output_dir / "docs_v_subsystem_coverage.analyze.txt"
     expect_true(profile_analyze.exists())
@@ -170,5 +166,4 @@ def test_main_with_analyze_flag(docs_profile_db: Path, tmp_path: Path) -> None:
 
     run_profile(db_path=docs_profile_db, output_dir=output_dir, analyze=True)
 
-    # Verify analyze files were created
     expect_true((output_dir / "docs_v_subsystem_profile.analyze.txt").exists())

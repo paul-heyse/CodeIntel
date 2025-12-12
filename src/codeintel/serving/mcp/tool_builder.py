@@ -202,7 +202,6 @@ def build_tool_from_operation(
 
     @_wrap
     def _tool(**kwargs: object) -> object:
-        # Check for auto-pipeline prerequisites
         if auto_pipeline_enabled and config is not None and has_gateway:
             run_prereqs(spec.id, config, cast("QueryBackend", backend))
 

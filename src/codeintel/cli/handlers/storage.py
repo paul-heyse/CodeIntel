@@ -102,9 +102,7 @@ def validate_macros_handler(
         or MacroRequirement.REQUIRE
     )
 
-    # Determine which gateway to use
     if db_path_str is not None:
-        # Explicit db_path provided - use dedicated gateway
         db_path = Path(db_path_str)
         try:
             with _readonly_gateway(db_path) as gateway:
@@ -121,7 +119,6 @@ def validate_macros_handler(
                 )
             )
     else:
-        # No explicit path - use CommandContext's gateway (runtime-resolved)
         return _validate_macros(ctx.gateway, macro_requirement)
 
 
@@ -198,7 +195,6 @@ def generate_macros_handler(
     CliResult[GenerateMacrosResult]
         Generated macro definitions.
     """
-    # Get tables from params
     tables = ctx.params.get_list("tables")
 
     if not tables:

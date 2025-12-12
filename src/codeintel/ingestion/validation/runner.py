@@ -86,16 +86,12 @@ class IngestContractValidator:
         for contract in contracts:
             tables.add(contract.table)
 
-        # Run all validations
         violations = validate_contracts(self._gateway, contracts, snapshot)
 
-        # Apply severity overrides
         violations = apply_severity_overrides(violations, self._options.severity_overrides)
 
-        # Cap findings if configured
         violations = cap_findings(violations, self._options.max_findings_per_rule)
 
-        # Separate warnings from errors
         warnings: list[str] = []
         errors: list[ContractViolation] = []
         for violation in violations:
@@ -175,7 +171,6 @@ def run_ingest_validations(
     validator = IngestContractValidator(gateway, options=opts)
     result = validator.validate(contracts, snapshot)
 
-    # Log summary
     if result.valid:
         log.info(
             "Validation passed: checked=%d tables=%d",
@@ -192,18 +187,12 @@ def run_ingest_validations(
         for violation in result.violations:
             log.warning("  - %s", violation.message)
 
-    # Hard fail if configured and errors present
     if opts.hard_fail and has_error_findings(result.violations):
         error_count = sum(1 for v in result.violations if v.severity == "error")
         message = f"Validation hard fail: {error_count} error-level violations"
         raise RuntimeError(message)
 
     return result
-
-
-# =============================================================================
-# Contract Builders (convenience functions)
-# =============================================================================
 
 
 def row_count_contract(
@@ -324,7 +313,6 @@ def foreign_key_contract(
     IngestContractSpec
         Foreign key contract.
     """
-    # Support both 'options' and 'spec' (deprecated) keyword args
     opts = kwargs.get("options") or kwargs.get("spec") or ForeignKeyContractOptions()
     return IngestContractSpec(
         table=table,

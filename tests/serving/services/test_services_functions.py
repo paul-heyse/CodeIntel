@@ -35,9 +35,6 @@ if TYPE_CHECKING:
     from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_apps import ServiceApp
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 T = TypeVar("T")
 MIN_RISK_THRESHOLD = 0.7
@@ -47,11 +44,6 @@ RADIUS_ONE = 1
 RADIUS_TWO = 2
 MAX_NODES_SMALL = 5
 MAX_NODES_LARGE = 50
-
-
-# =============================================================================
-# get_function_summary Tests (via HTTP)
-# =============================================================================
 
 
 def test_get_function_summary_with_goid_h128(
@@ -113,11 +105,6 @@ def test_get_function_summary_no_params_returns_error(
     assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
 
 
-# =============================================================================
-# list_high_risk_functions Tests (via HTTP)
-# =============================================================================
-
-
 def test_list_high_risk_functions_default(
     provisioned_service_app: ServiceApp,
 ) -> None:
@@ -159,11 +146,6 @@ def test_list_high_risk_functions_variations(
     data = response.json()
     expect_in("functions", data)
     expect_true(len(data["functions"]) <= MAX_NODES_SMALL)
-
-
-# =============================================================================
-# get_callgraph_neighbors Tests (via HTTP)
-# =============================================================================
 
 
 def test_get_callgraph_neighbors_direction_both(
@@ -252,11 +234,6 @@ def test_get_callgraph_neighbors_with_limit(
     expect_equal(response.status_code, status.HTTP_200_OK)
 
 
-# =============================================================================
-# get_callgraph_neighborhood Tests (via HTTP)
-# =============================================================================
-
-
 def test_get_callgraph_neighborhood_radius_one(
     provisioned_service_app: ServiceApp,
     analytics_samples: AnalyticsSamples,
@@ -326,11 +303,6 @@ def test_get_callgraph_neighborhood_with_max_nodes(
     expect_true(len(data.get("nodes", [])) <= MAX_NODES_SMALL)
 
 
-# =============================================================================
-# get_import_boundary Tests (via HTTP)
-# =============================================================================
-
-
 def test_get_import_boundary_with_subsystem_id(
     provisioned_service_app: ServiceApp,
     analytics_samples: AnalyticsSamples,
@@ -389,13 +361,7 @@ def test_get_import_boundary_nonexistent_subsystem(
     with provisioned_service_app.client() as client:
         response = client.get("/graph/import/boundary?subsystem_id=nonexistent_subsystem")
 
-    # Should return empty result or 404
     assert_ok_or_not_found(response)
-
-
-# =============================================================================
-# get_tests_for_function Tests (via HTTP)
-# =============================================================================
 
 
 def test_get_tests_for_function_with_goid_h128(
@@ -454,11 +420,6 @@ def test_get_tests_for_function_no_params_returns_error(
     assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
 
 
-# =============================================================================
-# get_file_summary Tests (via HTTP)
-# =============================================================================
-
-
 def test_get_file_summary_with_rel_path(
     provisioned_service_app: ServiceApp,
     analytics_samples: AnalyticsSamples,
@@ -493,7 +454,6 @@ def test_get_file_summary_nonexistent_file(
     with provisioned_service_app.client() as client:
         response = client.get("/file/summary?rel_path=nonexistent/path/file.py")
 
-    # Should return empty result or 404
     assert_ok_or_not_found(response)
 
 
@@ -510,13 +470,7 @@ def test_get_file_summary_missing_param(
     with provisioned_service_app.client() as client:
         response = client.get("/file/summary")
 
-    # Should return 422 validation error (missing required param)
     assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
-
-
-# =============================================================================
-# Direct LocalQueryService Tests
-# =============================================================================
 
 
 def test_local_query_service_get_function_summary(
@@ -644,11 +598,6 @@ def test_local_query_service_get_tests_for_function(
     expect_true(hasattr(tests, "tests"))
 
 
-# =============================================================================
-# Edge Case Tests
-# =============================================================================
-
-
 def test_high_risk_functions_with_all_params(
     provisioned_service_app: ServiceApp,
 ) -> None:
@@ -682,7 +631,6 @@ def test_callgraph_neighbors_missing_goid_h128(
     with provisioned_service_app.client() as client:
         response = client.get("/function/callgraph")
 
-    # Should return 422 validation error (missing required param)
     assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
@@ -699,7 +647,6 @@ def test_callgraph_neighborhood_missing_goid_h128(
     with provisioned_service_app.client() as client:
         response = client.get("/graph/call/neighborhood")
 
-    # Should return 422 validation error (missing required param)
     assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
@@ -716,13 +663,7 @@ def test_import_boundary_missing_subsystem_id(
     with provisioned_service_app.client() as client:
         response = client.get("/graph/import/boundary")
 
-    # Should return 422 validation error (missing required param)
     assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
-
-
-# =============================================================================
-# Base class coverage
-# =============================================================================
 
 
 class _RecordedFunctionQueries(BaseFunctionQueries):

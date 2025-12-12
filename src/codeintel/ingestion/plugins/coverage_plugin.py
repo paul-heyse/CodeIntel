@@ -126,25 +126,21 @@ class CoverageIngestPlugin(TargetPlugin):
         TargetResult
             Success result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Resolve coverage file
         coverage_path = resolve_coverage_file(ctx)
         if coverage_path is None:
             log.info("No coverage file found, skipping coverage ingestion")
             return TargetResult.succeeded(row_counts={})
 
-        # Get module paths and convert to ModuleRecord
         paths = get_module_paths(ctx)
         modules = paths_to_modules(paths, ctx.repo_root)
 
-        # Create adapters using build protocols
         storage = DuckDBStorageAdapter(ctx.gateway)
         tool = BuildToolAdapter(
             coverage_collector=ctx.resources.coverage_collector,
         )
 
-        # Execute step
         step = CoverageIngestStep(storage=storage, tools=tool)
         result = await step.execute_async(
             modules,

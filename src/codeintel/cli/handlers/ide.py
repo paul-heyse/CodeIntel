@@ -32,11 +32,6 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Result Types
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class IdeHintsResult:
     """Result from IDE hints lookup.
@@ -68,11 +63,6 @@ class IdeHintsResult:
             "hints": self.hints,
             "meta": self.meta,
         }
-
-
-# =============================================================================
-# Handlers
-# =============================================================================
 
 
 def ide_hints_handler(ctx: CommandContext) -> CliResult[IdeHintsResult]:
@@ -107,8 +97,8 @@ def ide_hints_handler(ctx: CommandContext) -> CliResult[IdeHintsResult]:
     Examples
     --------
     >>> with CommandContextBuilder().build() as ctx:
-    ...     result = ide_hints_handler(ctx)  # doctest: +SKIP
-    ...     result.success  # doctest: +SKIP
+    ...     result = ide_hints_handler(ctx)
+    ...     result.success
     True
     """
     rel_path = ctx.params.require_str("rel_path").strip()
@@ -133,7 +123,6 @@ def ide_hints_handler(ctx: CommandContext) -> CliResult[IdeHintsResult]:
         else SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
     )
 
-    # Build graph runtime for this operation
     graph_runtime = build_graph_runtime(
         gateway=ctx.gateway,
         options=GraphRuntimeOptions(snapshot=snapshot),
@@ -150,14 +139,12 @@ def ide_hints_handler(ctx: CommandContext) -> CliResult[IdeHintsResult]:
         )
     )
 
-    # Build backend resource using context's lazy resources
     resource = build_backend_resource(
         serving_cfg,
         gateway=ctx.gateway,
         options=BackendResourceOptions(graph_runtime=graph_runtime),
     )
 
-    # Get hints from backend
     response = resource.backend.get_file_hints(rel_path=rel_path)
 
     if not response.found or not response.hints:

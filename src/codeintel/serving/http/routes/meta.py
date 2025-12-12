@@ -182,7 +182,6 @@ def build_meta_router() -> APIRouter:
             404 if the operation is not found.
             503 if gateway is not available (requires local_db mode).
         """
-        # Validate operation exists
         operation = get_operation(op_id)
         if operation is None:
             raise HTTPException(
@@ -190,11 +189,9 @@ def build_meta_router() -> APIRouter:
                 detail=f"Unknown operation: {op_id}",
             )
 
-        # Use config defaults if not provided
         effective_repo = repo or cfg.repo
         effective_commit = commit or cfg.commit
 
-        # Get gateway from backend
         gateway: StorageGateway | None = getattr(backend, "gateway", None)
         if gateway is None:
             raise HTTPException(
@@ -202,7 +199,6 @@ def build_meta_router() -> APIRouter:
                 detail="Gateway not available (requires local_db mode)",
             )
 
-        # Build debug info
         debug_info = build_prereq_debug_info(
             gateway,
             op_id,
@@ -210,7 +206,6 @@ def build_meta_router() -> APIRouter:
             commit=effective_commit,
         )
 
-        # Convert to response model
         return OperationPrereqDebugResponse(
             op_id=debug_info.op_id,
             repo=debug_info.repo,

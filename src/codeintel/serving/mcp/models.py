@@ -58,14 +58,14 @@ Usage Pattern
 ~~~~~~~~~~~~~
 ::
 
-    # At Transport layer (HTTP route or MCP tool):
-    domain_result = service.get_function_summary(...)  # Returns domain model
-    response = FunctionSummaryResponse.from_domain(domain_result)  # Convert
-    return response  # Pydantic model serializes to JSON
 
-    # In HttpQueryService (reverse direction):
-    http_response = self._http_call(...)  # Returns Pydantic model
-    return http_response.to_domain()  # Convert back to domain model
+    domain_result = service.get_function_summary(...)
+    response = FunctionSummaryResponse.from_domain(domain_result)
+    return response
+
+
+    http_response = self._http_call(...)
+    return http_response.to_domain()
 
 See Also
 --------
@@ -1865,11 +1865,6 @@ class DataflowGraphResponse(BaseModel):
 
     nodes: list[DataflowNodePayload]
     edges: list[DataflowEdgePayload]
-
-
-# -----------------------------------------------------------------------------
-# Auto-Pipeline Debug Models
-# -----------------------------------------------------------------------------
 
 
 class OperationPrereqDatasetStatus(BaseModel):

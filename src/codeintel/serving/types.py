@@ -8,12 +8,12 @@ Import Pattern
 --------------
 Instead of importing from specific modules that might create cycles:
 
-    # Avoid this (can create cycles)
+
     from codeintel.serving.mcp.backend import QueryBackend
 
 Use this module:
 
-    # Prefer this
+
     from codeintel.serving.types import QueryBackendProtocol
 
 Protocol Hierarchy
@@ -64,14 +64,9 @@ if TYPE_CHECKING:
     )
     from codeintel.serving.services.query_service import QueryService
 
-# Type aliases for common patterns
+
 RowDict = dict[str, object]
 JsonPayload = dict[str, object] | list[object]
-
-
-# =============================================================================
-# Pydantic-related Protocols
-# =============================================================================
 
 
 class HasModelDump(Protocol):
@@ -90,11 +85,6 @@ class HasModelValidate(Protocol):
     def model_validate(cls, obj: object) -> HasModelValidate:
         """Validate and construct from arbitrary object."""
         ...
-
-
-# =============================================================================
-# Resource Management Protocols
-# =============================================================================
 
 
 @runtime_checkable
@@ -255,23 +245,10 @@ class SubsystemRepositoryProtocol(RepositoryProtocol, Protocol):
         ...
 
 
-# Type for service factory callables
 ServiceFactory = Callable[..., QueryServiceProtocol]
 
-# Type for backend factory callables
+
 BackendFactory = Callable[..., QueryBackendProtocol]
-
-
-# =============================================================================
-# Unified Query Protocols (single source of truth)
-# =============================================================================
-# These protocols unify the query interfaces across the serving layer.
-# - Service layer: LocalQueryService, HttpQueryService use these
-# - Backend layer: DuckDBQueryService implementations conform to these
-#
-# Backward-compatible aliases are maintained in:
-# - backend/query_api.py (FunctionQueriesApi, etc.)
-# - services/query_service.py (FunctionQueryApi, etc.)
 
 
 class FunctionQueryProtocol(Protocol):
@@ -489,11 +466,6 @@ class DatasetQueryProtocol(Protocol):
     ) -> dm.DatasetSchema:
         """Return schema and samples for a dataset."""
         ...
-
-
-# =============================================================================
-# Backend Protocols (moved from mcp/backend.py for centralization)
-# =============================================================================
 
 
 class BaseBackendProtocol(Protocol):

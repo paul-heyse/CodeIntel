@@ -225,7 +225,6 @@ def _resolve_plugin_options_map(
         if cfg_opts is None and rt_opts is None:
             resolved[name] = plugin.metadata.options_default
         elif rt_opts is not None:
-            # Runtime options override config
             resolved[name] = rt_opts
         else:
             resolved[name] = cfg_opts
@@ -350,7 +349,7 @@ def _build_plugin_settings(
             options_hash=options_hash,
         )
     )
-    # Get retry policy directly (now uses core RetryPolicy)
+
     retry_policy = policy.retries.get(plugin.metadata.name, RetryPolicy())
 
     return PluginExecutionSettings(

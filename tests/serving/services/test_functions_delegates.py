@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_contexts import ProvisionedServiceContext
 
-# Test constants
+
 LOW_RISK: Final = 0.3
 RADIUS_ONE: Final = 1
 GOID_ONE: Final = 1
@@ -62,11 +62,6 @@ def _build_local_service(
         Service instance wired to the provisioned gateway snapshot.
     """
     return service_ctx.service
-
-
-# =============================================================================
-# Tests for _FunctionQueryDelegates through LocalQueryService
-# =============================================================================
 
 
 def test_get_function_summary_returns_domain_result(
@@ -336,18 +331,12 @@ def test_get_file_summary_returns_domain_result(
     )
 
 
-# =============================================================================
-# Additional edge case tests
-# =============================================================================
-
-
 def test_get_function_summary_not_found(
     provisioned_service_ctx: ProvisionedServiceContext,
 ) -> None:
     """Verify get_function_summary handles not found case."""
     service = _build_local_service(provisioned_service_ctx)
 
-    # Use a nonexistent goid_h128
     nonexistent_goid = 99999999
     summary = service.get_function_summary(goid_h128=nonexistent_goid)
 
@@ -407,11 +396,6 @@ def test_get_import_boundary_nonexistent_subsystem(
         condition=isinstance(boundary, dm.ImportBoundary),
         message="Should return ImportBoundary domain object even for nonexistent",
     )
-
-
-# =============================================================================
-# Additional delegate normalization coverage
-# =============================================================================
 
 
 class _Requester:

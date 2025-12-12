@@ -35,11 +35,6 @@ def _expect_equal(actual: object, expected: object, label: str) -> None:
         pytest.fail(f"{label}: expected {expected!r}, got {actual!r}")
 
 
-# ------------------------------------------------------------------
-# PluginTableRelation tests
-# ------------------------------------------------------------------
-
-
 def test_plugin_table_relation_creation() -> None:
     """Create PluginTableRelation with all fields."""
     rel = PluginTableRelation(
@@ -97,11 +92,6 @@ def test_plugin_table_relation_immutability() -> None:
         setattr(frozen_rel, attr, "modified")
 
 
-# ------------------------------------------------------------------
-# Plugin lookup function tests
-# ------------------------------------------------------------------
-
-
 def test_get_producer_plugins_returns_list() -> None:
     """Verify get_producer_plugins returns a list."""
     result = get_producer_plugins("analytics.function_metrics")
@@ -132,11 +122,6 @@ def test_get_consumer_plugins_unknown_table() -> None:
     _expect_equal(len(result), 0, "should be empty for unknown table")
 
 
-# ------------------------------------------------------------------
-# extract_constraints_from_plugins tests
-# ------------------------------------------------------------------
-
-
 def test_extract_constraints_from_plugins_returns_constraintset() -> None:
     """Verify extract_constraints_from_plugins returns ConstraintSet."""
     result = extract_constraints_from_plugins("analytics.function_metrics")
@@ -159,11 +144,6 @@ def test_extract_constraints_from_plugins_constraint_kinds() -> None:
             condition=c.kind in valid_kinds,
             message=f"unexpected constraint kind: {c.kind}",
         )
-
-
-# ------------------------------------------------------------------
-# merge_constraint_sets tests
-# ------------------------------------------------------------------
 
 
 def test_merge_constraint_sets_single() -> None:
@@ -216,7 +196,7 @@ def test_merge_constraint_sets_different_keys_raises() -> None:
         merge_constraint_sets(cs1, cs2)
         pytest.fail("Should have raised ValueError")
     except ValueError:
-        pass  # Expected
+        pass
 
 
 def test_merge_constraint_sets_empty_raises() -> None:
@@ -225,4 +205,4 @@ def test_merge_constraint_sets_empty_raises() -> None:
         merge_constraint_sets()
         pytest.fail("Should have raised ValueError")
     except ValueError:
-        pass  # Expected
+        pass

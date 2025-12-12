@@ -53,7 +53,7 @@ def mock_config() -> CliConfig:
     """
     config = MagicMock(spec=CliConfig)
     config.log_level = "WARNING"
-    # Mock the telemetry attribute accessed by bootstrap_cli
+
     config.telemetry = MagicMock()
     config.telemetry.enabled = False
     return cast("CliConfig", config)
@@ -89,13 +89,11 @@ class TestBootstrapCli:
         """Second call returns cached config without re-initialization."""
         first = bootstrap_cli(config=mock_config)
 
-        # Create different config for second call
         other_config = MagicMock(log_level="DEBUG")
         other_config.telemetry = MagicMock()
         other_config.telemetry.enabled = False
         second = bootstrap_cli(config=other_config)
 
-        # Should return first config, not second
         expect_true(second is first)
         expect_true(second is mock_config)
 
@@ -132,7 +130,6 @@ class TestResetBootstrap:
         other_config.telemetry.enabled = False
         second = bootstrap_cli(config=other_config)
 
-        # After reset, should use new config
         expect_true(second is other_config)
         expect_false(second is first)
 

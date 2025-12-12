@@ -35,9 +35,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEMO_REPO = "demo/repo"
 DEMO_COMMIT = "abc123def456"
@@ -52,11 +49,6 @@ FAN_IN_10 = 10
 FAN_OUT_15 = 15
 AVG_RISK_0_35 = 0.35
 MAX_RISK_0_85 = 0.85
-
-
-# =============================================================================
-# Fixtures
-# =============================================================================
 
 
 @pytest.fixture
@@ -92,11 +84,6 @@ def snapshot(ctx: TestContext) -> SnapshotRef:
         Snapshot associated with the shared test context.
     """
     return ctx.snapshot
-
-
-# =============================================================================
-# SubsystemsAdapter Tests
-# =============================================================================
 
 
 def test_subsystems_adapter_table_name(
@@ -155,7 +142,6 @@ def test_subsystems_adapter_persist_single(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.subsystems WHERE repo = ? AND commit = ?",
@@ -268,7 +254,6 @@ def test_subsystems_adapter_persist_verifies_data(
     )
     adapter.persist([row])
 
-    # Query and verify
     result = ctx.gateway.con.execute(
         """
         SELECT subsystem_id, name, risk_level, function_count
@@ -283,11 +268,6 @@ def test_subsystems_adapter_persist_verifies_data(
     expect_equal(row[1], "Billing")
     expect_equal(row[2], "moderate")
     expect_equal(row[3], FUNCTION_COUNT_25)
-
-
-# =============================================================================
-# SubsystemModulesAdapter Tests
-# =============================================================================
 
 
 def test_subsystem_modules_adapter_table_name(
@@ -334,7 +314,6 @@ def test_subsystem_modules_adapter_persist_single(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.subsystem_modules WHERE repo = ? AND commit = ?",
@@ -399,7 +378,6 @@ def test_subsystem_modules_adapter_persist_verifies_data(
     )
     adapter.persist([row])
 
-    # Query and verify
     result = ctx.gateway.con.execute(
         """
         SELECT subsystem_id, module, role

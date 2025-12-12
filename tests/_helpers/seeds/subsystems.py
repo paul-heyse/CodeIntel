@@ -31,18 +31,8 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Subsystem Data Constants
-# =============================================================================
-
-# Subsystem identifiers
 SUBSYSTEM_CORE = "core"
 SUBSYSTEM_UTIL = "util"
-
-
-# =============================================================================
-# Subsystem Pack Implementation
-# =============================================================================
 
 
 @dataclass
@@ -98,7 +88,6 @@ class SubsystemPack:
             Test context with gateway.
         """
         rows = [
-            # Core subsystem contains mod_a, mod_b, mod_c
             SubsystemModuleRow(
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -120,7 +109,6 @@ class SubsystemPack:
                 module=MOD_C_FQN,
                 role="internal",
             ),
-            # Util subsystem contains only util
             SubsystemModuleRow(
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -189,7 +177,6 @@ class SubsystemPack:
         insert_rows(ctx.gateway, rows)
 
 
-# Default instance for common usage
 SUBSYSTEM_PACK = SubsystemPack()
 
 

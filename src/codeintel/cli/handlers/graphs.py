@@ -305,7 +305,6 @@ def graph_plugins_plan_handler(
     selection_policy_str = ctx.params.get_str("selection_policy", "lenient")
     dependency_policy_str = ctx.params.get_str("dependency_policy", "skip")
 
-    # Parse policies
     try:
         selection_policy = SelectionPolicy(selection_policy_str)
     except ValueError:
@@ -330,15 +329,12 @@ def graph_plugins_plan_handler(
 
     requested_plugins = _resolve_requested_plan_plugins(names=names, enable=enable)
 
-    # Call with the correct API signature
     plan = plan_graph_plugins(
         plugin_names=requested_plugins,
         disabled=list(disable) if disable else None,
         plan_options=options,
     )
 
-    # Convert plan to result format - GraphPluginPlan has `plugins` not `stages`
-    # Simplified: treat all plugins as one stage
     plugin_names_list = [p.metadata.name for p in plan.plugins]
     stages = [
         GraphPlanStage(
@@ -357,10 +353,6 @@ def graph_plugins_plan_handler(
         )
     )
 
-
-# -----------------------------------------------------------------------------
-# Operation Registrations
-# -----------------------------------------------------------------------------
 
 register_operation(
     OperationSpec(

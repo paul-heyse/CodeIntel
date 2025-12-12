@@ -62,7 +62,7 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
 def _load(name: str) -> Callable[..., Any]:
     try:
         module_path, attr_name = _LAZY_ATTRS[name]
-    except KeyError as exc:  # pragma: no cover - defensive guard
+    except KeyError as exc:
         msg = f"module {__name__!r} has no attribute {name!r}"
         raise AttributeError(msg) from exc
     return getattr(import_module(module_path), attr_name)

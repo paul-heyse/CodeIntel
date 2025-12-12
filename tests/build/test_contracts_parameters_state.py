@@ -146,7 +146,7 @@ def test_target_parameters_access_and_merge() -> None:
     merged = params.merge(other)
     expect_equal(merged.get("count", int), 10)
     expect_true(merged.get("flag", bool))
-    expect_equal(params.get("count", int), 5)  # original unchanged
+    expect_equal(params.get("count", int), 5)
 
     with pytest.raises(ParameterError):
         params.get("missing", int)
@@ -168,7 +168,6 @@ def test_state_validator_missing_and_computed() -> None:
     target = _make_target("single")
     snapshot = _snapshot()
 
-    # Compute manifest with matching input hash
     current_hash = compute_input_hash(target, snapshot, _make_gateway({}))
     manifest = sample_manifest(
         target="single",
@@ -185,7 +184,6 @@ def test_state_validator_missing_and_computed() -> None:
     expect_equal(state.blocking_deps, ())
     expect_is_none(state.staleness_reason)
 
-    # Missing manifest path
     missing_validator = StateValidator(graph, _make_gateway({}), snapshot)
     missing_state = missing_validator.validate().get("single")
     expect_equal(missing_state.status, "missing")

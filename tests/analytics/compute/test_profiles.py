@@ -32,10 +32,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# =============================================================================
-# Constants
-# =============================================================================
-
 EXPECTED_FUNCTIONS_0 = 0
 EXPECTED_FUNCTIONS_1 = 1
 EXPECTED_FUNCTIONS_3 = 3
@@ -53,7 +49,7 @@ EXPECTED_PARTIAL_COUNT_1 = 1
 EXPECTED_PARTIAL_COUNT_3 = 3
 EXPECTED_UNTYPED_COUNT_1 = 1
 EXPECTED_COMPLEXITY_3 = 3.0
-EXPECTED_AVG_COMPLEXITY = 4.0  # (2 + 4 + 6) / 3
+EXPECTED_AVG_COMPLEXITY = 4.0
 EXPECTED_AVG_LOC_25 = 25.0
 EXPECTED_QUALITY_SCORE_0_85 = 0.85
 EXPECTED_QUALITY_HIGH_COMPLEX = 0.7
@@ -63,10 +59,6 @@ WEIGHT_SUM = 1.0
 TYPED_RATIO_0_5 = 0.5
 PARTIAL_RATIO_0_3 = 0.3
 UNTYPED_RATIO_0_2 = 0.2
-
-# =============================================================================
-# Test Data Factories
-# =============================================================================
 
 
 def _make_typed_function(
@@ -193,11 +185,6 @@ def _make_realistic_codebase() -> list[FunctionMetricInput]:
     return metrics
 
 
-# =============================================================================
-# ProfileAggregates Tests
-# =============================================================================
-
-
 def test_aggregates_default_values() -> None:
     """Verify default values for ProfileAggregates."""
     agg = ProfileAggregates()
@@ -223,11 +210,6 @@ def test_aggregates_custom_values() -> None:
     expect_equal(agg.typed_count, EXPECTED_TYPED_COUNT_7)
 
 
-# =============================================================================
-# FunctionMetricInput Tests
-# =============================================================================
-
-
 def test_metric_create() -> None:
     """Create function metric input."""
     metric = FunctionMetricInput(
@@ -241,11 +223,6 @@ def test_metric_create() -> None:
     expected_ratio = 0.75
     expect_equal(metric.loc, expected_loc)
     expect_equal(metric.typedness_ratio, expected_ratio)
-
-
-# =============================================================================
-# aggregate_function_metrics Tests
-# =============================================================================
 
 
 def test_aggregate_empty_metrics() -> None:
@@ -327,11 +304,6 @@ def test_aggregate_realistic_codebase() -> None:
     expect_equal(result.untyped_count, EXPECTED_UNTYPED_COUNT_1)
 
 
-# =============================================================================
-# compute_profile_stats Tests
-# =============================================================================
-
-
 def test_stats_empty_aggregates() -> None:
     """Handle empty aggregates without division by zero."""
     agg = ProfileAggregates()
@@ -402,11 +374,6 @@ def test_stats_all_present() -> None:
     expect_equal(set(stats.keys()), expected_keys)
 
 
-# =============================================================================
-# ProfileFeatures Tests
-# =============================================================================
-
-
 def test_features_create() -> None:
     """Create profile features."""
     features = ProfileFeatures(
@@ -430,18 +397,13 @@ def test_features_is_frozen() -> None:
     assert_frozen(features, "quality_score", 0.5)
 
 
-# =============================================================================
-# extract_profile_features Tests
-# =============================================================================
-
-
 def test_extract_small_simple_typed() -> None:
     """Extract features for small, simple, fully typed module."""
     agg = ProfileAggregates(
         total_functions=5,
-        total_loc=50,  # < SMALL_MODULE_THRESHOLD
-        avg_complexity=2.0,  # < LOW_COMPLEXITY_THRESHOLD
-        avg_typedness=0.95,  # >= HIGH_TYPED_RATIO
+        total_loc=50,
+        avg_complexity=2.0,
+        avg_typedness=0.95,
         typed_count=5,
     )
     features = extract_profile_features(agg)
@@ -454,9 +416,9 @@ def test_extract_large_complex_untyped() -> None:
     """Extract features for large, complex, untyped module."""
     agg = ProfileAggregates(
         total_functions=50,
-        total_loc=2000,  # >= LARGE_MODULE_THRESHOLD
-        avg_complexity=12.0,  # >= HIGH_COMPLEXITY_THRESHOLD
-        avg_typedness=0.1,  # < LOW_TYPED_RATIO
+        total_loc=2000,
+        avg_complexity=12.0,
+        avg_typedness=0.1,
         untyped_count=45,
     )
     features = extract_profile_features(agg)
@@ -469,9 +431,9 @@ def test_extract_medium_moderate_partial() -> None:
     """Extract features for medium-sized, moderate, partially typed module."""
     agg = ProfileAggregates(
         total_functions=20,
-        total_loc=500,  # Between thresholds
-        avg_complexity=7.0,  # Between thresholds
-        avg_typedness=0.5,  # Between thresholds
+        total_loc=500,
+        avg_complexity=7.0,
+        avg_typedness=0.5,
         partial_typed_count=10,
     )
     features = extract_profile_features(agg)
@@ -482,7 +444,6 @@ def test_extract_medium_moderate_partial() -> None:
 
 def test_quality_score_bounds() -> None:
     """Quality score is bounded between 0.0 and 1.0."""
-    # High quality case
     high_agg = ProfileAggregates(
         total_functions=10,
         total_loc=100,
@@ -493,11 +454,10 @@ def test_quality_score_bounds() -> None:
     high_features = extract_profile_features(high_agg)
     expect_true(0.0 <= high_features.quality_score <= 1.0)
 
-    # Low quality case
     low_agg = ProfileAggregates(
         total_functions=0,
         total_loc=0,
-        avg_complexity=25.0,  # Very high
+        avg_complexity=25.0,
         avg_typedness=0.0,
     )
     low_features = extract_profile_features(low_agg)
@@ -506,7 +466,6 @@ def test_quality_score_bounds() -> None:
 
 def test_quality_score_weights() -> None:
     """Quality score uses correct weights."""
-    # Verify weights sum to 1.0
     total_weight = TYPEDNESS_WEIGHT + COMPLEXITY_WEIGHT + SIZE_WEIGHT
     expect_true(abs(total_weight - WEIGHT_SUM) < RATIO_TOLERANCE)
 
@@ -520,7 +479,6 @@ def test_threshold_constants() -> None:
 
 def test_size_boundary_small_medium() -> None:
     """Test size classification at small/medium boundary."""
-    # Just under threshold
     small = ProfileAggregates(
         total_functions=5,
         total_loc=SMALL_MODULE_THRESHOLD - 1,
@@ -528,7 +486,6 @@ def test_size_boundary_small_medium() -> None:
     small_features = extract_profile_features(small)
     expect_equal(small_features.size_category, "small")
 
-    # At threshold
     medium = ProfileAggregates(
         total_functions=5,
         total_loc=SMALL_MODULE_THRESHOLD,
@@ -539,7 +496,6 @@ def test_size_boundary_small_medium() -> None:
 
 def test_size_boundary_medium_large() -> None:
     """Test size classification at medium/large boundary."""
-    # Just under threshold
     medium = ProfileAggregates(
         total_functions=20,
         total_loc=LARGE_MODULE_THRESHOLD - 1,
@@ -547,7 +503,6 @@ def test_size_boundary_medium_large() -> None:
     medium_features = extract_profile_features(medium)
     expect_equal(medium_features.size_category, "medium")
 
-    # At threshold
     large = ProfileAggregates(
         total_functions=20,
         total_loc=LARGE_MODULE_THRESHOLD,
@@ -606,21 +561,14 @@ def test_typedness_boundary() -> None:
 
 def test_complexity_normalization() -> None:
     """Quality score uses complexity normalization correctly."""
-    # Very high complexity should give low complexity score
     high_complex = ProfileAggregates(
         total_functions=5,
-        avg_complexity=COMPLEXITY_NORMALIZATION * 2,  # Double normalization factor
+        avg_complexity=COMPLEXITY_NORMALIZATION * 2,
         avg_typedness=1.0,
     )
     features = extract_profile_features(high_complex)
-    # Complexity score would be max(0, 1 - 2) = 0
-    # So quality = 0.4 * 1.0 + 0.3 * 0 + 0.3 * 1.0 = 0.7
+
     expect_true(abs(features.quality_score - EXPECTED_QUALITY_HIGH_COMPLEX) < QUALITY_TOLERANCE)
-
-
-# =============================================================================
-# Integration Tests
-# =============================================================================
 
 
 def test_aggregate_then_extract() -> None:
@@ -633,10 +581,8 @@ def test_aggregate_then_extract() -> None:
     aggregates = aggregate_function_metrics(metrics)
     features = extract_profile_features(aggregates)
 
-    # Should be small (90 loc)
     expect_equal(features.size_category, "small")
 
-    # Should be simple (avg ~3)
     expect_equal(features.complexity_category, "simple")
 
 
@@ -647,10 +593,8 @@ def test_realistic_codebase_features() -> None:
     stats = compute_profile_stats(aggregates)
     features = extract_profile_features(aggregates)
 
-    # Verify stats match features
     expect_equal(stats["avg_complexity"], aggregates.avg_complexity)
 
-    # Quality should be reasonable for mixed codebase
     min_quality = 0.3
     max_quality = 0.9
     expect_true(min_quality < features.quality_score < max_quality)

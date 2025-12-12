@@ -188,7 +188,6 @@ class CoveragePlugin(ToolPlugin):
                 parsed=CoverageReport.empty(),
             )
 
-        # Parse the JSON output file
         parsed = CoverageReport.empty()
 
         def _is_file() -> bool:

@@ -27,14 +27,9 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from contextvars import Token
 
-# =============================================================================
-# Basic Context Operations
-# =============================================================================
-
 
 def test_request_context_default_is_none() -> None:
     """Verify get_current_request_context returns None when not set."""
-    # Reset any existing context first
     token = set_current_request_context(RequestContext(correlation_id="temp", transport="http"))
     reset_current_request_context(token)
 
@@ -73,28 +68,22 @@ def test_set_and_get_request_context() -> None:
 
 def test_reset_request_context_restores_previous() -> None:
     """Verify reset_current_request_context restores the previous value."""
-    # Set initial context
     ctx1 = RequestContext(correlation_id="ctx-1", transport="http")
     token1 = set_current_request_context(ctx1)
 
-    # Set nested context
     ctx2 = RequestContext(correlation_id="ctx-2", transport="mcp")
     token2 = set_current_request_context(ctx2)
 
-    # Verify nested context is active
     current = get_current_request_context()
     current = expect_is_not_none(current)
     expect_equal(current.correlation_id, "ctx-2")
 
-    # Reset nested context
     reset_current_request_context(token2)
 
-    # Verify original context is restored
     current = get_current_request_context()
     current = expect_is_not_none(current)
     expect_equal(current.correlation_id, "ctx-1")
 
-    # Clean up
     reset_current_request_context(token1)
 
 
@@ -117,7 +106,6 @@ def test_request_context_with_optional_fields() -> None:
 
 def test_request_context_with_snapshot_and_graph_scope() -> None:
     """Verify RequestContext can hold snapshot and graph_scope objects."""
-    # Use arbitrary objects to test Any fields
     mock_snapshot = {"repo": "test", "commit": "abc"}
     mock_graph_scope = {"subsystem_id": "core"}
 
@@ -132,11 +120,6 @@ def test_request_context_with_snapshot_and_graph_scope() -> None:
     expect_equal(ctx.graph_scope, mock_graph_scope)
 
 
-# =============================================================================
-# Thread Isolation Tests
-# =============================================================================
-
-
 def test_context_isolation_across_threads() -> None:
     """Verify context is isolated between threads."""
     results: dict[str, str | None] = {}
@@ -145,7 +128,6 @@ def test_context_isolation_across_threads() -> None:
         ctx = RequestContext(correlation_id=correlation_id, transport="http")
         token = set_current_request_context(ctx)
         try:
-            # Small sleep to allow interleaving
             time.sleep(0.01)
             current = get_current_request_context()
             results[thread_id] = current.correlation_id if current else None
@@ -161,7 +143,6 @@ def test_context_isolation_across_threads() -> None:
         for f in futures:
             f.result()
 
-    # Each thread should have seen its own context
     expect_equal(results["thread-1"], "corr-1")
     expect_equal(results["thread-2"], "corr-2")
     expect_equal(results["thread-3"], "corr-3")
@@ -183,23 +164,17 @@ def test_context_not_visible_in_other_thread() -> None:
         thread.start()
         thread.join()
 
-        # Other thread should not see main thread's context
         expect_equal(len(other_thread_result), 1)
         expect_true(other_thread_result[0] is None)
     finally:
         reset_current_request_context(token)
 
 
-# =============================================================================
-# Async Context Tests
-# =============================================================================
-
-
 def test_context_propagation_in_async_task() -> None:
     """Verify context propagates to async tasks correctly."""
 
     async def async_worker() -> RequestContext | None:
-        await asyncio.sleep(0)  # Yield to event loop
+        await asyncio.sleep(0)
         return get_current_request_context()
 
     async def main() -> RequestContext | None:
@@ -223,7 +198,7 @@ def test_context_isolation_across_async_tasks() -> None:
         ctx = RequestContext(correlation_id=correlation_id, transport="http")
         token = set_current_request_context(ctx)
         try:
-            await asyncio.sleep(0.01)  # Allow interleaving
+            await asyncio.sleep(0.01)
             current = get_current_request_context()
             results[task_id] = current.correlation_id if current else None
         finally:
@@ -238,32 +213,23 @@ def test_context_isolation_across_async_tasks() -> None:
 
     asyncio.run(main())
 
-    # Each task should have seen its own context
     expect_equal(results["task-1"], "corr-1")
     expect_equal(results["task-2"], "corr-2")
     expect_equal(results["task-3"], "corr-3")
-
-
-# =============================================================================
-# Nested Context Tests
-# =============================================================================
 
 
 def test_nested_context_stacking() -> None:
     """Verify nested contexts can be stacked and unwound correctly."""
     tokens: list[Token[RequestContext | None]] = []
 
-    # Stack 3 contexts
     for i in range(3):
         ctx = RequestContext(correlation_id=f"level-{i}", transport="http")
         tokens.append(set_current_request_context(ctx))
 
-    # Verify topmost is active
     current = get_current_request_context()
     current = expect_is_not_none(current)
     expect_equal(current.correlation_id, "level-2")
 
-    # Unwind and verify each level
     reset_current_request_context(tokens[2])
     current = get_current_request_context()
     current = expect_is_not_none(current)
@@ -307,7 +273,6 @@ def test_context_manager_pattern() -> None:
             if self.token is not None:
                 reset_current_request_context(self.token)
 
-    # Verify clean state
     expect_true(get_current_request_context() is None)
 
     with ContextScope("scoped-ctx", "http") as ctx:
@@ -316,13 +281,7 @@ def test_context_manager_pattern() -> None:
         expect_true(current is ctx)
         expect_equal(ctx.correlation_id, "scoped-ctx")
 
-    # Verify cleanup
     expect_true(get_current_request_context() is None)
-
-
-# =============================================================================
-# Transport Type Tests
-# =============================================================================
 
 
 def test_all_transport_types() -> None:

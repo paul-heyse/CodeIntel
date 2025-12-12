@@ -88,19 +88,17 @@ class DataModelUsagePlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         cfg = DataModelUsageStepConfig(
             snapshot=ctx.snapshot,
         )
 
-        # Get catalog
         catalog_provider = ctx.resources.catalog
         if catalog_provider is None:
             log.info("data_model_usage: No catalog available, skipping")
             return TargetResult.succeeded(row_counts={"analytics.data_model_usage": 0})
 
-        # Load module map from database
         module_rows = ctx.gateway.con.execute(
             "SELECT path, module FROM core.modules WHERE repo = ? AND commit = ?",
             [ctx.repo, ctx.commit],
@@ -112,14 +110,12 @@ class DataModelUsagePlugin(TargetPlugin):
 
         module_map = {row[0]: row[1] for row in module_rows}
 
-        # Get catalog and check for functions
         catalog = catalog_provider.catalog()
         function_spans = catalog.function_spans
         if not function_spans:
             log.info("data_model_usage: No functions in catalog, skipping")
             return TargetResult.succeeded(row_counts={"analytics.data_model_usage": 0})
 
-        # Load function ASTs
         request = FunctionAstLoadRequest(
             repo=ctx.repo,
             commit=ctx.commit,

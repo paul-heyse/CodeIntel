@@ -89,7 +89,7 @@ class BuildToolAdapter:
                 DiagnosticEntry(
                     path=d.path,
                     line=d.line,
-                    column=d.character,  # TypeDiagnostic uses character
+                    column=d.character,
                     severity=d.severity,
                     code=d.code or "pyright",
                     message=d.message,
@@ -119,7 +119,6 @@ class BuildToolAdapter:
         DiagnosticResult
             Type checking results with diagnostics.
         """
-        # Pyrefly uses the same interface as pyright
         return await self.run_pyright(repo_root)
 
     async def run_ruff(self, repo_root: Path) -> DiagnosticResult:
@@ -135,9 +134,8 @@ class BuildToolAdapter:
         DiagnosticResult
             Linting results - always returns SKIPPED.
         """
-        # Mark self and repo_root as used for interface compatibility
         _ = self, repo_root
-        # Ruff would need its own protocol - for now return skipped
+
         return DiagnosticResult(
             status=ToolStatus.SKIPPED,
             error="Ruff linting not available via build adapter",
@@ -166,7 +164,6 @@ class BuildToolAdapter:
         CoverageResult
             Coverage data for all files.
         """
-        # Mark unused parameters for interface compatibility
         _ = repo_root, output_path
         if self._coverage_collector is None:
             return CoverageResult(
@@ -179,7 +176,6 @@ class BuildToolAdapter:
                 error="Coverage file path not provided",
             )
         try:
-            # CoverageCollector.collect returns Mapping[str, CoverageData]
             result = await self._coverage_collector.collect(coverage_file)
             files = [
                 CoverageFileData(
@@ -228,7 +224,6 @@ class BuildToolAdapter:
         ScipResult
             SCIP indexing results.
         """
-        # Mark unused parameters for interface compatibility
         _ = output_json, target_dir, rel_paths
         if self._scip_indexer is None:
             return ScipResult(
@@ -236,20 +231,18 @@ class BuildToolAdapter:
                 error="SCIP indexer not available",
             )
         try:
-            # ScipIndexer.index uses output_path for the single output file
             result = await self._scip_indexer.index(repo_root, output_scip)
             if not result.success:
                 return ScipResult(
                     status=ToolStatus.FAILED,
                     error=result.error_message or "SCIP indexing failed",
                 )
-            # ScipIndexResult only contains success/path, not parsed documents
-            # Document parsing happens separately in the compute layer
+
             return ScipResult(
                 status=ToolStatus.OK,
-                documents=[],  # Documents not provided by simple indexer
+                documents=[],
                 index_scip_path=result.index_path,
-                index_json_path=None,  # JSON not generated via this adapter
+                index_json_path=None,
             )
         except (OSError, RuntimeError, ValueError) as exc:
             return ScipResult(
@@ -277,7 +270,6 @@ class BuildToolAdapter:
         TestResult
             Test execution results.
         """
-        # Mark unused parameters for interface compatibility
         _ = repo_root
         if self._test_reporter is None:
             return TestResult(
@@ -285,13 +277,12 @@ class BuildToolAdapter:
                 error="Test reporter not available",
             )
         try:
-            # TestReporter.collect returns tuple[TestResult, ...]
             results = await self._test_reporter.collect(json_report_path)
             tests = [
                 TestCase(
                     nodeid=t.node_id,
                     outcome=t.outcome,
-                    duration_s=t.duration_ms / 1000.0,  # Convert ms to seconds
+                    duration_s=t.duration_ms / 1000.0,
                 )
                 for t in results
             ]

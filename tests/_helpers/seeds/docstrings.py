@@ -28,11 +28,6 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Docstring Pack Implementation
-# =============================================================================
-
-
 @dataclass
 class DocstringPack:
     """Seed pack for docstring data.
@@ -157,7 +152,6 @@ class DocstringPack:
         insert_rows(ctx.gateway, rows)
 
 
-# Default instance for common usage
 DOCSTRING_PACK = DocstringPack()
 
 

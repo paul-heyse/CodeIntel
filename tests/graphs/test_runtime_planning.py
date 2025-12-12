@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 
     from codeintel.graphs.core.protocol import GraphPluginProtocol
 
-# Constants
+
 EXPECTED_HASH_LENGTH: Final = 16
 TIMEOUT_DEFAULT_MS: Final = 10000
 TIMEOUT_OVERRIDE_MS: Final = 5000
@@ -64,9 +64,6 @@ EFFECTIVE_SEVERITY = _PLANNING_PRIVATES["_effective_severity"]
 EFFECTIVE_TIMEOUT = _PLANNING_PRIVATES["_effective_timeout"]
 RESOLVE_TARGET = _PLANNING_PRIVATES["_resolve_target"]
 BUILD_PLUGIN_SETTINGS = _PLANNING_PRIVATES["_build_plugin_settings"]
-
-
-# Test Helpers
 
 
 def _make_test_plugin(
@@ -241,7 +238,7 @@ def test_resolve_target_from_cfg() -> None:
 def test_resolve_target_from_explicit_tuple() -> None:
     """Explicit target tuple takes precedence over config."""
     repo, commit = RESOLVE_TARGET(
-        cfg=None,  # No config
+        cfg=None,
         runtime_snapshot=None,
         target=("explicit/repo", "explicit_commit"),
     )
@@ -466,7 +463,6 @@ def test_plan_graph_plugin_run_with_dependencies() -> None:
             context=context,
         )
 
-        # dep_a should come before dep_b
         names = plan.ordered_names
         expect_true(names.index("dep_a") < names.index("dep_b"))
 
@@ -503,7 +499,6 @@ def test_graph_plugin_execution_plan_skipped_plugins() -> None:
             policy=GraphPluginPolicy(),
         )
 
-        # Request unknown plugin - should be skipped
         plan = plan_graph_plugin_run(
             plugin_names=["skip_test", "nonexistent_plugin"],
             context=context,

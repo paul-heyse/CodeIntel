@@ -17,11 +17,6 @@ def _require(*, condition: bool, message: str) -> None:
         pytest.fail(message)
 
 
-# ------------------------------------------------------------------
-# DatasetSchemaRegistry unit tests with controlled fixture
-# ------------------------------------------------------------------
-
-
 @pytest.fixture
 def isolated_registry() -> DatasetSchemaRegistry:
     """Create an isolated registry for testing.
@@ -38,7 +33,6 @@ def test_registry_get_returns_none_for_unknown_key(
     isolated_registry: DatasetSchemaRegistry,
 ) -> None:
     """Get returns None for unknown table keys."""
-    # Force initialization by accessing any method that triggers it
     isolated_registry.initialize()
     result = isolated_registry.get("nonexistent.table.xyz123")
 
@@ -81,33 +75,23 @@ def test_registry_contains_check(isolated_registry: DatasetSchemaRegistry) -> No
     """Contains check works correctly."""
     isolated_registry.initialize()
 
-    # Should return False for nonexistent key
     _require(
         condition="nonexistent.table.xyz123" not in isolated_registry,
         message="should not contain unknown key",
     )
 
 
-# ------------------------------------------------------------------
-# Global SCHEMA_REGISTRY integration tests
-# ------------------------------------------------------------------
-
-
 def test_global_registry_initializes_from_contracts() -> None:
     """SCHEMA_REGISTRY initializes from existing contracts."""
     all_schemas = SCHEMA_REGISTRY.all()
 
-    # Should have schemas for datasets that have both contracts and Pandera schemas
     _require(condition=len(all_schemas) > 0, message="should have at least one schema")
 
 
 def test_global_registry_known_dataset_is_available() -> None:
     """A known dataset should be available in the registry."""
-    # analytics.function_metrics should have both contract and Pandera schema
     schema = SCHEMA_REGISTRY.get("analytics.function_metrics")
 
-    # May be None if Pandera schema not defined for this table
-    # but should not raise an error
     if schema is not None:
         _require(
             condition=schema.name == "analytics.function_metrics",
@@ -137,14 +121,8 @@ def test_global_registry_consistency() -> None:
         _require(condition=key in all_schemas, message=f"key {key} should be in all()")
 
 
-# ------------------------------------------------------------------
-# get_schema convenience function tests
-# ------------------------------------------------------------------
-
-
 def test_get_schema_returns_schema_or_none() -> None:
     """Get_schema returns schema from global registry or None."""
-    # Test with known key
     all_schemas = SCHEMA_REGISTRY.all()
 
     if len(all_schemas) > 0:
@@ -160,11 +138,6 @@ def test_get_schema_returns_none_for_unknown() -> None:
     result = get_schema("definitely.nonexistent.table.xyz")
 
     _require(condition=result is None, message="should return None for unknown key")
-
-
-# ------------------------------------------------------------------
-# producers_of and consumers_of tests
-# ------------------------------------------------------------------
 
 
 def test_producers_of_returns_list() -> None:

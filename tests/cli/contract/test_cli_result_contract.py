@@ -22,7 +22,6 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 
-# Test constants
 TEST_COUNT = 42
 METADATA_VALUE = 123
 STATUS_SUCCESS = 400
@@ -86,11 +85,9 @@ def test_json_serialization_error() -> None:
     expect_in("error", parsed)
     err = parsed["error"]
 
-    # RFC 9457 required fields
     expect_in("type", err)
     expect_in("title", err)
 
-    # RFC 9457 optional fields
     expect_in("detail", err)
     expect_in("status", err)
     expect_in("instance", err)
@@ -218,7 +215,6 @@ def test_dataclass_data_serialization() -> None:
     result = CliResult.ok(TestData(name="test", value=test_value))
     data = result.to_dict()
 
-    # Data should be serialized via to_dict
     expect_equal(data["data"], {"name": "test", "value": test_value})
 
 
@@ -245,7 +241,7 @@ def test_problem_detail_optional_fields() -> None:
 
     expect_is_none(error.detail)
     expect_is_none(error.instance)
-    # extensions should have a default
+
     expect_true(isinstance(error.extensions, dict))
 
 
@@ -280,14 +276,11 @@ def test_to_dict_rfc9457_compliance() -> None:
     )
     data = error.to_dict()
 
-    # RFC 9457 field names
     expect_in("type", data)
     expect_in("title", data)
     expect_in("detail", data)
     expect_in("status", data)
     expect_in("instance", data)
 
-    # Extensions are flattened into the dict per RFC 9457
-    # or may be nested under "extensions"
     has_field = "field" in data or ("extensions" in data and "field" in data["extensions"])
     expect_true(has_field)

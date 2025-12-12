@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 
-# Test constants (non-repo/commit)
+
 TEST_MAX_CONDITIONS = 10
 GOID_SIMPLE = 10001
 GOID_TYPED = 10002
@@ -231,11 +231,6 @@ def _seed_function_types(
     )
 
 
-# =============================================================================
-# Integration Tests with Catalog
-# =============================================================================
-
-
 def test_compute_contracts_with_catalog_goid_iteration(
     ctx: TestContext,
     contracts_config: FunctionContractsStepConfig,
@@ -283,7 +278,6 @@ def test_compute_contracts_with_missing_ast(
     catalog = _create_mock_catalog(spans)
     ensure_catalog_with_goids(ctx, catalog)
 
-    # No AST map provided for the GOID
     compute_function_contracts(
         ctx.gateway,
         contracts_config,
@@ -300,7 +294,6 @@ def test_compute_contracts_with_missing_ast(
         [DEFAULT_REPO, DEFAULT_COMMIT],
     ).fetchone()
 
-    # Row should be created with empty contracts
     result = expect_is_not_none(result)
     expect_equal(result[0], GOID_MISSING)
     expect_equal(json.loads(result[1]), [])
@@ -324,7 +317,6 @@ def test_compute_contracts_with_docstring_data(
     catalog = _create_mock_catalog(spans)
     ensure_catalog_with_goids(ctx, catalog)
 
-    # Seed docstring with optional parameter info
     _seed_docstrings(
         ctx.gateway,
         rel_path="module.py",
@@ -375,7 +367,6 @@ def test_compute_contracts_with_type_annotations(
     catalog = _create_mock_catalog(spans)
     ensure_catalog_with_goids(ctx, catalog)
 
-    # Seed type info with nullable and non-nullable types
     _seed_function_types(
         ctx.gateway,
         goid=GOID_TYPED,
@@ -448,7 +439,6 @@ def test_compute_contracts_with_guards_and_catalog(
     preconditions = json.loads(result[0])
     raises = json.loads(result[1])
 
-    # Should have extracted at least one precondition or raise
     expect_true(len(preconditions) > 0 or len(raises) > 0)
 
 
@@ -496,7 +486,6 @@ def test_compute_contracts_with_bool_return_type(
     result = expect_is_not_none(result)
     postconditions = json.loads(result[0])
 
-    # Should have a returns_bool_predicate postcondition
     kinds = [p.get("kind") for p in postconditions]
     expect_in("returns_bool_predicate", kinds)
 
@@ -521,7 +510,6 @@ def test_compute_contracts_confidence_score(
     catalog = _create_mock_catalog(spans)
     ensure_catalog_with_goids(ctx, catalog)
 
-    # Add both docstrings and type info for higher confidence
     _seed_docstrings(
         ctx.gateway,
         rel_path="module.py",
@@ -553,7 +541,7 @@ def test_compute_contracts_confidence_score(
 
     result = expect_is_not_none(result)
     confidence = result[0]
-    # With types, docs, and guards, confidence should be high
+
     expect_true(confidence > MIN_CONFIDENCE)
 
 
@@ -682,7 +670,6 @@ def test_compute_contracts_with_isinstance_guard(
     preconditions = json.loads(result[0])
     raises = json.loads(result[1])
 
-    # Should have extracted type error raises
     expect_true(len(preconditions) > 0 or len(raises) > 0)
 
 
@@ -741,7 +728,6 @@ def test_compute_contracts_with_predicate_name(
     spans = [MockFunctionSpan(GOID_SIMPLE, "module.py", "is_valid", 1, 3)]
     catalog = _create_mock_catalog(spans)
 
-    # No type info, just rely on name
     compute_function_contracts(
         fresh_gateway,
         contracts_config,
@@ -749,7 +735,6 @@ def test_compute_contracts_with_predicate_name(
         catalog=catalog,
     )
 
-    # Should produce result without error
     result = fresh_gateway.con.execute(
         """
         SELECT postconditions_json

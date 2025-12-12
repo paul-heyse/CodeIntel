@@ -119,8 +119,8 @@ class TypeCoveragePlugin(TargetPlugin):
         TargetResult
             Success result placeholder until computation is wired.
         """
-        _ = self  # Protocol requires instance
-        _ = ctx  # Execution wiring not yet migrated in this phase
+        _ = self
+        _ = ctx
         return TargetResult.succeeded()
 
 

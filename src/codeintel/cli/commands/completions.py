@@ -104,7 +104,6 @@ def install(
     """
     shell_lower = shell.lower()
 
-    # Validate shell name
     valid_shells = {s.value for s in Shell}
     if shell_lower not in valid_shells:
         _write_stderr(f"Unknown shell: {shell}")

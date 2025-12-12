@@ -239,7 +239,6 @@ def extract_constraints_from_pandera(
     cs = ConstraintSet(table_key=table_key)
 
     for col_name, column in schema.columns.items():
-        # Type constraint
         cs.add(
             Constraint(
                 kind=ConstraintKind.TYPE,
@@ -249,7 +248,6 @@ def extract_constraints_from_pandera(
             )
         )
 
-        # Nullability
         nullable_str = "nullable" if column.nullable else "required"
         cs.add(
             Constraint(
@@ -260,12 +258,10 @@ def extract_constraints_from_pandera(
             )
         )
 
-        # Column checks - extract common patterns
         if column.checks:
             for check in column.checks:
                 _extract_check_constraint(cs, col_name, check)
 
-    # Table-level checks
     if schema.checks:
         for check in schema.checks:
             cs.add(
@@ -298,7 +294,6 @@ def _extract_check_constraint(
     """
     check_str = str(check)
 
-    # Non-negative check patterns
     if ">= 0" in check_str or "(s >= 0)" in check_str:
         cs.add(
             Constraint(
@@ -310,7 +305,6 @@ def _extract_check_constraint(
         )
         return
 
-    # Positive check patterns
     if ">= 1" in check_str or "(s >= 1)" in check_str:
         cs.add(
             Constraint(
@@ -322,7 +316,6 @@ def _extract_check_constraint(
         )
         return
 
-    # Ratio bound patterns (0 to 1)
     if "<= 1" in check_str and ">= 0" in check_str:
         cs.add(
             Constraint(
@@ -333,9 +326,3 @@ def _extract_check_constraint(
             )
         )
         return
-
-    # NOTE(schema-unification): Additional check patterns could be extracted:
-    # - Regex pattern checks
-    # - isin() checks (enum values)
-    # - String length checks
-    # See architecture Section 3.2 - ConstraintSet Model for details

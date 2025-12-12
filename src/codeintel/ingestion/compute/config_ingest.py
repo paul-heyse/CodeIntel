@@ -311,13 +311,9 @@ class ConfigIngestStep:
                 errors.append(f"Failed to parse {record.rel_path}")
                 continue
 
-            # Determine config format from file extension
             config_format = _get_config_format(record.file_path)
 
             for key, _value in kvs:
-                # Schema expects: repo, commit, config_path, format, key,
-                # reference_paths, reference_modules, reference_count
-                # Reference tracking is not implemented yet, use empty defaults
                 all_rows.append(
                     [
                         repo,
@@ -325,9 +321,9 @@ class ConfigIngestStep:
                         record.rel_path,
                         config_format,
                         key,
-                        "[]",  # reference_paths (JSON)
-                        "[]",  # reference_modules (JSON)
-                        0,  # reference_count
+                        "[]",
+                        "[]",
+                        0,
                     ]
                 )
 

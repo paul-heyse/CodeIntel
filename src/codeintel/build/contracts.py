@@ -25,7 +25,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-# Re-export schema primitives for convenience
 from codeintel.config.datasets.primitives import (
     Column,
     ColumnType,
@@ -194,7 +193,6 @@ class OutputContract:
         """
         errors: list[str] = []
 
-        # Check for duplicate table keys
         table_keys = [t.fq_name for t in self.tables]
         seen_tables: set[str] = set()
         for key in table_keys:
@@ -202,14 +200,12 @@ class OutputContract:
                 errors.append(f"Duplicate table key: {key}")
             seen_tables.add(key)
 
-        # Check for duplicate artifact names
         seen_artifacts: set[str] = set()
         for artifact in self.artifacts:
             if artifact.name in seen_artifacts:
                 errors.append(f"Duplicate artifact name: {artifact.name}")
             seen_artifacts.add(artifact.name)
 
-        # Check table schemas have at least one column
         errors.extend(
             f"Table {table.fq_name} has no columns" for table in self.tables if not table.columns
         )
@@ -262,5 +258,4 @@ class OutputContract:
         return cls(tables=tuple(tables), artifacts=tuple(artifacts))
 
 
-# Empty contract for targets that don't produce tables
 EMPTY_CONTRACT: OutputContract = OutputContract()

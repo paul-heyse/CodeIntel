@@ -86,7 +86,7 @@ class SymbolGraphMetricsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         repo = ctx.snapshot.repo
         commit = ctx.snapshot.commit
@@ -94,7 +94,6 @@ class SymbolGraphMetricsPlugin(TargetPlugin):
 
         row_counts: dict[str, int] = {}
 
-        # Compute module-level metrics
         try:
             log.info("Computing symbol graph metrics (modules) for %s@%s", repo, commit)
             compute_symbol_graph_metrics_modules(
@@ -114,7 +113,6 @@ class SymbolGraphMetricsPlugin(TargetPlugin):
         except (RuntimeError, ValueError, OSError) as e:
             log.warning("Symbol graph metrics (modules) failed: %s", e)
 
-        # Compute function-level metrics
         try:
             log.info("Computing symbol graph metrics (functions) for %s@%s", repo, commit)
             compute_symbol_graph_metrics_functions(

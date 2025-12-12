@@ -73,11 +73,9 @@ class GraphPluginExecutionContext(PluginExecutionContext):
         RuntimeError
             If no GraphResource is registered in the context.
         """
-        # Try by type first
         if self.has_resource(GraphResource):
             return self.require(GraphResource)
 
-        # Try by name as fallback
         if self.has_resource_by_name(GraphResource.RESOURCE_NAME):
             resource = self.require_by_name(GraphResource.RESOURCE_NAME)
             if isinstance(resource, GraphResource):

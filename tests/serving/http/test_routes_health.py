@@ -24,10 +24,6 @@ if TYPE_CHECKING:
 
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# build_health_router Tests
-# =============================================================================
-
 
 def test_build_health_router_returns_router() -> None:
     """Verify build_health_router returns an APIRouter with health path."""
@@ -40,11 +36,6 @@ def test_build_health_router_returns_router() -> None:
             if isinstance(path_value, str):
                 routes.append(path_value)
     expect_in("/health", routes)
-
-
-# =============================================================================
-# Health Endpoint Tests
-# =============================================================================
 
 
 def test_health_endpoint_returns_status_ok(
@@ -142,5 +133,5 @@ def test_health_endpoint_database_connectivity_verified(
     response = health_http_client.get("/health")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
-    # This confirms the DuckDB SELECT 1 query succeeded
+
     expect_equal(response.json()["status"], "ok")

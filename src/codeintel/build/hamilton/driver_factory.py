@@ -27,7 +27,7 @@ from codeintel.build.registry import get_target_graph
 if TYPE_CHECKING:
     from codeintel.build.targets import TargetGraph
 
-# Type alias for node mode selection
+
 HamiltonNodeMode = Literal["phase0", "generated"]
 
 
@@ -93,13 +93,11 @@ def _build_target_to_node_map(
     if mode == "phase0":
         return dict(targets_phase0.TARGET_TO_NODE)
 
-    # Generated mode: use generated module's mapping or compute from naming
     mod = get_generated_module()
     mapping = getattr(mod, "TARGET_TO_NODE", None)
     if isinstance(mapping, dict) and mapping:
         return dict(mapping)
 
-    # Fallback: compute stable names from target_node()
     return {t.name: target_node(t.name) for t in graph.all_targets}
 
 
@@ -155,7 +153,6 @@ def build_driver(
         nodes_module,
     )
 
-    # Build bidirectional mappings
     t2n = _build_target_to_node_map(graph, mode=mode)
     n2t = {v: k for k, v in t2n.items()}
 
@@ -228,15 +225,12 @@ def target_to_node_name(
     >>> target_to_node_name("modules", runtime=runtime)
     't__modules'
     """
-    # Use runtime mapping if provided
     if runtime is not None:
         return runtime.target_to_node.get(target_name)
 
-    # Fallback based on mode
     if mode == "phase0":
         return targets_phase0.TARGET_TO_NODE.get(target_name)
 
-    # Generated mode: compute from naming
     return target_node(target_name)
 
 

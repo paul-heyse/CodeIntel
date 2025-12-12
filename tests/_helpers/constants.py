@@ -6,10 +6,6 @@ All test helper modules should import from here rather than defining their own.
 
 from __future__ import annotations
 
-# =============================================================================
-# Repository and Commit Defaults
-# =============================================================================
-
 DEFAULT_REPO: str = "demo/repo"
 """Default repository identifier for tests."""
 

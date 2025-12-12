@@ -12,6 +12,7 @@ from time import perf_counter
 from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.export import default_validation_schemas
+from codeintel.export.export_exprs import build_export_expr, compile_export_sql
 from codeintel.export.manifest import (
     ExportManifestData,
     IncrementalMarker,
@@ -29,8 +30,6 @@ from codeintel.serving.services.errors import ExportError, ProblemDetails, log_p
 from codeintel.storage.gateway import (
     DuckDBError,
 )
-from codeintel.storage.metadata import NORMALIZED_MACROS as BOOTSTRAP_MACROS
-from codeintel.storage.sql import macro_select_sql
 from codeintel.storage.sql.builder import prepared_statements_dynamic
 from codeintel.storage.validation import _schema_path
 
@@ -49,7 +48,6 @@ log = logging.getLogger(__name__)
 MAX_EXPORT_LIMIT = 9_223_372_036_854_775_807
 AUDIT_LOG_PATH = os.getenv("CODEINTEL_EXPORT_AUDIT_LOG")
 AUDIT_TABLE_ENABLED = os.getenv("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
-# When set, the above enable audit logging of export metadata.
 
 
 def _env_flag(name: str) -> bool:
@@ -190,51 +188,15 @@ def _row_count(con: DuckDBConnection, table_name: str) -> int | None:
     return int(row[0])
 
 
-NORMALIZED_MACROS: dict[str, str] = dict(BOOTSTRAP_MACROS)
-
-
-def _macro_relation(
-    con: DuckDBConnection,
+def _export_relation(
+    gateway: StorageGateway,
     table_key: str,
     row_limit: int,
     row_offset: int,
-    *,
-    require_normalized_macros: bool = False,
-) -> tuple[DuckDBRelation, str]:
-    macro = NORMALIZED_MACROS.get(table_key)
-    if macro:
-        log.debug("Exporting via normalized macro for %s: %s", table_key, macro)
-        try:
-            return (
-                con.sql(
-                    macro_select_sql(macro, "?, ?, ?"),
-                    params=[table_key, row_limit, row_offset],
-                ),
-                macro,
-            )
-        except DuckDBError as exc:
-            if require_normalized_macros:
-                message = f"No normalized macro available for {table_key}"
-                raise ValueError(message) from exc
-            log.warning(
-                "Normalized macro %s missing; falling back to dataset_rows for %s",
-                macro,
-                table_key,
-            )
-    if require_normalized_macros:
-        message = f"No normalized macro found for {table_key}"
-        raise ValueError(message)
-    log.debug("Exporting via dataset_rows fallback for %s", table_key)
-    return (
-        con.sql(
-            """
-            SELECT *
-            FROM metadata.dataset_rows(?, ?, ?)
-            """,
-            params=[table_key, row_limit, row_offset],
-        ),
-        "metadata.dataset_rows",
-    )
+) -> DuckDBRelation:
+    expr = build_export_expr(gateway, table_key, limit=row_limit, offset=row_offset)
+    sql = compile_export_sql(expr)
+    return gateway.con.sql(sql)
 
 
 def _write_audit_entry(
@@ -255,7 +217,7 @@ def _write_audit_entry(
         with Path(AUDIT_LOG_PATH).open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(json_record))
             handle.write("\n")
-    # Skip writing SQL/plan to file to avoid string-based SQL emission concerns.
+
     if AUDIT_TABLE_ENABLED:
         con.execute(
             """
@@ -308,7 +270,7 @@ def export_jsonl_for_table(
     output_path : Path
         Destination path for the JSONL file.
     require_normalized_macros : bool, optional
-        When True, raise if a normalized macro is not available for this dataset.
+        Deprecated; exports are macro-free and always use Ibis normalization.
 
     Notes
     -----
@@ -342,13 +304,12 @@ def export_jsonl_for_table(
             return
 
     start = perf_counter()
-    rel, macro_name = _macro_relation(
-        con,
-        table_name,
-        MAX_EXPORT_LIMIT,
-        0,
-        require_normalized_macros=require_normalized_macros,
-    )
+    if require_normalized_macros:
+        log.warning(
+            "require_normalized_macros is deprecated; exports are macro-free and use Ibis normalization"
+        )
+    rel = _export_relation(gateway, table_name, MAX_EXPORT_LIMIT, 0)
+    macro_name = "ibis_export"
     write_json = getattr(rel, "write_json", None)
     if write_json is not None:
         callable_write_json = cast("Callable[..., object]", write_json)
@@ -367,7 +328,7 @@ def export_jsonl_for_table(
             con=con,
         )
         log.debug(
-            "Exported %s rows for %s via macro in %.3fs",
+            "Exported %s rows for %s via Ibis export in %.3fs",
             rows,
             table_name,
             duration,
@@ -388,7 +349,9 @@ def export_jsonl_for_table(
         ),
         con=con,
     )
-    log.debug("Exported %s rows for %s via macro fallback in %.3fs", rows, table_name, duration)
+    log.debug(
+        "Exported %s rows for %s via Ibis export fallback in %.3fs", rows, table_name, duration
+    )
 
 
 def export_dataset_to_jsonl(
@@ -688,7 +651,6 @@ def export_repo_map_json(
         log.warning("core.repo_map is empty; skipping repo_map.json export")
         return None
 
-    # For now we export the first row; typical usage is one repo/commit per DB.
     row = df.iloc[0]
     payload = {
         "repo": row["repo"],

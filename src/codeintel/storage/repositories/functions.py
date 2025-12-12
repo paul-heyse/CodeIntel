@@ -299,7 +299,6 @@ class FunctionRepository(BaseRepository):
             and_predicates(table.repo == self.repo, table.commit == self.commit)
         ).select("function_goid_h128")
 
-        # NOTE: Skip Pandera validation for single-column projections.
         df = pd.DataFrame(expr.execute())
         records = df.where(pd.notna(df), None).to_dict(orient="records")
 

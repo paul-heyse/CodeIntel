@@ -96,17 +96,13 @@ if TYPE_CHECKING:
     build_service_stack: object
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
-    # Backend implementations
     "DuckDBBackend": ("codeintel.serving.mcp.backend", "DuckDBBackend"),
     "HttpBackend": ("codeintel.serving.mcp.backend", "HttpBackend"),
     "QueryBackend": ("codeintel.serving.mcp.backend", "QueryBackend"),
-    # Type protocols
     "HasModelDump": ("codeintel.serving.types", "HasModelDump"),
-    # Service layer
     "HttpQueryService": ("codeintel.serving.services.query_service", "HttpQueryService"),
     "LocalQueryService": ("codeintel.serving.services.query_service", "LocalQueryService"),
     "QueryService": ("codeintel.serving.services.query_service", "QueryService"),
-    # Bootstrap and wiring (canonical location)
     "BackendResource": ("codeintel.serving.bootstrap", "BackendResource"),
     "BootstrapOptions": ("codeintel.serving.bootstrap", "BootstrapOptions"),
     "PaginatedFetch": ("codeintel.serving.backend.pagination", "PaginatedFetch"),

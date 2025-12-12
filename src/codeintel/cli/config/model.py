@@ -20,17 +20,9 @@ from typing import ClassVar, Literal
 
 _PATH = Path
 
-# =============================================================================
-# Type Aliases
-# =============================================================================
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 OutputFormat = Literal["text", "json"]
-
-
-# =============================================================================
-# Nested Configuration Sections
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -147,11 +139,6 @@ class PluginsConfigSection:
     disabled: tuple[str, ...] = ()
 
 
-# =============================================================================
-# Root Configuration Model
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class CliConfig:
     """Complete CLI configuration - single source of truth.
@@ -193,12 +180,10 @@ class CliConfig:
     'codeintel-cli'
     """
 
-    # Top-level settings
     output_format: OutputFormat = "text"
     color: bool = True
     log_level: LogLevel = "WARNING"
 
-    # Nested sections
     progress: ProgressConfig = field(default_factory=ProgressConfig)
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
@@ -206,10 +191,8 @@ class CliConfig:
     project: ProjectConfigSection = field(default_factory=ProjectConfigSection)
     plugins: PluginsConfigSection = field(default_factory=PluginsConfigSection)
 
-    # Metadata tracking (not part of config schema)
     _sources: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
-    # Schema metadata
     SCHEMA_ID: ClassVar[str] = "https://codeintel.dev/schemas/cli-config.json"
     SCHEMA_TITLE: ClassVar[str] = "CodeIntel CLI Configuration"
 

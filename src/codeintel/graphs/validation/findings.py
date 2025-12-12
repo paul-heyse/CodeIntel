@@ -27,9 +27,6 @@ if TYPE_CHECKING:
     from codeintel.analytics.runtime import GraphRuntimeOptions
     from codeintel.storage.gateway import StorageGateway
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 SAMPLE_LIMIT = 5
 SYMBOL_COMMUNITY_MIN = 2
@@ -37,11 +34,6 @@ CONFIG_KEY_MIN_THRESHOLD = 2
 HUB_MIN_DEGREE_FLOOR = 10
 HUB_DEGREE_RATIO = 0.1
 CALL_SCC_MIN = 5
-
-
-# =============================================================================
-# Options
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -89,11 +81,6 @@ def resolve_validation_options(
     return GraphValidationOptions()
 
 
-# =============================================================================
-# Graph-Specific Helpers
-# =============================================================================
-
-
 def hub_threshold(node_count: int) -> int:
     """Compute a hub threshold that scales with graph size.
 
@@ -108,11 +95,6 @@ def hub_threshold(node_count: int) -> int:
         Degree threshold used to flag hubs.
     """
     return max(HUB_MIN_DEGREE_FLOOR, int(node_count * HUB_DEGREE_RATIO))
-
-
-# =============================================================================
-# Persistence
-# =============================================================================
 
 
 def persist_findings(
@@ -167,21 +149,17 @@ def persist_findings(
 
 
 __all__ = [
-    # Constants
     "CALL_SCC_MIN",
     "CONFIG_KEY_MIN_THRESHOLD",
     "HUB_DEGREE_RATIO",
     "HUB_MIN_DEGREE_FLOOR",
     "SAMPLE_LIMIT",
     "SYMBOL_COMMUNITY_MIN",
-    # Types
     "GraphValidationOptions",
     "ValidationSeverity",
-    # Core re-exports
     "apply_severity_overrides",
     "cap_findings",
     "has_error_findings",
-    # Graph-specific functions
     "hub_threshold",
     "persist_findings",
     "resolve_validation_options",

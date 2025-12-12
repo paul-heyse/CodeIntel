@@ -158,7 +158,6 @@ def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
             module_goid_count,
         )
     except DuckDBError as exc:
-        # Tables may not exist yet in early pipeline stages
         log.debug("call_graph_builder: Could not query repo state: %s", exc)
 
 
@@ -399,8 +398,8 @@ def _build_nodes_from_goids(
             goid_h128=int(goid_h128),
             language=str(language) if language else "python",
             kind=str(kind),
-            arity=0,  # Default value, column may not exist
-            is_public=True,  # Default value, column may not exist
+            arity=0,
+            is_public=True,
             rel_path=str(rel_path),
         )
         for goid_h128, language, kind, rel_path in rows.itertuples(index=False, name=None)
@@ -471,10 +470,8 @@ def _persist_edges(
     if not edges:
         return 0
 
-    # Deduplicate edges
     unique_edges = dedupe_edge_rows(edges)
 
-    # Serialize evidence_json fields
     serialized: list[CallGraphEdgeRow] = []
     for edge in unique_edges:
         evidence = edge["evidence_json"]
@@ -656,7 +653,7 @@ class CallGraphPlugin(TargetPlugin):
         TargetResult
             Execution result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
         opts = self.resolve_options()
         cfg = CallGraphStepConfig(snapshot=ctx.snapshot)
         gateway, repo, commit = ctx.gateway, cfg.repo, cfg.commit
@@ -664,7 +661,6 @@ class CallGraphPlugin(TargetPlugin):
         try:
             _log_repo_state(gateway, repo, commit)
 
-            # Load function index and get paths
             function_index = load_function_index(gateway, repo=repo, commit=commit)
             paths = _filter_paths_by_scope(function_index.paths(), opts.scope_paths)
 
@@ -674,15 +670,13 @@ class CallGraphPlugin(TargetPlugin):
                     row_counts={"graph.call_graph_nodes": 0, "graph.call_graph_edges": 0}
                 )
 
-            # Build lookup maps
             global_callees = _build_global_callee_lookup(gateway, repo, commit)
             def_goids = _build_def_goids_by_path(gateway, repo, commit)
-            # Use snapshot repo_root directly, fall back to db or cwd
+
             source_root = (
                 ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
             )
 
-            # Collect and persist edges
             collection_ctx = _EdgeCollectionContext(
                 function_index=function_index,
                 global_callees=global_callees,
@@ -697,7 +691,6 @@ class CallGraphPlugin(TargetPlugin):
             edges = _collect_all_edges(paths, collection_ctx)
             log.info("callgraph: Collected %d edges from %d files", len(edges), len(paths))
 
-            # Build and persist nodes
             node_count = _persist_nodes(
                 gateway, _build_nodes_from_goids(gateway, repo, commit), repo, commit
             )

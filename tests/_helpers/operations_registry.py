@@ -49,7 +49,7 @@ class OperationRegistryBuilder:
         """
         if self.graph_mapping is not None:
             return dict(self.graph_mapping)
-        # Default mirrors production mapping for core graphs.
+
         return {"callgraph": "call_graph", "importgraph": "import_graph"}
 
     def build_targets_for_operation(self, operation: Operation) -> OperationTargets:

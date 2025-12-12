@@ -54,7 +54,6 @@ __all__ = [
 ]
 
 
-# Default config file name
 CONFIG_FILE_NAME = "codeintel.build.toml"
 
 
@@ -154,17 +153,14 @@ class BuildConfig:
         """
         config = cls(config_path=config_path, _raw=data)
 
-        # Parse sections recursively
         def parse_sections(prefix: str, d: dict[str, Any]) -> None:
             section_values: dict[str, Any] = {}
 
             for key, value in d.items():
                 if isinstance(value, dict):
-                    # Nested section
                     section_name = f"{prefix}.{key}" if prefix else key
                     parse_sections(section_name, value)
                 else:
-                    # Value in current section
                     section_values[key] = value
 
             if section_values:
@@ -208,18 +204,15 @@ class BuildConfig:
         TargetParameters
             Merged parameters.
         """
-        # Try to find target in any module
         modules = ["ingestion", "graphs", "analytics", "export"]
 
         result_values: dict[str, Any] = {}
 
         for module in modules:
-            # Check for module-level config
             module_section = self.sections.get(module)
             if module_section:
                 result_values.update(module_section.values)
 
-            # Check for target-level config
             target_section = self.sections.get(f"{module}.{target_name}")
             if target_section:
                 result_values.update(target_section.values)
@@ -295,56 +288,39 @@ def load_build_config(project_root: Path) -> BuildConfig:
         return BuildConfig.empty()
 
 
-# =============================================================================
-# Default Parameter Values
-# =============================================================================
-
-# These are the default values used when no config is provided.
-# They match the values previously scattered across step config classes.
-
 DEFAULT_PARAMETERS: dict[str, dict[str, Any]] = {
-    # Hotspots
     "hotspots": {
         "max_commits": 2000,
     },
-    # Function history
     "function_history": {
         "max_history_days": 365,
         "min_lines_threshold": 1,
         "default_branch": "HEAD",
     },
-    # History timeseries
     "history_timeseries": {
         "days_back": 90,
         "bucket_days": 7,
     },
-    # Profiles
     "profiles": {
         "include_ownership": True,
         "compute_trends": True,
     },
-    # Subsystems
     "subsystems": {
         "min_modules_per_subsystem": 2,
         "max_subsystems": 50,
     },
-    # Semantic roles
     "semantic_roles": {
         "min_confidence": 0.7,
     },
-    # Coverage
     "coverage_functions": {
         "min_coverage_threshold": 0.0,
     },
-    # Data models
     "data_models": {
         "include_private": False,
     },
-    # Graph metrics
     "graph_metrics": {
         "enable_extended_metrics": True,
     },
-    # Risk factors
     "risk_factors": {
         "weights": {
             "complexity": 0.3,
@@ -354,11 +330,9 @@ DEFAULT_PARAMETERS: dict[str, dict[str, Any]] = {
             "age": 0.15,
         },
     },
-    # External dependencies
     "external_deps": {
         "include_stdlib": False,
     },
-    # Entrypoints
     "entrypoints": {
         "detect_http": True,
         "detect_cli": True,

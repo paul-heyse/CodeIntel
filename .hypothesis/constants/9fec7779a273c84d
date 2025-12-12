@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/completions/completion_model.py
+# hypothesis_version: 6.148.7
+
+['.', 'CodeIntel CLI', 'CommandSpec', 'CompletionModel', 'CompletionSpec', 'CompletionType', 'CompletionValue', 'Enable debug mode', 'FlagSpec', 'Health checks', 'Human-readable text', 'JSON output', 'Output format', 'Plugin management', 'Show help', 'Show version', 'V', 'codeintel', 'command', 'completions', 'config', 'debug', 'directory', 'dynamic', 'f', 'file', 'h', 'health', 'help', 'json', 'literal', 'operation', 'output-format', 'plugins', 'text', 'version']

@@ -155,7 +155,7 @@ def test_register_dataset_tools_registers_and_executes() -> None:
         ),
     )
     expect_equal([reg.name for reg in mcp.registrations.calls], ["datasets_list"])
-    # Execute registered tool
+
     tool_func = cast("Callable[[], list[dict[str, object]]]", mcp.registry["datasets_list"])
     result = tool_func()
     expect_is_instance(result, list)

@@ -140,7 +140,6 @@ class DuckDBStorageAdapter:
             log.warning("Mutation execution failed: %s", exc)
             return 0
         else:
-            # DuckDB returns rowcount for mutations
             if result.description:
                 row = result.fetchone()
                 if row is not None:

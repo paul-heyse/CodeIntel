@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/__init__.py
+# hypothesis_version: 6.148.7
+
+['callgraph', 'cfg', 'dfg', 'goid', 'imports', 'symbols']

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Final
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Module paths and FQNs
+
 MOD_A_PATH: Final[str] = "pkg/mod_a.py"
 MOD_B_PATH: Final[str] = "pkg/mod_b.py"
 MOD_C_PATH: Final[str] = "pkg/mod_c.py"
@@ -24,7 +24,7 @@ MOD_B_FQN: Final[str] = "pkg.mod_b"
 MOD_C_FQN: Final[str] = "pkg.mod_c"
 MOD_UTIL_FQN: Final[str] = "pkg.util"
 
-# GOID assignments (kept stable for cross-pack references)
+
 GOID_FUNC_A: Final[int] = 1001
 GOID_FUNC_B: Final[int] = 1002
 GOID_FUNC_C: Final[int] = 1003

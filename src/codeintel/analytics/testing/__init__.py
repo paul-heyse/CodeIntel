@@ -21,9 +21,6 @@ from __future__ import annotations
 
 from codeintel.analytics.testing.coverage.edges import compute_test_coverage_edges
 from codeintel.analytics.testing.graph_metrics import compute_test_graph_metrics
-
-# Import builder functions directly to avoid circular imports
-# These can't be re-exported from profiles/ due to circular dependencies
 from codeintel.analytics.testing.profiles.builder import (
     build_behavioral_coverage,
     build_test_profile,

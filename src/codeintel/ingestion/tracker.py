@@ -157,7 +157,6 @@ class ChangeTracker:
         request_modules = change_request.modules or tuple(modules)
         request = replace(change_request, modules=request_modules)
 
-        # Use provided port or create default adapter
         if change_detection is None:
             storage = DuckDBStorageAdapter(gateway)
             change_detection = HashChangeDetectionAdapter(storage)
@@ -349,7 +348,7 @@ def _notify_observer[RowT](
         RuntimeError,
         ValueError,
         TypeError,
-    ):  # pragma: no cover - observer errors are non-fatal
+    ):
         log.exception("Incremental ingest observer failed for dataset %s", ops.dataset_name)
 
 

@@ -41,17 +41,14 @@ def _resolve_config_path() -> Path:
     Path
         Path to the config file.
     """
-    # Check environment override
     env_path = os.environ.get(CONFIG_PATH_ENV_VAR)
     if env_path:
         return Path(env_path)
 
-    # Search TOML config paths
     for path in TOML_CONFIG_PATHS:
         if path.exists():
             return path
 
-    # Default to codeintel.toml (even if it doesn't exist)
     return Path("codeintel.toml")
 
 
@@ -139,19 +136,16 @@ def _resolve_effective_config(cli: RuntimeCLI | None) -> dict[str, object]:
         "cli": [],
     }
 
-    # 1. Load file config (lowest precedence)
     file_cfg = _load_toml_config()
     for key, value in file_cfg.items():
         result[key] = value
         sources["file"].append(key)
 
-    # 2. Apply env overrides
     env_cfg = _load_env_config()
     for key, value in env_cfg.items():
         result[key] = value
         sources["env"].append(key)
 
-    # 3. Apply CLI overrides (highest precedence)
     cli_cfg = _cli_to_dict(cli)
     for key, value in cli_cfg.items():
         result[key] = value
@@ -220,10 +214,6 @@ def _find_source(key: str, sources: dict[str, list[str]]) -> str:
     return "unknown"
 
 
-# -----------------------------------------------------------------------------
-# Command Group
-# -----------------------------------------------------------------------------
-
 config_app = App(name="config", help="Configuration inspection and management.")
 
 
@@ -247,7 +237,6 @@ class ConfigShowCommand:
 
     def __call__(self) -> None:
         """Execute the config show command."""
-        # Use ConfigService for comprehensive config loading
         service = ConfigService.load(validate=False)
         cfg_dict = config_to_dict(service.config)
         writer = sys.stdout
@@ -391,29 +380,29 @@ class ConfigInitCommand:
 
         target.parent.mkdir(parents=True, exist_ok=True)
 
-        default_config = """# CodeIntel CLI Configuration
-# https://codeintel.dev/docs/cli/configuration
+        default_config = """
 
-# Output settings
-output_format: text  # text, json
+
+
+output_format: text
 color: true
 progress: true
-progress_threshold: 2.0  # seconds before showing progress
+progress_threshold: 2.0
 
-# Telemetry
+
 telemetry_enabled: true
 
-# Logging
-log_level: WARNING  # DEBUG, INFO, WARNING, ERROR
 
-# Retry policy
+log_level: WARNING
+
+
 retry:
   max_attempts: 3
   initial_delay: 0.5
   backoff_factor: 2.0
 
-# Project defaults (optional)
-# project_root: /path/to/project
+
+
 """
 
         target.write_text(default_config)
@@ -435,7 +424,6 @@ class ConfigPathsCommand:
         writer.write("Configuration File Search Paths:\n")
         writer.write("-" * 40 + "\n")
 
-        # Include TOML config paths and YAML/JSON config paths
         all_paths = [*TOML_CONFIG_PATHS, *DEFAULT_CONFIG_PATHS]
         seen: set[str] = set()
 
@@ -448,7 +436,6 @@ class ConfigPathsCommand:
             exists = "✓" if path.exists() else "✗"
             writer.write(f"  {exists} {path}\n")
 
-        # Show current active config path if set via env
         active_path = ConfigService.get_toml_config_path()
         if active_path:
             writer.write(f"\nActive config: {active_path}\n")

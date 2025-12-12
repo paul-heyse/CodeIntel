@@ -208,7 +208,6 @@ def resolve_scip_inputs(
     scip_python_bin = inputs.scip_python_bin
     scip_bin = inputs.scip_bin
 
-    # Prefer explicit modules argument; fall back to inputs.modules
     module_list = list(modules) if modules is not None else []
     if not module_list and inputs.modules is not None:
         module_list = list(inputs.modules)

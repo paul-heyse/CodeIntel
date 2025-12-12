@@ -18,7 +18,6 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, TypedDict
 
-# Re-export canonical row types from data_models (single source of truth)
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
 
 _DATETIME = datetime

@@ -24,7 +24,7 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-# Type alias for the serializer function
+
 RowSerializer = Callable[[Mapping[str, object]], tuple[object, ...]]
 
 
@@ -125,12 +125,10 @@ def get_or_create_row_binding(table_key: str) -> RowBinding:
     Flip preference to schema-generated when ready for full migration.
     See architecture Section 5.3.2 - Update contracts for activation steps.
     """
-    # First, try manual RowBinding
     row_bindings = get_row_bindings()
     if table_key in row_bindings:
         return row_bindings[table_key]
 
-    # Fall back to schema-generated
     try:
         return row_binding_from_schema(table_key)
     except KeyError:
@@ -160,17 +158,15 @@ def compare_row_bindings(table_key: str) -> dict[str, object]:
         "has_manual": False,
         "has_schema": False,
         "row_type_match": False,
-        "column_order_match": True,  # Assume match if we can't verify
+        "column_order_match": True,
         "differences": [],
     }
     differences: list[str] = []
 
-    # Check manual
     row_bindings = get_row_bindings()
     manual_binding = row_bindings.get(table_key)
     result["has_manual"] = manual_binding is not None
 
-    # Check schema
     schema = SCHEMA_REGISTRY.get(table_key)
     result["has_schema"] = schema is not None
 
@@ -182,7 +178,6 @@ def compare_row_bindings(table_key: str) -> dict[str, object]:
         result["differences"] = differences
         return result
 
-    # Compare row types
     try:
         schema_model = schema.get_row_model()
         manual_annotations = getattr(manual_binding.row_type, "__annotations__", {})

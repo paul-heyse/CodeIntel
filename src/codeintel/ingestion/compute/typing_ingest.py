@@ -25,7 +25,6 @@ from codeintel.config.datasets import (
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.ports.tools import ToolStatus
 
-# Threshold below which a file is considered under-annotated and may need overlay typing
 _ANNOTATION_OVERLAY_THRESHOLD = 0.5
 
 if TYPE_CHECKING:
@@ -264,17 +263,14 @@ class TypingIngestStep:
         """
         created_at = datetime.now(UTC)
 
-        # Collect diagnostic counts
         diag_counts = DiagnosticCounts(pyright={}, pyrefly={}, ruff={})
         if run_diagnostics and self._tools is not None:
             diag_counts = await _collect_diagnostic_counts(Path(repo_root), self._tools)
 
-        # Process modules
         typedness_rows, diagnostic_rows = self._process_modules(
             modules, repo, commit, created_at, diag_counts
         )
 
-        # Persist rows
         return self._persist_rows(typedness_rows, diagnostic_rows, repo, commit)
 
     def _process_modules(
@@ -320,13 +316,11 @@ class TypingIngestStep:
             if info is None:
                 continue
 
-            # Build typedness row - matches analytics.typedness schema
             pyright_errors = diag_counts.pyright.get(module.rel_path, 0)
             pyrefly_errors = diag_counts.pyrefly.get(module.rel_path, 0)
             ruff_errors = diag_counts.ruff.get(module.rel_path, 0)
             type_error_count = pyright_errors + pyrefly_errors + ruff_errors
 
-            # Compute overlay_needed: true if there are errors and low annotation coverage
             overlay_needed = type_error_count > 0 and (
                 info.params_ratio < _ANNOTATION_OVERLAY_THRESHOLD
                 or info.returns_ratio < _ANNOTATION_OVERLAY_THRESHOLD
@@ -345,7 +339,6 @@ class TypingIngestStep:
             )
             typedness_rows.append(list(typedness_row_to_tuple(row)))
 
-            # Build diagnostic rows
             diagnostic_rows.extend(
                 self._build_diagnostic_rows(module, repo, commit, created_at, diag_counts)
             )
@@ -432,10 +425,8 @@ class TypingIngestStep:
         total_rows = 0
 
         if typedness_rows:
-            # Extract paths from rows (path is at index 2 in the row tuple)
-            # Schema: repo, commit, path, type_error_count, annotation_ratio, ...
             typedness_paths = [str(row[2]) for row in typedness_rows]
-            # Delete existing rows to avoid duplicate key errors (idempotent re-ingest)
+
             self._storage.delete_by_paths(
                 "analytics.typedness",
                 typedness_paths,
@@ -450,10 +441,8 @@ class TypingIngestStep:
             total_rows += result.rows_written
 
         if diagnostic_rows:
-            # Extract paths from rows (rel_path is at index 2 in the row tuple)
-            # Schema: repo, commit, rel_path, pyrefly_errors, pyright_errors, ...
             diagnostic_paths = [str(row[2]) for row in diagnostic_rows]
-            # Delete existing rows to avoid duplicate key errors (idempotent re-ingest)
+
             self._storage.delete_by_paths(
                 "analytics.static_diagnostics",
                 diagnostic_paths,

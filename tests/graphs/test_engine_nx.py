@@ -50,7 +50,6 @@ def _assert_graph_match(name: str, expected: nx.Graph, actual: nx.Graph) -> None
 
 def test_engine_matches_nx_views_for_core_graphs(test_ctx: TestContext) -> None:
     """NxGraphEngine should produce the same graphs as direct nx_views loaders."""
-    # Apply all required seed packs
     test_ctx.require(GRAPH_PACK, SYMBOL_PACK, CONFIG_PACK, COVERAGE_PACK)
 
     repo = test_ctx.repo
@@ -103,11 +102,6 @@ def test_engine_matches_nx_views_for_core_graphs(test_ctx: TestContext) -> None:
             actual is engine_loader(),
             message=f"{name} was not cached on subsequent engine calls",
         )
-
-
-# ===========================================================================
-# GraphCache Tests
-# ===========================================================================
 
 
 def test_cache_seed_with_none_is_noop() -> None:
@@ -194,13 +188,7 @@ def test_cache_invalidate_with_missing_key_is_noop() -> None:
     """GraphCache.invalidate with non-existent key does not raise."""
     cache = GraphCache()
 
-    # Should not raise
     cache.invalidate(GraphKind.CALL_GRAPH)
-
-
-# ===========================================================================
-# nx_views Helper and Loader Tests
-# ===========================================================================
 
 
 def test_numeric_normalizers() -> None:
@@ -238,7 +226,6 @@ def test_load_call_graph_weights_and_isolated_nodes(test_ctx: TestContext) -> No
     con.execute("DELETE FROM graph.call_graph_edges")
     con.execute("DELETE FROM graph.call_graph_nodes")
 
-    # Two identical edges (weight aggregation) and one malformed with None callee skipped
     con.executemany(
         """
         INSERT INTO graph.call_graph_edges
@@ -251,7 +238,7 @@ def test_load_call_graph_weights_and_isolated_nodes(test_ctx: TestContext) -> No
             (repo, commit, 1, None),
         ],
     )
-    # Isolated node
+
     insert_rows(
         test_ctx.gateway,
         [
@@ -291,7 +278,7 @@ def test_load_import_graph_with_missing_import_modules(test_ctx: TestContext) ->
             (repo, commit, "b", "c", 2),
         ],
     )
-    # Remove import_modules to trigger DuckDBError path
+
     con.execute("DROP TABLE IF EXISTS graph.import_modules")
 
     graph = nx_views.load_import_graph(test_ctx.gateway, repo, commit)
@@ -374,8 +361,8 @@ def test_parse_reference_modules_and_config_bipartite(test_ctx: TestContext) -> 
 
     graph = nx_views.load_config_module_bipartite(test_ctx.gateway, repo, commit)
 
-    expect_true(("c", "k1") in graph.nodes)  # key node
-    expect_true(("m", "missing.mod") in graph.nodes)  # retained raw
+    expect_true(("c", "k1") in graph.nodes)
+    expect_true(("m", "missing.mod") in graph.nodes)
     expect_true(graph.has_edge(("c", "k2"), ("m", "allowed")))
 
 

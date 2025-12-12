@@ -47,7 +47,7 @@ def test_build_insert_sql_invalid_table_raises() -> None:
 def test_build_delete_sql_with_repo_commit() -> None:
     """Verify build_delete_sql generates correct DELETE for repo/commit tables."""
     sql = build_delete_sql("analytics.function_metrics")
-    # Table with repo and commit columns should have a delete SQL
+
     if sql is None:
         pytest.fail("expected delete sql for analytics.function_metrics")
     require(condition="DELETE FROM" in sql, message="delete statement should include DELETE FROM")
@@ -59,7 +59,6 @@ def test_build_delete_sql_with_repo_commit() -> None:
 
 def test_build_delete_sql_returns_none_for_no_repo_commit() -> None:
     """Verify build_delete_sql returns None for tables without repo/commit."""
-    # core.ast_nodes doesn't have repo/commit directly
     result = build_delete_sql("core.ast_nodes")
     require(
         condition=result is None,
@@ -94,7 +93,7 @@ def test_build_delete_sql_by_table_returns_dict() -> None:
         condition=isinstance(sql_dict, dict),
         message="build_delete_sql_by_table should return a dict",
     )
-    # Should have fewer entries than insert (only tables with repo/commit)
+
     insert_dict = build_insert_sql_by_table()
     require(
         condition=len(sql_dict) <= len(insert_dict),
@@ -146,7 +145,7 @@ def test_load_columns_by_table_returns_dict() -> None:
         message="load_columns_by_table should return a dict",
     )
     require(condition=len(columns) > 0, message="columns mapping should not be empty")
-    # Each value should be a list of strings
+
     for table_key, col_list in columns.items():
         require(condition=isinstance(col_list, list), message=f"{table_key} columns is not a list")
         for col_name in col_list:

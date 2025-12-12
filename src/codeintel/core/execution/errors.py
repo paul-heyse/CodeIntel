@@ -13,8 +13,7 @@ from codeintel.storage.errors import DUCKDB_ERRORS
 if TYPE_CHECKING:
     from codeintel.core.plugins.types.result import PluginExecutionRecord
 
-# Exceptions that can be caught and handled during plugin execution.
-# These represent recoverable errors that should not crash the entire run.
+
 PLUGIN_CATCHABLE_ERRORS: tuple[type[Exception], ...] = (
     *DUCKDB_ERRORS,
     AttributeError,
@@ -45,7 +44,6 @@ class PluginFatalError(Exception):
     --------
     >>> record = PluginExecutionRecord(...)
     >>> try:
-    ...     # Plugin execution that fails
     ...     raise ValueError("Something went wrong")
     ... except ValueError as e:
     ...     raise PluginFatalError(record, e) from e
@@ -153,7 +151,6 @@ class PluginSkipRequestError(Exception):
     >>> def execute(self, ctx):
     ...     if not self._has_work_to_do(ctx):
     ...         raise PluginSkipRequestError("No files to process")
-    ...     # ... do work ...
     """
 
     def __init__(self, reason: str = "") -> None:

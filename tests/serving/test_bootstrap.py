@@ -50,17 +50,12 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 
-# Constants for test values
+
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 1000
 SMALL_DEFAULT_LIMIT = 50
 SMALL_MAX_LIMIT = 500
 TIMEOUT_SECONDS = 30.0
-
-
-# =============================================================================
-# DatasetRegistryOptions Tests
-# =============================================================================
 
 
 def test_dataset_registry_options_defaults() -> None:
@@ -90,11 +85,6 @@ def test_dataset_registry_options_custom() -> None:
     expect_equal(opts.describe_fn("t", "f"), "Custom: t (f)")
 
 
-# =============================================================================
-# ServiceBuildOptions Tests
-# =============================================================================
-
-
 def test_service_build_options_defaults() -> None:
     """Verify ServiceBuildOptions default values."""
     opts = ServiceBuildOptions()
@@ -113,11 +103,6 @@ def test_service_build_options_with_observability() -> None:
     expect_is_not_none(opts.observability)
     expect_true(opts.observability is obs)
     expect_true(obs.enabled)
-
-
-# =============================================================================
-# BootstrapOptions Tests
-# =============================================================================
 
 
 def test_bootstrap_options_defaults() -> None:
@@ -142,11 +127,6 @@ def test_bootstrap_options_custom() -> None:
     expect_false(opts.validate_registry)
 
 
-# =============================================================================
-# BackendResourceOptions Tests
-# =============================================================================
-
-
 def test_backend_resource_options_defaults() -> None:
     """Verify BackendResourceOptions default values."""
     opts = BackendResourceOptions()
@@ -155,11 +135,6 @@ def test_backend_resource_options_defaults() -> None:
     expect_is_none(opts.observability)
     expect_is_none(opts.graph_runtime)
     expect_is_none(opts.runtime_pool)
-
-
-# =============================================================================
-# get_observability_from_config Tests
-# =============================================================================
 
 
 def test_get_observability_disabled_by_default(tmp_path: Path) -> None:
@@ -189,11 +164,6 @@ def test_service_observability_disabled() -> None:
     obs = ServiceObservability(enabled=False)
 
     expect_false(obs.enabled)
-
-
-# =============================================================================
-# build_backend_context Tests
-# =============================================================================
 
 
 def test_build_backend_context_basic(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -235,11 +205,6 @@ def test_build_backend_context_with_custom_limits(
     expect_equal(context.limits.max_rows_per_call, SMALL_MAX_LIMIT)
 
 
-# =============================================================================
-# build_repositories Tests
-# =============================================================================
-
-
 def test_build_repositories_returns_duckdb_repositories(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
@@ -256,11 +221,6 @@ def test_build_repositories_returns_duckdb_repositories(
 
     expect_equal(repos.repo, "demo/repo")
     expect_equal(repos.commit, "deadbeef")
-
-
-# =============================================================================
-# build_http_query_service Tests
-# =============================================================================
 
 
 def test_build_http_query_service_basic() -> None:
@@ -291,11 +251,6 @@ def test_build_http_query_service_with_observability() -> None:
     service = build_http_query_service(mock_request, limits=limits, observability=obs)
 
     expect_is_instance(service, HttpQueryService)
-
-
-# =============================================================================
-# build_service_from_config Tests
-# =============================================================================
 
 
 def test_build_service_from_config_local_db_missing_gateway(tmp_path: Path) -> None:
@@ -381,11 +336,6 @@ def test_build_service_from_config_local_db_returns_local_service(
     expect_is_instance(service, LocalQueryService)
 
 
-# =============================================================================
-# build_service_stack Tests
-# =============================================================================
-
-
 def test_build_service_stack_returns_stack(provisioned_repo: TestContext) -> None:
     """Verify build_service_stack returns complete ServiceStack."""
     cfg = ServingConfig(
@@ -434,17 +384,9 @@ def test_build_service_stack_close_calls_cleanup(provisioned_repo: TestContext) 
         repo_root=provisioned_repo.repo_root,
     )
 
-    # Build stack - note that close will close the gateway
-    # Since provisioned_repo manages its own cleanup, we skip the actual close test
     stack = build_service_stack(cfg, gateway=provisioned_repo.gateway)
 
-    # Just verify close_fn is callable
     expect_true(callable(stack.close_fn))
-
-
-# =============================================================================
-# ServiceStack Tests
-# =============================================================================
 
 
 def test_service_stack_close_method(provisioned_repo: TestContext) -> None:
@@ -459,14 +401,8 @@ def test_service_stack_close_method(provisioned_repo: TestContext) -> None:
 
     stack = build_service_stack(cfg, gateway=provisioned_repo.gateway)
 
-    # Verify close method exists
     expect_true(hasattr(stack, "close"))
     expect_true(callable(stack.close))
-
-
-# =============================================================================
-# build_local_query_service Tests
-# =============================================================================
 
 
 def test_build_local_query_service_with_validation(
@@ -506,11 +442,6 @@ def test_build_local_query_service_with_validation(
     expect_is_instance(service, LocalQueryService)
 
 
-# =============================================================================
-# build_query_service Tests
-# =============================================================================
-
-
 def test_build_query_service_basic(provisioned_repo: TestContext) -> None:
     """Verify build_query_service constructs DuckDBQueryService."""
     gateway = provisioned_repo.gateway
@@ -533,6 +464,6 @@ def test_build_query_service_basic(provisioned_repo: TestContext) -> None:
     query = build_query_service(context, repos, provider)
 
     expect_is_not_none(query)
-    # Access repo/commit through context
+
     expect_equal(query.context.repo, provisioned_repo.repo)
     expect_equal(query.context.commit, provisioned_repo.commit)

@@ -26,9 +26,9 @@ dataset_app = App(
     help="Dataset inspection commands.",
 )
 
-# Config for dataset commands - no runtime needed for listing/describing
+
 _DATASET_NO_RUNTIME_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
-# Config for dataset verify - requires runtime
+
 _DATASET_RUNTIME_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
 

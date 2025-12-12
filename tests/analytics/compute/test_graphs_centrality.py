@@ -34,9 +34,6 @@ if TYPE_CHECKING:
 
     import pytest
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 EXPECTED_NODES_4 = 4
 EXPECTED_NODES_5 = 5
@@ -46,7 +43,7 @@ TOLERANCE = 0.001
 DENSE_GRAPH_RANGE_TOLERANCE = 0.1
 PAGERANK_SUM = 1.0
 
-# Test data constants
+
 TEST_PAGERANK = 0.25
 TEST_BETWEENNESS = 0.5
 TEST_IN_DEGREE = 3
@@ -54,10 +51,6 @@ TEST_OUT_DEGREE = 2
 TEST_CLOSENESS = 0.75
 TEST_HARMONIC = 0.8
 TEST_EIGENVECTOR = 0.6
-
-# =============================================================================
-# Test Data: Realistic Graph Structures
-# =============================================================================
 
 
 def _make_simple_chain() -> nx.DiGraph:
@@ -133,21 +126,21 @@ def _make_call_graph_realistic() -> nx.DiGraph:
         A realistic call graph.
     """
     graph = nx.DiGraph()
-    # Main entry point
+
     graph.add_edge("main", "process_request")
     graph.add_edge("main", "handle_error")
-    # Request processing
+
     graph.add_edge("process_request", "validate")
     graph.add_edge("process_request", "execute")
     graph.add_edge("process_request", "log_result")
-    # Validation
+
     graph.add_edge("validate", "check_input")
     graph.add_edge("validate", "sanitize")
-    # Execution
+
     graph.add_edge("execute", "fetch_data")
     graph.add_edge("execute", "transform")
     graph.add_edge("execute", "save_result")
-    # Shared utilities
+
     graph.add_edge("validate", "format_error")
     graph.add_edge("execute", "format_error")
     graph.add_edge("handle_error", "format_error")
@@ -165,11 +158,11 @@ def _make_disconnected_components() -> nx.DiGraph:
         A graph with three disconnected components.
     """
     graph = nx.DiGraph()
-    # Component 1: A -> B -> C
+
     graph.add_edges_from([("A", "B"), ("B", "C")])
-    # Component 2: X -> Y -> Z
+
     graph.add_edges_from([("X", "Y"), ("Y", "Z")])
-    # Component 3: isolated node
+
     graph.add_node("Isolated")
     return graph
 
@@ -185,17 +178,12 @@ def _make_dense_cluster() -> nx.DiGraph:
     """
     graph = nx.DiGraph()
     nodes = ["N1", "N2", "N3", "N4", "N5"]
-    # Create edges from each node to all others (complete directed graph)
+
     for source in nodes:
         for target in nodes:
             if source != target:
                 graph.add_edge(source, target)
     return graph
-
-
-# =============================================================================
-# CentralityMetrics Dataclass Tests
-# =============================================================================
 
 
 def test_metrics_create_all_fields() -> None:
@@ -235,11 +223,6 @@ def test_metrics_is_frozen() -> None:
     assert_frozen(metrics, "pagerank", 0.5)
 
 
-# =============================================================================
-# compute_pagerank Tests
-# =============================================================================
-
-
 def test_pagerank_empty_graph() -> None:
     """Empty graph returns empty PageRank dictionary."""
     graph = nx.DiGraph()
@@ -260,9 +243,9 @@ def test_pagerank_simple_chain() -> None:
     """PageRank flows through chain graph."""
     graph = _make_simple_chain()
     result = compute_pagerank(graph)
-    # All 4 nodes should be present
+
     expect_length(result, EXPECTED_NODES_4)
-    # D (end of chain) should have highest PageRank due to receiving flow
+
     expect_true(result["D"] > result["A"])
 
 
@@ -270,7 +253,7 @@ def test_pagerank_cycle_equal() -> None:
     """Nodes in simple cycle have equal PageRank."""
     graph = _make_simple_cycle()
     result = compute_pagerank(graph)
-    # All nodes in cycle should have similar PageRank
+
     values = list(result.values())
     expect_true(max(values) - min(values) < TOLERANCE)
 
@@ -279,8 +262,7 @@ def test_pagerank_star_hub_low() -> None:
     """Hub in out-star has lower PageRank (no incoming edges)."""
     graph = _make_star_graph()
     result = compute_pagerank(graph)
-    # Hub has no incoming edges, spokes receive from hub
-    # With damping, spokes should have higher PageRank
+
     hub_rank = result["Hub"]
     spoke_ranks = [result[s] for s in ["A", "B", "C", "D"]]
     avg_spoke = sum(spoke_ranks) / len(spoke_ranks)
@@ -300,9 +282,9 @@ def test_pagerank_realistic_call_graph() -> None:
     """PageRank identifies important functions in call graph."""
     graph = _make_call_graph_realistic()
     result = compute_pagerank(graph)
-    # format_error is called by many functions, should be present
+
     expect_in("format_error", result)
-    # log_result is called by multiple paths
+
     expect_in("log_result", result)
 
 
@@ -311,14 +293,14 @@ def test_pagerank_custom_alpha() -> None:
     graph = _make_simple_chain()
     result_low = compute_pagerank(graph, alpha=0.5)
     result_high = compute_pagerank(graph, alpha=0.95)
-    # Different alpha should give different distributions
+
     expect_not_equal(result_low, result_high)
 
 
 def test_pagerank_custom_max_iter() -> None:
     """PageRank respects custom max_iter parameter."""
     graph = _make_simple_chain()
-    # Should converge quickly for simple graph
+
     result = compute_pagerank(graph, max_iter=10)
     expect_length(result, EXPECTED_NODES_4)
 
@@ -328,7 +310,7 @@ def test_pagerank_custom_tolerance() -> None:
     graph = _make_simple_chain()
     result_low = compute_pagerank(graph, tol=1e-9)
     result_high = compute_pagerank(graph, tol=1e-3)
-    # Both should produce results (may differ slightly in precision)
+
     expect_length(result_low, EXPECTED_NODES_4)
     expect_length(result_high, EXPECTED_NODES_4)
 
@@ -337,9 +319,9 @@ def test_pagerank_disconnected_components() -> None:
     """PageRank handles disconnected graph components."""
     graph = _make_disconnected_components()
     result = compute_pagerank(graph)
-    # All 7 nodes should be present
+
     expect_length(result, EXPECTED_NODES_7)
-    # Isolated node should have non-zero PageRank (damping factor)
+
     expect_in("Isolated", result)
     expect_true(result["Isolated"] > 0)
 
@@ -355,9 +337,9 @@ def test_pagerank_sums_to_one() -> None:
 def test_pagerank_keys_match_nodes() -> None:
     """PageRank result keys match original node types."""
     graph = nx.DiGraph()
-    graph.add_edges_from([(1, 2), (2, 3)])  # Integer node IDs
+    graph.add_edges_from([(1, 2), (2, 3)])
     result = compute_pagerank(graph)
-    # Keys should be the original node types
+
     for key in result:
         expect_is_instance(key, int)
 
@@ -368,11 +350,6 @@ def test_pagerank_values_are_floats() -> None:
     result = compute_pagerank(graph)
     for value in result.values():
         expect_is_instance(value, float)
-
-
-# =============================================================================
-# compute_betweenness Tests
-# =============================================================================
 
 
 def test_betweenness_empty_graph() -> None:
@@ -393,10 +370,9 @@ def test_betweenness_single_node_zero() -> None:
 
 def test_betweenness_chain_middle_nodes_high() -> None:
     """Middle nodes in chain have higher betweenness."""
-    graph = _make_simple_chain()  # A -> B -> C -> D
+    graph = _make_simple_chain()
     result = compute_betweenness(graph)
-    # B and C are on the shortest paths between A and D
-    # End nodes A and D have lower betweenness
+
     expect_true(result["B"] > result["A"])
     expect_true(result["C"] > result["D"])
 
@@ -430,16 +406,16 @@ def test_betweenness_unnormalized() -> None:
     """Unnormalized betweenness can exceed 1."""
     graph = _make_call_graph_realistic()
     result = compute_betweenness(graph, normalized=False)
-    # Just verify it runs and produces results
+
     expect_length(result, graph.number_of_nodes())
 
 
 def test_betweenness_sampled_with_k() -> None:
     """Approximate betweenness with sample size k."""
     graph = _make_dense_cluster()
-    # Sample 3 nodes for approximation
+
     result = compute_betweenness(graph, k=3)
-    # Should still produce results for all nodes
+
     expect_length(result, EXPECTED_NODES_5)
 
 
@@ -447,9 +423,9 @@ def test_betweenness_disconnected_components() -> None:
     """Betweenness handles disconnected components."""
     graph = _make_disconnected_components()
     result = compute_betweenness(graph)
-    # All nodes should be present
+
     expect_length(result, EXPECTED_NODES_7)
-    # Isolated node has zero betweenness
+
     expect_equal(result["Isolated"], 0.0)
 
 
@@ -457,9 +433,9 @@ def test_betweenness_realistic_call_graph() -> None:
     """Betweenness identifies bridge functions in call graph."""
     graph = _make_call_graph_realistic()
     result = compute_betweenness(graph)
-    # process_request is a bridge between main and many other functions
+
     expect_in("process_request", result)
-    # process_request should have significant betweenness
+
     expect_true(result["process_request"] > 0)
 
 
@@ -468,7 +444,7 @@ def test_betweenness_keys_match_nodes() -> None:
     graph = nx.DiGraph()
     graph.add_edges_from([(1, 2), (2, 3)])
     result = compute_betweenness(graph)
-    # Keys should be the original node types
+
     for key in result:
         expect_is_instance(key, int)
 
@@ -479,11 +455,6 @@ def test_betweenness_values_are_floats() -> None:
     result = compute_betweenness(graph)
     for value in result.values():
         expect_is_instance(value, float)
-
-
-# =============================================================================
-# Integration Tests
-# =============================================================================
 
 
 class _ContextOverrides(TypedDict, total=False):
@@ -526,15 +497,13 @@ def test_metrics_identify_different_importance() -> None:
     graph = _make_call_graph_realistic()
     pagerank = compute_pagerank(graph)
     betweenness = compute_betweenness(graph)
-    # format_error has high PageRank (many incoming)
-    # process_request has high betweenness (bridge node)
-    # They measure different aspects of node importance
+
     pr_sorted = sorted(pagerank.items(), key=lambda x: x[1], reverse=True)
     bc_sorted = sorted(betweenness.items(), key=lambda x: x[1], reverse=True)
-    # Top nodes may differ between metrics
+
     top_pr = [n for n, _ in pr_sorted[:EXPECTED_TOP_3]]
     top_bc = [n for n, _ in bc_sorted[:EXPECTED_TOP_3]]
-    # Just verify both metrics produce reasonable rankings
+
     expect_length(top_pr, EXPECTED_TOP_3)
     expect_length(top_bc, EXPECTED_TOP_3)
 
@@ -544,19 +513,14 @@ def test_dense_graph_metrics() -> None:
     graph = _make_dense_cluster()
     pagerank = compute_pagerank(graph)
     betweenness = compute_betweenness(graph)
-    # All 5 nodes should have similar values in fully connected graph
+
     pr_values = list(pagerank.values())
     bc_values = list(betweenness.values())
     pr_range = max(pr_values) - min(pr_values)
     bc_range = max(bc_values) - min(bc_values)
-    # Values should be relatively uniform in complete graph
+
     expect_true(pr_range < DENSE_GRAPH_RANGE_TOLERANCE)
     expect_true(bc_range < DENSE_GRAPH_RANGE_TOLERANCE)
-
-
-# =============================================================================
-# Warning handling
-# =============================================================================
 
 
 def test_centrality_directed_logs_eigen_warning(

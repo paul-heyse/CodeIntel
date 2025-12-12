@@ -201,9 +201,8 @@ class GraphValidationPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Use GraphMetricsStepConfig as validation uses similar inputs
         cfg = GraphMetricsStepConfig(snapshot=ctx.snapshot)
 
         gateway = ctx.gateway
@@ -213,7 +212,6 @@ class GraphValidationPlugin(TargetPlugin):
         try:
             all_errors: list[str] = []
 
-            # Run validation checks
             call_graph_errors = _validate_call_graph_integrity(gateway, repo, commit)
             all_errors.extend(call_graph_errors)
 
@@ -223,7 +221,6 @@ class GraphValidationPlugin(TargetPlugin):
             cfg_errors = _validate_cfg_integrity(gateway, repo, commit)
             all_errors.extend(cfg_errors)
 
-            # Log errors
             for error in all_errors:
                 log.warning("graph_validation: %s", error)
 

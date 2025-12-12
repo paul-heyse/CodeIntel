@@ -11,20 +11,17 @@ import fnmatch
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from codeintel.build.manifest import OutputManifest
 from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.storage.gateway import StorageGateway
+from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-
-# =============================================================================
-# CLI Snapshot Testing Configuration
-# =============================================================================
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -83,13 +80,11 @@ def pytest_configure(config: pytest.Config) -> None:
     """
     config.addinivalue_line("markers", "cli_snapshot: CLI golden snapshot tests")
 
-    # Handle --cli-snapshot-fail-fast
     if config.getoption("--cli-snapshot-fail-fast"):
         maxfail = getattr(config.option, "maxfail", 0)
         if maxfail in {0, None}:
             config.option.maxfail = 1
 
-    # Handle --list-cli-snapshots
     if config.getoption("--list-cli-snapshots"):
         _list_cli_snapshots_and_exit(config)
 
@@ -102,8 +97,6 @@ def _list_cli_snapshots_and_exit(config: pytest.Config) -> None:
     config
         Pytest configuration object.
     """
-    from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest  # noqa: PLC0415
-
     snapshots_dir = Path(__file__).parent / "snapshots"
 
     override = config.getoption("--cli-snapshot-manifest")
@@ -119,7 +112,6 @@ def _list_cli_snapshots_and_exit(config: pytest.Config) -> None:
 
     manifest = load_snapshot_manifest(manifest_path)
 
-    # Apply optional filters
     tags_opt = config.getoption("--cli-snapshot-tags")
     pat_opt = config.getoption("--cli-snapshot-pattern")
 
@@ -147,11 +139,6 @@ def _list_cli_snapshots_and_exit(config: pytest.Config) -> None:
         lines.append("")
 
     pytest.exit("\n".join(lines), returncode=0)
-
-
-# =============================================================================
-# Fake Gateway/Accessor for Testing
-# =============================================================================
 
 
 @dataclass
@@ -183,7 +170,7 @@ class FakeBuildAccessor:
         RuntimeError
             If raise_on_load is True (for testing manifest_index usage).
         """
-        _ = (repo, commit)  # Unused in fake
+        _ = (repo, commit)
         self.load_manifest_calls.append(target)
         if self.raise_on_load:
             msg = f"load_manifest called for {target} - should use manifest_index"
@@ -202,7 +189,7 @@ class FakeBuildAccessor:
         Sequence[OutputManifest]
             All manifests in the fake accessor.
         """
-        _ = (repo, commit)  # Unused in fake
+        _ = (repo, commit)
         return list(self.manifests.values())
 
 
@@ -213,21 +200,16 @@ class FakeGateway:
     build: FakeBuildAccessor = field(default_factory=FakeBuildAccessor)
 
 
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-
 @pytest.fixture
-def fake_gateway() -> FakeGateway:
+def fake_gateway() -> StorageGateway:
     """Create a fake gateway with empty manifest index.
 
     Returns
     -------
-    FakeGateway
+    StorageGateway
         A fake gateway instance.
     """
-    return FakeGateway()
+    return cast("StorageGateway", FakeGateway())
 
 
 @pytest.fixture

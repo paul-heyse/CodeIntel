@@ -12,10 +12,6 @@ from typing import Any
 
 from codeintel.cli.core.results import result_type
 
-# =============================================================================
-# Generic Result Types
-# =============================================================================
-
 
 @result_type
 @dataclass(frozen=True)
@@ -151,11 +147,6 @@ class ExportResult:
     output_path: str
     item_count: int
     duration_seconds: float | None = None
-
-
-# =============================================================================
-# Domain-Specific Result Types
-# =============================================================================
 
 
 @dataclass(frozen=True)

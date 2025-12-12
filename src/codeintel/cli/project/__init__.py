@@ -10,7 +10,6 @@ This package provides:
 
 from __future__ import annotations
 
-# Project configuration and runtime
 from codeintel.cli.project._project import (
     PROJECT_FILE,
     AnalyticsProjectConfig,
@@ -24,15 +23,11 @@ from codeintel.cli.project._project import (
     find_project_root,
     load_project_config,
 )
-
-# Dry-run planning
 from codeintel.cli.project.dry_run import (
     plan_dry_run,
     render_dry_run,
     render_dry_run_to,
 )
-
-# Pipeline execution
 from codeintel.cli.project.pipelines import (
     BatchItemResult,
     BatchOperation,
@@ -45,10 +40,8 @@ from codeintel.cli.project.pipelines import (
 )
 
 __all__ = [
-    # Project
     "PROJECT_FILE",
     "AnalyticsProjectConfig",
-    # Pipelines
     "BatchItemResult",
     "BatchOperation",
     "BatchResult",
@@ -64,7 +57,6 @@ __all__ = [
     "find_project_root",
     "load_batch",
     "load_project_config",
-    # Dry-run
     "plan_dry_run",
     "read_stdin_operations",
     "render_dry_run",

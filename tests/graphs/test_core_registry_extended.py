@@ -41,7 +41,7 @@ from tests._helpers.fakes.graph_plugins import make_graph_plugin
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-# Constants
+
 TEST_PLUGIN_PREFIX: Final = "_test_registry_"
 
 
@@ -67,14 +67,11 @@ def cleanup_test_plugins() -> Iterator[None]:
         Runs test, then cleans up.
     """
     yield
-    # Clean up any test plugins from global registry
+
     registry = get_graph_registry()
     for name in registry.list_names():
         if name.startswith(TEST_PLUGIN_PREFIX):
             registry.unregister(name)
-
-
-# Tests: Plugin Registration
 
 
 def test_register_plugin_basic(fresh_registry: GraphPluginRegistry) -> None:
@@ -153,9 +150,6 @@ def test_register_plugin_indexes_by_table(fresh_registry: GraphPluginRegistry) -
     expect_in(plugin, plugins_by_table)
 
 
-# Tests: Plugin Unregistration
-
-
 def test_unregister_plugin_removes(fresh_registry: GraphPluginRegistry) -> None:
     """Unregister removes plugin from registry."""
     plugin = make_graph_plugin("unregister", prefix=TEST_PLUGIN_PREFIX)
@@ -190,11 +184,7 @@ def test_unregister_removes_from_indexes(fresh_registry: GraphPluginRegistry) ->
 
 def test_unregister_nonexistent_silent(fresh_registry: GraphPluginRegistry) -> None:
     """Unregister nonexistent plugin does nothing."""
-    # Should not raise
     fresh_registry.unregister("nonexistent_plugin")
-
-
-# Tests: Plugin Lookup
 
 
 def test_get_plugin_returns_registered(fresh_registry: GraphPluginRegistry) -> None:
@@ -224,9 +214,6 @@ def test_contains_returns_true_for_registered(fresh_registry: GraphPluginRegistr
 def test_contains_returns_false_for_unknown(fresh_registry: GraphPluginRegistry) -> None:
     """Contains returns False for unknown plugin."""
     expect_false(fresh_registry.contains("nonexistent"))
-
-
-# Tests: List Methods
 
 
 def test_list_all_returns_registered(fresh_registry: GraphPluginRegistry) -> None:
@@ -286,9 +273,6 @@ def test_list_by_stage_empty_for_unknown_stage(
     expect_equal(result, ())
 
 
-# Tests: Dependency Resolution
-
-
 def test_resolve_dependencies_explicit(fresh_registry: GraphPluginRegistry) -> None:
     """Dependencies resolved via explicit depends_on."""
     dep_name = f"{TEST_PLUGIN_PREFIX}dependency"
@@ -304,7 +288,6 @@ def test_resolve_dependencies_explicit(fresh_registry: GraphPluginRegistry) -> N
 
     plan = fresh_registry.plan(plugin_names=[dep_name, main_plugin.metadata.name])
 
-    # Dependency should come before main
     plugin_names = [p.metadata.name for p in plan.plugins]
     expect_true(plugin_names.index(dep_name) < plugin_names.index(main_plugin.metadata.name))
 
@@ -460,26 +443,23 @@ def test_resolve_dependencies_ambiguous_capability_raises(
         )
 
 
-# Tests: Topological Sorting
-
-
 def test_topological_sort_orders_dependencies(fresh_registry: GraphPluginRegistry) -> None:
     """Topological sort orders plugins by dependencies."""
     p1_name = f"{TEST_PLUGIN_PREFIX}sort1"
     p2_name = f"{TEST_PLUGIN_PREFIX}sort2"
     p3_name = f"{TEST_PLUGIN_PREFIX}sort3"
 
-    p1 = make_graph_plugin("sort1", prefix=TEST_PLUGIN_PREFIX)  # No deps
+    p1 = make_graph_plugin("sort1", prefix=TEST_PLUGIN_PREFIX)
     p2 = make_graph_plugin(
         "sort2",
         prefix=TEST_PLUGIN_PREFIX,
         metadata={"depends_on": (p1_name,)},
-    )  # Depends on p1
+    )
     p3 = make_graph_plugin(
         "sort3",
         prefix=TEST_PLUGIN_PREFIX,
         metadata={"depends_on": (p2_name,)},
-    )  # Depends on p2
+    )
 
     fresh_registry.register(p1)
     fresh_registry.register(p2)
@@ -497,7 +477,6 @@ def test_topological_sort_cycle_detection(fresh_registry: GraphPluginRegistry) -
     p1_name = f"{TEST_PLUGIN_PREFIX}cycle1"
     p2_name = f"{TEST_PLUGIN_PREFIX}cycle2"
 
-    # Create a cycle: p1 -> p2 -> p1
     p1 = make_graph_plugin(
         "cycle1",
         prefix=TEST_PLUGIN_PREFIX,
@@ -514,9 +493,6 @@ def test_topological_sort_cycle_detection(fresh_registry: GraphPluginRegistry) -
 
     with pytest.raises(ValueError, match="Dependency cycle detected"):
         fresh_registry.plan(plugin_names=[p1_name, p2_name])
-
-
-# Tests: Plan Building
 
 
 def test_plan_includes_plan_id(fresh_registry: GraphPluginRegistry) -> None:
@@ -600,15 +576,12 @@ def test_plan_with_enabled_overrides_defaults(fresh_registry: GraphPluginRegistr
 
     plan = fresh_registry.plan(
         enabled=[p1.metadata.name],
-        defaults=[p2.metadata.name],  # This should be ignored
+        defaults=[p2.metadata.name],
     )
 
     plugin_names = [p.metadata.name for p in plan.plugins]
     expect_in(p1.metadata.name, plugin_names)
     expect_true(p2.metadata.name not in plugin_names)
-
-
-# Tests: Global Registry Functions
 
 
 def test_get_graph_registry_returns_singleton() -> None:
@@ -636,9 +609,6 @@ def test_unregister_graph_plugin_uses_global() -> None:
     unregister_graph_plugin(plugin.metadata.name)
 
     expect_false(get_graph_registry().contains(plugin.metadata.name))
-
-
-# Tests: Metadata Access
 
 
 def test_metadata_for_returns_metadata(fresh_registry: GraphPluginRegistry) -> None:
@@ -676,9 +646,6 @@ def test_dependency_graph_returns_deps(fresh_registry: GraphPluginRegistry) -> N
     expect_in(p1_name, dep_graph)
     expect_in(p2.metadata.name, dep_graph)
     expect_in(p1_name, dep_graph[p2.metadata.name])
-
-
-# Tests: GraphPluginPlan Attributes
 
 
 def test_graph_plugin_plan_plugins_tuple(fresh_registry: GraphPluginRegistry) -> None:

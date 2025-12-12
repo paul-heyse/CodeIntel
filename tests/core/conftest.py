@@ -27,10 +27,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
-# =============================================================================
-# Sample Configuration Classes for Testing
-# =============================================================================
-
 
 @dataclass
 class SampleDatabaseConfig:
@@ -55,11 +51,6 @@ class SampleCacheConfig:
 
     ttl_seconds: int
     max_entries: int
-
-
-# =============================================================================
-# Configuration Registry Fixtures
-# =============================================================================
 
 
 @pytest.fixture
@@ -126,11 +117,6 @@ def config_provider() -> ConfigProvider:
     )
 
 
-# =============================================================================
-# Gateway and Snapshot Fixtures
-# =============================================================================
-
-
 @pytest.fixture
 def core_gateway() -> Iterator[StorageGateway]:
     """Provide standard gateway for core tests.
@@ -162,11 +148,6 @@ def core_snapshot(tmp_path: Path) -> SnapshotRef:
     return create_test_snapshot(tmp_path)
 
 
-# =============================================================================
-# Resource Registry Fixtures
-# =============================================================================
-
-
 @pytest.fixture
 def resource_registry() -> ResourceRegistry:
     """Create a fresh ResourceRegistry instance for testing.
@@ -177,11 +158,6 @@ def resource_registry() -> ResourceRegistry:
         Empty resource registry instance.
     """
     return ResourceRegistry()
-
-
-# =============================================================================
-# Plugin Fixtures
-# =============================================================================
 
 
 @pytest.fixture
@@ -272,11 +248,6 @@ def plugin_scratch() -> PluginScratch:
     return PluginScratch()
 
 
-# =============================================================================
-# Temporary Path Fixtures
-# =============================================================================
-
-
 @pytest.fixture
 def repo_root(tmp_path: Path) -> Path:
     """Create a temporary repository root directory.
@@ -304,10 +275,6 @@ def build_dir(tmp_path: Path) -> Path:
     build.mkdir(parents=True, exist_ok=True)
     return build
 
-
-# =============================================================================
-# Sample Config Classes Export (for use in tests)
-# =============================================================================
 
 __all__ = [
     "SampleAppConfig",

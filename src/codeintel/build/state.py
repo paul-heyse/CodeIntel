@@ -39,9 +39,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# =============================================================================
-# Type Definitions
-# =============================================================================
 
 TargetStatus = Literal["missing", "computed", "stale", "blocked"]
 """Status of a build target.
@@ -251,11 +248,6 @@ class DatabaseState:
         return self.targets[name].status == "computed"
 
 
-# =============================================================================
-# State Validator
-# =============================================================================
-
-
 class StateValidator:
     """Validate database state against the target graph.
 
@@ -312,7 +304,6 @@ class StateValidator:
         self._gateway = gateway
         self._snapshot = snapshot
 
-        # Validate graph integrity before proceeding
         errors = graph.validate()
         if errors:
             error_msg = "\n".join(errors)
@@ -331,14 +322,12 @@ class StateValidator:
         DatabaseState
             Complete state snapshot for all targets.
         """
-        # Load all manifests for this repo/commit
         manifests = self._gateway.build.list_manifests(
             repo=self._snapshot.repo,
             commit=self._snapshot.commit,
         )
         manifest_lookup: dict[str, OutputManifest] = {m.target: m for m in manifests}
 
-        # Log manifests for unknown targets (graceful handling of removed targets)
         known_targets = set(self._graph)
         for target_name in manifest_lookup:
             if target_name not in known_targets:
@@ -347,14 +336,12 @@ class StateValidator:
                     target_name,
                 )
 
-        # Pass 1: Compute individual target states
         preliminary_states: dict[str, TargetState] = {}
         for target_name in self._graph:
             target = self._graph.get(target_name)
             manifest = manifest_lookup.get(target_name)
             preliminary_states[target_name] = self._compute_individual_state(target, manifest)
 
-        # Pass 2: Propagate blocking status
         final_states = self._propagate_blocking(preliminary_states)
 
         return DatabaseState(
@@ -409,7 +396,6 @@ class StateValidator:
         TargetState
             Preliminary state (may be upgraded to blocked in Pass 2).
         """
-        # No manifest means target is missing
         if manifest is None:
             return TargetState(
                 name=target.name,
@@ -420,7 +406,6 @@ class StateValidator:
                 current_input_hash=None,
             )
 
-        # Compare input hashes
         is_current, current_hash = self._check_input_hash(target, manifest)
 
         if is_current:
@@ -433,7 +418,6 @@ class StateValidator:
                 current_input_hash=current_hash,
             )
 
-        # Determine staleness reason
         reason = self._determine_staleness_reason(manifest, current_hash)
         return TargetState(
             name=target.name,
@@ -490,8 +474,6 @@ class StateValidator:
         StalenessReason
             Explanation of why hashes differ.
         """
-        # The hash mismatch could be due to input changes or options changes
-        # Since compute_input_hash includes options_hash, we report as input mismatch
         return StalenessReason(
             kind="input_hash_mismatch",
             details=f"Stored hash '{manifest.input_hash}' != current hash '{current_hash}'",
@@ -518,23 +500,19 @@ class StateValidator:
         """
         final_states = dict(preliminary_states)
 
-        # Process in topological order so dependencies are finalized first
         topo_order = self._graph.topological_order(list(self._graph))
 
         for target_name in topo_order:
             current_state = final_states[target_name]
 
-            # Skip targets that are already missing (no manifest to protect)
             if current_state.status == "missing":
                 continue
 
-            # Check all dependencies for blocking conditions
             target = self._graph.get(target_name)
             blocking_deps, blocking_reason = self._find_blocking_deps(
                 target.dependencies, final_states
             )
 
-            # If we have blocking deps, upgrade status to blocked
             if blocking_deps:
                 final_states[target_name] = TargetState(
                     name=target_name,

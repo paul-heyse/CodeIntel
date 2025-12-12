@@ -143,7 +143,7 @@ def compute_constraint(
 
     try:
         constraint_result: dict[Any, float] = nx.constraint(work_graph)
-        # NetworkX returns nan for isolated nodes; convert to 0.0
+
         return {
             node: 0.0 if math.isnan(val) else float(val) for node, val in constraint_result.items()
         }

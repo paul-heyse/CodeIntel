@@ -256,18 +256,9 @@ def should_skip(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for manifest access.
-    target
-        Target name to check.
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    input_hash
-        Current input hash to compare.
-    manifest_index
-        Optional pre-loaded manifest index to avoid DB call.
+    request
+        SkipCheckRequest containing gateway, target, repo, commit, input hash,
+        and optional manifest index.
 
     Returns
     -------
@@ -276,16 +267,17 @@ def should_skip(
 
     Examples
     --------
-    >>> if should_skip(
+    >>> from codeintel.build.hamilton.manifest_hook import SkipCheckRequest, should_skip
+    >>> request = SkipCheckRequest(
     ...     gateway=gateway,
     ...     target="function_metrics",
     ...     repo="my-org/my-repo",
     ...     commit="abc123",
     ...     input_hash="a1b2c3d4",
-    ... ):
+    ... )
+    >>> if should_skip(request):
     ...     print("Skipping - output is still valid")
     """
-    # Use manifest_index if available, otherwise load from DB
     if request.manifest_index is not None:
         prior = request.manifest_index.get(request.target)
     else:

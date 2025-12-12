@@ -26,27 +26,21 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# Test constants
-MS_10_IN_NS = 10_000_000  # 10ms in nanoseconds
-MS_10 = 10.0  # 10ms
-MS_15 = 15.0  # 15ms
-MS_20 = 20.0  # 20ms
-MS_30 = 30.0  # 30ms
-MS_50 = 50.0  # 50ms upper bound
-S_0_02 = 0.02  # 20ms in seconds
-S_0_05 = 0.05  # 50ms in seconds
-MS_TOLERANCE = 0.001  # Tolerance for ms comparisons
-S_TOLERANCE = 0.000001  # Tolerance for second comparisons
-EXPECTED_5 = 5  # Expected result for 2 + 3
-EXPECTED_20 = 20  # Expected result for 4 * 5
-EXPECTED_27 = 27  # Expected result for 3 ** 3
-EXPECTED_42 = 42  # Expected result for timed_work
-TIMING_5_MS = 5.0  # First timing threshold
-
-
-# =============================================================================
-# TimingResult Tests
-# =============================================================================
+MS_10_IN_NS = 10_000_000
+MS_10 = 10.0
+MS_15 = 15.0
+MS_20 = 20.0
+MS_30 = 30.0
+MS_50 = 50.0
+S_0_02 = 0.02
+S_0_05 = 0.05
+MS_TOLERANCE = 0.001
+S_TOLERANCE = 0.000001
+EXPECTED_5 = 5
+EXPECTED_20 = 20
+EXPECTED_27 = 27
+EXPECTED_42 = 42
+TIMING_5_MS = 5.0
 
 
 def test_timing_result_construction() -> None:
@@ -83,9 +77,9 @@ def test_timing_result_stop_idempotent() -> None:
     first_end = result.end_ns
 
     time.sleep(0.01)
-    result.stop()  # Second call
+    result.stop()
 
-    expect_equal(result.end_ns, first_end)  # Should not change
+    expect_equal(result.end_ns, first_end)
 
 
 def test_timing_result_is_stopped_false() -> None:
@@ -104,39 +98,35 @@ def test_timing_result_is_stopped_true() -> None:
 def test_timing_result_elapsed_ns() -> None:
     """Verify elapsed_ns returns nanoseconds."""
     result = TimingResult()
-    time.sleep(0.01)  # 10ms
+    time.sleep(0.01)
     result.stop()
 
-    # Should be at least 10ms = 10,000,000 ns
     expect_true(result.elapsed_ns >= MS_10_IN_NS)
 
 
 def test_timing_result_elapsed_ns_before_stop() -> None:
     """Verify elapsed_ns works before stop() is called."""
     result = TimingResult()
-    time.sleep(0.01)  # 10ms
+    time.sleep(0.01)
 
-    # Should still return elapsed time (up to now)
     expect_true(result.elapsed_ns >= MS_10_IN_NS)
 
 
 def test_timing_result_elapsed_ms() -> None:
     """Verify elapsed_ms returns milliseconds."""
     result = TimingResult()
-    time.sleep(0.01)  # 10ms
+    time.sleep(0.01)
     result.stop()
 
-    # Should be at least 10ms
     expect_true(result.elapsed_ms >= MS_10)
 
 
 def test_timing_result_elapsed_s() -> None:
     """Verify elapsed_s returns seconds."""
     result = TimingResult()
-    time.sleep(0.05)  # 50ms
+    time.sleep(0.05)
     result.stop()
 
-    # Should be at least 0.05s
     expect_true(result.elapsed_s >= S_0_05)
 
 
@@ -150,7 +140,6 @@ def test_timing_result_elapsed_consistency() -> None:
     ms = result.elapsed_ms
     s = result.elapsed_s
 
-    # Conversions should be accurate
     expect_true(abs(ms - ns / 1_000_000) < MS_TOLERANCE)
     expect_true(abs(s - ns / 1_000_000_000) < S_TOLERANCE)
 
@@ -161,15 +150,9 @@ def test_timing_result_elapsed_frozen_after_stop() -> None:
     result.stop()
     elapsed_after_stop = result.elapsed_ns
 
-    time.sleep(0.01)  # Wait a bit
+    time.sleep(0.01)
 
-    # Should be the same (frozen at stop time)
     expect_equal(result.elapsed_ns, elapsed_after_stop)
-
-
-# =============================================================================
-# timed() Context Manager Tests
-# =============================================================================
 
 
 def test_timed_yields_timing_result() -> None:
@@ -216,7 +199,7 @@ def test_timed_stops_on_exception() -> None:
 def test_timed_measures_work() -> None:
     """Verify timed() accurately measures work duration."""
     with timed() as t:
-        time.sleep(0.02)  # 20ms of "work"
+        time.sleep(0.02)
 
     expect_true(t.elapsed_ms >= MS_20)
     expect_true(t.elapsed_s >= S_0_02)
@@ -230,13 +213,8 @@ def test_timed_nested() -> None:
             time.sleep(0.01)
         time.sleep(0.01)
 
-    expect_true(outer.elapsed_ms >= MS_30)  # All three sleeps
-    expect_true(inner.elapsed_ms >= MS_10)  # Just inner sleep
-
-
-# =============================================================================
-# measure_duration() Tests
-# =============================================================================
+    expect_true(outer.elapsed_ms >= MS_30)
+    expect_true(inner.elapsed_ms >= MS_10)
 
 
 def test_measure_duration_returns_result() -> None:
@@ -308,11 +286,6 @@ def test_measure_duration_with_exception() -> None:
         measure_duration(failing_fn)
 
 
-# =============================================================================
-# measure_duration_ms() Tests
-# =============================================================================
-
-
 def test_measure_duration_ms_returns_result() -> None:
     """Verify measure_duration_ms returns function result."""
 
@@ -360,20 +333,15 @@ def test_measure_duration_ms_accuracy() -> None:
     """Verify measure_duration_ms is accurate."""
 
     def timed_work() -> int:
-        time.sleep(0.015)  # 15ms
+        time.sleep(0.015)
         return EXPECTED_42
 
     result, duration = measure_duration_ms(timed_work)
 
     expect_equal(result, EXPECTED_42)
     expect_true(duration >= MS_15)
-    # Should be close to 15ms (allowing some overhead)
-    expect_true(duration < MS_50)  # Generous upper bound
 
-
-# =============================================================================
-# Integration Tests
-# =============================================================================
+    expect_true(duration < MS_50)
 
 
 def test_timing_result_in_loop() -> None:
@@ -382,10 +350,9 @@ def test_timing_result_in_loop() -> None:
 
     for i in range(3):
         with timed() as t:
-            time.sleep(0.005 * (i + 1))  # 5ms, 10ms, 15ms
+            time.sleep(0.005 * (i + 1))
         timings.append(t.elapsed_ms)
 
-    # Each timing should be independent and increasing
     expect_true(timings[0] >= TIMING_5_MS)
     expect_true(timings[1] >= MS_10)
     expect_true(timings[2] >= MS_15)
@@ -400,17 +367,13 @@ def test_measure_duration_vs_timed_equivalence() -> None:
         time.sleep(work_duration_ms / 1000)
         return "done"
 
-    # Using measure_duration
     result1, timing1 = measure_duration(work)
 
-    # Using timed()
     with timed() as timing2:
         result2 = work()
 
-    # Both should succeed
     expect_equal(result1, "done")
     expect_equal(result2, "done")
 
-    # Both should measure approximately the same duration
     expect_true(timing1.elapsed_ms >= work_duration_ms)
     expect_true(timing2.elapsed_ms >= work_duration_ms)

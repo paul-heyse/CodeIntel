@@ -81,13 +81,13 @@ Example
 -------
 ::
 
-    # In HTTP route (Transport layer):
-    domain_result = service.get_function_summary(goid_h128=123)  # Returns dm.*
-    return FunctionSummaryResponse.from_domain(domain_result)    # Convert for HTTP
 
-    # In MCP backend (Transport layer):
-    domain_result = self.service.get_function_summary(...)       # Returns dm.*
-    return FunctionSummaryResponse.from_domain(domain_result)    # Convert for MCP
+    domain_result = service.get_function_summary(goid_h128=123)
+    return FunctionSummaryResponse.from_domain(domain_result)
+
+
+    domain_result = self.service.get_function_summary(...)
+    return FunctionSummaryResponse.from_domain(domain_result)
 
 See Also
 --------

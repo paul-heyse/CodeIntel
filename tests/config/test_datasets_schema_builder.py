@@ -26,11 +26,6 @@ def _require(*, condition: bool, message: str) -> None:
         pytest.fail(message)
 
 
-# ------------------------------------------------------------------
-# build_dataset_schema tests
-# ------------------------------------------------------------------
-
-
 def test_build_creates_dataset_schema() -> None:
     """Create DatasetSchema from contract and Pandera schema."""
     pandera_schema = DataFrameSchema(
@@ -174,11 +169,6 @@ def test_build_includes_composition_if_available() -> None:
     _require(condition=result.composition is composition, message="composition should be included")
 
 
-# ------------------------------------------------------------------
-# build_all_schemas tests
-# ------------------------------------------------------------------
-
-
 def test_build_all_returns_dict_of_schemas() -> None:
     """Returns a dictionary of DatasetSchema instances."""
     result = build_all_schemas()
@@ -212,8 +202,6 @@ def test_build_all_includes_known_datasets() -> None:
     """Known datasets with Pandera schemas are included."""
     result = build_all_schemas()
 
-    # analytics.function_metrics should be in the result
-    # (assuming it has a Pandera schema defined)
     if "analytics.function_metrics" in result:
         schema = result["analytics.function_metrics"]
         _require(condition=schema.name == "analytics.function_metrics", message="name mismatch")
@@ -224,7 +212,6 @@ def test_build_all_only_includes_valid_schemas() -> None:
     """All returned schemas are valid DatasetSchema instances."""
     result = build_all_schemas()
 
-    # Every schema in the result should be valid
     for table_key, schema in result.items():
         _require(
             condition=isinstance(schema, DatasetSchema),
@@ -234,7 +221,7 @@ def test_build_all_only_includes_valid_schemas() -> None:
             condition=schema.name == table_key,
             message=f"schema name {schema.name} should match key {table_key}",
         )
-        # Schema should have columns (proof it has a valid pandera_schema)
+
         _require(
             condition=len(schema.column_names()) > 0,
             message=f"{table_key} should have columns",
@@ -246,12 +233,9 @@ def test_build_all_schemas_have_valid_structure() -> None:
     result = build_all_schemas()
 
     for schema in result.values():
-        # Should have a name
         _require(condition=bool(schema.name), message="schema should have a name")
 
-        # Should have column names
         columns = schema.column_names()
         _require(condition=isinstance(columns, tuple), message="column_names should return tuple")
 
-        # Should have metadata
         _require(condition=schema.metadata is not None, message="schema should have metadata")

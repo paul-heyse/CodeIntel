@@ -10,7 +10,7 @@ For most use cases, use the high-level builder:
     from codeintel.serving.bootstrap import build_service_stack
 
     stack = build_service_stack(config, gateway=gateway)
-    # stack.backend, stack.service, stack.close()
+
 
 For backend resource construction (includes both local and remote modes):
 
@@ -78,11 +78,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-# =============================================================================
-# Configuration Types
-# =============================================================================
-
-
 @dataclass
 class DatasetRegistryOptions:
     """
@@ -124,11 +119,6 @@ class ServiceBuildOptions:
     observability: ServiceObservability | None = None
     graph_runtime: GraphRuntime | None = None
     graph_engine: GraphEngine | None = None
-
-
-# =============================================================================
-# Service Stack
-# =============================================================================
 
 
 @dataclass
@@ -358,17 +348,13 @@ def build_service_stack(
     """
     opts = options or BootstrapOptions()
 
-    # Verify gateway matches configuration
     verify_db_identity(gateway, config)
 
-    # Create views if requested and not read-only
     if opts.create_views and not gateway.config.read_only:
         create_all_views(gateway.con)
 
-    # Build limits
     _, limits = build_registry_and_limits(config)
 
-    # Resolve graph runtime/engine
     runtime: GraphRuntime | None = None
     engine: GraphEngine | None = opts.graph_engine
 
@@ -379,7 +365,6 @@ def build_service_stack(
         runtime = build_graph_runtime_for_config(gateway, config)
         engine = runtime.engine
 
-    # Build context and repositories
     context = build_backend_context(
         gateway,
         config,
@@ -388,11 +373,9 @@ def build_service_stack(
     )
     repositories = build_repositories(gateway, config)
 
-    # Build engine provider and query service
     engine_provider = GraphEngineProvider(context=context, graph_engine=engine)
     query = build_query_service(context, repositories, engine_provider)
 
-    # Build local query service wrapper
     service: LocalQueryService = LocalQueryService(
         query=query,
         observability=opts.observability,
@@ -601,10 +584,6 @@ def build_service_from_config(
     raise ValueError(message)
 
 
-# =============================================================================
-# Backend Resource
-# =============================================================================
-
 LOG = logging.getLogger(__name__)
 
 
@@ -770,7 +749,7 @@ def _build_local_resource(
             graph_runtime=active_runtime,
         ),
     )
-    # local_db mode always returns LocalQueryService; type guard for pyright
+
     if not isinstance(service, LocalQueryService):
         msg = "Expected LocalQueryService for local_db mode"
         raise TypeError(msg)

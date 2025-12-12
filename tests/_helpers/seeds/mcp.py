@@ -26,21 +26,12 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# MCP Data Constants
-# =============================================================================
-
 DEFAULT_GOID: int = 1
 CALLEE_GOID: int = 2
 CALLER_GOID: int = 3
 DEFAULT_URN: str = "urn:foo"
 DEFAULT_PATH: str = "foo.py"
 CALLER_PATH: str = "bar.py"
-
-
-# =============================================================================
-# MCP Pack Implementation
-# =============================================================================
 
 
 @dataclass
@@ -95,10 +86,8 @@ class McpPack:
         repo = self.repo
         commit = self.commit
 
-        # Clean up existing data
         self._cleanup_existing_data(ctx, repo, commit)
 
-        # Seed all tables
         self._seed_risk_factors(ctx, repo, commit, now)
         self._seed_function_metrics(ctx, repo, commit, now)
         self._seed_function_validation(ctx, repo, commit, now)

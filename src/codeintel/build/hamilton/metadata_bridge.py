@@ -114,24 +114,21 @@ def from_target(target: OutputTarget) -> CanonicalPluginMeta:
     >>> meta.domain
     'analytics'
     """
-    # Build stable name from module and target name
     name = f"{target.module}.{target.name}"
 
-    # Extract requires from dependencies
     requires = tuple(f"{target.module}.{dep}" for dep in target.dependencies)
 
-    # Extract produces_tables from contract
     produces_tables = target.contract.table_keys if target.contract else ()
 
     return CanonicalPluginMeta(
         name=name,
-        version="0.0.0",  # Version unknown without explicit metadata
+        version="0.0.0",
         domain=target.module,
         description=target.description or f"Target {target.name} ({target.module})",
         requires=requires,
         provides=(name,),
         produces_tables=produces_tables,
-        consumes_tables=(),  # Not tracked in OutputTarget
+        consumes_tables=(),
         options_type=None,
     )
 
@@ -169,8 +166,6 @@ def from_plugin_or_target(
     if meta is None:
         return from_target(target)
 
-    # Extract fields from plugin metadata object
-    # Support both attribute access and dict-like access
     if isinstance(meta, dict):
         return CanonicalPluginMeta(
             name=str(meta.get("name", f"{target.module}.{target.name}")),
@@ -184,7 +179,6 @@ def from_plugin_or_target(
             options_type=meta.get("options_type"),
         )
 
-    # Handle object-style metadata
     return CanonicalPluginMeta(
         name=getattr(meta, "name", f"{target.module}.{target.name}"),
         version=getattr(meta, "version", "0.0.0"),

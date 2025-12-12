@@ -55,7 +55,6 @@ The following plugins are registered by default:
 
 from __future__ import annotations
 
-# Adapter exports
 from codeintel.ingestion.adapters import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
@@ -63,8 +62,6 @@ from codeintel.ingestion.adapters import (
     HashChangeDetectionAdapter,
     ToolRunnerAdapter,
 )
-
-# Compute layer exports (pure domain logic)
 from codeintel.ingestion.compute import (
     AstExtractStep,
     ConfigIngestStep,
@@ -78,8 +75,6 @@ from codeintel.ingestion.compute import (
     TestsIngestStep,
     TypingIngestStep,
 )
-
-# Infrastructure exports
 from codeintel.ingestion.infrastructure.paths import (
     ensure_repo_root,
     normalize_rel_path,
@@ -101,8 +96,6 @@ from codeintel.ingestion.infrastructure.workers import (
     resolve_worker_count,
     worker_pool,
 )
-
-# Plugin classes (TargetPlugin implementations)
 from codeintel.ingestion.plugins import (
     AstExtractPlugin,
     ColumnConstraint,
@@ -122,8 +115,6 @@ from codeintel.ingestion.plugins import (
     foreign_key_contract,
     not_null_contract,
 )
-
-# Port-Adapter architecture exports
 from codeintel.ingestion.ports import (
     BatchResult,
     ChangeDetectionPort,
@@ -141,8 +132,6 @@ from codeintel.ingestion.ports import (
     ScipResult,
     TestResult,
 )
-
-# Tracker domain service exports
 from codeintel.ingestion.tracker import (
     ChangeTracker,
     ChangeTrackerDatasetView,
@@ -151,29 +140,21 @@ from codeintel.ingestion.tracker import (
     SupportsFullRebuild,
     run_incremental_ingest,
 )
-
-# Validation framework exports
 from codeintel.ingestion.validation import (
     IngestValidationOptions,
     run_ingest_validations,
 )
 
 __all__ = [
-    # Infrastructure
     "AST_WORKER_CONFIG",
     "CST_WORKER_CONFIG",
-    # Plugins
     "AstExtractPlugin",
-    # Compute steps
     "AstExtractStep",
-    # Ports
     "BatchResult",
-    # Adapters
     "BuildToolAdapter",
     "ChangeDetectionPort",
     "ChangeRequest",
     "ChangeSet",
-    # Tracker
     "ChangeTracker",
     "ChangeTrackerDatasetView",
     "ColumnConstraint",
@@ -201,7 +182,6 @@ __all__ = [
     "IngestContractValidator",
     "IngestStoragePort",
     "IngestToolPort",
-    # Validation
     "IngestValidationOptions",
     "ModuleDiscoveryPort",
     "ModuleRecord",

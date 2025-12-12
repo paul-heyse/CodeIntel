@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from codeintel.graphs.core.context import GraphPluginExecutionContext
     from codeintel.graphs.engine import GraphKind
 
-# Graph-specific plugin kinds and stages
+
 GraphPluginKind = Literal["builder", "metric", "validation"]
 """Plugin kinds specific to graph processing."""
 
@@ -79,7 +79,6 @@ class GraphPluginMetadata(PluginMetadata):
 
     def __post_init__(self) -> None:
         """Normalize derived flags."""
-        # Call parent's __post_init__ for isolation flag normalization
         super().__post_init__()
 
 
@@ -323,8 +322,6 @@ class GraphPluginPlan:
         return tuple(plugin.metadata.name for plugin in self.plugins)
 
 
-# Default plugins for different plugin kinds
-# Names must match actual plugin_name values in TargetPlugin implementations
 DEFAULT_BUILDER_PLUGINS: tuple[str, ...] = (
     "goid_builder",
     "callgraph",

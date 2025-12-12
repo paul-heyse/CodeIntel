@@ -27,8 +27,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Skip expensive metrics (clustering, betweenness, closeness, community) for
-# projections larger than this threshold to avoid very long computation times.
+
 _MAX_EDGES_FOR_FULL_METRICS = 50_000
 
 
@@ -151,13 +150,11 @@ def projection_metrics(
         edge_count,
     )
 
-    # Compute degree metrics (fast, always safe)
     degree_view = nx.degree(proj, weight=None)
     weighted_view = nx.degree(proj, weight=weight_attr)
     degree = {node: int(deg) for node, deg in degree_view}
     weighted_degree = {node: float(deg) for node, deg in weighted_view}
 
-    # Skip expensive metrics for large projections to avoid timeouts
     if edge_count > _MAX_EDGES_FOR_FULL_METRICS:
         log.warning(
             "projection_metrics.skip_expensive label=%s edges=%d threshold=%d - "

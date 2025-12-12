@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Semantic version pattern
+
 SEMVER_PATTERN = re.compile(
     r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
     r"(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"
@@ -23,10 +23,10 @@ SEMVER_PATTERN = re.compile(
     r"(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$",
 )
 
-# Plugin name pattern
+
 PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 
-# Current CLI API version
+
 CLI_API_VERSION = "1.0.0"
 
 
@@ -314,13 +314,11 @@ class PluginManifest:
         """
         errors: list[str] = []
 
-        # Validate version
         try:
             SemanticVersion.parse(self.version)
         except ValueError as e:
             errors.append(f"Invalid version: {e}")
 
-        # Validate API version
         try:
             plugin_api = SemanticVersion.parse(self.api_version)
             cli_api = SemanticVersion.parse(CLI_API_VERSION)
@@ -332,13 +330,11 @@ class PluginManifest:
         except ValueError as e:
             errors.append(f"Invalid API version: {e}")
 
-        # Validate name
         if not PLUGIN_NAME_PATTERN.match(self.name):
             errors.append(
                 "Invalid name: must be lowercase alphanumeric with hyphens/underscores",
             )
 
-        # Validate entry point
         if not self.entry_point:
             errors.append("Missing entry_point")
 

@@ -88,10 +88,6 @@ if TYPE_CHECKING:
     )
     from tests.analytics.integration.sample_repo import SampleRepo
 
-# =============================================================================
-# Standard Analytics Test Fixtures
-# =============================================================================
-
 
 @pytest.fixture
 def analytics_gateway() -> Iterator[StorageGateway]:
@@ -186,11 +182,6 @@ def analytics_context(
     )
 
 
-# =============================================================================
-# Legacy Fixture Aliases (for backward compatibility)
-# =============================================================================
-
-
 @pytest.fixture
 def test_gateway(analytics_gateway: StorageGateway) -> StorageGateway:
     """Alias for analytics_gateway for backward compatibility.
@@ -239,11 +230,6 @@ def graph_runtime_ctx(tmp_path: Path) -> Iterator[GraphRuntimeHarness]:
         yield ctx
     finally:
         ctx.close()
-
-
-# =============================================================================
-# Mock Graph Runtime Fixtures
-# =============================================================================
 
 
 @pytest.fixture
@@ -307,11 +293,6 @@ def mock_runtime_all_graphs() -> MockGraphRuntime:
     return create_mock_runtime_all_graphs()
 
 
-# =============================================================================
-# Mock Function Catalog Fixtures
-# =============================================================================
-
-
 @pytest.fixture
 def mock_function_catalog() -> MockFunctionCatalog:
     """Provide an empty MockFunctionCatalog for analytics testing.
@@ -368,11 +349,6 @@ def mock_catalog_realistic() -> MockFunctionCatalog:
         Mock catalog with realistic function patterns.
     """
     return create_mock_catalog_realistic()
-
-
-# =============================================================================
-# Plugin Test Harness
-# =============================================================================
 
 
 @dataclass
@@ -454,7 +430,6 @@ def plugin_harness(tmp_path: Path) -> Iterator[PluginTestHarness]:
         harness.close()
 
 
-# Re-export for convenience in tests
 __all__ = [
     "MockFunctionCatalog",
     "MockFunctionMeta",

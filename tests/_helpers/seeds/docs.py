@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-# Import seed functions at module level (they are in a separate module to avoid cycles)
 from tests._helpers.orchestration.seeding_docs import (
     seed_docs_export_minimal,
     seed_mcp_backend,
@@ -52,7 +51,7 @@ class DocsExportPack:
         ctx
             Test context to seed.
         """
-        _ = self._name  # Satisfy protocol requirement
+        _ = self._name
         seed_docs_export_minimal(
             ctx.gateway,
             repo=ctx.repo,
@@ -132,7 +131,7 @@ class McpBackendPack:
         ctx
             Test context to seed.
         """
-        _ = self._name  # Satisfy protocol requirement
+        _ = self._name
         seed_mcp_backend(
             ctx.gateway,
             repo=ctx.repo,
@@ -140,7 +139,6 @@ class McpBackendPack:
         )
 
 
-# Singleton instances for convenient import
 DOCS_EXPORT_PACK = DocsExportPack()
 PROFILE_DATA_PACK = ProfileDataPack()
 MCP_BACKEND_PACK = McpBackendPack()

@@ -312,7 +312,6 @@ class DatasetSchemaRegistry:
         return result
 
 
-# Module-level singleton instance
 SCHEMA_REGISTRY = DatasetSchemaRegistry()
 
 

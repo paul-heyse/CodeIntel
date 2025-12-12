@@ -25,7 +25,7 @@ Check if data exists for a snapshot:
     from codeintel.storage.validation import table_has_rows_for_snapshot
 
     if table_has_rows_for_snapshot(con, contract, repo=repo, commit=commit):
-        # Data exists, proceed with processing
+
         ...
 
 Count rows across multiple tables:

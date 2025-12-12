@@ -45,11 +45,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-# =============================================================================
-# Test Fixtures
-# =============================================================================
-
-
 @dataclass
 class MockSnapshotRef:
     """Mock snapshot reference for testing."""
@@ -133,7 +128,6 @@ def create_test_graph() -> TargetGraph:
     """
     graph = TargetGraph()
 
-    # Root target (no dependencies)
     ast = OutputTarget.from_tables(
         name="ast",
         module="ingestion",
@@ -142,7 +136,6 @@ def create_test_graph() -> TargetGraph:
     )
     graph.register(ast)
 
-    # Second level
     goids = OutputTarget.from_tables(
         name="goids",
         module="graphs",
@@ -152,7 +145,6 @@ def create_test_graph() -> TargetGraph:
     )
     graph.register(goids)
 
-    # Third level
     function_metrics = OutputTarget.from_tables(
         name="function_metrics",
         module="analytics",
@@ -162,7 +154,6 @@ def create_test_graph() -> TargetGraph:
     )
     graph.register(function_metrics)
 
-    # Fourth level
     function_profile = OutputTarget.from_tables(
         name="function_profile",
         module="analytics",
@@ -272,11 +263,6 @@ def gateway_with_ast(snapshot: MockSnapshotRef) -> MockStorageGateway:
     )
     key = f"{snapshot.repo}:{snapshot.commit}:ast"
     return MockStorageGateway(build=MockBuildTracking(_manifests={key: manifest}))
-
-
-# =============================================================================
-# Unit Tests for Type Definitions
-# =============================================================================
 
 
 def test_dependency_status_satisfied() -> None:
@@ -393,11 +379,6 @@ def test_target_readiness_blocked() -> None:
     expect_equal(readiness.ultimate_bottleneck, "ast")
 
 
-# =============================================================================
-# Integration Tests for TargetReadinessView
-# =============================================================================
-
-
 def test_root_target_can_run(
     graph: TargetGraph, gateway: MockStorageGateway, snapshot: MockSnapshotRef
 ) -> None:
@@ -436,11 +417,9 @@ def test_deep_dependency_chain(
     target = graph.get("function_profile")
     view = TargetReadinessView(target, graph, as_gateway(gateway), as_snapshot(snapshot))
 
-    # function_profile -> function_metrics -> goids -> ast
     expect_true(view.is_blocked)
     expect_equal(view.ultimate_bottleneck, "ast")
 
-    # Check blocker chain
     chain = view.blocker_chain
     expect_true(len(chain) >= MIN_BLOCKER_CHAIN_LENGTH)
     expect_equal(chain[0].target, "function_profile")
@@ -456,8 +435,6 @@ def test_computed_target_blocks_dependent_due_to_hash_mismatch(
     target = graph.get("ast")
     view = TargetReadinessView(target, graph, as_gateway(gateway_with_ast), as_snapshot(snapshot))
 
-    # The manifest exists but hash likely doesn't match (mock hash vs computed)
-    # So it should be either current or stale depending on hash
     self_status = view.self_status
     expect_true(self_status in {"current", "stale", "never_computed"})
 
@@ -475,7 +452,6 @@ def test_ready_target_properties() -> None:
     expect_false(readiness.can_run)
 
 
-# =============================================================================
 def test_fresh_database_summary(
     graph: TargetGraph, empty_gateway: MockStorageGateway, snapshot: MockSnapshotRef
 ) -> None:
@@ -483,9 +459,9 @@ def test_fresh_database_summary(
     view = DatabaseReadinessView(graph, as_gateway(empty_gateway), as_snapshot(snapshot))
 
     summary = view.summary()
-    expect_equal(summary["total"], 4)  # ast, goids, function_metrics, function_profile
+    expect_equal(summary["total"], 4)
     expect_equal(summary["ready"], 0)
-    # ast can run, others blocked
+
     expect_true(summary["runnable"] >= 1)
     expect_true(summary["blocked"] >= 1)
 
@@ -532,7 +508,7 @@ def test_ready_targets(
     view = DatabaseReadinessView(graph, as_gateway(empty_gateway), as_snapshot(snapshot))
 
     ready = view.ready_targets()
-    expect_equal(ready, ())  # Nothing ready on fresh database
+    expect_equal(ready, ())
 
 
 def test_runnable_targets(
@@ -542,7 +518,7 @@ def test_runnable_targets(
     view = DatabaseReadinessView(graph, as_gateway(empty_gateway), as_snapshot(snapshot))
 
     runnable = view.runnable_targets()
-    expect_in("ast", runnable)  # ast has no deps, can run
+    expect_in("ast", runnable)
 
 
 def test_blocked_targets(
@@ -554,11 +530,10 @@ def test_blocked_targets(
     blocked = view.blocked_targets()
     blocked_names = [name for name, _ in blocked]
 
-    # goids, function_metrics, function_profile should be blocked
     expect_in("goids", blocked_names)
     expect_in("function_metrics", blocked_names)
     expect_in("function_profile", blocked_names)
-    # ast should not be blocked (it can run)
+
     expect_false("ast" in blocked_names)
 
 
@@ -569,7 +544,7 @@ def test_bottlenecks(
     view = DatabaseReadinessView(graph, as_gateway(empty_gateway), as_snapshot(snapshot))
 
     bottlenecks = view.bottlenecks()
-    # ast is the only bottleneck since everything depends on it
+
     expect_in("ast", bottlenecks)
 
 
@@ -610,11 +585,6 @@ def test_all_readiness(
     expect_is_instance(all_readiness["ast"], TargetReadiness)
 
 
-# =============================================================================
-# Tests for Blocker Chain Computation
-# =============================================================================
-
-
 def test_blocker_info_structure() -> None:
     """Test BlockerInfo dataclass structure."""
     info = BlockerInfo(
@@ -638,11 +608,6 @@ def test_blocker_info_for_bottleneck() -> None:
     expect_is_none(info.blocked_by)
 
 
-# =============================================================================
-# Tests for Time Estimation
-# =============================================================================
-
-
 def test_time_estimation_for_runnable(
     graph: TargetGraph, empty_gateway: MockStorageGateway, snapshot: MockSnapshotRef
 ) -> None:
@@ -651,14 +616,9 @@ def test_time_estimation_for_runnable(
     view = TargetReadinessView(target, graph, as_gateway(empty_gateway), as_snapshot(snapshot))
 
     readiness = view.readiness
-    # ast has estimated_duration_ms of 5000
+
     if readiness.estimated_time_to_ready_ms is not None:
         expect_true(readiness.estimated_time_to_ready_ms >= MIN_ESTIMATED_TIME_MS)
-
-
-# =============================================================================
-# Edge Case Tests
-# =============================================================================
 
 
 def test_empty_graph() -> None:
@@ -714,14 +674,7 @@ def test_target_with_default_duration() -> None:
     view = DatabaseReadinessView(graph, as_gateway(gateway), as_snapshot(snapshot))
     readiness = view["default_duration"].readiness
 
-    # Time estimation uses computed duration from TargetExecution
-    # Default duration is 5000ms (base) so estimation should be present
     expect_is_not_none(readiness.estimated_time_to_ready_ms)
-
-
-# =============================================================================
-# Test Action Kind Values
-# =============================================================================
 
 
 def test_action_kind_none() -> None:
@@ -750,11 +703,6 @@ def test_action_kind_blocked_external() -> None:
     action = ActionNeeded(kind="blocked_external", reason="External dependency missing")
     expect_equal(action.kind, "blocked_external")
     expect_false(action.is_ready)
-
-
-# =============================================================================
-# Test Self Status Values
-# =============================================================================
 
 
 def test_all_self_status_values() -> None:

@@ -15,7 +15,6 @@ Examples
 
 from __future__ import annotations
 
-# Import from the commands package (canonical location)
 from codeintel.cli.commands import (
     app,
     build_app,

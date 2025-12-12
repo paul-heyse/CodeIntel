@@ -246,7 +246,6 @@ def test_strict_schema_flag_enforces_views(tmp_path: Path) -> None:
         run_ingestion=False,
     )
     with provisioned_gateway(tmp_path / "repo", config=config) as ctx:
-        # docs view should be queryable because strict_schema turns on views
         ctx.gateway.con.execute("SELECT * FROM docs.v_symbol_module_graph LIMIT 0")
 
 

@@ -194,9 +194,8 @@ class ScipIngestPlugin(TargetPlugin):
         ToolNotAvailableError
             When the scip-python tool is not available.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Check tool availability
         if ctx.resources.scip_indexer is None:
             raise ToolNotAvailableError(target=self.plugin_name, tool="scip-python")
 
@@ -204,15 +203,12 @@ class ScipIngestPlugin(TargetPlugin):
             dynamic_overrides={"scip_output_dir": ctx.scip_dir},
         )
 
-        # Get module paths and convert to ModuleRecord
         paths = _filter_paths(get_module_paths(ctx), opts.scope_paths)
         modules = paths_to_modules(paths, ctx.repo_root)
 
-        # Create adapters using build protocols
         storage = DuckDBStorageAdapter(ctx.gateway)
         tool = BuildToolAdapter(scip_indexer=ctx.resources.scip_indexer)
 
-        # Create config
         scip_dir = opts.scip_output_dir or ctx.scip_dir
         config = ScipIngestConfig(
             repo=ctx.repo,
@@ -222,7 +218,6 @@ class ScipIngestPlugin(TargetPlugin):
             output_json=scip_dir / "index.json",
         )
 
-        # Execute step
         step = ScipIngestStep(storage=storage, tools=tool)
         result = await step.execute_async(modules, config)
 
@@ -230,7 +225,6 @@ class ScipIngestPlugin(TargetPlugin):
             errors = "; ".join(result.errors) if result.errors else "Unknown error"
             return TargetResult.failed(f"SCIP ingest failed: {errors}")
 
-        # Compute row counts
         row_counts = _compute_row_counts(ctx)
         return TargetResult.succeeded(
             row_counts=row_counts,

@@ -14,7 +14,7 @@ from codeintel.cli.config.schema import generate_schema
 if TYPE_CHECKING:
     from types import ModuleType
 
-# Validation constraints
+
 VALID_OUTPUT_FORMATS = {"text", "json"}
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 MIN_RETRY_ATTEMPTS = 1
@@ -24,7 +24,7 @@ MAX_STORAGE_CONNECTIONS = 100
 REPO_PATTERN = re.compile(r"^[a-zA-Z0-9_\-\./]+$")
 COMMIT_PATTERN = re.compile(r"^[a-fA-F0-9]{7,40}$")
 
-# Try to import jsonschema for JSON Schema validation
+
 _jsonschema: ModuleType | None
 try:
     import jsonschema as _jsonschema
@@ -288,7 +288,6 @@ def validate_with_json_schema(
     If jsonschema is not installed, returns an empty list (no validation).
     """
     if not _HAS_JSONSCHEMA or _jsonschema is None:
-        # jsonschema not available, skip JSON Schema validation
         return []
 
     schema = generate_schema(CliConfig)

@@ -25,7 +25,7 @@ from codeintel.cli.rendering import CODEINTEL_THEME
 if TYPE_CHECKING:
     from codeintel.cli.execution.registry import OperationSpec
 
-# Minimum number of parts in operation_id for group/action split (e.g., "jobs.list")
+
 _MIN_OPERATION_ID_PARTS = 2
 
 
@@ -59,7 +59,6 @@ class HelpRenderer:
             self.console.print(f"[error]Operation not found: {operation_id}[/error]")
             return False
 
-        # Header
         self.console.print()
         self.console.print(
             Panel(
@@ -69,7 +68,6 @@ class HelpRenderer:
             )
         )
 
-        # Metadata
         table = Table(show_header=False, box=None)
         table.add_column("Key", style="bold")
         table.add_column("Value")
@@ -83,7 +81,6 @@ class HelpRenderer:
         self.console.print(table)
         self.console.print()
 
-        # Usage example
         self._render_usage_example(info)
 
         return True
@@ -97,7 +94,7 @@ class HelpRenderer:
             Operation specification.
         """
         self.console.print("[heading]Usage[/heading]")
-        # Generate basic CLI example from operation_id
+
         parts = info.operation_id.split(".")
         if len(parts) >= _MIN_OPERATION_ID_PARTS:
             group, action = parts[0], parts[1]
@@ -206,7 +203,6 @@ def render_help_text(
     if info.tags:
         writer.write(f"Tags: {', '.join(info.tags)}\n")
 
-    # Generate basic usage example
     writer.write("\nUsage:\n")
     parts = info.operation_id.split(".")
     if len(parts) >= _MIN_OPERATION_ID_PARTS:

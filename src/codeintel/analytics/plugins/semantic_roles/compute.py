@@ -76,31 +76,26 @@ class SemanticRolesPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Build config from context
         cfg = SemanticRolesStepConfig(
             snapshot=ctx.snapshot,
         )
 
-        # Get resources from catalog
         catalog = ctx.resources.catalog
         module_by_path: dict[str, str] = {}
         ast_map: dict[int, FunctionAst] = {}
         features_map: dict[int, FunctionAstFeatures] = {}
 
         if catalog is not None:
-            # Get module_by_path from catalog
             if hasattr(catalog, "catalog"):
                 module_by_path = catalog.catalog().module_by_path
 
-            # Get AST data
-            ast_data = None  # Resources not yet populated via build context
+            ast_data = None
             if ast_data is not None:
                 ast_map = ast_data.function_ast_map
 
-            # Get features
-            features = None  # Resources not yet populated via build context
+            features = None
             if features is not None:
                 features_map = cast("dict[int, FunctionAstFeatures]", features)
 

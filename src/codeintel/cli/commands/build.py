@@ -30,7 +30,7 @@ build_app = App(
     help="Build system commands for minimal-work target computation.",
 )
 
-# Config for build commands - requires runtime and gateway
+
 _BUILD_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
 

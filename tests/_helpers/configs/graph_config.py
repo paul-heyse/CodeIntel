@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-# Default constants for graph tests
 REPO = "demo/repo"
 COMMIT = "deadbeef"
 

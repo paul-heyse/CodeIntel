@@ -6,6 +6,7 @@ Validates DatasetRef includes repo/commit fields and ArtifactRef structure.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -61,7 +62,7 @@ class TestDatasetRefV2Fields:
             commit="abc123",
         )
         with pytest.raises(AttributeError):
-            ref.repo = "changed"  # type: ignore[misc]
+            object.__setattr__(cast("Any", ref), "repo", "changed")  # noqa: PLC2801
 
 
 class TestRefsFromTargetResult:
@@ -101,7 +102,7 @@ class TestRefsFromTargetResult:
         ref = refs.get("analytics.function_metrics")
         if ref is None:
             pytest.fail("refs_from_target_result should return ref")
-        # Without snapshot, should have empty strings
+
         if ref.repo:
             pytest.fail(f"Expected repo='', got '{ref.repo}'")
 
@@ -152,7 +153,7 @@ class TestArtifactRef:
             commit="abc123",
         )
         with pytest.raises(AttributeError):
-            ref.name = "changed"  # type: ignore[misc]
+            object.__setattr__(cast("Any", ref), "name", "changed")  # noqa: PLC2801
 
 
 class TestTargetRunRecordArtifacts:
@@ -267,7 +268,6 @@ class TestSkippedTargetsDatasetRef:
         if "analytics.metrics_b" not in refs:
             pytest.fail("Missing ref for metrics_b")
 
-        # Both should have lineage info
         for key, ref in refs.items():
             if ref.repo != DEFAULT_REPO:
                 pytest.fail(f"{key} should have repo from snapshot")
@@ -283,7 +283,6 @@ class TestSkippedTargetsDatasetRef:
             commit="abc123",
         )
 
-        # DatasetRef fields should be directly accessible
         if ref.table_key != "analytics.metrics":
             pytest.fail("table_key field not accessible")
         if ref.repo != "org/repo":

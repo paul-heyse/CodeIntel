@@ -288,12 +288,10 @@ def insert_analytics_rows(
         If delete columns cannot be determined for the requested dataset.
     """
     if delete_scope is not None:
-        # Validate that the table supports repo/commit deletion
         if not _table_supports_snapshot_delete(contract.table_key):
             message = f"Unsupported delete target: {contract.table_key}"
             raise ValueError(message)
 
-        # Use policy backend for deletion
         backend = DuckDBPolicyBackend(gateway)
         backend.delete_for_snapshot(
             contract.table_key,

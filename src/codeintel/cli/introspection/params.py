@@ -24,13 +24,11 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
-# Parameter Role Classification
-# -----------------------------------------------------------------------------
 
 ParamRole = Literal["selector", "filter", "advanced"]
 """Classification of CLI parameter purpose."""
 
-# Selector parameters identify specific entities
+
 _SELECTOR_NAMES: frozenset[str] = frozenset(
     {
         "goid_h128",
@@ -45,10 +43,10 @@ _SELECTOR_NAMES: frozenset[str] = frozenset(
     }
 )
 
-# Selector suffix patterns (e.g., function_goid_h128, caller_goid_h128)
+
 _SELECTOR_SUFFIXES: tuple[str, ...] = ("_goid_h128", "_urn", "_id")
 
-# Filter parameters restrict result sets
+
 _FILTER_PREFIXES: tuple[str, ...] = ("min_", "max_")
 _FILTER_SUFFIXES: tuple[str, ...] = ("_only",)
 _FILTER_NAMES: frozenset[str] = frozenset(
@@ -62,7 +60,7 @@ _FILTER_NAMES: frozenset[str] = frozenset(
     }
 )
 
-# Advanced parameters control complex behavior
+
 _ADVANCED_NAMES: frozenset[str] = frozenset(
     {
         "scope",
@@ -129,7 +127,6 @@ def classify_param_role(
     ParamRole
         Classification as selector, filter, or advanced.
     """
-    # Direct name matches take priority (check all sets first)
     if name in _SELECTOR_NAMES or _is_selector_by_suffix(name):
         return "selector"
     if name in _ADVANCED_NAMES:
@@ -137,17 +134,11 @@ def classify_param_role(
     if name in _FILTER_NAMES or _check_prefix_suffix_patterns(name):
         return "filter"
 
-    # Graph-related operations default to advanced for unknown params
     if operation is not None and operation.required_graphs:
         return "advanced"
 
-    # Default to filter for unknown parameters
     return "filter"
 
-
-# -----------------------------------------------------------------------------
-# Panel Name Mapping
-# -----------------------------------------------------------------------------
 
 _ROLE_TO_PANEL: Mapping[ParamRole, str] = {
     "selector": "Target Selection",
@@ -170,11 +161,6 @@ def get_help_panel_for_role(role: ParamRole) -> str:
         Panel name for Typer's rich_help_panel option.
     """
     return _ROLE_TO_PANEL[role]
-
-
-# -----------------------------------------------------------------------------
-# CLI Parameter Specification
-# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -258,7 +244,6 @@ def _is_optional_type(type_hint: type[Any] | None) -> bool:
     if origin is None:
         return False
 
-    # Handle Union types (including X | None via types.UnionType or typing.Union)
     if origin is types.UnionType or origin is Union:
         args = get_args(type_hint)
         return type(None) in args
@@ -286,7 +271,6 @@ def _extract_base_type(type_hint: type[Any] | None) -> type[Any] | None:
     if origin is None:
         return type_hint
 
-    # Handle Union types (types.UnionType for X | None, Union for Optional[X])
     union_origins = {types.UnionType, Union}
 
     if origin in union_origins:
@@ -333,7 +317,6 @@ def _generate_help_text(name: str, role: ParamRole, python_type: type[Any] | Non
         "advanced": "Advanced option",
     }
 
-    # Convert name to human-readable form
     human_name = name.replace("_", " ")
 
     return f"{role_hints[role]}: {human_name}{type_desc}"
@@ -383,12 +366,6 @@ def build_cli_param_spec(
     )
 
 
-# -----------------------------------------------------------------------------
-# Signature Introspection
-# -----------------------------------------------------------------------------
-
-# Map operation backend_method to Protocol class + method
-# This avoids import cycles by using string-based lookup
 _BACKEND_METHOD_TO_API: dict[str, tuple[str, str]] = {
     "get_function_summary": ("FunctionQueriesApi", "get_function_summary"),
     "list_high_risk_functions": ("FunctionQueriesApi", "list_high_risk_functions"),
@@ -433,9 +410,6 @@ def _get_type_hints_safe(method: object) -> dict[str, Any]:
     try:
         return get_type_hints(method)
     except (NameError, AttributeError, TypeError):
-        # NameError: forward reference not resolvable
-        # AttributeError: method doesn't support type hints
-        # TypeError: invalid type hint
         return {}
 
 
@@ -502,22 +476,15 @@ def build_cli_param_specs_for_operation(
     specs: list[CliParamSpec] = []
 
     for param in sig.parameters.values():
-        # Skip self parameter
         if param.name == "self":
             continue
         spec = build_cli_param_spec(param, hints, operation)
         specs.append(spec)
 
-    # Sort by role: selectors first, then filters, then advanced
     role_order: dict[ParamRole, int] = {"selector": 0, "filter": 1, "advanced": 2}
     specs.sort(key=lambda s: (role_order[s.role], s.name))
 
     return specs
-
-
-# -----------------------------------------------------------------------------
-# Operation Metadata
-# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -574,7 +541,6 @@ def build_operation_cli_metadata(operation: Operation) -> OperationCliMetadata:
     cli_name = _make_operation_cli_name(operation.id)
     params = tuple(build_cli_param_specs_for_operation(operation))
 
-    # Build help text
     help_lines = [operation.summary]
     if operation.description:
         help_lines.append("")
@@ -595,11 +561,6 @@ def build_operation_cli_metadata(operation: Operation) -> OperationCliMetadata:
         params=params,
         help_text=help_text,
     )
-
-
-# -----------------------------------------------------------------------------
-# CLI Type Conversion
-# -----------------------------------------------------------------------------
 
 
 _BASIC_TYPES: frozenset[type[Any]] = frozenset({int, float, bool, str})
@@ -626,13 +587,7 @@ def _get_typer_type(spec: CliParamSpec) -> type[Any]:
     if base_type in _BASIC_TYPES:
         return base_type
 
-    # For complex types, use string and let the backend handle conversion
     return str
-
-
-# -----------------------------------------------------------------------------
-# Command Factory
-# -----------------------------------------------------------------------------
 
 
 def get_operations_with_cli_support() -> list[Operation]:
@@ -648,9 +603,7 @@ def get_operations_with_cli_support() -> list[Operation]:
     """
     operations: list[Operation] = []
     for op in iter_operations():
-        # Include operations with HTTP or MCP exposure
         if op.http_path is not None or op.tool_name is not None:
-            # Skip health and meta operations
             if op.category in {"health"}:
                 continue
             operations.append(op)
@@ -692,8 +645,6 @@ def coerce_string_param(
     if base_type is bool:
         return parse_bool(value)
 
-    # For complex types (like enums, dataclasses), return as string
-    # and let the backend handle conversion
     return value
 
 
@@ -725,7 +676,6 @@ def coerce_params_from_strings(
 
         spec = spec_map.get(name)
         if spec is None:
-            # Unknown parameter - pass through as string
             result[name] = value
             continue
 

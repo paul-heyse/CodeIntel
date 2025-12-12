@@ -31,9 +31,7 @@ class ModuleRepository(BaseRepository):
             .select("module")
             .order_by("module")
         )
-        # NOTE: Skip Pandera validation (table_key=None) because we're only
-        # selecting a single column. Full schema validation would fail since
-        # the Pandera schema expects all columns.
+
         rows = self._ibis_to_dicts(expr)
         return [str(row["module"]) for row in rows]
 

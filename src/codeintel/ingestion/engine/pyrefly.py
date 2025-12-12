@@ -195,7 +195,6 @@ class PyreflyPlugin(ToolPlugin):
                 parsed=DiagnosticReport.empty("pyrefly"),
             )
 
-        # Parse the JSON output file
         parsed = DiagnosticReport.empty("pyrefly")
         if output_exists:
 

@@ -37,10 +37,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.env_options import GatewayOptions
 
-# =============================================================================
-# Gateway Factory
-# =============================================================================
-
 
 class GatewayFactory:
     """Unified gateway creation with composable options.
@@ -529,7 +525,7 @@ __all__ = [
     "BackendOptions",
     "DuckDBConnection",
     "GatewayFactory",
-    "ScopeRecordingQuery",  # Re-exported from fakes.serving
+    "ScopeRecordingQuery",
     "build_duckdb_backend",
     "build_duckdb_query_service",
     "build_scope_parsing_service",

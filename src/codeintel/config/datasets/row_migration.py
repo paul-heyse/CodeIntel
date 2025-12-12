@@ -124,7 +124,6 @@ def get_row_model(table_key: str) -> type:
     validate_row_model_compatibility() confirms all datasets compatible.
     See architecture Section 5.3.1 - Migrate row models for activation steps.
     """
-    # First, try to get schema-generated model
     schema = SCHEMA_REGISTRY.get(table_key)
     if schema is not None:
         try:
@@ -132,7 +131,6 @@ def get_row_model(table_key: str) -> type:
         except (KeyError, AttributeError) as exc:
             log.debug("Could not generate row model for %s: %s", table_key, exc)
 
-    # Fall back to manual model lookup
     manual_model = _get_manual_row_model(table_key)
     if manual_model is not None:
         return manual_model
@@ -154,7 +152,6 @@ def _get_manual_row_model(table_key: str) -> type | None:
     type | None
         The manual TypedDict if found, None otherwise.
     """
-    # Map of table_key to manual model import paths
     manual_models: dict[str, str] = {
         "analytics.function_metrics": "FunctionMetricsRow",
         "analytics.function_types": "FunctionTypesRow",
@@ -199,16 +196,14 @@ def validate_row_model_compatibility(table_key: str) -> MigrationStatus:
     Examples
     --------
     >>> status = validate_row_model_compatibility("analytics.function_metrics")
-    >>> status.compatible  # doctest: +SKIP
+    >>> status.compatible
     True
     """
     differences: list[str] = []
 
-    # Check for manual model
     manual_model = _get_manual_row_model(table_key)
     has_manual = manual_model is not None
 
-    # Check for schema-generated model
     schema = SCHEMA_REGISTRY.get(table_key)
     has_schema = schema is not None
 
@@ -222,7 +217,6 @@ def validate_row_model_compatibility(table_key: str) -> MigrationStatus:
         )
 
     if manual_model is None:
-        # No manual model means we can use schema-generated directly
         return MigrationStatus(
             table_key=table_key,
             has_manual_model=False,
@@ -231,8 +225,6 @@ def validate_row_model_compatibility(table_key: str) -> MigrationStatus:
             differences=[],
         )
 
-    # At this point, both schema and manual_model are not None
-    # Compare the two models
     try:
         generated_model = schema.get_row_model()
         differences = _compare_typed_dicts(manual_model, generated_model)
@@ -265,14 +257,12 @@ def _compare_typed_dicts(manual: type, generated: type) -> list[str]:
     """
     differences: list[str] = []
 
-    # Get annotations from both
     manual_annotations = getattr(manual, "__annotations__", {})
     generated_annotations = getattr(generated, "__annotations__", {})
 
     manual_fields = set(manual_annotations.keys())
     generated_fields = set(generated_annotations.keys())
 
-    # Check for missing fields
     missing_in_generated = manual_fields - generated_fields
     differences.extend(
         f"Field '{field}' in manual but not in generated" for field in missing_in_generated
@@ -283,7 +273,6 @@ def _compare_typed_dicts(manual: type, generated: type) -> list[str]:
         f"Field '{field}' in generated but not in manual" for field in extra_in_generated
     )
 
-    # Check for type mismatches in common fields
     common_fields = manual_fields & generated_fields
     for field in common_fields:
         manual_type = manual_annotations[field]
@@ -316,7 +305,6 @@ def _types_compatible(manual_type: object, generated_type: object) -> bool:
     More sophisticated type comparison could handle Union types, Optional,
     and type aliases. See architecture Section 5.3.1 - Migrate row models.
     """
-    # Simple string comparison for now
     return str(manual_type) == str(generated_type)
 
 

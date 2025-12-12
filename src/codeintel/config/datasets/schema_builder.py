@@ -62,7 +62,6 @@ def build_dataset_schema(
     >>> ds.name
     'analytics.function_metrics'
     """
-    # Extract metadata from contract
     metadata = DatasetMetadata(
         description=contract.description,
         owner=contract.owner,
@@ -70,13 +69,12 @@ def build_dataset_schema(
         freshness_sla=contract.freshness_sla,
         retention_policy=contract.retention_policy,
         upstream_dependencies=contract.upstream_dependencies,
-        downstream_consumers=(),  # Computed later by registry
+        downstream_consumers=(),
         tags=contract.tags,
         deprecated=contract.deprecated,
         deprecation_message=contract.deprecation_message,
     )
 
-    # Get pre-existing row model if available
     row_model = None
     if contract.row_binding is not None:
         row_model = contract.row_binding.row_type
@@ -123,7 +121,6 @@ def build_all_schemas() -> dict[str, DatasetSchema]:
         pandera_schema = dataset_schemas.get(table_key)
 
         if pandera_schema is None:
-            # Skip datasets without Pandera schemas
             continue
 
         schemas[table_key] = build_dataset_schema(contract, pandera_schema)

@@ -38,11 +38,6 @@ if TYPE_CHECKING:
     from codeintel.graphs.ports.parsing import ParsedModule
 
 
-# =============================================================================
-# Local Type Tracking
-# =============================================================================
-
-
 class LocalTypeTracker:
     """Track variable types from class instantiations.
 
@@ -77,7 +72,6 @@ class LocalTypeTracker:
         import_aliases
             Import alias mapping to resolve class to fully qualified name.
         """
-        # Resolve class name through import aliases
         resolved = import_aliases.get(class_name, class_name)
         self._variable_types[var_name] = resolved
 
@@ -117,7 +111,6 @@ def extract_class_name_from_call(func: cst.BaseExpression) -> str | None:
     if isinstance(func, cst.Name):
         return func.value
     if isinstance(func, cst.Attribute):
-        # Handle module.ClassName() - return full dotted name
         parts: list[str] = []
         current: cst.BaseExpression = func
         while isinstance(current, cst.Attribute):
@@ -130,17 +123,12 @@ def extract_class_name_from_call(func: cst.BaseExpression) -> str | None:
     return None
 
 
-# Backwards compatibility alias
 _extract_class_name_from_call = extract_class_name_from_call
 
 
-# =============================================================================
-# CST-based Collection (Primary Strategy)
-# =============================================================================
-
 FUNCTION_NODE_TYPES = (cst.FunctionDef, getattr(cst, "AsyncFunctionDef", cst.FunctionDef))
 
-# Number of elements in an attribute chain for instance method calls (obj.method)
+
 _INSTANCE_METHOD_CHAIN_LENGTH = 2
 
 
@@ -187,11 +175,10 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
             self.current_function_goid = self.context.function_index.lookup(
                 self.rel_path, start.line, end.line
             )
-            # Clear type tracking when entering a new function scope
+
             self.type_tracker.clear()
             return True
 
-        # Track simple assignments like: obj = ClassName()
         if isinstance(node, (cst.Assign, cst.AnnAssign)):
             self._track_assignment(node)
 
@@ -213,7 +200,6 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         node
             Assignment node to analyze.
         """
-        # Get the value being assigned
         value: cst.BaseExpression | None = None
         var_name: str | None = None
 
@@ -230,7 +216,6 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         if var_name is None or value is None:
             return
 
-        # Check if value is a Call (potential class instantiation)
         if isinstance(value, cst.Call):
             class_name = extract_class_name_from_call(value.func)
             if class_name:
@@ -255,12 +240,10 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
 
         callee_name, attr_chain = extract_callee_cst(node.func)
 
-        # First, try instance method resolution if we have a two-part chain (obj.method)
         resolution: ResolutionResult | None = None
         if len(attr_chain) == _INSTANCE_METHOD_CHAIN_LENGTH:
             resolution = self._try_instance_method_resolution(attr_chain)
 
-        # Fall back to standard resolution
         if resolution is None or resolution.callee_goid is None:
             resolution = resolve_callee(
                 callee_name,
@@ -319,7 +302,6 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         if class_type is None:
             return None
 
-        # Try to resolve the method on the inferred class
         method_qualname = f"{class_type}.{method_name}"
         goid = self.context.global_callees.get(method_qualname)
         if goid is not None:
@@ -329,7 +311,6 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
                 confidence=0.75,
             )
 
-        # Also try with just the class name (not fully qualified)
         class_short_name = class_type.rsplit(".", 1)[-1]
         short_method_qualname = f"{class_short_name}.{method_name}"
         goid = self.context.global_callees.get(short_method_qualname)
@@ -340,10 +321,7 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
                 confidence=0.7,
             )
 
-        # Try scanning global_callees for matching method name patterns
-        # This handles cases where the class name is partial (e.g., 'C' instead of 'pkg.a.C')
         for qualname, qgoid in self.context.global_callees.items():
-            # Match qualname ending with .ClassName.method_name
             if qualname.endswith(f".{class_short_name}.{method_name}"):
                 return ResolutionResult(
                     callee_goid=qgoid,
@@ -415,11 +393,6 @@ def collect_edges_cst(
     wrapper.resolve(metadata.PositionProvider)
     wrapper.visit(visitor)
     return visitor.edges
-
-
-# =============================================================================
-# AST-based Collection (Fallback Strategy)
-# =============================================================================
 
 
 def extract_callee_ast(expr: ast.AST) -> tuple[str, list[str]]:
@@ -549,11 +522,6 @@ def collect_edges_ast(
     visitor = _AstCallGraphVisitor(rel_path, context)
     visitor.visit(tree)
     return visitor.edges
-
-
-# =============================================================================
-# Edge Utilities
-# =============================================================================
 
 
 def collect_call_sites(
@@ -691,7 +659,6 @@ def dedupe_edges(
     if not edges:
         return []
 
-    # Handle CallEdge type
     if isinstance(edges[0], CallEdge):
         seen: dict[tuple[int, int | None, int], CallEdge] = {}
         for edge in edges:

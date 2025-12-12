@@ -42,11 +42,6 @@ def _expect_in(item: object, container: Container[object], label: str) -> None:
         pytest.fail(f"{label}: {item!r} not in {container!r}")
 
 
-# ------------------------------------------------------------------
-# ColumnLineage tests
-# ------------------------------------------------------------------
-
-
 def test_column_lineage_creation() -> None:
     """Create ColumnLineage with basic fields."""
     lineage = ColumnLineage(
@@ -158,11 +153,6 @@ def test_column_lineage_summary() -> None:
     _require(condition="test_plugin" in summary, message="should have producer")
 
 
-# ------------------------------------------------------------------
-# TableLineage tests
-# ------------------------------------------------------------------
-
-
 def test_table_lineage_creation() -> None:
     """Create TableLineage with basic fields."""
     lineage = TableLineage(
@@ -231,27 +221,20 @@ def test_table_lineage_get_column_missing() -> None:
     _require(condition=result is None, message="should return None")
 
 
-# ------------------------------------------------------------------
-# trace_column_lineage tests
-# ------------------------------------------------------------------
-
-
 def test_trace_column_lineage_missing_table() -> None:
     """Verify trace_column_lineage raises KeyError for missing table."""
     try:
         trace_column_lineage("nonexistent.table", "col")
         pytest.fail("Should have raised KeyError")
     except KeyError:
-        pass  # Expected
+        pass
 
 
 def test_trace_column_lineage_registered_table() -> None:
     """Verify trace_column_lineage works for registered tables."""
-    # Skip if no schemas registered
     if len(SCHEMA_REGISTRY) == 0:
         pytest.skip("No schemas registered")
 
-    # Get first registered table
     table_key = next(iter(SCHEMA_REGISTRY.keys()))
     schema = SCHEMA_REGISTRY.get(table_key)
     if schema is None:
@@ -271,7 +254,6 @@ def test_trace_column_lineage_registered_table() -> None:
 
 def test_trace_column_lineage_missing_column() -> None:
     """Verify trace_column_lineage raises ValueError for missing column."""
-    # Skip if no schemas registered
     if len(SCHEMA_REGISTRY) == 0:
         pytest.skip("No schemas registered")
 
@@ -281,12 +263,7 @@ def test_trace_column_lineage_missing_column() -> None:
         trace_column_lineage(table_key, "nonexistent_column_xyz")
         pytest.fail("Should have raised ValueError")
     except ValueError:
-        pass  # Expected
-
-
-# ------------------------------------------------------------------
-# trace_table_lineage tests
-# ------------------------------------------------------------------
+        pass
 
 
 def test_trace_table_lineage_missing_table() -> None:
@@ -295,12 +272,11 @@ def test_trace_table_lineage_missing_table() -> None:
         trace_table_lineage("nonexistent.table")
         pytest.fail("Should have raised KeyError")
     except KeyError:
-        pass  # Expected
+        pass
 
 
 def test_trace_table_lineage_registered_table() -> None:
     """Verify trace_table_lineage works for registered tables."""
-    # Skip if no schemas registered
     if len(SCHEMA_REGISTRY) == 0:
         pytest.skip("No schemas registered")
 
@@ -310,11 +286,6 @@ def test_trace_table_lineage_registered_table() -> None:
     _expect_equal(lineage.table_key, table_key, "table_key")
     _require(condition=isinstance(lineage.columns, dict), message="columns should be dict")
     _require(condition=lineage.column_count >= 0, message="column_count should be non-negative")
-
-
-# ------------------------------------------------------------------
-# get_all_columns_with_constraint tests
-# ------------------------------------------------------------------
 
 
 def test_get_all_columns_with_constraint_returns_list() -> None:
@@ -331,7 +302,7 @@ def test_get_all_columns_with_constraint_invalid_kind() -> None:
 
 def test_get_all_columns_with_constraint_tuple_format() -> None:
     """Verify results are (table_key, column) tuples."""
-    expected_tuple_length = 2  # (table_key, column)
+    expected_tuple_length = 2
     result = get_all_columns_with_constraint("type")
     for item in result:
         _require(condition=isinstance(item, tuple), message="should be tuple")

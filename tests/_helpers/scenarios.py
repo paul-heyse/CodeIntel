@@ -25,11 +25,6 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Scenario Configuration
-# =============================================================================
-
-
 @dataclass
 class ScenarioConfig:
     """Configuration for a test scenario."""
@@ -42,22 +37,13 @@ class ScenarioConfig:
     extra: dict[str, object] = field(default_factory=dict)
 
 
-# =============================================================================
-# Scenario Builder
-# =============================================================================
-
-
 @dataclass
 class TestScenario:
     """Fluent builder for test scenarios."""
 
-    __test__ = False  # Prevent pytest collection
+    __test__ = False
 
     config: ScenarioConfig = field(default_factory=ScenarioConfig)
-
-    # -------------------------------------------------------------------------
-    # Factory Methods
-    # -------------------------------------------------------------------------
 
     @classmethod
     def minimal(cls) -> TestScenario:
@@ -176,10 +162,6 @@ class TestScenario:
         scenario.config.seed_packs.extend([CORE_PACK, GRAPH_PACK, COVERAGE_PACK, METRICS_PACK])
         return scenario
 
-    # -------------------------------------------------------------------------
-    # Configuration Methods
-    # -------------------------------------------------------------------------
-
     def with_repo(self, repo: str) -> Self:
         """Set repository identifier.
 
@@ -246,10 +228,6 @@ class TestScenario:
         self.config.extra[key] = value
         return self
 
-    # -------------------------------------------------------------------------
-    # Build Methods
-    # -------------------------------------------------------------------------
-
     def build(self, tmp_path: Path) -> TestContext:
         """Build the test context from configuration (parallel-safe).
 
@@ -276,11 +254,6 @@ class TestScenario:
             ctx.require(pack)
 
         return ctx
-
-
-# =============================================================================
-# Convenience Functions
-# =============================================================================
 
 
 def minimal_context(tmp_path: Path) -> TestContext:

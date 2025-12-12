@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     from opentelemetry.trace import Span, Tracer
 
-# Try to import OpenTelemetry components (optional dependency)
+
 try:
     from opentelemetry import trace as otel_trace
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -241,7 +241,6 @@ class TelemetryProvider:
         provider
             TracerProvider instance.
         """
-        # Use self to satisfy linter
         _ = self
         provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
 
@@ -317,7 +316,6 @@ def _dataclass_replace(obj: TelemetryConfig, /, **changes: object) -> TelemetryC
     TelemetryConfig
         New instance with replaced fields.
     """
-    # Build new config with explicit field handling
     enabled = changes.get("enabled", obj.enabled)
     service_name = changes.get("service_name", obj.service_name)
     export_traces = changes.get("export_traces", obj.export_traces)
@@ -413,7 +411,6 @@ class OperationMetrics:
         float
             Percentile value.
         """
-        # Use self to satisfy linter
         _ = self
         if not values:
             return 0.0
@@ -496,7 +493,6 @@ class TracingMiddleware:
         context
             Context from before_invoke.
         """
-        # Use op_id and result to satisfy linter
         _ = result
 
         start_time = context.get("start_time")

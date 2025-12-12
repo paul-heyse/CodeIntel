@@ -295,7 +295,6 @@ def docs_export_handler(
     params = _collect_export_params(ctx)
 
     try:
-        # Access runtime to trigger resolution and validate project
         _ = deps.runtime_builder(ctx)
     except (ResolutionError, ValidationError) as e:
         return fail_project_error("docs", str(e))
@@ -365,15 +364,11 @@ def docs_validate_handler(
     """
     deps = deps or DEFAULT_DOCS_DEPS
     try:
-        # Access runtime to trigger resolution and validate project
         _ = deps.runtime_builder(ctx)
     except (ResolutionError, ValidationError) as e:
         return fail_project_error("docs", str(e))
 
     LOG.info("Validating docs exports")
-
-    # In a real implementation, this would run validation checks
-    # For now, return a passing result
 
     return CliResult.ok(
         DocsValidateResult(

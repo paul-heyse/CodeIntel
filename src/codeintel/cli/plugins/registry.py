@@ -53,7 +53,6 @@ def register_plugin_operations(
         )
         return 0
 
-    # Check for register() function
     if hasattr(plugin.module, "register"):
         return _register_new_api(plugin, reg)
 
@@ -105,9 +104,9 @@ def _register_new_api(
             OperationSpec
                 The registered spec.
             """
-            _ = self  # Required for method signature
+            _ = self
             nonlocal count
-            # Validate operation ID prefix
+
             if not spec.operation_id.startswith(f"{plugin.manifest.name}."):
                 LOG.warning(
                     "Operation '%s' should be prefixed with '%s.'",
@@ -189,7 +188,6 @@ def initialize_plugins(
     loader = PluginLoader(sandbox_enabled=sandbox_enabled)
     result = loader.load_all(search_paths)
 
-    # Log failures
     for path, error in result.failed:
         LOG.error("Failed to load plugin %s: %s", path, error)
 

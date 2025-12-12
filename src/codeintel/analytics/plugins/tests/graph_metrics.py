@@ -86,7 +86,7 @@ class TestGraphMetricsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         repo = ctx.snapshot.repo
         commit = ctx.snapshot.commit
@@ -103,7 +103,6 @@ class TestGraphMetricsPlugin(TargetPlugin):
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Test graph metrics computation failed: {e}")
 
-        # Count rows written
         row_counts: dict[str, int] = {}
         for table in (
             "analytics.test_graph_metrics_tests",

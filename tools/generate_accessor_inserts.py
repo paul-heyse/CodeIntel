@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
-# DuckDB type to Python type mapping
+
 DUCKDB_TO_PYTHON: Final[dict[str, str]] = {
     "BOOLEAN": "bool",
     "INTEGER": "int",
@@ -42,20 +42,20 @@ DUCKDB_TO_PYTHON: Final[dict[str, str]] = {
     "TIMESTAMPTZ": "str",
 }
 
-# Tables that have special handling in accessors.py and should NOT be generated
+
 SKIP_TABLES: Final[set[str]] = set()
 
-# Schema prefixes to mixin class mapping
+
 SCHEMA_TO_MIXIN: Final[dict[str, str]] = {
     "core": "CoreTableInsertsMixin",
     "graph": "GraphTableInsertsMixin",
     "analytics": "AnalyticsTableInsertsMixin",
 }
 
-# Threshold for multi-line tuple type formatting
+
 MULTILINE_TYPE_THRESHOLD: Final[int] = 8
 
-# Threshold for truncating column descriptions in docstrings
+
 COLUMN_DESC_TRUNCATE_THRESHOLD: Final[int] = 10
 COLUMN_DESC_PREVIEW_COUNT: Final[int] = 8
 
@@ -127,9 +127,7 @@ def generate_tuple_type(table_key: str) -> str:
 
     types = [duckdb_type_to_python(col.type, nullable=col.nullable) for col in schema.columns]
 
-    # Format the tuple type with line breaks for readability if long
     if len(types) > MULTILINE_TYPE_THRESHOLD:
-        # Multi-line format
         type_str = ",\n                ".join(types)
         return f"tuple[\n                {type_str},\n            ]"
     return f"tuple[{', '.join(types)}]"
@@ -153,7 +151,7 @@ def generate_docstring_params(table_key: str) -> str:
         return "        rows\n            Iterable of row tuples."
 
     col_names = [col.name for col in schema.columns]
-    # Truncate if too many columns
+
     col_desc = (
         ", ".join(col_names[:COLUMN_DESC_PREVIEW_COUNT]) + ", ..."
         if len(col_names) > COLUMN_DESC_TRUNCATE_THRESHOLD
@@ -230,7 +228,7 @@ def generate_mixin_class(schema_prefix: str, table_keys: list[str]) -> str:
     insert_symbol_use_edges) and are defined manually in accessors.py.
     """
 
-    # Type annotation for _insert_rows inherited from BaseTableAccessor
+
     _insert_rows: Any
 
 {methods_str}'''

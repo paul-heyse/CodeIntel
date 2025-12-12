@@ -53,7 +53,6 @@ def _parse_pytest_json(
     TestReport
         Parsed test results.
     """
-    # pytest-json-report has tests at top-level "tests" key
     tests = payload.get("tests")
     if tests is None and "report" in payload:
         tests = payload["report"].get("tests")
@@ -137,7 +136,6 @@ class PytestPlugin(ToolPlugin):
                 parsed=TestReport.empty(),
             )
 
-        # Parse the JSON output file
         parsed = TestReport.empty()
 
         def _is_file() -> bool:

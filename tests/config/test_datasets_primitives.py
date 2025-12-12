@@ -147,7 +147,6 @@ def test_composite_schema_source_column_names() -> None:
         excluded_columns=frozenset({"excluded_col"}),
     )
 
-    # Create mock table schemas for testing
     mock_schemas: dict[str, TableSchema] = {
         "source1": TableSchema(
             schema="test",
@@ -172,18 +171,14 @@ def test_composite_schema_source_column_names() -> None:
 
     result = cs.source_column_names(mock_schemas)
 
-    # Should include shared columns
     require("repo" in result, "repo should be included from shared fragments")
     require("commit" in result, "commit should be included from shared fragments")
 
-    # Should include source-specific columns
     require("col_a" in result, "col_a should be included from source1")
 
-    # Should apply mapping
     require("new_name" in result, "column mapping should apply to old_name")
     require("old_name" not in result, "old_name should be replaced by new_name")
 
-    # Should exclude specified columns
     require("excluded_col" not in result, "excluded_col should be removed")
 
 
@@ -209,19 +204,16 @@ def test_composite_schema_get_source_for_column() -> None:
         ),
     }
 
-    # Shared column returns first source
     require(
         cs.get_source_for_column("repo", mock_schemas) == "source1",
         "repo should map to first composed source",
     )
 
-    # Additional column returns None (profile-specific)
     require(
         cs.get_source_for_column("extra", mock_schemas) is None,
         "additional columns should return None source",
     )
 
-    # Source-specific column returns that source
     require(
         cs.get_source_for_column("unique_col", mock_schemas) == "source1",
         "unique_col should map to source1",

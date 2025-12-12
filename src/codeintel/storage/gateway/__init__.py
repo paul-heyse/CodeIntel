@@ -21,10 +21,10 @@ Open a gateway and access tables through typed accessors:
 
     config = StorageConfig(path="catalog.duckdb")
     with open_gateway(config) as gw:
-        # Typed relation access
+
         modules = gw.core.modules().fetchall()
 
-        # Typed row insertion
+
         gw.core.insert_goids([(hash, urn, repo, commit, ...)])
 
 The accessor classes provide:

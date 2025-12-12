@@ -31,12 +31,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# =============================================================================
-# Plugin Definitions (module path, class name, target names)
-# =============================================================================
 
 _PLUGIN_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    # Ingestion plugins
     (
         "codeintel.ingestion.plugins.repo_scan",
         "RepoScanPlugin",
@@ -82,7 +78,6 @@ _PLUGIN_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "ConfigIngestPlugin",
         ("config_ingest",),
     ),
-    # Graph plugins
     (
         "codeintel.graphs.plugins.builders.goid",
         "GoidBuilderPlugin",
@@ -123,7 +118,6 @@ _PLUGIN_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "GraphValidationPlugin",
         ("graph_validation",),
     ),
-    # Analytics plugins
     (
         "codeintel.analytics.plugins.hotspots.build",
         "HotspotsPlugin",
@@ -250,10 +244,6 @@ _PLUGIN_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ("profiles",),
     ),
 )
-
-# =============================================================================
-# Plugin Registry
-# =============================================================================
 
 
 @dataclass

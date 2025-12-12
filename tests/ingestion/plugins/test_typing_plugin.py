@@ -84,7 +84,7 @@ async def test_typing_plugin_runs_step_and_returns_counts(tmp_path: Path) -> Non
         tmp_path / "repo",
         {"pkg/typed.py": TYPED_SOURCE, "pkg/naive.py": TYPED_SOURCE},
     )
-    # Use RecordingTypeChecker (a proper double) instead of object()
+
     checker = RecordingTypeChecker()
     captured = StepCallCapture()
 
@@ -117,7 +117,7 @@ async def test_typing_plugin_reports_failure(
         tmp_path / "repo",
         {"pkg/typed.py": TYPED_SOURCE, "pkg/unicode/delta.py": TYPED_SOURCE},
     )
-    # Use RecordingTypeChecker (a proper double) instead of object()
+
     checker = RecordingTypeChecker()
     captured = StepCallCapture()
     failing_result = StepResult.fail("typing blew up")

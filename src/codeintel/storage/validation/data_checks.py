@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from codeintel.config.datasets import DatasetContract
 
-# Type alias for DuckDB connection
+
 DuckDBConnection = DuckDBPyConnection
 
 LOG = logging.getLogger(__name__)
@@ -75,11 +75,9 @@ def table_has_rows_for_snapshot(
     has_commit_col = schema is not None and any(c.name == "commit" for c in schema.columns)
 
     try:
-        # Use the relation API for safe table name handling
         relation = con.table(table_key)
 
         if has_repo_col and has_commit_col:
-            # Escape single quotes in repo/commit values
             escaped_repo = repo.replace("'", "''")
             escaped_commit = commit.replace("'", "''")
             relation = relation.filter(f"repo = '{escaped_repo}' AND commit = '{escaped_commit}'")

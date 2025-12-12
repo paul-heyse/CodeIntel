@@ -36,7 +36,7 @@ class TimingResult:
     Examples
     --------
     >>> result = TimingResult()
-    >>> # ... do work ...
+    >>>
     >>> result.stop()
     >>> print(f"Took {result.elapsed_ms:.2f}ms")
     """
@@ -116,7 +116,6 @@ def timed() -> Iterator[TimingResult]:
     Examples
     --------
     >>> with timed() as t:
-    ...     # do work
     ...     pass
     >>> print(f"Operation took {t.elapsed_ms:.2f}ms")
     """

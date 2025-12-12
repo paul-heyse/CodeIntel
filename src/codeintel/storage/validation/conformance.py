@@ -76,7 +76,7 @@ def _validate_schema_rows(
         validator = jsonschema.Draft202012Validator(schema)
         try:
             rows = con.table(ds.table_key).limit(sample_size).fetchall()
-        except duckdb.Error as exc:  # pragma: no cover - surfaced as issue
+        except duckdb.Error as exc:
             yield ConformanceIssue(dataset=name, message=f"Failed to sample rows: {exc}")
             continue
         columns = [col.name for col in ds.schema.columns if col.name is not None]

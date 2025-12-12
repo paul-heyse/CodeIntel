@@ -170,9 +170,8 @@ def fetch_paginated(
     --------
     >>> sql = "SELECT * FROM table WHERE x = ? LIMIT ?"
     >>> result = fetch_paginated(con, sql, [value], limit=10)
-    >>> result.truncated  # True if more than 10 rows exist
+    >>> result.truncated
     """
-    # Fetch one extra row to detect truncation
     fetch_limit = limit + 1
     result = con.execute(sql, [*params, fetch_limit])
     all_rows = result.fetchall()
@@ -316,10 +315,6 @@ class BaseRepository:
             True if at least one row matches.
         """
         return row_exists(self.con, sql, params)
-
-    # -------------------------------------------------------------------------
-    # Ibis-based query helpers (prefer these over raw SQL)
-    # -------------------------------------------------------------------------
 
     def _ibis_table(self, table_key: str) -> it.Table:
         """
@@ -505,7 +500,7 @@ class BaseRepository:
             True if at least one row matches the expression.
         """
         _ = self
-        # Limit to 1 row for efficiency and count
+
         limited = expr.limit(1)
         df = pd.DataFrame(limited.execute())
         return len(df) > 0
@@ -538,7 +533,7 @@ class BaseRepository:
             Paginated result with truncation metadata.
         """
         _ = self
-        # Fetch one extra row to detect truncation
+
         fetch_limit = limit + 1
         limited_expr = expr.limit(fetch_limit)
         df = pd.DataFrame(limited_expr.execute())

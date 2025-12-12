@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/services/params.py
+# hypothesis_version: 6.148.7
+
+[0.0, 'E', 'ParamError', 'ParamService', 'json', 'output_format']

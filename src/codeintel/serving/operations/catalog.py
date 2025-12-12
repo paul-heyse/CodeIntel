@@ -101,48 +101,33 @@ class Operation:
         Maximum allowed limit, or None for unlimited.
     """
 
-    # Identity & grouping
     id: str
     category: str
 
-    # Human-facing documentation
     summary: str
     description: str | None
 
-    # HTTP surface
     http_method: Literal["GET", "POST"] | None
     http_path: str | None
 
-    # MCP surface
     tool_name: str | None
     output_model_name: str
 
-    # Backend binding
     backend_method: str
 
-    # Data contract
     data_source: DataSourceType
     source_name: str | None
     repository_method: str | None
 
-    # Dependencies
     required_datasets: tuple[str, ...]
     required_graphs: tuple[str, ...]
     exposed_datasets: tuple[str, ...] = ()
 
-    # Pagination & limits
     supports_pagination: bool = False
     default_limit: int | None = None
     max_limit: int | None = None
 
 
-# =============================================================================
-# Canonical Operation Catalog
-# =============================================================================
-# All 26 operations defined here. The IDs are the canonical source
-# since they are actively used by HTTP routes and MCP tools.
-
-# Functions
 _FUNCTION_SUMMARY = Operation(
     id="function.summary",
     category="functions",
@@ -212,7 +197,7 @@ _FUNCTIONS_TESTS = Operation(
     max_limit=None,
 )
 
-# Graph Operations
+
 _GRAPH_CALL_NEIGHBORS = Operation(
     id="graph.call_neighbors",
     category="graph",
@@ -282,7 +267,7 @@ _GRAPH_IMPORT_BOUNDARY = Operation(
     max_limit=None,
 )
 
-# File Operations
+
 _FILE_SUMMARY = Operation(
     id="file.summary",
     category="files",
@@ -306,7 +291,7 @@ _FILE_SUMMARY = Operation(
     max_limit=1,
 )
 
-# Profile Operations
+
 _PROFILES_FUNCTION = Operation(
     id="profiles.function",
     category="profiles",
@@ -367,7 +352,7 @@ _PROFILES_MODULE = Operation(
     max_limit=1,
 )
 
-# Architecture Operations
+
 _ARCHITECTURE_FUNCTION = Operation(
     id="architecture.function",
     category="architecture",
@@ -414,7 +399,7 @@ _ARCHITECTURE_MODULE = Operation(
     max_limit=1,
 )
 
-# Subsystem Operations
+
 _SUBSYSTEMS_LIST = Operation(
     id="subsystems.list",
     category="subsystems",
@@ -563,7 +548,7 @@ _SUBSYSTEMS_SUMMARIZE = Operation(
     max_limit=None,
 )
 
-# IDE Operations
+
 _IDE_HINTS = Operation(
     id="ide.hints",
     category="ide",
@@ -587,7 +572,7 @@ _IDE_HINTS = Operation(
     max_limit=1,
 )
 
-# Dataset Operations
+
 _DATASETS_LIST = Operation(
     id="datasets.list",
     category="datasets",
@@ -646,7 +631,6 @@ _DATASETS_ROWS = Operation(
     repository_method="DatasetReadRepository.read_rows",
     required_datasets=(),
     required_graphs=(),
-    # exposed_datasets populated at module load time below
     supports_pagination=True,
     default_limit=None,
     max_limit=None,
@@ -675,7 +659,7 @@ _DATASETS_SCHEMA = Operation(
     max_limit=None,
 )
 
-# Graph Plugin Operations
+
 _GRAPH_PLUGINS_PLAN = Operation(
     id="graph.plugins.plan",
     category="graph_plugins",
@@ -699,7 +683,7 @@ _GRAPH_PLUGINS_PLAN = Operation(
     max_limit=None,
 )
 
-# Health Operations
+
 _HEALTH_STATUS = Operation(
     id="health.status",
     category="health",
@@ -723,9 +707,6 @@ _HEALTH_STATUS = Operation(
     max_limit=None,
 )
 
-# =============================================================================
-# Build the canonical registry
-# =============================================================================
 
 OPERATIONS_BY_ID: dict[str, Operation] = {
     op.id: op
@@ -759,11 +740,6 @@ OPERATIONS_BY_ID: dict[str, Operation] = {
     )
 }
 
-# =============================================================================
-# Test Operation Registry
-# =============================================================================
-# Separate registry for test operations that can be registered/unregistered
-# without polluting the canonical catalog. Used by CLI dynamic operation tests.
 
 _TEST_OPERATIONS: dict[str, Operation] = {}
 
@@ -783,7 +759,6 @@ def get_operation(op_id: str) -> Operation | None:
     Operation | None
         The operation if found, otherwise None.
     """
-    # Check test operations first to allow overrides in tests
     if op_id in _TEST_OPERATIONS:
         return _TEST_OPERATIONS[op_id]
     return OPERATIONS_BY_ID.get(op_id)
@@ -851,14 +826,8 @@ def iter_operations() -> Iterable[Operation]:
     Iterable[Operation]
         All operations in the catalog and test registry.
     """
-    # Test operations may override canonical ones, so build a combined view
     combined = {**OPERATIONS_BY_ID, **_TEST_OPERATIONS}
     return combined.values()
-
-
-# =============================================================================
-# Dataset Metadata
-# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -932,11 +901,6 @@ def build_dataset_meta(service: QueryService, limits: BackendLimits) -> list[Dat
     return metas
 
 
-# =============================================================================
-# Dataflow Graph Building
-# =============================================================================
-
-
 def _resolve_dataset_identifier(identifier: str) -> str | None:
     """Resolve a dataset identifier used in Operation into a canonical table_key.
 
@@ -971,7 +935,6 @@ def _build_operations_with_patches() -> dict[str, Operation]:
 
     for operation in iter_operations():
         if operation.id == "datasets.rows":
-            # Patch in exposed_datasets dynamically
             patched_op = dataclasses.replace(operation, exposed_datasets=exposed_datasets_keys)
             operations[patched_op.id] = patched_op
         else:
@@ -980,7 +943,6 @@ def _build_operations_with_patches() -> dict[str, Operation]:
     return operations
 
 
-# Build the patched operations dict from the canonical catalog
 _PATCHED_OPERATIONS: dict[str, Operation] = _build_operations_with_patches()
 
 

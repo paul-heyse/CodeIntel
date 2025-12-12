@@ -412,7 +412,6 @@ class AstExtractStep:
             if result.metric_row is not None:
                 metric_rows.append(result.metric_row)
 
-        # Persist rows
         table_counts: dict[str, int] = {}
         total_rows = 0
 

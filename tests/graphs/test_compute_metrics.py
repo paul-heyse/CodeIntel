@@ -90,9 +90,6 @@ from tests._helpers.fakes.networkx_graphs import (
 )
 from tests.graphs.constants import CYCLE_SIZE_SWEEP
 
-# ---------------------------------------------------------------------------
-# Constants for magic value compliance
-# ---------------------------------------------------------------------------
 EXPECTED_CYCLE_NODES: Final[int] = 3
 EXPECTED_MIN_COMPONENTS: Final[int] = 2
 EXPECTED_SINGLE_COMPONENT: Final[int] = 1
@@ -125,11 +122,6 @@ TRIANGLES_PER_NODE_K4: Final[int] = 3
 CORE_NUMBER_K4: Final[int] = 3
 
 
-# ===========================================================================
-# CENTRALITY TESTS
-# ===========================================================================
-
-
 def test_pagerank_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = empty_digraph()
@@ -143,7 +135,7 @@ def test_pagerank_simple_cycle() -> None:
     result = compute_pagerank(graph)
 
     expect_true(len(result) == EXPECTED_CYCLE_NODES)
-    # In a cycle, all nodes should have similar PageRank
+
     values = list(result.values())
     expected_uniform = 1.0 / EXPECTED_CYCLE_NODES
     for val in values:
@@ -155,7 +147,6 @@ def test_pagerank_star_graph_center_has_highest() -> None:
     graph = star_graph(4, inward=True)
     result = compute_pagerank(graph)
 
-    # Center should have highest PageRank
     expect_true(result["hub"] > result["spoke1"])
     expect_true(result["hub"] > result["spoke2"])
 
@@ -166,7 +157,6 @@ def test_pagerank_custom_alpha() -> None:
     result_default = compute_pagerank(graph)
     result_low_alpha = compute_pagerank(graph, alpha=0.5)
 
-    # Results should differ with different alpha
     expect_true(result_default != result_low_alpha)
 
 
@@ -212,7 +202,6 @@ def test_betweenness_path_graph_middle_node_highest() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (3, 4), (4, 5)])
     result = compute_betweenness(graph, normalized=True)
 
-    # Nodes 2, 3, 4 are on paths between others
     expect_true(result[3] >= result[1])
 
 
@@ -254,7 +243,7 @@ def test_closeness_complete_graph_uniform() -> None:
     result = compute_closeness(graph)
 
     values = list(result.values())
-    # All nodes should have same closeness in complete graph
+
     expect_true(all(abs(v - values[0]) < PAGERANK_TOLERANCE for v in values))
 
 
@@ -264,7 +253,6 @@ def test_closeness_wf_improved_parameter() -> None:
     result_improved = compute_closeness(graph, wf_improved=True)
     result_basic = compute_closeness(graph, wf_improved=False)
 
-    # Both should return valid results
     expect_true(len(result_improved) == len(result_basic))
 
 
@@ -288,7 +276,6 @@ def test_in_degree_centrality() -> None:
     graph = fan_in_fan_out_graph(sources=("s1", "s2", "s3"), sinks=("t1",))
     result = compute_in_degree_centrality(graph)
 
-    # Node 0 has highest in-degree
     expect_true(result["core"] > result["s1"])
 
 
@@ -305,7 +292,6 @@ def test_out_degree_centrality() -> None:
     graph = fan_in_fan_out_graph(sinks=("out1", "out2", "out3"))
     result = compute_out_degree_centrality(graph)
 
-    # Node 0 has highest out-degree
     expect_true(result["core"] > result["out1"])
 
 
@@ -388,11 +374,6 @@ def test_centrality_to_rows_converts_metrics() -> None:
     expect_true(row["betweenness"] == BETWEENNESS_POINT_THREE)
 
 
-# ===========================================================================
-# COMPONENT TESTS
-# ===========================================================================
-
-
 def test_scc_empty_graph_returns_empty() -> None:
     """Empty graph returns empty result."""
     graph = empty_digraph()
@@ -435,7 +416,6 @@ def test_scc_node_to_component_mapping() -> None:
     graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
     result = find_strongly_connected(graph)
 
-    # All nodes in same component should have same ID
     comp_id = result.node_to_component[1]
     expect_true(result.node_to_component[2] == comp_id)
     expect_true(result.node_to_component[3] == comp_id)
@@ -536,8 +516,7 @@ def test_bridges_path_graph_all_edges_are_bridges() -> None:
     graph = bridge_chain_graph(segments=4, segment_size=1)
     result = find_bridges(graph)
 
-    # All edges in a path are bridges
-    expect_equal(len(result), EXPECTED_CYCLE_NODES)  # 3 edges for 4 nodes
+    expect_equal(len(result), EXPECTED_CYCLE_NODES)
 
 
 def test_bridges_cycle_has_no_bridges() -> None:
@@ -560,7 +539,6 @@ def test_articulation_path_graph_middle_nodes() -> None:
     graph = nx.path_graph(5)
     result = find_articulation_points(graph)
 
-    # Nodes 1, 2, 3 are articulation points
     expect_true(len(result) == EXPECTED_CYCLE_NODES)
 
 
@@ -619,7 +597,6 @@ def test_cycles_simple_cycle_detected(cycle_size: int) -> None:
 
 def test_cycles_limit_parameter_respected() -> None:
     """Limit parameter is respected."""
-    # Graph with multiple cycles
     graph = nx.relabel_nodes(
         two_cycle_graph(),
         mapping={"A": 1, "B": 2, "C": 3, "D": 4},
@@ -680,7 +657,6 @@ def test_condensation_layers_with_condensation() -> None:
     scc_result = find_strongly_connected(graph, compute_condensation=True)
     result = condensation_layers(graph, scc_result)
 
-    # All nodes should have layers assigned
     expect_true(len(result) == graph.number_of_nodes())
 
 
@@ -695,11 +671,6 @@ def test_condensation_layers_respects_component_order() -> None:
     expect_true(layers["C"] > layers["A"])
 
 
-# ===========================================================================
-# COUPLING TESTS
-# ===========================================================================
-
-
 def test_coupling_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = empty_digraph()
@@ -709,7 +680,6 @@ def test_coupling_empty_graph_returns_empty() -> None:
 
 def test_coupling_computes_afferent_efferent() -> None:
     """Computes afferent and efferent coupling."""
-    # Node 1 has 2 outgoing, 1 incoming
     graph = nx.DiGraph([(1, 2), (1, 3), (4, 1)])
     result = compute_coupling(graph)
 
@@ -722,7 +692,6 @@ def test_coupling_instability_calculation() -> None:
     graph = nx.DiGraph([(1, 2), (1, 3), (4, 1)])
     result = compute_coupling(graph)
 
-    # Node 1: efferent=2, afferent=1, instability = 2/3
     expect_true(abs(result[1].instability - EXPECTED_INSTABILITY_TWO_THIRDS) < PAGERANK_TOLERANCE)
 
 
@@ -835,7 +804,6 @@ def test_distance_main_sequence_off_main_returns_distance() -> None:
     coupling = CouplingMetrics(afferent=0, efferent=1, instability=INSTABILITY_FULL)
     result = compute_distance_from_main_sequence(coupling, abstractness=INSTABILITY_HALF)
 
-    # abs(0.5 + 1.0 - 1.0) = 0.5
     expect_true(result == INSTABILITY_HALF)
 
 
@@ -972,11 +940,10 @@ def test_hub_nodes_empty_graph_returns_empty() -> None:
 
 def test_hub_nodes_star_graph_center_is_hub() -> None:
     """Star graph center is a hub."""
-    # Create star with center 0 connected to 10 other nodes
     graph = nx.star_graph(STAR_GRAPH_SIZE_TEN)
     result = find_hub_nodes(graph, min_degree=MIN_HUB_DEGREE)
 
-    expect_true(0 in result)  # Center node
+    expect_true(0 in result)
 
 
 def test_hub_nodes_threshold_ratio_parameter() -> None:
@@ -985,7 +952,6 @@ def test_hub_nodes_threshold_ratio_parameter() -> None:
     result_strict = find_hub_nodes(graph, threshold_ratio=0.9, min_degree=1)
     result_loose = find_hub_nodes(graph, threshold_ratio=HUB_THRESHOLD_RATIO, min_degree=1)
 
-    # Stricter threshold should find fewer hubs
     expect_true(len(result_strict) <= len(result_loose))
 
 
@@ -999,7 +965,7 @@ def test_boundary_nodes_empty_communities_returns_empty() -> None:
 def test_boundary_nodes_finds_boundary() -> None:
     """Finds nodes at community boundaries."""
     graph = empty_graph()
-    # Two communities with bridge node
+
     graph.add_edges_from([(1, 2), (2, 3), (3, 10), (10, 11), (11, 12)])
     communities = [
         Community(community_id=0, nodes=frozenset([1, 2, 3]), size=COMMUNITY_SIZE_THREE),
@@ -1007,7 +973,6 @@ def test_boundary_nodes_finds_boundary() -> None:
     ]
     result = find_boundary_nodes(graph, communities)
 
-    # Nodes 3 and 10 are at the boundary
     expect_true(EXPECTED_CYCLE_NODES in result or STAR_GRAPH_SIZE_TEN in result)
 
 
@@ -1028,11 +993,6 @@ def test_coupling_to_rows_converts_metrics() -> None:
     expect_true(row["afferent_coupling"] == AFFERENT_THREE)
     expect_true(row["efferent_coupling"] == EFFERENT_TWO)
     expect_true(row["instability"] == INSTABILITY_POINT_FOUR)
-
-
-# ===========================================================================
-# STRUCTURAL METRIC TESTS
-# ===========================================================================
 
 
 def test_structural_clustering_handles_directed_graphs() -> None:
@@ -1097,11 +1057,6 @@ def test_all_structural_empty_graph_returns_empty() -> None:
     expect_true(result == {})
 
 
-# ===========================================================================
-# DATACLASS TESTS
-# ===========================================================================
-
-
 def test_centrality_metrics_frozen() -> None:
     """CentralityMetrics is frozen."""
     metrics = CentralityMetrics(
@@ -1143,13 +1098,6 @@ def test_scc_result_frozen() -> None:
     assert_cannot_setattr(result, "condensation", empty_digraph())
 
 
-# ===========================================================================
-# REALISTIC GOLDEN DATASET TESTS
-# ===========================================================================
-# These tests use production-realistic graph structures from the golden dataset
-# to ensure algorithms work correctly on complex, realistic data.
-
-
 GOLDEN_MIN_NODES: Final[int] = 13
 GOLDEN_MIN_EDGES: Final[int] = 30
 GOLDEN_EXPECTED_COMMUNITIES: Final[int] = 2
@@ -1166,18 +1114,15 @@ def _build_realistic_call_graph() -> nx.DiGraph:
     """
     g = empty_digraph()
 
-    # Layer 0: Core utilities (no internal deps)
     core_funcs = ["format_string", "parse_json", "validate_input", "hash_value"]
     g.add_nodes_from(core_funcs)
 
-    # Layer 1: Services (depend on core)
     services = ["authenticate", "query", "execute", "get_cached", "set_cached"]
     g.add_nodes_from(services)
     for s in services:
         g.add_edge(s, "validate_input")
         g.add_edge(s, "format_string")
 
-    # Layer 2: Handlers (depend on services, core)
     handlers = ["create_user", "get_user", "update_user", "delete_user", "create_order"]
     g.add_nodes_from(handlers)
     for h in handlers:
@@ -1185,21 +1130,18 @@ def _build_realistic_call_graph() -> nx.DiGraph:
         g.add_edge(h, "query")
         g.add_edge(h, "get_cached")
 
-    # Layer 3: API (depend on handlers)
     api = ["handle_request", "register_routes"]
     g.add_nodes_from(api)
     for a in api:
         for h in handlers:
             g.add_edge(a, h)
 
-    # Hub function: log_info is called by many
     g.add_node("log_info")
     for node in services + handlers:
         g.add_edge(node, "log_info")
 
-    # Small SCC: auth <-> cache interaction
     g.add_edge("authenticate", "get_cached")
-    g.add_edge("get_cached", "authenticate")  # Cache validates with auth
+    g.add_edge("get_cached", "authenticate")
 
     return g
 
@@ -1214,18 +1156,15 @@ def _build_realistic_import_graph() -> nx.DiGraph:
     """
     g = empty_digraph()
 
-    # Core modules
     core = ["core.utils", "core.types", "core.errors", "core.config"]
     g.add_nodes_from(core)
 
-    # Service modules
     services = ["services.auth", "services.cache", "services.database"]
     g.add_nodes_from(services)
     for s in services:
         g.add_edge(s, "core.utils")
         g.add_edge(s, "core.errors")
 
-    # Handler modules
     handlers = ["handlers.user", "handlers.product", "handlers.order"]
     g.add_nodes_from(handlers)
     for h in handlers:
@@ -1233,19 +1172,16 @@ def _build_realistic_import_graph() -> nx.DiGraph:
         g.add_edge(h, "services.database")
         g.add_edge(h, "core.errors")
 
-    # API modules
     api = ["api.routes", "api.middleware"]
     g.add_nodes_from(api)
     for a in api:
         for h in handlers:
             g.add_edge(a, h)
 
-    # Cross-cutting: utils.logging imported by many
     g.add_node("utils.logging")
     for node in services + handlers + api:
         g.add_edge(node, "utils.logging")
 
-    # Intentional cycle: services.auth <-> services.cache
     g.add_edge("services.auth", "services.cache")
     g.add_edge("services.cache", "services.auth")
 
@@ -1258,13 +1194,10 @@ def test_realistic_pagerank_identifies_hub_functions() -> None:
 
     result = compute_pagerank(graph)
 
-    # Hub functions should have higher PageRank
-    # log_info is called by many, so should have high rank
     hub_rank = result.get("log_info", 0)
 
-    # Hub should have meaningful PageRank
     expect_true(hub_rank > 0)
-    # Ensure we got results for multiple nodes
+
     expect_true(len(result) >= GOLDEN_MIN_NODES)
 
 
@@ -1274,8 +1207,6 @@ def test_realistic_scc_finds_cycles() -> None:
 
     result = find_strongly_connected(graph)
 
-    # Should have at least one SCC (the auth-cache cycle)
-    # Most SCCs will be single nodes (trivial), but at least one should have >1 node
     non_trivial_sccs = [comp for comp in result.components if comp.size > 1]
     expect_true(len(non_trivial_sccs) >= GOLDEN_EXPECTED_SCC)
 
@@ -1284,13 +1215,10 @@ def test_realistic_import_layers_computed() -> None:
     """Topological layers work on realistic import graphs."""
     graph = _build_realistic_import_graph()
 
-    # Need DAG for topological layers, so we use condensation first
     scc_result = find_strongly_connected(graph, compute_condensation=True)
 
-    # The graph has a cycle, so use condensation layers
     layers = condensation_layers(graph, scc_result)
 
-    # Should have multiple layers due to the layered architecture
     expect_true(len(layers) >= EXPECTED_NODE_COUNT_TWO)
 
 
@@ -1300,10 +1228,8 @@ def test_realistic_centrality_metrics() -> None:
 
     metrics = compute_all_centralities(graph)
 
-    # Should have metrics for all nodes
     expect_true(len(metrics) >= GOLDEN_MIN_NODES)
 
-    # All metric values should be in valid ranges
     for metric in metrics.values():
         expect_true(metric.pagerank >= 0)
         expect_true(metric.betweenness >= 0)
@@ -1318,7 +1244,6 @@ def test_realistic_component_stats() -> None:
     sccs = find_strongly_connected(graph)
     stats = compute_component_stats(sccs.components)
 
-    # Should have valid statistics
     expect_true(stats["count"] >= GOLDEN_EXPECTED_SCC)
     expect_true(stats["mean_size"] > 0)
     expect_true(stats["largest_size"] >= 1)
@@ -1330,10 +1255,8 @@ def test_realistic_community_detection() -> None:
 
     communities = detect_communities_louvain(graph)
 
-    # Should find at least 2 communities (core/services vs handlers/api)
     expect_true(len(communities) >= GOLDEN_EXPECTED_COMMUNITIES)
 
-    # All nodes should be assigned to a community
     all_nodes = set(graph.nodes())
     community_nodes = set()
     for comm in communities:
@@ -1347,10 +1270,8 @@ def test_realistic_hub_detection() -> None:
 
     hubs = find_hub_nodes(graph, min_degree=3, threshold_ratio=0.05)
 
-    # Should find some hubs (modules imported by many)
     expect_true(len(hubs) >= 1)
 
-    # Check that we have actual hub node names
     expect_true(all(isinstance(h, str) for h in hubs))
 
 
@@ -1358,20 +1279,16 @@ def test_realistic_coupling_metrics() -> None:
     """Coupling metrics work on realistic import graphs."""
     graph = _build_realistic_import_graph()
 
-    # Test coupling for all nodes
     all_metrics = compute_coupling(graph)
 
-    # Should have metrics for all nodes
     expect_true(len(all_metrics) >= GOLDEN_MIN_NODES)
 
-    # Test specific module
     metrics = all_metrics.get("handlers.user")
     expect_is_not_none(metrics)
     if metrics is None:
         return
 
-    # Handler modules have both afferent (api imports them) and efferent (import services)
-    expect_true(metrics.afferent >= 1)  # At least api imports it
-    expect_true(metrics.efferent >= 1)  # At least imports services.auth
+    expect_true(metrics.afferent >= 1)
+    expect_true(metrics.efferent >= 1)
     expect_true(metrics.instability >= 0)
     expect_true(metrics.instability <= 1)

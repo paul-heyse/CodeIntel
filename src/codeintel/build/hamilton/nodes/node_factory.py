@@ -18,12 +18,16 @@ from __future__ import annotations
 import inspect
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from types import ModuleType
+from typing import Any, cast
 
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
+from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df, load_dataset_ibis
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.metadata_bridge import from_target
 from codeintel.build.hamilton.naming import (
@@ -38,12 +42,45 @@ from codeintel.build.registry import get_target_graph
 from codeintel.build.targets import OutputTarget, TargetGraph
 
 __all__ = [
+    "GenerationOptions",
     "build_target_module",
     "clear_generated_module_cache",
     "get_generated_module",
 ]
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class _GeneratedModuleCache:
+    module: ModuleType | None = None
+    config_key: tuple[bool, bool, bool, frozenset[str], frozenset[str]] | None = None
+
+
+_MODULE_CACHE = _GeneratedModuleCache()
+
+
+def _set_signature[T](fn: Callable[..., T], signature: inspect.Signature) -> Callable[..., T]:
+    """Attach an inspect.Signature to a callable for Hamilton compatibility.
+
+    Returns
+    -------
+    Callable[..., T]
+        The input function with signature metadata applied.
+    """
+    setattr(fn, "__signature__", signature)
+    return fn
+
+
+@dataclass(frozen=True)
+class GenerationOptions:
+    """Configuration for generated Hamilton node modules."""
+
+    include_targets: set[str] | None = None
+    exclude_targets: set[str] | None = None
+    include_dataset_nodes: bool = True
+    include_loader_nodes: bool = True
+    include_artifact_nodes: bool = True
 
 
 def _create_node_function(
@@ -74,7 +111,6 @@ def _create_node_function(
         graph: TargetGraph,
         **dependencies: TargetRunRecord,
     ) -> TargetRunRecord:
-        # Extract upstream records for failure gating
         upstream = tuple(rec for rec in dependencies.values() if isinstance(rec, TargetRunRecord))
         return _run_target(
             env=env,
@@ -83,8 +119,6 @@ def _create_node_function(
             upstream=upstream,
         )
 
-    # Build signature that Hamilton can inspect
-    # Types are imported at runtime so Hamilton can resolve them
     params: list[inspect.Parameter] = [
         inspect.Parameter(
             "env",
@@ -98,7 +132,6 @@ def _create_node_function(
         ),
     ]
 
-    # Add dependency parameters
     params.extend(
         [
             inspect.Parameter(
@@ -110,11 +143,10 @@ def _create_node_function(
         ]
     )
 
-    node_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
+    _set_signature(node_fn, inspect.Signature(params))
     node_fn.__name__ = target_node(target_name)
     node_fn.__doc__ = f"Execute the {target_name} target ({domain})."
 
-    # Apply tag decorator for Hamilton observability
     return tag(domain=domain, target=target_name)(node_fn)
 
 
@@ -151,7 +183,6 @@ def _create_dataset_node_function(
             raise ValueError(msg)
         return ds
 
-    # Build signature with single parameter for the target node
     params = [
         inspect.Parameter(
             t_name,
@@ -160,14 +191,13 @@ def _create_dataset_node_function(
         ),
     ]
 
-    dataset_fn.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
-        params,
-        return_annotation=DatasetRef,
+    _set_signature(
+        dataset_fn,
+        inspect.Signature(params, return_annotation=DatasetRef),
     )
     dataset_fn.__name__ = d_name
     dataset_fn.__doc__ = f"Extract {table_key} dataset from {target_name} target."
 
-    # Apply tag decorator for Hamilton observability
     domain = table_key.split(".", 1)[0] if "." in table_key else "main"
     return tag(domain=domain, table=table_key)(dataset_fn)
 
@@ -191,8 +221,6 @@ def _create_query_node_function(
     Callable[..., ir.Table]
         Node function that loads an Ibis table expression.
     """
-    from codeintel.build.hamilton.io.ibis_adapter import load_dataset_ibis
-
     q_name = query_node(table_key)
     d_name = dataset_node(table_key)
 
@@ -203,7 +231,6 @@ def _create_query_node_function(
             raise TypeError(msg)
         return load_dataset_ibis(gateway=env.gateway, ref=ds_ref)
 
-    # Build signature with env and dataset ref parameters
     params = [
         inspect.Parameter(
             "env",
@@ -217,11 +244,10 @@ def _create_query_node_function(
         ),
     ]
 
-    query_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
+    _set_signature(query_fn, inspect.Signature(params))
     query_fn.__name__ = q_name
     query_fn.__doc__ = f"Load {table_key} as Ibis expression from {target_name} target."
 
-    # Apply tag decorator for Hamilton observability
     domain = table_key.split(".", 1)[0] if "." in table_key else "main"
     return tag(domain=domain, table=table_key, node_type="query")(query_fn)
 
@@ -245,8 +271,6 @@ def _create_dataframe_node_function(
     Callable[..., pd.DataFrame]
         Node function that loads a pandas DataFrame.
     """
-    from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df
-
     df_name = dataframe_node(table_key)
     d_name = dataset_node(table_key)
 
@@ -257,7 +281,6 @@ def _create_dataframe_node_function(
             raise TypeError(msg)
         return load_dataset_df(gateway=env.gateway, ref=ds_ref)
 
-    # Build signature with env and dataset ref parameters
     params = [
         inspect.Parameter(
             "env",
@@ -271,11 +294,10 @@ def _create_dataframe_node_function(
         ),
     ]
 
-    dataframe_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
+    _set_signature(dataframe_fn, inspect.Signature(params))
     dataframe_fn.__name__ = df_name
     dataframe_fn.__doc__ = f"Load {table_key} as pandas DataFrame from {target_name} target."
 
-    # Apply tag decorator for Hamilton observability
     domain = table_key.split(".", 1)[0] if "." in table_key else "main"
     return tag(domain=domain, table=table_key, node_type="dataframe")(dataframe_fn)
 
@@ -302,8 +324,6 @@ def _create_artifact_node_function(
     Callable[..., ArtifactRef]
         Node function that provides artifact reference.
     """
-    from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
-
     a_name = artifact_node(artifact_name)
     t_name = target_node(target_name)
 
@@ -313,12 +333,10 @@ def _create_artifact_node_function(
             msg = f"Expected TargetRunRecord for {t_name}, got {type(run_record)}"
             raise TypeError(msg)
 
-        # Look up artifact from the run record
         for art in run_record.artifacts:
             if art.name == artifact_name:
                 return art
 
-        # Return a placeholder if artifact not found (for skipped targets)
         return ArtifactRef(
             name=artifact_name,
             artifact_type="unknown",
@@ -326,7 +344,6 @@ def _create_artifact_node_function(
             commit=env.commit,
         )
 
-    # Build signature with env and target node parameters
     params = [
         inspect.Parameter(
             "env",
@@ -340,164 +357,179 @@ def _create_artifact_node_function(
         ),
     ]
 
-    artifact_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
+    _set_signature(artifact_fn, inspect.Signature(params))
     artifact_fn.__name__ = a_name
     artifact_fn.__doc__ = f"Access {artifact_name} artifact from {target_name} target."
 
-    # Apply tag decorator for Hamilton observability
     domain = artifact_name.split(".", 1)[0] if "." in artifact_name else "main"
     return tag(domain=domain, artifact=artifact_name, node_type="artifact")(artifact_fn)
 
 
+@dataclass(frozen=True)
+class _GeneratedMappings:
+    target_to_node: dict[str, str]
+    dataset_to_node: dict[str, str]
+    query_to_node: dict[str, str]
+    dataframe_to_node: dict[str, str]
+    artifact_to_node: dict[str, str]
+
+
+def _generate_nodes_for_target(
+    module: ModuleType,
+    target: OutputTarget,
+    meta_domain: str,
+    options: GenerationOptions,
+    mappings: _GeneratedMappings,
+) -> None:
+    dep_node_names = [target_node(dep) for dep in target.dependencies]
+    node_fn = _create_node_function(
+        target=target,
+        dep_node_names=dep_node_names,
+        domain=meta_domain,
+    )
+    node_name = target_node(target.name)
+    setattr(module, node_name, node_fn)
+    mappings.target_to_node[target.name] = node_name
+
+    if options.include_dataset_nodes:
+        table_keys = target.contract.table_keys or target.table_keys
+        for table_key in table_keys:
+            d_name = dataset_node(table_key)
+            setattr(
+                module,
+                d_name,
+                _create_dataset_node_function(table_key=table_key, target_name=target.name),
+            )
+            mappings.dataset_to_node[table_key] = d_name
+
+            if options.include_loader_nodes:
+                q_name = query_node(table_key)
+                setattr(
+                    module,
+                    q_name,
+                    _create_query_node_function(table_key=table_key, target_name=target.name),
+                )
+                mappings.query_to_node[table_key] = q_name
+
+                df_name = dataframe_node(table_key)
+                setattr(
+                    module,
+                    df_name,
+                    _create_dataframe_node_function(table_key=table_key, target_name=target.name),
+                )
+                mappings.dataframe_to_node[table_key] = df_name
+
+    if options.include_artifact_nodes:
+        art_names = target.contract.artifact_names if target.contract else ()
+        for art_name in art_names:
+            a_node_name = artifact_node(art_name)
+            setattr(
+                module,
+                a_node_name,
+                _create_artifact_node_function(
+                    artifact_name=art_name,
+                    target_name=target.name,
+                ),
+            )
+            mappings.artifact_to_node[art_name] = a_node_name
+
+
+def _attach_mappings(module: ModuleType, mappings: _GeneratedMappings) -> None:
+    module_any = cast("Any", module)
+    module_any.TARGET_TO_NODE = mappings.target_to_node
+    module_any.DATASET_TO_NODE = mappings.dataset_to_node
+    module_any.QUERY_TO_NODE = mappings.query_to_node
+    module_any.DATAFRAME_TO_NODE = mappings.dataframe_to_node
+    module_any.ARTIFACT_TO_NODE = mappings.artifact_to_node
+
+
 def build_target_module(
-    *,
-    include_targets: set[str] | None = None,
-    exclude_targets: set[str] | None = None,
-    include_dataset_nodes: bool = True,
-    include_loader_nodes: bool = True,
-    include_artifact_nodes: bool = True,
+    options: GenerationOptions | None = None,
 ) -> ModuleType:
     """Generate a module containing Hamilton nodes for all targets.
 
-    Creates Python functions dynamically from the TargetGraph, with
-    proper signatures and dependencies for Hamilton execution.
-
     Parameters
     ----------
-    include_targets
-        If provided, only generate nodes for these targets.
-    exclude_targets
-        If provided, exclude these targets from generation.
-    include_dataset_nodes
-        If True (default), also generate d__* dataset nodes for
-        all tables in target contracts.
-    include_loader_nodes
-        If True (default), also generate q__* and df__* loader nodes
-        for all tables in target contracts.
-    include_artifact_nodes
-        If True (default), also generate a__* artifact nodes for
-        all artifacts in target contracts.
+    options
+        GenerationOptions controlling which targets to include and which helper
+        nodes (datasets, loaders, artifacts) to emit. If omitted, all targets
+        are included with dataset, loader, and artifact nodes enabled.
 
     Returns
     -------
     ModuleType
-        Module containing generated node functions.
-
-    Examples
-    --------
-    >>> module = build_target_module(exclude_targets={"export_jsonl"})
-    >>> "t__function_metrics" in dir(module)
-    True
+        Module populated with Hamilton node functions and mapping dictionaries.
     """
+    resolved = options or GenerationOptions()
     graph = get_target_graph()
     all_target_names = {t.name for t in graph.all_targets}
-    include = include_targets or all_target_names
-    exclude = exclude_targets or set()
+    include = resolved.include_targets or all_target_names
+    exclude = resolved.exclude_targets or set()
 
-    # Create module
     module = ModuleType("codeintel.build.hamilton.nodes.generated")
     module.__doc__ = "Auto-generated Hamilton nodes from TargetGraph."
 
-    # Track generated node names for mappings
-    target_to_node: dict[str, str] = {}
-    dataset_to_node: dict[str, str] = {}
-    query_to_node: dict[str, str] = {}
-    dataframe_to_node: dict[str, str] = {}
-    artifact_to_node: dict[str, str] = {}
+    mappings = _GeneratedMappings(
+        target_to_node={},
+        dataset_to_node={},
+        query_to_node={},
+        dataframe_to_node={},
+        artifact_to_node={},
+    )
 
     for target in graph.all_targets:
         if target.name not in include or target.name in exclude:
             continue
-
-        # Get metadata for domain
         meta = from_target(target)
-
-        # Map dependencies to node names
-        dep_node_names = [target_node(dep) for dep in target.dependencies]
-
-        # Create and register target node function
-        node_fn = _create_node_function(
+        _generate_nodes_for_target(
+            module=module,
             target=target,
-            dep_node_names=dep_node_names,
-            domain=meta.domain,
+            meta_domain=meta.domain,
+            options=resolved,
+            mappings=mappings,
         )
 
-        node_name = target_node(target.name)
-        setattr(module, node_name, node_fn)
-        target_to_node[target.name] = node_name
-
-        # Generate dataset nodes for all contract tables
-        if include_dataset_nodes:
-            table_keys = target.contract.table_keys or target.table_keys
-            for table_key in table_keys:
-                dataset_fn = _create_dataset_node_function(
-                    table_key=table_key,
-                    target_name=target.name,
-                )
-                d_name = dataset_node(table_key)
-                setattr(module, d_name, dataset_fn)
-                dataset_to_node[table_key] = d_name
-
-                # Generate q__* and df__* loader nodes
-                if include_loader_nodes:
-                    # Query node (returns Ibis expression)
-                    q_fn = _create_query_node_function(
-                        table_key=table_key,
-                        target_name=target.name,
-                    )
-                    q_name = query_node(table_key)
-                    setattr(module, q_name, q_fn)
-                    query_to_node[table_key] = q_name
-
-                    # DataFrame node (returns pandas DataFrame)
-                    df_fn = _create_dataframe_node_function(
-                        table_key=table_key,
-                        target_name=target.name,
-                    )
-                    df_name = dataframe_node(table_key)
-                    setattr(module, df_name, df_fn)
-                    dataframe_to_node[table_key] = df_name
-
-        # Generate artifact nodes for targets with artifact contracts
-        if include_artifact_nodes:
-            art_names = target.contract.artifact_names if target.contract else ()
-            for art_name in art_names:
-                a_fn = _create_artifact_node_function(
-                    artifact_name=art_name,
-                    target_name=target.name,
-                )
-                a_node_name = artifact_node(art_name)
-                setattr(module, a_node_name, a_fn)
-                artifact_to_node[art_name] = a_node_name
-
-    # Attach mappings for executor lookups
-    module.TARGET_TO_NODE = target_to_node  # type: ignore[attr-defined]
-    module.DATASET_TO_NODE = dataset_to_node  # type: ignore[attr-defined]
-    module.QUERY_TO_NODE = query_to_node  # type: ignore[attr-defined]
-    module.DATAFRAME_TO_NODE = dataframe_to_node  # type: ignore[attr-defined]
-    module.ARTIFACT_TO_NODE = artifact_to_node  # type: ignore[attr-defined]
+    _attach_mappings(module, mappings)
 
     log.debug(
         "build_target_module: generated %d target, %d dataset, %d query, %d df, %d artifact",
-        len(target_to_node),
-        len(dataset_to_node),
-        len(query_to_node),
-        len(dataframe_to_node),
-        len(artifact_to_node),
+        len(mappings.target_to_node),
+        len(mappings.dataset_to_node),
+        len(mappings.query_to_node),
+        len(mappings.dataframe_to_node),
+        len(mappings.artifact_to_node),
     )
 
     return module
 
 
-# Cache for the generated module
-_generated_module: ModuleType | None = None
+def _cache_key(
+    options: GenerationOptions,
+) -> tuple[bool, bool, bool, frozenset[str], frozenset[str]]:
+    return (
+        options.include_dataset_nodes,
+        options.include_loader_nodes,
+        options.include_artifact_nodes,
+        frozenset(options.include_targets or ()),
+        frozenset(options.exclude_targets or ()),
+    )
 
 
-def get_generated_module() -> ModuleType:
+def _should_use_cache(key: tuple[bool, bool, bool, frozenset[str], frozenset[str]]) -> bool:
+    return _MODULE_CACHE.module is not None and _MODULE_CACHE.config_key == key
+
+
+def get_generated_module(options: GenerationOptions | None = None) -> ModuleType:
     """Get or create the generated nodes module.
 
     Returns a cached module instance, creating it on first call.
     This avoids regenerating nodes for each driver build.
+
+    Parameters
+    ----------
+    options
+        Optional GenerationOptions controlling which targets and helper nodes are generated.
+        Passing different options produces distinct cached modules.
 
     Returns
     -------
@@ -510,10 +542,15 @@ def get_generated_module() -> ModuleType:
     >>> hasattr(module, "TARGET_TO_NODE")
     True
     """
-    global _generated_module
-    if _generated_module is None:
-        _generated_module = build_target_module()
-    return _generated_module
+    resolved = options or GenerationOptions()
+    key = _cache_key(resolved)
+    if not _should_use_cache(key):
+        _MODULE_CACHE.module = build_target_module(options=resolved)
+        _MODULE_CACHE.config_key = key
+    if _MODULE_CACHE.module is None:
+        _MODULE_CACHE.module = build_target_module(options=resolved)
+        _MODULE_CACHE.config_key = key
+    return _MODULE_CACHE.module
 
 
 def clear_generated_module_cache() -> None:
@@ -521,5 +558,5 @@ def clear_generated_module_cache() -> None:
 
     Useful for testing or when the TargetGraph has changed.
     """
-    global _generated_module
-    _generated_module = None
+    _MODULE_CACHE.module = None
+    _MODULE_CACHE.config_key = None

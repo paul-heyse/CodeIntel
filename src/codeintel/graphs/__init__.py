@@ -40,10 +40,10 @@ Example
 ```python
 from codeintel.graphs.core import get_graph_registry, plan_graph_plugins
 
-# Plan and run specific plugins
+
 plan = plan_graph_plugins(["goid_builder", "callgraph_builder"])
 
-# Using hexagonal architecture
+
 from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.resources import StorageResource
 from codeintel.graphs.compute.metrics import centrality
@@ -51,7 +51,7 @@ from codeintel.graphs.compute.metrics import centrality
 resources = ResourceRegistry()
 resources.register_provider(StorageResource(gateway, repo_root))
 
-# Pure computation with no I/O
+
 pagerank = centrality.compute_pagerank(call_graph)
 ```
 
@@ -71,13 +71,8 @@ logic is in adapters/.
 
 from __future__ import annotations
 
-# Hexagonal architecture exports
 from codeintel.core.resources import ResourceRegistry
-
-# Subpackage re-exports for convenient access
 from codeintel.graphs import adapters, compute, ports, resources
-
-# Re-export key types from submodules for convenience
 from codeintel.graphs.core import (
     GraphPluginExecutionContext,
     GraphPluginMetadata,

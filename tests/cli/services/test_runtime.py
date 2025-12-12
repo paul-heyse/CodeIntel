@@ -18,10 +18,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# ---------------------------------------------------------------------------
-# Creation
-# ---------------------------------------------------------------------------
-
 
 def test_from_dict() -> None:
     """Create from dictionary."""
@@ -46,11 +42,6 @@ def test_explicit_overrides() -> None:
     expect_equal(service.params["project_root"], Path("/override"))
 
 
-# ---------------------------------------------------------------------------
-# Caching
-# ---------------------------------------------------------------------------
-
-
 def test_is_resolved_initially_false() -> None:
     """Service starts unresolved."""
     service = RuntimeService({})
@@ -66,11 +57,6 @@ def test_invalidate_clears_cache() -> None:
 
     service.invalidate()
     expect_false(service.is_resolved)
-
-
-# ---------------------------------------------------------------------------
-# Resolution
-# ---------------------------------------------------------------------------
 
 
 def test_runtime_property_resolves_lazily(tmp_path: Path) -> None:

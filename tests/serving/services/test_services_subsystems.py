@@ -33,10 +33,6 @@ if TYPE_CHECKING:
     from tests._helpers.analytics_samples import AnalyticsSamples
     from tests._helpers.serving_contexts import ProvisionedServiceContext
 
-# =============================================================================
-# Subsystem Route Tests (covers service delegates)
-# =============================================================================
-
 
 @pytest.mark.parametrize("query", ["", "limit=5"])
 def test_list_subsystems_returns_data(
@@ -67,13 +63,11 @@ def test_get_subsystem_modules(
     architecture_samples
         Sample analytics identifiers for architecture subsystem.
     """
-    # Try to get modules for a subsystem
     with architecture_service_ctx.client() as client:
         response = client.get(
             f"/architecture/subsystem?subsystem_id={architecture_samples.subsystem_id}"
         )
 
-    # May be 200 with empty data or 400/404 if no such subsystem - both are valid
     expect_true(
         response.status_code
         in {
@@ -102,7 +96,6 @@ def test_get_module_subsystems(
             f"/architecture/module-subsystems?module={architecture_samples.module}"
         )
 
-    # May be 200 with data or 400/404 if not found
     expect_true(
         response.status_code
         in {
@@ -143,11 +136,6 @@ def test_subsystem_profiles_endpoint(
         response = client.get("/architecture/subsystem-profiles")
 
     expect_equal(response.status_code, status.HTTP_200_OK)
-
-
-# =============================================================================
-# Delegate normalization and HTTP mixin coverage
-# =============================================================================
 
 
 def test_subsystem_delegate_normalization_variants() -> None:

@@ -7,7 +7,6 @@ import pytest
 from codeintel.serving.operations import iter_operations
 from codeintel.serving.operations.catalog import iter_registry_operations
 
-# Expected counts for snapshot verification
 EXPECTED_OPERATION_COUNT = 26
 
 
@@ -56,7 +55,7 @@ def test_operation_ids_snapshot() -> None:
         "subsystems.summarize",
     }
     actual_ids = {op.id for op in iter_registry_operations()}
-    # Validate expected count
+
     if len(expected_ids) != EXPECTED_OPERATION_COUNT:
         pytest.fail(f"Expected IDs count mismatch: {len(expected_ids)}")
     if actual_ids != expected_ids:

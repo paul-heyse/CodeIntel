@@ -17,7 +17,6 @@ from codeintel.analytics.ports import StoragePort, CatalogPort, GraphRuntimePort
 
 def analyze(storage: StoragePort, catalog: CatalogPort) -> dict[str, int]:
     spans = catalog.function_spans
-    # Pure computation on catalog data...
 ```
 """
 

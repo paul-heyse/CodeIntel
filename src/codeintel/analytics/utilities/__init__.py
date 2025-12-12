@@ -17,10 +17,10 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
 )
 
-# Extract call name from AST node
+
 name = call_name(node)
 
-# Insert analytics rows
+
 contract = get_analytics_dataset_contract(gateway, "analytics.function_metrics")
 insert_analytics_rows(gateway, contract, rows)
 ```

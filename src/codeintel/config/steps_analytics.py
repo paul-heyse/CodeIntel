@@ -19,7 +19,7 @@ Example
 >>> builder = ConfigBuilder.from_snapshot(
 ...     snapshot=SnapshotInit(repo="org/repo", commit="abc123", repo_root=Path("/repo")),
 ... )
->>> config = builder.function_analytics()  # Preferred
+>>> config = builder.function_analytics()
 """
 
 from __future__ import annotations

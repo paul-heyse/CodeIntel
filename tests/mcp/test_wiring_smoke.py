@@ -51,7 +51,6 @@ def test_mcp_wiring_smoke(fresh_gateway: StorageGateway) -> None:
     if resource is None:
         pytest.fail("backend_factory returned None")
 
-    # Capture resource in local variables for closures (pyrefly null-safety)
     captured_resource = resource
 
     def _close_wrapper() -> None:

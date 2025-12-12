@@ -69,7 +69,6 @@ def compute_dfg_path_lengths(
     result: dict[Any, DFGPathStats] = {}
 
     for node in graph.nodes():
-        # Use BFS to find distances to all reachable nodes
         distances: dict[Any, int] = {}
         queue = [(node, 0)]
         visited: set[Any] = {node}
@@ -191,7 +190,7 @@ def compute_dfg_density(graph: nx.DiGraph) -> float:
         return 0.0
 
     n = graph.number_of_nodes()
-    max_edges = n * (n - 1)  # Directed graph
+    max_edges = n * (n - 1)
     return graph.number_of_edges() / max_edges
 
 

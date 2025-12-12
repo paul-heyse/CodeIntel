@@ -39,18 +39,13 @@ if TYPE_CHECKING:
 
 AST_NODES_COLUMNS = get_table_columns("core.ast_nodes")
 
-# Test constants
+
 EXPECTED_SOURCE_LINES = 3
 INDEX_CASES = [
     (("functions", (ast.FunctionDef,), ast.FunctionDef), "function defs"),
     (("classes", (ast.ClassDef,), ast.ClassDef), "class defs"),
     (("both", (ast.FunctionDef, ast.ClassDef), (ast.FunctionDef, ast.ClassDef)), "mixed defs"),
 ]
-
-
-# =============================================================================
-# AstSpanIndex.from_tree Tests
-# =============================================================================
 
 
 def _expect_index_has_kind(index: AstSpanIndex, kinds: tuple[type[ast.AST], ...]) -> None:
@@ -98,16 +93,10 @@ def test_empty_tree_returns_empty_index() -> None:
 def test_ignores_nodes_without_lineno() -> None:
     """Should skip nodes without lineno attribute."""
     tree = ast.parse(SIMPLE_MODULE)
-    # Module node itself typically doesn't have a meaningful lineno
+
     index = AstSpanIndex.from_tree(tree, kinds=(ast.Module,))
-    # Module node may or may not be indexed depending on lineno
-    # Main point is that no error is raised
+
     expect_is_instance(index.node_map, dict)
-
-
-# =============================================================================
-# AstSpanIndex.lookup Tests
-# =============================================================================
 
 
 LookupSpan = tuple[int, int | None]
@@ -151,20 +140,13 @@ def test_smallest_enclosing_span_preferred() -> None:
     tree = ast.parse(NESTED_CLASS_FUNCTION)
     index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef, ast.ClassDef))
 
-    # Get the inner function's lines
     for node in index.node_map.values():
         if isinstance(node, ast.FunctionDef) and node.name == "inner":
-            # Looking up from inside should find inner, not Outer
             line = node.lineno
             result = index.lookup(line, line)
-            # Should find the function, not the class
+
             expect_true(result is node or isinstance(result, ast.FunctionDef))
             break
-
-
-# =============================================================================
-# parse_python_module Tests
-# =============================================================================
 
 
 def test_parses_valid_file(tmp_path: Path) -> None:
@@ -234,7 +216,7 @@ def test_handles_unicode_content(tmp_path: Path) -> None:
 def test_returns_none_for_binary_file(tmp_path: Path) -> None:
     """Should return None for binary file with decode error."""
     test_file = tmp_path / "binary.py"
-    # Write invalid UTF-8 bytes
+
     test_file.write_bytes(b"\xff\xfe invalid utf-8 \x80\x81")
 
     result = parse_python_module(test_file)
@@ -254,11 +236,6 @@ def test_parses_empty_file(tmp_path: Path) -> None:
     lines, tree = result
     expect_true(len(lines) == 0 or lines == [""])
     expect_is_instance(tree, ast.Module)
-
-
-# =============================================================================
-# timed_parse Tests
-# =============================================================================
 
 
 def test_returns_lines_tree_and_duration(tmp_path: Path) -> None:
@@ -309,29 +286,20 @@ def test_timed_parse_returns_none_for_missing_file(tmp_path: Path) -> None:
     expect_is_none(result)
 
 
-# =============================================================================
-# Integration Tests
-# =============================================================================
-
-
 def test_parse_and_index_workflow(tmp_path: Path) -> None:
     """Should support typical parse-then-index workflow."""
     test_file = tmp_path / "module.py"
     test_file.write_text(SIMPLE_MODULE, encoding="utf-8")
 
-    # Parse the module
     result = parse_python_module(test_file)
     if result is None:
         pytest.fail("Expected parse result in workflow test")
     lines, tree = result
 
-    # Build index
     index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef, ast.ClassDef))
 
-    # Lookup a function
     for (start, _), node in index.node_map.items():
         if isinstance(node, ast.FunctionDef):
-            # Verify we can find the function's source in lines
             expect_true(start <= len(lines))
             break
 
@@ -348,20 +316,13 @@ def test_multiline_function_span(tmp_path: Path) -> None:
 
     index = AstSpanIndex.from_tree(tree, kinds=(ast.FunctionDef,))
 
-    # Should have one function
     expect_equal(len(index.node_map), 1)
 
-    # Function should span multiple lines
     (start, end), node = next(iter(index.node_map.items()))
     if not isinstance(node, ast.FunctionDef):
         pytest.fail(f"Expected FunctionDef node, got {type(node).__name__}")
     expect_equal(node.name, "complex_function")
-    expect_true(end > start)  # Multi-line
-
-
-# =============================================================================
-# AstVisitor Tests
-# =============================================================================
+    expect_true(end > start)
 
 
 def test_ast_visitor_records_decorator_span() -> None:

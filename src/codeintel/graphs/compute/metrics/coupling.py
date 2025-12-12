@@ -86,7 +86,6 @@ def compute_coupling(graph: nx.DiGraph) -> dict[Any, CouplingMetrics]:
     """
     result: dict[Any, CouplingMetrics] = {}
     for node in graph.nodes():
-        # Cast needed due to imprecise NetworkX stubs
         afferent = cast("int", graph.in_degree(node))
         efferent = cast("int", graph.out_degree(node))
         total = afferent + efferent
@@ -250,8 +249,7 @@ def compute_clustering_coefficient(graph: nx.Graph) -> dict[Any, float]:
     """
     if graph.number_of_nodes() == 0:
         return {}
-    # nx.clustering(graph) returns dict[node, float] when called with a graph
-    # The stubs are imprecise, showing it could return float for single-node calls
+
     clustering_result = nx.clustering(graph)
     return cast("dict[Any, float]", clustering_result)
 
@@ -298,8 +296,6 @@ def find_hub_nodes(
     if graph.number_of_nodes() == 0:
         return []
 
-    # Build degree mapping from the graph
-    # Use len(neighbors) to avoid NetworkX stub issues with graph.degree()
     degrees: dict[Any, int] = {}
     for node in graph.nodes():
         degrees[node] = len(list(graph.neighbors(node)))
@@ -333,7 +329,6 @@ def find_boundary_nodes(
     if not communities:
         return []
 
-    # Build node to community mapping
     node_community: dict[Any, int] = {}
     for comm in communities:
         for node in comm.nodes:

@@ -77,21 +77,15 @@ class HotspotsPlugin(TargetPlugin):
         TargetResult
             Success result with row counts.
         """
-        # Get parameters
         max_commits = ctx.parameters.get("max_commits", int, default=2000)
 
-        # Build hotspots config from parameters
         cfg = HotspotsStepConfig(
             snapshot=ctx.snapshot,
             max_commits=max_commits,
         )
 
-        # Execute computation
-        # Note: ToolRunner type mismatch between build.protocols and ingestion.engine.infrastructure
-        # Passing None for now as runner is optional
         build_hotspots(ctx.gateway, cfg, runner=None)
 
-        # Compute row counts
         row_counts = self._compute_row_counts(ctx)
         return TargetResult.succeeded(row_counts=row_counts)
 

@@ -29,9 +29,9 @@ if TYPE_CHECKING:
 
     from codeintel.build.protocols import TypeChecker
     from codeintel.ingestion.ports.storage import IngestStoragePort
-else:  # pragma: no cover - runtime placeholder
+else:
 
-    class TypeChecker:  # pragma: no cover - minimal stub
+    class TypeChecker:
         async def check(
             self,
             repo_root: Path,

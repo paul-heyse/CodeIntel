@@ -41,25 +41,22 @@ def _enable_nx_cugraph_backend() -> None:
     """
     try:
         nx_cugraph = importlib.import_module("nx_cugraph")
-    except ImportError as exc:  # pragma: no cover - environment dependent
+    except ImportError as exc:
         message = "Requested GPU backend, but nx_cugraph is not installed."
         raise RuntimeError(message) from exc
 
-    # Try old API first (nx_cugraph < 25.x)
     set_backend = getattr(nx_cugraph, "set_default_backend", None)
     if set_backend is not None:
         set_backend()
         LOG.info("NetworkX GPU backend enabled via nx_cugraph.set_default_backend.")
         return
 
-    # NetworkX 3.x uses nx.config.backend_priority
     try:
         nx = importlib.import_module("networkx")
         config = getattr(nx, "config", None)
         if config is not None and hasattr(config, "backend_priority"):
-            # Set cugraph as the priority backend
             config.backend_priority = ["cugraph"]
-            # Suppress verbose cache warnings - we don't mutate graphs after creation
+
             if hasattr(config, "warnings_to_ignore"):
                 config.warnings_to_ignore.add("cache")
             LOG.info("NetworkX GPU backend enabled via nx.config.backend_priority=['cugraph'].")
@@ -67,8 +64,6 @@ def _enable_nx_cugraph_backend() -> None:
     except (ImportError, AttributeError) as exc:
         LOG.debug("NetworkX config API not available: %s", exc)
 
-    # Fallback: set environment variable for automatic backend dispatch
-    # NetworkX 3.x will pick up cugraph automatically if available
     os.environ.setdefault("NETWORKX_BACKEND_PRIORITY", "cugraph")
     LOG.info("NetworkX GPU backend enabled via NETWORKX_BACKEND_PRIORITY env var.")
 

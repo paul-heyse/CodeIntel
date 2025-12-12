@@ -21,10 +21,6 @@ if TYPE_CHECKING:
 
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# build_meta_router Tests
-# =============================================================================
-
 
 def test_build_meta_router_returns_router() -> None:
     """Verify build_meta_router returns an APIRouter with meta paths."""
@@ -42,11 +38,6 @@ def test_build_meta_router_returns_router() -> None:
     expect_in("/meta/dataflow", routes)
 
 
-# =============================================================================
-# /meta/datasets Tests
-# =============================================================================
-
-
 def test_meta_datasets_returns_list(
     meta_http_client: TestClient,
 ) -> None:
@@ -56,7 +47,7 @@ def test_meta_datasets_returns_list(
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
     expect_is_instance(data, list)
-    # Should have at least some datasets registered
+
     if data:
         first = data[0]
         expect_in("id", first)
@@ -100,11 +91,6 @@ def test_meta_datasets_includes_limit_info(
         expect_in("max_limit", first)
 
 
-# =============================================================================
-# /meta/operations Tests
-# =============================================================================
-
-
 def test_meta_operations_returns_list(
     meta_http_client: TestClient,
 ) -> None:
@@ -114,7 +100,7 @@ def test_meta_operations_returns_list(
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
     expect_is_instance(data, list)
-    # Should have many operations registered
+
     expect_true(len(data) > 0)
     first = data[0]
     expect_in("id", first)
@@ -130,17 +116,12 @@ def test_meta_operations_includes_http_details(
 
     expect_equal(response.status_code, status.HTTP_200_OK)
     data = response.json()
-    # Find an operation with HTTP details (most have them)
+
     http_ops = [op for op in data if op.get("http_path") is not None]
     expect_true(len(http_ops) > 0)
     http_op = http_ops[0]
     expect_in("http_method", http_op)
     expect_in("http_path", http_op)
-
-
-# =============================================================================
-# /meta/dataflow Tests
-# =============================================================================
 
 
 def test_meta_dataflow_returns_graph(
@@ -184,11 +165,6 @@ def test_meta_dataflow_nodes_have_expected_fields(
         first_node = nodes[0]
         expect_in("id", first_node)
         expect_in("kind", first_node)
-
-
-# =============================================================================
-# /meta/debug/pipeline/prereqs Tests
-# =============================================================================
 
 
 def test_meta_debug_prereqs_unknown_operation(

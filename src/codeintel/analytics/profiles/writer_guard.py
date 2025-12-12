@@ -64,7 +64,6 @@ def write_rows_with_registry_guard(
         message = f"Columns for {context.table_key} differ from serializer constants."
         raise RuntimeError(message)
 
-    # Delete existing data using Ibis
     table = gateway.ibis.table(context.table_key)
 
     where = and_predicates(
@@ -76,7 +75,6 @@ def write_rows_with_registry_guard(
     if not rows_list:
         return 0
 
-    # Write rows using Ibis
     tuples = [context.serialize_row(row) for row in rows_list]
     gateway.ibis.write(context.table_key, tuples, columns=list(context.columns))
     return len(tuples)
@@ -124,9 +122,7 @@ def write_rows_via_policy_backend(
 
     backend = DuckDBPolicyBackend(gateway)
 
-    # Delete existing rows for this snapshot
     backend.delete_for_snapshot(config.table_key, repo=config.repo, commit=config.commit)
 
-    # Serialize and insert
     tuples = [config.serialize_row(row) for row in rows_list]
     return backend.bulk_insert(config.table_key, tuples, columns=list(config.columns))

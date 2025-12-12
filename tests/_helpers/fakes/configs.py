@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from codeintel.ingestion.engine.service import ToolService
 
 
-# Import constants from central module (use canonical names)
 from tests._helpers.constants import (
     DEFAULT_COMMIT as DEFAULT_TEST_COMMIT,
 )
@@ -30,10 +29,6 @@ from tests._helpers.constants import (
 from tests._helpers.constants import (
     DEFAULT_RUN_ID as DEFAULT_TEST_RUN_ID,
 )
-
-# =============================================================================
-# Factory Functions
-# =============================================================================
 
 
 def create_test_snapshot(
@@ -111,11 +106,6 @@ def create_test_run_context(
         snapshot=snapshot,
         trigger=trigger,
     )
-
-
-# =============================================================================
-# Test Context Types
-# =============================================================================
 
 
 @dataclass

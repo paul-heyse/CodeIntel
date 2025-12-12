@@ -47,7 +47,6 @@ from codeintel.analytics.plugins.tests import (
     TestProfilePlugin,
 )
 
-# Singleton plugin instances - instantiate once, register once
 FUNCTION_METRICS_PLUGIN = FunctionMetricsPlugin()
 FUNCTION_AST_FEATURES_PLUGIN = FunctionAstFeaturesPlugin()
 FUNCTION_EFFECTS_PLUGIN = FunctionEffectsPlugin()
@@ -74,9 +73,7 @@ CONFIG_DATA_FLOW_PLUGIN = ConfigDataFlowPlugin()
 CFG_DFG_METRICS_PLUGIN = CfgDfgMetricsPlugin()
 SYMBOL_GRAPH_METRICS_PLUGIN = SymbolGraphMetricsPlugin()
 
-# All plugins - used by build executor for discovery
-# Note: Graph plugins are in graphs.plugins and are executed via
-# the graph plugin system, not this registration module.
+
 ALL_PLUGINS = (
     FUNCTION_METRICS_PLUGIN,
     FUNCTION_AST_FEATURES_PLUGIN,

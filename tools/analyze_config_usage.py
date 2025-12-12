@@ -44,10 +44,10 @@ class ExportInfo:
 
     name: str
     source_file: str
-    kind: str  # "class", "function", "constant", "type_alias"
+    kind: str
     external_uses: int = 0
     test_uses: int = 0
-    internal_uses: int = 0  # Within config package
+    internal_uses: int = 0
     used_in_files: list[str] = field(default_factory=list)
 
 
@@ -244,7 +244,6 @@ def analyze_config_usage(
 
     for source_file, names in exports_by_file.items():
         for name in names:
-            # Deduplicate - same name from different files
             if name in seen_names:
                 continue
             seen_names.add(name)
@@ -263,7 +262,6 @@ def analyze_config_usage(
             )
             all_exports.append(info)
 
-    # Sort by external uses (ascending) so unused items are first
     all_exports.sort(key=lambda x: (x.external_uses, x.name))
 
     unused = sum(1 for e in all_exports if e.external_uses == 0)
@@ -354,7 +352,7 @@ def format_text_report(result: AnalysisResult, threshold: int) -> str:
     )
 
     well_used = [e for e in result.exports if e.external_uses >= threshold]
-    well_used.sort(key=lambda x: -x.external_uses)  # Descending
+    well_used.sort(key=lambda x: -x.external_uses)
     lines.extend(
         f"  ✅ {export.name}: {export.external_uses} external uses"
         for export in well_used[:WELL_USED_REPORT_LIMIT]
@@ -404,7 +402,6 @@ def main() -> int:
     )
 
     if args.json:
-        # Convert to JSON-serializable dict
         data = {
             "total_exports": result.total_exports,
             "unused_count": result.unused_count,
@@ -428,7 +425,6 @@ def main() -> int:
         sys.stdout.write(format_text_report(result, args.threshold))
         sys.stdout.write("\n")
 
-    # Return non-zero if there are unused exports
     return 1 if result.unused_count > 0 else 0
 
 

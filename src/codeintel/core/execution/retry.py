@@ -75,10 +75,9 @@ class RetryPolicy:
     >>> policy = RetryPolicy(max_attempts=3, use_jitter=True)
     >>> @policy.as_decorator()
     ... def unstable_operation():
-    ...     # May fail transiently
     ...     pass
 
-    >>> # Or use block-style retrying
+    >>>
     >>> for attempt in policy.create_retrying():
     ...     with attempt:
     ...         unstable_operation()
@@ -148,7 +147,7 @@ class RetryPolicy:
         >>> for attempt in policy.create_retrying():
         ...     with attempt:
         ...         step1()
-        ...         step2()  # Both steps retry together
+        ...         step2()
         """
         return Retrying(
             stop=self.get_stop_strategy(),
@@ -253,11 +252,6 @@ class RetryPolicy:
         )
 
 
-# =============================================================================
-# Pre-configured policies for common use cases
-# =============================================================================
-
-#: Default policy for plugin execution with moderate retries
 PLUGIN_RETRY_POLICY = RetryPolicy(
     max_attempts=3,
     max_delay_s=30.0,
@@ -265,7 +259,7 @@ PLUGIN_RETRY_POLICY = RetryPolicy(
     backoff_max_s=5.0,
 )
 
-#: Policy for network operations with more aggressive retries
+
 NETWORK_RETRY_POLICY = RetryPolicy(
     max_attempts=5,
     max_delay_s=60.0,
@@ -274,24 +268,19 @@ NETWORK_RETRY_POLICY = RetryPolicy(
     retryable_exceptions=(TimeoutError, ConnectionError, OSError),
 )
 
-#: Policy that disables retries (single attempt only)
+
 NO_RETRY_POLICY = RetryPolicy(
     max_attempts=1,
     max_delay_s=0.0,
 )
 
-#: Policy for database operations
+
 DATABASE_RETRY_POLICY = RetryPolicy(
     max_attempts=3,
     max_delay_s=15.0,
     backoff_multiplier=0.25,
     backoff_max_s=3.0,
 )
-
-
-# =============================================================================
-# Helper functions
-# =============================================================================
 
 
 _RETRY_EXHAUSTED_MSG = "Retry exhausted without result or exception"
@@ -339,7 +328,7 @@ def with_retry[T](
     for attempt in policy.create_retrying():
         with attempt:
             return fn(*args, **kwargs)
-    # Should not reach here due to reraise=True, but satisfy type checker
+
     raise RuntimeError(_RETRY_EXHAUSTED_MSG)
 
 
@@ -375,7 +364,7 @@ async def with_retry_async[T](
     async for attempt in policy.create_async_retrying():
         with attempt:
             return await fn(*args, **kwargs)
-    # Should not reach here due to reraise=True, but satisfy type checker
+
     raise RuntimeError(_RETRY_EXHAUSTED_MSG)
 
 

@@ -32,9 +32,6 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEMO_REPO = "demo/repo"
 DEMO_COMMIT = "abc123"
@@ -52,11 +49,6 @@ class SampleRow:
     commit: str
     value: int
     name: str
-
-
-# =============================================================================
-# Concrete Adapter Implementations for Testing
-# =============================================================================
 
 
 class ConcreteAnalyticsAdapter(AnalyticsAdapter[SampleRow]):
@@ -105,7 +97,6 @@ class ConcreteAnalyticsAdapter(AnalyticsAdapter[SampleRow]):
         if not rows:
             return EXPECTED_COUNT_0
 
-        # Delete existing rows first
         delete_query = """
             DELETE FROM sample_analytics
             WHERE repo = ? AND commit = ?
@@ -115,7 +106,6 @@ class ConcreteAnalyticsAdapter(AnalyticsAdapter[SampleRow]):
             [self._snapshot.repo, self._snapshot.commit],
         )
 
-        # Insert new rows
         for row in rows:
             insert_query = """
                 INSERT INTO sample_analytics (repo, commit, value, name)
@@ -221,16 +211,10 @@ class ConcreteSimpleBatchAdapter(SimpleBatchAdapter[SampleRow]):
         int
             Number of rows inserted.
         """
-        # Access self.table_name to satisfy PLR6301 (method uses self)
         _ = self.table_name
-        # Record that a gateway was provided to ensure interface compliance
+
         expect_is_not_none(gateway)
         return len(rows)
-
-
-# =============================================================================
-# Test Fixtures
-# =============================================================================
 
 
 @pytest.fixture
@@ -248,7 +232,6 @@ def gateway_with_tables(fresh_gateway: StorageGateway) -> StorageGateway:
     StorageGateway
         Gateway with sample tables created.
     """
-    # Create sample tables on top of the fresh gateway
     fresh_gateway.con.execute("""
         CREATE TABLE IF NOT EXISTS sample_analytics (
             repo VARCHAR,
@@ -293,11 +276,6 @@ def snapshot() -> SnapshotRef:
     )
 
 
-# =============================================================================
-# DeleteScope Tests
-# =============================================================================
-
-
 def test_create_delete_scope() -> None:
     """Create delete scope with repo and commit."""
     scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
@@ -326,11 +304,6 @@ def test_delete_scope_is_frozen() -> None:
     """Delete scope is immutable."""
     scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
     assert_frozen(scope, "repo", "other")
-
-
-# =============================================================================
-# AnalyticsAdapter Tests
-# =============================================================================
 
 
 def test_adapter_properties(
@@ -363,7 +336,6 @@ def test_adapter_persist_and_load(
     """Persist rows and load them back."""
     adapter = ConcreteAnalyticsAdapter(gateway_with_tables, snapshot)
 
-    # Persist rows
     sample_rows = [
         SampleRow(repo=DEMO_REPO, commit=DEMO_COMMIT, value=1, name="first"),
         SampleRow(repo=DEMO_REPO, commit=DEMO_COMMIT, value=2, name="second"),
@@ -371,7 +343,6 @@ def test_adapter_persist_and_load(
     count = adapter.persist(sample_rows)
     expect_equal(count, EXPECTED_COUNT_2)
 
-    # Load back
     loaded = list(adapter.load())
     expect_length(loaded, EXPECTED_COUNT_2)
 
@@ -393,20 +364,13 @@ def test_adapter_persist_replaces_existing(
     """Persist replaces existing rows for same repo/commit."""
     adapter = ConcreteAnalyticsAdapter(gateway_with_tables, snapshot)
 
-    # First persist
     adapter.persist([SampleRow(DEMO_REPO, DEMO_COMMIT, 1, "original")])
 
-    # Second persist should replace
     adapter.persist([SampleRow(DEMO_REPO, DEMO_COMMIT, 2, "replaced")])
 
     loaded = list(adapter.load())
     expect_length(loaded, EXPECTED_COUNT_1)
     expect_equal(loaded[0].name, "replaced")
-
-
-# =============================================================================
-# BatchAdapter Tests
-# =============================================================================
 
 
 def test_batch_table_name_property(
@@ -436,11 +400,9 @@ def test_batch_persist_with_delete(
     """Persist batch deletes existing rows first."""
     adapter = ConcreteBatchAdapter(gateway_with_tables, snapshot)
 
-    # First persist
     sample_rows = [SampleRow(DEMO_REPO, DEMO_COMMIT, 1, "first")]
     adapter.persist_batch(sample_rows, delete_before=True)
 
-    # Second persist with delete
     new_rows = [SampleRow(DEMO_REPO, DEMO_COMMIT, 2, "second")]
     adapter.persist_batch(new_rows, delete_before=True)
 
@@ -456,13 +418,11 @@ def test_batch_persist_without_delete(
     """Persist batch without delete appends rows."""
     adapter = ConcreteBatchAdapter(gateway_with_tables, snapshot)
 
-    # First persist
     adapter.persist_batch(
         [SampleRow(DEMO_REPO, DEMO_COMMIT, 1, "first")],
         delete_before=False,
     )
 
-    # Second persist without delete
     adapter.persist_batch(
         [SampleRow(DEMO_REPO, DEMO_COMMIT, 2, "second")],
         delete_before=False,
@@ -482,11 +442,6 @@ def test_batch_persist_empty(
     expect_equal(count, EXPECTED_COUNT_0)
 
 
-# =============================================================================
-# SimpleBatchAdapter Tests
-# =============================================================================
-
-
 def test_simple_batch_table_name_property() -> None:
     """Simple batch adapter exposes table_name property."""
     adapter = ConcreteSimpleBatchAdapter()
@@ -502,7 +457,7 @@ def test_simple_batch_insert_rows(
         SampleRow(DEMO_REPO, DEMO_COMMIT, 1, "a"),
         SampleRow(DEMO_REPO, DEMO_COMMIT, 2, "b"),
     ]
-    # Note: Our test impl just returns len(rows)
+
     count = adapter.insert_rows(gateway_with_tables, rows)
     expect_equal(count, EXPECTED_COUNT_2)
 
@@ -511,7 +466,6 @@ def test_simple_batch_execute_delete(
     gateway_with_tables: StorageGateway,
 ) -> None:
     """Execute delete removes matching rows."""
-    # Insert some rows
     gateway_with_tables.con.execute(
         """
         INSERT INTO sample_simple_batch (repo, commit, value, name)
@@ -526,7 +480,6 @@ def test_simple_batch_execute_delete(
 
     expect_equal(deleted, EXPECTED_COUNT_1)
 
-    # Verify row is gone
     result = gateway_with_tables.con.execute(
         "SELECT COUNT(*) FROM sample_simple_batch WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],

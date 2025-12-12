@@ -535,7 +535,6 @@ def _parse_scip_range(rng: Sequence[object]) -> tuple[int, int, int, int] | None
     tuple[int, int, int, int] | None
         Normalized (start_line, start_col, end_line, end_col) or None.
     """
-    # Convert elements to int safely
     try:
         int_values = [int(x) for x in rng if isinstance(x, (int, float, str))]
     except (ValueError, TypeError):
@@ -714,13 +713,11 @@ class ScipIndexResult:
         for doc in self.documents:
             for occ in doc.occurrences:
                 if occ.is_definition:
-                    # SCIP lines are 0-indexed, add 1 for 1-indexed
                     start_line = occ.range_[0] + 1
                     result[doc.relative_path, start_line] = occ.symbol
         return result
 
 
-# Type alias for parsed results that can be attached to ToolPluginResult
 ParsedToolResult = DiagnosticReport | CoverageReport | TestReport | ScipIndexResult
 
 

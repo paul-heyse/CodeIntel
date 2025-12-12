@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypedDict, cast
 
-# Re-export canonical row types from data_models (single source of truth)
 from codeintel.core.data_models.rows import (
     CFGBlockRow,
     CFGEdgeRow,
@@ -27,7 +26,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 
-# Simple alias to align with serializer naming used in tests and contracts.
 def symbol_use_to_tuple(row: SymbolUseRow) -> tuple[object, ...]:
     """Serialize a SymbolUseRow into the INSERT column order.
 
@@ -37,9 +35,6 @@ def symbol_use_to_tuple(row: SymbolUseRow) -> tuple[object, ...]:
         Values aligned with symbol_use INSERT order.
     """
     return SymbolUseRow.to_tuple(row)
-
-
-# Call graph types remain TypedDicts as they are not duplicated in compute modules
 
 
 class CallGraphNodeRow(TypedDict):

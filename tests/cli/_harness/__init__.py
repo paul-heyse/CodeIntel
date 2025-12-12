@@ -232,7 +232,7 @@ class CliTestHarness:
         tuple[io.StringIO, io.StringIO]
             Stdout and stderr capture objects.
         """
-        _ = args  # Used only for documentation
+        _ = args
         stdout_capture = io.StringIO()
         stderr_capture = io.StringIO()
         old_argv = sys.argv
@@ -242,7 +242,6 @@ class CliTestHarness:
         old_env = dict(os.environ)
 
         try:
-            # Set up environment
             sys.argv = ["codeintel", *args]
             sys.stdout = stdout_capture
             sys.stderr = stderr_capture
@@ -312,7 +311,6 @@ class CliTestHarness:
         RuntimeError
             If invocation failed.
         """
-        # Add JSON format flag if not present
         if "--format=json" not in args and "--output-format" not in " ".join(args):
             args = [*args, "--format=json"]
 

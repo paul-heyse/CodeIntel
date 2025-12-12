@@ -77,13 +77,12 @@ class BehavioralCoveragePlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         cfg = BehavioralCoverageStepConfig(
             snapshot=ctx.snapshot,
         )
 
-        # Get optional LLM runner from parameters
         llm_runner: BehavioralLLMRunner | None = None
         llm_runner_raw = ctx.parameters.get_optional("behavioral_llm_runner", object)
         if llm_runner_raw is not None and callable(llm_runner_raw):
@@ -98,7 +97,6 @@ class BehavioralCoveragePlugin(TargetPlugin):
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Behavioral coverage build failed: {e}")
 
-        # Count rows written
         row = ctx.gateway.con.execute(
             """
             SELECT COUNT(*) FROM analytics.behavioral_coverage

@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Column definitions for graph_stats table
+
 _GRAPH_STATS_COLUMNS: tuple[str, ...] = (
     "graph_name",
     "repo",
@@ -134,7 +134,6 @@ def compute_graph_stats(
             )
         )
 
-    # Use policy backend for delete and bulk insert
     backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot("analytics.graph_stats", repo=repo, commit=commit)
     if rows:

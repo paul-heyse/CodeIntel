@@ -122,12 +122,10 @@ class AstExtractPlugin(TargetPlugin):
     )
     _core_metadata: ClassVar[CorePluginMetadata] = AST_EXTRACT_METADATA
 
-    # Class-level defaults for adapter and step factories
     default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
     default_discovery_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
     default_step_factory: ClassVar[StepFactory] = AstExtractStep
 
-    # Instance attributes (set in __init__)
     _storage_factory: StorageFactory
     _discovery_factory: DiscoveryFactory
     _step_factory: StepFactory
@@ -173,7 +171,6 @@ class AstExtractPlugin(TargetPlugin):
         ValueError
             If no storage gateway is available.
         """
-        # Create adapters
         gateway = ctx.resources.gateway
         if gateway is None:
             message = "Storage gateway is required for AST extraction"
@@ -181,11 +178,9 @@ class AstExtractPlugin(TargetPlugin):
         storage = self._storage_factory(gateway)
         discovery = self._discovery_factory(ctx.repo_root)
 
-        # Get module paths and convert to ModuleRecord
         paths = _get_module_paths(ctx)
         modules = _paths_to_modules(paths, ctx.repo_root)
 
-        # Execute step
         step = self._step_factory(storage, discovery)
         result = step.execute(
             modules,
@@ -213,11 +208,9 @@ def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
     list[str]
         List of relative module paths.
     """
-    # First check if modules are provided in resources
     if ctx.resources.modules:
         return list(ctx.resources.modules)
 
-    # Otherwise query from database
     try:
         table = ctx.gateway.ibis.table("core.modules")
         df = (

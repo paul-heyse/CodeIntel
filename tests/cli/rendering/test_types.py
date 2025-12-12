@@ -97,7 +97,6 @@ def test_render_context_for_testing() -> None:
     expect_is_instance(out, StringIO)
     expect_is_instance(err, StringIO)
 
-    # Verify streams are writable
     ctx.writer.write("test")
     ctx.err_writer.write("error")
 

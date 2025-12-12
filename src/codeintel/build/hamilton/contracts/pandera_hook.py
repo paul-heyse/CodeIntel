@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from functools import wraps
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
 import pandas as pd
 
@@ -36,7 +36,8 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-F = TypeVar("F", bound=Callable[..., Any])
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 def _ensure_dataframe(result: object, table_key: str) -> pd.DataFrame:
@@ -81,7 +82,7 @@ def get_pandera_schema(table_key: str) -> pa.DataFrameSchema | None:
     Examples
     --------
     >>> schema = get_pandera_schema("analytics.function_metrics")
-    >>> schema is not None  # If registered
+    >>> schema is not None
     True
     """
     dataset_schema = SCHEMA_REGISTRY.get(table_key)
@@ -115,7 +116,7 @@ def validate_dataframe(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
     Examples
     --------
     >>> df = pd.DataFrame({"repo": ["r1"], "loc": [100]})
-    >>> validated = validate_dataframe(df, "test.table")  # If schema exists
+    >>> validated = validate_dataframe(df, "test.table")
     """
     schema = get_pandera_schema(table_key)
     if schema is None:
@@ -127,7 +128,7 @@ def validate_dataframe(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
     return schema.validate(df)
 
 
-def with_contract(table_key: str) -> Callable[[F], F]:
+def with_contract(table_key: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorate a function to validate its output against a Pandera schema.
 
     This is a lightweight decorator that validates the function's return
@@ -155,9 +156,9 @@ def with_contract(table_key: str) -> Callable[[F], F]:
     ...     return process(data)
     """
 
-    def decorator(func: F) -> F:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args: object, **kwargs: object) -> object:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             result = func(*args, **kwargs)
             if not isinstance(result, pd.DataFrame):
                 return result
@@ -171,9 +172,9 @@ def with_contract(table_key: str) -> Callable[[F], F]:
                 )
                 return result
 
-            return schema.validate(result)
+            return cast("R", schema.validate(result))
 
-        return wrapper  # type: ignore[return-value]
+        return cast("Callable[P, R]", wrapper)
 
     return decorator
 
@@ -208,7 +209,6 @@ def validate_dataset_ref(
     """
     schema = get_pandera_schema(ref.table_key)
     if schema is None:
-        # No schema = no validation required
         return True, None
 
     try:

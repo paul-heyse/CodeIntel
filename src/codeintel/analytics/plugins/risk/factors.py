@@ -145,7 +145,7 @@ class RiskFactorsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         gateway = ctx.gateway
         con = gateway.con

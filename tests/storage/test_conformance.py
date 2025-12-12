@@ -24,7 +24,7 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-# Constants
+
 SAMPLE_SIZE_5 = 5
 SAMPLE_SIZE_10 = 10
 

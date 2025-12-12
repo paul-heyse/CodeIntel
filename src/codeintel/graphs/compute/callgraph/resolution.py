@@ -20,11 +20,6 @@ if TYPE_CHECKING:
     from codeintel.graphs.ports.catalog import FunctionSpanData
 
 
-# =============================================================================
-# Resolution Functions
-# =============================================================================
-
-
 def resolve_callee(
     callee_name: str,
     attr_chain: Sequence[str],
@@ -184,11 +179,6 @@ def build_callee_map(spans: Sequence[FunctionSpanData]) -> dict[str, int]:
     return mapping
 
 
-# =============================================================================
-# Import Alias Resolution
-# =============================================================================
-
-
 def attr_to_str(node: cst.CSTNode) -> str:
     """Render a LibCST Name/Attribute into a dotted string.
 
@@ -231,7 +221,7 @@ def resolve_base_module(current_module: str, node: cst.ImportFrom) -> str | None
 
     package_parts = current_module.split(".")
     if package_parts:
-        package_parts = package_parts[:-1]  # drop module name
+        package_parts = package_parts[:-1]
 
     if level > 1:
         package_parts = package_parts[: max(0, len(package_parts) - (level - 1))]
@@ -405,7 +395,7 @@ __all__ = [
     "resolve_via_scip",
 ]
 
-# Backwards compatibility aliases for previously private helpers
+
 _attr_to_str = attr_to_str
 _record_import_aliases = record_import_aliases
 _record_import_from_aliases = record_import_from_aliases

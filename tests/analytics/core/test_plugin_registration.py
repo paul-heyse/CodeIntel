@@ -25,7 +25,7 @@ from tests._helpers.assertions import (
 def test_all_plugins_have_names() -> None:
     """Verify ALL_PLUGINS all have unique plugin names."""
     plugin_names = {p.plugin_name for p in ALL_PLUGINS}
-    # All plugins should have unique names
+
     expect_equal(len(plugin_names), len(ALL_PLUGINS), label="Duplicate plugin names found")
 
 
@@ -65,7 +65,6 @@ def test_no_duplicate_plugin_names() -> None:
     """Verify no plugins share the same name."""
     names = [p.plugin_name for p in ALL_PLUGINS]
 
-    # Check for duplicates
     duplicates = [name for name in names if names.count(name) > 1]
     if duplicates:
         pytest.fail(f"Duplicate plugin names found: {set(duplicates)}")

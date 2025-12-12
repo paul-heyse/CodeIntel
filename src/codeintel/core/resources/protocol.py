@@ -18,11 +18,6 @@ from typing import ClassVar, Protocol, TypeVar, runtime_checkable
 T_co = TypeVar("T_co", covariant=True)
 
 
-# =============================================================================
-# Exceptions
-# =============================================================================
-
-
 class ResourceError(Exception):
     """Base exception for resource-related errors.
 
@@ -61,11 +56,6 @@ class ResourceNotLoadedError(ResourceError):
         super().__init__(message)
         self.resource_type = resource_type
         self.reason = reason
-
-
-# =============================================================================
-# Protocols and Base Classes
-# =============================================================================
 
 
 @runtime_checkable
@@ -200,7 +190,7 @@ class LazyResource[T](ABC):
     ...     def _load(self) -> dict[str, str]:
     ...         return {"key": "value"}
     >>> provider = ConfigProvider("app_config")
-    >>> config = provider.get()  # Loads on first access
+    >>> config = provider.get()
     >>> provider.is_loaded
     True
     """

@@ -19,7 +19,6 @@ test
 
 from __future__ import annotations
 
-# Analytics table rows
 from codeintel.config.datasets.rows.analytics import (
     FUNCTION_CONTRACTS_COLUMNS,
     FUNCTION_EFFECTS_COLUMNS,
@@ -46,8 +45,6 @@ from codeintel.config.datasets.rows.analytics import (
     static_diagnostic_to_tuple,
     typedness_row_to_tuple,
 )
-
-# Core entity rows
 from codeintel.config.datasets.rows.core import (
     ConfigValueRow,
     DocstringRow,
@@ -59,8 +56,6 @@ from codeintel.config.datasets.rows.core import (
     docstring_row_to_tuple,
     ingest_run_to_tuple,
 )
-
-# Graph table rows
 from codeintel.config.datasets.rows.graph import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -75,8 +70,6 @@ from codeintel.config.datasets.rows.graph import (
     dict_to_call_graph_edge,
     dict_to_call_graph_node,
 )
-
-# Profile table rows
 from codeintel.config.datasets.rows.profiles import (
     FILE_PROFILE_COLUMNS,
     FUNCTION_PROFILE_COLUMNS,
@@ -102,8 +95,6 @@ from codeintel.config.datasets.rows.profiles import (
     graph_metrics_modules_row_to_tuple,
     module_profile_row_to_tuple,
 )
-
-# Test-related rows
 from codeintel.config.datasets.rows.test import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     SUBSYSTEM_COVERAGE_COLUMNS,

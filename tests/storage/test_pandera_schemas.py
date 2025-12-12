@@ -35,10 +35,6 @@ if TYPE_CHECKING:
 
 MIN_SCHEMA_COUNT = 85
 
-# ---------------------------------------------------------------------------
-# Fixtures and helpers
-# ---------------------------------------------------------------------------
-
 
 def _require_schema(table_key: str) -> DataFrameSchema:
     """
@@ -90,11 +86,6 @@ def goids_schema() -> DataFrameSchema:
         The core.goids schema.
     """
     return _require_schema("core.goids")
-
-
-# ---------------------------------------------------------------------------
-# Schema Registry Tests
-# ---------------------------------------------------------------------------
 
 
 class TestSchemaRegistry:
@@ -155,11 +146,6 @@ class TestSchemaRegistry:
             _require_schema(view)
 
 
-# ---------------------------------------------------------------------------
-# Schema Validation Tests
-# ---------------------------------------------------------------------------
-
-
 class TestSchemaValidation:
     """Test schema validation behavior."""
 
@@ -212,7 +198,6 @@ class TestSchemaValidation:
         if schema is None:
             pytest.skip("Schema not available")
 
-        # Create DataFrame with invalid negative line numbers
         df = pd.DataFrame(
             {
                 "function_goid_h128": [1],
@@ -223,7 +208,7 @@ class TestSchemaValidation:
                 "language": ["python"],
                 "kind": ["function"],
                 "qualname": ["test"],
-                "start_line": [-1],  # Invalid: must be >= 1
+                "start_line": [-1],
                 "end_line": [10],
                 "loc": [10],
                 "logical_loc": [5],
@@ -250,11 +235,6 @@ class TestSchemaValidation:
         expect_false(result.success, message="Strict validation should fail for bad data")
         expect_true(result.error_count > 0, message="Expected validation errors")
         expect_true(result.validated_df is None, message="validated_df should be None")
-
-
-# ---------------------------------------------------------------------------
-# JSON Schema Export Tests
-# ---------------------------------------------------------------------------
 
 
 class TestJsonSchemaExport:
@@ -302,25 +282,19 @@ class TestJsonSchemaExport:
         json_schema = pandera_to_json_schema(function_metrics_schema)
         properties = json_schema["properties"]
 
-        # Check integer columns
         expect_in("integer", properties.get("loc", {}).get("type", []), label="loc_type")
-        # Check boolean columns
+
         expect_in(
             "boolean",
             properties.get("is_async", {}).get("type", []),
             label="is_async_type",
         )
-        # Check string columns
+
         expect_in(
             "string",
             properties.get("qualname", {}).get("type", []),
             label="qualname_type",
         )
-
-
-# ---------------------------------------------------------------------------
-# Property-Based Tests
-# ---------------------------------------------------------------------------
 
 
 class TestPropertyBased:
@@ -354,7 +328,7 @@ class TestPropertyBased:
                 "created_at": [pd.Timestamp.now()],
             }
         )
-        # Should not raise for valid non-negative goid_h128
+
         with contextlib.suppress(Exception):
             validate_dataset_df("core.goids", df)
 
@@ -403,7 +377,7 @@ class TestPropertyBased:
                 "created_at": [pd.Timestamp.now()],
             }
         )
-        # Should not raise for valid non-negative values
+
         result = validate_dataset_df("analytics.function_metrics", df)
         expect_equal(len(result), 1, label="function_metrics_row_count")
 
@@ -448,14 +422,9 @@ class TestPropertyBased:
                 "created_at": [pd.Timestamp.now()],
             }
         )
-        # Should accept valid ratio values
+
         result = validate_dataset_df("analytics.goid_risk_factors", df)
         expect_equal(len(result), 1, label="risk_factors_row_count")
-
-
-# ---------------------------------------------------------------------------
-# Cross-Table Invariant Tests
-# ---------------------------------------------------------------------------
 
 
 class TestCrossTableInvariants:
@@ -477,7 +446,7 @@ class TestCrossTableInvariants:
                 "start_line": [1],
                 "end_line": [10],
                 "executable_lines": [10],
-                "covered_lines": [5],  # Valid: 5 <= 10
+                "covered_lines": [5],
                 "coverage_ratio": [0.5],
                 "tested": [True],
                 "untested_reason": [None],
@@ -501,7 +470,7 @@ class TestCrossTableInvariants:
                 "kind": ["function"],
                 "qualname": ["test"],
                 "start_line": [5],
-                "end_line": [10],  # Valid: 10 >= 5
+                "end_line": [10],
                 "created_at": [pd.Timestamp.now()],
             }
         )

@@ -29,9 +29,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEMO_REPO = "demo/repo"
 DEMO_COMMIT = "abc123def456"
@@ -41,16 +38,6 @@ EXPECTED_COUNT_2 = 2
 TEST_GOID_12345 = Decimal(12345)
 TEST_GOID_67890 = Decimal(67890)
 TEST_FILE_COUNT_5 = 5
-
-
-# =============================================================================
-# Test Data Factories
-# =============================================================================
-
-
-# =============================================================================
-# Fixtures
-# =============================================================================
 
 
 @pytest.fixture
@@ -80,11 +67,6 @@ def snapshot(ctx: TestContext) -> SnapshotRef:
         Snapshot associated with the shared test context.
     """
     return ctx.snapshot
-
-
-# =============================================================================
-# FunctionProfileAdapter Tests
-# =============================================================================
 
 
 def test_function_profile_adapter_table_name(
@@ -123,7 +105,6 @@ def test_function_profile_adapter_persist_single_row(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",
@@ -150,18 +131,12 @@ def test_function_profile_adapter_persist_multiple_rows(
     count = adapter.persist(rows)
     expect_equal(count, EXPECTED_COUNT_2)
 
-    # Verify rows were inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
     expect_equal(total, EXPECTED_COUNT_2)
-
-
-# =============================================================================
-# FileProfileAdapter Tests
-# =============================================================================
 
 
 def test_file_profile_adapter_table_name(
@@ -200,7 +175,6 @@ def test_file_profile_adapter_persist_single_row(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
@@ -223,18 +197,12 @@ def test_file_profile_adapter_persist_multiple_rows(
     count = adapter.persist(rows)
     expect_equal(count, EXPECTED_COUNT_2)
 
-    # Verify rows were inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
         [DEMO_REPO, DEMO_COMMIT],
     )
     expect_equal(total, EXPECTED_COUNT_2)
-
-
-# =============================================================================
-# ModuleProfileAdapter Tests
-# =============================================================================
 
 
 def test_module_profile_adapter_table_name(
@@ -273,7 +241,6 @@ def test_module_profile_adapter_persist_single_row(
     count = adapter.persist([row])
     expect_equal(count, EXPECTED_COUNT_1)
 
-    # Verify row was inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.module_profile WHERE repo = ? AND commit = ?",
@@ -296,7 +263,6 @@ def test_module_profile_adapter_persist_multiple_rows(
     count = adapter.persist(rows)
     expect_equal(count, EXPECTED_COUNT_2)
 
-    # Verify rows were inserted
     total = count_rows(
         ctx.gateway.con,
         "SELECT COUNT(*) FROM analytics.module_profile WHERE repo = ? AND commit = ?",

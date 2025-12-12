@@ -24,11 +24,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
 
 
-# =============================================================================
-# Row Parsing Helpers
-# =============================================================================
-
-
 def _parse_manifest_row(row: tuple[Any, ...]) -> OutputManifest:
     """Parse a DuckDB row into an OutputManifest.
 
@@ -173,10 +168,6 @@ class BuildTracking:
         self._con = gateway.con
         self._backend = DuckDBPolicyBackend(gateway)
 
-    # =========================================================================
-    # Manifest Operations
-    # =========================================================================
-
     def save_manifest(self, manifest: OutputManifest) -> None:
         """Save or update an output manifest.
 
@@ -286,10 +277,6 @@ class BuildTracking:
             [repo, commit],
         )
 
-    # =========================================================================
-    # Run Tracking Operations
-    # =========================================================================
-
     def start_run(self, record: BuildRunRecord) -> None:
         """Record the start of a build run.
 
@@ -345,7 +332,7 @@ class BuildTracking:
             Error summary if failed.
         """
         completed_at = _now()
-        # Calculate duration from started_at
+
         result = self._con.execute(
             "SELECT started_at FROM build.runs WHERE run_id = ?",
             [run_id],
@@ -436,10 +423,6 @@ class BuildTracking:
         ).fetchall()
 
         return tuple(_parse_run_row(row) for row in results)
-
-    # =========================================================================
-    # Run Target Operations (Phase 2)
-    # =========================================================================
 
     def save_run_targets(
         self,

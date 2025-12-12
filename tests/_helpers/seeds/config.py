@@ -26,19 +26,9 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Config Data Constants
-# =============================================================================
-
-# Configuration file paths
 CONFIG_PYPROJECT = "pyproject.toml"
 CONFIG_SETTINGS = "settings.yaml"
 CONFIG_ENV = ".env"
-
-
-# =============================================================================
-# Config Pack Implementation
-# =============================================================================
 
 
 @dataclass
@@ -91,7 +81,6 @@ class ConfigPack:
             Test context with gateway.
         """
         rows = [
-            # pyproject.toml references
             ConfigValueRow(
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -112,7 +101,6 @@ class ConfigPack:
                 reference_modules=[],
                 reference_count=0,
             ),
-            # settings.yaml references
             ConfigValueRow(
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -135,7 +123,6 @@ class ConfigPack:
             ),
         ]
 
-        # Optionally add .env references
         if self.include_env:
             rows.extend(
                 [
@@ -165,7 +152,6 @@ class ConfigPack:
         insert_rows(ctx.gateway, rows)
 
 
-# Default instance for common usage
 CONFIG_PACK = ConfigPack()
 
 

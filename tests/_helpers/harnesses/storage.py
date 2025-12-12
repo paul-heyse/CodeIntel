@@ -59,7 +59,7 @@ def storage_macro_harness(tmp_path: Path) -> Iterator[StorageHandlerHarness]:
     """
     ctx = create_cli_test_context(tmp_path, options=EnvOptions(file_backed=True))
     ctx.require(CORE_PACK, STORAGE_PROFILE_PACK)
-    # Ensure ingest macros are registered for validation paths
+
     ensure_ingest_macros(ctx.gateway.con)
     harness = StorageHandlerHarness(ctx=ctx)
     try:

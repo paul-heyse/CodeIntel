@@ -36,7 +36,6 @@ class TestRepository(BaseRepository):
         """
         tbl = self._ibis_table("docs.v_test_to_function")
 
-        # Use Ibis column introspection instead of PRAGMA
         cols = set(tbl.columns)
         repo_field = "test_repo" if "test_repo" in cols else ("repo" if "repo" in cols else None)
         commit_field = (

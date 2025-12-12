@@ -20,10 +20,6 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# get_str
-# ---------------------------------------------------------------------------
-
 
 def test_get_str_returns_value() -> None:
     """Get existing string parameter."""
@@ -49,11 +45,6 @@ def test_get_str_returns_none_when_missing_no_default() -> None:
     expect_is_none(params.get_str("name"))
 
 
-# ---------------------------------------------------------------------------
-# get_int
-# ---------------------------------------------------------------------------
-
-
 def test_get_int_returns_int_value() -> None:
     """Get existing integer parameter."""
     params = ParamService({"count": 42})
@@ -76,11 +67,6 @@ def test_get_int_returns_default_for_bool() -> None:
     """Return default for boolean values."""
     params = ParamService({"flag": True})
     expect_equal(params.get_int("flag", 5), 5)
-
-
-# ---------------------------------------------------------------------------
-# get_bool
-# ---------------------------------------------------------------------------
 
 
 def test_get_bool_returns_bool_value() -> None:
@@ -109,11 +95,6 @@ def test_get_bool_returns_default_when_missing() -> None:
     expect_true(params.get_bool("enabled", default=True))
 
 
-# ---------------------------------------------------------------------------
-# get_path
-# ---------------------------------------------------------------------------
-
-
 def test_get_path_returns_path(tmp_path: Path) -> None:
     """Get existing path parameter."""
     file_path = tmp_path / "test.txt"
@@ -134,11 +115,6 @@ def test_get_path_returns_default(tmp_path: Path) -> None:
     default = tmp_path / "default"
     params = ParamService({})
     expect_equal(params.get_path("file", default), default)
-
-
-# ---------------------------------------------------------------------------
-# get_enum
-# ---------------------------------------------------------------------------
 
 
 def test_get_enum_returns_enum_value() -> None:
@@ -169,11 +145,6 @@ def test_get_enum_returns_default_for_unknown() -> None:
     expect_equal(result, OutputFormat.TEXT)
 
 
-# ---------------------------------------------------------------------------
-# get_list
-# ---------------------------------------------------------------------------
-
-
 def test_get_list_returns_list() -> None:
     """Get existing list parameter."""
     params = ParamService({"items": ["a", "b", "c"]})
@@ -196,11 +167,6 @@ def test_get_list_returns_empty_default() -> None:
     """Return empty list for missing parameter."""
     params = ParamService({})
     expect_equal(params.get_list("items"), [])
-
-
-# ---------------------------------------------------------------------------
-# require
-# ---------------------------------------------------------------------------
 
 
 def test_require_str_returns_value() -> None:
@@ -246,11 +212,6 @@ def test_require_path_raises_for_missing() -> None:
         params.require_path("file")
 
 
-# ---------------------------------------------------------------------------
-# output format
-# ---------------------------------------------------------------------------
-
-
 def test_get_output_format_with_json_flag() -> None:
     """JSON flag takes precedence."""
     params = ParamService({"json": True, "output_format": OutputFormat.TEXT})
@@ -267,11 +228,6 @@ def test_get_output_format_default() -> None:
     """Return default when nothing specified."""
     params = ParamService({})
     expect_equal(params.get_output_format(), OutputFormat.TEXT)
-
-
-# ---------------------------------------------------------------------------
-# coercion
-# ---------------------------------------------------------------------------
 
 
 def test_coerce_cli_value_int() -> None:
@@ -297,11 +253,6 @@ def test_coerce_cli_value_bool_false() -> None:
 def test_coerce_cli_value_string() -> None:
     """Return string for non-numeric."""
     expect_equal(ParamService.coerce_cli_value("hello"), "hello")
-
-
-# ---------------------------------------------------------------------------
-# merge
-# ---------------------------------------------------------------------------
 
 
 def test_merge_creates_new_service() -> None:

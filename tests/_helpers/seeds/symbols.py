@@ -33,11 +33,6 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Symbol Pack Implementation
-# =============================================================================
-
-
 @dataclass
 class SymbolPack:
     """Seed pack for symbol use edge data.
@@ -87,14 +82,7 @@ class SymbolPack:
         ctx
             Test context with gateway.
         """
-        # Symbol usage patterns:
-        # - func_a is defined in mod_a, used in mod_b
-        # - func_b is defined in mod_b, used in mod_a and mod_c
-        # - func_c is defined in mod_c, used in mod_b
-        # - helper is defined in util, used in mod_a
-
         rows = [
-            # func_b used in mod_a (cross-module)
             make_symbol_use_edge_row(
                 "func_b",
                 MOD_B_PATH,
@@ -106,7 +94,6 @@ class SymbolPack:
                     use_goid_h128=GOID_FUNC_A if self.include_goids else None,
                 ),
             ),
-            # func_c used in mod_b (cross-module)
             make_symbol_use_edge_row(
                 "func_c",
                 MOD_C_PATH,
@@ -118,7 +105,6 @@ class SymbolPack:
                     use_goid_h128=GOID_FUNC_B if self.include_goids else None,
                 ),
             ),
-            # helper used in mod_a (cross-module)
             make_symbol_use_edge_row(
                 "helper",
                 MOD_UTIL_PATH,
@@ -130,7 +116,6 @@ class SymbolPack:
                     use_goid_h128=GOID_FUNC_A if self.include_goids else None,
                 ),
             ),
-            # Internal symbol reference within mod_a
             make_symbol_use_edge_row(
                 "_internal_a",
                 MOD_A_PATH,
@@ -141,7 +126,6 @@ class SymbolPack:
                     use_goid_h128=GOID_FUNC_A if self.include_goids else None,
                 ),
             ),
-            # Cross-file but same package reference
             make_symbol_use_edge_row(
                 "MOD_CONSTANT",
                 MOD_UTIL_PATH,
@@ -156,7 +140,6 @@ class SymbolPack:
         insert_symbol_use_edges(ctx.gateway, rows)
 
 
-# Default instance for common usage
 SYMBOL_PACK = SymbolPack()
 
 

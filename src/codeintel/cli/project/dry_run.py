@@ -48,7 +48,6 @@ def plan_dry_run(
     steps: list[DryRunStep] = []
     warnings: list[str] = []
 
-    # Add prerequisite step placeholder if not skipped
     if not skip_prereqs:
         steps.append(
             DryRunStep(
@@ -62,7 +61,6 @@ def plan_dry_run(
             "Prerequisites will be checked and run if needed. Use --skip-prereqs to skip."
         )
 
-    # Add target operation
     steps.append(
         DryRunStep(
             operation_id=op_id,

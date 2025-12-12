@@ -28,11 +28,11 @@ Example
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute import AstExtractStep
 
-# Create adapters
+
 storage = DuckDBStorageAdapter(gateway)
 discovery = FilesystemDiscoveryAdapter(repo_root)
 
-# Create and execute computation
+
 step = AstExtractStep(storage=storage, discovery=discovery)
 result = step.execute(modules, repo="my-repo", commit="abc123")
 print(f"Wrote {result.rows_written} rows")

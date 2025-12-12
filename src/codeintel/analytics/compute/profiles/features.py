@@ -12,24 +12,24 @@ from typing import TYPE_CHECKING, Final
 if TYPE_CHECKING:
     from codeintel.analytics.compute.profiles.aggregation import ProfileAggregates
 
-# Size thresholds (lines of code)
+
 SMALL_MODULE_THRESHOLD: Final[int] = 100
 LARGE_MODULE_THRESHOLD: Final[int] = 1000
 
-# Complexity thresholds (average cyclomatic complexity)
+
 LOW_COMPLEXITY_THRESHOLD: Final[float] = 5.0
 HIGH_COMPLEXITY_THRESHOLD: Final[float] = 10.0
 
-# Typedness thresholds (annotation ratio)
+
 HIGH_TYPED_RATIO: Final[float] = 0.8
 LOW_TYPED_RATIO: Final[float] = 0.3
 
-# Quality score weights
+
 TYPEDNESS_WEIGHT: Final[float] = 0.4
 COMPLEXITY_WEIGHT: Final[float] = 0.3
 SIZE_WEIGHT: Final[float] = 0.3
 
-# Complexity normalization factor
+
 COMPLEXITY_NORMALIZATION: Final[float] = 20.0
 
 
@@ -84,7 +84,6 @@ def extract_profile_features(aggregates: ProfileAggregates) -> ProfileFeatures:
     >>> features.typedness_category
     'typed'
     """
-    # Size classification
     if aggregates.total_loc < SMALL_MODULE_THRESHOLD:
         size_category = "small"
     elif aggregates.total_loc < LARGE_MODULE_THRESHOLD:
@@ -92,7 +91,6 @@ def extract_profile_features(aggregates: ProfileAggregates) -> ProfileFeatures:
     else:
         size_category = "large"
 
-    # Complexity classification
     if aggregates.avg_complexity < LOW_COMPLEXITY_THRESHOLD:
         complexity_category = "simple"
     elif aggregates.avg_complexity < HIGH_COMPLEXITY_THRESHOLD:
@@ -100,7 +98,6 @@ def extract_profile_features(aggregates: ProfileAggregates) -> ProfileFeatures:
     else:
         complexity_category = "complex"
 
-    # Typedness classification
     if aggregates.avg_typedness >= HIGH_TYPED_RATIO:
         typedness_category = "typed"
     elif aggregates.avg_typedness >= LOW_TYPED_RATIO:
@@ -108,7 +105,6 @@ def extract_profile_features(aggregates: ProfileAggregates) -> ProfileFeatures:
     else:
         typedness_category = "untyped"
 
-    # Quality score (weighted combination)
     typedness_score = aggregates.avg_typedness
     complexity_score = max(0.0, 1 - (aggregates.avg_complexity / COMPLEXITY_NORMALIZATION))
     size_score = 1.0 if aggregates.total_functions > 0 else 0.0

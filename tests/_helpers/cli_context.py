@@ -49,7 +49,7 @@ class CliTestContext:
     >>> from tests._helpers.cli_context import create_cli_test_context
     >>> from tests._helpers.seeds import CORE_PACK
     >>>
-    >>> def test_handler(tmp_path):  # doctest: +SKIP
+    >>> def test_handler(tmp_path):
     ...     ctx = create_cli_test_context(tmp_path)
     ...     ctx.require(CORE_PACK)
     ...     with ctx.command_context({"name": "test"}) as cmd_ctx:
@@ -154,7 +154,7 @@ class CliTestContext:
 
         Examples
         --------
-        >>> with ctx.command_context({"key": "value"}) as cmd_ctx:  # doctest: +SKIP
+        >>> with ctx.command_context({"key": "value"}) as cmd_ctx:
         ...     result = handler(cmd_ctx)
         """
         builder = (
@@ -276,10 +276,10 @@ def create_cli_test_context(
     --------
     >>> from tests._helpers.cli_context import create_cli_test_context
     >>>
-    >>> def test_example(tmp_path):  # doctest: +SKIP
+    >>> def test_example(tmp_path):
     ...     ctx = create_cli_test_context(tmp_path)
     ...     ctx.require(CORE_PACK)
-    ...     # ... use ctx ...
+    ...
     ...     ctx.close()
     """
     test_ctx = create_test_context(tmp_path, options=options, gateway_options=gateway_options)
@@ -317,9 +317,9 @@ def cli_test_context_with_seeds(
     >>> from tests._helpers.cli_context import cli_test_context_with_seeds
     >>> from tests._helpers.seeds import CORE_PACK, GRAPH_PACK
     >>>
-    >>> def test_graph_handler(tmp_path):  # doctest: +SKIP
+    >>> def test_graph_handler(tmp_path):
     ...     with cli_test_context_with_seeds(tmp_path, CORE_PACK, GRAPH_PACK) as ctx:
-    ...         # ... use ctx ...
+    ...
     """
     ctx = create_cli_test_context(tmp_path, operation_id=operation_id)
     if seed_packs:
@@ -352,7 +352,7 @@ def make_command_context(
 
     Examples
     --------
-    >>> with make_command_context({"name": "test"}) as ctx:  # doctest: +SKIP
+    >>> with make_command_context({"name": "test"}) as ctx:
     ...     result = my_handler(ctx)
     """
     builder = CommandContextBuilder().with_params(params or {}).with_operation_id(operation_id)

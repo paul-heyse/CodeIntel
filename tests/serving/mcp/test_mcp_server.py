@@ -21,10 +21,6 @@ from tests._helpers.mcp_registrar import wrap_fastmcp
 if TYPE_CHECKING:
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# create_mcp_server Tests
-# =============================================================================
-
 
 def test_create_mcp_server_local_db_requires_gateway() -> None:
     """Verify create_mcp_server raises ValueError without gateway in local_db mode."""
@@ -163,7 +159,6 @@ def test_create_mcp_server_close_callback_callable(
     provisioned_repo
         Provisioned gateway fixture.
     """
-    # Create a backend with our own close tracking
     close_called = False
 
     def track_close() -> None:
@@ -206,7 +201,6 @@ def test_create_mcp_server_close_callback_callable(
         gateway=provisioned_repo.gateway,
     )
 
-    # Call close to verify it's invoked
     close()
     expect_true(close_called)
 

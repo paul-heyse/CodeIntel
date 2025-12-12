@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Root paths
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MKDOCS_CONFIG = REPO_ROOT / "mkdocs-build" / "mkdocs.yml"
 OUTPUT_DIR = REPO_ROOT / "mkdocs-output"
@@ -173,7 +173,6 @@ def generate_pyreverse_diagrams() -> None:
     docs_arch = REPO_ROOT / "mkdocs-build" / "docs" / "architecture"
     docs_arch.mkdir(parents=True, exist_ok=True)
 
-    # Run pyreverse (capture stderr to suppress "Format svg not supported natively" message)
     run_command_sync(
         [
             "pyreverse",
@@ -186,7 +185,6 @@ def generate_pyreverse_diagrams() -> None:
         cwd=src_root,
     )
 
-    # Move generated files
     for src_name, dest_name in [
         ("packages_codeintel.svg", "codeintel-packages.svg"),
         ("classes_codeintel.svg", "codeintel-classes.svg"),
@@ -231,7 +229,6 @@ def run_mkdocs_build() -> None:
         elif lowered.startswith("error"):
             log.error("  %s", line)
 
-    # Count output files
     html_files = list(OUTPUT_DIR.rglob("*.html"))
     log.info("  Generated %d HTML pages", len(html_files))
 
@@ -266,7 +263,6 @@ def build_docs(*, parallel: bool = True, skip_diagrams: bool = False) -> BuildCo
     ctx = BuildContext(parallel=parallel)
     ctx.start_time = time.perf_counter()
 
-    # Define phases
     pydeps_phase: BuildPhase | None = None
     pyreverse_phase: BuildPhase | None = None
     if not skip_diagrams:
@@ -277,7 +273,6 @@ def build_docs(*, parallel: bool = True, skip_diagrams: bool = False) -> BuildCo
     mkdocs_phase = BuildPhase("MkDocs build")
     ctx.phases.append(mkdocs_phase)
 
-    # Header
     module_count = count_source_modules()
     log.info("")
     log.info("=" * 70)
@@ -289,7 +284,6 @@ def build_docs(*, parallel: bool = True, skip_diagrams: bool = False) -> BuildCo
     log.info("-" * 70)
     log.info("")
 
-    # Progress bar for all phases
     pbar = cast(
         "ProgressBar",
         tqdm(
@@ -301,7 +295,6 @@ def build_docs(*, parallel: bool = True, skip_diagrams: bool = False) -> BuildCo
     )
     try:
         if not skip_diagrams and parallel and pydeps_phase and pyreverse_phase:
-            # Run diagram generation in parallel
             pbar.set_description("Generating diagrams (parallel)")
 
             def timed_task(
@@ -325,15 +318,13 @@ def build_docs(*, parallel: bool = True, skip_diagrams: bool = False) -> BuildCo
                 ]
 
                 for future in as_completed(futures):
-                    future.result()  # Re-raises any exception
+                    future.result()
                     pbar.update(1)
 
         elif not skip_diagrams and pydeps_phase and pyreverse_phase:
-            # Sequential diagram generation
             run_phase(pydeps_phase, generate_pydeps_diagram, pbar)
             run_phase(pyreverse_phase, generate_pyreverse_diagrams, pbar)
 
-        # MkDocs build (always sequential)
         run_phase(mkdocs_phase, run_mkdocs_build, pbar)
     finally:
         pbar.close()
@@ -356,7 +347,6 @@ def print_summary(ctx: BuildContext) -> None:
     log.info("Build Summary")
     log.info("-" * 70)
 
-    # Phase results
     for phase in ctx.phases:
         status_icon = "OK" if phase.status == "success" else "FAIL"
         log.info("  [%s] %-30s (%.1fs)", status_icon.ljust(4), phase.name, phase.duration)
@@ -395,7 +385,6 @@ def main() -> int:
         format="%(message)s",
     )
 
-    # Parse simple arguments
     args = sys.argv[1:]
     parallel = "--no-parallel" not in args
     skip_diagrams = "--skip-diagrams" in args

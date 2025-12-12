@@ -28,7 +28,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 
-# Constants - SCIP Role Bitmasks
 ROLE_DEFINITION: Final = 1
 ROLE_REFERENCE: Final = 2
 ROLE_CALL: Final = 4
@@ -142,7 +141,7 @@ def test_build_def_map_simple() -> None:
 
     expect_equal(def_map["ClassA"], "src/a.py")
     expect_equal(def_map["ClassB"], "src/b.py")
-    expect_length(def_map, DEF_MAP_EXPECTED_COUNT)  # Only definitions
+    expect_length(def_map, DEF_MAP_EXPECTED_COUNT)
 
 
 def test_build_def_map_first_definition_wins() -> None:
@@ -237,7 +236,7 @@ def test_build_use_edges_no_definition_skipped() -> None:
     occurrences = [
         SymbolOccurrence("undefined", "src/use.py", 10, ROLE_REFERENCE),
     ]
-    def_map = {}  # No definitions
+    def_map = {}
     module_by_path = {"src/use.py": "mypackage"}
 
     edges = build_use_edges(occurrences, def_map, module_by_path)

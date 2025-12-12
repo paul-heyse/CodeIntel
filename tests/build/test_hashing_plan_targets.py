@@ -75,9 +75,9 @@ def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> 
 
     hash1 = compute_input_hash(target, snapshot, cast("Any", gateway), options_hash="opts")
     hash2 = compute_input_hash(target, snapshot, cast("Any", gateway), options_hash="opts")
-    # Deterministic and includes both dependency states
+
     expect_equal(hash1, hash2)
-    # Uses input_hash ("in") for cascade, not output_hash ("out-hash")
+
     combined = b"demo:c1|main|dep:in,missing:MISSING|opts"
     expect_equal(hash1, hashlib.sha256(combined).hexdigest()[:16])
 

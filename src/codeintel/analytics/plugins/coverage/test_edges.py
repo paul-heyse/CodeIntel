@@ -76,9 +76,8 @@ class CoverageTestEdgesPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Build config from context
         cfg = TestCoverageStepConfig(
             snapshot=ctx.snapshot,
         )

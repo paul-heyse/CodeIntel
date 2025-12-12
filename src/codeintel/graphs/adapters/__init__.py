@@ -22,7 +22,7 @@ from codeintel.graphs.adapters import (
 storage = DuckDBStorageAdapter(gateway, repo_root)
 parser = LibCSTParsingAdapter()
 
-# Use adapters with pure computation functions
+
 source = storage.read_source("module.py")
 result = parser.parse_module(source)
 ```

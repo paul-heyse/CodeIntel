@@ -215,7 +215,6 @@ def export_execution_json(
     """
     dag_info = get_dag_info(runtime, targets)
 
-    # Add execution-specific info
     execution_info = {
         **dag_info,
         "execution_order": list_execution_order(runtime, targets),
@@ -263,15 +262,13 @@ def export_dag_mermaid(
     info = get_dag_info(runtime, targets)
     lines = ["graph TD"]
 
-    # Add nodes with labels showing module
     for node in info["nodes"]:
         name = node["name"]
         module = node.get("module", "node")
-        # Escape special characters for Mermaid
+
         label = f"{name} ({module})"
         lines.append(f'  {name}["{label}"]')
 
-    # Add edges
     for edge in info["edges"]:
         from_node = edge["from"]
         to_node = edge["to"]
@@ -311,14 +308,12 @@ def export_dag_dot(
     info = get_dag_info(runtime, targets)
     lines = ["digraph G {", "  rankdir=TB;"]
 
-    # Add nodes with labels showing module
     for node in info["nodes"]:
         name = node["name"]
         module = node.get("module", "node")
         label = f"{name}\\n({module})"
         lines.append(f'  "{name}" [label="{label}"];')
 
-    # Add edges
     for edge in info["edges"]:
         from_node = edge["from"]
         to_node = edge["to"]

@@ -191,7 +191,7 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
             if hasattr(result, "iloc"):
                 return int(cast("SupportsInt", result.iloc[0, 0]))
             return int(cast("SupportsInt", result))
-        except DuckDBError as exc:  # pragma: no cover - defensive logging
+        except DuckDBError as exc:
             log.warning("Validation snapshot count failed for %s: %s", table_expr, exc)
             return -1
 

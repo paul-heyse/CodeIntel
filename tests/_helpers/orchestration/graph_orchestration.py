@@ -134,7 +134,6 @@ def build_span_graph_components(env: SpanTestEnv) -> None:
         paths=paths,
     )
 
-    # Execute graph plugins
     call_graph_result = builder.execute_plugin(CallGraphPlugin())
     if not call_graph_result.success:
         msg = f"CallGraphPlugin failed: {call_graph_result.error_message}"
@@ -228,7 +227,7 @@ def _write_repo(repo_root: Path) -> tuple[int, int]:
         "from pkg.a import callee\n\ndef caller():\n    return callee()\n",
         encoding="utf8",
     )
-    # Line numbers for caller function span (3-4).
+
     return 3, 4
 
 

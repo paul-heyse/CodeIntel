@@ -19,7 +19,7 @@ Example
 ...         return self._load_source_data()
 ...
 ...     def load(self) -> Iterator[ResultRow]:
-...         return iter([])  # Optional: load existing results
+...         return iter([])
 ...
 ...     def persist(self, rows: Sequence[ResultRow]) -> int:
 ...         return self._write_results(rows)
@@ -61,11 +61,6 @@ class DeleteScope:
     repo: str
     commit: str
     columns: tuple[str, ...] | None = None
-
-
-# =============================================================================
-# Split Adapter Protocols
-# =============================================================================
 
 
 class InputAdapter[InputT](ABC):
@@ -153,16 +148,11 @@ class ComputeAdapter[InputT, OutputT](InputAdapter[InputT], OutputAdapter[Output
     ...         return self._goid_loader.iter_goids()
     ...
     ...     def load_outputs(self) -> Iterator[MetricsRow]:
-    ...         return iter([])  # No existing rows to load
+    ...         return iter([])
     ...
     ...     def persist(self, rows: Sequence[MetricsRow]) -> int:
     ...         return self._insert_rows(rows)
     """
-
-
-# =============================================================================
-# Adapter Base Classes
-# =============================================================================
 
 
 class AnalyticsAdapter[RowT](ABC):
@@ -299,7 +289,6 @@ class SimpleBatchAdapter[RowT](ABC):
         int
             Number of rows deleted.
         """
-        # Count rows before deleting to return accurate count
         count = self._count_rows_for_scope(gateway, scope)
 
         backend = DuckDBPolicyBackend(gateway)
@@ -328,7 +317,6 @@ class SimpleBatchAdapter[RowT](ABC):
             commit_filter = cast("Any", tbl.commit == scope.commit)
             return cast("int", tbl.filter(repo_filter & commit_filter).count().execute())
         except DuckDBError:
-            # If count fails, return 0 (table might not exist or be empty)
             return 0
 
 

@@ -38,10 +38,6 @@ BUCKET_MAX_THRESHOLD = 5.0
 MIN_SHORT_SPAN_DURATION_S = 0.01
 MIN_LONG_SPAN_DURATION_S = 0.02
 
-# =============================================================================
-# PluginSpan Tests
-# =============================================================================
-
 
 def test_plugin_span_construction() -> None:
     """Verify PluginSpan can be constructed with required fields."""
@@ -90,10 +86,9 @@ def test_plugin_span_elapsed_ns() -> None:
         start_time_ns=start,
     )
 
-    time.sleep(0.01)  # 10ms
+    time.sleep(0.01)
     elapsed = span.elapsed_ns
 
-    # Should be at least 10ms = 10,000,000 ns
     expect_true(elapsed >= MIN_ELAPSED_NS)
 
 
@@ -105,10 +100,9 @@ def test_plugin_span_elapsed_ms() -> None:
         start_time_ns=time.perf_counter_ns(),
     )
 
-    time.sleep(0.01)  # 10ms
+    time.sleep(0.01)
     elapsed = span.elapsed_ms
 
-    # Should be at least 10ms
     expect_true(elapsed >= MIN_ELAPSED_MS)
 
 
@@ -120,10 +114,9 @@ def test_plugin_span_elapsed_s() -> None:
         start_time_ns=time.perf_counter_ns(),
     )
 
-    time.sleep(0.05)  # 50ms
+    time.sleep(0.05)
     elapsed = span.elapsed_s
 
-    # Should be at least 0.05s
     expect_true(elapsed >= MIN_ELAPSED_S)
 
 
@@ -137,19 +130,12 @@ def test_plugin_span_elapsed_consistency() -> None:
 
     time.sleep(0.01)
 
-    # Get all elapsed values at roughly the same time
     ns = span.elapsed_ns
     ms = span.elapsed_ms
     s = span.elapsed_s
 
-    # Check conversions are approximately correct
-    expect_true(abs(ms - ns / 1_000_000) < MS_TOLERANCE)  # Within 1ms
-    expect_true(abs(s - ns / 1_000_000_000) < S_TOLERANCE)  # Within 1ms
-
-
-# =============================================================================
-# TelemetryConfig Tests
-# =============================================================================
+    expect_true(abs(ms - ns / 1_000_000) < MS_TOLERANCE)
+    expect_true(abs(s - ns / 1_000_000_000) < S_TOLERANCE)
 
 
 def test_telemetry_config_defaults() -> None:
@@ -184,11 +170,6 @@ def test_telemetry_config_is_frozen() -> None:
     assert_frozen(config, "service_name", "modified")
 
 
-# =============================================================================
-# DEFAULT_DURATION_BUCKETS Tests
-# =============================================================================
-
-
 def test_default_duration_buckets() -> None:
     """Verify DEFAULT_DURATION_BUCKETS is a tuple of floats."""
     expect_is_instance(DEFAULT_DURATION_BUCKETS, tuple)
@@ -203,14 +184,9 @@ def test_default_duration_buckets_sorted() -> None:
 
 def test_default_duration_buckets_range() -> None:
     """Verify DEFAULT_DURATION_BUCKETS cover a reasonable range."""
-    expect_true(min(DEFAULT_DURATION_BUCKETS) > 0)  # All positive
-    expect_true(min(DEFAULT_DURATION_BUCKETS) < BUCKET_MIN_THRESHOLD)  # Sub-100ms start
-    expect_true(max(DEFAULT_DURATION_BUCKETS) >= BUCKET_MAX_THRESHOLD)  # At least 5s end
-
-
-# =============================================================================
-# RuntimeTelemetry Tests
-# =============================================================================
+    expect_true(min(DEFAULT_DURATION_BUCKETS) > 0)
+    expect_true(min(DEFAULT_DURATION_BUCKETS) < BUCKET_MIN_THRESHOLD)
+    expect_true(max(DEFAULT_DURATION_BUCKETS) >= BUCKET_MAX_THRESHOLD)
 
 
 def test_runtime_telemetry_initialization() -> None:
@@ -267,11 +243,11 @@ def test_runtime_telemetry_end_span_success() -> None:
     telemetry = RuntimeTelemetry()
     span = telemetry.start_span("test.plugin", "run-123")
 
-    time.sleep(0.01)  # Small delay
+    time.sleep(0.01)
 
     duration = telemetry.end_span(span, success=True, rows_written=100)
 
-    expect_true(duration >= MIN_SHORT_SPAN_DURATION_S)  # At least 10ms
+    expect_true(duration >= MIN_SHORT_SPAN_DURATION_S)
 
 
 def test_runtime_telemetry_end_span_failure() -> None:
@@ -293,16 +269,15 @@ def test_runtime_telemetry_end_span_returns_duration() -> None:
     telemetry = RuntimeTelemetry()
     span = telemetry.start_span("test.plugin", "run-123")
 
-    time.sleep(0.02)  # 20ms
+    time.sleep(0.02)
 
     duration = telemetry.end_span(span, success=True)
 
-    expect_true(duration >= MIN_LONG_SPAN_DURATION_S)  # At least 20ms in seconds
+    expect_true(duration >= MIN_LONG_SPAN_DURATION_S)
 
 
 def test_runtime_telemetry_record_run_metrics() -> None:
     """Verify RuntimeTelemetry.record_run_metrics logs metrics."""
-    # This is a static method that just logs
     RuntimeTelemetry.record_run_metrics(
         run_id="run-test",
         success_count=10,
@@ -310,12 +285,6 @@ def test_runtime_telemetry_record_run_metrics() -> None:
         skip_count=1,
         duration_s=5.5,
     )
-    # Should not raise
-
-
-# =============================================================================
-# Graceful Degradation Tests
-# =============================================================================
 
 
 def test_otel_available_is_bool() -> None:
@@ -330,7 +299,6 @@ def test_prometheus_available_is_bool() -> None:
 
 def test_telemetry_works_without_otel() -> None:
     """Verify telemetry works even when OTEL is unavailable."""
-    # Create telemetry - should work regardless of OTEL availability
     telemetry = RuntimeTelemetry()
 
     span = telemetry.start_span("test", "run")
@@ -348,8 +316,6 @@ def test_telemetry_disabled_tracing() -> None:
     duration = telemetry.end_span(span, success=True)
 
     expect_true(duration >= 0)
-    # OTel span should not be in context_data when tracing disabled
-    # (unless OTEL is available and tracer was still created)
 
 
 def test_telemetry_disabled_metrics() -> None:
@@ -361,11 +327,6 @@ def test_telemetry_disabled_metrics() -> None:
     duration = telemetry.end_span(span, success=True)
 
     expect_true(duration >= 0)
-
-
-# =============================================================================
-# get_runtime_telemetry Tests
-# =============================================================================
 
 
 def test_get_runtime_telemetry_returns_instance() -> None:
@@ -383,16 +344,10 @@ def test_get_runtime_telemetry_is_singleton() -> None:
     expect_true(telemetry1 is telemetry2)
 
 
-# =============================================================================
-# Integration Tests
-# =============================================================================
-
-
 def test_full_span_lifecycle() -> None:
     """Verify complete span lifecycle works."""
     telemetry = RuntimeTelemetry()
 
-    # Start span
     span = telemetry.start_span(
         "integration.test",
         "run-456",
@@ -403,10 +358,8 @@ def test_full_span_lifecycle() -> None:
     expect_equal(span.run_id, "run-456")
     expect_equal(span.attributes["test_type"], "integration")
 
-    # Do some work
     time.sleep(0.01)
 
-    # End span with success
     duration = telemetry.end_span(span, success=True, rows_written=50)
 
     expect_true(duration >= MIN_SHORT_SPAN_DURATION_S)

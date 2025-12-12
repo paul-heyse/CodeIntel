@@ -61,11 +61,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-# =============================================================================
-# Shared Test Helpers
-# =============================================================================
-
-
 @contextmanager
 def _override(obj: object, name: str, value: object) -> Iterator[None]:
     """Context manager to temporarily override an attribute."""
@@ -185,11 +180,6 @@ def _configs(tmp_path: Path) -> tuple[TestProfileStepConfig, BehavioralCoverageS
     return TestProfileStepConfig(snapshot=snapshot), BehavioralCoverageStepConfig(snapshot=snapshot)
 
 
-# =============================================================================
-# Importance and Flakiness Tests (from helpers and wrappers)
-# =============================================================================
-
-
 def test_importance_guardrails_and_monotonicity() -> None:
     """Importance/flakiness scoring should remain bounded and monotonic."""
     io_none = IoFlags()
@@ -281,11 +271,6 @@ def test_importance_and_flakiness_scoring() -> None:
         raise AssertionError(message)
 
 
-# =============================================================================
-# Row Building and Round-Trip Tests
-# =============================================================================
-
-
 def test_build_test_profile_rows_round_trip() -> None:
     """Tuple-to-model mapping should align with schema constants for new helpers."""
     created_at = datetime(2024, 1, 1, tzinfo=UTC)
@@ -339,7 +324,7 @@ def test_build_test_profile_rows_round_trip() -> None:
         tg_metrics=tg_metrics,
         ast_info=ast_info,
     )
-    # Freeze time for determinism
+
     frozen_ctx = TestProfileContext(
         cfg=ctx.cfg,
         now=created_at,
@@ -389,11 +374,6 @@ def test_build_behavioral_coverage_rows_normalization() -> None:
     if len(serialized) != len(BEHAVIORAL_COVERAGE_COLUMNS):
         msg = "Serialized tuple length mismatch for behavioral_coverage."
         pytest.fail(msg)
-
-
-# =============================================================================
-# Behavior Tags and Mixed Sources Tests
-# =============================================================================
 
 
 def test_infer_behavior_tags_basic() -> None:
@@ -526,11 +506,6 @@ def test_build_behavior_rows_mixed_sources() -> None:
         pytest.fail(msg)
 
 
-# =============================================================================
-# Coverage Wrapper Tests
-# =============================================================================
-
-
 def test_coverage_wrappers_empty(
     tmp_path: Path, coverage_profiles_conn: duckdb.DuckDBPyConnection
 ) -> None:
@@ -557,11 +532,6 @@ def test_coverage_wrappers_empty(
     if load_test_graph_metrics(coverage_profiles_conn, test_cfg, loader=lambda *_: {}) != {}:
         message = "Expected empty test graph metrics aggregation."
         raise AssertionError(message)
-
-
-# =============================================================================
-# Registry and Writer Guard Tests
-# =============================================================================
 
 
 def test_test_profile_model_snapshot() -> None:
@@ -717,7 +687,7 @@ def test_behavioral_writer_registry_guard() -> None:
         inserted = rows.write_behavioral_coverage_rows(gateway, beh_cfg, [row])
         if inserted != 1:
             pytest.fail("Writer did not report one inserted row.")
-        # Check that ibis.write() was called with the right table
+
         if not fake_ibis.write_calls:
             pytest.fail("ibis.write() was not called.")
         table_key, data, _columns = fake_ibis.write_calls[0]
@@ -770,7 +740,7 @@ def test_write_test_profile_rows_with_stubs() -> None:
         if inserted != 1:
             msg = "Writer did not report one inserted row."
             pytest.fail(msg)
-        # Check that ibis.write() was called with the right table
+
         if not fake_ibis.write_calls:
             msg = "ibis.write() was not called."
             pytest.fail(msg)

@@ -63,7 +63,6 @@ def build_profiles_router(options: RouterOptions | None = None) -> APIRouter:
     file_path = spec_file.http_path
     module_path = spec_module.http_path
 
-    # Build dependencies based on options
     auto_pipeline = options is not None and options.auto_pipeline
     func_deps = [Depends(make_op_prereq_dependency("profiles.function"))] if auto_pipeline else []
     file_deps = [Depends(make_op_prereq_dependency("profiles.file"))] if auto_pipeline else []

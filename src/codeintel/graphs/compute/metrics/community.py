@@ -52,7 +52,7 @@ def detect_communities_greedy(
         )
     except nx.NetworkXError as exc:
         log.warning("Community detection failed: %s", exc)
-        # Fall back to each node in its own community
+
         return {node: idx for idx, node in enumerate(graph.nodes())}
 
     result: dict[Any, int] = {}
@@ -179,7 +179,6 @@ def compute_modularity(
 
     work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
 
-    # Group nodes by community
     community_sets: dict[int, set[Any]] = {}
     for node, comm_id in communities.items():
         if comm_id not in community_sets:

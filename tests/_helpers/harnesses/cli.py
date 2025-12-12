@@ -49,7 +49,7 @@ class CliHandlerHarness:
     --------
     >>> from tests._helpers.harnesses.cli import cli_handler_harness
     >>>
-    >>> def test_handler(tmp_path):  # doctest: +SKIP
+    >>> def test_handler(tmp_path):
     ...     with cli_handler_harness(tmp_path) as harness:
     ...         result = harness.execute(my_handler, {"key": "value"})
     ...         assert result.success
@@ -88,7 +88,7 @@ class CliHandlerHarness:
 
         Examples
         --------
-        >>> result = harness.execute(my_handler, {"name": "test"})  # doctest: +SKIP
+        >>> result = harness.execute(my_handler, {"name": "test"})
         >>> assert result.success
         """
         with self.ctx.command_context(params, operation_id=operation_id) as cmd_ctx:
@@ -171,7 +171,7 @@ def cli_handler_harness(
     >>> from tests._helpers.harnesses.cli import cli_handler_harness
     >>> from tests._helpers.seeds import CORE_PACK
     >>>
-    >>> def test_handler(tmp_path):  # doctest: +SKIP
+    >>> def test_handler(tmp_path):
     ...     with cli_handler_harness(tmp_path, CORE_PACK) as harness:
     ...         result = harness.execute(my_handler, {})
     """

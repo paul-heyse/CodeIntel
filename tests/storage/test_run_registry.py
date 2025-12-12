@@ -302,7 +302,6 @@ class TestMultipleSteps:
 
         now = datetime.now(tz=UTC)
 
-        # Add ingestion step
         tracking.record_step(
             PipelineStepRecord(
                 run_id="ci-123",
@@ -315,7 +314,6 @@ class TestMultipleSteps:
             ),
         )
 
-        # Add graphs step
         tracking.record_step(
             PipelineStepRecord(
                 run_id="ci-123",
@@ -328,7 +326,6 @@ class TestMultipleSteps:
             ),
         )
 
-        # Add analytics step
         tracking.record_step(
             PipelineStepRecord(
                 run_id="ci-123",
@@ -344,11 +341,9 @@ class TestMultipleSteps:
 
         steps = expect_steps(tracking.fetch_steps("ci-123"), expected_count=3)
 
-        # Steps are ordered by module, stage, name
         modules = [s.module for s in steps]
         expect_equal(modules, ["analytics", "graphs", "ingestion"])
 
-        # Check status distribution
         statuses = {s.module: s.status for s in steps}
         expect_equal(statuses["ingestion"], "succeeded")
         expect_equal(statuses["graphs"], "succeeded")

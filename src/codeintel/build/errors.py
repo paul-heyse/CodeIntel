@@ -46,11 +46,6 @@ __all__ = [
 ]
 
 
-# =============================================================================
-# Base Error
-# =============================================================================
-
-
 class BuildError(Exception):
     """Base class for all build system errors.
 
@@ -94,11 +89,6 @@ class BuildError(Exception):
             Short identifier like "CONTRACT_SCHEMA_NOT_FOUND".
         """
         return self.__class__.__name__.upper()
-
-
-# =============================================================================
-# Contract Errors - Caught at registration/planning time
-# =============================================================================
 
 
 class ContractError(BuildError):
@@ -219,11 +209,6 @@ class ArtifactNotFoundError(ContractError):
         return f"Ensure the dependency that produces '{self.artifact_name}' runs successfully first"
 
 
-# =============================================================================
-# Resource Errors - Caught at planning/execution time
-# =============================================================================
-
-
 class ResourceError(BuildError):
     """Base class for resource-related errors.
 
@@ -301,11 +286,6 @@ class DependencyUnavailableError(ResourceError):
         return f"Fix the issue with '{self.dependency}' first, then retry"
 
 
-# =============================================================================
-# Execution Errors - Caught during plugin execution
-# =============================================================================
-
-
 class ExecutionError(BuildError):
     """Base class for execution-time errors.
 
@@ -341,7 +321,6 @@ class PluginExecutionError(ExecutionError):
     @property
     def actionable_hint(self) -> str | None:
         """Return suggestion for fixing the error."""
-        # Try to extract hint from cause if it's a BuildError
         if isinstance(self.cause, BuildError):
             return self.cause.actionable_hint
         return None
@@ -382,11 +361,6 @@ class TargetTimeoutError(ExecutionError):
         )
 
 
-# =============================================================================
-# Graph Errors - Caught during graph construction/validation
-# =============================================================================
-
-
 class TargetNotFoundError(BuildError):
     """Requested target does not exist in the graph.
 
@@ -414,7 +388,6 @@ class TargetNotFoundError(BuildError):
         if not self.available:
             return "Check the target name and try again"
 
-        # Find similar names for suggestions
         matches = get_close_matches(self.target, self.available, n=3, cutoff=0.6)
         if matches:
             suggestions = ", ".join(f"'{m}'" for m in matches)
@@ -473,11 +446,6 @@ class CycleDetectedError(BuildError):
     def actionable_hint(self) -> str:
         """Return suggestion for fixing the error."""
         return "Restructure target dependencies to remove the cycle"
-
-
-# =============================================================================
-# Error Collection - For continue-and-collect semantics
-# =============================================================================
 
 
 @dataclass

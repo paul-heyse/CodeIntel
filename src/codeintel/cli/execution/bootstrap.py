@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
-# Verbosity thresholds (same as handlers/base.py)
+
 VERBOSITY_DEBUG = 2
 VERBOSITY_INFO = 1
 
@@ -47,7 +47,6 @@ class _BootstrapState:
     config: CliConfig | None = None
 
 
-# Module-level state instance (singleton)
 _state = _BootstrapState()
 
 
@@ -88,37 +87,31 @@ def bootstrap_cli(
     Examples
     --------
     >>> from unittest.mock import MagicMock
-    >>> reset_bootstrap()  # Ensure clean state for doctest
+    >>> reset_bootstrap()
     >>> mock_config = MagicMock()
     >>> mock_config.log_level = "WARNING"
     >>> result = bootstrap_cli(verbosity=1, config=mock_config)
     >>> result is mock_config
     True
-    >>> reset_bootstrap()  # Clean up after doctest
+    >>> reset_bootstrap()
     """
-    # Fast path for already initialized
     if _state.complete:
         if _state.config is not None:
             return _state.config
-        # Shouldn't happen, but handle gracefully
+
         return load_cli_config(validate=False)
 
     with _state.lock:
-        # Double-check after acquiring lock
         if _state.complete and _state.config is not None:
             return _state.config
 
-        # Load configuration if not provided
         active_config = config if config is not None else load_cli_config(validate=False)
 
-        # Configure logging (structured if requested or if telemetry enabled)
         use_structured = structured_logging or active_config.telemetry.enabled
         _configure_logging(verbosity, active_config, structured=use_structured)
 
-        # Register signal handlers
         _register_signal_handlers()
 
-        # Mark as complete
         _state.config = active_config
         _state.complete = True
 
@@ -152,7 +145,7 @@ def _configure_logging(
         logging.basicConfig(
             level=level,
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            force=True,  # Reconfigure if already configured
+            force=True,
         )
 
 
@@ -175,13 +168,12 @@ def _determine_log_level(verbosity: int, config: CliConfig) -> int:
         return logging.DEBUG
     if verbosity >= VERBOSITY_INFO:
         return logging.INFO
-    # Use config default
+
     return getattr(logging, config.log_level, logging.WARNING)
 
 
 def _register_signal_handlers() -> None:
     """Register signal handlers for graceful shutdown."""
-    # Only register on main thread
     if threading.current_thread() is not threading.main_thread():
         return
 
@@ -190,12 +182,10 @@ def _register_signal_handlers() -> None:
         LOG.info("Received signal %d, initiating shutdown", signum)
         sys.exit(128 + signum)
 
-    # Register handlers (ignore if not supported)
     try:
         signal.signal(signal.SIGINT, _handle_signal)
         signal.signal(signal.SIGTERM, _handle_signal)
     except (ValueError, OSError):
-        # Signal registration may fail in some environments
         LOG.debug("Could not register signal handlers")
 
 
@@ -212,7 +202,7 @@ def reset_bootstrap() -> None:
     >>> mock_config.log_level = "WARNING"
     >>> _ = bootstrap_cli(config=mock_config)
     >>> reset_bootstrap()
-    >>> # Now bootstrap can be called again with new config
+    >>>
     """
     with _state.lock:
         _state.complete = False

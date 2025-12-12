@@ -104,16 +104,13 @@ class ConfigIngestPlugin(TargetPlugin):
         TargetResult
             Success result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Create adapters
         storage = DuckDBStorageAdapter(ctx.gateway)
         discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
 
-        # Create config profile for config files (YAML, JSON, TOML, INI)
         profile = default_config_profile(ctx.repo_root)
 
-        # Find config files using config_profile
         config_files: list[ModuleRecord] = list(
             FilesystemDiscoveryAdapter.discover_modules(ctx.repo_root, profile)
         )
@@ -122,7 +119,6 @@ class ConfigIngestPlugin(TargetPlugin):
             log.info("No config files found matching profile")
             return TargetResult.succeeded(row_counts={})
 
-        # Execute step
         step = ConfigIngestStep(storage=storage, discovery=discovery)
         result = step.execute(
             config_files,
@@ -130,16 +126,13 @@ class ConfigIngestPlugin(TargetPlugin):
             commit=ctx.commit,
         )
 
-        # Log parse errors as warnings but don't fail if we processed some files
         if result.errors:
             for error in result.errors:
                 log.warning("Config parse warning: %s", error)
 
-        # Consider it a success if we wrote any rows, even with some parse failures
         if result.rows_written > 0 or not result.errors:
             return TargetResult.succeeded(row_counts=result.table_counts or {})
 
-        # Only fail if there were errors AND no data was written
         errors = "; ".join(result.errors)
         return TargetResult.failed(f"Config ingest failed: {errors}")
 

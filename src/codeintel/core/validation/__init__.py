@@ -26,14 +26,14 @@ from codeintel.core.validation import (
     has_error_findings,
 )
 
-# Create options with overrides
+
 options = BaseValidationOptions(
     severity_overrides={"null_check": "error"},
     hard_fail=True,
     max_findings_per_rule=50,
 )
 
-# Process findings
+
 findings = run_validation_checks()
 findings = apply_severity_overrides(findings, options.severity_overrides)
 findings = cap_findings(findings, options.max_findings_per_rule)

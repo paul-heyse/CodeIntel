@@ -123,11 +123,6 @@ def test_load_config_keys_filters_repo(dependencies_ctx: DependenciesFixture) ->
     expect_in("cache.ttl", mapping["pkg.mod_b"])
 
 
-# =============================================================================
-# Classification tests
-# =============================================================================
-
-
 def test_classify_modes_prioritizes_specific_matchers(
     dependencies_ctx: DependenciesFixture,
 ) -> None:
@@ -168,11 +163,6 @@ def test_severity_scores_constant() -> None:
     """Verify SEVERITY_SCORES constant includes expected severities."""
     expect_equal(len(SEVERITY_SCORES), EXPECTED_SEVERITY_COUNT)
     expect_in("critical", SEVERITY_SCORES)
-
-
-# =============================================================================
-# Detection tests
-# =============================================================================
 
 
 def test_build_alias_maps_handles_dotted_imports(

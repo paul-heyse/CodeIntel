@@ -29,25 +29,12 @@ if TYPE_CHECKING:
     from codeintel.serving import domain_models as dm
     from tests._helpers.plugins.mcp import McpBackendComponents
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEFAULT_LIMIT = 10
 MAX_ROWS = 100
 
-# Dataset tools category
+
 DATASET_CATEGORIES: set[str] = {"datasets"}
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-# =============================================================================
-# register_dataset_tools Tests
-# =============================================================================
 
 
 def test_register_dataset_tools_success(
@@ -56,10 +43,8 @@ def test_register_dataset_tools_success(
     """Verify register_dataset_tools registers tools successfully."""
     mcp = wrap_fastmcp("Test Dataset Tools")
 
-    # Should not raise
     register_tools_for_category(mcp, mcp_backend.backend, DATASET_CATEGORIES)
 
-    # Server should be configured
     expect_equal(mcp.name, "Test Dataset Tools")
 
 
@@ -132,11 +117,6 @@ def test_dataset_tools_serialize_unicode_payloads(
     assert_logged(caplog.records, level="WARNING", containing="MCP tool error: list failed")
 
 
-# =============================================================================
-# Operation Tests
-# =============================================================================
-
-
 def test_iter_operations_yields_dataset_operations() -> None:
     """Verify iter_operations yields dataset category operations."""
     dataset_ops = [spec for spec in iter_operations() if spec.category == "datasets"]
@@ -146,11 +126,6 @@ def test_iter_operations_yields_dataset_operations() -> None:
         expect_equal(spec.category, "datasets")
         expect_is_not_none(spec.backend_method)
         expect_is_not_none(spec.output_model_name)
-
-
-# =============================================================================
-# Backend Method Tests
-# =============================================================================
 
 
 def test_backend_list_datasets(
@@ -206,22 +181,12 @@ def test_backend_dataset_schema(
         expect_is_not_none(schema)
 
 
-# =============================================================================
-# Error Handling Tests
-# =============================================================================
-
-
 def test_backend_read_dataset_rows_nonexistent_dataset(
     mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend raises error for nonexistent dataset."""
     with pytest.raises(McpError):
         mcp_backend.backend.read_dataset_rows(dataset_name="nonexistent_dataset_xyz", limit=5)
-
-
-# =============================================================================
-# Limits Tests
-# =============================================================================
 
 
 def test_backend_with_custom_limits(
@@ -243,18 +208,12 @@ def test_backend_with_custom_limits(
     expect_equal(backend.limits.max_rows_per_call, custom_max)
 
 
-# =============================================================================
-# Serialization Tests
-# =============================================================================
-
-
 def test_backend_list_datasets_returns_descriptors(
     mcp_backend: McpBackendComponents,
 ) -> None:
     """Verify backend.list_datasets returns descriptors with name field."""
     datasets = mcp_backend.backend.list_datasets()
 
-    # Verify we get objects with name attribute
     for dataset in datasets:
         expect_true(hasattr(dataset, "name"))
 
@@ -267,11 +226,6 @@ def test_backend_dataset_specs_returns_pydantic_models(
 
     for spec in specs:
         expect_is_instance(spec, DatasetSpecDescriptor)
-
-
-# =============================================================================
-# Context Tests
-# =============================================================================
 
 
 def test_register_dataset_tools_preserves_backend_state(

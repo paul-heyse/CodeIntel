@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from codeintel.cli.execution.registry import OperationRegistry
     from codeintel.cli.introspection import ValidationSchema
 
-# Minimum number of parts for a valid operation ID (group.subcommand)
+
 _MIN_OPERATION_ID_PARTS = 2
 
 
@@ -195,7 +195,6 @@ def build_completion_model(registry: OperationRegistry | None = None) -> Complet
     """
     registry = registry or get_registry()
 
-    # Build subcommands from registry
     command_groups: dict[str, list[CommandSpec]] = {}
 
     for spec in registry.list_operations():
@@ -207,8 +206,6 @@ def build_completion_model(registry: OperationRegistry | None = None) -> Complet
             if group not in command_groups:
                 command_groups[group] = []
 
-            # Note: New OperationSpec doesn't have param_schema, so flags are empty
-            # Command-line flags come from Cyclopts dataclass definitions instead
             flags: list[FlagSpec] = []
 
             command_groups[group].append(
@@ -219,7 +216,6 @@ def build_completion_model(registry: OperationRegistry | None = None) -> Complet
                 ),
             )
 
-    # Build top-level commands
     subcommands: list[CommandSpec] = []
     for group, commands in sorted(command_groups.items()):
         subcommands.append(
@@ -230,7 +226,6 @@ def build_completion_model(registry: OperationRegistry | None = None) -> Complet
             ),
         )
 
-    # Add special commands
     subcommands.extend(
         [
             CommandSpec(name="config", description="Configuration management"),
@@ -240,7 +235,6 @@ def build_completion_model(registry: OperationRegistry | None = None) -> Complet
         ],
     )
 
-    # Global flags
     global_flags = [
         FlagSpec(
             name="output-format",

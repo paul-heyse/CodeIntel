@@ -33,8 +33,7 @@ __all__ = [
     "validate_with_result",
 ]
 
-# Type alias for Pandera-compatible dtypes
-# Pandera accepts: type, str, numpy.dtype, or pandas ExtensionDtype
+
 PanderaDtype = type | str | ExtensionDtype
 _DefaultT = TypeVar("_DefaultT")
 
@@ -43,7 +42,7 @@ _INT_DTYPE: PanderaDtype = pd.Int64Dtype()
 _FLOAT_DTYPE: PanderaDtype = pd.Float64Dtype()
 _BOOL_DTYPE: PanderaDtype = pd.BooleanDtype()
 
-# Mapping from DuckDB column types to Pandera-friendly dtypes.
+
 _COLUMN_TYPE_TO_DTYPE: Mapping[str, PanderaDtype] = {
     "BOOLEAN": _BOOL_DTYPE,
     "INTEGER": _INT_DTYPE,
@@ -57,7 +56,6 @@ _COLUMN_TYPE_TO_DTYPE: Mapping[str, PanderaDtype] = {
     "TIMESTAMPTZ": "datetime64[ns]",
 }
 
-# Table-level checks keyed by fully-qualified table name
 
 _DATAFRAME_CHECKS: dict[str, list[Check]] = {
     "core.goids": [
@@ -155,7 +153,7 @@ _DATAFRAME_CHECKS: dict[str, list[Check]] = {
     "graph.dfg_edges": [
         Check(
             lambda df: df["def_line"].isna() | df["use_line"].isna() | True,
-            error="",  # No cross-column constraint for dfg edges
+            error="",
         ),
     ],
     "analytics.subsystem_agreement": [
@@ -163,7 +161,7 @@ _DATAFRAME_CHECKS: dict[str, list[Check]] = {
             lambda df: df["disagree_count"].isna()
             | df["agree_count"].isna()
             | df["disagree_count"].isna()
-            | True,  # Just validating structure
+            | True,
             error="",
         ),
     ],
@@ -184,8 +182,6 @@ _DATAFRAME_CHECKS: dict[str, list[Check]] = {
         ),
     ],
 }
-
-# Reusable check factories
 
 
 def _check_non_negative() -> Check:
@@ -235,8 +231,6 @@ def _check_confidence() -> Check:
     """
     return Check(lambda s: s.isna() | ((s >= 0) & (s <= 1)))
 
-
-# Column-level checks keyed by table -> column -> list of checks
 
 _COLUMN_CHECKS: dict[str, dict[str, list[Check]]] = {
     "core.goids": {
@@ -827,7 +821,6 @@ def _graph_view_schemas() -> dict[str, DataFrameSchema]:
     """
     view_schemas: dict[str, DataFrameSchema] = {}
 
-    # graph.v_call_graph_degree
     view_schemas["graph.v_call_graph_degree"] = DataFrameSchema(
         {
             "repo": Column(_dtype_for_column_type("VARCHAR")),
@@ -1290,10 +1283,6 @@ class _LazySchemaDict(MutableMapping[str, DataFrameSchema]):
         return self._data.values()
 
 
-# Module-level lazy dict that looks like a regular dict
-# DEPRECATED: Use SCHEMA_REGISTRY from codeintel.config.datasets.schema_registry instead.
-# This provides direct Pandera schema access but lacks metadata. The unified
-# DatasetSchema interface wraps Pandera schemas with governance metadata.
 DATASET_SCHEMAS: _LazySchemaDict = _LazySchemaDict()
 
 
@@ -1477,7 +1466,7 @@ def _extract_column_constraints(column: Column) -> dict[str, Any]:
 
     for check in column.checks:
         check_str = str(check)
-        # Detect common patterns from check lambdas
+
         if ">= 0" in check_str or "(s >= 0)" in check_str:
             constraints["minimum"] = 0
         elif ">= 1" in check_str or "(s >= 1)" in check_str:
@@ -1524,7 +1513,6 @@ def pandera_to_json_schema(
         if fmt is not None:
             field_schema["format"] = fmt
 
-        # Add constraints from checks
         if include_constraints:
             constraints = _extract_column_constraints(column)
             field_schema.update(constraints)
@@ -1541,7 +1529,6 @@ def pandera_to_json_schema(
     if required:
         schema["required"] = required
 
-    # Add metadata if requested
     if include_metadata and df_schema.name:
         schema["title"] = df_schema.name
         if df_schema.name in _SCHEMA_DESCRIPTIONS:
@@ -1550,7 +1537,6 @@ def pandera_to_json_schema(
     return schema
 
 
-# Schema descriptions for enhanced JSON Schema export
 _SCHEMA_DESCRIPTIONS: dict[str, str] = {
     "core.goids": "Global Object Identifiers for all tracked code entities.",
     "core.goid_crosswalk": "Cross-reference table linking GOIDs to AST/SCIP symbols.",

@@ -143,7 +143,6 @@ def compute_layers(
     if condensation.number_of_nodes() == 0:
         return {}
 
-    # Compute layers on condensation DAG
     comp_layers: dict[int, int] = {
         node: 0 for node in condensation.nodes if condensation.in_degree(node) == 0
     }
@@ -173,7 +172,6 @@ def analyze_imports(
     ImportAnalysisResult
         Analysis results with SCC and layer mappings.
     """
-    # Ensure all edge endpoints are in modules
     all_modules = set(modules)
     for edge in edges:
         all_modules.add(edge.src_module)
@@ -247,7 +245,6 @@ def build_import_edge_rows(
     list[ImportEdgeRow]
         Edge rows for persistence.
     """
-    # Compute fan-in/fan-out
     fan_out: dict[str, int] = {}
     fan_in: dict[str, int] = {}
     for edge in result.edges:

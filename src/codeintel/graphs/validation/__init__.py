@@ -18,10 +18,10 @@ from codeintel.graphs.validation import (
     warn_graph_structure,
 )
 
-# Run full validation suite
+
 run_graph_validations(gateway, snapshot=snapshot, runtime=runtime)
 
-# Or run structure warnings only
+
 findings = warn_graph_structure(engine, repo, commit)
 ```
 """

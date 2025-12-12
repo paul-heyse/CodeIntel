@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/config.py
+# hypothesis_version: 6.148.7
+
+[0.0, 0.15, 0.2, 0.3, 0.7, 365, 2000, '.', 'BuildConfig', 'ConfigSection', 'HEAD', '_T', 'age', 'analytics', 'bucket_days', 'churn', 'codeintel.build.toml', 'complexity', 'compute_trends', 'coupling', 'coverage', 'coverage_functions', 'data_models', 'days_back', 'default_branch', 'detect_cli', 'detect_grpc', 'detect_http', 'entrypoints', 'export', 'external_deps', 'function_history', 'graph_metrics', 'graphs', 'history_timeseries', 'hotspots', 'include_ownership', 'include_private', 'include_stdlib', 'ingestion', 'load_build_config', 'max_commits', 'max_history_days', 'max_subsystems', 'min_confidence', 'min_lines_threshold', 'profiles', 'rb', 'risk_factors', 'semantic_roles', 'subsystems', 'weights']

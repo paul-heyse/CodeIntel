@@ -9,10 +9,10 @@ Example (new protocol-based fakes)
 >>> from tests._helpers.fakes import ProtocolFakeProviders
 >>> from codeintel.build.context import ContextResources
 >>>
->>> # Create fake providers
+>>>
 >>> providers = ProtocolFakeProviders.defaults()
 >>>
->>> # Use in context
+>>>
 >>> resources = ContextResources(providers=providers)
 
 Example (legacy tool fakes)
@@ -21,8 +21,6 @@ Example (legacy tool fakes)
 >>> runner = FakeToolRunner(cache_dir=Path("/tmp/cache"))
 """
 
-# Legacy tool fakes (for ingestion tests)
-# New protocol-based fakes (for build system tests)
 from tests._helpers.fakes.fake_providers import (
     FakeCoverageCollector,
     FakeGitHistoryProvider,

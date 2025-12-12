@@ -40,7 +40,7 @@ def generate_schema(model_class: type) -> dict[str, object]:
 
     for f in fields(model_class):
         if f.name.startswith("_"):
-            continue  # Skip private fields
+            continue
 
         field_type = hints.get(f.name, f.type)
         prop = _type_to_schema(field_type, f)
@@ -103,7 +103,6 @@ def _type_to_schema(type_hint: type, field_info: object) -> dict[str, object]:
     if result is not None:
         return result
 
-    # Fallback
     return {"type": "string"}
 
 
@@ -218,7 +217,6 @@ def _try_primitive_schema(type_hint: type, field_info: object) -> dict[str, obje
     dict[str, object] | None
         Schema if type is primitive, None otherwise.
     """
-    # Handle Path specially
     if type_hint is Path:
         return {"type": "string", "format": "path"}
 
@@ -291,7 +289,6 @@ def _get_default(field_info: object) -> str | int | float | bool | None:
     if field_info is None:
         return None
 
-    # Check for default attribute
     default = getattr(field_info, "default", MISSING)
     if default is not MISSING and isinstance(default, (str, int, float, bool)):
         return default

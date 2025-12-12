@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
 
-# Type aliases for run classification
+
 RunKind = Literal["ingest", "graphs", "analytics", "full", "op_prereqs"]
 """Classification of the run type.
 

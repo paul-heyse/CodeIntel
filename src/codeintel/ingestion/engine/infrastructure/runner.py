@@ -231,7 +231,6 @@ class ToolRunner:
             loop = None
 
         if loop is not None:
-            # Already in an async context - run in thread pool
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(
                     asyncio.run,

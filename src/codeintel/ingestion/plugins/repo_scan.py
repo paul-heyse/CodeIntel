@@ -145,7 +145,6 @@ class RepoScanPlugin(TargetPlugin):
         TargetResult
             Success result with row counts.
         """
-        # Create adapters
         storage = DuckDBStorageAdapter(ctx.gateway)
         discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
         change_detection = HashChangeDetectionAdapter(storage)
@@ -153,7 +152,6 @@ class RepoScanPlugin(TargetPlugin):
         opts = self.resolve_options()
         profile = build_scan_profile(ctx.repo_root, opts)
 
-        # Execute step
         step = RepoScanStep(
             storage=storage,
             discovery=discovery,
@@ -169,7 +167,6 @@ class RepoScanPlugin(TargetPlugin):
             full_rebuild=False,
         )
 
-        # Build change request for tracker
         change_request = ChangeRequest(
             repo=ctx.repo,
             commit=ctx.commit,
@@ -179,7 +176,6 @@ class RepoScanPlugin(TargetPlugin):
             scan_profile=profile,
         )
 
-        # Create change tracker (stored in resources for downstream plugins)
         tracker = ChangeTracker.create(
             gateway=ctx.gateway,
             change_request=change_request,
@@ -188,14 +184,10 @@ class RepoScanPlugin(TargetPlugin):
             change_detection=change_detection,
         )
 
-        # Store tracker in context resources for downstream plugins
-        # This is accessed via ctx.resources.change_tracker
         ctx.resources.change_tracker = tracker
 
-        # Write repo_map entry for this repo/commit
         self._write_repo_map(ctx, modules)
 
-        # Compute row counts from tables
         row_counts = self._compute_row_counts(ctx)
 
         return TargetResult.succeeded(row_counts=row_counts)
@@ -225,7 +217,6 @@ class RepoScanPlugin(TargetPlugin):
         modules_json = json.dumps(module_entries)
         overlays_json = json.dumps({})
 
-        # Delete existing entry for this repo/commit
         policy_backend = DuckDBPolicyBackend(ctx.gateway)
         policy_backend.delete_for_snapshot("core.repo_map", repo=ctx.repo, commit=ctx.commit)
         ctx.gateway.core.insert_repo_map(

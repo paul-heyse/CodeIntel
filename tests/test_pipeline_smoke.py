@@ -62,7 +62,6 @@ def test_build_export_smoke(tmp_path: Path) -> None:
         message = "GOID export not found"
         raise RuntimeError(message)
 
-    # Verify other exports materialize
     for fname in (
         "call_graph_edges.parquet",
         "function_metrics.parquet",
@@ -73,7 +72,6 @@ def test_build_export_smoke(tmp_path: Path) -> None:
             message = f"Expected export missing: {fname}"
             raise RuntimeError(message)
 
-    # Verify docs views contain data
     con = open_gateway(
         StorageConfig(
             db_path=db_path,
@@ -94,7 +92,6 @@ def test_build_export_smoke(tmp_path: Path) -> None:
         message = "docs.v_function_summary is empty after build run"
         raise RuntimeError(message)
 
-    # JSONL exports present
     goids_jsonl = document_output / "goids.jsonl"
     if not goids_jsonl.is_file():
         message = "goids.jsonl export not found"

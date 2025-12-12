@@ -21,7 +21,6 @@ FORBIDDEN_PATTERNS: dict[str, re.Pattern[str]] = {
 
 
 ALLOWLIST: set[str] = {
-    # Temporary allowlist for legacy tests still using mocks; refactor tracked separately.
     "tests/cli/services",
     "tests/cli/execution",
 }

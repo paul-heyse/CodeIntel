@@ -6,7 +6,7 @@ Validates the planner status matrix, entry structure, and plan generation.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -18,7 +18,9 @@ from codeintel.build.hamilton.planner import (
     compute_plan,
 )
 from codeintel.build.manifest import OutputManifest
+from codeintel.build.providers import Providers
 from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.build import make_build_config, make_build_paths, make_snapshot
 from tests._helpers.fakes.fake_providers import FakeProviders
 
@@ -57,13 +59,13 @@ def make_test_build_env(
     snapshot = make_snapshot(tmp_path)
     paths = make_build_paths(tmp_path)
     config = make_build_config()
-    providers = FakeProviders.defaults()
+    providers = cast("Providers", FakeProviders.defaults())
 
     return BuildEnv(
-        gateway=gateway,  # type: ignore[arg-type]
+        gateway=cast("StorageGateway", gateway),
         snapshot=snapshot,
         paths=paths,
-        providers=providers,  # type: ignore[arg-type]
+        providers=providers,
         config=config,
         force_targets=force_targets or frozenset(),
         manifest_index=manifest_index,
@@ -204,7 +206,7 @@ class TestPlanStatusMatrix:
         env = make_test_build_env(fake_gateway, tmp_path, {})
 
         plan = compute_plan(
-            env=env,  # type: ignore[arg-type]
+            env=env,
             graph=minimal_target_graph,
             requested=("a",),
             mode="generated",
@@ -245,7 +247,7 @@ class TestPlanStatusMatrix:
         )
 
         plan = compute_plan(
-            env=env,  # type: ignore[arg-type]
+            env=env,
             graph=minimal_target_graph,
             requested=("a",),
             mode="generated",
@@ -269,7 +271,6 @@ class TestPlanStatusMatrix:
         The planner may either raise KeyError for missing targets
         or mark them as blocked. Both are acceptable behaviors.
         """
-        # Create graph with missing dependency
         graph = TargetGraph()
         graph.register(
             OutputTarget(
@@ -283,24 +284,20 @@ class TestPlanStatusMatrix:
 
         env = make_test_build_env(fake_gateway, tmp_path, {})
 
-        # The planner may raise KeyError for missing dependencies
-        # or mark them as blocked - both are valid behaviors
         try:
             plan = compute_plan(
-                env=env,  # type: ignore[arg-type]
+                env=env,
                 graph=graph,
                 requested=("downstream",),
                 mode="generated",
             )
-            # If we get here, check if downstream is blocked
+
             entry = plan.get_entry("downstream")
             if entry is not None and entry.status == "blocked":
-                # This is the expected "blocked" behavior
                 pass
             elif entry is not None:
                 pytest.fail(f"Expected status='blocked' or KeyError, got '{entry.status}'")
         except KeyError:
-            # This is also acceptable - missing target raises KeyError
             pass
 
 
@@ -317,19 +314,17 @@ class TestPlanClosure:
         env = make_test_build_env(fake_gateway, tmp_path, {})
 
         plan = compute_plan(
-            env=env,  # type: ignore[arg-type]
+            env=env,
             graph=minimal_target_graph,
             requested=("c",),
             mode="generated",
         )
 
-        # Closure should be in dependency order: a, b, c
         if len(plan.closure) != EXPECTED_LINEAR_CLOSURE:
             pytest.fail(
                 f"Expected {EXPECTED_LINEAR_CLOSURE} targets in closure, got {len(plan.closure)}"
             )
 
-        # Verify order: a should come before b, b before c
         a_idx = plan.closure.index("a")
         b_idx = plan.closure.index("b")
         c_idx = plan.closure.index("c")
@@ -357,7 +352,7 @@ class TestPlanClosure:
         env = make_test_build_env(fake_gateway, tmp_path, {})
 
         plan = compute_plan(
-            env=env,  # type: ignore[arg-type]
+            env=env,
             graph=graph,
             requested=("with_tables",),
             mode="generated",
@@ -387,16 +382,14 @@ class TestDryRunParity:
         env = make_test_build_env(fake_gateway, tmp_path, {})
 
         plan = compute_plan(
-            env=env,  # type: ignore[arg-type]
+            env=env,
             graph=minimal_target_graph,
             requested=("c",),
             mode="generated",
         )
 
-        # Serialize to dict (this is what dry-run and plan commands use)
         plan_dict = plan.to_dict()
 
-        # Verify structure matches expected format
         if "requested" not in plan_dict:
             pytest.fail("plan.to_dict() should include 'requested'")
         if "closure" not in plan_dict:
@@ -421,13 +414,12 @@ class TestDryRunParity:
         env = make_test_build_env(fake_gateway, tmp_path, {})
 
         plan = compute_plan(
-            env=env,  # type: ignore[arg-type]
+            env=env,
             graph=minimal_target_graph,
             requested=("c",),
             mode="generated",
         )
 
-        # Entry targets should match closure order
         entry_targets = [e.target for e in plan.entries]
         closure_list = list(plan.closure)
 
@@ -448,20 +440,19 @@ class TestDryRunParity:
         env = make_test_build_env(fake_gateway, tmp_path, {})
 
         plan1 = compute_plan(
-            env=env,  # type: ignore[arg-type]
+            env=env,
             graph=minimal_target_graph,
             requested=("c",),
             mode="generated",
         )
 
         plan2 = compute_plan(
-            env=env,  # type: ignore[arg-type]
+            env=env,
             graph=minimal_target_graph,
             requested=("c",),
             mode="generated",
         )
 
-        # Plans should have identical structure
         if plan1.closure != plan2.closure:
             pytest.fail("Plans should have same closure")
         if plan1.to_compute != plan2.to_compute:

@@ -34,7 +34,7 @@ Example
 >>> factory = ProviderFactory(gateway, snapshot)
 >>> registry = factory.create_registry(include_graphs=True, include_catalog=True)
 >>> graphs = registry.require(GraphProvider)
->>> call_graph = graphs.call_graph  # Loaded on first access
+>>> call_graph = graphs.call_graph
 """
 
 from __future__ import annotations

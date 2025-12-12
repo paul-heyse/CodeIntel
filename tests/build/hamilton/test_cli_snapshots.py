@@ -149,13 +149,11 @@ def _select_cases(
     """
     selected: list[SnapshotCase] = []
     for c in cases:
-        # Tag filtering - case must have at least one matching tag
         if tags:
             case_tags = set(c.tags)
             if case_tags.isdisjoint(tags):
                 continue
 
-        # Pattern filtering - case name must match at least one pattern
         if patterns and not any(fnmatch.fnmatch(c.name, pat) for pat in patterns):
             continue
 
@@ -178,7 +176,6 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 
     manifest_path = _manifest_path(metafunc.config)
     if not manifest_path.exists():
-        # No manifest - skip parametrization
         return
 
     manifest = _load_manifest_cached(str(manifest_path))

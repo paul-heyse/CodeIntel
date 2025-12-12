@@ -16,11 +16,6 @@ def _require(*, condition: bool, message: str) -> None:
         pytest.fail(message)
 
 
-# ------------------------------------------------------------------
-# write_validated_table tests
-# ------------------------------------------------------------------
-
-
 def test_write_validated_table_missing_schema_key_error() -> None:
     """Verify KeyError is raised when schema is not registered.
 
@@ -41,10 +36,8 @@ def test_write_validated_table_integration() -> None:
     if not all_keys:
         pytest.skip("No schemas registered")
 
-    # Find a schema we can test with
     table_key = next(iter(all_keys))
     schema = SCHEMA_REGISTRY.require(table_key)
 
-    # Just verify the schema exists and has columns
     columns = schema.column_names()
     _require(condition=len(columns) > 0, message="schema should have columns")

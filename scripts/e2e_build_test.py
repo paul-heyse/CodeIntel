@@ -37,6 +37,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import duckdb
+from codeintel.core.process import (
+    CommandExecutionError,
+    CommandExecutor,
+    CommandNotAllowedError,
+)
 
 from codeintel.build.executor import BuildExecutor, ExecutorEnv
 from codeintel.build.plan import PlanGenerator
@@ -45,11 +50,6 @@ from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import StateValidator
 from codeintel.config.primitives import BuildLayoutOptions, BuildPaths, SnapshotRef
 from codeintel.config.resolver import resolve_tools_config
-from codeintel.core.process import (
-    CommandExecutionError,
-    CommandExecutor,
-    CommandNotAllowedError,
-)
 from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
 from codeintel.storage.gateway import StorageConfig, open_gateway
@@ -57,7 +57,7 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# Configure logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -65,7 +65,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Constants
+
 CRITICAL_FILES = (
     "goids.jsonl",
     "goids.parquet",
@@ -328,7 +328,6 @@ def _stage_scip_index(
         msg = "scip-python is not available on PATH"
         raise RuntimeError(msg) from exc
 
-    # Convert to JSON if needed
     if not scip_json.exists() and scip_index.exists():
         try:
             COMMAND_EXECUTOR.export_scip_to_json(scip_index, scip_json)
@@ -379,7 +378,6 @@ def _stage_build_run(
     """
     log.info("Initializing build system...")
 
-    # Create snapshot and paths
     snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
     paths = BuildPaths.from_layout(
         repo_root=repo_root,
@@ -417,7 +415,6 @@ def _stage_build_run(
         len(plan.skipped_targets),
     )
 
-    # Execute
     log.info("Executing build plan...")
     env = ExecutorEnv(
         gateway=gateway,
@@ -441,7 +438,6 @@ def _stage_build_run(
         "error_summary": result.error_summary,
     }
 
-    # Raise if build failed so stage is marked as failed
     if result.status == "failed":
         msg = f"Build failed: {result.error_summary or 'Unknown error'}"
         raise RuntimeError(msg)
@@ -479,17 +475,13 @@ def _stage_export_docs(
         )
     )
 
-    # Export JSONL (validation disabled for E2E testing - schemas may be incomplete)
-    # Force full export to ensure fresh data is written (bypasses incremental markers)
     log.info("Exporting JSONL files...")
     export_opts = ExportCallOptions(validate_exports=False, force_full_export=True)
     jsonl_files = export_all_jsonl(gateway, output_dir, options=export_opts)
 
-    # Export Parquet
     log.info("Exporting Parquet files...")
     export_all_parquet(gateway, output_dir, options=export_opts)
 
-    # Count outputs
     jsonl_count = len(list(output_dir.glob("*.jsonl")))
     parquet_count = len(list(output_dir.glob("*.parquet")))
     total_size_mb = sum(f.stat().st_size for f in output_dir.iterdir()) / (1024 * 1024)
@@ -523,7 +515,6 @@ def _stage_verify_outputs(
     """
     log.info("Verifying outputs...")
 
-    # Check critical files
     missing: list[str] = []
     file_stats: dict[str, dict[str, object]] = {}
     for fname in CRITICAL_FILES:
@@ -535,7 +526,6 @@ def _stage_verify_outputs(
             missing.append(fname)
             file_stats[fname] = {"exists": False, "size_bytes": 0}
 
-    # Check database tables
     gateway = open_gateway(
         StorageConfig(
             db_path=db_path,
@@ -607,7 +597,6 @@ def run_e2e_test(
 
     paths = _derive_paths(repo_root)
 
-    # Get repo info
     repo = os.environ.get("GEN_DOCS_REPO", "local/repo")
     commit = _get_commit_sha(repo_root)
 
@@ -626,7 +615,6 @@ def run_e2e_test(
     stages: list[StageResult] = []
     overall_status = "success"
 
-    # Stage 1: SCIP Indexing
     stages.append(
         _run_stage(
             "SCIP Indexing",
@@ -637,11 +625,9 @@ def run_e2e_test(
         )
     )
 
-    # Only continue if SCIP succeeded or was skipped
     if stages[-1].status == "failed":
         overall_status = "failed"
     else:
-        # Stage 2: Build Run
         stages.append(
             _run_stage(
                 "Build System Run",
@@ -657,7 +643,6 @@ def run_e2e_test(
         if stages[-1].status == "failed":
             overall_status = "failed"
         else:
-            # Stage 3: Export Documents
             stages.append(
                 _run_stage(
                     "Document Export",
@@ -667,7 +652,6 @@ def run_e2e_test(
                 )
             )
 
-            # Stage 4: Verify Outputs
             stages.append(
                 _run_stage(
                     "Verify Outputs",
@@ -677,14 +661,12 @@ def run_e2e_test(
                 )
             )
 
-            # Determine overall status
             overall_status = "failed" if any(s.status == "failed" for s in stages) else "success"
 
     end_time = time.perf_counter()
     total_duration_ms = (end_time - start_time) * 1000
     ended_at = _get_timestamp()
 
-    # Build summary
     summary: dict[str, object] = {
         "stages_total": len(stages),
         "stages_success": sum(1 for s in stages if s.status == "success"),
@@ -692,7 +674,6 @@ def run_e2e_test(
         "stages_skipped": sum(1 for s in stages if s.status == "skipped"),
     }
 
-    # Add key metrics from stages
     for stage in stages:
         if stage.name == "Build System Run" and stage.status == "success":
             summary["targets_computed"] = stage.outputs.get("computed_count", 0)
@@ -810,7 +791,6 @@ def main() -> int:
 
     _print_report(report, json_output=args.json)
 
-    # Save report to file
     report_path = args.repo_root / "build" / "e2e_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with report_path.open("w") as f:

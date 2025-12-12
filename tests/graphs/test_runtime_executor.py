@@ -63,24 +63,23 @@ class _MockFunctionCatalogProvider(FunctionCatalogProvider):
         return self._catalog
 
     @staticmethod
-    def urn_for_goid(goid: int) -> str | None:  # pragma: no cover - protocol stub
+    def urn_for_goid(goid: int) -> str | None:
         del goid
         return None
 
     @staticmethod
-    def module_for_path(rel_path: str) -> str | None:  # pragma: no cover - protocol stub
+    def module_for_path(rel_path: str) -> str | None:
         del rel_path
         return None
 
     @staticmethod
     def lookup_goid(
         rel_path: str, start_line: int, end_line: int | None, qualname: str | None
-    ) -> int | None:  # pragma: no cover - protocol stub
+    ) -> int | None:
         del rel_path, start_line, end_line, qualname
         return None
 
 
-# Constants
 STATUS_SUCCESS_COUNT: Final = 2
 STATUS_FAILURE_COUNT: Final = 1
 STATUS_SKIPPED_COUNT: Final = 1
@@ -89,9 +88,6 @@ REPORT_FAILURE_COUNT: Final = 1
 REPORT_MIXED_SUCCESS_COUNT: Final = 1
 _EXECUTOR_PRIVATES: Final = graph_executor.__dict__
 STATUS_COUNTS = _EXECUTOR_PRIVATES["_status_counts"]
-
-
-# Test Helpers
 
 
 def _make_test_plugin(name: str, config: Mapping[str, object] | None = None) -> GraphPluginProtocol:
@@ -182,7 +178,6 @@ def test_graph_plugin_executor_dry_run_skips_execution(
             snapshot=graph_executor_env.snapshot,
         )
 
-        # Convert policy and use GraphPluginExecutor directly
         base_policy = BaseExecutionPolicy(
             dry_run=True,
         )
@@ -225,12 +220,10 @@ def test_graph_plugin_execution_context_require_graphs_by_type_and_name(
 
     ctx = base_builder.build_graph_context()
 
-    # Register by type
     ctx.resources.register(GraphResource, engine_resource)
     expect_true(ctx.has_resource(GraphResource))
     expect_true(ctx.require_graphs() is engine_resource)
 
-    # Register by name only and ensure fallback works
     ctx.resources.register_provider(engine_resource)
     expect_true(ctx.has_graph_resource(GraphResource.RESOURCE_NAME))
     expect_true(ctx.require_graphs() is engine_resource)
@@ -303,9 +296,8 @@ def test_graph_plugin_executor_skip_on_unchanged(
             context=context,
         )
 
-        # Get the actual computed input hash
         settings = plan.settings_by_plugin[plugin.metadata.name]
-        # Update prior manifest with actual hash
+
         prior_manifest: Mapping[str, Mapping[str, object]] = {
             plugin.metadata.name: {
                 "input_hash": settings.input_hash,
@@ -313,7 +305,6 @@ def test_graph_plugin_executor_skip_on_unchanged(
             }
         }
 
-        # Create new context with correct prior manifest
         context_with_correct_hash = GraphPlanContext(
             runtime_snapshot=graph_executor_env.snapshot,
             policy=GraphPluginPolicy(skip_on_unchanged=True),
@@ -329,7 +320,6 @@ def test_graph_plugin_executor_skip_on_unchanged(
             snapshot=graph_executor_env.snapshot,
         )
 
-        # Use GraphPluginExecutor directly
         base_policy = BaseExecutionPolicy(
             skip_on_unchanged=True,
         )
@@ -372,7 +362,6 @@ def test_graph_plugin_executor_builds_manifest(
             snapshot=graph_executor_env.snapshot,
         )
 
-        # Use GraphPluginExecutor directly
         graph_executor = GraphPluginExecutor(
             scope=plan.scope,
         )
@@ -412,7 +401,6 @@ def test_graph_plugin_executor_fatal_stops_remaining(
             snapshot=graph_executor_env.snapshot,
         )
 
-        # Use GraphPluginExecutor directly
         base_policy = BaseExecutionPolicy(
             default_severity="fatal",
             fail_fast=True,
@@ -430,7 +418,7 @@ def test_graph_plugin_executor_fatal_stops_remaining(
         )
 
         expect_true(report.fatal_error)
-        # Only the fatal plugin should have a record
+
         expect_length(report.records, 1)
         expect_equal(report.records[0].plugin_name, "fatal_first")
 

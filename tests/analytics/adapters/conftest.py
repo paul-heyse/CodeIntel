@@ -10,10 +10,6 @@ from __future__ import annotations
 
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
-# =============================================================================
-# Constants (aliases for backward compatibility)
-# =============================================================================
-
 ADAPTER_TEST_REPO = DEFAULT_REPO
 ADAPTER_TEST_COMMIT = DEFAULT_COMMIT
 

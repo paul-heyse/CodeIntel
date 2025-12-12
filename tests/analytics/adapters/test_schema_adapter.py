@@ -46,17 +46,9 @@ if TYPE_CHECKING:
 
     from tests._helpers.context import TestContext
 
-# =============================================================================
-# Constants
-# =============================================================================
 
 DEMO_REPO = "demo/repo"
 DEMO_COMMIT = "abc123"
-
-
-# =============================================================================
-# Test Fixtures
-# =============================================================================
 
 
 def _build_ctx(tmp_path: Path) -> TestContext:
@@ -92,11 +84,6 @@ def test_ctx(tmp_path: Path) -> Iterator[TestContext]:
         ctx.close()
 
 
-# =============================================================================
-# SchemaValidationMixin Tests
-# =============================================================================
-
-
 class _MixinTestClass(SchemaValidationMixin):
     """Test class implementing SchemaValidationMixin."""
 
@@ -105,18 +92,15 @@ class _MixinTestClass(SchemaValidationMixin):
 
 def test_mixin_get_schema_for_registered_table() -> None:
     """Mixin can retrieve schema for registered table."""
-    # Initialize registry first
     SCHEMA_REGISTRY.initialize()
 
     mixin = _MixinTestClass()
 
-    # Try to get schema - may or may not exist depending on registry state
     try:
         schema = mixin.get_schema()
         expect_is_instance(schema, DatasetSchema)
         expect_equal(schema.name, "analytics.function_metrics")
     except KeyError:
-        # Schema not registered is also valid for this test
         pass
 
 
@@ -133,7 +117,6 @@ def test_mixin_get_schema_for_unregistered_table() -> None:
 
 def test_mixin_validate_dataframe_with_valid_data() -> None:
     """Mixin validates DataFrame successfully with valid data."""
-    # Create a minimal test schema
     pandera_schema = DataFrameSchema(
         {
             "name": Column(str),
@@ -145,7 +128,6 @@ def test_mixin_validate_dataframe_with_valid_data() -> None:
         pandera_schema=pandera_schema,
     )
 
-    # Create a temporary registry entry for testing
     class _TestMixin(SchemaValidationMixin):
         table_key: ClassVar[str] = "test.validation"
         test_schema_value: ClassVar[DatasetSchema] = test_schema
@@ -168,7 +150,6 @@ def test_mixin_validate_dataframe_with_valid_data() -> None:
 
 def test_mixin_try_validate_returns_original_on_failure() -> None:
     """Try validate returns original DataFrame on validation failure."""
-    # Create a strict schema
     pandera_schema = DataFrameSchema(
         {
             "name": Column(str),
@@ -195,17 +176,11 @@ def test_mixin_try_validate_returns_original_on_failure() -> None:
             return type(self).test_schema_value
 
     mixin = _StrictMixin()
-    # Invalid data - strings where ints expected
+
     df = pd.DataFrame({"name": ["a", "b"], "value": ["not", "int"]})
 
-    # try_validate should not raise, should return original
     result = mixin.try_validate_dataframe(df)
     expect_equal(len(result), 2)
-
-
-# =============================================================================
-# SchemaAwareBatchAdapter Tests
-# =============================================================================
 
 
 class _TestSchemaAdapter(SchemaAwareBatchAdapter[dict[str, Any]]):
@@ -221,7 +196,7 @@ class _TestSchemaAdapter(SchemaAwareBatchAdapter[dict[str, Any]]):
         Iterator[dict[str, Any]]
             Empty iterator.
         """
-        _ = self  # Satisfy the abstract method signature
+        _ = self
         return iter([])
 
     def persist(self, rows: Sequence[dict[str, Any]]) -> int:
@@ -237,7 +212,7 @@ class _TestSchemaAdapter(SchemaAwareBatchAdapter[dict[str, Any]]):
         int
             Number of rows persisted.
         """
-        _ = self  # Satisfy the abstract method signature
+        _ = self
         return len(rows)
 
 
@@ -251,7 +226,6 @@ def test_schema_adapter_inherits_mixin_methods(test_ctx: TestContext) -> None:
     """SchemaAwareBatchAdapter has mixin methods available."""
     adapter = _TestSchemaAdapter(test_ctx.gateway, test_ctx.snapshot)
 
-    # Verify mixin methods exist
     expect_true(hasattr(adapter, "get_schema"))
     expect_true(hasattr(adapter, "validate_dataframe"))
     expect_true(hasattr(adapter, "try_validate_dataframe"))
@@ -260,7 +234,7 @@ def test_schema_adapter_inherits_mixin_methods(test_ctx: TestContext) -> None:
 def test_schema_adapter_persist_validated_empty(test_ctx: TestContext) -> None:
     """Persist validated with empty rows returns 0."""
     adapter = _TestSchemaAdapter(test_ctx.gateway, test_ctx.snapshot)
-    # Use delete_before=False to avoid trying to delete from non-existent table
+
     count = adapter.persist_validated([], delete_before=False, strict=False)
     expect_equal(count, 0)
 
@@ -275,11 +249,6 @@ def test_schema_adapter_snapshot_property(test_ctx: TestContext) -> None:
     """SchemaAwareBatchAdapter exposes snapshot property."""
     adapter = _TestSchemaAdapter(test_ctx.gateway, test_ctx.snapshot)
     expect_is_instance(adapter.snapshot, SnapshotRef)
-
-
-# =============================================================================
-# Integration Tests
-# =============================================================================
 
 
 def test_function_metrics_adapter_has_schema_validation() -> None:

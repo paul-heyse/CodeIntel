@@ -63,7 +63,7 @@ class ColumnLineage:
     >>> lineage = trace_column_lineage("analytics.function_metrics", "loc")
     >>> lineage.column
     'loc'
-    >>> len(lineage.constraints) > 0  # doctest: +SKIP
+    >>> len(lineage.constraints) > 0
     True
     """
 
@@ -250,16 +250,12 @@ def trace_column_lineage(table_key: str, column: str) -> ColumnLineage:
         msg = f"Column '{column}' not found in table '{table_key}'"
         raise ValueError(msg)
 
-    # Extract constraints for this column
     all_constraints = extract_constraints_from_pandera(table_key, schema.pandera_schema)
     column_constraints = all_constraints.for_column(column)
 
-    # Get producer plugins
     producer_metas = get_producer_plugins(table_key)
     producer_names = [m.name for m in producer_metas]
 
-    # Get upstream columns (requires column-level dependency tracking)
-    # NOTE(logic-framework): This returns empty until column-level DAG is implemented
     upstream_columns: list[tuple[str, str]] = []
 
     return ColumnLineage(
@@ -292,7 +288,7 @@ def trace_table_lineage(table_key: str) -> TableLineage:
     Examples
     --------
     >>> lineage = trace_table_lineage("analytics.function_metrics")
-    >>> lineage.column_count > 0  # doctest: +SKIP
+    >>> lineage.column_count > 0
     True
     """
     schema = SCHEMA_REGISTRY.get(table_key)
@@ -304,17 +300,14 @@ def trace_table_lineage(table_key: str) -> TableLineage:
     for col_name in schema.column_names():
         columns[col_name] = trace_column_lineage(table_key, col_name)
 
-    # Get producer plugins
     producer_metas = get_producer_plugins(table_key)
     producer_names = [m.name for m in producer_metas]
 
-    # Get upstream tables from plugin consumes_tables
     upstream_tables: list[str] = []
     for meta in producer_metas:
         if meta.consumes_tables:
             upstream_tables.extend(meta.consumes_tables)
 
-    # Deduplicate
     upstream_tables = list(dict.fromkeys(upstream_tables))
 
     return TableLineage(

@@ -140,7 +140,7 @@ def compute_history_timeseries(
 
     history_con = history_gateway.con
     ensure_schema(history_con, "analytics.history_timeseries")
-    # Delete by repo only (not snapshot-specific)
+
     history_con.execute(
         "DELETE FROM analytics.history_timeseries WHERE repo = ?",
         [cfg.repo],

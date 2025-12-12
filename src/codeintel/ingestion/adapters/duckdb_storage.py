@@ -157,7 +157,7 @@ class DuckDBStorageAdapter(IngestStoragePort):
 
         try:
             self._gateway.ibis.delete(table_key, where=cond)
-        except Exception as exc:  # pragma: no cover - delegated to backend
+        except Exception as exc:
             message = f"Failed to delete rows from {table_key}"
             raise ValueError(message) from exc
         return 0
@@ -251,7 +251,7 @@ class IngestStorageService:
         df = pd.DataFrame([list(row) for row in rows], columns=pd.Index(registry_cols))
         try:
             schema.validate(df, lazy=True)
-        except SchemaErrors as exc:  # pragma: no cover - advisory path
+        except SchemaErrors as exc:
             log.warning(
                 "Pandera validation warning for %s: %s",
                 table_key,

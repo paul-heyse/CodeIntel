@@ -56,7 +56,7 @@ class ServingService:
 
     Examples
     --------
-    >>> service = ServingService(runtime_svc, storage_svc)  # doctest: +SKIP
+    >>> service = ServingService(runtime_svc, storage_svc)
     >>> result = service.invoke("function.summary", {"goid_h128": "abc123"})
     """
 
@@ -116,12 +116,11 @@ class ServingService:
 
         Examples
         --------
-        >>> result = service.invoke(  # doctest: +SKIP
+        >>> result = service.invoke(
         ...     "function.summary",
         ...     {"goid_h128": "abc123"},
         ... )
         """
-        # Look up operation
         op = get_operation(operation_id)
         if op is None:
             msg = f"Unknown serving operation: {operation_id}"
@@ -130,7 +129,6 @@ class ServingService:
         runtime = self._runtime.runtime
         gateway = self._storage.gateway
 
-        # Run prerequisites if needed
         if not skip_prereqs:
             LOG.debug("Running prerequisites for operation: %s", operation_id)
             run_operation_prereqs(
@@ -141,7 +139,6 @@ class ServingService:
                 tools=runtime.tools,
             )
 
-        # Build service stack and invoke
         stack = build_service_stack(
             config=runtime.serving,
             gateway=gateway,
@@ -156,7 +153,6 @@ class ServingService:
             LOG.debug("Invoking %s.%s with params: %s", operation_id, op.backend_method, params)
             result = method(**params)
 
-            # Serialize result to dictionary
             return self._serialize_result(result)
 
         finally:
@@ -208,17 +204,13 @@ class ServingService:
         dict[str, Any]
             Serialized result.
         """
-        # Pydantic model
         model_dump = getattr(result, "model_dump", None)
         if callable(model_dump):
-            # Pydantic's model_dump returns dict[str, Any]
             return cast("dict[str, Any]", model_dump(mode="json"))
 
-        # Dataclass or object with __dict__
         if hasattr(result, "__dict__") and not isinstance(result, type):
             return dict(result.__dict__)
 
-        # Primitive value
         return {"value": result}
 
     @staticmethod

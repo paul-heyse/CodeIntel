@@ -79,11 +79,6 @@ def _create_test_client(
     return TestClient(app)
 
 
-# -----------------------------------------------------------------------------
-# Debug Endpoint Tests
-# -----------------------------------------------------------------------------
-
-
 def test_debug_prereqs_endpoint_returns_structured_response(
     architecture_gateway: StorageGateway,
 ) -> None:
@@ -103,7 +98,6 @@ def test_debug_prereqs_endpoint_returns_structured_response(
     expect_equal(response.status_code, HTTPStatus.OK)
     payload = response.json()
 
-    # Check required fields exist
     expect_in("op_id", payload)
     expect_equal(payload["op_id"], "function.summary")
     expect_in("repo", payload)
@@ -158,10 +152,9 @@ def test_debug_prereqs_shows_dataset_statuses(
     payload = response.json()
 
     dataset_statuses = payload.get("dataset_statuses", [])
-    # Should be a list (may be empty if no required datasets)
+
     expect_is_instance(dataset_statuses, list)
 
-    # If there are statuses, verify structure
     for status in dataset_statuses:
         expect_in("table_key", status)
         expect_in("name", status)
@@ -188,7 +181,6 @@ def test_debug_prereqs_uses_config_defaults(
     expect_equal(response.status_code, HTTPStatus.OK)
     payload = response.json()
 
-    # Should use config defaults
     expect_equal(payload["repo"], "test/repo")
     expect_equal(payload["commit"], "abc123")
 
@@ -216,7 +208,6 @@ def test_debug_prereqs_accepts_custom_repo_commit(
     expect_equal(response.status_code, HTTPStatus.OK)
     payload = response.json()
 
-    # Should use custom values
     expect_equal(payload["repo"], "custom/repo")
     expect_equal(payload["commit"], "custom123")
 
@@ -240,7 +231,6 @@ def test_debug_prereqs_returns_boolean_satisfaction_flags(
     expect_equal(response.status_code, HTTPStatus.OK)
     payload = response.json()
 
-    # Satisfaction flags should be booleans
     expect_is_instance(payload["data_satisfied"], bool)
     expect_is_instance(payload["run_satisfied"], bool)
     expect_is_instance(payload["overall_satisfied"], bool)
@@ -297,7 +287,6 @@ def test_debug_prereqs_works_for_various_operations(
             params={"op_id": op_id},
         )
 
-    # Should return 200 for known operations
     expect_equal(response.status_code, HTTPStatus.OK)
     payload = response.json()
     expect_equal(payload["op_id"], op_id)

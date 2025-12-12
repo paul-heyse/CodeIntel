@@ -146,18 +146,15 @@ class StructuredLogFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        # Add extra fields from record
         for key in ("operation_id", "duration_ms", "success", "error_type", "params"):
             if hasattr(record, key):
                 log_data[key] = getattr(record, key)
 
-        # Add trace context
         if self._include_trace:
             trace_ctx = self._trace_adapter.get_trace_context()
             if trace_ctx:
                 log_data.update(trace_ctx)
 
-        # Add exception info
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
 

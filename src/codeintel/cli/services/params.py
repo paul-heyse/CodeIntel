@@ -452,11 +452,9 @@ class ParamService:
         OutputFormat
             Resolved output format.
         """
-        # JSON flag takes precedence
         if self.get_bool(json_key):
             return OutputFormat.JSON
 
-        # Check explicit format
         fmt = self.get_enum(format_key, OutputFormat)
         if fmt is not None:
             return fmt

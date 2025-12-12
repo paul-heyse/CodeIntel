@@ -8,8 +8,10 @@ from __future__ import annotations
 import pytest
 
 from codeintel.build.hamilton.planner import (
+    HamiltonBuildPlan,
     PlanEntry,
     StalenessExplanation,
+    explain_plan,
 )
 
 
@@ -79,6 +81,8 @@ class TestPlanEntryDepHashes:
 class TestStalenessExplanation:
     """Tests for StalenessExplanation dataclass."""
 
+    EXPECTED_CHANGED_DEPS = 2
+
     @staticmethod
     def test_staleness_explanation_structure() -> None:
         """Verify StalenessExplanation has required fields."""
@@ -114,8 +118,11 @@ class TestStalenessExplanation:
             dep_hashes={"upstream1": "v2", "upstream2": "v2"},
             prior_dep_hashes={"upstream1": "v1", "upstream2": "v1"},
         )
-        if len(explanation.changed_deps) != 2:
-            pytest.fail(f"Expected 2 changed deps, got {len(explanation.changed_deps)}")
+        if len(explanation.changed_deps) != TestStalenessExplanation.EXPECTED_CHANGED_DEPS:
+            pytest.fail(
+                f"Expected {TestStalenessExplanation.EXPECTED_CHANGED_DEPS} changed deps, "
+                f"got {len(explanation.changed_deps)}",
+            )
         if "upstream1" not in explanation.changed_deps:
             pytest.fail("upstream1 should be in changed_deps")
 
@@ -220,16 +227,12 @@ class TestExplainPlan:
     @staticmethod
     def test_explain_plan_exists() -> None:
         """Verify explain_plan function is importable."""
-        from codeintel.build.hamilton.planner import explain_plan
-
         if not callable(explain_plan):
             pytest.fail("explain_plan should be callable")
 
     @staticmethod
     def test_explain_plan_returns_explanations() -> None:
         """Verify explain_plan returns explanations for targets."""
-        from codeintel.build.hamilton.planner import HamiltonBuildPlan, explain_plan
-
         entry = PlanEntry(
             target="a",
             node="t__a",

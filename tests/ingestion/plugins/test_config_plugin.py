@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.context import TargetExecutionContext
 
-# Minimum rows expected from flattening yaml + toml + ini config values
+
 MIN_CONFIG_ROWS_EXPECTED = 5
 
 

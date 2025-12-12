@@ -13,7 +13,6 @@ Examples
 >>> def my_handler(ctx):
 ...     if not ctx.param_str("name"):
 ...         return fail_validation("name", "Parameter is required")
-...     # ... rest of handler
 """
 
 from __future__ import annotations
@@ -34,11 +33,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 type ErrorResult = CliResult[Any]
-
-
-# -----------------------------------------------------------------------------
-# Validation Error Factories
-# -----------------------------------------------------------------------------
 
 
 def fail_validation(
@@ -131,11 +125,6 @@ def fail_invalid_value(
     )
 
 
-# -----------------------------------------------------------------------------
-# Not Found Factories
-# -----------------------------------------------------------------------------
-
-
 def fail_not_found(
     resource_type: str,
     identifier: str,
@@ -161,11 +150,6 @@ def fail_not_found(
     return CliResult.fail(
         ProblemBuilder.not_found(resource_type, identifier, suggestion=suggestion)
     )
-
-
-# -----------------------------------------------------------------------------
-# Storage Error Factories
-# -----------------------------------------------------------------------------
 
 
 def fail_storage(
@@ -217,11 +201,6 @@ def fail_storage_connection(db_path: str | Path, cause: str) -> ErrorResult:
     )
 
 
-# -----------------------------------------------------------------------------
-# Internal Error Factories
-# -----------------------------------------------------------------------------
-
-
 def fail_internal(
     message: str,
     *,
@@ -245,11 +224,6 @@ def fail_internal(
         Failed result with internal error.
     """
     return CliResult.fail(ProblemBuilder.internal(message, cause=cause, operation_id=operation_id))
-
-
-# -----------------------------------------------------------------------------
-# Operation Error Factories
-# -----------------------------------------------------------------------------
 
 
 def fail_operation(
@@ -278,11 +252,6 @@ def fail_operation(
         Failed result with operation error.
     """
     return CliResult.fail(ProblemBuilder.operation(code, operation_id, detail, cause=cause))
-
-
-# -----------------------------------------------------------------------------
-# Job Error Factories
-# -----------------------------------------------------------------------------
 
 
 def fail_job_not_found(job_id: str) -> ErrorResult:
@@ -325,11 +294,6 @@ def fail_job_not_completed(job_id: str, current_status: str) -> ErrorResult:
             f"Job {job_id} is not completed (status: {current_status})",
         )
     )
-
-
-# -----------------------------------------------------------------------------
-# Domain-Specific Error Factories
-# -----------------------------------------------------------------------------
 
 
 def fail_domain(
@@ -449,9 +413,8 @@ def fail_with_problem(
     CliResult
         Failed result with the specified error.
     """
-    # Parse URN format: urn:codeintel:domain:code
     parts = error_type.split(":")
-    # Domain is third part (index 2), code is last part
+
     domain_index = 2
     domain = parts[domain_index] if len(parts) > domain_index else "cli"
     code = parts[-1] if parts else error_type
@@ -563,11 +526,6 @@ def fail_invalid_param_format(param: str, expected: str, got: str | None = None)
     )
 
 
-# -----------------------------------------------------------------------------
-# Project/Resolution Error Factories
-# -----------------------------------------------------------------------------
-
-
 def fail_project_error(domain: str, message: str) -> ErrorResult:
     """Create failed result for project resolution errors.
 
@@ -628,11 +586,6 @@ def fail_execution_failed(domain: str, message: str, *, status: int = 500) -> Er
         Failed result with execution error.
     """
     return fail_domain(domain, "execution-failed", "Execution Failed", message, status=status)
-
-
-# -----------------------------------------------------------------------------
-# Build Domain Error Factories
-# -----------------------------------------------------------------------------
 
 
 def fail_invalid_module(module: str, valid_modules: tuple[str, ...]) -> ErrorResult:
@@ -704,11 +657,6 @@ def fail_build_run_not_found(message: str) -> ErrorResult:
         Failed result with run not found error.
     """
     return fail_domain("build", "run-not-found", "Run Not Found", message, status=404)
-
-
-# -----------------------------------------------------------------------------
-# Plugin Domain Error Factories
-# -----------------------------------------------------------------------------
 
 
 def fail_plugin_not_found(name: str) -> ErrorResult:
@@ -788,11 +736,6 @@ def fail_invalid_plugin_manifest(message: str) -> ErrorResult:
     )
 
 
-# -----------------------------------------------------------------------------
-# Graph Domain Error Factories
-# -----------------------------------------------------------------------------
-
-
 def fail_invalid_policy(policy_type: str, value: str) -> ErrorResult:
     """Create failed result for invalid policy value.
 
@@ -814,11 +757,6 @@ def fail_invalid_policy(policy_type: str, value: str) -> ErrorResult:
         f"Invalid {policy_type.title()} Policy",
         f"Unknown {policy_type} policy: {value}",
     )
-
-
-# -----------------------------------------------------------------------------
-# Operation/Serving Error Factories
-# -----------------------------------------------------------------------------
 
 
 def fail_unknown_operation(op_id: str) -> ErrorResult:
@@ -860,11 +798,6 @@ def fail_invalid_param(param_str: str) -> ErrorResult:
     )
 
 
-# -----------------------------------------------------------------------------
-# Storage Domain Error Factories
-# -----------------------------------------------------------------------------
-
-
 def fail_no_tables(message: str) -> ErrorResult:
     """Create failed result for no tables specified.
 
@@ -900,11 +833,6 @@ def fail_missing_output_path(param: str) -> ErrorResult:
         f"Missing {param.replace('_', ' ').title()}",
         f"{param} parameter is required.",
     )
-
-
-# -----------------------------------------------------------------------------
-# Subsystem/IDE Domain Error Factories
-# -----------------------------------------------------------------------------
 
 
 def fail_subsystem_not_found(subsystem_id: str) -> ErrorResult:
@@ -951,11 +879,6 @@ def fail_ide_hints_not_found(rel_path: str) -> ErrorResult:
         status=404,
         instance=f"file://{rel_path}",
     )
-
-
-# -----------------------------------------------------------------------------
-# History Domain Error Factories
-# -----------------------------------------------------------------------------
 
 
 def fail_history_error(title: str, detail: str, *, status: int = 1) -> ErrorResult:

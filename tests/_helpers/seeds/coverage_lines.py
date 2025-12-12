@@ -26,21 +26,12 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-# =============================================================================
-# Coverage Lines Constants
-# =============================================================================
-
 FUNCTION_SPANS = {
     GOID_FUNC_A: (MOD_A_PATH, 1, 3),
     GOID_FUNC_B: (MOD_B_PATH, 1, 6),
     GOID_FUNC_C: (MOD_C_PATH, 1, 2),
     GOID_HELPER: (MOD_UTIL_PATH, 1, 2),
 }
-
-
-# =============================================================================
-# Coverage Lines Pack Implementation
-# =============================================================================
 
 
 @dataclass
@@ -147,7 +138,6 @@ class CoverageLinesPack:
         return rows
 
 
-# Default instance for common usage
 COVERAGE_LINES_PACK = CoverageLinesPack()
 
 

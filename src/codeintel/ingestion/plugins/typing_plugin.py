@@ -149,12 +149,10 @@ class TypingIngestPlugin(TargetPlugin):
     )
     _core_metadata: ClassVar[CorePluginMetadata] = TYPING_INGEST_METADATA
 
-    # Class-level defaults for adapter and step factories
     default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
     default_discovery_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
     default_step_factory: ClassVar[StepFactory] = TypingIngestStep
 
-    # Instance attributes (set in __init__)
     _storage_factory: StorageFactory
     _discovery_factory: DiscoveryFactory
     _type_checker_factory: TypeCheckerFactory
@@ -203,17 +201,14 @@ class TypingIngestPlugin(TargetPlugin):
         ValueError
             If no storage gateway is available.
         """
-        # Check if type checker is available (soft dependency)
         type_checker = self._type_checker_factory(ctx.resources.type_checker)
         if type_checker is None:
             log.info("Type checker not available, skipping typing analysis")
             return TargetResult.succeeded(row_counts={})
 
-        # Get module paths and convert to ModuleRecord
         paths = _get_module_paths(ctx)
         modules = _paths_to_modules(paths, ctx.repo_root)
 
-        # Create adapters using build protocols
         gateway = ctx.resources.gateway
         if gateway is None:
             message = "Storage gateway is required for typing ingest"
@@ -222,7 +217,6 @@ class TypingIngestPlugin(TargetPlugin):
         discovery = self._discovery_factory(ctx.repo_root)
         tools = BuildToolAdapter(type_checker=type_checker)
 
-        # Execute step
         step = self._step_factory(storage, discovery, tools)
         result = await step.execute_async(
             modules,

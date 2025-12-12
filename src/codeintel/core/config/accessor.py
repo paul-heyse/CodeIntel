@@ -32,7 +32,6 @@ class ConfigAccessor(Protocol):
     >>> def process_with_config(accessor: ConfigAccessor) -> None:
     ...     if accessor.has(MyConfig):
     ...         config = accessor.get(MyConfig)
-    ...         # use config
     """
 
     def get[T](self, config_type: type[T]) -> T:

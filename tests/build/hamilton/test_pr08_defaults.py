@@ -32,10 +32,10 @@ class TestHamiltonDefaultMode:
         """Verify list_available_nodes defaults to generated mode."""
         clear_generated_module_cache()
         nodes = list_available_nodes()
-        # Generated mode should include more nodes than just phase0 nodes
+
         if len(nodes) == 0:
             pytest.fail("No nodes returned from list_available_nodes")
-        # Should have target nodes
+
         target_nodes = [n for n in nodes if n.startswith("t__")]
         if len(target_nodes) == 0:
             pytest.fail("No target nodes found in generated mode")
@@ -43,10 +43,9 @@ class TestHamiltonDefaultMode:
     @staticmethod
     def test_executor_defaults_to_generated_mode() -> None:
         """Verify HamiltonBuildExecutor defaults to generated mode."""
-        # Check the default value in the class signature
         executor = HamiltonBuildExecutor(profile="default")
-        if executor._mode != "generated":
-            pytest.fail(f"Expected executor mode='generated', got '{executor._mode}'")
+        if executor.mode != "generated":
+            pytest.fail(f"Expected executor mode='generated', got '{executor.mode}'")
 
     @staticmethod
     def test_hamilton_mode_phase0_still_works() -> None:
@@ -54,7 +53,7 @@ class TestHamiltonDefaultMode:
         runtime = build_driver(mode="phase0")
         if runtime.mode != "phase0":
             pytest.fail(f"Expected mode='phase0', got '{runtime.mode}'")
-        # Phase0 should have the explicit nodes
+
         nodes = list_available_nodes(mode="phase0")
         if "t__modules" not in nodes:
             pytest.fail("Phase0 mode missing t__modules node")
@@ -64,10 +63,10 @@ class TestHamiltonDefaultMode:
         """Verify generated mode includes nodes for all registered targets."""
         clear_generated_module_cache()
         runtime = build_driver(mode="generated")
-        # Should have mappings for all targets
+
         if not runtime.target_to_node:
             pytest.fail("Generated mode should have target_to_node mapping")
-        # Verify key targets are mapped
+
         expected_targets = ["modules", "scip", "ast", "goids", "function_metrics"]
         for target in expected_targets:
             if target not in runtime.target_to_node:
@@ -83,8 +82,8 @@ class TestHamiltonModeConsistency:
         clear_generated_module_cache()
         runtime = build_driver()
         executor = HamiltonBuildExecutor(profile="default")
-        if runtime.mode != executor._mode:
-            pytest.fail(f"Mode mismatch: driver={runtime.mode}, executor={executor._mode}")
+        if runtime.mode != executor.mode:
+            pytest.fail(f"Mode mismatch: driver={runtime.mode}, executor={executor.mode}")
 
     @staticmethod
     def test_explicit_mode_propagates() -> None:
@@ -93,5 +92,5 @@ class TestHamiltonModeConsistency:
         executor = HamiltonBuildExecutor(profile="default", mode="phase0")
         if runtime.mode != "phase0":
             pytest.fail(f"Driver mode should be phase0, got {runtime.mode}")
-        if executor._mode != "phase0":
-            pytest.fail(f"Executor mode should be phase0, got {executor._mode}")
+        if executor.mode != "phase0":
+            pytest.fail(f"Executor mode should be phase0, got {executor.mode}")

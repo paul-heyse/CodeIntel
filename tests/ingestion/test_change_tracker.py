@@ -345,25 +345,20 @@ def test_compute_changes_tracks_add_modify_delete(ingestion_ctx_bundle: SimpleNa
             modules=modules,
         )
 
-    # First pass: file is new → should report as added
     first = _compute_changes(gateway, make_request([make_record()]))
     if len(first.added) != 1 or first.modified or first.deleted:
         pytest.fail(f"Expected first pass to report one addition only, got {first}")
 
-    # Second pass with same file → no changes
     unchanged = _compute_changes(gateway, make_request([make_record()]))
     if unchanged.added or unchanged.modified or unchanged.deleted:
         pytest.fail(f"Expected no changes on second pass, got {unchanged}")
 
-    # Third pass: modify file content → should detect modification
     file_path.write_text("x = 2\n", encoding="utf8")
     modified = _compute_changes(gateway, make_request([make_record()]))
     if modified.added or len(modified.modified) != 1 or modified.deleted:
         pytest.fail(f"Expected single modification only, got {modified}")
 
-    # Fourth pass: delete file and pass EMPTY module list
-    # (simulating that the scanner no longer finds the file)
     file_path.unlink()
-    deleted = _compute_changes(gateway, make_request([]))  # Empty list = file not found
+    deleted = _compute_changes(gateway, make_request([]))
     if deleted.added or deleted.modified or len(deleted.deleted) != 1:
         pytest.fail(f"Expected single deletion only, got {deleted}")

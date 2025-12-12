@@ -141,7 +141,7 @@ def test_parse_module_syntax_error() -> None:
     """Parse invalid source returns error result."""
     source = """
 def broken(
-    # Missing closing paren
+
 def other():
     pass
 """
@@ -164,7 +164,6 @@ from pathlib import Path
         message=f"Expected at least {EXPECTED_IMPORT_COUNT} imports, got {len(imports)}",
     )
 
-    # Check os import
     os_import = next((i for i in imports if i[0] == "os"), None)
     expect_is_not_none(os_import, message="Expected 'os' import")
 
@@ -196,7 +195,6 @@ from collections.abc import Mapping, Sequence
         message=f"Expected at least {EXPECTED_IMPORT_COUNT} imports, got {len(imports)}",
     )
 
-    # Check os.path import
     path_import = next((i for i in imports if i[0] == "os.path"), None)
     expect_is_not_none(path_import, message="Expected 'os.path' import")
     if path_import is not None:
@@ -242,8 +240,7 @@ def target():
 def last():
     pass
 '''
-    # Parse the middle function - verifies the method runs without error
-    # Note: LibCST doesn't expose line numbers directly so we can't assert on result
+
     _ = adapter.parse_function(source, start_line=4, end_line=8)
 
 
@@ -262,7 +259,7 @@ def func_with_params(a, b, c=None, *args, **kwargs):
     expect_equal(len(result.module.functions), 1)
 
     func = result.module.functions[0]
-    # Parameters should include at least a, b, c
+
     expect_true(
         len(func.parameters) >= EXPECTED_PARAM_COUNT,
         message=f"Expected at least {EXPECTED_PARAM_COUNT} parameters, got {func.parameters}",
@@ -296,7 +293,6 @@ def caller():
 
 def test_extract_call_sites_no_ast_module() -> None:
     """Extract call sites when AST module is None."""
-    # Create a ParsedModule with no AST
     parsed = ParsedModule(
         source="",
         functions=(),
@@ -372,7 +368,7 @@ from collections.abc import Mapping
         return
 
     imports = result.module.imports
-    # Should have collected at least the dotted module names
+
     module_names = [i[0] for i in imports]
     expect_in("collections.abc", module_names)
 

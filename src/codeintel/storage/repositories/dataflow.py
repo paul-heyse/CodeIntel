@@ -48,7 +48,6 @@ class DataflowRepository(BaseRepository):
         tbl = self._ibis_table("metadata.dataset_dataflow_edges")
         expr = tbl.select("src", "dst", "edge_type")
 
-        # Apply optional filters
         if src is not None:
             expr = expr.filter(ibis_bool(tbl.src == src))
         if dst is not None:

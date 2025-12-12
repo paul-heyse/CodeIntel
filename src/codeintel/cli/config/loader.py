@@ -45,7 +45,7 @@ DEFAULT_CONFIG_PATHS = [
     Path(".codeintel.json"),
 ]
 
-# Valid enum values
+
 VALID_OUTPUT_FORMATS = {"text", "json"}
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
@@ -83,28 +83,23 @@ def load_config(
     sources: list[str] = ["defaults"]
     merged: dict[str, object] = {}
 
-    # 1. Config file
     file_config, file_source = _load_config_file(config_file)
     if file_config:
         merged = _deep_merge(merged, file_config)
         sources.append(file_source)
 
-    # 2. Environment variables
     env_config = load_env_config(env_prefix)
     if env_config:
         merged = _deep_merge(merged, env_config)
         sources.append("environment")
 
-    # 3. CLI overrides
     if cli_overrides:
         flat_overrides = {k: v for k, v in cli_overrides.items() if v is not None}
         merged = _deep_merge(merged, flat_overrides)
         sources.append("cli-flags")
 
-    # Build config from merged dict
     config = dict_to_config(merged, sources=tuple(sources))
 
-    # 4. Validate if requested
     if validate:
         errors = validate_config(config)
         if errors:
@@ -577,12 +572,10 @@ def apply_overrides(config: CliConfig, overrides: dict[str, object]) -> CliConfi
     CliConfig
         New configuration with overrides applied.
     """
-    # Convert to dict, apply overrides, convert back
     data = config_to_dict(config)
 
     for key, value in overrides.items():
         if "." in key:
-            # Handle nested keys like "progress.enabled"
             parts = key.split(".")
             target: dict[str, object] = data
             for part in parts[:-1]:

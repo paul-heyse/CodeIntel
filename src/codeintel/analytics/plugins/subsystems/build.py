@@ -84,9 +84,8 @@ class SubsystemsPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Build config from context
         cfg = SubsystemsStepConfig(
             snapshot=ctx.snapshot,
         )

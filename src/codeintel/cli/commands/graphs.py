@@ -83,11 +83,6 @@ def _resolve_requested_plan_plugins(
     return enabled_by_default_names or None
 
 
-# =============================================================================
-# Result Types
-# =============================================================================
-
-
 @result_type
 @dataclass(frozen=True)
 class GraphPluginInfo:
@@ -171,11 +166,6 @@ class GraphPlanResult:
     disabled: list[str]
 
 
-# =============================================================================
-# Commands
-# =============================================================================
-
-
 @cli_command("graph.plugins.list", require_storage=False)
 @graphs_app.command(name="plugins-list")
 @dataclass(frozen=True)
@@ -214,7 +204,7 @@ class GraphPluginsList(Command[GraphPluginsResult]):
         CliResult[GraphPluginsResult]
             List of plugins.
         """
-        _ = ctx  # Not needed for plugin listing
+        _ = ctx
         names = tuple(self.names) if self.names else None
 
         LOG.info("Listing graph plugins (names=%s)", names)
@@ -307,12 +297,11 @@ class GraphPluginsPlan(Command[GraphPlanResult]):
         CliResult[GraphPlanResult]
             Execution plan.
         """
-        _ = ctx  # Not needed for planning
+        _ = ctx
         names = list(self.names) if self.names else None
         enable = list(self.enable) if self.enable else None
         disable = list(self.disable) if self.disable else None
 
-        # Validate policies (they're already typed, but we may need to handle strings)
         selection_policy = self.selection_policy
         dependency_policy = self.dependency_policy
 
@@ -342,15 +331,12 @@ class GraphPluginsPlan(Command[GraphPlanResult]):
             selection_policy=selection_policy,
         )
 
-        # Call with the correct API signature
         plan = plan_graph_plugins(
             plugin_names=requested_plugins,
             disabled=disable,
             plan_options=options,
         )
 
-        # Convert plan to result format - GraphPluginPlan has `plugins` not `stages`
-        # Simplified: treat all plugins as one stage
         plugin_names_list = [p.metadata.name for p in plan.plugins]
         stages = [
             GraphPlanStage(

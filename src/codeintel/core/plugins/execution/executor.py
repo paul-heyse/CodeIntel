@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Type variables for generic executor
+
 P = TypeVar("P", bound="PluginProtocol")
 C = TypeVar("C", bound="PluginExecutionContext")
 EC = TypeVar("EC", bound="BaseExecutorContext")
@@ -116,7 +116,6 @@ class DefaultPluginExecutionStrategy[P, C, EC]:
         str | None
             Skip reason when skipping, otherwise None.
         """
-        # Provide an explicit self reference to allow future strategy-specific branching
         if self._strategy is ExecutionStrategy.STANDARD and ctx.policy.dry_run:
             return "dry_run"
         return None
@@ -401,9 +400,8 @@ class BasePluginExecutor[
         str | None
             Error message when invalid, otherwise None.
         """
-        # Base uses self._policy (even though trivially) to ensure it's an instance method
-        _ = self._policy  # Instance method validation hook
-        # Check if plugin has validate_inputs method
+        _ = self._policy
+
         validate_method = getattr(plugin, "validate_inputs", None)
         if validate_method is not None and callable(validate_method):
             validation = cast("ValidationResult", validate_method(ctx))
@@ -492,7 +490,6 @@ class BasePluginExecutor[
         shared_scratch = scratch or PluginScratch()
         fatal_error = False
 
-        # Reset manifest for this run
         self._manifest = {}
 
         log.info(
@@ -511,14 +508,12 @@ class BasePluginExecutor[
                     prior_manifest=self._prior_manifest,
                 )
 
-                # Check for skip condition
                 skip_reason = self._should_skip_plugin(strategy_ctx)
                 if skip_reason is not None:
                     record = self._create_skip_record(strategy_ctx, skip_reason)
                     records.append(record)
                     continue
 
-                # Build plugin-specific context
                 record = self._execute_single_plugin(
                     plugin,
                     self._build_plugin_context(executor_ctx, plugin, shared_scratch),
@@ -541,7 +536,6 @@ class BasePluginExecutor[
 
         run_timing = self._compute_timing(start_time)
 
-        # Record run-level telemetry
         self._telemetry.record_run_metrics(
             run_id=effective_run_id,
             success_count=sum(1 for r in records if r.status == "succeeded"),
@@ -612,7 +606,6 @@ class BasePluginExecutor[
         started_at = utc_now()
         start_time = time.perf_counter()
 
-        # Start telemetry span
         span = self._telemetry.start_span(
             plugin.metadata.name,
             run_id,
@@ -625,7 +618,6 @@ class BasePluginExecutor[
             plugin.metadata.stage,
         )
 
-        # Validate inputs
         validation_error = self._validate_plugin_inputs(plugin, ctx)
         if validation_error is not None:
             timing = self._compute_timing(start_time)
@@ -640,7 +632,6 @@ class BasePluginExecutor[
                 meta=self._build_record_meta(strategy_ctx),
             )
 
-        # Execute with retry
         result, attempts, error = self._execute_with_retries(
             plugin,
             ctx,
@@ -706,9 +697,6 @@ class BasePluginExecutor[
         tuple[PluginResult | None, int, str | None]
             Result, attempt count, and error message.
         """
-        # Determine retry policy:
-        # 1. Use settings retry_policy if provided
-        # 2. Otherwise use per-plugin override from policy
         if settings is not None:
             retry_policy = settings.retry_policy
         else:
@@ -720,14 +708,13 @@ class BasePluginExecutor[
         result: PluginResult | None = None
 
         try:
-            # Use tenacity-based retry from core.runtime.retry
             for attempt in retry_policy.create_retrying():
                 with attempt:
                     attempts += 1
                     result = plugin.execute(ctx)
                     if result.success:
                         return result, attempts, None
-                    # Plugin returned failure without exception
+
                     error = result.error
                     return result, attempts, error
         except PLUGIN_CATCHABLE_ERRORS as exc:

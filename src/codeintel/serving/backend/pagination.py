@@ -22,10 +22,6 @@ if TYPE_CHECKING:
 Message = dm.Message
 ResponseMeta = dm.ResponseMeta
 
-# =============================================================================
-# Backend Configuration
-# =============================================================================
-
 
 @dataclass(frozen=True)
 class BackendLimits:
@@ -61,11 +57,6 @@ class BackendLimits:
         default = getattr(cfg, "default_limit", cls.default_limit)
         maximum = getattr(cfg, "max_rows_per_call", cls.max_rows_per_call)
         return cls(default_limit=int(default), max_rows_per_call=int(maximum))
-
-
-# =============================================================================
-# Pagination Types
-# =============================================================================
 
 
 @dataclass(frozen=True)

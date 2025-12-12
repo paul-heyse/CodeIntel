@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
     from codeintel.core.execution.context import RunKind, TriggerKind
 
-# Constants for test assertions
+
 UNIQUENESS_SAMPLE_SIZE = 100
 RUN_ID_HEX_SUFFIX_LENGTH = 32
 
@@ -77,7 +77,7 @@ class TestNewRunId:
         run_id = new_run_id(prefix="test")
         suffix = run_id.split("-", 1)[1]
         expect_equal(len(suffix), RUN_ID_HEX_SUFFIX_LENGTH)
-        # Should be valid hex
+
         int(suffix, 16)
 
 
@@ -215,7 +215,7 @@ class TestNewRunContext:
             trigger="api",
             requested_datasets=datasets,
         )
-        # Should be converted to tuple
+
         expect_equal(ctx.requested_datasets, tuple(datasets))
 
 
@@ -227,7 +227,7 @@ class TestRunKindValues:
         """Verify all expected run kinds are available."""
         expected: set[RunKind] = {"ingest", "graphs", "analytics", "full", "op_prereqs"}
         valid_kinds = {"ingest", "graphs", "analytics", "full", "op_prereqs"}
-        # Create a context with each kind to verify they're valid
+
         for kind in expected:
             expect_in(kind, valid_kinds)
 

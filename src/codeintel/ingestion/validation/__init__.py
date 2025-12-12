@@ -20,13 +20,13 @@ from codeintel.ingestion.validation import (
     run_ingest_validations,
 )
 
-# Create contracts
+
 contracts = [
     row_count_contract("core.modules", min_rows=1),
     row_count_contract("core.ast_nodes", min_rows=10),
 ]
 
-# Run validation
+
 result = run_ingest_validations(gateway, contracts, snapshot=snapshot)
 if not result.valid:
     for violation in result.violations:

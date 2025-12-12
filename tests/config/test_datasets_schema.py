@@ -21,11 +21,6 @@ def _require(*, condition: bool, message: str) -> None:
         pytest.fail(message)
 
 
-# ------------------------------------------------------------------
-# DatasetMetadata tests
-# ------------------------------------------------------------------
-
-
 def test_metadata_default_values() -> None:
     """Create metadata with default values."""
     metadata = DatasetMetadata()
@@ -83,11 +78,6 @@ def test_metadata_immutable() -> None:
 
     with pytest.raises(AttributeError):
         metadata_any.description = "Changed"
-
-
-# ------------------------------------------------------------------
-# DatasetSchema tests
-# ------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -188,7 +178,6 @@ def test_schema_validate_invalid_dataframe(simple_pandera_schema: DataFrameSchem
     df = pd.DataFrame(
         {
             "repo": ["test-repo"],
-            # Missing required column "commit"
         }
     )
 
@@ -227,7 +216,6 @@ def test_schema_get_row_model_generates_typeddict(simple_pandera_schema: DataFra
 
     row_model = ds.get_row_model()
 
-    # Verify it's a TypedDict-like class
     _require(condition=hasattr(row_model, "__annotations__"), message="missing __annotations__")
     annotations = row_model.__annotations__
     _require(condition="repo" in annotations, message="repo missing in annotations")

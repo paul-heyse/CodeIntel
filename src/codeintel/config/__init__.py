@@ -32,8 +32,6 @@ Use `ConfigBuilder.from_snapshot()` to create step configurations.
 """
 
 from codeintel.config.builder import BuilderDependencies, ConfigBuilder
-
-# Re-export CLI boundary models for convenience
 from codeintel.config.models import (
     CliPathsInput,
     CodeIntelConfig,
@@ -50,10 +48,6 @@ from codeintel.config.primitives import (
     SnapshotRef,
     ToolBinaries,
 )
-
-# NOTE: resolver functions are NOT imported here to avoid circular imports.
-# Import them directly: from codeintel.config.resolver import resolve_tools_config
-# The resolver module has heavy dependencies on ingestion which creates cycles.
 from codeintel.config.steps_analytics import (
     BehavioralCoverageStepConfig,
     CoverageAnalyticsStepConfig,
@@ -130,5 +124,4 @@ __all__ = [
     "TestProfileStepConfig",
     "ToolBinaries",
     "ToolsConfig",
-    # NOTE: resolve_* functions moved to config.resolver to break circular imports
 ]

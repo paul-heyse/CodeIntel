@@ -51,7 +51,7 @@ class TestBasePluginExecutionRecord:
     def test_computed_duration_ms() -> None:
         """Test computed_duration_ms returns duration in milliseconds."""
         started = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
-        ended = datetime(2024, 1, 1, 12, 0, 2, 500000, tzinfo=UTC)  # 2.5 seconds
+        ended = datetime(2024, 1, 1, 12, 0, 2, 500000, tzinfo=UTC)
 
         record = BasePluginExecutionRecord(
             plugin_name="test.plugin",
@@ -149,7 +149,6 @@ class TestPluginExecutionRecordWithResult:
             result=result,
         )
 
-        # Canonical pattern for accessing row_counts
         row_counts = (
             dict(record.result.row_counts) if record.result and record.result.row_counts else None
         )

@@ -9,7 +9,7 @@ Examples
 >>> from pandera import DataFrameSchema, Column
 >>> schema = DataFrameSchema({"repo": Column(str), "loc": Column(int, nullable=True)})
 >>> RowModel = typed_dict_from_pandera("ExampleRow", schema)
->>> # RowModel is a TypedDict with repo: str, loc: int | None
+>>>
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ __all__ = [
     "typed_dict_from_pandera",
 ]
 
-# Pre-built dtype mapping at module load time
+
 _PANDAS_TYPE_MAP: dict[type[object], type[Any]] = {
     pd.Int64Dtype: int,
     pd.Float64Dtype: float,
@@ -114,7 +114,7 @@ def typed_dict_from_pandera(
     ...     }
     ... )
     >>> RowModel = typed_dict_from_pandera("MyRow", schema)
-    >>> # RowModel has annotations: {"repo": str, "loc": int | None}
+    >>>
     """
     annotations: dict[str, Any] = {}
 
@@ -122,13 +122,10 @@ def typed_dict_from_pandera(
         py_type = _pandera_dtype_to_python(column.dtype)
 
         if nullable_as_optional and column.nullable:
-            # Use union with None for nullable columns
             annotations[col_name] = py_type | None
         else:
             annotations[col_name] = py_type
 
-    # Create TypedDict using class creation
-    # We use __annotations__ assignment which is how TypedDict classes work internally
     td_class = type(name, (), {"__annotations__": annotations, "__total__": True})
     return cast("type[Any]", td_class)
 

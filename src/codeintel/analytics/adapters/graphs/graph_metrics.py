@@ -205,12 +205,10 @@ def load_symbol_module_edges(
     outbound: dict[str, set[str]] = defaultdict(set)
 
     if module_by_path is None:
-        # Join symbol_use_edges with modules tables to get module names
         su = gateway.ibis.table("graph.symbol_use_edges")
         m_def = gateway.ibis.table("core.modules").view()
         m_use = gateway.ibis.table("core.modules").view()
 
-        # Left join to get module names for def and use paths
         joined = (
             su.left_join(m_def, cast("Any", su.def_path == m_def.path))
             .left_join(m_use, cast("Any", su.use_path == m_use.path))
@@ -235,7 +233,6 @@ def load_symbol_module_edges(
             inbound[dst].add(src)
         return modules, inbound, outbound
 
-    # Use mapping from path to module
     su = gateway.ibis.table("graph.symbol_use_edges")
     expr = su.select("def_path", "use_path")
     df = cast("pd.DataFrame", expr.execute())

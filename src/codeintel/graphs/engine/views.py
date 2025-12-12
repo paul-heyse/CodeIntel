@@ -45,7 +45,7 @@ def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
 
     try:
         importlib.import_module("nx_cugraph")
-    except ImportError:  # pragma: no cover - environment dependent
+    except ImportError:
         log.debug("nx_cugraph not installed; leaving graph on CPU backend.")
         return graph
 
@@ -199,7 +199,6 @@ def load_call_graph(
         else:
             graph.add_edge(caller, callee, weight=1)
 
-    # Ensure isolated nodes are present
     node_rows = con.execute(
         """
         SELECT goid_h128, kind
@@ -443,8 +442,6 @@ def load_config_module_bipartite(
             else raw_modules
         )
         if allowed_modules and raw_modules and not filtered_modules:
-            # If filtering would drop everything, keep the raw modules so we do not
-            # silently erase config edges when names are slightly misaligned.
             filtered_modules = raw_modules
         kept_modules += len(filtered_modules)
         dropped_modules += len(raw_modules) - len(filtered_modules)
@@ -600,7 +597,7 @@ __all__ = [
     "parse_reference_modules",
 ]
 
-# Backwards compatibility aliases for previously private helpers
+
 _as_int = as_int
 _normalize_decimal = normalize_decimal
 _module_attrs_from_row = module_attrs_from_row

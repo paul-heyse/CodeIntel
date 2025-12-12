@@ -215,14 +215,12 @@ class TestFullRunLifecycle:
         sample_snapshot: SnapshotRef,
     ) -> None:
         """Verify a full run lifecycle across multiple modules."""
-        # Create a full pipeline run context
         ctx = new_run_context(
             snapshot=sample_snapshot,
             kind="full",
             trigger="cli",
         )
 
-        # Start the run via gateway
         gateway.runs.start_run(
             ctx,
             pipeline_name="full:default",
@@ -230,7 +228,6 @@ class TestFullRunLifecycle:
 
         now = datetime.now(tz=UTC)
 
-        # Record ingestion step
         gateway.runs.record_step(
             PipelineStepRecord(
                 run_id=ctx.run_id,
@@ -244,7 +241,6 @@ class TestFullRunLifecycle:
             ),
         )
 
-        # Record graphs step
         gateway.runs.record_step(
             PipelineStepRecord(
                 run_id=ctx.run_id,
@@ -258,7 +254,6 @@ class TestFullRunLifecycle:
             ),
         )
 
-        # Record analytics step
         gateway.runs.record_step(
             PipelineStepRecord(
                 run_id=ctx.run_id,
@@ -272,19 +267,16 @@ class TestFullRunLifecycle:
             ),
         )
 
-        # Complete the run
         gateway.runs.complete_run(
             ctx.run_id,
             status="succeeded",
         )
 
-        # Verify run record
         expect_run(
             gateway.runs.fetch_run(ctx.run_id),
             ExpectedRun(status="succeeded", kind="full"),
         )
 
-        # Verify steps
         steps = expect_steps(
             gateway.runs.fetch_steps(ctx.run_id),
             expected_count=3,
@@ -329,7 +321,6 @@ class TestFullRunLifecycle:
 
         now = datetime.now(tz=UTC)
 
-        # Record a failed step
         gateway.runs.record_step(
             PipelineStepRecord(
                 run_id=ctx.run_id,
@@ -343,14 +334,12 @@ class TestFullRunLifecycle:
             ),
         )
 
-        # Complete the run as failed
         gateway.runs.complete_run(
             ctx.run_id,
             status="failed",
             error_summary="function_metrics plugin failed",
         )
 
-        # Verify
         expect_run(
             gateway.runs.fetch_run(ctx.run_id),
             ExpectedRun(status="failed", error_summary="function_metrics plugin failed"),

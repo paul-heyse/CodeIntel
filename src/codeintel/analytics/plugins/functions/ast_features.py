@@ -82,14 +82,12 @@ class FunctionAstFeaturesPlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
-        # Get catalog for resources
         catalog = ctx.resources.catalog
         if catalog is None:
             return TargetResult.failed("CatalogProvider is required")
 
-        # Create FeaturesProvider and compute features
         try:
             provider = FeaturesProvider(
                 gateway=ctx.gateway,

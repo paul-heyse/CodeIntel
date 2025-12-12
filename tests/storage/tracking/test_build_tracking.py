@@ -96,7 +96,6 @@ class TestOutputManifestOperations:
         )
         tracking.save_manifest(manifest1)
 
-        # Update with new values
         manifest2 = OutputManifest(
             target="test_target",
             repo="test-org/test-repo",
@@ -132,7 +131,6 @@ class TestOutputManifestOperations:
         manifests = tracking.list_manifests("test-org/test-repo", "abc123")
         expect_length(manifests, MANIFEST_COUNT)
 
-        # Should be ordered by target name
         names = [m.target for m in manifests]
         expect_equal(names, sorted(names))
 
@@ -152,14 +150,11 @@ class TestOutputManifestOperations:
             )
             tracking.save_manifest(manifest)
 
-        # Verify manifests were created
         manifests_before = tracking.list_manifests("test-org/test-repo", "abc123")
         expect_true(len(manifests_before) > 0)
 
-        # Delete all manifests
         tracking.delete_manifests("test-org/test-repo", "abc123")
 
-        # Verify all manifests were deleted
         manifests_after = tracking.list_manifests("test-org/test-repo", "abc123")
         expect_length(manifests_after, 0)
 
@@ -274,7 +269,6 @@ class TestBuildRunOperations:
         runs = tracking.list_runs("test-org/test-repo")
         expect_length(runs, LIST_RUN_COUNT)
 
-        # Should be ordered by started_at descending (newest first)
         for i in range(len(runs) - 1):
             expect_true(runs[i].started_at >= runs[i + 1].started_at)
 

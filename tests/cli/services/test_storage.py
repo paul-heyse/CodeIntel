@@ -11,10 +11,6 @@ from codeintel.cli.services.runtime import RuntimeService
 from codeintel.cli.services.storage import StorageService
 from tests._helpers.assertions import expect_equal, expect_false, expect_true
 
-# ---------------------------------------------------------------------------
-# Creation
-# ---------------------------------------------------------------------------
-
 
 def test_from_path(tmp_path: Path) -> None:
     """Create from explicit path."""
@@ -29,11 +25,6 @@ def test_from_runtime() -> None:
     runtime.db_path = Path("test.duckdb")
     service = StorageService.from_runtime(runtime)
     expect_equal(service.db_path, Path("test.duckdb"))
-
-
-# ---------------------------------------------------------------------------
-# Lifecycle
-# ---------------------------------------------------------------------------
 
 
 def test_is_open_initially_false(tmp_path: Path) -> None:
@@ -69,11 +60,6 @@ def test_context_manager_closes(tmp_path: Path) -> None:
             expect_true(service.is_open)
         expect_false(service.is_open)
         mock_gateway.close.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# Gateway access
-# ---------------------------------------------------------------------------
 
 
 def test_gateway_opens_lazily(tmp_path: Path) -> None:
@@ -139,11 +125,6 @@ def test_write_gateway_opens_writable(tmp_path: Path) -> None:
         call_args = mock_open.call_args
         config = call_args[0][0]
         expect_false(config.read_only)
-
-
-# ---------------------------------------------------------------------------
-# Path resolution
-# ---------------------------------------------------------------------------
 
 
 def test_db_path_from_explicit(tmp_path: Path) -> None:

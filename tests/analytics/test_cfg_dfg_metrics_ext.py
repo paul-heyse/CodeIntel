@@ -20,11 +20,11 @@ from tests._helpers.builders import (
 if TYPE_CHECKING:
     from tests._helpers import TestContext
 
-# Test constants
+
 REL_PATH = "pkg/mod.py"
 GOID_TEST_FUNC = 1
 
-# Expected metrics values
+
 EXPECTED_CFG_EXT_METRICS = (1, 1, 0, 0, 1, 2, 1, 1)
 PHI_RATIO_MIN = 0.3
 PHI_RATIO_MAX = 0.4

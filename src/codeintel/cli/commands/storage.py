@@ -25,7 +25,7 @@ storage_app = App(
     help="Storage validation utilities.",
 )
 
-# Config for storage commands - requires runtime and gateway
+
 _STORAGE_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
 

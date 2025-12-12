@@ -99,7 +99,7 @@ class CfgDfgMetricsPlugin(TargetPlugin):
         TargetResult
             Execution result with row counts.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         repo = ctx.snapshot.repo
         commit = ctx.snapshot.commit
@@ -112,12 +112,10 @@ class CfgDfgMetricsPlugin(TargetPlugin):
             result_df = filtered.aggregate(row_count=table.repo.count()).execute()
             return int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
 
-        # Compute CFG metrics
         try:
             log.info("Computing CFG metrics for %s@%s", repo, commit)
             compute_cfg_metrics(ctx.gateway, repo=repo, commit=commit)
 
-            # Count rows written
             for table in (
                 "analytics.cfg_function_metrics",
                 "analytics.cfg_block_metrics",
@@ -127,12 +125,10 @@ class CfgDfgMetricsPlugin(TargetPlugin):
         except (RuntimeError, ValueError, OSError) as e:
             log.warning("CFG metrics computation failed: %s", e)
 
-        # Compute DFG metrics
         try:
             log.info("Computing DFG metrics for %s@%s", repo, commit)
             compute_dfg_metrics(ctx.gateway, repo=repo, commit=commit)
 
-            # Count rows written
             for table in (
                 "analytics.dfg_function_metrics",
                 "analytics.dfg_block_metrics",

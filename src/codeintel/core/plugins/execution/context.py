@@ -246,28 +246,20 @@ class PluginExecutionContext:
     snapshot: SnapshotRef
     run_id: str | None = None
 
-    # Resource registry for typed resource access
     resources: ResourceRegistry = field(default_factory=ResourceRegistry)
 
-    # Typed config accessor - uses ConfigAccessor protocol for flexibility
     configs: ConfigAccessor = field(default_factory=ConfigProvider)
 
-    # Scratch for inter-plugin communication
     scratch: PluginScratch = field(default_factory=PluginScratch)
 
-    # Build paths configuration (for graph plugins)
     paths: BuildPaths | None = None
 
-    # Plugin-specific options (validated by plugin)
     options: object | None = None
 
-    # Current plugin name (set by executor)
     plugin_name: str | None = None
 
-    # Additional metadata
     extra: MutableMapping[str, Any] = field(default_factory=dict)
 
-    # Unified run context for cross-engine correlation
     run_context: RunContext | None = None
 
     @property

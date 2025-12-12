@@ -76,7 +76,7 @@ class TestProfilePlugin(TargetPlugin):
         TargetResult
             Execution result.
         """
-        _ = self  # Protocol method requires instance
+        _ = self
 
         cfg = TestProfileStepConfig(
             snapshot=ctx.snapshot,
@@ -87,7 +87,6 @@ class TestProfilePlugin(TargetPlugin):
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Test profile build failed: {e}")
 
-        # Count rows written
         row = ctx.gateway.con.execute(
             """
             SELECT COUNT(*) FROM analytics.test_profile

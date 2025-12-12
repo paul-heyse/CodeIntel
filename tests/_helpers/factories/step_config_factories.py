@@ -93,9 +93,7 @@ def make_step_config[T](
     >>> config.snapshot.repo == "demo/repo"
     """
     snapshot = make_snapshot(repo_root, repo=repo, commit=commit)
-    # All step configs accept snapshot as their first/required parameter.
-    # Cast the config class constructor to a callable that takes just snapshot,
-    # since different step configs have varying optional parameters beyond snapshot.
+
     ctor = cast("Callable[..., T]", config_type)
     return ctor(snapshot=snapshot)
 

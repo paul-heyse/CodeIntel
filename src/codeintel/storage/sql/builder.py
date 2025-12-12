@@ -70,8 +70,7 @@ def prepared_statements_dynamic(
     insert_sql = build_insert_sql(table_key, registry_cols)
     table_sql = quote_table_key(table_key)
     select_sql = " ".join(("SELECT * FROM", table_sql, "WHERE repo = ? AND commit = ?"))
-    # select_params default to a typical repo/commit tuple to keep the shape consistent;
-    # callers should supply concrete values when executing.
+
     select_params: list[object] | None = None
     return PreparedStatements(
         insert_sql=insert_sql,
@@ -101,16 +100,12 @@ def ensure_schema(con: DuckDBPyConnection, table_key: str) -> None:
     RuntimeError
         If the table is missing or deviates from the registry.
     """
-    # Column verification is now done at build time via TABLE_SCHEMAS
-    # No need for runtime verification since all columns come from the same source
-
     contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
     schema = TABLE_SCHEMAS.get(table_key)
     if contract is not None and contract.schema is not None:
         registry_cols = [col.name for col in contract.schema.columns]
         is_view = contract.is_view
     elif schema is not None:
-        # TableSchema from TABLE_SCHEMAS without a contract - assume base table
         registry_cols = [col.name for col in schema.columns]
         is_view = False
     else:

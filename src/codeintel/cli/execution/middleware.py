@@ -191,7 +191,7 @@ class LoggingMiddleware(ExecutionMiddleware):
             type(error).__name__,
             error,
         )
-        return None  # Re-raise
+        return None
 
 
 @dataclass
@@ -221,7 +221,6 @@ class ExecutionPipeline:
         CliResult[T]
             Command result after middleware processing.
         """
-        # Before hooks
         for mw in self.middleware:
             mw.before(command, ctx)
 
@@ -230,7 +229,6 @@ class ExecutionPipeline:
         try:
             result = command.execute(ctx)
         except Exception as e:
-            # Error hooks
             for mw in reversed(self.middleware):
                 error_result = mw.on_error(command, ctx, e)
                 if error_result is not None:
@@ -239,7 +237,6 @@ class ExecutionPipeline:
         else:
             duration = time.perf_counter() - start_time
 
-            # After hooks (in reverse order)
             for mw in reversed(self.middleware):
                 result = mw.after(command, ctx, result, duration)
 

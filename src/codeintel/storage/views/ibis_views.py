@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
     from codeintel.storage.views.ibis_registry import IbisViewGateway
 
-# Re-export Any for use in cast() within view builders
-_ = Any  # Ensure Any is used to avoid F401
+
+_ = Any
 
 
 def _table(con: DuckDBBackend, qualified_name: str) -> it.Table:
@@ -70,7 +70,6 @@ def _create_view(con: DuckDBBackend, qualified_name: str, expr: it.Table) -> Non
 
 
 __all__ = [
-    # View builders
     "build_call_graph_enriched",
     "build_callgraph_degree",
     "build_docs_behavioral_classification_input",
@@ -108,7 +107,6 @@ __all__ = [
     "build_goid_crosswalk_join",
     "build_goid_crosswalk_mismatches",
     "build_import_graph_degree",
-    # Legacy creators (deprecated)
     "create_all_ibis_views",
     "create_call_graph_enriched_view",
     "create_callgraph_degree_view",
@@ -128,11 +126,6 @@ CALLGRAPH_LOC_SMALL = 50
 CALLGRAPH_LOC_MEDIUM = 200
 COMPLEXITY_LOW_MAX = 5
 COMPLEXITY_MEDIUM_MAX = 10
-
-
-# ---------------------------------------------------------------------------
-# View Builders (registered via decorator)
-# ---------------------------------------------------------------------------
 
 
 @register_view("analytics.v_function_summary")
@@ -647,7 +640,6 @@ def build_docs_file_summary(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    # Use raw SQL with inline subquery instead of CTE to avoid naming conflicts
     sql_expr = """
         SELECT
             m.repo,
@@ -785,7 +777,6 @@ def build_docs_subsystem_summary(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    # Use raw SQL with inline subquery for the complex aggregation
     sql_expr = """
         SELECT
             s.repo,
@@ -913,7 +904,6 @@ def build_docs_subsystem_coverage(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    # Use inline subquery instead of CTE to avoid name conflicts
     sql_expr = """
         SELECT
             s.repo,
@@ -1439,11 +1429,6 @@ def build_docs_dfg_block_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-# ---------------------------------------------------------------------------
-# Module Views
-# ---------------------------------------------------------------------------
-
-
 @register_view("docs.v_module_history_timeseries")
 def build_docs_module_history_timeseries(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_module_history_timeseries by filtering history.
@@ -1678,11 +1663,6 @@ def build_docs_external_dependency_calls(ibis_gw: IbisViewGateway) -> it.Table:
     return _table(con, "analytics.external_dependency_calls")
 
 
-# ---------------------------------------------------------------------------
-# Data Model Views
-# ---------------------------------------------------------------------------
-
-
 @register_view("docs.v_data_models")
 def build_docs_data_models(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_data_models with nested fields and relationships JSON.
@@ -1701,8 +1681,6 @@ def build_docs_data_models(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    # Use raw SQL for this complex view with correlated subqueries
-    # The struct_pack and list functions are DuckDB-specific
     sql_expr = """
         SELECT
             dm.repo,
@@ -1788,7 +1766,6 @@ def build_docs_data_models_normalized(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    # Use raw SQL for this complex view with correlated subqueries
     sql_expr = """
         SELECT
             dm.repo,
@@ -1983,11 +1960,6 @@ def build_docs_config_data_flow(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-# ---------------------------------------------------------------------------
-# Subsystem Views (additional)
-# ---------------------------------------------------------------------------
-
-
 @register_view("docs.v_module_with_subsystem")
 def build_docs_module_with_subsystem(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_module_with_subsystem joining modules with subsystems.
@@ -2071,11 +2043,6 @@ def build_docs_subsystem_agreement(ibis_gw: IbisViewGateway) -> it.Table:
     """
     con = ibis_gw.con
     return _table(con, "analytics.subsystem_agreement")
-
-
-# ---------------------------------------------------------------------------
-# Test Views
-# ---------------------------------------------------------------------------
 
 
 @register_view("docs.v_test_to_function")
@@ -2264,11 +2231,6 @@ def build_docs_behavioral_classification_input(ibis_gw: IbisViewGateway) -> it.T
     )
 
 
-# ---------------------------------------------------------------------------
-# Graph Views
-# ---------------------------------------------------------------------------
-
-
 @register_view("docs.v_symbol_module_graph")
 def build_docs_symbol_module_graph(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_symbol_module_graph (simple passthrough).
@@ -2324,11 +2286,6 @@ def build_docs_validation_summary(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
     return func_part.union(graph_part)
-
-
-# ---------------------------------------------------------------------------
-# IDE Views
-# ---------------------------------------------------------------------------
 
 
 @register_view("docs.v_ide_hints")
@@ -2411,11 +2368,6 @@ def build_docs_ide_hints(ibis_gw: IbisViewGateway) -> it.Table:
         subs.module_count.name("subsystem_module_count"),
         subs.entrypoints_json.name("subsystem_entrypoints"),
     )
-
-
-# ---------------------------------------------------------------------------
-# Legacy create_* functions (for backward compatibility)
-# ---------------------------------------------------------------------------
 
 
 def create_function_summary_view(gateway: StorageGateway) -> None:
@@ -2508,8 +2460,8 @@ def create_all_ibis_views(gateway: StorageGateway) -> None:
     - analytics.v_function_hotspots
     - analytics.v_import_degree
     """
-    create_function_summary_view(gateway)  # analytics.v_function_summary
-    create_callgraph_degree_view(gateway)  # analytics.v_callgraph_degree
-    create_goid_crosswalk_views(gateway)  # core.v_goid_crosswalk_*
-    create_function_hotspots_view(gateway)  # analytics.v_function_hotspots
-    create_import_graph_degree_view(gateway)  # analytics.v_import_degree
+    create_function_summary_view(gateway)
+    create_callgraph_degree_view(gateway)
+    create_goid_crosswalk_views(gateway)
+    create_function_hotspots_view(gateway)
+    create_import_graph_degree_view(gateway)
