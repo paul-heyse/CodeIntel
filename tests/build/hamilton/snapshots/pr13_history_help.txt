@@ -1,0 +1,21 @@
+Usage: codeintel build history [ARGS]
+
+Show build run history and details.
+
+╭─ Parameters ─────────────────────────────────────────────────────────────────╮
+│ RUN-ID --run-id -i    Specific run ID to show details for (prefix match      │
+│                       supported). [env var: CODEINTEL_BUILD_HISTORY_RUN_ID]  │
+│                       [default: (none)]                                      │
+│ LIMIT --limit -n      Number of recent runs to show. [env var:               │
+│                       CODEINTEL_BUILD_HISTORY_LIMIT] [default: 10]           │
+│ --flags               [env var: CODEINTEL_BUILD_HISTORY_FLAGS] [default:     │
+│                       --flags]                                               │
+│ ROOT --root -r        Explicit project root directory. [env var:             │
+│                       CODEINTEL_BUILD_HISTORY_ROOT] [default: (none)]        │
+│ OUTPUT-FORMAT         Output format. [choices: text, json, jsonl] [env var:  │
+│   --output-format     CODEINTEL_BUILD_HISTORY_OUTPUT_FORMAT] [default: text] │
+│ JSON --json           Alias for --output-format json. [env var:              │
+│                       CODEINTEL_BUILD_HISTORY_JSON] [default: false]         │
+│ VERBOSE --verbose -v  Increase verbosity (0=warnings, 1=info, 2=debug). [env │
+│                       var: CODEINTEL_BUILD_HISTORY_VERBOSE] [default: 0]     │
+╰──────────────────────────────────────────────────────────────────────────────╯

@@ -605,8 +605,12 @@ def join_function_contracts(inputs: FunctionProfileInputs) -> Mapping[int, Funct
             contracts.function_goid_h128,
             contracts.param_nullability_json,
             contracts.return_nullability,
-            (contracts_expr.preconditions_json.cast("string").length() > 0).name("has_preconditions"),
-            (contracts_expr.postconditions_json.cast("string").length() > 0).name("has_postconditions"),
+            (contracts_expr.preconditions_json.cast("string").length() > 0).name(
+                "has_preconditions"
+            ),
+            (contracts_expr.postconditions_json.cast("string").length() > 0).name(
+                "has_postconditions"
+            ),
             (contracts_expr.raises_json.cast("string").length() > 0).name("has_raises"),
             contracts.contract_confidence,
         ).execute()

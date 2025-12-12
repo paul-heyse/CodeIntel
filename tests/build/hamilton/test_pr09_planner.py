@@ -30,6 +30,46 @@ if TYPE_CHECKING:
 EXPECTED_LINEAR_CLOSURE = 3
 
 
+def make_test_build_env(
+    gateway: FakeGateway,
+    tmp_path: Path,
+    manifest_index: dict[str, OutputManifest] | None = None,
+    force_targets: frozenset[str] | None = None,
+) -> BuildEnv:
+    """Create a minimal BuildEnv for testing.
+
+    Parameters
+    ----------
+    gateway
+        Fake gateway for testing.
+    tmp_path
+        Temporary path for test artifacts.
+    manifest_index
+        Pre-loaded manifests.
+    force_targets
+        Targets to force rebuild.
+
+    Returns
+    -------
+    BuildEnv
+        A BuildEnv instance.
+    """
+    snapshot = make_snapshot(tmp_path)
+    paths = make_build_paths(tmp_path)
+    config = make_build_config()
+    providers = FakeProviders.defaults()
+
+    return BuildEnv(
+        gateway=gateway,  # type: ignore[arg-type]
+        snapshot=snapshot,
+        paths=paths,
+        providers=providers,  # type: ignore[arg-type]
+        config=config,
+        force_targets=force_targets or frozenset(),
+        manifest_index=manifest_index,
+    )
+
+
 class TestPlanEntryStructure:
     """Tests for PlanEntry dataclass structure."""
 
@@ -155,53 +195,13 @@ class TestPlanStatusMatrix:
     """Tests for plan status determination based on manifest state."""
 
     @staticmethod
-    def _make_build_env(
-        gateway: FakeGateway,
-        tmp_path: Path,
-        manifest_index: dict[str, OutputManifest] | None = None,
-        force_targets: frozenset[str] | None = None,
-    ) -> object:
-        """Create a minimal BuildEnv for testing.
-
-        Parameters
-        ----------
-        gateway
-            Fake gateway for testing.
-        tmp_path
-            Temporary path for test artifacts.
-        manifest_index
-            Pre-loaded manifests.
-        force_targets
-            Targets to force rebuild.
-
-        Returns
-        -------
-        object
-            A BuildEnv instance.
-        """
-        snapshot = make_snapshot(tmp_path)
-        paths = make_build_paths(tmp_path)
-        config = make_build_config()
-        providers = FakeProviders.defaults()
-
-        return BuildEnv(
-            gateway=gateway,  # type: ignore[arg-type]
-            snapshot=snapshot,
-            paths=paths,
-            providers=providers,  # type: ignore[arg-type]
-            config=config,
-            force_targets=force_targets or frozenset(),
-            manifest_index=manifest_index,
-        )
-
-    @staticmethod
     def test_plan_status_no_manifest_returns_compute(
         fake_gateway: FakeGateway,
         minimal_target_graph: TargetGraph,
         tmp_path: Path,
     ) -> None:
         """Verify target with no manifest gets status=compute, reason=no_manifest."""
-        env = TestPlanStatusMatrix._make_build_env(fake_gateway, tmp_path, {})
+        env = make_test_build_env(fake_gateway, tmp_path, {})
 
         plan = compute_plan(
             env=env,  # type: ignore[arg-type]
@@ -237,7 +237,7 @@ class TestPlanStatusMatrix:
             row_count=100,
         )
 
-        env = TestPlanStatusMatrix._make_build_env(
+        env = make_test_build_env(
             fake_gateway,
             tmp_path,
             manifest_index={"a": manifest},
@@ -281,7 +281,7 @@ class TestPlanStatusMatrix:
             )
         )
 
-        env = TestPlanStatusMatrix._make_build_env(fake_gateway, tmp_path, {})
+        env = make_test_build_env(fake_gateway, tmp_path, {})
 
         # The planner may raise KeyError for missing dependencies
         # or mark them as blocked - both are valid behaviors
@@ -298,9 +298,7 @@ class TestPlanStatusMatrix:
                 # This is the expected "blocked" behavior
                 pass
             elif entry is not None:
-                pytest.fail(
-                    f"Expected status='blocked' or KeyError, got '{entry.status}'"
-                )
+                pytest.fail(f"Expected status='blocked' or KeyError, got '{entry.status}'")
         except KeyError:
             # This is also acceptable - missing target raises KeyError
             pass
@@ -316,7 +314,7 @@ class TestPlanClosure:
         tmp_path: Path,
     ) -> None:
         """Verify plan closure is in topological order."""
-        env = TestPlanStatusMatrix._make_build_env(fake_gateway, tmp_path, {})
+        env = make_test_build_env(fake_gateway, tmp_path, {})
 
         plan = compute_plan(
             env=env,  # type: ignore[arg-type]
@@ -328,8 +326,7 @@ class TestPlanClosure:
         # Closure should be in dependency order: a, b, c
         if len(plan.closure) != EXPECTED_LINEAR_CLOSURE:
             pytest.fail(
-                f"Expected {EXPECTED_LINEAR_CLOSURE} targets in closure, "
-                f"got {len(plan.closure)}"
+                f"Expected {EXPECTED_LINEAR_CLOSURE} targets in closure, got {len(plan.closure)}"
             )
 
         # Verify order: a should come before b, b before c
@@ -353,13 +350,11 @@ class TestPlanClosure:
                 module="analytics",
                 plugin="analytics.with_tables",
                 description="Has contract",
-                contract=OutputContract.simple(
-                    table_keys=("analytics.output_table",)
-                ),
+                contract=OutputContract.simple(table_keys=("analytics.output_table",)),
             )
         )
 
-        env = TestPlanStatusMatrix._make_build_env(fake_gateway, tmp_path, {})
+        env = make_test_build_env(fake_gateway, tmp_path, {})
 
         plan = compute_plan(
             env=env,  # type: ignore[arg-type]
@@ -372,6 +367,104 @@ class TestPlanClosure:
         if entry is None:
             pytest.fail("Plan should contain entry for 'with_tables'")
         if "analytics.output_table" not in entry.table_keys:
-            pytest.fail(
-                f"Expected table_keys to include contract tables: {entry.table_keys}"
-            )
+            pytest.fail(f"Expected table_keys to include contract tables: {entry.table_keys}")
+
+
+class TestDryRunParity:
+    """Tests for dry-run parity with build plan command."""
+
+    @staticmethod
+    def test_plan_to_dict_produces_consistent_output(
+        fake_gateway: FakeGateway,
+        minimal_target_graph: TargetGraph,
+        tmp_path: Path,
+    ) -> None:
+        """Verify plan.to_dict() produces consistent serializable output.
+
+        The dry-run output should be based on the same plan computation
+        as the build plan command. This test verifies the serialization.
+        """
+        env = make_test_build_env(fake_gateway, tmp_path, {})
+
+        plan = compute_plan(
+            env=env,  # type: ignore[arg-type]
+            graph=minimal_target_graph,
+            requested=("c",),
+            mode="generated",
+        )
+
+        # Serialize to dict (this is what dry-run and plan commands use)
+        plan_dict = plan.to_dict()
+
+        # Verify structure matches expected format
+        if "requested" not in plan_dict:
+            pytest.fail("plan.to_dict() should include 'requested'")
+        if "closure" not in plan_dict:
+            pytest.fail("plan.to_dict() should include 'closure'")
+        if "entries" not in plan_dict:
+            pytest.fail("plan.to_dict() should include 'entries'")
+        if "to_compute" not in plan_dict:
+            pytest.fail("plan.to_dict() should include 'to_compute'")
+        if "to_skip" not in plan_dict:
+            pytest.fail("plan.to_dict() should include 'to_skip'")
+
+    @staticmethod
+    def test_plan_entries_match_closure_order(
+        fake_gateway: FakeGateway,
+        minimal_target_graph: TargetGraph,
+        tmp_path: Path,
+    ) -> None:
+        """Verify plan entries are in the same order as closure.
+
+        Both dry-run and plan should produce entries in topological order.
+        """
+        env = make_test_build_env(fake_gateway, tmp_path, {})
+
+        plan = compute_plan(
+            env=env,  # type: ignore[arg-type]
+            graph=minimal_target_graph,
+            requested=("c",),
+            mode="generated",
+        )
+
+        # Entry targets should match closure order
+        entry_targets = [e.target for e in plan.entries]
+        closure_list = list(plan.closure)
+
+        if entry_targets != closure_list:
+            pytest.fail(f"Entry order {entry_targets} doesn't match closure {closure_list}")
+
+    @staticmethod
+    def test_multiple_plan_calls_produce_same_result(
+        fake_gateway: FakeGateway,
+        minimal_target_graph: TargetGraph,
+        tmp_path: Path,
+    ) -> None:
+        """Verify compute_plan is deterministic across calls.
+
+        Both dry-run and plan commands call compute_plan, so results
+        must be identical.
+        """
+        env = make_test_build_env(fake_gateway, tmp_path, {})
+
+        plan1 = compute_plan(
+            env=env,  # type: ignore[arg-type]
+            graph=minimal_target_graph,
+            requested=("c",),
+            mode="generated",
+        )
+
+        plan2 = compute_plan(
+            env=env,  # type: ignore[arg-type]
+            graph=minimal_target_graph,
+            requested=("c",),
+            mode="generated",
+        )
+
+        # Plans should have identical structure
+        if plan1.closure != plan2.closure:
+            pytest.fail("Plans should have same closure")
+        if plan1.to_compute != plan2.to_compute:
+            pytest.fail("Plans should have same to_compute list")
+        if plan1.to_skip != plan2.to_skip:
+            pytest.fail("Plans should have same to_skip list")

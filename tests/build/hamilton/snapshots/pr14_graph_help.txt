@@ -1,0 +1,28 @@
+Usage: codeintel build graph [ARGS]
+
+Export Hamilton DAG for specified targets.
+
+╭─ Parameters ─────────────────────────────────────────────────────────────────╮
+│ TARGETS --targets     Target names to show DAG for (e.g., function_metrics,  │
+│   --empty-targets     call_graph). [env var: CODEINTEL_BUILD_GRAPH_TARGETS]  │
+│                       [default: (none)]                                      │
+│ MODULE --module -m    Show DAG for all targets in a module (ingestion,       │
+│                       graphs, analytics). [env var:                          │
+│                       CODEINTEL_BUILD_GRAPH_MODULE] [default: (none)]        │
+│ ALL --all -a          Show DAG for all targets across all modules. [env var: │
+│                       CODEINTEL_BUILD_GRAPH_ALL] [default: false]            │
+│ FORMAT --format -f    Output format: json (default), mermaid, or dot. [env   │
+│                       var: CODEINTEL_BUILD_GRAPH_FORMAT] [default: json]     │
+│ OUTPUT --output -o    Output file path (stdout if not specified). [env var:  │
+│                       CODEINTEL_BUILD_GRAPH_OUTPUT] [default: (none)]        │
+│ --flags               [env var: CODEINTEL_BUILD_GRAPH_FLAGS] [default:       │
+│                       --flags]                                               │
+│ ROOT --root -r        Explicit project root directory. [env var:             │
+│                       CODEINTEL_BUILD_GRAPH_ROOT] [default: (none)]          │
+│ OUTPUT-FORMAT         Output format. [choices: text, json, jsonl] [env var:  │
+│   --output-format     CODEINTEL_BUILD_GRAPH_OUTPUT_FORMAT] [default: text]   │
+│ JSON --json           Alias for --output-format json. [env var:              │
+│                       CODEINTEL_BUILD_GRAPH_JSON] [default: false]           │
+│ VERBOSE --verbose -v  Increase verbosity (0=warnings, 1=info, 2=debug). [env │
+│                       var: CODEINTEL_BUILD_GRAPH_VERBOSE] [default: 0]       │
+╰──────────────────────────────────────────────────────────────────────────────╯

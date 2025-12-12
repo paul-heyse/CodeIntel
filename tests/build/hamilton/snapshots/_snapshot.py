@@ -17,23 +17,25 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 # Fields that vary between runs and should be removed for comparison
-DEFAULT_DYNAMIC_KEYS: frozenset[str] = frozenset({
-    "run_id",
-    "duration_ms",
-    "duration_seconds",
-    "started_at",
-    "completed_at",
-    "recorded_at",
-    "computed_at",
-    "timestamp",
-    "total_duration_ms",
-    "now",
-})
+DEFAULT_DYNAMIC_KEYS: frozenset[str] = frozenset(
+    {
+        "run_id",
+        "duration_ms",
+        "duration_seconds",
+        "started_at",
+        "completed_at",
+        "recorded_at",
+        "computed_at",
+        "timestamp",
+        "total_duration_ms",
+        "now",
+    }
+)
 
 
 @dataclass(frozen=True)
 class TextReplace:
-    """Regex-based text replacement for snapshot normalization.
+    r"""Regex-based text replacement for snapshot normalization.
 
     Use this to normalize paths, IDs, timestamps, or other dynamic
     content in text-based snapshots (DOT, Mermaid, etc.).
@@ -47,9 +49,9 @@ class TextReplace:
 
     Examples
     --------
-    >>> tr = TextReplace(pattern=r"/tmp/[^\\s]+", repl="<TMP>")
+    >>> tr = TextReplace(pattern=r"/tmp/[^\s]+", repl="<TMP>")
     >>> tr.pattern
-    '/tmp/[^\\\\s]+'
+    '/tmp/[^\\s]+'
     """
 
     pattern: str
@@ -76,7 +78,9 @@ def normalize_json_obj(obj: object, *, strip_keys: frozenset[str]) -> object:
 
     Examples
     --------
-    >>> normalize_json_obj({"target": "modules", "duration_ms": 123.4}, strip_keys=frozenset({"duration_ms"}))
+    >>> normalize_json_obj(
+    ...     {"target": "modules", "duration_ms": 123.4}, strip_keys=frozenset({"duration_ms"})
+    ... )
     {'target': 'modules'}
     """
     if isinstance(obj, dict):
@@ -91,7 +95,7 @@ def normalize_json_obj(obj: object, *, strip_keys: frozenset[str]) -> object:
 
 
 def normalize_text(text: str, *, replaces: Iterable[TextReplace]) -> str:
-    """Normalize text output for snapshot comparison.
+    r"""Normalize text output for snapshot comparison.
 
     Standardizes line endings, trims trailing whitespace, and applies
     optional regex replacements for dynamic content.
@@ -110,8 +114,8 @@ def normalize_text(text: str, *, replaces: Iterable[TextReplace]) -> str:
 
     Examples
     --------
-    >>> normalize_text("line1  \\r\\nline2\\r", replaces=[])
-    'line1\\nline2\\n'
+    >>> normalize_text("line1  \r\nline2\r", replaces=[])
+    'line1\nline2\n'
     """
     # Normalize line endings
     t = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -142,10 +146,9 @@ def load_json(text: str) -> object:
     object
         Parsed Python object.
 
-    Raises
-    ------
-    json.JSONDecodeError
-        If text is not valid JSON.
+    Notes
+    -----
+    May raise json.JSONDecodeError if text is not valid JSON.
     """
     return json.loads(text)
 
@@ -255,4 +258,3 @@ __all__ = [
     "normalize_json_obj",
     "normalize_text",
 ]
-

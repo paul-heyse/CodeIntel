@@ -128,6 +128,8 @@ def _get_str(d: Mapping[str, Any], key: str, *, default: str | None = None) -> s
     if default is not None:
         v = d.get(key, default)
     else:
+        if key not in d:
+            raise KeyError(key)
         v = d[key]
     if not isinstance(v, str):
         msg = f"Expected string for '{key}', got {type(v).__name__}"
@@ -187,15 +189,13 @@ def _get_kind(d: Mapping[str, Any], key: str, *, default: SnapshotKind) -> Snaps
         If value is not a valid kind.
     """
     v = d.get(key, default)
-    if v not in ("json", "text"):
+    if v not in {"json", "text"}:
         msg = f"Invalid kind: {v!r}"
         raise ValueError(msg)
     return v  # type: ignore[return-value]
 
 
-def _get_output(
-    d: Mapping[str, Any], key: str, *, default: OutputSelect
-) -> OutputSelect:
+def _get_output(d: Mapping[str, Any], key: str, *, default: OutputSelect) -> OutputSelect:
     """Extract output selection from mapping.
 
     Parameters
@@ -218,7 +218,7 @@ def _get_output(
         If value is not a valid output selection.
     """
     v = d.get(key, default)
-    if v not in ("stdout", "stderr", "both"):
+    if v not in {"stdout", "stderr", "both"}:
         msg = f"Invalid output: {v!r}"
         raise ValueError(msg)
     return v  # type: ignore[return-value]
@@ -407,14 +407,11 @@ def _load_manifest_data(path: Path) -> dict[str, Any]:
 
     if suffix == ".json":
         data = json.loads(text)
-    elif suffix in (".yaml", ".yml"):
+    elif suffix in {".yaml", ".yml"}:
         try:
-            import yaml
+            import yaml  # noqa: PLC0415
         except ImportError as e:
-            msg = (
-                "PyYAML is required to load YAML manifests. "
-                "Install with: pip install pyyaml"
-            )
+            msg = "PyYAML is required to load YAML manifests. Install with: pip install pyyaml"
             raise RuntimeError(msg) from e
         data = yaml.safe_load(text)
     else:
@@ -425,6 +422,60 @@ def _load_manifest_data(path: Path) -> dict[str, Any]:
         msg = "Manifest root must be an object"
         raise TypeError(msg)
     return data
+
+
+def _parse_case(c: Mapping[str, Any], defaults: SnapshotDefaults) -> SnapshotCase:
+    """Parse a single case from manifest data.
+
+    Parameters
+    ----------
+    c
+        Case mapping from manifest.
+    defaults
+        Default values to use when fields are missing.
+
+    Returns
+    -------
+    SnapshotCase
+        Parsed case.
+
+    Raises
+    ------
+    TypeError
+        If case structure is invalid.
+    """
+    if not isinstance(c, dict):
+        msg = "Each case must be an object"
+        raise TypeError(msg)
+
+    name = _get_str(c, "name")
+    kind = _get_kind(c, "kind", default=defaults.kind)
+
+    # Merge env (defaults overridden by case)
+    env_default = dict(defaults.env or {})
+    env_case = dict(_get_env(c, "env") or {})
+    env = {**env_default, **env_case} if (env_default or env_case) else None
+
+    # Snapshot path inference
+    snapshot = c.get("snapshot")
+    if snapshot is None:
+        snapshot = f"{name}.json" if kind == "json" else f"{name}.txt"
+    if not isinstance(snapshot, str):
+        msg = "Expected string for 'snapshot'"
+        raise TypeError(msg)
+
+    return SnapshotCase(
+        name=name,
+        args=_get_args(c),
+        kind=kind,
+        output=_get_output(c, "output", default=defaults.output),
+        exit_code=_get_int(c, "exit_code", default=defaults.exit_code),
+        env=env,
+        snapshot=snapshot,
+        strip_keys=_get_strip_keys(c),
+        replace=_get_replace(c),
+        tags=_get_tags(c),
+    )
 
 
 def load_snapshot_manifest(path: Path) -> SnapshotManifest:
@@ -452,6 +503,9 @@ def load_snapshot_manifest(path: Path) -> SnapshotManifest:
         If required fields are missing.
     """
     data = _load_manifest_data(path)
+    if "cases" not in data:
+        cases_required_msg = "'cases' required in manifest"
+        raise KeyError(cases_required_msg)
 
     app_import = _get_str(data, "app_import")
     defaults_raw = data.get("defaults") or {}
@@ -470,47 +524,11 @@ def load_snapshot_manifest(path: Path) -> SnapshotManifest:
     if not isinstance(cases_raw, list):
         msg = "'cases' must be a list"
         raise TypeError(msg)
+    if not cases_raw:
+        msg = "'cases' must not be empty"
+        raise ValueError(msg)
 
-    cases: list[SnapshotCase] = []
-    for c in cases_raw:
-        if not isinstance(c, dict):
-            msg = "Each case must be an object"
-            raise TypeError(msg)
-
-        name = _get_str(c, "name")
-        args = _get_args(c)
-        kind = _get_kind(c, "kind", default=defaults.kind)
-        output = _get_output(c, "output", default=defaults.output)
-        exit_code = _get_int(c, "exit_code", default=defaults.exit_code)
-
-        # Merge env (defaults overridden by case)
-        env_default = dict(defaults.env or {})
-        env_case = dict(_get_env(c, "env") or {})
-        env = {**env_default, **env_case} if (env_default or env_case) else None
-
-        # Snapshot path inference
-        snapshot = c.get("snapshot")
-        if snapshot is None:
-            snapshot = f"{name}.json" if kind == "json" else f"{name}.txt"
-        if not isinstance(snapshot, str):
-            msg = "Expected string for 'snapshot'"
-            raise TypeError(msg)
-
-        cases.append(
-            SnapshotCase(
-                name=name,
-                args=args,
-                kind=kind,
-                output=output,
-                exit_code=exit_code,
-                env=env,
-                snapshot=snapshot,
-                strip_keys=_get_strip_keys(c),
-                replace=_get_replace(c),
-                tags=_get_tags(c),
-            )
-        )
-
+    cases = [_parse_case(c, defaults) for c in cases_raw]
     return SnapshotManifest(app_import=app_import, defaults=defaults, cases=tuple(cases))
 
 
@@ -522,4 +540,3 @@ __all__ = [
     "SnapshotManifest",
     "load_snapshot_manifest",
 ]
-

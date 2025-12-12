@@ -86,7 +86,7 @@ def pytest_configure(config: pytest.Config) -> None:
     # Handle --cli-snapshot-fail-fast
     if config.getoption("--cli-snapshot-fail-fast"):
         maxfail = getattr(config.option, "maxfail", 0)
-        if maxfail in (0, None):
+        if maxfail in {0, None}:
             config.option.maxfail = 1
 
     # Handle --list-cli-snapshots
@@ -102,7 +102,7 @@ def _list_cli_snapshots_and_exit(config: pytest.Config) -> None:
     config
         Pytest configuration object.
     """
-    from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest
+    from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest  # noqa: PLC0415
 
     snapshots_dir = Path(__file__).parent / "snapshots"
 
@@ -129,9 +129,7 @@ def _list_cli_snapshots_and_exit(config: pytest.Config) -> None:
     def selected(case_tags: tuple[str, ...], case_name: str) -> bool:
         if tags and set(case_tags).isdisjoint(tags):
             return False
-        if patterns and not any(fnmatch.fnmatch(case_name, p) for p in patterns):
-            return False
-        return True
+        return not (patterns and not any(fnmatch.fnmatch(case_name, p) for p in patterns))
 
     lines: list[str] = []
     lines.append(f"Manifest: {manifest_path}")

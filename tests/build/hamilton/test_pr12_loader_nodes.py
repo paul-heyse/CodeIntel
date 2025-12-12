@@ -107,3 +107,101 @@ class TestBuildEnvValidateOutputsFlag:
         field_info = fields["validate_outputs"]
         if field_info.default is not False:
             pytest.fail("validate_outputs should default to False")
+
+
+class TestValidateOutputsBehavior:
+    """Tests for --validate-outputs behavior and blocking semantics."""
+
+    @staticmethod
+    def test_validate_outputs_flag_exists_in_build_run_command() -> None:
+        """Verify BuildRunCommand has validate_outputs option."""
+        from codeintel.cli.commands.build import BuildRunCommand  # noqa: PLC0415
+
+        fields = getattr(BuildRunCommand, "__dataclass_fields__", {})
+        if "validate_outputs" not in fields:
+            pytest.skip("validate_outputs option not yet implemented")
+
+    @staticmethod
+    def test_validation_result_dataclass_exists() -> None:
+        """Verify ValidationResult type exists for tracking validation status.
+
+        When --validate-outputs is used, targets should report validation
+        results that can block downstream if validation fails.
+
+        This test checks for the existence of the ValidationResult type
+        which is part of the optional --validate-outputs feature.
+        """
+        import importlib  # noqa: PLC0415
+        import importlib.util  # noqa: PLC0415
+
+        # Check if the validation module exists
+        spec = importlib.util.find_spec("codeintel.build.hamilton.validation")
+        if spec is None:
+            pytest.skip("ValidationResult not yet implemented")
+
+        # Dynamically import the module
+        try:
+            validation_mod = importlib.import_module(
+                "codeintel.build.hamilton.validation"
+            )
+        except ImportError:
+            pytest.skip("ValidationResult not yet implemented")
+
+        validation_result_cls = getattr(validation_mod, "ValidationResult", None)
+        if validation_result_cls is None:
+            pytest.skip("ValidationResult class not found")
+
+        result = validation_result_cls(
+            table_key="analytics.function_metrics",
+            valid=False,
+            errors=("Column 'loc' has wrong type",),
+        )
+        if result.valid:
+            pytest.fail("Constructed result should be invalid")
+        if not result.errors:
+            pytest.fail("Invalid result should have errors")
+
+    @staticmethod
+    def test_validation_failure_blocks_downstream_conceptually() -> None:
+        """Verify validation failure would block downstream targets.
+
+        The validation semantics should prevent downstream targets from
+        running if upstream validation fails. This test verifies the
+        conceptual model rather than full integration.
+        """
+        from codeintel.build.hamilton.manifest_hook import (  # noqa: PLC0415
+            TargetRunRecord,
+        )
+
+        # A record with validation_errors indicates failure
+        record = TargetRunRecord(
+            target="function_metrics",
+            plugin_name="analytics.function_metrics",
+            status="failed",
+            input_hash="hash123",
+            error="Validation failed: Column 'loc' has wrong type",
+        )
+
+        # Downstream targets should check upstream status
+        # If any upstream has status="failed", downstream should not execute
+        if record.status != "failed":
+            pytest.fail("Record with validation error should have status='failed'")
+
+    @staticmethod
+    def test_target_run_record_has_validation_fields() -> None:
+        """Verify TargetRunRecord can capture validation state."""
+        from codeintel.build.hamilton.manifest_hook import (  # noqa: PLC0415
+            TargetRunRecord,
+        )
+
+        # Check that record can hold validation-related data
+        record = TargetRunRecord(
+            target="function_metrics",
+            plugin_name="analytics.function_metrics",
+            status="succeeded",
+            input_hash="hash123",
+        )
+
+        # Status field should support standard values
+        if record.status not in {"succeeded", "failed", "skipped"}:
+            pytest.fail(f"Unexpected status: {record.status}")

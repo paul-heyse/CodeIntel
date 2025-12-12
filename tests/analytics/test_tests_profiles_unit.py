@@ -109,12 +109,24 @@ class _FakeIbis:
         self.write_calls: list[tuple[str, list[tuple[object, ...]], list[str] | None]] = []
 
     def table(self, table_key: str) -> SimpleNamespace:
-        """Return a fake table object with repo/commit columns."""
+        """Return a fake table object with repo/commit columns.
+
+        Returns
+        -------
+        SimpleNamespace
+            Fake table exposing repo and commit columns.
+        """
         self.table_calls.append(table_key)
         return SimpleNamespace(repo=_FakeIbisColumn("repo"), commit=_FakeIbisColumn("commit"))
 
     def delete(self, table_key: str, *, where: object | None = None) -> int:
-        """Record delete call and return a fake deleted row count."""
+        """Record delete call and return a fake deleted row count.
+
+        Returns
+        -------
+        int
+            Sentinel row count indicating deletion attempt.
+        """
         self.delete_calls.append((table_key, where))
         return -1
 

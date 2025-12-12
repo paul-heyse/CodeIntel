@@ -15,6 +15,8 @@ from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
+EXPECTED_DUAL_OUTPUT_REFS = 2
+
 
 class TestDatasetRefV2Fields:
     """Tests for DatasetRef v2 repo/commit fields."""
@@ -190,3 +192,101 @@ class TestTargetRunRecordArtifacts:
             pytest.fail("artifacts should have 1 entry")
         if record.artifacts[0].name != "scip_index":
             pytest.fail("artifact not stored correctly")
+
+
+class TestSkippedTargetsDatasetRef:
+    """Tests for skipped targets still populating DatasetRef."""
+
+    @staticmethod
+    def test_skipped_target_has_datasets_field() -> None:
+        """Verify TargetRunRecord for skipped targets has datasets."""
+        record = TargetRunRecord(
+            target="function_metrics",
+            plugin_name="analytics.function_metrics",
+            status="skipped",
+            input_hash="hash123",
+            datasets=(
+                DatasetRef(
+                    table_key="analytics.function_metrics",
+                    repo="org/repo",
+                    commit="abc123",
+                ),
+            ),
+        )
+        if not record.datasets:
+            pytest.fail("Skipped target should have datasets")
+        if len(record.datasets) != 1:
+            pytest.fail("Expected 1 dataset")
+
+    @staticmethod
+    def test_skipped_target_datasets_have_lineage() -> None:
+        """Verify skipped target DatasetRef has repo/commit for lineage."""
+        record = TargetRunRecord(
+            target="function_metrics",
+            plugin_name="analytics.function_metrics",
+            status="skipped",
+            input_hash="hash123",
+            datasets=(
+                DatasetRef(
+                    table_key="analytics.function_metrics",
+                    repo="org/repo",
+                    commit="abc123",
+                ),
+            ),
+        )
+
+        dataset = record.datasets[0]
+        if not dataset.repo:
+            pytest.fail("Skipped dataset should have repo")
+        if not dataset.commit:
+            pytest.fail("Skipped dataset should have commit")
+        if dataset.repo != "org/repo":
+            pytest.fail(f"Expected repo='org/repo', got '{dataset.repo}'")
+        if dataset.commit != "abc123":
+            pytest.fail(f"Expected commit='abc123', got '{dataset.commit}'")
+
+    @staticmethod
+    def test_refs_from_target_result_multiple_tables() -> None:
+        """Verify refs_from_target_result handles multiple table_keys."""
+        snapshot = SnapshotRef(
+            repo=DEFAULT_REPO,
+            commit=DEFAULT_COMMIT,
+            repo_root=Path.cwd(),
+        )
+
+        refs = refs_from_target_result(
+            target_name="dual_output",
+            table_keys=("analytics.metrics_a", "analytics.metrics_b"),
+            snapshot=snapshot,
+        )
+
+        if len(refs) != EXPECTED_DUAL_OUTPUT_REFS:
+            pytest.fail(f"Expected {EXPECTED_DUAL_OUTPUT_REFS} refs, got {len(refs)}")
+        if "analytics.metrics_a" not in refs:
+            pytest.fail("Missing ref for metrics_a")
+        if "analytics.metrics_b" not in refs:
+            pytest.fail("Missing ref for metrics_b")
+
+        # Both should have lineage info
+        for key, ref in refs.items():
+            if ref.repo != DEFAULT_REPO:
+                pytest.fail(f"{key} should have repo from snapshot")
+            if ref.commit != DEFAULT_COMMIT:
+                pytest.fail(f"{key} should have commit from snapshot")
+
+    @staticmethod
+    def test_dataset_ref_fields_accessible() -> None:
+        """Verify DatasetRef fields are accessible for serialization."""
+        ref = DatasetRef(
+            table_key="analytics.metrics",
+            repo="org/repo",
+            commit="abc123",
+        )
+
+        # DatasetRef fields should be directly accessible
+        if ref.table_key != "analytics.metrics":
+            pytest.fail("table_key field not accessible")
+        if ref.repo != "org/repo":
+            pytest.fail("repo field not accessible")
+        if ref.commit != "abc123":
+            pytest.fail("commit field not accessible")

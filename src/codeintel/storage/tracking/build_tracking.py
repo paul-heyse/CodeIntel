@@ -474,20 +474,22 @@ class BuildTracking:
 
         for rec in records:
             row_counts_json = encode_json_compact(dict(rec.row_counts) if rec.row_counts else {})
-            rows.append((
-                run_id,
-                repo,
-                commit,
-                rec.target,
-                rec.plugin_name,
-                rec.status,
-                rec.input_hash,
-                rec.options_hash,
-                rec.duration_ms,
-                row_counts_json,
-                rec.error,
-                recorded_at,
-            ))
+            rows.append(
+                (
+                    run_id,
+                    repo,
+                    commit,
+                    rec.target,
+                    rec.plugin_name,
+                    rec.status,
+                    rec.input_hash,
+                    rec.options_hash,
+                    rec.duration_ms,
+                    row_counts_json,
+                    rec.error,
+                    recorded_at,
+                )
+            )
 
         return self._backend.bulk_insert(
             "build.run_targets",

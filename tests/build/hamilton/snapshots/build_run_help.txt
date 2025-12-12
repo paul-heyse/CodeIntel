@@ -1,0 +1,42 @@
+Usage: codeintel build run [ARGS]
+
+Build targets with automatic dependency resolution.
+
+╭─ Parameters ─────────────────────────────────────────────────────────────────╮
+│ TARGETS --targets            Target names to build (e.g., function_metrics,  │
+│   --empty-targets            call_graph). [env var:                          │
+│                              CODEINTEL_BUILD_RUN_TARGETS] [default: (none)]  │
+│ MODULE --module -m           Build all targets in a module (ingestion,       │
+│                              graphs, analytics). [env var:                   │
+│                              CODEINTEL_BUILD_RUN_MODULE] [default: (none)]   │
+│ ALL --all -a                 Build all targets across all modules. [env var: │
+│                              CODEINTEL_BUILD_RUN_ALL] [default: false]       │
+│ DRY-RUN --dry-run -n         Show build plan without executing. [env var:    │
+│                              CODEINTEL_BUILD_RUN_DRY_RUN] [default: false]   │
+│ FORCE --force --empty-force  Force recompute of specific targets             │
+│   -f                         (repeatable). [env var:                         │
+│                              CODEINTEL_BUILD_RUN_FORCE] [default: (none)]    │
+│ ENGINE --engine -e           Build engine to use: hamilton (default) or      │
+│                              legacy. [env var: CODEINTEL_BUILD_RUN_ENGINE]   │
+│                              [default: hamilton]                             │
+│ HAMILTON-MODE                Hamilton node mode: generated (default) or      │
+│   --hamilton-mode            phase0 (debug). [env var:                       │
+│                              CODEINTEL_BUILD_RUN_HAMILTON_MODE] [default:    │
+│                              generated]                                      │
+│ VALIDATE-OUTPUTS             Validate produced datasets against Pandera      │
+│   --validate-outputs         schemas after write. [env var:                  │
+│                              CODEINTEL_BUILD_RUN_VALIDATE_OUTPUTS] [default: │
+│                              false]                                          │
+│ --flags                      [env var: CODEINTEL_BUILD_RUN_FLAGS] [default:  │
+│                              --flags]                                        │
+│ ROOT --root -r               Explicit project root directory. [env var:      │
+│                              CODEINTEL_BUILD_RUN_ROOT] [default: (none)]     │
+│ OUTPUT-FORMAT                Output format. [choices: text, json, jsonl]     │
+│   --output-format            [env var: CODEINTEL_BUILD_RUN_OUTPUT_FORMAT]    │
+│                              [default: text]                                 │
+│ JSON --json                  Alias for --output-format json. [env var:       │
+│                              CODEINTEL_BUILD_RUN_JSON] [default: false]      │
+│ VERBOSE --verbose -v         Increase verbosity (0=warnings, 1=info,         │
+│                              2=debug). [env var:                             │
+│                              CODEINTEL_BUILD_RUN_VERBOSE] [default: 0]       │
+╰──────────────────────────────────────────────────────────────────────────────╯
