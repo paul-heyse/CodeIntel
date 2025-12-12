@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hamilton.manifest_hook import (
-    compute_target_input_hash,
+    compute_target_input_hash_with_deps,
     compute_target_options_hash,
 )
 from codeintel.build.hamilton.naming import target_node
@@ -137,6 +137,168 @@ class PlanEntry:
             "dep_hashes": dict(self.dep_hashes),
             "prior_dep_hashes": dict(self.prior_dep_hashes),
         }
+
+    def explain_staleness(self) -> StalenessExplanation:
+        """Explain why this target is stale.
+
+        Compares current dep_hashes to prior_dep_hashes to identify which
+        dependencies changed and caused this target to be recomputed.
+
+        Returns
+        -------
+        StalenessExplanation
+            Detailed explanation of staleness, including changed dependencies.
+        """
+        # Use set comprehensions for cleaner categorization
+        added_deps = [
+            dep
+            for dep in self.dep_hashes
+            if dep not in self.prior_dep_hashes
+        ]
+        changed_deps = [
+            dep
+            for dep, current_hash in self.dep_hashes.items()
+            if dep in self.prior_dep_hashes and self.prior_dep_hashes[dep] != current_hash
+        ]
+        removed_deps = [
+            dep
+            for dep in self.prior_dep_hashes
+            if dep not in self.dep_hashes
+        ]
+
+        return StalenessExplanation(
+            target=self.target,
+            status=self.status,
+            reason=self.reason,
+            input_hash_current=self.input_hash,
+            input_hash_prior=self.prior_input_hash,
+            changed_deps=tuple(sorted(changed_deps)),
+            added_deps=tuple(sorted(added_deps)),
+            removed_deps=tuple(sorted(removed_deps)),
+            dep_hashes=dict(self.dep_hashes),
+            prior_dep_hashes=dict(self.prior_dep_hashes),
+        )
+
+
+@dataclass(frozen=True)
+class StalenessExplanation:
+    """Detailed explanation of why a target is stale.
+
+    Provides a breakdown of what changed between the prior computation
+    and the current state, enabling users to understand incremental builds.
+
+    Attributes
+    ----------
+    target
+        Target name.
+    status
+        Plan status (compute, skip, blocked, missing).
+    reason
+        Reason for the status.
+    input_hash_current
+        Current computed input hash.
+    input_hash_prior
+        Prior input hash from manifest (if any).
+    changed_deps
+        Dependencies whose hashes changed.
+    added_deps
+        Dependencies that were added since prior computation.
+    removed_deps
+        Dependencies that were removed since prior computation.
+    dep_hashes
+        Current dependency hash mapping.
+    prior_dep_hashes
+        Prior dependency hash mapping.
+
+    Examples
+    --------
+    >>> entry = plan.get_entry("risk_factors")
+    >>> explanation = entry.explain_staleness()
+    >>> explanation.changed_deps
+    ('function_metrics',)
+    """
+
+    target: str
+    status: PlanStatus
+    reason: PlanReason
+    input_hash_current: str | None
+    input_hash_prior: str | None
+    changed_deps: tuple[str, ...]
+    added_deps: tuple[str, ...]
+    removed_deps: tuple[str, ...]
+    dep_hashes: dict[str, str]
+    prior_dep_hashes: dict[str, str]
+
+    @property
+    def is_stale(self) -> bool:
+        """Check if target is stale (needs recomputation).
+
+        Returns
+        -------
+        bool
+            True if target will be computed (stale).
+        """
+        return self.status == "compute"
+
+    @property
+    def has_changes(self) -> bool:
+        """Check if there are any dependency changes.
+
+        Returns
+        -------
+        bool
+            True if any deps changed, added, or removed.
+        """
+        return bool(self.changed_deps or self.added_deps or self.removed_deps)
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "target": self.target,
+            "status": self.status,
+            "reason": self.reason,
+            "is_stale": self.is_stale,
+            "input_hash_current": self.input_hash_current,
+            "input_hash_prior": self.input_hash_prior,
+            "changed_deps": list(self.changed_deps),
+            "added_deps": list(self.added_deps),
+            "removed_deps": list(self.removed_deps),
+            "dep_hashes": self.dep_hashes,
+            "prior_dep_hashes": self.prior_dep_hashes,
+        }
+
+    def summary(self) -> str:
+        """Generate human-readable summary.
+
+        Returns
+        -------
+        str
+            Human-readable staleness summary.
+        """
+        if self.status == "skip":
+            return f"{self.target}: up-to-date (hash {self.input_hash_current})"
+        if self.status == "blocked":
+            return f"{self.target}: blocked on upstream dependencies"
+        if self.reason == "no_manifest":
+            return f"{self.target}: no prior manifest (first run)"
+        if self.reason == "forced":
+            return f"{self.target}: forced recomputation"
+
+        # Hash changed - explain why
+        parts: list[str] = [f"{self.target}: stale"]
+        if self.changed_deps:
+            parts.append(f"changed deps: {', '.join(self.changed_deps)}")
+        if self.added_deps:
+            parts.append(f"added deps: {', '.join(self.added_deps)}")
+        if self.removed_deps:
+            parts.append(f"removed deps: {', '.join(self.removed_deps)}")
+        return " - ".join(parts)
 
 
 @dataclass(frozen=True)
@@ -298,19 +460,23 @@ def _compute_entry_for_target(
             table_keys=tuple(table_keys),
         )
 
+    # Compute hashes with dependency breakdown for staleness explanation
+    raw_params = env.config.parameters_for(target_name)
+    options_hash = compute_target_options_hash(raw_params) if raw_params else None
+    input_hash, dep_hashes = compute_target_input_hash_with_deps(
+        target=target,
+        snapshot=env.snapshot,
+        gateway=env.gateway,
+        options_hash=options_hash,
+        manifests=manifests,
+    )
+
+    # Get prior manifest and extract prior_dep_hashes
+    prior = manifests.get(target_name)
+    prior_dep_hashes = prior.dep_hashes if prior and prior.dep_hashes else {}
+
     # Check if forced
     if env.is_forced(target_name):
-        # Still compute hash for reference
-        raw_params = env.config.parameters_for(target_name)
-        options_hash = compute_target_options_hash(raw_params) if raw_params else None
-        input_hash = compute_target_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=env.gateway,
-            options_hash=options_hash,
-            manifests=manifests,
-        )
-        prior = manifests.get(target_name)
         return PlanEntry(
             target=target_name,
             node=node,
@@ -322,21 +488,11 @@ def _compute_entry_for_target(
             prior_input_hash=prior.input_hash if prior else None,
             dependencies=tuple(target.dependencies),
             table_keys=tuple(table_keys),
+            dep_hashes=dep_hashes,
+            prior_dep_hashes=prior_dep_hashes,
         )
 
-    # Compute hashes
-    raw_params = env.config.parameters_for(target_name)
-    options_hash = compute_target_options_hash(raw_params) if raw_params else None
-    input_hash = compute_target_input_hash(
-        target=target,
-        snapshot=env.snapshot,
-        gateway=env.gateway,
-        options_hash=options_hash,
-        manifests=manifests,
-    )
-
     # Check manifest
-    prior = manifests.get(target_name)
     if prior is None:
         return PlanEntry(
             target=target_name,
@@ -349,6 +505,8 @@ def _compute_entry_for_target(
             prior_input_hash=None,
             dependencies=tuple(target.dependencies),
             table_keys=tuple(table_keys),
+            dep_hashes=dep_hashes,
+            prior_dep_hashes={},
         )
 
     # Compare hashes
@@ -364,6 +522,8 @@ def _compute_entry_for_target(
             prior_input_hash=prior.input_hash,
             dependencies=tuple(target.dependencies),
             table_keys=tuple(table_keys),
+            dep_hashes=dep_hashes,
+            prior_dep_hashes=prior_dep_hashes,
         )
 
     # Up to date - can skip
@@ -378,6 +538,8 @@ def _compute_entry_for_target(
         prior_input_hash=prior.input_hash,
         dependencies=tuple(target.dependencies),
         table_keys=tuple(table_keys),
+        dep_hashes=dep_hashes,
+        prior_dep_hashes=prior_dep_hashes,
     )
 
 
@@ -474,10 +636,39 @@ def compute_plan(
     )
 
 
+def explain_plan(plan: HamiltonBuildPlan) -> list[StalenessExplanation]:
+    """Generate staleness explanations for all targets in a plan.
+
+    Provides detailed explanations for each target, useful for debugging
+    incremental builds and understanding cache behavior.
+
+    Parameters
+    ----------
+    plan
+        The build plan to explain.
+
+    Returns
+    -------
+    list[StalenessExplanation]
+        List of explanations, one per target in the plan's closure.
+
+    Examples
+    --------
+    >>> plan = compute_plan(env=env, requested=("risk_factors",))
+    >>> explanations = explain_plan(plan)
+    >>> for exp in explanations:
+    ...     print(exp.summary())
+    goids: stale - changed deps: ast
+    """
+    return [entry.explain_staleness() for entry in plan.entries]
+
+
 __all__ = [
     "HamiltonBuildPlan",
     "PlanEntry",
     "PlanReason",
     "PlanStatus",
+    "StalenessExplanation",
     "compute_plan",
+    "explain_plan",
 ]

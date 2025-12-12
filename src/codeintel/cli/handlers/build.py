@@ -24,6 +24,7 @@ from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
+    BuildExplainResult,
     BuildHistoryResult,
     BuildPlanResult,
     BuildRunResult,
@@ -947,6 +948,108 @@ def build_plan_handler(
     return CliResult.ok(result)
 
 
+def build_explain_handler(
+    ctx: CommandContext,
+) -> CliResult[BuildExplainResult]:
+    """Explain why a target is stale and what dependencies changed.
+
+    Parameters
+    ----------
+    ctx
+        Command context with params:
+        - target: Target name to explain.
+        - force: Mark specific targets as forced.
+
+    Returns
+    -------
+    CliResult[BuildExplainResult]
+        Structured result with staleness explanation.
+    """
+    try:
+        runtime = ctx.runtime
+    except ResolutionError as e:
+        return fail_project_error("build", str(e))
+
+    graph = get_target_graph()
+
+    # Parse parameters
+    target = ctx.params.get_str("target")
+    if not target:
+        return fail_invalid_targets("No target specified")
+
+    force_list = ctx.params.get_list("force")
+    force: list[str] | None = force_list if force_list else None
+
+    # Validate target exists
+    try:
+        graph.get(target)
+    except KeyError:
+        return fail_invalid_targets(f"Unknown target: {target}")
+
+    LOG.info(
+        "build.explain repo=%s commit=%s target=%s force=%s",
+        runtime.snapshot.repo,
+        runtime.snapshot.commit,
+        target,
+        force,
+    )
+
+    with runtime_gateway(runtime, read_only=True) as gateway:
+        # Build environment for planning
+        providers = create_default_providers(runtime.tools)
+        config = load_build_config(runtime.snapshot.repo_root)
+
+        # Prefetch manifests for planning
+        manifests_list = gateway.build.list_manifests(
+            repo=runtime.snapshot.repo,
+            commit=runtime.snapshot.commit,
+        )
+        manifest_index = {m.target: m for m in manifests_list}
+
+        env = BuildEnv(
+            gateway=gateway,
+            snapshot=runtime.snapshot,
+            paths=runtime.paths,
+            providers=providers,
+            config=config,
+            profile="default",
+            force_targets=frozenset(force or ()),
+            manifest_index=manifest_index,
+        )
+
+        # Compute the plan
+        plan = compute_plan(
+            env=env,
+            graph=graph,
+            requested=(target,),
+            mode="generated",
+        )
+
+    # Find the entry for the target
+    entry = plan.get_entry(target)
+    if entry is None:
+        return fail_invalid_targets(f"Target not found in plan: {target}")
+
+    # Generate staleness explanation
+    explanation = entry.explain_staleness()
+
+    # Build result
+    result = BuildExplainResult(
+        target=explanation.target,
+        status=explanation.status,
+        reason=explanation.reason,
+        is_stale=explanation.is_stale,
+        input_hash_current=explanation.input_hash_current,
+        input_hash_prior=explanation.input_hash_prior,
+        changed_deps=list(explanation.changed_deps),
+        added_deps=list(explanation.added_deps),
+        removed_deps=list(explanation.removed_deps),
+        summary=explanation.summary(),
+    )
+
+    return CliResult.ok(result)
+
+
 __all__ = [
     "BuildGraphResult",
     "BuildHistoryResult",
@@ -955,6 +1058,7 @@ __all__ = [
     "BuildStatusResult",
     "RunMode",
     "TargetScope",
+    "build_explain_handler",
     "build_graph_handler",
     "build_history_handler",
     "build_plan_handler",

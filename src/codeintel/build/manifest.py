@@ -52,6 +52,9 @@ class OutputManifest:
         Optional count of rows written to output tables.
     options_hash
         Optional hash of plugin configuration options.
+    dep_hashes
+        Optional mapping of dependency names to their input hashes at time
+        of computation. Enables "explain staleness" for debugging.
 
     Examples
     --------
@@ -76,6 +79,7 @@ class OutputManifest:
     output_hash: str | None = None
     row_count: int | None = None
     options_hash: str | None = None
+    dep_hashes: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)

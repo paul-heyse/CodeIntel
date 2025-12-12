@@ -63,6 +63,58 @@ def compute_input_hash(
     >>> len(hash_value)
     16
     """
+    input_hash, _ = compute_input_hash_with_deps(
+        target=target,
+        snapshot=snapshot,
+        gateway=gateway,
+        options_hash=options_hash,
+        manifests=manifests,
+    )
+    return input_hash
+
+
+def compute_input_hash_with_deps(
+    target: OutputTarget,
+    snapshot: SnapshotRef,
+    gateway: StorageGateway,
+    options_hash: str | None = None,
+    *,
+    manifests: Mapping[str, OutputManifest] | None = None,
+) -> tuple[str, dict[str, str]]:
+    """Compute input hash and return dependency hash mapping.
+
+    Extended version of compute_input_hash that also returns the individual
+    dependency hashes used in the computation. This enables "explain staleness"
+    debugging by comparing current vs prior dependency hashes.
+
+    Parameters
+    ----------
+    target
+        Target to compute hash for.
+    snapshot
+        Repository snapshot reference (provides repo/commit).
+    gateway
+        Storage gateway for loading dependency manifests.
+    options_hash
+        Optional hash of plugin configuration options.
+    manifests
+        Optional pre-loaded mapping of target names to manifests.
+        If provided, avoids per-dependency DB round trips.
+
+    Returns
+    -------
+    tuple[str, dict[str, str]]
+        Tuple of (input_hash, dep_hashes) where dep_hashes maps dependency
+        names to their input hashes (or "MISSING" sentinel).
+
+    Examples
+    --------
+    >>> hash_value, dep_hashes = compute_input_hash_with_deps(...)
+    >>> len(hash_value)
+    16
+    >>> dep_hashes
+    {'ast': 'abc123...', 'goids': 'def456...'}
+    """
     hasher = hashlib.sha256()
 
     # Include repo and commit
@@ -77,7 +129,8 @@ def compute_input_hash(
 
     # Include dependency hashes (sorted for determinism)
     # Use input_hash for cascade (more robust than output_hash)
-    dep_hashes: list[str] = []
+    dep_hash_list: list[str] = []
+    dep_hashes: dict[str, str] = {}
     for dep_name in sorted(target.dependencies):
         # Use pre-loaded manifests if available, otherwise load from DB
         if manifests is not None:
@@ -90,20 +143,22 @@ def compute_input_hash(
             )
         # Cascade on input_hash for proper propagation of changes
         if manifest is not None and manifest.input_hash is not None:
-            dep_hashes.append(f"{dep_name}:{manifest.input_hash}")
+            dep_hash_list.append(f"{dep_name}:{manifest.input_hash}")
+            dep_hashes[dep_name] = manifest.input_hash
         else:
             # Dependency not computed or no input hash - use sentinel
-            dep_hashes.append(f"{dep_name}:MISSING")
+            dep_hash_list.append(f"{dep_name}:MISSING")
+            dep_hashes[dep_name] = "MISSING"
 
-    hasher.update(",".join(dep_hashes).encode("utf-8"))
+    hasher.update(",".join(dep_hash_list).encode("utf-8"))
     hasher.update(b"|")
 
     # Include options hash if provided
     if options_hash is not None:
         hasher.update(options_hash.encode("utf-8"))
 
-    # Return first 16 hex characters
-    return hasher.hexdigest()[:16]
+    # Return first 16 hex characters and the dependency hashes
+    return hasher.hexdigest()[:16], dep_hashes
 
 
 def compute_options_hash(options: object | None) -> str | None:
@@ -147,5 +202,6 @@ def compute_options_hash(options: object | None) -> str | None:
 
 __all__ = [
     "compute_input_hash",
+    "compute_input_hash_with_deps",
     "compute_options_hash",
 ]

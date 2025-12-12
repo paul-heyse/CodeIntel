@@ -1038,7 +1038,7 @@ class DuckDBGateway:
         """Initialize table accessor instances after dataclass init."""
         self.ibis = IbisGateway(self)
         self.analytics = AnalyticsTables(self.con)
-        self.build = BuildTracking(self.con)
+        self.build = BuildTracking(self)
         self.core = CoreTables(self.con)
         self.docs = DocsViews(self.con)
         self.graph = GraphTables(self.con)

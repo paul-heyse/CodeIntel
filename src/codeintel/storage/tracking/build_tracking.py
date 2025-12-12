@@ -13,15 +13,15 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.helpers.json import decode_json_list, encode_json_compact
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from duckdb import DuckDBPyConnection
-
     from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.manifest import BuildStatus
+    from codeintel.storage.gateway.protocol import StorageGateway
 
 
 # =============================================================================
@@ -156,20 +156,22 @@ class BuildTracking:
 
     Examples
     --------
-    >>> tracking = BuildTracking(connection)
+    >>> tracking = BuildTracking(gateway)
     >>> tracking.save_manifest(manifest)
     >>> loaded = tracking.load_manifest("risk_factors", "org/repo", "abc123")
     """
 
-    def __init__(self, con: DuckDBPyConnection) -> None:
+    def __init__(self, gateway: StorageGateway) -> None:
         """Initialize build tracking accessor.
 
         Parameters
         ----------
-        con
-            DuckDB connection to use for all operations.
+        gateway
+            Storage gateway providing database access.
         """
-        self._con = con
+        self._gateway = gateway
+        self._con = gateway.con
+        self._backend = DuckDBPolicyBackend(gateway)
 
     # =========================================================================
     # Manifest Operations
@@ -487,18 +489,24 @@ class BuildTracking:
                 recorded_at,
             ))
 
-        self._con.executemany(
-            """
-            INSERT INTO build.run_targets (
-                run_id, repo, commit, target, plugin, status,
-                input_hash, options_hash, duration_ms, row_counts,
-                error, recorded_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        return self._backend.bulk_insert(
+            "build.run_targets",
             rows,
+            columns=(
+                "run_id",
+                "repo",
+                "commit",
+                "target",
+                "plugin",
+                "status",
+                "input_hash",
+                "options_hash",
+                "duration_ms",
+                "row_counts",
+                "error",
+                "recorded_at",
+            ),
         )
-
-        return len(rows)
 
     def list_run_targets(self, run_id: str) -> list[dict[str, Any]]:
         """List per-target records for a specific run.

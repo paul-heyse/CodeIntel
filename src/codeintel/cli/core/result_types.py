@@ -557,6 +557,67 @@ class BuildPlanResult:
 
 
 @dataclass(frozen=True)
+class BuildExplainResult:
+    """Result from build explain command.
+
+    Parameters
+    ----------
+    target
+        Target name being explained.
+    status
+        Plan status (compute, skip, blocked, missing).
+    reason
+        Reason for the status.
+    is_stale
+        Whether the target is stale (needs recomputation).
+    input_hash_current
+        Current computed input hash.
+    input_hash_prior
+        Prior input hash from manifest.
+    changed_deps
+        List of dependencies whose hashes changed.
+    added_deps
+        List of dependencies that were added.
+    removed_deps
+        List of dependencies that were removed.
+    summary
+        Human-readable summary of staleness.
+    """
+
+    target: str
+    status: str
+    reason: str
+    is_stale: bool
+    input_hash_current: str | None
+    input_hash_prior: str | None
+    changed_deps: list[str]
+    added_deps: list[str]
+    removed_deps: list[str]
+    summary: str
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "target": self.target,
+            "status": self.status,
+            "reason": self.reason,
+            "is_stale": self.is_stale,
+            "input_hash_current": self.input_hash_current,
+            "input_hash_prior": self.input_hash_prior,
+            "changed_deps": self.changed_deps,
+            "added_deps": self.added_deps,
+            "removed_deps": self.removed_deps,
+            "summary": self.summary,
+        }
+
+
+@dataclass(frozen=True)
 class SubsystemListResult:
     """Result from subsystem list command.
 
@@ -1610,6 +1671,7 @@ class HealthCheckResult:
 __all__ = [
     "ActionResult",
     "BuildExecutionResult",
+    "BuildExplainResult",
     "BuildHistoryResult",
     "BuildPlanResult",
     "BuildRunResult",
