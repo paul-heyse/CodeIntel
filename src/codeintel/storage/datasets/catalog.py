@@ -7,9 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import ibis
+import pandas as pd
+
 from codeintel.export.manifest import compute_file_hash
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.repositories.base import fetch_all_dicts
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -136,7 +138,7 @@ def _sample_rows(
     warn: Callable[[str], None] | None = None,
 ) -> list[dict[str, object]]:
     """
-    Collect sample rows via metadata.dataset_rows when available.
+    Collect sample rows via Ibis table access.
 
     Returns
     -------
@@ -151,52 +153,19 @@ def _sample_rows(
     limited = max(0, limit)
     if con is None or limited == 0:
         return []
-    if strict:
-        try:
-            available = con.execute(
-                """
-                SELECT COUNT(*)
-                FROM information_schema.table_functions
-                WHERE table_function_name = 'dataset_rows'
-                """
-            ).fetchone()
-        except RuntimeError as exc:
-            message = f"Failed to check sampling macro availability for {dataset.name}: {exc}"
-            raise RuntimeError(message) from exc
-        except DuckDBError as exc:
-            message = f"Failed to query sampling macro availability for {dataset.name}"
-            raise RuntimeError(message) from exc
-        if available is None or int(available[0]) == 0:
-            message = (
-                f"dataset_rows macro unavailable for sampling; skipping samples for {dataset.name}"
-            )
-            raise RuntimeError(message)
-        return fetch_all_dicts(
-            con,
-            "SELECT * FROM metadata.dataset_rows(?, ?, ?)",
-            [dataset.table_key, limited, 0],
-        )
+
     try:
-        available = con.execute(
-            """
-            SELECT COUNT(*)
-            FROM information_schema.table_functions
-            WHERE table_function_name = 'dataset_rows'
-            """
-        ).fetchone()
-        if available is None or int(available[0]) == 0:
-            message = (
-                f"dataset_rows macro unavailable for sampling; skipping samples for {dataset.name}"
-            )
-            if warn is not None:
-                warn(message)
-            return []
-        return fetch_all_dicts(
-            con,
-            "SELECT * FROM metadata.dataset_rows(?, ?, ?)",
-            [dataset.table_key, limited, 0],
-        )
-    except DuckDBError as exc:
+        ibis_con = ibis.duckdb.from_connection(con)
+        table_key = dataset.table_key
+        if "." in table_key:
+            database, name = table_key.split(".", 1)
+            expr = ibis_con.table(name, database=database)
+        else:
+            expr = ibis_con.table(table_key)
+
+        df = pd.DataFrame(expr.limit(limited).execute())
+        return df.to_dict(orient="records")
+    except (DuckDBError, RuntimeError, ValueError) as exc:
         return _handle_sampling_failure(
             dataset_name=dataset.name,
             strict=strict,

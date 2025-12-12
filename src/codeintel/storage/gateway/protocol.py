@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from codeintel.storage.datasets import DatasetRegistry
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
     from codeintel.storage.gateway.accessors import (
         AnalyticsTables,
         CoreTables,
@@ -59,6 +60,7 @@ class StorageGateway(Protocol):
     docs: DocsViews
     graph: GraphTables
     ibis: IbisGateway
+    policy: DuckDBPolicyBackend
     runs: PipelineRunTracking
 
     @property

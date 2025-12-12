@@ -15,6 +15,7 @@ from codeintel.storage.gateway.connection import (
     connect,
 )
 from codeintel.storage.metadata import bootstrap_metadata_datasets
+from codeintel.storage.schema import assert_schema_alignment
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
@@ -52,15 +53,22 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
             bootstrap_metadata_datasets(
                 con,
                 include_views=include_views,
-                validate_macros=include_views,
+                validate_schema_registry=config.validate_schema,
             )
         datasets = load_dataset_registry(con)
+        gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
+        if config.ensure_views and not config.read_only:
+            gateway.policy.ensure_all_views(overwrite=True, strict=config.validate_schema)
         if config.validate_schema:
+            assert_schema_alignment(
+                con,
+                include_views=config.ensure_views and not config.read_only,
+                strict=True,
+            )
             validate_contract_or_raise(
                 con,
                 include_views=config.ensure_views and not config.read_only,
             )
-        gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
     except duckdb.Error as exc:
         raise StorageConnectionError(str(exc)) from exc
     return gateway

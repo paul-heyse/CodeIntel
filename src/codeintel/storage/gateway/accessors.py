@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.gateway.insert_helpers import insert_rows
 from codeintel.storage.ibis_adapter import IbisGateway
@@ -1027,6 +1028,7 @@ class DuckDBGateway:
     datasets: DatasetRegistry
     con: DuckDBConnection
     ibis: IbisGateway = field(init=False)
+    policy: DuckDBPolicyBackend = field(init=False)
     analytics: AnalyticsTables = field(init=False)
     build: BuildTracking = field(init=False)
     core: CoreTables = field(init=False)
@@ -1037,6 +1039,7 @@ class DuckDBGateway:
     def __post_init__(self) -> None:
         """Initialize table accessor instances after dataclass init."""
         self.ibis = IbisGateway(self)
+        self.policy = DuckDBPolicyBackend(self)
         self.analytics = AnalyticsTables(self.con)
         self.build = BuildTracking(self)
         self.core = CoreTables(self.con)

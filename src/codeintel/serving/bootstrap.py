@@ -57,7 +57,6 @@ from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,
 )
-from codeintel.storage.views import create_all_views
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -351,7 +350,7 @@ def build_service_stack(
     verify_db_identity(gateway, config)
 
     if opts.create_views and not gateway.config.read_only:
-        create_all_views(gateway.con)
+        gateway.policy.ensure_all_views(overwrite=True, strict=False)
 
     _, limits = build_registry_and_limits(config)
 
@@ -720,7 +719,7 @@ def _build_local_resource(
 
     verify_db_identity(gateway, cfg)
     if not effective_read_only:
-        create_all_views(connection)
+        gateway.policy.ensure_all_views(overwrite=True, strict=False)
 
     duckdb_backend_cls, _ = _load_mcp_backends()
 
