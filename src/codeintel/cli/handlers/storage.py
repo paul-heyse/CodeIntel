@@ -28,14 +28,8 @@ from codeintel.cli.errors.results import (
 )
 from codeintel.storage.gateway import StorageConfig, StorageConnectionError, open_gateway
 from codeintel.storage.helpers.profiling import run_profile
-from codeintel.storage.macros.generation import render_macro
 from codeintel.storage.metadata import (
-    _assert_macro_coverage,
-    dataset_rows_only_entries,
-    ingest_macro_coverage,
     validate_dataset_schema_registry,
-    validate_macro_registry,
-    validate_normalized_macro_schemas,
 )
 
 if TYPE_CHECKING:
@@ -146,14 +140,7 @@ def _validate_macros(
     error_msg: str | None = None
 
     try:
-        _assert_macro_coverage()
-        validate_macro_registry(connection)
         validate_dataset_schema_registry(connection)
-        validate_normalized_macro_schemas(connection)
-        missing_ingest, present_ingest = ingest_macro_coverage(connection)
-        if missing_ingest:
-            LOG.warning("Missing ingest macros: %s", ", ".join(missing_ingest))
-        LOG.debug("Present ingest macros: %s", ", ".join(present_ingest))
         if macro_requirement is MacroRequirement.REQUIRE and missing_ingest:
             error_msg = f"Ingest macros missing: {', '.join(missing_ingest)}"
     except RuntimeError as exc:
@@ -162,12 +149,7 @@ def _validate_macros(
     if error_msg is not None:
         return fail_macro_validation(error_msg)
 
-    dataset_rows_list = dataset_rows_only_entries()
-    if dataset_rows_list:
-        LOG.info(
-            "dataset_rows-only datasets (no normalized macro): %s",
-            ", ".join(dataset_rows_list),
-        )
+    dataset_rows_list: list[str] = []
 
     return CliResult.ok(
         ValidateMacrosResult(
@@ -197,16 +179,13 @@ def generate_macros_handler(
     """
     tables = ctx.params.get_list("tables")
 
-    if not tables:
-        return fail_no_tables("No tables available to render macros for.")
-
-    rendered = [render_macro(table_key) for table_key in tables]
-    macro_dicts = [{"macro_name": m.macro_name, "ddl": m.ddl} for m in rendered]
+    _ = tables
+    LOG.warning("storage.generate_macros is deprecated; macros are retired.")
 
     return CliResult.ok(
         GenerateMacrosResult(
-            macros=macro_dicts,
-            count=len(rendered),
+            macros=[],
+            count=0,
         )
     )
 

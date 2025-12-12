@@ -14,7 +14,6 @@ from codeintel.storage.datasets.registry import (
     build_dataset_dependency_graph,
     load_dataset_registry,
 )
-from codeintel.storage.metadata import NORMALIZED_MACROS
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -95,11 +94,6 @@ def _validate_table_columns(con: DuckDBPyConnection, registry: DatasetRegistry) 
     for name, ds in registry.by_name.items():
         if ds.is_view or ds.schema is None:
             continue
-        if "dataset_rows_only" in ds.tags and ds.table_key in NORMALIZED_MACROS:
-            errors.append(
-                f"Dataset {name} is marked dataset_rows_only but has a normalized macro "
-                f"registered: {NORMALIZED_MACROS[ds.table_key]}"
-            )
         schema_name, table_name = ds.table_key.split(".", maxsplit=1)
         info = con.execute(
             """

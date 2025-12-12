@@ -1,19 +1,18 @@
-"""Connection management for DuckDB (macros removed).
+"""Connection management for DuckDB.
 
-All ingestion/DDL is now policy-backend + ibis driven; ingest macros are retired and
-no longer applied here. This module remains for gateway wiring and schema/view setup.
+This module owns low-level connection wiring (open/attach history) and optional
+schema application. View materialization and other policy operations are handled
+at the gateway layer via DuckDBPolicyBackend.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
-from warnings import warn
 
 import duckdb
 
-from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
-from codeintel.storage.views import create_all_views
+from codeintel.storage.schema import apply_all_schemas
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.config import StorageConfig
@@ -43,8 +42,7 @@ def connect(config: StorageConfig) -> DuckDBConnection:
         config.db_path.parent.mkdir(parents=True, exist_ok=True)
     con: DuckDBConnection = _open_primary_connection(config)
     _attach_history_if_needed(con, config)
-    _apply_schema_and_views(con, config)
-    _ensure_macros_and_schema(con, config)
+    _apply_schema(con, config)
     return con
 
 
@@ -90,25 +88,7 @@ def _attach_history_if_needed(con: DuckDBConnection, config: StorageConfig) -> N
     con.execute(f"ATTACH DATABASE '{history_path_str}' AS history")
 
 
-def _apply_schema_and_views(con: DuckDBConnection, config: StorageConfig) -> None:
-    """Apply schemas and views when configured."""
+def _apply_schema(con: DuckDBConnection, config: StorageConfig) -> None:
+    """Apply schemas when configured."""
     if config.apply_schema and not config.read_only:
         apply_all_schemas(con)
-    if config.ensure_views and not config.read_only:
-        create_all_views(con)
-
-
-def _ensure_macros_and_schema(con: DuckDBConnection, config: StorageConfig) -> None:
-    """Validate schema when configured (macros deprecated)."""
-    if not config.read_only:
-        warn(
-            "Ingest macros are deprecated and no longer applied during gateway setup.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-    if config.validate_schema:
-        assert_schema_alignment(
-            con,
-            include_views=config.ensure_views and not config.read_only,
-            strict=True,
-        )

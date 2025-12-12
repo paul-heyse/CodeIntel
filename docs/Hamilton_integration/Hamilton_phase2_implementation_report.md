@@ -31,6 +31,13 @@ Phase 2 transforms Hamilton into the **source of truth** for the CodeIntel build
 - **Extended PR test coverage** with dry-run parity, manifest prefetch, skipped targets, and validation tests
 - **Phase 3 Migration Scaffolding** with `impl_kind` field for native/wrapper implementation tracking
 
+### Structural Quality Refactors
+
+- **Request dataclasses** (`SkipCheckRequest`, `ManifestSaveRequest`, `BuildExecutionArgs`) replacing long parameter lists
+- **Configuration dataclasses** (`GenerationOptions`, `_GeneratedModuleCache`) replacing global state and kwargs
+- **Public properties** (`executor.mode`) enabling cleaner test access patterns
+- **Enum-based flags** (`RunMode`, `TargetScope`) replacing boolean positional parameters
+
 ---
 
 ## Phase 2 Implementation Summary
@@ -39,7 +46,7 @@ Phase 2 transforms Hamilton into the **source of truth** for the CodeIntel build
 |----|---------|----------------|
 | PR-08 | Hamilton Default Mode | `driver_factory.py`, `executor.py`, `cli/commands/build.py`, `cli/handlers/build.py` |
 | PR-09 | Build Planner | `planner.py` (new), `cli/commands/build.py`, `cli/handlers/build.py` |
-| PR-10 | Manifest Index + Hash Cascade | `env.py`, `hashing.py`, `manifest_hook.py`, `targets_phase0.py` |
+| PR-10 | Manifest Index + Hash Cascade | `env.py`, `hashing.py`, `manifest_hook.py`, `targets_phase0.py`, `cli/handlers/build.py` |
 | PR-11 | DatasetRef v2 + ArtifactRef | `dataset_ref.py`, `artifact_ref.py` (new), `manifest_hook.py` |
 | PR-12 | Loader Nodes | `node_factory.py`, `naming.py` |
 | PR-13 | Run Targets Persistence | `schemas.py`, `build_tracking.py`, `executor.py` |
@@ -48,6 +55,9 @@ Phase 2 transforms Hamilton into the **source of truth** for the CodeIntel build
 | VS | Validation Suite | `tests/build/hamilton/snapshots/` (new), `conftest.py`, `test_cli_snapshots.py` (new) |
 | VS | Extended PR Tests | `test_pr09_planner.py`, `test_pr10_manifest_index.py`, `test_pr11_datasetref_v2.py`, `test_pr12_loader_nodes.py` |
 | VS | Phase 3 Scaffolding | `planner.py` (impl_kind field) |
+| QR | Structural Refactors | `executor.py`, `manifest_hook.py`, `node_factory.py`, `cli/handlers/build.py` |
+
+**QR = Quality Refactors**: Structural improvements addressing Ruff/Pyright/Pyrefly findings (dataclasses, helper functions, public properties).
 
 ---
 
@@ -85,12 +95,25 @@ def build_driver(
 class HamiltonBuildExecutor:
     def __init__(
         self,
-        profile: str = "default",
+        *,
+        profile: str | None = None,
         mode: HamiltonNodeMode = "generated",  # Changed from "phase0"
     ) -> None:
         self._profile = profile
-        self._mode = mode
+        self._mode: HamiltonNodeMode = mode
+
+    @property
+    def profile(self) -> str | None:
+        """Return the configured profile name."""
+        return self._profile
+
+    @property
+    def mode(self) -> HamiltonNodeMode:
+        """Return the configured node mode (public API for tests)."""
+        return self._mode
 ```
+
+**Note:** The executor now exposes a public `mode` property to avoid private attribute access (`SLF001`) in tests.
 
 #### 3. CLI Command Updates (`cli/commands/build.py`)
 
@@ -411,15 +434,39 @@ def compute_input_hash(
 
 #### 3. CLI Handler Prefetch (`cli/handlers/build.py`)
 
+The CLI handler uses a `BuildExecutionArgs` dataclass and `RunMode` enum for cleaner APIs:
+
 ```python
+class RunMode(Enum):
+    """Build execution mode."""
+    EXECUTE = "execute"
+    DRY_RUN = "dry_run"
+
+@dataclass(frozen=True)
+class BuildExecutionArgs:
+    """Build execution options for both Hamilton and legacy engines."""
+    goals: list[str]
+    force: list[str] | None
+    run_mode: RunMode
+    engine: str
+    hamilton_mode: str
+    validate_outputs: bool
+
+    @property
+    def is_dry_run(self) -> bool:
+        """Return True when run_mode is DRY_RUN."""
+        return self.run_mode is RunMode.DRY_RUN
+
+    @property
+    def node_mode(self) -> HamiltonNodeMode:
+        """Return typed HamiltonNodeMode value."""
+        return "generated" if self.hamilton_mode == "generated" else "phase0"
+
+
 def _execute_build_hamilton(
     runtime: ResolvedRuntime,
     gateway: StorageGateway,
-    goals: list[str],
-    run_mode: RunMode,
-    force: list[str] | None = None,
-    hamilton_mode: str = "generated",
-    validate_outputs: bool = False,
+    execution: BuildExecutionArgs,  # Single options object
 ) -> BuildResultLike | None:
     # Prefetch all manifests for this repo/commit
     manifests_list = gateway.build.list_manifests(
@@ -436,11 +483,16 @@ def _execute_build_hamilton(
         providers=providers,
         config=config,
         profile="default",
-        force_targets=frozenset(force or ()),
+        force_targets=frozenset(execution.force or ()),
         manifest_index=manifest_index,
-        validate_outputs=validate_outputs,
+        validate_outputs=execution.validate_outputs,
     )
+    
+    executor = HamiltonBuildExecutor(profile="default", mode=execution.node_mode)
+    hamilton_result = executor.run(env=env, targets=execution.goals)
 ```
+
+**Note:** The handler now uses `BuildExecutionArgs` dataclass and `RunMode` enum instead of individual boolean positional parameters, improving API clarity and future-proofing.
 
 ---
 
@@ -548,7 +600,9 @@ class ArtifactRef:
         )
 ```
 
-#### 3. TargetRunRecord Extension (`manifest_hook.py`)
+#### 3. TargetRunRecord and Request Dataclasses (`manifest_hook.py`)
+
+The manifest hook now uses request dataclasses for cleaner APIs:
 
 ```python
 @dataclass(frozen=True)
@@ -558,14 +612,61 @@ class TargetRunRecord:
     target: str
     plugin_name: str
     status: str
-    input_hash: str | None = None
+    input_hash: str | None
     options_hash: str | None = None
     duration_ms: float = 0.0
-    row_counts: Mapping[str, int] | None = None
+    row_counts: Mapping[str, int] = field(default_factory=dict)
     error: str | None = None
     datasets: tuple[DatasetRef, ...] = ()
     artifacts: tuple[ArtifactRef, ...] = ()  # New field
+
+
+@dataclass(frozen=True)
+class SkipCheckRequest:
+    """Input parameters for manifest skip evaluation."""
+
+    gateway: StorageGateway
+    target: str
+    repo: str
+    commit: str
+    input_hash: str
+    manifest_index: Mapping[str, OutputManifest] | None = None
+
+
+def should_skip(request: SkipCheckRequest) -> bool:
+    """Check if a target can be skipped based on existing manifest.
+    
+    Takes a SkipCheckRequest instead of individual parameters for
+    reduced argument count and clearer intent.
+    """
+    if request.manifest_index is not None:
+        prior = request.manifest_index.get(request.target)
+    else:
+        prior = request.gateway.build.load_manifest(
+            target=request.target,
+            repo=request.repo,
+            commit=request.commit,
+        )
+    if prior is None:
+        return False
+    return prior.input_hash == request.input_hash
+
+
+@dataclass(frozen=True)
+class ManifestSaveRequest:
+    """Parameters for saving a manifest record."""
+
+    target: str
+    repo: str
+    commit: str
+    plugin: str
+    duration_ms: float
+    input_hash: str
+    row_count: int | None = None
+    options_hash: str | None = None
 ```
+
+**Note:** The `should_skip` function now accepts a `SkipCheckRequest` dataclass instead of individual parameters (`PLR0913` fix), and `ManifestSaveRequest` provides similar ergonomics for manifest persistence.
 
 ---
 
@@ -683,34 +784,93 @@ def _create_dataframe_node_function(
 
 #### 4. Module Registration (`node_factory.py`)
 
+The node factory now uses configuration dataclasses and a module cache for better testability:
+
 ```python
+@dataclass(frozen=True)
+class GenerationOptions:
+    """Configuration for generated Hamilton node modules."""
+
+    include_targets: set[str] | None = None
+    exclude_targets: set[str] | None = None
+    include_dataset_nodes: bool = True
+    include_loader_nodes: bool = True
+    include_artifact_nodes: bool = True
+
+
+@dataclass
+class _GeneratedModuleCache:
+    """Cache for generated modules (replaces global _generated_module)."""
+    module: ModuleType | None = None
+    config_key: tuple[bool, bool, bool, frozenset[str], frozenset[str]] | None = None
+
+
+@dataclass(frozen=True)
+class _GeneratedMappings:
+    """Mappings produced during node generation."""
+    target_to_node: dict[str, str]
+    dataset_to_node: dict[str, str]
+    query_to_node: dict[str, str]
+    dataframe_to_node: dict[str, str]
+    artifact_to_node: dict[str, str]
+
+
+def _generate_nodes_for_target(
+    module: ModuleType,
+    target: OutputTarget,
+    meta_domain: str,
+    options: GenerationOptions,
+    mappings: _GeneratedMappings,
+) -> None:
+    """Generate all nodes for a single target (helper function)."""
+    # Creates target node, dataset nodes, loader nodes, artifact nodes
+    ...
+
+
 def build_target_module(
-    *,
-    include_targets: set[str] | None = None,
-    exclude_targets: set[str] | None = None,
-    include_dataset_nodes: bool = True,
-    include_loader_nodes: bool = True,
-    include_artifact_nodes: bool = True,
+    options: GenerationOptions | None = None,
 ) -> ModuleType:
-    # ... target and dataset node generation ...
+    """Generate a module containing Hamilton nodes for all targets.
+    
+    Now accepts GenerationOptions dataclass instead of individual kwargs.
+    """
+    resolved = options or GenerationOptions()
+    graph = get_target_graph()
+    
+    module = ModuleType("codeintel.build.hamilton.nodes.generated")
+    mappings = _GeneratedMappings(
+        target_to_node={},
+        dataset_to_node={},
+        query_to_node={},
+        dataframe_to_node={},
+        artifact_to_node={},
+    )
+    
+    for target in graph.all_targets:
+        if target.name not in include or target.name in exclude:
+            continue
+        _generate_nodes_for_target(
+            module=module,
+            target=target,
+            meta_domain=meta.domain,
+            options=resolved,
+            mappings=mappings,
+        )
+    
+    _attach_mappings(module, mappings)
+    return module
 
-    # Generate loader nodes
-    if include_loader_nodes:
-        for table_key in table_keys:
-            # Query node (returns Ibis expression)
-            q_fn = _create_query_node_function(table_key=table_key, target_name=target.name)
-            setattr(module, query_node(table_key), q_fn)
-            query_to_node[table_key] = query_node(table_key)
 
-            # DataFrame node (returns pandas DataFrame)
-            df_fn = _create_dataframe_node_function(table_key=table_key, target_name=target.name)
-            setattr(module, dataframe_node(table_key), df_fn)
-            dataframe_to_node[table_key] = dataframe_node(table_key)
-
-    # Attach mappings
-    module.QUERY_TO_NODE = query_to_node
-    module.DATAFRAME_TO_NODE = dataframe_to_node
+def get_generated_module(options: GenerationOptions | None = None) -> ModuleType:
+    """Get or create the generated nodes module (cached)."""
+    ...
 ```
+
+**Note:** The node factory has been refactored to use:
+- `GenerationOptions` dataclass instead of individual keyword parameters
+- `_GeneratedModuleCache` dataclass instead of a global `_generated_module` variable
+- Helper functions (`_generate_nodes_for_target`, `_attach_mappings`) to reduce local variable count
+- `_GeneratedMappings` dataclass to bundle mapping dictionaries
 
 ---
 
@@ -1423,6 +1583,47 @@ This field enables:
 
 ---
 
+## Structural Quality Refactors
+
+Post-implementation refactors addressing static analysis findings (Ruff/Pyright/Pyrefly):
+
+### executor.py
+
+- Added public `mode` property to avoid `SLF001` (private attribute access) in tests
+- Extracted helper functions: `_categorize_outputs`, `_map_closure_to_nodes`, `_start_build_run`, `_complete_build_run`, `_persist_run_targets`
+- Added `_RunContext` and `_RunCompletionParams` dataclasses for execution state
+
+### manifest_hook.py
+
+- Introduced `SkipCheckRequest` dataclass to reduce `should_skip` argument count (`PLR0913`)
+- Added `ManifestSaveRequest` dataclass for manifest persistence parameters
+- Both request types clarify intent and support future-proofing for additional criteria
+
+### node_factory.py
+
+- Replaced global `_generated_module` with `_GeneratedModuleCache` dataclass
+- Added `GenerationOptions` dataclass to replace individual keyword parameters
+- Added `_GeneratedMappings` dataclass to bundle output dictionaries
+- Split `build_target_module` into helpers: `_generate_nodes_for_target`, `_attach_mappings`
+- Moved inline imports to module scope
+
+### cli/handlers/build.py
+
+- Added `BuildExecutionArgs` dataclass to bundle execution options
+- Added `BuildPlanArgs` dataclass for plan command parameters
+- Added `RunMode` and `TargetScope` enums to replace boolean flags
+- Extracted parameter parsing into `_extract_build_run_params` and `_parse_plan_args`
+- Moved imports to module scope
+
+### Tests
+
+- Tests now access `executor.mode` (public property) instead of `executor._mode`
+- Fixed set construction type issues in `test_pr13_run_targets.py`
+- Hoisted inline imports to module scope in test files
+- Added named constants for magic literals in assertions
+
+---
+
 ## Definition of Done Verification
 
 | Criterion | Status |
@@ -1442,6 +1643,7 @@ This field enables:
 | 13. CLI golden snapshot framework implemented | ✅ |
 | 14. PR test coverage extended (dry-run, prefetch, skipped) | ✅ |
 | 15. Phase 3 impl_kind scaffolding in PlanEntry | ✅ |
+| 16. Structural quality refactors (dataclasses, enums, helpers) | ✅ |
 
 ---
 
