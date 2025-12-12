@@ -24,6 +24,7 @@ from codeintel.build.manifest import OutputManifest
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
     from codeintel.build.hamilton.io.dataset_ref import DatasetRef
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
@@ -59,7 +60,9 @@ class TargetRunRecord:
     error
         Error message if execution failed.
     datasets
-        Tuple of DatasetRef instances produced by this target (Phase 1).
+        Tuple of DatasetRef instances produced by this target.
+    artifacts
+        Tuple of ArtifactRef instances produced by this target (Phase 2).
 
     Examples
     --------
@@ -82,6 +85,7 @@ class TargetRunRecord:
     row_counts: Mapping[str, int] = field(default_factory=dict)
     error: str | None = None
     datasets: tuple[DatasetRef, ...] = ()
+    artifacts: tuple[ArtifactRef, ...] = ()
 
     @property
     def success(self) -> bool:
@@ -143,6 +147,7 @@ def compute_target_input_hash(
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     options_hash: str | None = None,
+    manifests: Mapping[str, OutputManifest] | None = None,
 ) -> str:
     """Compute input hash for a target using existing infrastructure.
 
@@ -159,13 +164,15 @@ def compute_target_input_hash(
         Storage gateway for loading dependency manifests.
     options_hash
         Optional hash of plugin options.
+    manifests
+        Optional pre-loaded manifest index to avoid per-dependency DB calls.
 
     Returns
     -------
     str
         16-character hex hash string.
     """
-    return compute_input_hash(target, snapshot, gateway, options_hash)
+    return compute_input_hash(target, snapshot, gateway, options_hash, manifests=manifests)
 
 
 def compute_target_options_hash(options: object | None) -> str | None:
@@ -193,6 +200,7 @@ def should_skip(
     repo: str,
     commit: str,
     input_hash: str,
+    manifest_index: Mapping[str, OutputManifest] | None = None,
 ) -> bool:
     """Check if a target can be skipped based on existing manifest.
 
@@ -211,6 +219,8 @@ def should_skip(
         Commit SHA.
     input_hash
         Current input hash to compare.
+    manifest_index
+        Optional pre-loaded manifest index to avoid DB call.
 
     Returns
     -------
@@ -228,7 +238,11 @@ def should_skip(
     ... ):
     ...     print("Skipping - output is still valid")
     """
-    prior = gateway.build.load_manifest(target=target, repo=repo, commit=commit)
+    # Use manifest_index if available, otherwise load from DB
+    if manifest_index is not None:
+        prior = manifest_index.get(target)
+    else:
+        prior = gateway.build.load_manifest(target=target, repo=repo, commit=commit)
     if prior is None:
         return False
     return prior.input_hash == input_hash

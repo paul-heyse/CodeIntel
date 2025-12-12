@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hashing.py
+# hypothesis_version: 6.148.7
+
+[b':', b'|', ',', 'compute_input_hash', 'compute_options_hash', 'utf-8']

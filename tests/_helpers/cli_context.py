@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import SeedPack, TestContext
+    from tests._helpers.env_options import EnvOptions, GatewayOptions
 
 
 @dataclass
@@ -249,6 +250,8 @@ def create_cli_test_context(
     *,
     operation_id: str = "cli.test",
     write_repo: bool = True,
+    options: EnvOptions | None = None,
+    gateway_options: GatewayOptions | None = None,
 ) -> CliTestContext:
     """Create a CliTestContext for handler testing.
 
@@ -279,7 +282,7 @@ def create_cli_test_context(
     ...     # ... use ctx ...
     ...     ctx.close()
     """
-    test_ctx = create_test_context(tmp_path)
+    test_ctx = create_test_context(tmp_path, options=options, gateway_options=gateway_options)
     if write_repo:
         write_canonical_repo(test_ctx.repo_root)
     return CliTestContext(test_ctx=test_ctx, operation_id=operation_id)

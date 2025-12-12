@@ -224,7 +224,7 @@ def op_harness() -> OperationTestHarness:
 def _cleanup_gateways() -> Iterator[None]:
     """Ensure gateway cache is closed between CLI tests.
 
-    This fixture properly manages gateway lifecycle without monkeypatching.
+    This fixture properly manages gateway lifecycle without runtime patching.
     It uses the gateway_cache module's close_gateways function for cleanup.
     """
     try:
@@ -235,11 +235,11 @@ def _cleanup_gateways() -> Iterator[None]:
 
 # NOTE: The following fixtures have been removed as they violate the Testing Charter:
 #
-# - _disable_contract_validation: Used monkeypatch to disable contract validation.
+# - _disable_contract_validation: Used runtime patching to disable contract validation.
 #   Tests should use real validation. If a test needs to skip validation, it should
 #   use the proper configuration options instead.
 #
-# - _track_and_close_gateways: Used monkeypatch to wrap open_gateway. Gateway
+# - _track_and_close_gateways: Used runtime patching to wrap open_gateway. Gateway
 #   lifecycle should be managed through proper test context (CliTestContext) and
 #   the _cleanup_gateways fixture above.
 #

@@ -18,7 +18,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.config import BuildConfig
+    from codeintel.build.manifest import OutputManifest
     from codeintel.build.providers import Providers
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.storage.gateway import StorageGateway
@@ -50,6 +53,10 @@ class BuildEnv:
     force_targets
         Set of target names that should bypass skip checks and always
         recompute. Used to implement --force CLI flag.
+    manifest_index
+        Pre-loaded mapping of target names to their manifests for this
+        repo/commit. Used to avoid per-target DB round trips during
+        skip checks and hash computation.
 
     Examples
     --------
@@ -72,6 +79,7 @@ class BuildEnv:
     config: BuildConfig
     profile: str | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
+    manifest_index: Mapping[str, OutputManifest] | None = None
 
     @property
     def repo(self) -> str:

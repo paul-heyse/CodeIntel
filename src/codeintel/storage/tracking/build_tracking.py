@@ -16,8 +16,11 @@ from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.storage.helpers.json import decode_json_list, encode_json_compact
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from duckdb import DuckDBPyConnection
 
+    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.manifest import BuildStatus
 
 
@@ -431,6 +434,110 @@ class BuildTracking:
         ).fetchall()
 
         return tuple(_parse_run_row(row) for row in results)
+
+    # =========================================================================
+    # Run Target Operations (Phase 2)
+    # =========================================================================
+
+    def save_run_targets(
+        self,
+        run_id: str,
+        repo: str,
+        commit: str,
+        records: Sequence[TargetRunRecord],
+    ) -> int:
+        """Save per-target execution records for a build run.
+
+        Parameters
+        ----------
+        run_id
+            Parent run identifier.
+        repo
+            Repository slug.
+        commit
+            Commit SHA.
+        records
+            Sequence of TargetRunRecord objects from execution.
+
+        Returns
+        -------
+        int
+            Number of records inserted.
+        """
+        if not records:
+            return 0
+
+        recorded_at = _now()
+        rows: list[tuple[object, ...]] = []
+
+        for rec in records:
+            row_counts_json = encode_json_compact(dict(rec.row_counts) if rec.row_counts else {})
+            rows.append((
+                run_id,
+                repo,
+                commit,
+                rec.target,
+                rec.plugin_name,
+                rec.status,
+                rec.input_hash,
+                rec.options_hash,
+                rec.duration_ms,
+                row_counts_json,
+                rec.error,
+                recorded_at,
+            ))
+
+        self._con.executemany(
+            """
+            INSERT INTO build.run_targets (
+                run_id, repo, commit, target, plugin, status,
+                input_hash, options_hash, duration_ms, row_counts,
+                error, recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+
+        return len(rows)
+
+    def list_run_targets(self, run_id: str) -> list[dict[str, Any]]:
+        """List per-target records for a specific run.
+
+        Parameters
+        ----------
+        run_id
+            Run identifier to fetch targets for.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            List of target record dictionaries.
+        """
+        results = self._con.execute(
+            """
+            SELECT target, plugin, status, input_hash, options_hash,
+                   duration_ms, row_counts, error, recorded_at
+            FROM build.run_targets
+            WHERE run_id = ?
+            ORDER BY target
+            """,
+            [run_id],
+        ).fetchall()
+
+        return [
+            {
+                "target": row[0],
+                "plugin": row[1],
+                "status": row[2],
+                "input_hash": row[3],
+                "options_hash": row[4],
+                "duration_ms": row[5],
+                "row_counts": decode_json_list(row[6]) if row[6] else {},
+                "error": row[7],
+                "recorded_at": row[8],
+            }
+            for row in results
+        ]
 
 
 __all__ = [

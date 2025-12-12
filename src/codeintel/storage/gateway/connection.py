@@ -58,11 +58,17 @@ def _open_primary_connection(config: StorageConfig) -> DuckDBConnection:
         Live connection to the requested database (file-backed or memory).
     """
     if not config.read_only and config.db_path != Path(":memory:") and not config.db_path.exists():
+        # Bootstrap the database file with the latest storage version.
+        #
+        # We do this in a short-lived in-memory connection so that the gateway's
+        # primary connection can open the file directly (avoiding cross-connection
+        # file handle conflicts when the file remains attached).
         con = duckdb.connect(str(Path(":memory:")))
         db_path_str = str(config.db_path).replace("'", "''")
         con.execute(f"ATTACH DATABASE '{db_path_str}' AS main_db (STORAGE_VERSION 'latest')")
         con.execute("USE main_db")
-        return con
+        con.close()
+        return duckdb.connect(str(config.db_path), read_only=False)
     return duckdb.connect(str(config.db_path), read_only=config.read_only)
 
 

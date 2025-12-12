@@ -11,6 +11,8 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar, SupportsInt, cast
 
+from ibis.common.exceptions import TableNotFound
+
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
@@ -254,7 +256,7 @@ class RepoScanPlugin(TargetPlugin):
                     ibis_bool(table.commit == ctx.commit),
                 ).count()
                 row_counts[table_key] = int(cast("SupportsInt", count_expr.execute()))
-            except (RuntimeError, OSError, DuckDBCatalogException) as exc:
+            except (RuntimeError, OSError, DuckDBCatalogException, TableNotFound) as exc:
                 log.warning("Row count fallback for %s: %s", table_key, exc)
                 row_counts[table_key] = 0
         return row_counts

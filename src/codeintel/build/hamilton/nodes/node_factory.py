@@ -26,7 +26,12 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.metadata_bridge import from_target
-from codeintel.build.hamilton.naming import dataset_node, target_node
+from codeintel.build.hamilton.naming import (
+    dataframe_node,
+    dataset_node,
+    query_node,
+    target_node,
+)
 from codeintel.build.hamilton.nodes.targets_phase0 import _run_target
 from codeintel.build.registry import get_target_graph
 from codeintel.build.targets import OutputTarget, TargetGraph
@@ -69,9 +74,7 @@ def _create_node_function(
         **dependencies: TargetRunRecord,
     ) -> TargetRunRecord:
         # Extract upstream records for failure gating
-        upstream = tuple(
-            rec for rec in dependencies.values() if isinstance(rec, TargetRunRecord)
-        )
+        upstream = tuple(rec for rec in dependencies.values() if isinstance(rec, TargetRunRecord))
         return _run_target(
             env=env,
             graph=graph,
@@ -168,11 +171,120 @@ def _create_dataset_node_function(
     return tag(domain=domain, table=table_key)(dataset_fn)
 
 
+def _create_query_node_function(
+    *,
+    table_key: str,
+    target_name: str,
+) -> Callable[..., object]:
+    """Create a Hamilton node function for Ibis query loading.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table name (e.g., "analytics.function_metrics").
+    target_name
+        Target that produces this dataset.
+
+    Returns
+    -------
+    Callable[..., ir.Table]
+        Node function that loads an Ibis table expression.
+    """
+    from codeintel.build.hamilton.io.ibis_adapter import load_dataset_ibis
+
+    q_name = query_node(table_key)
+    d_name = dataset_node(table_key)
+
+    def query_fn(env: BuildEnv, **kwargs: object) -> object:
+        ds_ref = kwargs.get(d_name)
+        if not isinstance(ds_ref, DatasetRef):
+            msg = f"Expected DatasetRef for {d_name}, got {type(ds_ref)}"
+            raise TypeError(msg)
+        return load_dataset_ibis(gateway=env.gateway, ref=ds_ref)
+
+    # Build signature with env and dataset ref parameters
+    params = [
+        inspect.Parameter(
+            "env",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=BuildEnv,
+        ),
+        inspect.Parameter(
+            d_name,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=DatasetRef,
+        ),
+    ]
+
+    query_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
+    query_fn.__name__ = q_name
+    query_fn.__doc__ = f"Load {table_key} as Ibis expression from {target_name} target."
+
+    # Apply tag decorator for Hamilton observability
+    domain = table_key.split(".", 1)[0] if "." in table_key else "main"
+    return tag(domain=domain, table=table_key, node_type="query")(query_fn)
+
+
+def _create_dataframe_node_function(
+    *,
+    table_key: str,
+    target_name: str,
+) -> Callable[..., object]:
+    """Create a Hamilton node function for pandas DataFrame loading.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table name (e.g., "analytics.function_metrics").
+    target_name
+        Target that produces this dataset.
+
+    Returns
+    -------
+    Callable[..., pd.DataFrame]
+        Node function that loads a pandas DataFrame.
+    """
+    from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df
+
+    df_name = dataframe_node(table_key)
+    d_name = dataset_node(table_key)
+
+    def dataframe_fn(env: BuildEnv, **kwargs: object) -> object:
+        ds_ref = kwargs.get(d_name)
+        if not isinstance(ds_ref, DatasetRef):
+            msg = f"Expected DatasetRef for {d_name}, got {type(ds_ref)}"
+            raise TypeError(msg)
+        return load_dataset_df(gateway=env.gateway, ref=ds_ref)
+
+    # Build signature with env and dataset ref parameters
+    params = [
+        inspect.Parameter(
+            "env",
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=BuildEnv,
+        ),
+        inspect.Parameter(
+            d_name,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=DatasetRef,
+        ),
+    ]
+
+    dataframe_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
+    dataframe_fn.__name__ = df_name
+    dataframe_fn.__doc__ = f"Load {table_key} as pandas DataFrame from {target_name} target."
+
+    # Apply tag decorator for Hamilton observability
+    domain = table_key.split(".", 1)[0] if "." in table_key else "main"
+    return tag(domain=domain, table=table_key, node_type="dataframe")(dataframe_fn)
+
+
 def build_target_module(
     *,
     include_targets: set[str] | None = None,
     exclude_targets: set[str] | None = None,
     include_dataset_nodes: bool = True,
+    include_loader_nodes: bool = True,
 ) -> ModuleType:
     """Generate a module containing Hamilton nodes for all targets.
 
@@ -188,6 +300,9 @@ def build_target_module(
     include_dataset_nodes
         If True (default), also generate d__* dataset nodes for
         all tables in target contracts.
+    include_loader_nodes
+        If True (default), also generate q__* and df__* loader nodes
+        for all tables in target contracts.
 
     Returns
     -------
@@ -209,9 +324,11 @@ def build_target_module(
     module = ModuleType("codeintel.build.hamilton.nodes.generated")
     module.__doc__ = "Auto-generated Hamilton nodes from TargetGraph."
 
-    # Track generated node names for TARGET_TO_NODE mapping
+    # Track generated node names for mappings
     target_to_node: dict[str, str] = {}
     dataset_to_node: dict[str, str] = {}
+    query_to_node: dict[str, str] = {}
+    dataframe_to_node: dict[str, str] = {}
 
     for target in graph.all_targets:
         if target.name not in include or target.name in exclude:
@@ -246,15 +363,38 @@ def build_target_module(
                 setattr(module, d_name, dataset_fn)
                 dataset_to_node[table_key] = d_name
 
+                # Generate q__* and df__* loader nodes
+                if include_loader_nodes:
+                    # Query node (returns Ibis expression)
+                    q_fn = _create_query_node_function(
+                        table_key=table_key,
+                        target_name=target.name,
+                    )
+                    q_name = query_node(table_key)
+                    setattr(module, q_name, q_fn)
+                    query_to_node[table_key] = q_name
+
+                    # DataFrame node (returns pandas DataFrame)
+                    df_fn = _create_dataframe_node_function(
+                        table_key=table_key,
+                        target_name=target.name,
+                    )
+                    df_name = dataframe_node(table_key)
+                    setattr(module, df_name, df_fn)
+                    dataframe_to_node[table_key] = df_name
+
     # Attach mappings for executor lookups
     module.TARGET_TO_NODE = target_to_node  # type: ignore[attr-defined]
     module.DATASET_TO_NODE = dataset_to_node  # type: ignore[attr-defined]
+    module.QUERY_TO_NODE = query_to_node  # type: ignore[attr-defined]
+    module.DATAFRAME_TO_NODE = dataframe_to_node  # type: ignore[attr-defined]
 
     log.debug(
-        "build_target_module: generated %d target nodes and %d dataset nodes from %d targets",
+        "build_target_module: generated %d target, %d dataset, %d query, %d df nodes",
         len(target_to_node),
         len(dataset_to_node),
-        len(all_target_names),
+        len(query_to_node),
+        len(dataframe_to_node),
     )
 
     return module

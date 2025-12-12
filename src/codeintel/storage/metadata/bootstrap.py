@@ -826,7 +826,42 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_steps_run
 
 def apply_metadata_ddl(con: DuckDBPyConnection) -> None:
     """Create metadata schema, datasets catalog, and helper macros."""
+    repo_map_exists_row = con.execute(
+        """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'core' AND table_name = 'repo_map'
+        LIMIT 1
+        """
+    ).fetchone()
+    repo_map_exists = repo_map_exists_row is not None
+
     for stmt in METADATA_SCHEMA_DDL:
+        if (
+            not repo_map_exists
+            and "CREATE OR REPLACE MACRO metadata.normalized_symbol_use_edges" in stmt
+        ):
+            con.execute(
+                """
+                CREATE OR REPLACE MACRO metadata.normalized_symbol_use_edges(
+                    table_key TEXT,
+                    row_limit BIGINT := 9223372036854775807,
+                    row_offset BIGINT := 0
+                ) AS TABLE
+                SELECT
+                    CAST(NULL AS VARCHAR) AS repo,
+                    CAST(NULL AS VARCHAR) AS commit,
+                    ds.symbol,
+                    ds.def_path,
+                    ds.use_path,
+                    ds.same_file,
+                    ds.same_module,
+                    CAST(ds.def_goid_h128 AS BIGINT) AS def_goid_h128,
+                    CAST(ds.use_goid_h128 AS BIGINT) AS use_goid_h128
+                FROM metadata.dataset_rows(table_key, row_limit, row_offset) ds;
+                """
+            )
+            continue
         con.execute(stmt)
     con.execute(
         """
@@ -852,7 +887,7 @@ def _canonicalize_ddl(stmt: str) -> str:
 def _collect_macro_hashes() -> dict[str, str]:
     macro_hashes: dict[str, str] = {}
     for stmt in METADATA_SCHEMA_DDL:
-        match = re.search(r"CREATE\\s+OR\\s+REPLACE\\s+MACRO\\s+([\\w\\.]+)", stmt, re.IGNORECASE)
+        match = re.search(r"CREATE\s+OR\s+REPLACE\s+MACRO\s+([\w\.]+)", stmt, re.IGNORECASE)
         if match is None:
             continue
         macro_name = match.group(1)

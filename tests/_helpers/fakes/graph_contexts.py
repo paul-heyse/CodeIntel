@@ -139,20 +139,20 @@ class GraphTestEnv:
             tmp_path,
             options=EnvOptions(repo=repo, commit=commit, repo_root=tmp_path),
         )
-        existing_modules = env_ctx.gateway.con.execute(
-            "SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        ).fetchone()
-        if existing_modules and int(existing_modules[0]) == 0:
-            env_ctx.gateway.con.execute(
-                """
-                INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-                VALUES ('seed.mod', 'seed.py', ?, ?, 'python', '[]', '[]')
-                """,
-                [repo, commit],
-            )
         plugin_ctx = None
         if with_plugin_context:
+            existing_modules = env_ctx.gateway.con.execute(
+                "SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?",
+                [repo, commit],
+            ).fetchone()
+            if existing_modules and int(existing_modules[0]) == 0:
+                env_ctx.gateway.con.execute(
+                    """
+                    INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+                    VALUES ('seed.mod', 'seed.py', ?, ?, 'python', '[]', '[]')
+                    """,
+                    [repo, commit],
+                )
             plugin_ctx = GraphPluginExecutionContext(
                 snapshot=env_ctx.snapshot,
                 gateway=env_ctx.gateway,
