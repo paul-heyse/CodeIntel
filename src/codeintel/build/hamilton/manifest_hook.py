@@ -18,7 +18,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.build.hashing import compute_input_hash, compute_options_hash
+from codeintel.build.hashing import (
+    compute_input_hash,
+    compute_input_hash_with_deps,
+    compute_options_hash,
+)
 from codeintel.build.manifest import OutputManifest
 
 if TYPE_CHECKING:
@@ -173,6 +177,44 @@ def compute_target_input_hash(
         16-character hex hash string.
     """
     return compute_input_hash(target, snapshot, gateway, options_hash, manifests=manifests)
+
+
+def compute_target_input_hash_with_deps(
+    *,
+    target: OutputTarget,
+    snapshot: SnapshotRef,
+    gateway: StorageGateway,
+    options_hash: str | None = None,
+    manifests: Mapping[str, OutputManifest] | None = None,
+) -> tuple[str, dict[str, str]]:
+    """Compute input hash and dependency hash mapping.
+
+    Delegates to compute_input_hash_with_deps() from the build system hashing
+    module. Returns both the input hash and the individual dependency hashes
+    for staleness explanation.
+
+    Parameters
+    ----------
+    target
+        Target to compute hash for.
+    snapshot
+        Repository snapshot reference.
+    gateway
+        Storage gateway for loading dependency manifests.
+    options_hash
+        Optional hash of plugin options.
+    manifests
+        Optional pre-loaded manifest index to avoid per-dependency DB calls.
+
+    Returns
+    -------
+    tuple[str, dict[str, str]]
+        Tuple of (input_hash, dep_hashes) where dep_hashes maps dependency
+        names to their input hashes (or "MISSING" sentinel).
+    """
+    return compute_input_hash_with_deps(
+        target, snapshot, gateway, options_hash, manifests=manifests
+    )
 
 
 def compute_target_options_hash(options: object | None) -> str | None:

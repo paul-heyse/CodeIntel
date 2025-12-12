@@ -2061,6 +2061,11 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             ),
             Column("error", "VARCHAR", description="Error message if failed"),
             Column(
+                "dep_hashes",
+                "JSON",
+                description="JSON mapping of dependency names to their input hashes",
+            ),
+            Column(
                 "recorded_at",
                 "TIMESTAMPTZ",
                 nullable=False,

@@ -63,7 +63,9 @@ from codeintel.build.hamilton.observability import (
 from codeintel.build.hamilton.planner import (
     HamiltonBuildPlan,
     PlanEntry,
+    StalenessExplanation,
     compute_plan,
+    explain_plan,
 )
 
 __all__ = [
@@ -77,10 +79,12 @@ __all__ = [
     "HamiltonRuntime",
     "IbisIOConfig",
     "PlanEntry",
+    "StalenessExplanation",
     "TargetRunRecord",
     "build_driver",
     "compute_plan",
     "dataset_node",
+    "explain_plan",
     "export_dag_json",
     "export_execution_json",
     "get_dag_info",

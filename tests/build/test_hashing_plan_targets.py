@@ -49,7 +49,11 @@ class _FakeGateway:
 
 
 def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> None:
-    """Input hash uses repo/commit/target/dependency hashes deterministically."""
+    """Input hash uses repo/commit/target/dependency input_hashes deterministically.
+
+    Note: Uses input_hash (not output_hash) for cascade semantics - changes in
+    upstream inputs propagate correctly through the dependency chain.
+    """
     dep_manifest = OutputManifest(
         target="dep",
         repo="demo",
@@ -73,7 +77,8 @@ def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> 
     hash2 = compute_input_hash(target, snapshot, cast("Any", gateway), options_hash="opts")
     # Deterministic and includes both dependency states
     expect_equal(hash1, hash2)
-    combined = b"demo:c1|main|dep:out-hash,missing:MISSING|opts"
+    # Uses input_hash ("in") for cascade, not output_hash ("out-hash")
+    combined = b"demo:c1|main|dep:in,missing:MISSING|opts"
     expect_equal(hash1, hashlib.sha256(combined).hexdigest()[:16])
 
 

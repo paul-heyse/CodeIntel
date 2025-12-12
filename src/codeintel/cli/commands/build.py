@@ -17,6 +17,7 @@ from cyclopts import App, Parameter
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.build import (
+    build_explain_handler,
     build_graph_handler,
     build_history_handler,
     build_plan_handler,
@@ -177,6 +178,29 @@ class BuildPlanCommand:
         Parameter(
             name=["--output", "-o"],
             help="Output file path (stdout if not specified).",
+        ),
+    ] = None
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("build.explain", handler=build_explain_handler, config=_BUILD_CONFIG)
+@build_app.command(name="explain")
+@dataclass
+class BuildExplainCommand:
+    """Explain why a target is stale and what dependencies changed."""
+
+    target: Annotated[
+        str,
+        Parameter(
+            name=None,
+            help="Target name to explain (e.g., function_metrics).",
+        ),
+    ]
+    force: Annotated[
+        list[str] | None,
+        Parameter(
+            name=["--force", "-f"],
+            help="Mark specific targets as forced (repeatable).",
         ),
     ] = None
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
