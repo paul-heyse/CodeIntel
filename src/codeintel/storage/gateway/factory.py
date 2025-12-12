@@ -12,8 +12,6 @@ from codeintel.storage.exceptions import StorageConnectionError
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.connection import (
-    _apply_schema_and_views,
-    _ensure_macros_and_schema,
     connect,
 )
 from codeintel.storage.metadata import bootstrap_metadata_datasets
@@ -51,9 +49,11 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
     try:
         con = connect(config)
         if not config.read_only:
-            _apply_schema_and_views(con, config)
-            _ensure_macros_and_schema(con, config)
-            bootstrap_metadata_datasets(con)
+            bootstrap_metadata_datasets(
+                con,
+                include_views=config.ensure_views and config.apply_schema,
+                validate_macros=config.apply_schema,
+            )
         datasets = load_dataset_registry(con)
         if config.validate_schema:
             validate_contract_or_raise(con)

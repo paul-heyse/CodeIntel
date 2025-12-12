@@ -7,11 +7,10 @@ This module provides a registry for Ibis-defined views that allows:
 
 Example
 -------
->>> from codeintel.storage.views.ibis_registry import register_view, VIEW_BUILDERS
->>> from codeintel.storage.ibis_adapter import IbisGateway
+>>> from codeintel.storage.views.ibis_registry import IbisViewGateway, register_view, VIEW_BUILDERS
 >>>
 >>> @register_view("analytics.v_function_summary")
->>> def build_function_summary(ibis_gw: IbisGateway) -> it.Table:
+>>> def build_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
 ...     fm = ibis_gw.table("analytics.function_metrics")
 ...     ft = ibis_gw.table("analytics.function_types")
 ...     return fm.left_join(ft, ["function_goid_h128"])
@@ -29,10 +28,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     import ibis.expr.types as it
-
-    from codeintel.storage.ibis_adapter import IbisGateway
+    from ibis.backends.duckdb import Backend as DuckDBBackend
 
 __all__ = [
+    "IbisViewGateway",
     "VIEW_BUILDERS",
     "ViewBuilder",
     "get_registered_views",
@@ -40,14 +39,27 @@ __all__ = [
 ]
 
 
+class IbisViewGateway(Protocol):
+    """Protocol for objects that provide Ibis access for view building."""
+
+    @property
+    def con(self) -> DuckDBBackend:
+        """Return an Ibis backend bound to a DuckDB connection."""
+        ...
+
+    def table(self, table_name: str) -> it.Table:
+        """Return an Ibis table expression for a fully qualified table."""
+        ...
+
+
 class ViewBuilder(Protocol):
     """Protocol for view builder functions.
 
-    A ViewBuilder takes an IbisGateway and returns an Ibis table expression
+    A ViewBuilder takes an IbisViewGateway and returns an Ibis table expression
     that defines the view's query.
     """
 
-    def __call__(self, ibis_gw: IbisGateway) -> it.Table:
+    def __call__(self, ibis_gw: IbisViewGateway) -> it.Table:
         """Build an Ibis table expression for the view.
 
         Parameters
@@ -83,7 +95,7 @@ def register_view(table_key: str) -> Callable[[ViewBuilder], ViewBuilder]:
     Example
     -------
     >>> @register_view("analytics.v_my_view")
-    >>> def build_my_view(ibis_gw: IbisGateway) -> it.Table:
+    >>> def build_my_view(ibis_gw: IbisViewGateway) -> it.Table:
     ...     return ibis_gw.table("analytics.source_table").select("col1", "col2")
     """
 

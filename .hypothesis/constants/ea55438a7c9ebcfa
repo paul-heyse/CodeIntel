@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/server.py
+# hypothesis_version: 6.148.7
+
+['CodeIntel', 'FastMCP', '__main__', 'local_db', 'service']

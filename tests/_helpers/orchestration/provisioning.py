@@ -32,8 +32,6 @@ from codeintel.ingestion.engine.infrastructure.runner import ToolNotFoundError
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.gateway import StorageConfig, open_gateway
-from codeintel.storage.macros import ensure_ingest_macros, list_ingest_macros
-from codeintel.storage.metadata import INGEST_MACROS
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.builders import (
     CallGraphEdgeRow,
@@ -78,22 +76,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion import (
         ModuleRecord,
     )
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-
-
-def _assert_ingest_macros_present(con: DuckDBConnection) -> None:
-    """Fail fast if ingest macros are missing for a connection.
-
-    Raises
-    ------
-    RuntimeError
-        When any ingest macro is missing.
-    """
-    macros = list_ingest_macros(con)
-    missing = {m.lower() for m in INGEST_MACROS.values() if m.lower() not in macros}
-    if missing:
-        message = f"Missing ingest macros on gateway: {sorted(missing)}"
-        raise RuntimeError(message)
+    from codeintel.storage.gateway import StorageGateway
 
 
 def make_repo_context(
@@ -230,7 +213,6 @@ def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> Storag
             commit=ctx.commit,
         )
         gateway = open_gateway(cfg)
-        ensure_ingest_macros(gateway.con)
     else:
         factory = GatewayFactory()
         if not opts.apply_schema:
@@ -243,7 +225,6 @@ def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> Storag
             factory = factory.relaxed()
         factory = factory.with_snapshot(ctx.repo, ctx.commit)
         gateway = factory.open()
-    _assert_ingest_macros_present(gateway.con)
     return gateway
 
 
@@ -295,8 +276,6 @@ def _build_provisioning_setup(
 
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
     gateway = _open_gateway_from_context(ctx, gateway_opts)
-    ensure_ingest_macros(gateway.con)
-    _assert_ingest_macros_present(gateway.con)
 
     storage = DuckDBStorageAdapter(gateway)
     discovery = FilesystemDiscoveryAdapter(repo_root)
@@ -476,7 +455,6 @@ def provision_ingested_repo(
 
     _run_ingestion_steps(setup, list(modules), opts, repo, commit)
 
-    _assert_ingest_macros_present(setup.gateway.con)
     return ProvisionedGateway(
         repo=repo,
         commit=commit,

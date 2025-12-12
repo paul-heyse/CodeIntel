@@ -50,6 +50,8 @@ Additional Utilities
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
 from tests._helpers.build import (
     ManifestParams,
     RecordingExecutor,
@@ -64,8 +66,6 @@ from tests._helpers.build import (
     write_build_config,
 )
 from tests._helpers.catalogs import ensure_catalog_with_goids, seed_goids_from_catalog
-from typing import TYPE_CHECKING, Any, cast
-
 from tests._helpers.cli_context import (
     CliTestContext,
     cli_test_context_with_seeds,

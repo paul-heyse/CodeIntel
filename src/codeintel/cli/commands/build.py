@@ -75,6 +75,14 @@ class BuildRunCommand:
             help="Force recompute of specific targets (repeatable).",
         ),
     ] = None
+    engine: Annotated[
+        str,
+        Parameter(
+            name=["--engine", "-e"],
+            help="Build engine to use: legacy (default) or hamilton.",
+            show_choices=True,
+        ),
+    ] = "legacy"
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

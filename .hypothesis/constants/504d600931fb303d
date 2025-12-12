@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/config/validation.py
+# hypothesis_version: 6.148.7
+
+[100, '.', 'CRITICAL', 'DEBUG', 'ERROR', 'INFO', 'Must be at least 1', 'Must be non-negative', 'WARNING', '^[a-fA-F0-9]{7,40}$', '^[a-zA-Z0-9_\\-\\./]+$', 'invalid_enum', 'json', 'json_schema', 'log_level', 'max_value', 'min_value', 'output_format', 'pattern', 'progress.threshold', 'project.commit', 'project.repo', 'retry.backoff_factor', 'retry.initial_delay', 'retry.max_attempts', 'retry.max_delay', 'text', 'validate_config']

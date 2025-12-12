@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/validation/findings.py
+# hypothesis_version: 6.148.7
+
+['*', 'ColumnConstraint', 'ContractViolation', 'ForeignKeyConstraint', 'IngestContractSpec', 'MIN_ROW_THRESHOLD', 'SAMPLE_LIMIT', 'ValidationSeverity', 'cap_findings', 'error', 'has_error_findings', 'in_set', 'max_value', 'min_value', 'not_null', 'positive', 'regex', 'unique', 'warning']

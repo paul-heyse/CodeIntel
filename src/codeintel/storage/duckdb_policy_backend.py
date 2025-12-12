@@ -26,12 +26,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
+
 from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from codeintel.config.datasets import TableSchema, get_dataset_contracts_by_table_key
+    from codeintel.config.datasets import TableSchema
     from codeintel.storage.gateway.protocol import StorageGateway
 
 __all__ = [

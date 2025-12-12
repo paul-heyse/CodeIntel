@@ -8,10 +8,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
+from codeintel.build.config import load_build_config
 from codeintel.build.executor import BuildExecutor, ExecutorEnv
+from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
 from codeintel.build.plan import PlanGenerator
+from codeintel.build.providers import create_default_providers
 from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
@@ -31,6 +34,7 @@ from codeintel.cli.resolution.errors import ResolutionError
 
 if TYPE_CHECKING:
     from codeintel.build.executor import BuildResult
+    from codeintel.build.hamilton import HamiltonBuildResult
     from codeintel.build.manifest import BuildRunRecord
     from codeintel.build.plan import BuildPlan
     from codeintel.build.targets import TargetGraph, TargetModule
@@ -39,6 +43,30 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
+
+
+class BuildResultLike(Protocol):
+    """Protocol for build result objects."""
+
+    @property
+    def completed_targets(self) -> tuple[str, ...]:
+        """Return targets that completed successfully."""
+        ...
+
+    @property
+    def skipped_targets(self) -> tuple[str, ...]:
+        """Return targets that were skipped."""
+        ...
+
+    @property
+    def failed_targets(self) -> tuple[str, ...]:
+        """Return targets that failed."""
+        ...
+
+    @property
+    def duration_ms(self) -> float:
+        """Return total duration in milliseconds."""
+        ...
 
 
 class RunMode(Enum):
@@ -240,6 +268,106 @@ def _execute_build(
     return result, plan
 
 
+def _execute_build_hamilton(
+    runtime: ResolvedRuntime,
+    gateway: StorageGateway,
+    goals: list[str],
+    run_mode: RunMode,
+) -> BuildResultLike | None:
+    """Execute build using Hamilton executor.
+
+    Parameters
+    ----------
+    runtime
+        Resolved runtime context.
+    gateway
+        Open storage gateway.
+    goals
+        Target names to build.
+    run_mode
+        Whether to execute or return a dry-run plan.
+
+    Returns
+    -------
+    BuildResult | None
+        Build result or None for dry-run.
+    """
+    if run_mode is RunMode.DRY_RUN:
+        LOG.info("build.cli.hamilton.dry_run goals=%s", goals)
+        return None
+
+    LOG.info("build.cli.hamilton.execute goals=%s", goals)
+
+    # Build the Hamilton environment
+    providers = create_default_providers(runtime.tools)
+    config = load_build_config(runtime.snapshot.repo_root)
+
+    env = BuildEnv(
+        gateway=gateway,
+        snapshot=runtime.snapshot,
+        paths=runtime.paths,
+        providers=providers,
+        config=config,
+        profile="default",
+    )
+
+    executor = HamiltonBuildExecutor(profile="default")
+    hamilton_result = executor.run(env=env, targets=goals)
+
+    # Convert Hamilton result to BuildResult-like object for compatibility
+    # We create a minimal adapter that has the expected attributes
+    return _HamiltonResultAdapter(hamilton_result)
+
+
+class _HamiltonResultAdapter:
+    """Adapter to make HamiltonBuildResult compatible with BuildResult interface."""
+
+    def __init__(self, hamilton_result: HamiltonBuildResult) -> None:
+        """Initialize adapter with Hamilton result.
+
+        Parameters
+        ----------
+        hamilton_result
+            Result from HamiltonBuildExecutor.
+        """
+        self._result = hamilton_result
+
+    @property
+    def completed_targets(self) -> tuple[str, ...]:
+        """Return targets that completed successfully."""
+        completed: list[str] = []
+        for target in self._result.requested:
+            record = self._result.get_record(target)
+            if record is not None and record.status in {"succeeded", "skipped"}:
+                completed.append(target)
+        return tuple(completed)
+
+    @property
+    def skipped_targets(self) -> tuple[str, ...]:
+        """Return targets that were skipped."""
+        skipped: list[str] = []
+        for target in self._result.requested:
+            record = self._result.get_record(target)
+            if record is not None and record.status == "skipped":
+                skipped.append(target)
+        return tuple(skipped)
+
+    @property
+    def failed_targets(self) -> tuple[str, ...]:
+        """Return targets that failed."""
+        return self._result.failed_targets
+
+    @property
+    def duration_ms(self) -> float:
+        """Return total duration in milliseconds."""
+        total = 0.0
+        for target in self._result.requested:
+            record = self._result.get_record(target)
+            if record is not None:
+                total += record.duration_ms
+        return total
+
+
 def _lookup_run_by_id(
     gateway: StorageGateway,
     repo: str,
@@ -349,6 +477,7 @@ class _BuildRunParams:
     all_targets: bool
     dry_run: bool
     force: list[str] | None
+    engine: str
 
 
 def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
@@ -376,6 +505,7 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         all_targets=ctx.params.get_bool("all_targets"),
         dry_run=ctx.params.get_bool("dry_run"),
         force=force,
+        engine=ctx.params.get_str("engine") or "legacy",
     )
 
 
@@ -402,6 +532,13 @@ def _validate_build_run_params(
     provided = [bool(params.targets), params.module is not None, params.all_targets]
     if sum(provided) != 1:
         return fail_invalid_target_selection("Provide exactly one of targets, --module, or --all.")
+
+    # Validate engine parameter
+    valid_engines = ("legacy", "hamilton")
+    if params.engine not in valid_engines:
+        return fail_invalid_target_selection(
+            f"Invalid engine '{params.engine}'. Valid: {', '.join(valid_engines)}"
+        )
 
     return None
 
@@ -446,14 +583,15 @@ def build_run_handler(
         return fail_invalid_targets(str(e))
 
     LOG.info(
-        "build.run repo=%s commit=%s targets=%s",
+        "build.run repo=%s commit=%s targets=%s engine=%s",
         runtime.snapshot.repo,
         runtime.snapshot.commit,
         goals,
+        params.engine,
     )
 
     run_mode = RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE
-    return _execute_and_format_result(runtime, goals, params.force, run_mode)
+    return _execute_and_format_result(runtime, goals, params.force, run_mode, params.engine)
 
 
 def _execute_and_format_result(
@@ -461,6 +599,7 @@ def _execute_and_format_result(
     goals: list[str],
     force: list[str] | None,
     run_mode: RunMode,
+    engine: str = "legacy",
 ) -> CliResult[BuildRunResult]:
     """Execute build and format result.
 
@@ -474,6 +613,8 @@ def _execute_and_format_result(
         Force recompute targets.
     run_mode
         Execution mode.
+    engine
+        Build engine to use: "legacy" or "hamilton".
 
     Returns
     -------
@@ -482,9 +623,12 @@ def _execute_and_format_result(
     """
     try:
         with runtime_gateway(runtime, read_only=False) as gateway:
-            result, _plan = _execute_build(runtime, gateway, goals, force, run_mode)
+            if engine == "hamilton":
+                result = _execute_build_hamilton(runtime, gateway, goals, run_mode)
+            else:
+                result, _plan = _execute_build(runtime, gateway, goals, force, run_mode)
     except Exception as exc:
-        LOG.exception("build.run.error")
+        LOG.exception("build.run.error engine=%s", engine)
         return fail_execution_failed("build", str(exc))
 
     if run_mode is RunMode.DRY_RUN or result is None:

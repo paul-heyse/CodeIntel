@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/gateway/factory.py
+# hypothesis_version: 6.148.7
+
+[':memory:', 'open_gateway', 'open_memory_gateway']

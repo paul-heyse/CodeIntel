@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/registry/capability_index.py
+# hypothesis_version: 6.148.7
+
+['PluginRegistryIndex', 'build_registry_index']

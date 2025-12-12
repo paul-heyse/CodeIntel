@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/registry/sorting.py
+# hypothesis_version: 6.148.7
+
+['CapabilityProvider', 'build_provider_index', 'topological_sort']

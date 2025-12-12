@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/resolution/runtime.py
+# hypothesis_version: 6.148.7
+
+['.codeintel', 'build', 'build_dir', 'commit', 'db_path', 'document_output_dir', 'local_db', 'project_root', 'repo', 'repo_root', 'resolve_from_params', 'use_gpu']

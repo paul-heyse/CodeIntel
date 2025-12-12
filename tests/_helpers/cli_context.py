@@ -13,6 +13,7 @@ from __future__ import annotations
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
+
 from tests._helpers.context import create_test_context
 from tests._helpers.repo import write_canonical_repo
 
