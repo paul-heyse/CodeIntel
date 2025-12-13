@@ -16,7 +16,8 @@ from fastapi.testclient import TestClient
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.datasets import build_registry_and_limits, validate_dataset_registry
-from codeintel.serving.http.fastapi import BackendResource, create_app
+from codeintel.serving.bootstrap import BackendResource
+from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     ResponseMeta,

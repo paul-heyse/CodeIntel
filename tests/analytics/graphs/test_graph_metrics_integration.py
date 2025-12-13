@@ -22,8 +22,7 @@ from codeintel.analytics.graphs.plugin_catalog import (
     build_plugin_catalog,
     render_plugin_catalog_markdown,
 )
-from codeintel.config import ConfigBuilder, SnapshotInit
-from codeintel.config.primitives import BuildLayoutOptions
+from codeintel.config.primitives import SnapshotRef
 from tests._helpers import (
     GraphMetricsGatewayOptions,
     graph_metrics_ready_gateway,
@@ -189,12 +188,8 @@ def test_compute_function_graph_metrics_counts_and_cycles(tmp_path: Path) -> Non
     )
     seed_function_graph_cycle(ctx.gateway, repo=REPO, commit=COMMIT, rel_path=REL_PATH)
 
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo=REPO, commit=COMMIT, repo_root=ctx.repo_root),
-        layout=BuildLayoutOptions(build_dir=ctx.build_dir),
-    )
-    cfg = builder.graph_metrics()
-    compute_graph_metrics(ctx.gateway, cfg)
+    snapshot = SnapshotRef(repo=REPO, commit=COMMIT, repo_root=ctx.repo_root)
+    compute_graph_metrics(ctx.gateway, snapshot)
 
     assert_graph_metrics_function_row(
         ctx.gateway.con,
@@ -231,12 +226,8 @@ def test_compute_module_graph_metrics_with_symbol_coupling(tmp_path: Path) -> No
         module_b=MODULE_B,
     )
 
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo=REPO, commit=COMMIT, repo_root=ctx.repo_root),
-        layout=BuildLayoutOptions(build_dir=ctx.build_dir),
-    )
-    cfg = builder.graph_metrics()
-    compute_graph_metrics(ctx.gateway, cfg)
+    snapshot = SnapshotRef(repo=REPO, commit=COMMIT, repo_root=ctx.repo_root)
+    compute_graph_metrics(ctx.gateway, snapshot)
 
     assert_graph_metrics_module_row(
         ctx.gateway.con,

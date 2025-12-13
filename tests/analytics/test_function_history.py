@@ -7,12 +7,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.functions import compute_function_history
-from codeintel.config import SnapshotInit
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.config.primitives import SnapshotRef
 from tests._helpers import TestScenario
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.builders import insert_rows
-from tests._helpers.config_factory import function_history_cfg
 from tests._helpers.orchestration.tooling import init_git_repo_with_history
 from tests._helpers.rows import function_metrics_row, module_row
 
@@ -98,11 +97,8 @@ def test_function_history_populates_rows(
     try:
         _seed_function_for_history(ctx, goid=GOID_TEST_FUNC_1, urn="urn:fn", commit=commit)
 
-        cfg = function_history_cfg(
-            SnapshotInit(repo=ctx.repo, commit=commit, repo_root=repo_root),
-            min_lines_threshold=None,
-        )
-        compute_function_history(ctx.gateway, cfg, runner=git_ctx.runner)
+        snapshot = SnapshotRef(repo=ctx.repo, commit=commit, repo_root=repo_root)
+        compute_function_history(ctx.gateway, snapshot, runner=git_ctx.runner)
 
         rows = ctx.con.execute("SELECT * FROM analytics.function_history").fetchall()
         expect_equal(len(rows), 1, label="Expected a single function history row.")
@@ -140,11 +136,8 @@ def test_function_history_respects_min_threshold(
     try:
         _seed_function_for_history(ctx, goid=GOID_TEST_FUNC_2, urn="urn:fn2", commit=commit)
 
-        cfg = function_history_cfg(
-            SnapshotInit(repo=ctx.repo, commit=commit, repo_root=repo_root),
-            min_lines_threshold=10,
-        )
-        compute_function_history(ctx.gateway, cfg, runner=git_ctx.runner)
+        snapshot = SnapshotRef(repo=ctx.repo, commit=commit, repo_root=repo_root)
+        compute_function_history(ctx.gateway, snapshot, runner=git_ctx.runner)
 
         rows = ctx.con.execute(
             "SELECT commit_count, lines_added FROM analytics.function_history"

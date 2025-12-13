@@ -9,7 +9,8 @@ from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.fastapi import BackendResource, create_app
+from codeintel.serving.bootstrap import BackendResource
+from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.http.routes.architecture import build_architecture_router
 from codeintel.serving.http.routes.datasets import build_datasets_router
 from codeintel.serving.http.routes.functions import build_functions_router

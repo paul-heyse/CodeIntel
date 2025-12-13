@@ -58,7 +58,6 @@ from codeintel.analytics.profiles import files as profile_files
 from codeintel.analytics.profiles import functions as profile_functions
 from codeintel.analytics.profiles import modules as profile_modules
 from codeintel.analytics.testing.profiles import rows as profile_rows
-from codeintel.config import BehavioralCoverageStepConfig, SnapshotInit, TestProfileStepConfig
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     FILE_PROFILE_COLUMNS,
@@ -71,7 +70,6 @@ from codeintel.config.datasets import (
     module_profile_row_to_tuple,
     serialize_test_profile_row,
 )
-from codeintel.config.primitives import BuildLayoutOptions
 from tests._helpers import METRICS_PACK, assert_frozen
 from tests._helpers.assertions import (
     assert_coverage_lines,
@@ -85,7 +83,6 @@ from tests._helpers.assertions import (
     expect_true,
     require_row,
 )
-from tests._helpers.config_factory import profiles_analytics_cfg
 from tests._helpers.factories.row_factories import (
     blank_behavioral_coverage_row,
     blank_file_profile_row,
@@ -246,17 +243,10 @@ def test_profile_builders_aggregate_expected_fields(profiles_ctx: TestContext) -
     """Ensure profile builders compose metrics, tests, coverage, and graph data."""
     gateway = profiles_ctx.gateway
     con = gateway.con
-    cfg = profiles_analytics_cfg(
-        SnapshotInit(
-            repo=profiles_ctx.repo,
-            commit=profiles_ctx.commit,
-            repo_root=profiles_ctx.repo_root,
-        ),
-        layout=BuildLayoutOptions(build_dir=profiles_ctx.build_paths.build_dir),
-    )
-    build_function_profile(gateway, cfg)
-    build_file_profile(gateway, cfg)
-    build_module_profile(gateway, cfg)
+    snapshot = profiles_ctx.to_snapshot_ref()
+    build_function_profile(gateway, snapshot)
+    build_file_profile(gateway, snapshot)
+    build_module_profile(gateway, snapshot)
     _assert_function_profile(con)
     _assert_file_profile(con)
     _assert_module_profile(con)
@@ -452,20 +442,19 @@ def test_test_and_behavioral_profile_writers(
     """Test profile and behavioral coverage writers respect snapshot alignment."""
     ctx = TestScenario.minimal().build(tmp_path)
     try:
-        test_cfg = TestProfileStepConfig(snapshot=ctx.snapshot)
-        behavior_cfg = BehavioralCoverageStepConfig(snapshot=ctx.snapshot)
+        snapshot = ctx.to_snapshot_ref()
         caplog.set_level(logging.WARNING)
 
         test_rows = _test_rows(ctx.repo, ctx.commit)
         ctx.gateway.con.execute("DELETE FROM analytics.test_profile")
-        inserted = profile_rows.write_test_profile_rows(ctx.gateway, test_cfg, test_rows)
+        inserted = profile_rows.write_test_profile_rows(ctx.gateway, snapshot, test_rows)
         expect_equal(inserted, len(test_rows))
         stored = ctx.gateway.con.execute(
             "SELECT test_id, rel_path FROM analytics.test_profile ORDER BY test_id"
         ).fetchall()
         expect_equal(len(stored), len(test_rows))
 
-        replaced = profile_rows.write_test_profile_rows(ctx.gateway, test_cfg, test_rows[:1])
+        replaced = profile_rows.write_test_profile_rows(ctx.gateway, snapshot, test_rows[:1])
         expect_equal(replaced, 1)
         remaining = ctx.gateway.con.execute(
             "SELECT COUNT(*) FROM analytics.test_profile"
@@ -477,7 +466,7 @@ def test_test_and_behavioral_profile_writers(
         ctx.gateway.con.execute("DELETE FROM analytics.behavioral_coverage")
         behavior_rows = _behavior_rows(ctx.repo, ctx.commit)
         inserted_behavior = profile_rows.write_behavioral_coverage_rows(
-            ctx.gateway, behavior_cfg, behavior_rows
+            ctx.gateway, snapshot, behavior_rows
         )
         expect_equal(inserted_behavior, len(behavior_rows))
         behavior_count = ctx.gateway.con.execute(

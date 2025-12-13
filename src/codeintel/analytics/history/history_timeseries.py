@@ -51,6 +51,7 @@ class HistoryTimeseriesOptions:
     max_entities: int = 500
     selection_strategy: str = "risk_score"
 
+
 HISTORY_TIMESERIES_COLS = [
     "repo",
     "entity_kind",

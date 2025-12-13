@@ -30,13 +30,15 @@
 
 ### Impact Summary
 
-| Phase | Lines Reduced | Risk Level | Effort | Priority |
-|-------|---------------|------------|--------|----------|
-| Phase 1 | ~630 lines | Low | 2-3 days | High |
-| Phase 2 | ~150 lines | Medium | 1-2 days | Medium |
-| Phase 3 | ~800 lines | Medium-High | 3-4 days | Medium |
-| Phase 4 | ~400 lines | High | 5+ days | Low |
-| **Total** | **~2,000 lines** | - | **11-14 days** | - |
+| Phase | Lines Reduced | Risk Level | Effort | Priority | Status |
+|-------|---------------|------------|--------|----------|--------|
+| Phase 1 | ~630 lines | Low | 2-3 days | High | ✅ Complete |
+| Phase 2 | ~150 lines | Medium | 1-2 days | Medium | ✅ Complete |
+| Phase 3 | ~960 lines | Medium-High | 4-5 days | Medium | Pending |
+| Phase 4 | ~500 lines | High | 5+ days | Low | Pending |
+| **Total** | **~2,240 lines** | - | **12-16 days** | - |
+
+> **Phase 3/4 Updated:** Added new optimization items discovered during Phase 1/2 implementation.
 
 ---
 
@@ -524,7 +526,58 @@ class HttpTransport(TransportAdapter):
 
 ## Phase 3: Backend Consolidation
 
-### 3.1 Create `BackendMethodMixin`
+> **Note:** Updated based on learnings from Phase 1/2 implementation.
+
+### 3.0 Add `to_response_result()` Helper (NEW)
+
+**Priority:** P1 (enables 3.1)  
+**Estimated Effort:** 1-2 hours  
+**Lines Saved:** ~50 (from backend methods)
+
+#### Problem
+
+The MCP backend methods have the inverse conversion pattern of service methods:
+- Service methods: raw → domain (handled by `to_domain_result()`)
+- Backend methods: domain → response (needs `to_response_result()`)
+
+#### Solution
+
+Add to `services/conversion.py`:
+
+```python
+@runtime_checkable
+class HasFromDomain(Protocol[D_co]):
+    """Protocol for response models with from_domain class method."""
+    
+    @classmethod
+    def from_domain(cls, domain: D_co) -> HasFromDomain[D_co]:
+        """Create response model from domain model."""
+        ...
+
+
+def to_response_result(
+    raw: object,
+    response_type: type[HasFromDomain[D]],
+) -> HasFromDomain[D]:
+    """
+    Convert domain model to response model with type coercion.
+    
+    This function handles two cases:
+    1. raw is already the response type → return as-is
+    2. raw is a domain model → call from_domain()
+    
+    Used by MCP backends to ensure consistent response serialization.
+    """
+    if isinstance(raw, response_type):
+        return raw
+    return response_type.from_domain(raw)
+```
+
+This creates symmetry with `to_domain_result()` and enables cleaner backend code.
+
+---
+
+### 3.1 Create `BackendDispatchMixin`
 
 **Priority:** P2  
 **Estimated Effort:** 3-4 days  
@@ -827,7 +880,128 @@ This reduces from 15+ protocols to 6 core protocols.
 
 ---
 
+### 3.3 Centralize Scope Normalization (NEW)
+
+**Priority:** P2  
+**Estimated Effort:** 2-3 hours  
+**Lines Saved:** ~30
+
+#### Problem
+
+Scope normalization appears in multiple places:
+- `parse_graph_scope()` in `mcp/models.py`
+- Inline `isinstance(scope, GraphScopePayload)` checks in backend methods
+- `_normalize_scope()` proposed for `BackendDispatchMixin`
+
+#### Solution
+
+Consolidate into a single utility in `mcp/models.py`:
+
+```python
+def normalize_scope(scope: object | None) -> GraphScopePayload | None:
+    """
+    Normalize scope parameter to GraphScopePayload or None.
+    
+    Parameters
+    ----------
+    scope
+        Raw scope value from API calls.
+    
+    Returns
+    -------
+    GraphScopePayload | None
+        Normalized scope for backend operations.
+    """
+    if scope is None:
+        return None
+    if isinstance(scope, GraphScopePayload):
+        return scope
+    if isinstance(scope, dict):
+        return GraphScopePayload.model_validate(scope)
+    return None
+```
+
+Update all callers to use this single function.
+
+---
+
+### 3.4 HTTP Mixin Limit/Error Pattern Consolidation (NEW)
+
+**Priority:** P2  
+**Estimated Effort:** 3-4 hours  
+**Lines Saved:** ~80
+
+#### Problem
+
+HTTP mixins (`_HttpFunctionQueryMixin`, `_HttpSubsystemQueryMixin`, etc.) repeat this pattern:
+
+```python
+def some_method(self, *, limit: int | None = None, ...) -> dm.SomeResult:
+    def _run() -> SomeResponse:
+        applied_limit = self.limits.default_limit if limit is None else limit
+        clamp = clamp_limit(
+            applied_limit,
+            default=applied_limit,
+            max_limit=self.limits.max_rows_per_call,
+        )
+        if clamp.has_error:
+            return SomeResponse(items=[], meta=ResponseMeta())  # Empty response
+        # ... actual HTTP call ...
+```
+
+#### Solution
+
+Create a helper that encapsulates this pattern:
+
+```python
+# services/http_helpers.py
+
+@dataclass
+class ClampedCall(Generic[T]):
+    """Result of a clamped HTTP call."""
+    
+    result: T
+    clamped_limit: ClampResult
+    clamped_offset: ClampResult | None = None
+
+
+def with_clamped_limits(
+    limits: BackendLimits,
+    limit: int | None,
+    offset: int | None = None,
+    *,
+    empty_response_factory: Callable[[], T],
+) -> tuple[int, int, list[dm.Message]] | T:
+    """
+    Apply limit/offset clamping and return early if errors.
+    
+    Returns tuple of (applied_limit, applied_offset, messages) if valid,
+    or the empty response if clamping failed.
+    """
+    applied_limit = limits.default_limit if limit is None else limit
+    clamp = clamp_limit(applied_limit, default=applied_limit, max_limit=limits.max_rows_per_call)
+    
+    messages = list(clamp.messages)
+    applied_offset = 0
+    
+    if offset is not None:
+        offset_clamp = clamp_offset(offset)
+        messages.extend(offset_clamp.messages)
+        applied_offset = offset_clamp.applied
+        if offset_clamp.has_error:
+            return empty_response_factory()
+    
+    if clamp.has_error:
+        return empty_response_factory()
+    
+    return (clamp.applied, applied_offset, messages)
+```
+
+---
+
 ## Phase 4: Layer Simplification (Long-term)
+
+> **Note:** Updated based on learnings from Phase 1/2 implementation.
 
 ### 4.1 Simplify Bootstrap Entry Points
 
@@ -902,7 +1076,73 @@ def build_serving_stack(
         raise ValueError(f"Unsupported mode: {config.mode}")
 ```
 
-### 4.2 Consider Layer Collapse
+### 4.2 Canonical Import Documentation (NEW)
+
+**Priority:** P2  
+**Estimated Effort:** 2-3 hours  
+**Lines Saved:** N/A (prevents import errors)
+
+#### Problem
+
+During Phase 1/2 implementation, discovered that test files were importing `BackendResource` from `codeintel.serving.http.fastapi` instead of the canonical location `codeintel.serving.bootstrap`. This is a documentation/discovery issue.
+
+#### Solution
+
+1. **Update module docstrings** to specify canonical import locations
+2. **Add re-exports** to convenient locations with deprecation warnings:
+
+```python
+# http/fastapi.py - add explicit note
+"""
+FastAPI server exposing MCP-aligned queries over DuckDB.
+
+Note: Import ``BackendResource`` from ``codeintel.serving.bootstrap``,
+not from this module.
+"""
+```
+
+3. **Add to `services/__init__.py`** (already done in Phase 1):
+   - `BackendResource` is now exported from services for convenience
+
+4. **Update test fixtures** to use canonical imports (completed in Phase 1/2)
+
+---
+
+### 4.3 Transport Adapter Migration (NEW)
+
+**Priority:** P3  
+**Estimated Effort:** 1-2 days  
+**Lines Saved:** ~100
+
+#### Problem
+
+After Phase 2 consolidation, we have both:
+- `LocalTransport` / `HttpTransport` classes in `transport.py`
+- `_HttpTransportMixin` class also in `transport.py`
+
+The mixin is currently used by HTTP service classes, while `HttpTransport` is unused.
+
+#### Options
+
+**Option A: Migrate to Transport Adapters**
+- Update HTTP mixins to use `HttpTransport.call()` instead of `_http_call()`
+- Deprecate `_HttpTransportMixin`
+- Pro: Cleaner abstraction
+- Con: Larger change
+
+**Option B: Keep Both, Document Purpose**
+- `_HttpTransportMixin`: For service mixins that inherit from it
+- `HttpTransport`: For composition-based usage
+- Pro: No changes needed
+- Con: Conceptual overlap
+
+#### Recommendation
+
+Choose Option B for now. The mixins work well for the current architecture. Consider Option A when doing a larger service layer refactor.
+
+---
+
+### 4.4 Consider Layer Collapse
 
 **Priority:** P4 (Future)  
 **Estimated Effort:** 5+ days  
@@ -917,6 +1157,32 @@ Currently, MCP Backend → Service → Query Layer all do thin wrapping.
 - Service layer could be absorbed
 
 **Recommendation:** Defer this to a future major version. The current three-layer design provides good separation of concerns, even if verbose.
+
+---
+
+### 4.5 Dead Code Audit (NEW)
+
+**Priority:** P3  
+**Estimated Effort:** 2-3 hours  
+**Lines Saved:** Unknown
+
+#### Problem
+
+During Phase 1 implementation, discovered that `_normalize_validation_profile` in `services/datasets.py` was completely unused. There may be other dead code in the serving module.
+
+#### Solution
+
+Run a dead code audit:
+
+```bash
+uv run vulture src/codeintel/serving/ --min-confidence 90
+```
+
+Review results and remove confirmed dead code. Candidates to check:
+- Unused imports (already handled by ruff)
+- Functions defined but never called
+- Classes defined but never instantiated
+- Protocol methods never implemented
 
 ---
 
@@ -960,35 +1226,41 @@ uv run ruff check src/codeintel/serving/ --fix
 
 ### Phase 1 Checklist
 
-- [ ] Create `services/conversion.py` with `to_domain_result()`
-- [ ] Update `services/functions.py` to use `to_domain_result()`
-- [ ] Update `services/profiles.py` to use `to_domain_result()`
-- [ ] Update `services/subsystems.py` to use `to_domain_result()`
-- [ ] Update `services/datasets.py` to use `to_domain_result()`
-- [ ] Delete duplicate `_normalize_validation_profile` from `services/datasets.py`
-- [ ] Create unified `ensure_prereqs()` in `auto_pipeline.py`
-- [ ] Deprecate `ensure_prereqs_for_http()` and `ensure_prereqs_for_mcp()`
-- [ ] Delete or document `services/base.py`
-- [ ] Run tests, type checking, and linting
-- [ ] Update `__all__` exports
+- [x] Create `services/conversion.py` with `to_domain_result()`
+- [x] Update `services/functions.py` to use `to_domain_result()`
+- [x] Update `services/profiles.py` to use `to_domain_result()`
+- [x] Update `services/subsystems.py` to use `to_domain_result()`
+- [x] Update `services/datasets.py` to use `to_domain_result()`
+- [x] Delete duplicate `_normalize_validation_profile` from `services/datasets.py`
+- [x] Create unified `ensure_prereqs()` in `auto_pipeline.py`
+- [x] Deprecate `ensure_prereqs_for_http()` and `ensure_prereqs_for_mcp()`
+- [x] Delete or document `services/base.py`
+- [x] Run tests, type checking, and linting
+- [x] Update `__all__` exports
 
 ### Phase 2 Checklist
 
-- [ ] Consolidate `transport.py` and `http_transport.py`
-- [ ] Update service mixins to use `TransportAdapter`
-- [ ] Delete `services/http_transport.py`
-- [ ] Run tests, type checking, and linting
+- [x] Consolidate `transport.py` and `http_transport.py`
+- [x] Update service mixins to use `_HttpTransportMixin` from `transport.py`
+- [x] Delete `services/http_transport.py`
+- [x] Run tests, type checking, and linting
 
 ### Phase 3 Checklist
 
+- [ ] Add `HasFromDomain` protocol and `to_response_result()` to `services/conversion.py`
 - [ ] Create `mcp/backend_base.py` with `BackendDispatchMixin`
 - [ ] Refactor `DuckDBBackend` to use `_dispatch()`
 - [ ] Refactor `HttpBackend` to use `_dispatch()`
 - [ ] Consolidate protocols in `types.py`
+- [ ] Create `normalize_scope()` utility and update callers
+- [ ] Create HTTP limit/error helpers (optional, can defer)
 - [ ] Run tests, type checking, and linting
 
 ### Phase 4 Checklist
 
+- [ ] Document canonical import locations in module docstrings
+- [ ] Run dead code audit with vulture
+- [ ] Remove confirmed dead code
 - [ ] Consolidate bootstrap entry points
 - [ ] Update all callers to new entry points
 - [ ] Deprecate old entry points
@@ -1045,4 +1317,6 @@ def get_something(self, ...) -> SomeResponse:
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2025-12-13 | AI Assistant | Initial comprehensive plan |
+| 1.1 | 2025-12-13 | AI Assistant | Completed Phase 1 and Phase 2 implementation |
+| 1.2 | 2025-12-13 | AI Assistant | Updated Phase 3/4 with learnings from implementation: added `to_response_result()`, scope normalization, HTTP helpers, canonical imports, transport migration options, dead code audit |
 

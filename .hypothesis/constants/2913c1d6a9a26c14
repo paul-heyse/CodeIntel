@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/hotspots/metrics.py
+# hypothesis_version: 6.148.7
+
+[0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 500, 2000, '--date=short', '--no-renames', '--numstat', '.tool_cache', '/', 'COMMIT\t', '\\', 'analytics.hotspots', 'author_count', 'build', 'commit_count', 'complexity', 'core.ast_metrics', 'empty', 'git', 'lines_added', 'lines_deleted', 'log', 'rel_path']

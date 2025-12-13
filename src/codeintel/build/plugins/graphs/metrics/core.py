@@ -111,9 +111,7 @@ class CoreMetricsPlugin(TargetPlugin):
                 "analytics.graph_stats",
             ]:
                 expr = ctx.gateway.ibis.table(table)
-                filtered = expr.filter(
-                    and_predicates(expr.repo == repo, expr.commit == commit)
-                )
+                filtered = expr.filter(and_predicates(expr.repo == repo, expr.commit == commit))
                 result_df = filtered.aggregate(row_count=expr.repo.count()).execute()
                 row_counts[table] = (
                     int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0

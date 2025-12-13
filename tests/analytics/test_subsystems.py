@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.analytics.subsystems import build_subsystems
-from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.analytics.subsystems.materialize import SubsystemOptions
+from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import expect_equal, expect_in, expect_length
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds.subsystems_analytics import (
@@ -52,17 +53,16 @@ def subsystem_ctx(tmp_path: Path) -> Iterator[TestContext]:
 
 def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> None:
     """Cluster modules and aggregate risk across subsystems using seeded pack."""
-    cfg = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(
-            repo=subsystem_ctx.repo,
-            commit=subsystem_ctx.commit,
-            repo_root=subsystem_ctx.repo_root,
-        ),
-    ).analytics.subsystems(
+    snapshot = SnapshotRef(
+        repo=subsystem_ctx.repo,
+        commit=subsystem_ctx.commit,
+        repo_root=subsystem_ctx.repo_root,
+    )
+    options = SubsystemOptions(
         max_subsystems=2,
         min_modules=1,
     )
-    build_subsystems(subsystem_ctx.gateway, cfg)
+    build_subsystems(subsystem_ctx.gateway, snapshot, options=options)
 
     subsystems = subsystem_ctx.query(
         """

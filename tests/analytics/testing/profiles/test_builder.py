@@ -22,7 +22,7 @@ from codeintel.analytics.testing.profiles.builder import (
     infer_behavior_tags,
 )
 from codeintel.analytics.testing.profiles.types import IoFlags, TestAstInfo
-from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -315,13 +315,11 @@ class TestBuildTestProfile:
     @staticmethod
     def test_returns_early_when_no_tests(test_ctx: TestContext) -> None:
         """Verify build_test_profile returns early with no test catalog."""
-        cfg = ConfigBuilder.from_snapshot(
-            snapshot=SnapshotInit(
-                repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
-            ),
-        ).analytics.test_profile()
+        snapshot = SnapshotRef(
+            repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
+        )
 
-        build_test_profile(test_ctx.gateway, cfg)
+        build_test_profile(test_ctx.gateway, snapshot)
 
         count = test_ctx.query_count(
             "analytics.test_profile",
@@ -332,15 +330,13 @@ class TestBuildTestProfile:
     @staticmethod
     def test_builds_profiles_with_seeded_tests(coverage_ctx: TestContext) -> None:
         """Verify build_test_profile creates rows when test catalog exists."""
-        cfg = ConfigBuilder.from_snapshot(
-            snapshot=SnapshotInit(
-                repo=coverage_ctx.repo,
-                commit=coverage_ctx.commit,
-                repo_root=coverage_ctx.repo_root,
-            ),
-        ).analytics.test_profile()
+        snapshot = SnapshotRef(
+            repo=coverage_ctx.repo,
+            commit=coverage_ctx.commit,
+            repo_root=coverage_ctx.repo_root,
+        )
 
-        build_test_profile(coverage_ctx.gateway, cfg)
+        build_test_profile(coverage_ctx.gateway, snapshot)
 
         count = coverage_ctx.query_count(
             "analytics.test_profile",

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/ibis_utils.py
+# hypothesis_version: 6.148.7
+
+['Any', 'bool_or', 'float64', 'int64', 'it.NumericValue', 'literal_sequence', 'safe_ratio', 'zero_if_null']

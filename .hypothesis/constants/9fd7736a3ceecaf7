@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/subsystems/materialize.py
+# hypothesis_version: 6.148.7
+
+[0.0, 100, 1000, ', ', '.', '_', 'ai', 'analytics.subsystems', 'api', 'avg_risk_score', 'cli', 'commit', 'core', 'coverage_cache_ms', 'coverage_speedup', 'coverage_view_ms', 'created_at', 'data', 'description', 'domain', 'endpoint', 'entrypoints_json', 'etl', 'external_edge_count', 'fan_in', 'fan_out', 'function_count', 'infra', 'internal_edge_count', 'kind', 'low', 'max_risk_score', 'ml', 'module', 'module_count', 'modules_json', 'name', 'ops', 'platform', 'profile_cache_ms', 'profile_speedup', 'profile_view_ms', 'repo', 'risk_level', 'role', 'routes', 'service', 'services', 'subsystem_id', 'tag', 'test', 'tests', 'tool', 'utf-8']

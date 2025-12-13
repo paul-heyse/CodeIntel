@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import build_snapshot_gateway_resolver
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.configs.history_config import SnapshotSpec
@@ -58,10 +59,8 @@ def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
         commit=commit_new,
     )
     with analytics_gateway(options) as gateway:
-        builder = ConfigBuilder.from_snapshot(
-            snapshot=SnapshotInit(repo=repo, commit=commit_new, repo_root=git_ctx.repo_root),
-        )
-        cfg = builder.analytics.history_timeseries(
+        snapshot = SnapshotRef(repo=repo, commit=commit_new, repo_root=git_ctx.repo_root)
+        options_ts = HistoryTimeseriesOptions(
             commits=(commit_new, commit_old),
             entity_kind="function",
         )
@@ -72,8 +71,9 @@ def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
         )
         compute_history_timeseries_gateways(
             gateway,
-            cfg,
+            snapshot,
             snapshot_resolver,
+            options=options_ts,
             runner=git_ctx.runner,
         )
 

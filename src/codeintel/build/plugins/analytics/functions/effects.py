@@ -114,9 +114,7 @@ class FunctionEffectsPlugin(TargetPlugin):
                 ast_map=ast_map,
                 missing_goids=missing_goids,
             )
-            compute_function_effects(
-                ctx.gateway, ctx.snapshot, options=opts, inputs=inputs
-            )
+            compute_function_effects(ctx.gateway, ctx.snapshot, options=opts, inputs=inputs)
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Function effects computation failed: {e}")
 

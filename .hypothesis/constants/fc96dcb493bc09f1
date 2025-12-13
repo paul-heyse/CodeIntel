@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/builder.py
+# hypothesis_version: 6.148.7
+
+['BuilderDependencies', 'ConfigBuilder']

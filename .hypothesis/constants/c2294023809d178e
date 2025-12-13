@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/graph_helpers.py
+# hypothesis_version: 6.148.7
+
+[1.0, 200, 'GraphMetricWeights', 'GraphMetricsTuning', 'GraphPluginPolicy', 'GraphRunScope', 'fatal', 'modules', 'paths', 'skip_on_error', 'soft_fail']

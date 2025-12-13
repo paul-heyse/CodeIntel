@@ -17,7 +17,8 @@ from codeintel.serving.mcp.models import (
     TestsForFunctionResponse,
     parse_graph_scope,
 )
-from codeintel.serving.services.http_transport import _HttpTransportMixin
+from codeintel.serving.services.conversion import to_domain_result
+from codeintel.serving.services.transport import _HttpTransportMixin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -43,7 +44,7 @@ class _FunctionQueryDelegates:
         qualname: str | None = None,
         scope: GraphScopePayload | None = None,
     ) -> dm.FunctionSummaryResult:
-        raw_resp = self._call(
+        raw = self._call(
             "get_function_summary",
             lambda: self.query.functions.get_function_summary(
                 urn=urn,
@@ -53,11 +54,7 @@ class _FunctionQueryDelegates:
                 scope=parse_graph_scope(scope),
             ),
         )
-        if isinstance(raw_resp, dm.FunctionSummaryResult):
-            return raw_resp
-        if isinstance(raw_resp, FunctionSummaryResponse):
-            return raw_resp.to_domain()
-        return FunctionSummaryResponse.model_validate(raw_resp).to_domain()
+        return to_domain_result(raw, dm.FunctionSummaryResult, FunctionSummaryResponse)
 
     def list_high_risk_functions(
         self,
@@ -67,7 +64,7 @@ class _FunctionQueryDelegates:
         tested_only: bool = False,
         scope: GraphScopePayload | None = None,
     ) -> dm.HighRiskFunctionsResult:
-        raw_resp = self._call(
+        raw = self._call(
             "list_high_risk_functions",
             lambda: self.query.functions.list_high_risk_functions(
                 min_risk=min_risk,
@@ -76,11 +73,7 @@ class _FunctionQueryDelegates:
                 scope=parse_graph_scope(scope),
             ),
         )
-        if isinstance(raw_resp, dm.HighRiskFunctionsResult):
-            return raw_resp
-        if isinstance(raw_resp, HighRiskFunctionsResponse):
-            return raw_resp.to_domain()
-        return HighRiskFunctionsResponse.model_validate(raw_resp).to_domain()
+        return to_domain_result(raw, dm.HighRiskFunctionsResult, HighRiskFunctionsResponse)
 
     def get_callgraph_neighbors(
         self,
@@ -90,7 +83,7 @@ class _FunctionQueryDelegates:
         limit: int | None = None,
         scope: GraphScopePayload | None = None,
     ) -> dm.CallGraphNeighbors:
-        raw_resp = self._call(
+        raw = self._call(
             "get_callgraph_neighbors",
             lambda: self.query.functions.get_callgraph_neighbors(
                 goid_h128=goid_h128,
@@ -99,11 +92,7 @@ class _FunctionQueryDelegates:
                 scope=parse_graph_scope(scope),
             ),
         )
-        if isinstance(raw_resp, dm.CallGraphNeighbors):
-            return raw_resp
-        if isinstance(raw_resp, CallGraphNeighborsResponse):
-            return raw_resp.to_domain()
-        return CallGraphNeighborsResponse.model_validate(raw_resp).to_domain()
+        return to_domain_result(raw, dm.CallGraphNeighbors, CallGraphNeighborsResponse)
 
     def get_tests_for_function(
         self,
@@ -113,7 +102,7 @@ class _FunctionQueryDelegates:
         limit: int | None = None,
         scope: GraphScopePayload | None = None,
     ) -> dm.TestsForFunctionResult:
-        raw_resp = self._call(
+        raw = self._call(
             "get_tests_for_function",
             lambda: self.query.functions.get_tests_for_function(
                 goid_h128=goid_h128,
@@ -122,11 +111,7 @@ class _FunctionQueryDelegates:
                 scope=parse_graph_scope(scope),
             ),
         )
-        if isinstance(raw_resp, dm.TestsForFunctionResult):
-            return raw_resp
-        if isinstance(raw_resp, TestsForFunctionResponse):
-            return raw_resp.to_domain()
-        return TestsForFunctionResponse.model_validate(raw_resp).to_domain()
+        return to_domain_result(raw, dm.TestsForFunctionResult, TestsForFunctionResponse)
 
     def get_callgraph_neighborhood(
         self,
@@ -135,18 +120,14 @@ class _FunctionQueryDelegates:
         radius: int = 1,
         max_nodes: int | None = None,
     ) -> dm.GraphNeighborhood:
-        raw_resp = self._call(
+        raw = self._call(
             "get_callgraph_neighborhood",
             lambda: self.query.functions.get_callgraph_neighborhood(
                 goid_h128=goid_h128, radius=radius, max_nodes=max_nodes
             ),
             dataset="call_graph_nodes",
         )
-        if isinstance(raw_resp, dm.GraphNeighborhood):
-            return raw_resp
-        if isinstance(raw_resp, GraphNeighborhoodResponse):
-            return raw_resp.to_domain()
-        return GraphNeighborhoodResponse.model_validate(raw_resp).to_domain()
+        return to_domain_result(raw, dm.GraphNeighborhood, GraphNeighborhoodResponse)
 
     def get_import_boundary(
         self,
@@ -154,34 +135,26 @@ class _FunctionQueryDelegates:
         subsystem_id: str,
         max_edges: int | None = None,
     ) -> dm.ImportBoundary:
-        raw_resp = self._call(
+        raw = self._call(
             "get_import_boundary",
             lambda: self.query.functions.get_import_boundary(
                 subsystem_id=subsystem_id, max_edges=max_edges
             ),
             dataset="import_graph_edges",
         )
-        if isinstance(raw_resp, dm.ImportBoundary):
-            return raw_resp
-        if isinstance(raw_resp, ImportBoundaryResponse):
-            return raw_resp.to_domain()
-        return ImportBoundaryResponse.model_validate(raw_resp).to_domain()
+        return to_domain_result(raw, dm.ImportBoundary, ImportBoundaryResponse)
 
     def get_file_summary(
         self, *, rel_path: str, scope: GraphScopePayload | None = None
     ) -> dm.FileSummaryResult:
-        raw_resp = self._call(
+        raw = self._call(
             "get_file_summary",
             lambda: self.query.modules.get_file_summary(
                 rel_path=rel_path,
                 scope=parse_graph_scope(scope),
             ),
         )
-        if isinstance(raw_resp, dm.FileSummaryResult):
-            return raw_resp
-        if isinstance(raw_resp, FileSummaryResponse):
-            return raw_resp.to_domain()
-        return FileSummaryResponse.model_validate(raw_resp).to_domain()
+        return to_domain_result(raw, dm.FileSummaryResult, FileSummaryResponse)
 
 
 class _HttpFunctionQueryMixin(_HttpTransportMixin):

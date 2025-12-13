@@ -79,8 +79,6 @@ FUNC_C_LINES = (1, 2)
 HELPER_LINES = (1, 2)
 
 
-
-
 @pytest.fixture
 def ast_metrics_ctx(tmp_path: Path) -> Iterator[TestContext]:
     """Provide a seeded TestContext with AST metrics data.
@@ -390,7 +388,7 @@ def test_build_hotspots_idempotent(
 
     snapshot = make_snapshot(repo_root=tmp_path)
     build_hotspots(memory_gateway, snapshot, max_commits=0)
-    build_hotspots(memory_gateway, cfg)
+    build_hotspots(memory_gateway, snapshot, max_commits=0)
 
     result = memory_gateway.con.execute(
         "SELECT COUNT(*) FROM analytics.hotspots WHERE rel_path = ?",
