@@ -7,7 +7,7 @@ Architecture
 ------------
 This module follows the layered architecture:
 - **Compute Layer**: Pure functions in `analytics.compute.functions`
-- **Adapters**: Database I/O in `analytics.adapters.functions`
+- **GOID Loading**: `analytics.compute.functions.goids.FunctionGoidLoader`
 - **Orchestration**: This module coordinates between layers
 
 The public API is stable.

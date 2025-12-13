@@ -1,9 +1,82 @@
 # Adapters Migration Plan: Transition to Hamilton-Native Patterns
 
-**Document Version:** 1.0  
+**Document Version:** 2.0  
 **Created:** 2025-12-13  
-**Status:** Proposed  
+**Last Updated:** 2025-12-13  
+**Status:** Part 1 Complete, Parts 2-3 In Planning  
 **Scope:** `analytics/adapters/`, `graphs/adapters/`, `ingestion/adapters/`
+
+---
+
+## Completed Work Summary
+
+### Part 1: Analytics Adapters - COMPLETE
+
+**Status:** Fully implemented and verified on 2025-12-13
+
+#### What Was Done
+
+| Work Package | Description | LOC Change |
+|--------------|-------------|------------|
+| **WP-1: Extract DeleteScope** | Moved to `analytics/utilities/persistence.py` | +35 |
+| **WP-2: Move Row Builders** | `adapters/graphs/` → `compute/row_builders/` | +200 (reorganized) |
+| **WP-3: Extract Data Types** | Created `config/datasets/dependencies.py` (~160 LOC) | +160 |
+| **WP-4: Extract GOID Types** | Created `compute/functions/goids.py` (~200 LOC) | +200 |
+| **WP-5: Extract Semantic Roles** | Created `config/datasets/semantic_roles.py` (~340 LOC) | +340 |
+| **WP-6: Delete Adapters** | Removed 9 adapter files, ~3,100 LOC | -3,100 |
+| **WP-7: Delete Tests** | Removed 10 test files, ~3,560 LOC | -3,560 |
+| **WP-8: Error Stub** | Created helpful `__init__.py` with migration guidance | +65 |
+
+**Net Result:** -5,971 LOC removed
+
+#### Files Created
+```
+src/codeintel/analytics/utilities/persistence.py      # DeleteScope
+src/codeintel/config/datasets/dependencies.py         # DependencyCallRow, DependencyAggregateRow
+src/codeintel/config/datasets/semantic_roles.py       # FunctionSemanticRoleRow, ModuleSemanticRoleRow
+src/codeintel/analytics/compute/functions/goids.py    # FunctionGoid, FunctionGoidLoader, GoidRow
+src/codeintel/analytics/compute/row_builders/         # Moved from adapters/graphs/
+├── __init__.py
+├── graph_metrics.py
+├── graph_metrics_ext.py
+├── subsystem_metrics.py
+└── symbol_metrics.py
+```
+
+#### Files Deleted
+```
+src/codeintel/analytics/adapters/
+├── base.py                  # Deleted
+├── data_models.py           # Deleted
+├── dependencies.py          # Deleted (types extracted)
+├── entrypoints.py           # Deleted
+├── functions.py             # Deleted (types extracted)
+├── profiles.py              # Deleted
+├── schema_adapter.py        # Deleted
+├── semantic_roles.py        # Deleted (types extracted)
+├── subsystems.py            # Deleted
+└── graphs/                  # Deleted (moved to compute/)
+
+tests/analytics/adapters/    # Entire directory deleted (~3,560 LOC)
+```
+
+#### Migration Paths for Old Imports
+
+| Old Import | New Import |
+|------------|------------|
+| `analytics.adapters.base.DeleteScope` | `analytics.utilities.persistence.DeleteScope` |
+| `analytics.adapters.dependencies.DependencyCallRow` | `config.datasets.dependencies.DependencyCallRow` |
+| `analytics.adapters.dependencies.compute_dep_id` | `config.datasets.dependencies.compute_dep_id` |
+| `analytics.adapters.functions.FunctionGoid` | `analytics.compute.functions.goids.FunctionGoid` |
+| `analytics.adapters.functions.FunctionGoidLoader` | `analytics.compute.functions.goids.FunctionGoidLoader` |
+| `analytics.adapters.semantic_roles.FunctionSemanticRoleRow` | `config.datasets.semantic_roles.FunctionSemanticRoleRow` |
+| `analytics.adapters.graphs.*` (row builders) | `analytics.compute.row_builders.*` |
+
+#### Verification
+- All imports from new locations work correctly
+- Old imports raise helpful `ImportError` with migration guidance
+- `pyright` and `pyrefly` pass with no errors
+- All affected tests pass
 
 ---
 
@@ -13,149 +86,62 @@ This document outlines a phased migration plan for transitioning adapter impleme
 
 ### Package Overview
 
-| Package | Files | LOC | Hamilton Plugin Usage | Migration Priority |
-|---------|-------|-----|----------------------|-------------------|
-| `ingestion/adapters/` | 6 | ~1,800 | **Heavy** (11+ plugins) | Phase 3 (Last) |
-| `graphs/adapters/` | 5 | ~950 | **Light** (1 plugin) | Phase 2 |
-| `analytics/adapters/` | 11 | ~2,100 | **Minimal** (1 import) | Phase 1 (First) |
+| Package | Original | Current | Status | Notes |
+|---------|----------|---------|--------|-------|
+| `analytics/adapters/` | 11 files, ~3,100 LOC | 1 file, ~65 LOC | ✅ **COMPLETE** | -5,971 LOC removed |
+| `graphs/adapters/` | 5 files, ~950 LOC | 5 files, ~950 LOC | 🔄 **PENDING** | ~700 LOC deletable |
+| `ingestion/adapters/` | 6 files, ~1,600 LOC | 6 files, ~1,600 LOC | ⏸️ **NO CHANGES** | Actively used |
+
+**Total Reduction:** ~6,670 LOC (after Parts 1-2 complete)
 
 ---
 
-## Part 1: Analytics Adapters
+## Part 1: Analytics Adapters - COMPLETE ✅
 
-### Current State
+**Status:** Fully implemented on 2025-12-13
+
+### Final State
 
 ```
 src/codeintel/analytics/adapters/
-├── __init__.py           (85 LOC)  - Package exports
-├── base.py               (397 LOC) - Base adapter classes
-├── profiles.py           (345 LOC) - Profile table adapters
-├── functions.py          (505 LOC) - Function metrics adapters
-├── subsystems.py         (249 LOC) - Subsystem classification adapters
-├── semantic_roles.py     (460 LOC) - Semantic role adapters
-├── entrypoints.py        (188 LOC) - Entrypoint detection adapters
-├── data_models.py        (108 LOC) - Data model usage adapters
-├── dependencies.py       (354 LOC) - Dependency adapters
-├── schema_adapter.py     (212 LOC) - Schema validation mixin
-└── graphs/
-    ├── __init__.py       - Graph metric exports
-    ├── graph_metrics.py  - Function graph metric row builders
-    ├── graph_metrics_ext.py - Extended graph metrics
-    ├── subsystem_graph_metrics.py - Subsystem graph metrics
-    └── symbol_graph_metrics.py - Symbol graph metrics
+└── __init__.py           (65 LOC)  - Migration error stub only
+
+# Data types extracted to:
+src/codeintel/analytics/utilities/persistence.py    # DeleteScope
+src/codeintel/config/datasets/dependencies.py       # DependencyCallRow, etc.
+src/codeintel/config/datasets/semantic_roles.py     # FunctionSemanticRoleRow, etc.
+src/codeintel/analytics/compute/functions/goids.py  # FunctionGoid, FunctionGoidLoader
+
+# Row builders moved to:
+src/codeintel/analytics/compute/row_builders/
+├── __init__.py
+├── graph_metrics.py
+├── graph_metrics_ext.py
+├── subsystem_metrics.py
+└── symbol_metrics.py
 ```
 
-### Usage Analysis
+### What Was Done
 
-| Component | Used By | Hamilton Equivalent |
-|-----------|---------|---------------------|
-| `DeleteScope` (base.py) | 1 build plugin, 5 analytics compute modules | Move to `analytics/utilities/` |
-| `BatchAdapter`, `AnalyticsAdapter` | 6 concrete adapters (not build plugins) | `ctx.write_table()` |
-| `SchemaValidationMixin` | 3 profile adapters | `ctx.write_validated_table()` |
-| `graphs/*.py` row builders | 5 analytics compute modules | **Keep** - These are pure functions |
+1. **Extracted DeleteScope** → `analytics/utilities/persistence.py`
+2. **Moved row builders** → `analytics/compute/row_builders/`
+3. **Extracted data types:**
+   - `DependencyCallRow`, `DependencyAggregateRow` → `config/datasets/dependencies.py`
+   - `FunctionGoid`, `FunctionGoidLoader`, `GoidRow` → `compute/functions/goids.py`
+   - `FunctionSemanticRoleRow`, `ModuleSemanticRoleRow` → `config/datasets/semantic_roles.py`
+4. **Deleted all adapter classes** (12 classes, ~3,100 LOC)
+5. **Deleted all adapter tests** (~3,560 LOC)
+6. **Created migration stub** with helpful `ImportError` messages
 
-### Migration Strategy
+### Results
 
-#### Phase 1.1: Extract Common Utilities (Week 1)
-
-**Move `DeleteScope` to utilities:**
-
-```python
-# FROM: analytics/adapters/base.py
-# TO:   analytics/utilities/persistence.py
-
-@dataclass(frozen=True)
-class DeleteScope:
-    """Specification for scoped deletion before insert."""
-    repo: str
-    commit: str
-    columns: tuple[str, ...] | None = None
-```
-
-**Actions:**
-1. Create `analytics/utilities/persistence.py`
-2. Move `DeleteScope` class
-3. Update imports in:
-   - `build/plugins/analytics/functions/ast_features.py`
-   - `analytics/graphs/graph_metrics.py`
-   - `analytics/graphs/graph_metrics_ext.py`
-   - `analytics/graphs/module_graph_metrics_ext.py`
-   - `analytics/utilities/datasets.py`
-
-#### Phase 1.2: Rename Graph Row Builders (Week 1)
-
-The `analytics/adapters/graphs/` directory contains **row builder functions**, not adapters:
-
-```python
-# These are pure functions, not adapter classes:
-- build_function_graph_metric_rows()
-- build_module_graph_metric_rows()
-- persist_graph_metrics()
-```
-
-**Actions:**
-1. Rename `analytics/adapters/graphs/` → `analytics/compute/graph_row_builders/`
-2. Update all imports in `analytics/graphs/*.py`
-3. Export from `analytics/compute/__init__.py`
-
-#### Phase 1.3: Deprecate Unused Adapter Classes (Week 2)
-
-These adapter classes have **zero usage** in Hamilton plugins:
-
-| Adapter | Status | Action |
-|---------|--------|--------|
-| `FunctionProfileAdapter` | Unused | Add deprecation warning |
-| `FileProfileAdapter` | Unused | Add deprecation warning |
-| `ModuleProfileAdapter` | Unused | Add deprecation warning |
-| `FunctionMetricsAdapter` | Unused | Add deprecation warning |
-| `FunctionTypesAdapter` | Unused | Add deprecation warning |
-| `SubsystemsAdapter` | Unused | Add deprecation warning |
-| `SubsystemModulesAdapter` | Unused | Add deprecation warning |
-| `SemanticRolesFunctionsAdapter` | Unused | Add deprecation warning |
-| `SemanticRolesModulesAdapter` | Unused | Add deprecation warning |
-| `EntrypointsAdapter` | Unused | Add deprecation warning |
-| `EntrypointTestsAdapter` | Unused | Add deprecation warning |
-| `DataModelUsageAdapter` | Unused | Add deprecation warning |
-
-**Deprecation Pattern:**
-
-```python
-import warnings
-
-class FunctionProfileAdapter(BatchAdapter[dict[str, Any]], SchemaValidationMixin):
-    """Adapter for analytics.function_profile table.
-    
-    .. deprecated:: 4.0.0
-        Use ``ctx.write_table()`` or ``ctx.write_validated_table()`` instead.
-        This adapter will be removed in version 5.0.0.
-    """
-    
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "FunctionProfileAdapter is deprecated. "
-            "Use ctx.write_table() or ctx.write_validated_table() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(*args, **kwargs)
-```
-
-#### Phase 1.4: Delete Deprecated Adapters (Week 4+)
-
-After deprecation period (1-2 release cycles):
-
-1. Delete adapter class files
-2. Remove from `__init__.py` exports
-3. Delete empty `adapters/` directory
-4. Update any remaining internal references
-
-### Expected Outcome
-
-| Metric | Before | After |
-|--------|--------|-------|
-| Files | 11 | 0 (or 1 for graphs row builders) |
-| LOC | ~2,100 | ~500 (row builders only) |
-| Adapter Classes | 12 | 0 |
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| Source Files | 11 | 1 | -10 |
+| Source LOC | ~3,100 | ~65 | -3,035 |
+| Test Files | 10 | 0 | -10 |
+| Test LOC | ~3,560 | 0 | -3,560 |
+| **Total** | ~6,660 | ~65 | **-6,595** |
 
 ---
 
@@ -172,75 +158,87 @@ src/codeintel/graphs/adapters/
 └── nx_engine_adapter.py      (136 LOC) - NetworkX engine wrapper
 ```
 
-### Usage Analysis
+### Updated Usage Analysis (Post-Analytics Migration)
 
-| Component | Used By | Hamilton Equivalent |
-|-----------|---------|---------------------|
-| `DuckDBStorageAdapter` | `graphs/resources/storage.py` | `build/context.py` + policy backend |
-| `persist_call_graph_edges()` | 1 build plugin | **Keep** - utility function |
-| `dedupe_edge_rows()` | 1 build plugin | **Keep** - utility function |
-| `LibCSTParsingAdapter` | `graphs/resources/graphs.py` | Direct LibCST usage |
-| `NxEngineAdapter` | `graphs/resources/graphs.py` | Direct engine usage |
+**Critical Finding:** After auditing actual imports, only `callgraph_persistence.py` is actively used.
 
-### Migration Strategy
+| Component | Actual Usage | Recommendation |
+|-----------|--------------|----------------|
+| `DuckDBStorageAdapter` | **0 callers** (exported but unused) | **Delete immediately** |
+| `LibCSTParsingAdapter` | **0 callers** (exported but unused) | **Delete immediately** |
+| `NxEngineAdapter` | **0 callers** (exported but unused) | **Delete immediately** |
+| `dedupe_edge_rows()` | 2 callers: `callgraph.py`, `collection.py` | **Keep** - Active utility |
+| `default_edge_key()` | Used by `dedupe_edge_rows()` | **Keep** - Internal helper |
+| `persist_call_graph_edges()` | **0 callers** | **Delete** - Unused |
 
-#### Phase 2.1: Keep Persistence Utilities (Week 2)
+**Verified Callers:**
+```
+src/codeintel/build/plugins/graphs/builders/callgraph.py:45
+    from codeintel.graphs.adapters.callgraph_persistence import dedupe_edge_rows
 
-The `callgraph_persistence.py` contains **pure utility functions** that are actively used:
-
-```python
-# These stay - they're utility functions, not adapters:
-- dedupe_edge_rows()      # Used by callgraph.py plugin
-- default_edge_key()      # Helper for deduplication
-- persist_call_graph_edges()  # Useful batch operation
-- persist_call_graph_nodes()  # Useful batch operation
+src/codeintel/graphs/compute/callgraph/collection.py:16
+    from codeintel.graphs.adapters.callgraph_persistence import (
+        dedupe_edge_rows,
+        default_edge_key,
+    )
 ```
 
+### Revised Migration Strategy
+
+#### Phase 2.1: Delete Unused Adapter Classes (Immediate)
+
+These adapter classes have **zero usage** and can be deleted immediately:
+
+| File | LOC | Exports | Action |
+|------|-----|---------|--------|
+| `duckdb_storage.py` | 224 | `DuckDBStorageAdapter` | **Delete** - No callers |
+| `libcst_parsing.py` | 365 | `LibCSTParsingAdapter` | **Delete** - No callers |
+| `nx_engine_adapter.py` | 136 | `NxEngineAdapter` | **Delete** - No callers |
+
+**Risk:** None - grep confirms zero imports outside `__init__.py`
+
+#### Phase 2.2: Consolidate Callgraph Utilities
+
+Move the actively used utilities to a more appropriate location:
+
+**Option A (Recommended):** Rename in place
+```
+src/codeintel/graphs/adapters/callgraph_persistence.py
+    → src/codeintel/graphs/compute/callgraph/persistence.py
+```
+
+**Option B:** Keep in adapters (lower risk)
+- Keep `callgraph_persistence.py` as-is
+- Delete the unused adapter files
+- Update `__init__.py` to only export utility functions
+
 **Actions:**
-1. Rename file to `graphs/compute/callgraph_utils.py` or keep in adapters
-2. Consider moving to `graphs/persistence/` for clarity
+1. Delete `duckdb_storage.py`, `libcst_parsing.py`, `nx_engine_adapter.py`
+2. Either move or keep `callgraph_persistence.py`
+3. Update `__init__.py` exports
+4. Update 2 import statements if moving
 
-#### Phase 2.2: Evaluate DuckDBStorageAdapter (Week 2-3)
+#### Phase 2.3: Clean Up Unused Utilities
 
-The `DuckDBStorageAdapter` duplicates functionality available via:
-- `StorageGateway.policy` (DuckDBPolicyBackend)
-- `ctx.gateway` in build context
-
-**Assessment Questions:**
-1. Is `DuckDBStorageAdapter` used directly by any compute modules?
-2. Can `graphs/resources/storage.py` use `ctx.gateway` directly?
+Within `callgraph_persistence.py`, these functions appear unused:
+- `persist_call_graph_edges()`
+- `persist_call_graph_nodes()`
 
 **Actions:**
-1. Audit all usages of `graphs/adapters/duckdb_storage.py`
-2. Migrate callers to use `gateway.policy` directly
-3. Mark as deprecated once no callers remain
-
-#### Phase 2.3: Evaluate Parsing/Engine Adapters (Week 3)
-
-`LibCSTParsingAdapter` and `NxEngineAdapter` wrap external libraries:
-
-| Adapter | Purpose | Recommendation |
-|---------|---------|----------------|
-| `LibCSTParsingAdapter` | Wraps LibCST for module parsing | **Evaluate** - May be useful abstraction |
-| `NxEngineAdapter` | Wraps NxGraphEngine | **Deprecate** - Thin wrapper adds no value |
-
-**Actions for LibCSTParsingAdapter:**
-1. Assess if the abstraction provides testability benefits
-2. If primarily for testing, keep but rename to `graphs/parsing/libcst_adapter.py`
-3. If just a thin wrapper, inline into callers
-
-**Actions for NxEngineAdapter:**
-1. Mark as deprecated immediately (adds no value)
-2. Update `graphs/resources/graphs.py` to use `NxGraphEngine` directly
-3. Delete after one release cycle
+1. Grep verify no callers for persist functions
+2. If confirmed unused, delete them
+3. Keep only `dedupe_edge_rows()` and `default_edge_key()`
 
 ### Expected Outcome
 
 | Metric | Before | After |
 |--------|--------|-------|
-| Files | 5 | 2-3 |
-| LOC | ~950 | ~400-600 |
-| Adapter Classes | 3 | 0-1 |
+| Files | 5 | 1-2 |
+| LOC | ~950 | ~100-150 |
+| Adapter Classes | 3 | 0 |
+| Utility Functions | 5 | 2 |
+
+**Estimated Work:** ~30 minutes (mostly deletions)
 
 ---
 
@@ -258,90 +256,46 @@ src/codeintel/ingestion/adapters/
 └── build_tool_adapter.py     (307 LOC)  - Build protocol bridge
 ```
 
-### Usage Analysis
+### Updated Usage Analysis (Post-Analytics Migration)
 
-**Critical Finding:** Ingestion adapters are **heavily used** by Hamilton build plugins.
+**Critical Finding:** Ingestion adapters are **heavily used** by Hamilton build plugins and cannot be simply deleted.
 
-| Component | Hamilton Plugin Usage | Direct Callers |
-|-----------|----------------------|----------------|
-| `DuckDBStorageAdapter` | 11 plugins | `tracker.py` |
-| `FilesystemDiscoveryAdapter` | 3 plugins | - |
-| `BuildToolAdapter` | 2 plugins | - |
-| `HashChangeDetectionAdapter` | 0 plugins | `tracker.py` |
-| `ToolRunnerAdapter` | 0 plugins | internal |
+**Verified Callers:**
 
-### Migration Strategy
+| Component | Callers | Caller Locations |
+|-----------|---------|------------------|
+| `DuckDBStorageAdapter` | 10 | `docstrings_plugin.py`, `typing_plugin.py`, `coverage_plugin.py`, `scip_plugin.py`, `repo_scan.py`, `config_plugin.py`, `cst_extract.py`, `tests_plugin.py`, `ast_extract.py`, `tracker.py`, `compute/__init__.py` |
+| `FilesystemDiscoveryAdapter` | 5 | `docstrings_plugin.py`, `typing_plugin.py`, `repo_scan.py`, `config_plugin.py`, `analytics/entrypoints/core.py`, `compute/__init__.py` |
+| `BuildToolAdapter` | 2 | `coverage_plugin.py`, `scip_plugin.py` |
+| `HashChangeDetectionAdapter` | 1 | `tracker.py` |
+| `ToolRunnerAdapter` | 0 | Not directly imported (used internally) |
 
-**⚠️ Important:** Ingestion adapters require careful migration due to heavy usage.
+### Revised Migration Strategy
 
-#### Phase 3.1: Consolidate Storage Access (Week 4-5)
+**⚠️ Key Insight:** Unlike analytics adapters, ingestion adapters provide **real value**:
+- They implement well-defined port protocols
+- They're used by 9+ active Hamilton plugins
+- Removing them would require extensive plugin refactoring
 
-The `DuckDBStorageAdapter` implements `IngestStoragePort`:
+#### Phase 3.1: Keep Core Adapters (No Changes)
 
-```python
-class DuckDBStorageAdapter(IngestStoragePort):
-    def write_batch(self, table_key, rows, *, scope=None) -> BatchResult
-    def delete_by_params(self, table_key, params) -> int
-    def delete_by_paths(self, table_key, paths, **kwargs) -> int
-    def execute_query(self, sql, params=None) -> QueryResult
-    def fetch_dataframe(self, sql, params=None) -> pd.DataFrame
-```
+These adapters are actively used and should be **kept**:
 
-**Hamilton Equivalents:**
-
-| Adapter Method | Hamilton Equivalent |
-|----------------|---------------------|
-| `write_batch()` | `ctx.write_table()` + `gateway.policy.bulk_insert()` |
-| `delete_by_params()` | `gateway.policy.delete_for_snapshot()` |
-| `delete_by_paths()` | `gateway.ibis.delete()` with filter |
-| `execute_query()` | `gateway.execute()` |
-| `fetch_dataframe()` | `gateway.execute().fetch_df()` |
-
-**Recommended Approach:**
-1. **Don't delete** - Keep the adapter as a convenience layer
-2. **Simplify** - Make it a thin wrapper around `gateway.policy`
-3. **Document** - Mark as "compatibility layer" in docstrings
-
-#### Phase 3.2: Evaluate Discovery Adapter (Week 5)
-
-`FilesystemDiscoveryAdapter` provides module discovery utilities:
-
-```python
-class FilesystemDiscoveryAdapter:
-    @staticmethod
-    def discover_modules(repo_root, profile) -> Sequence[ModuleRecord]
-    @staticmethod
-    def iter_modules(module_map, repo_root, **kwargs) -> Iterator[ModuleRecord]
-    @staticmethod
-    def read_module_source(record) -> str | None
-```
-
-**Assessment:**
-- These are **static utility methods**, not adapter state
-- Could be moved to `ingestion/compute/discovery.py`
-
-**Actions:**
-1. Keep adapter for now (low migration risk)
-2. Consider renaming to `ingestion/discovery/filesystem.py`
-3. No deprecation needed - pure functions are fine
-
-#### Phase 3.3: Keep Tool Adapters (Week 5-6)
-
-`BuildToolAdapter` and `ToolRunnerAdapter` bridge different tool abstractions:
-
-| Adapter | Purpose | Recommendation |
-|---------|---------|----------------|
-| `BuildToolAdapter` | Bridge build protocols → ingestion ports | **Keep** - Active bridge pattern |
-| `ToolRunnerAdapter` | Wrap ToolService for port compliance | **Keep** - Useful abstraction |
+| Adapter | Usage Count | Recommendation |
+|---------|-------------|----------------|
+| `DuckDBStorageAdapter` | 10+ callers | **Keep** - Implements `IngestStoragePort` |
+| `FilesystemDiscoveryAdapter` | 5 callers | **Keep** - Pure static utilities |
+| `BuildToolAdapter` | 2 callers | **Keep** - Protocol bridge pattern |
+| `ToolRunnerAdapter` | internal | **Keep** - Tool abstraction layer |
 
 **Rationale:**
-- These adapters provide **real value** by normalizing result types
-- The build system and ingestion system have different type hierarchies
-- Keeping the bridge is cleaner than forcing one system to use another's types
+- These adapters follow the hexagonal architecture pattern correctly
+- They decouple plugins from storage implementation details
+- Removing them would couple plugins directly to `StorageGateway`
 
-#### Phase 3.4: Migrate HashChangeDetectionAdapter (Week 6)
+#### Phase 3.2: Evaluate HashChangeDetectionAdapter (Optional)
 
-`HashChangeDetectionAdapter` is used only by `tracker.py`:
+`HashChangeDetectionAdapter` has only 1 caller (`tracker.py`):
 
 ```python
 class HashChangeDetectionAdapter:
@@ -350,63 +304,96 @@ class HashChangeDetectionAdapter:
     def persist_current_state(self, repo, language, digests, commit) -> int
 ```
 
-**Assessment:**
-- Could be inlined into `ChangeTracker`
-- Or kept as-is (low complexity, single user)
+**Options:**
+1. **Keep as-is** (recommended) - Low complexity, single user, working code
+2. **Inline into ChangeTracker** - Only if tracker is rewritten for other reasons
 
-**Actions:**
-1. Low priority - keep as-is unless refactoring tracker
-2. Consider inlining if tracker is rewritten
+#### Phase 3.3: Documentation Update
+
+Rather than migration, focus on documentation:
+
+1. Add module docstrings explaining the port/adapter pattern
+2. Document how adapters relate to Hamilton `ctx.gateway`
+3. Clarify when to use adapters vs. direct gateway access
+
+**Example docstring update:**
+```python
+"""DuckDB storage adapter implementing IngestStoragePort.
+
+This adapter provides a stable interface for ingestion plugins while
+allowing the underlying storage implementation to evolve. Plugins
+should use this adapter rather than accessing StorageGateway directly.
+
+For new Hamilton plugins, prefer:
+- `ctx.write_table()` for simple row writes
+- This adapter for complex storage operations
+
+See Also
+--------
+- codeintel.build.context.TargetExecutionContext
+- codeintel.storage.gateway.StorageGateway
+"""
+```
 
 ### Expected Outcome
 
 | Metric | Before | After |
 |--------|--------|-------|
-| Files | 6 | 4-5 |
-| LOC | ~1,600 | ~1,200-1,400 |
-| Adapter Classes | 5 | 3-4 |
+| Files | 6 | 6 (unchanged) |
+| LOC | ~1,600 | ~1,600 (unchanged) |
+| Adapter Classes | 5 | 5 (unchanged) |
+
+**Conclusion:** Ingestion adapters are well-designed and actively used. No significant changes needed beyond documentation improvements.
 
 ---
 
 ## Implementation Timeline
 
+### Completed
+
 ```
-Week 1: Phase 1.1-1.2 (Analytics utilities extraction)
-        - Move DeleteScope to analytics/utilities/persistence.py
-        - Rename analytics/adapters/graphs/ to analytics/compute/graph_row_builders/
-        
-Week 2: Phase 1.3 + Phase 2.1 (Deprecation warnings + graphs utilities)
-        - Add deprecation warnings to unused analytics adapters
-        - Evaluate graphs persistence utilities
-        
-Week 3: Phase 2.2-2.3 (Graphs adapter evaluation)
-        - Migrate DuckDBStorageAdapter usages
-        - Deprecate NxEngineAdapter
-        
-Week 4-5: Phase 3.1-3.2 (Ingestion storage consolidation)
-        - Simplify DuckDBStorageAdapter
-        - Evaluate FilesystemDiscoveryAdapter
-        
-Week 6: Phase 3.3-3.4 (Final cleanup)
-        - Document tool adapter architecture decision
-        - Evaluate HashChangeDetectionAdapter
-        
-Week 8+: Deletion phase (after deprecation period)
-        - Delete deprecated analytics adapters
-        - Delete deprecated graphs adapters
-        - Clean up empty directories
+✅ Week 1: Part 1 Complete (Analytics Adapters)
+   - Extracted DeleteScope to analytics/utilities/persistence.py
+   - Moved row builders to analytics/compute/row_builders/
+   - Extracted data types to config/datasets/
+   - Deleted all adapter classes (~3,100 LOC)
+   - Deleted all adapter tests (~3,560 LOC)
+   - Created migration error stub
+```
+
+### Remaining Work
+
+```
+Week 2: Part 2 (Graphs Adapters) - ~30 minutes estimated
+   - Delete unused adapter files (duckdb_storage.py, libcst_parsing.py, nx_engine_adapter.py)
+   - Keep or move callgraph_persistence.py utilities
+   - Update __init__.py exports
+   - Update 2 import statements
+
+Week 3: Part 3 (Ingestion Adapters) - Documentation only
+   - No code changes needed
+   - Update docstrings to explain port/adapter pattern
+   - Document relationship to Hamilton ctx.gateway
 ```
 
 ---
 
 ## Risk Assessment
 
+### Completed Risks (Part 1 - Mitigated)
+
+| Risk | Outcome | Mitigation Applied |
+|------|---------|-------------------|
+| Breaking analytics compute | ✅ No issues | All imports updated, tests pass |
+| Missing usage patterns | ✅ No issues | grep audit found all callers |
+| Test failures | ✅ No issues | Tests updated/deleted appropriately |
+
+### Remaining Risks (Parts 2-3)
+
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| Breaking internal analytics compute | Medium | High | Run full test suite before each phase |
-| Breaking ingestion plugins | Low | Critical | Phased migration with compatibility shims |
-| Missing usage patterns | Medium | Medium | grep/ripgrep audit before each deletion |
-| Test failures | Medium | Low | Update tests alongside code changes |
+| Breaking graphs callgraph utilities | Low | Low | Only 2 callers, grep verified |
+| Breaking ingestion plugins | N/A | N/A | No changes planned (documentation only) |
 
 ---
 
@@ -443,51 +430,63 @@ python -c "from codeintel.{domain} import *"
 
 ## Success Criteria
 
-1. **Analytics adapters:** Reduce from 2,100 LOC to ~500 LOC (row builders only)
-2. **Graphs adapters:** Reduce from 950 LOC to ~400-600 LOC
-3. **Ingestion adapters:** Simplify and document; minimal LOC reduction expected
-4. **All tests pass** after each phase
-5. **No deprecation warnings** in Hamilton plugin code paths
-6. **Clear documentation** of remaining adapter purposes
+### Completed (Part 1)
+
+| Criteria | Target | Actual | Status |
+|----------|--------|--------|--------|
+| Analytics adapters LOC | ~500 | ~65 (stub only) | ✅ Exceeded |
+| Analytics tests pass | All | All | ✅ Complete |
+| Migration guidance | Clear errors | ImportError with instructions | ✅ Complete |
+| Data types preserved | In new locations | config/datasets/, compute/functions/ | ✅ Complete |
+
+### Remaining (Parts 2-3)
+
+| Criteria | Target | Status |
+|----------|--------|--------|
+| Graphs adapters LOC | ~100-150 | Pending |
+| Ingestion adapters | Documentation only | Pending |
+| All tests pass | After each phase | Pending |
 
 ---
 
 ## Appendix A: File Inventory
 
-### Analytics Adapters (~2,100 LOC)
+### Analytics Adapters - COMPLETED
 
-| File | LOC | Exports | Action |
-|------|-----|---------|--------|
-| `base.py` | 397 | `DeleteScope`, `BatchAdapter`, etc. | Extract `DeleteScope`, deprecate rest |
-| `profiles.py` | 345 | 3 profile adapters | Deprecate |
-| `functions.py` | 505 | 2 function adapters | Deprecate |
-| `subsystems.py` | 249 | 2 subsystem adapters | Deprecate |
-| `semantic_roles.py` | 460 | 2 semantic role adapters | Deprecate |
-| `entrypoints.py` | 188 | 2 entrypoint adapters | Deprecate |
-| `data_models.py` | 108 | 1 data model adapter | Deprecate |
-| `dependencies.py` | 354 | 1 dependency adapter | Deprecate |
-| `schema_adapter.py` | 212 | `SchemaValidationMixin` | Deprecate (use ctx method) |
-| `graphs/__init__.py` | ~20 | Exports | Move to compute/ |
-| `graphs/*.py` | ~500 | Row builder functions | Keep, rename |
+**Before:** ~3,100 LOC across 11 files
+**After:** ~65 LOC (error stub only)
 
-### Graphs Adapters (~950 LOC)
+| File | Status | New Location |
+|------|--------|--------------|
+| `base.py` | ✅ Deleted | `DeleteScope` → `utilities/persistence.py` |
+| `profiles.py` | ✅ Deleted | N/A (unused) |
+| `functions.py` | ✅ Deleted | `FunctionGoid` → `compute/functions/goids.py` |
+| `subsystems.py` | ✅ Deleted | N/A (unused) |
+| `semantic_roles.py` | ✅ Deleted | Types → `config/datasets/semantic_roles.py` |
+| `entrypoints.py` | ✅ Deleted | N/A (unused) |
+| `data_models.py` | ✅ Deleted | N/A (unused) |
+| `dependencies.py` | ✅ Deleted | Types → `config/datasets/dependencies.py` |
+| `schema_adapter.py` | ✅ Deleted | N/A (use `ctx.write_validated_table()`) |
+| `graphs/` | ✅ Deleted | Moved to `compute/row_builders/` |
 
-| File | LOC | Exports | Action |
-|------|-----|---------|--------|
-| `duckdb_storage.py` | 224 | `DuckDBStorageAdapter` | Evaluate, possibly deprecate |
-| `callgraph_persistence.py` | 212 | Persistence utilities | Keep |
-| `libcst_parsing.py` | 365 | `LibCSTParsingAdapter` | Evaluate |
-| `nx_engine_adapter.py` | 136 | `NxEngineAdapter` | Deprecate |
+### Graphs Adapters (~950 LOC) - PENDING
 
-### Ingestion Adapters (~1,600 LOC)
+| File | LOC | Actual Usage | Recommended Action |
+|------|-----|--------------|-------------------|
+| `duckdb_storage.py` | 224 | 0 callers | **Delete** |
+| `callgraph_persistence.py` | 212 | 2 callers | **Keep** (move to `compute/callgraph/`) |
+| `libcst_parsing.py` | 365 | 0 callers | **Delete** |
+| `nx_engine_adapter.py` | 136 | 0 callers | **Delete** |
 
-| File | LOC | Exports | Action |
-|------|-----|---------|--------|
-| `duckdb_storage.py` | 195 | `DuckDBStorageAdapter` | Simplify, keep |
-| `filesystem_discovery.py` | 233 | `FilesystemDiscoveryAdapter` | Keep |
-| `hash_change_detection.py` | 310 | `HashChangeDetectionAdapter` | Evaluate |
-| `tool_runner.py` | 527 | `ToolRunnerAdapter` | Keep |
-| `build_tool_adapter.py` | 307 | `BuildToolAdapter` | Keep |
+### Ingestion Adapters (~1,600 LOC) - NO CHANGES
+
+| File | LOC | Actual Usage | Recommended Action |
+|------|-----|--------------|-------------------|
+| `duckdb_storage.py` | 195 | 10+ callers | **Keep** |
+| `filesystem_discovery.py` | 233 | 5 callers | **Keep** |
+| `hash_change_detection.py` | 310 | 1 caller | **Keep** |
+| `tool_runner.py` | 527 | Internal | **Keep** |
+| `build_tool_adapter.py` | 307 | 2 callers | **Keep** |
 
 ---
 

@@ -71,6 +71,12 @@ from codeintel.config.datasets.dataflow import (
     iter_docs_view_alias_edges,
     iter_docs_view_alias_nodes,
 )
+from codeintel.config.datasets.dependencies import (
+    DependencyAggregateRow,
+    DependencyCallRow,
+    compute_dep_id,
+    to_decimal,
+)
 from codeintel.config.datasets.introspection import (
     DatasetIntrospection,
     introspect_all_datasets,
@@ -214,6 +220,25 @@ from codeintel.config.datasets.schema_registry import (
     SCHEMA_REGISTRY,
     DatasetSchemaRegistry,
     get_schema,
+)
+from codeintel.config.datasets.semantic_roles import (
+    FUNCTION_COLUMNS as SEMANTIC_ROLE_FUNCTION_COLUMNS,
+)
+from codeintel.config.datasets.semantic_roles import (
+    MODULE_COLUMNS as SEMANTIC_ROLE_MODULE_COLUMNS,
+)
+from codeintel.config.datasets.semantic_roles import (
+    FunctionSemanticRoleRow,
+    ModuleSemanticRoleRow,
+)
+from codeintel.config.datasets.semantic_roles import (
+    normalize_function_row as normalize_semantic_role_function_row,
+)
+from codeintel.config.datasets.semantic_roles import (
+    normalize_module_row as normalize_semantic_role_module_row,
+)
+from codeintel.config.datasets.semantic_roles import (
+    timestamp_str as semantic_role_timestamp_str,
 )
 from codeintel.config.datasets.validation import (
     ValidationMode,
@@ -384,6 +409,8 @@ __all__ = [
     "ROW_BINDINGS_BY_TABLE_KEY",
     "SCHEMA_REGISTRY",
     "SCHEMA_VERSION_BY_DATASET_NAME",
+    "SEMANTIC_ROLE_FUNCTION_COLUMNS",
+    "SEMANTIC_ROLE_MODULE_COLUMNS",
     "SOURCE_SPAN_COLS",
     "STABLE_ID_BY_DATASET_NAME",
     "SUBSYSTEM_COVERAGE_COLUMNS",
@@ -414,6 +441,8 @@ __all__ = [
     "DatasetMetadata",
     "DatasetSchema",
     "DatasetSchemaRegistry",
+    "DependencyAggregateRow",
+    "DependencyCallRow",
     "DocstringRow",
     "EdgeType",
     "FileProfileRowModel",
@@ -422,6 +451,7 @@ __all__ = [
     "FunctionEffectsRow",
     "FunctionMetricsRow",
     "FunctionProfileRowModel",
+    "FunctionSemanticRoleRow",
     "FunctionTypesRow",
     "FunctionValidationRow",
     "GoidCrosswalkRow",
@@ -438,6 +468,7 @@ __all__ = [
     "IngestRunLike",
     "IngestRunRow",
     "ModuleProfileRowModel",
+    "ModuleSemanticRoleRow",
     "NodeKind",
     "ProfileRowModel",
     "RowBinding",
@@ -458,6 +489,7 @@ __all__ = [
     "build_dataset_schema",
     "call_graph_edge_to_tuple",
     "call_graph_node_to_tuple",
+    "compute_dep_id",
     "config_value_to_tuple",
     "coverage_line_to_tuple",
     "dict_to_call_graph_edge",
@@ -493,7 +525,10 @@ __all__ = [
     "iter_docs_view_alias_nodes",
     "load_columns_by_table",
     "module_profile_row_to_tuple",
+    "normalize_semantic_role_function_row",
+    "normalize_semantic_role_module_row",
     "row_serializer_from_pandera",
+    "semantic_role_timestamp_str",
     "serialize_row",
     "serialize_test_catalog_row",
     "serialize_test_coverage_edge",
@@ -501,6 +536,7 @@ __all__ = [
     "static_diagnostic_to_tuple",
     "subsystem_coverage_cache_to_tuple",
     "subsystem_profile_cache_to_tuple",
+    "to_decimal",
     "typed_dict_from_pandera",
     "typedness_row_to_tuple",
     "validate_df",

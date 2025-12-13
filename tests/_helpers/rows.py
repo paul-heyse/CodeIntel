@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, TypedDict
 
-from codeintel.analytics.adapters.dependencies import (
+from codeintel.config.datasets.dependencies import (
     DependencyAggregateRow,
     DependencyCallRow,
     compute_dep_id,

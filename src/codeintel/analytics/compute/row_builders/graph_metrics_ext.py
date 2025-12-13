@@ -19,8 +19,7 @@ if TYPE_CHECKING:
 
 
 def _int_or_none(value: float | str | Decimal | None) -> int | None:
-    """
-    Return an integer when convertible, otherwise None.
+    """Return an integer when convertible, otherwise None.
 
     Returns
     -------
@@ -68,8 +67,7 @@ class ModuleMetricExtInputs:
 def build_function_metric_ext_rows(
     inputs: FunctionMetricExtInputs,
 ) -> list[GraphMetricsFunctionsExtRow]:
-    """
-    Construct rows for analytics.graph_metrics_functions_ext.
+    """Construct rows for analytics.graph_metrics_functions_ext.
 
     Returns
     -------
@@ -113,8 +111,7 @@ def build_function_metric_ext_rows(
 def build_module_metric_ext_rows(
     inputs: ModuleMetricExtInputs,
 ) -> list[GraphMetricsModulesExtRow]:
-    """
-    Construct rows for analytics.graph_metrics_modules_ext.
+    """Construct rows for analytics.graph_metrics_modules_ext.
 
     Returns
     -------

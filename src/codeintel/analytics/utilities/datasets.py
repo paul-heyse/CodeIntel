@@ -12,7 +12,7 @@ from sqlglot import exp
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.analytics.adapters.base import DeleteScope
+    from codeintel.analytics.utilities.persistence import DeleteScope
     from codeintel.config.datasets import (
         DatasetContract,
         TableSchema,

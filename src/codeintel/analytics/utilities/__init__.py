@@ -47,10 +47,12 @@ from codeintel.analytics.utilities.datasets import (
     get_function_ast_features_contract,
     insert_analytics_rows,
 )
+from codeintel.analytics.utilities.persistence import DeleteScope
 
 __all__ = [
     "AnalyticsDatasetContract",
     "CallTarget",
+    "DeleteScope",
     "build_analytics_dataset_contracts",
     "call_name",
     "get_analytics_dataset_contract",

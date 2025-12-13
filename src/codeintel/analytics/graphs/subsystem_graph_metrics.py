@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING, cast
 
 import networkx as nx
 
-from codeintel.analytics.adapters.graphs import (
+from codeintel.analytics.compute.graphs import centrality_directed
+from codeintel.analytics.compute.row_builders import (
     SubsystemMetricInputs,
     build_subsystem_graph_rows,
 )
-from codeintel.analytics.compute.graphs import centrality_directed
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
 from codeintel.analytics.runtime import (
     GraphRuntime,

@@ -14,8 +14,12 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
-from codeintel.analytics.adapters.base import DeleteScope
-from codeintel.analytics.adapters.graphs import (
+from codeintel.analytics.compute.graphs import (
+    centrality_directed,
+    component_metadata,
+    neighbor_stats,
+)
+from codeintel.analytics.compute.row_builders import (
     FunctionGraphMetricInputs,
     ModuleGraphMetricInputs,
     build_function_graph_metric_rows,
@@ -23,11 +27,6 @@ from codeintel.analytics.adapters.graphs import (
     component_metadata_from_import_table,
     load_symbol_module_edges,
     merge_component_metadata,
-)
-from codeintel.analytics.compute.graphs import (
-    centrality_directed,
-    component_metadata,
-    neighbor_stats,
 )
 from codeintel.analytics.runtime import (
     GraphRuntime,
@@ -43,6 +42,7 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
     validate_contract_rows,
 )
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
