@@ -12,7 +12,7 @@ from codeintel.analytics.entrypoints import EntrypointBuildInputs, build_entrypo
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
+from codeintel.build.plugins._metadata import to_plugin_metadata
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:

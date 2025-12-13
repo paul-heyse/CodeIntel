@@ -14,7 +14,7 @@ from codeintel.analytics.functions.function_effects import (
 )
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
+from codeintel.build.plugins._metadata import to_plugin_metadata
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:

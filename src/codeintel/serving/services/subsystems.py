@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import clamp_limit
 from codeintel.serving.mcp.models import (
     FileHintsResponse,
     Message,
@@ -108,10 +107,8 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
 
     Architecture Note
     -----------------
-    Implements HTTP transport path for subsystem queries. Performs bidirectional
-    domain/response conversion: receives HTTP responses, normalizes to Pydantic
-    models, and converts to domain models via ``to_domain()`` to satisfy the
-    service layer contract.
+    Implements HTTP transport path for subsystem queries. Uses ``_http_query()``
+    for methods with limit clamping and the standard pattern for methods without.
 
     See ``codeintel.serving.domain_models`` for the full architecture contract.
     """
@@ -123,27 +120,15 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
         role: str | None = None,
         q: str | None = None,
     ) -> dm.SubsystemSummaryResult:
-        def _run() -> SubsystemSummaryResponse:
-            applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit(
-                applied_limit,
-                default=applied_limit,
-                max_limit=self.limits.max_rows_per_call,
-            )
-            if clamp.has_error:
-                return SubsystemSummaryResponse(subsystems=[], meta=ResponseMeta())
-            payload = self.request_json(
-                "/architecture/subsystems",
-                {"limit": clamp.applied, "role": role, "q": q},
-            )
-            if isinstance(payload, dm.SubsystemSummaryResult):
-                return SubsystemSummaryResponse.from_domain(payload)
-            if isinstance(payload, SubsystemSummaryResponse):
-                return payload
-            return SubsystemSummaryResponse.model_validate(payload)
-
-        pydantic_resp: SubsystemSummaryResponse = self._http_call("list_subsystems", _run)
-        return pydantic_resp.to_domain()
+        return self._http_query(
+            "list_subsystems",
+            "/architecture/subsystems",
+            {"role": role, "q": q},
+            SubsystemSummaryResponse,
+            dm.SubsystemSummaryResult,
+            empty_data=SubsystemSummaryResponse(subsystems=[]),
+            limit=limit,
+        )
 
     def get_module_subsystems(self, *, module: str) -> dm.ModuleSubsystemResult:
         def _run() -> ModuleSubsystemResponse:
@@ -175,6 +160,7 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
         subsystem_id: str,
         module_limit: int | None = None,
     ) -> dm.SubsystemModulesResult:
+        # Special handling for ProblemError - can't use _http_query
         def _run() -> SubsystemModulesResponse:
             payload: dict[str, object] = {"subsystem_id": subsystem_id}
             if module_limit is not None:
@@ -211,27 +197,15 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
         role: str | None = None,
         q: str | None = None,
     ) -> dm.SubsystemSearchResult:
-        def _run() -> SubsystemSearchResponse:
-            applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit(
-                applied_limit,
-                default=applied_limit,
-                max_limit=self.limits.max_rows_per_call,
-            )
-            if clamp.has_error:
-                return SubsystemSearchResponse(subsystems=[], meta=ResponseMeta())
-            payload = self.request_json(
-                "/architecture/subsystems",
-                {"limit": clamp.applied, "role": role, "q": q},
-            )
-            if isinstance(payload, dm.SubsystemSearchResult):
-                return SubsystemSearchResponse.from_domain(payload)
-            if isinstance(payload, SubsystemSearchResponse):
-                return payload
-            return SubsystemSearchResponse.model_validate(payload)
-
-        pydantic_resp: SubsystemSearchResponse = self._http_call("search_subsystems", _run)
-        return pydantic_resp.to_domain()
+        return self._http_query(
+            "search_subsystems",
+            "/architecture/subsystems",
+            {"role": role, "q": q},
+            SubsystemSearchResponse,
+            dm.SubsystemSearchResult,
+            empty_data=SubsystemSearchResponse(subsystems=[]),
+            limit=limit,
+        )
 
     def summarize_subsystem(
         self,
@@ -242,54 +216,28 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
         return self.get_subsystem_modules(subsystem_id=subsystem_id, module_limit=module_limit)
 
     def list_subsystem_profiles(self, *, limit: int | None = None) -> dm.SubsystemProfileResult:
-        def _run() -> SubsystemProfileResponse:
-            applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit(
-                applied_limit, default=applied_limit, max_limit=self.limits.max_rows_per_call
-            )
-            if clamp.has_error:
-                return SubsystemProfileResponse(profiles=[], meta=ResponseMeta())
-            payload = self.request_json(
-                "/architecture/subsystem-profiles",
-                {"limit": clamp.applied},
-            )
-            if isinstance(payload, dm.SubsystemProfileResult):
-                return SubsystemProfileResponse.from_domain(payload)
-            if isinstance(payload, SubsystemProfileResponse):
-                return payload
-            return SubsystemProfileResponse.model_validate(payload)
-
-        pydantic_resp: SubsystemProfileResponse = self._http_call(
+        return self._http_query(
             "list_subsystem_profiles",
-            _run,
+            "/architecture/subsystem-profiles",
+            {},
+            SubsystemProfileResponse,
+            dm.SubsystemProfileResult,
+            empty_data=SubsystemProfileResponse(profiles=[]),
+            limit=limit,
             dataset="docs.v_subsystem_profile",
         )
-        return pydantic_resp.to_domain()
 
     def list_subsystem_coverage(self, *, limit: int | None = None) -> dm.SubsystemCoverageResult:
-        def _run() -> SubsystemCoverageResponse:
-            applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit(
-                applied_limit, default=applied_limit, max_limit=self.limits.max_rows_per_call
-            )
-            if clamp.has_error:
-                return SubsystemCoverageResponse(coverage=[], meta=ResponseMeta())
-            payload = self.request_json(
-                "/architecture/subsystem-coverage",
-                {"limit": clamp.applied},
-            )
-            if isinstance(payload, dm.SubsystemCoverageResult):
-                return SubsystemCoverageResponse.from_domain(payload)
-            if isinstance(payload, SubsystemCoverageResponse):
-                return payload
-            return SubsystemCoverageResponse.model_validate(payload)
-
-        pydantic_resp: SubsystemCoverageResponse = self._http_call(
+        return self._http_query(
             "list_subsystem_coverage",
-            _run,
+            "/architecture/subsystem-coverage",
+            {},
+            SubsystemCoverageResponse,
+            dm.SubsystemCoverageResult,
+            empty_data=SubsystemCoverageResponse(coverage=[]),
+            limit=limit,
             dataset="docs.v_subsystem_coverage",
         )
-        return pydantic_resp.to_domain()
 
 
 __all__ = ["_HttpSubsystemQueryMixin", "_SubsystemQueryDelegates"]

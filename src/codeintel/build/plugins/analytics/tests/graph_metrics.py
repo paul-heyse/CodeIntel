@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, ClassVar
 from codeintel.analytics.testing.graph_metrics import compute_test_graph_metrics
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
+from codeintel.build.plugins._metadata import to_plugin_metadata
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.storage.ibis_types import and_predicates
 

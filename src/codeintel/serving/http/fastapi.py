@@ -1,4 +1,25 @@
-"""FastAPI server exposing MCP-aligned queries over DuckDB."""
+"""FastAPI server exposing MCP-aligned queries over DuckDB.
+
+This module provides the FastAPI application factory for serving CodeIntel
+queries over HTTP. It sets up routes, error handlers, and lifecycle management.
+
+Canonical Imports
+-----------------
+Import ``BackendResource`` from ``codeintel.serving.bootstrap``, not from
+this module:
+
+    from codeintel.serving.bootstrap import BackendResource
+    from codeintel.serving.bootstrap import build_backend_resource
+
+Or use the convenience re-exports from ``codeintel.serving.services``:
+
+    from codeintel.serving.services import BackendResource, build_backend_resource
+
+See Also
+--------
+- ``codeintel.serving.bootstrap`` : Primary entry points for serving stack
+- ``codeintel.serving.services`` : Service layer re-exports
+"""
 
 from __future__ import annotations
 

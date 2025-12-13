@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/state_computer.py
+# hypothesis_version: 6.148.7
+
+['StateComputer', 'blocked', 'current', 'dependency_blocked', 'dependency_missing', 'dependency_stale', 'input_hash_mismatch', 'missing', 'stale']

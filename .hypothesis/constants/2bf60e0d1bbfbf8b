@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugins/_metadata.py
+# hypothesis_version: 6.148.7
+
+['PluginKind', 'PluginStage', 'other', 'to_plugin_metadata']

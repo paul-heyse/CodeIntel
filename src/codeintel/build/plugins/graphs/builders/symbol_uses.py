@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.plugins._metadata import to_plugin_metadata
 from codeintel.build.plugins.graphs.builders.symbol_uses_options import SymbolUsesOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.core.plugins.types.protocol import PluginMetadata
@@ -31,7 +32,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
-    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -53,26 +53,6 @@ SYMBOL_USES_METADATA = CorePluginMetadata(
     options_model=SymbolUsesOptions,
     extra={"graph_kinds": ("symbol_use",)},
 )
-
-
-def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
-    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
-
-    Returns
-    -------
-    PluginMetadata
-        Protocol-compatible metadata instance.
-    """
-    return PluginMetadata(
-        name=core.name,
-        version=core.version,
-        description=core.description,
-        kind=cast("PluginKind", core.kind),
-        stage=cast("PluginStage", core.stage or "edges"),
-        provides=core.provides,
-        requires=core.requires,
-        produces_tables=core.produces_tables,
-    )
 
 
 def _is_test_path(path: str) -> bool:
@@ -449,7 +429,7 @@ class SymbolUsesPlugin(TargetPlugin):
     @property
     def metadata(self) -> PluginMetadata:
         """Return plugin metadata."""
-        return _to_plugin_metadata(self._core_metadata)
+        return to_plugin_metadata(self._core_metadata)
 
     @property
     def core_metadata(self) -> CorePluginMetadata:

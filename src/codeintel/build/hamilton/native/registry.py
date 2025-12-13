@@ -1,87 +1,25 @@
 """Native target registry for Hamilton Phase 3.
 
-This module maintains the registry of native Hamilton targets that have been
+This module provides functions to query native Hamilton targets that have been
 migrated from plugin wrappers to pure Hamilton pipelines.
 
-The registry enables progressive migration: targets can be flipped from wrapper
-to native implementation without breaking the build system.
+All native target information is now stored in the UnifiedRegistry. This
+module provides a convenience API that delegates to the unified registry.
 """
 
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from types import ModuleType
 
 
-@dataclass(frozen=True)
-class NativeTargetSpec:
-    """Specification for a native Hamilton target.
-
-    Attributes
-    ----------
-    target_name
-        Build target name (e.g., "risk_factors").
-    module_path
-        Python import path to the native module
-        (e.g., "codeintel.build.hamilton.native.analytics.risk_factors").
-    """
-
-    target_name: str
-    module_path: str
-
-
-# Registry of native targets
-# Wave 1: risk_factors
-# Wave 2 PR-21: coverage_functions, hotspots, subsystems
-# Wave 2 PR-22: call_graph_views
-# Wave 2 PR-23: export_jsonl, export_parquet
-# Wave 3 PR-24: scip, typing
-NATIVE_TARGETS: Final[tuple[NativeTargetSpec, ...]] = (
-    NativeTargetSpec(
-        target_name="risk_factors",
-        module_path="codeintel.build.hamilton.native.analytics.risk_factors",
-    ),
-    NativeTargetSpec(
-        target_name="coverage_functions",
-        module_path="codeintel.build.hamilton.native.analytics.coverage_functions",
-    ),
-    NativeTargetSpec(
-        target_name="hotspots",
-        module_path="codeintel.build.hamilton.native.analytics.hotspots",
-    ),
-    NativeTargetSpec(
-        target_name="subsystems",
-        module_path="codeintel.build.hamilton.native.analytics.subsystems",
-    ),
-    NativeTargetSpec(
-        target_name="call_graph_views",
-        module_path="codeintel.build.hamilton.native.graphs.call_graph_views",
-    ),
-    NativeTargetSpec(
-        target_name="export_jsonl",
-        module_path="codeintel.build.hamilton.native.export.export_jsonl",
-    ),
-    NativeTargetSpec(
-        target_name="export_parquet",
-        module_path="codeintel.build.hamilton.native.export.export_parquet",
-    ),
-    NativeTargetSpec(
-        target_name="scip",
-        module_path="codeintel.build.hamilton.native.ingestion.scip",
-    ),
-    NativeTargetSpec(
-        target_name="typing",
-        module_path="codeintel.build.hamilton.native.ingestion.typing",
-    ),
-)
-
-
 def native_target_names() -> frozenset[str]:
     """Return the set of target names that have native implementations.
+
+    This function delegates to the UnifiedRegistry.
 
     Returns
     -------
@@ -91,14 +29,19 @@ def native_target_names() -> frozenset[str]:
     Examples
     --------
     >>> names = native_target_names()
-    >>> "risk_factors" in names  # Will be True after PR-20
-    False
+    >>> "risk_factors" in names
+    True
     """
-    return frozenset(spec.target_name for spec in NATIVE_TARGETS)
+    from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
+
+    return get_unified_registry().native_target_names()
 
 
 def load_native_modules() -> tuple[ModuleType, ...]:
     """Load all native target modules for driver composition.
+
+    This function loads modules from the UnifiedRegistry's native_module
+    registrations.
 
     Returns
     -------
@@ -113,22 +56,30 @@ def load_native_modules() -> tuple[ModuleType, ...]:
     Examples
     --------
     >>> modules = load_native_modules()
-    >>> len(modules)  # Will be > 0 after PR-20
-    0
+    >>> len(modules) > 0
+    True
     """
+    from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
+
+    registry = get_unified_registry()
     modules: list[ModuleType] = []
-    for spec in NATIVE_TARGETS:
-        try:
-            module = importlib.import_module(spec.module_path)
-            modules.append(module)
-        except ImportError as e:
-            msg = f"Failed to import native target module '{spec.module_path}': {e}"
-            raise ImportError(msg) from e
+
+    for reg in registry.get_all_registrations():
+        if reg.native_module is not None:
+            try:
+                module = importlib.import_module(reg.native_module)
+                modules.append(module)
+            except ImportError as e:
+                msg = f"Failed to import native target module '{reg.native_module}': {e}"
+                raise ImportError(msg) from e
+
     return tuple(modules)
 
 
 def is_native_target(target_name: str) -> bool:
     """Check if a target has a native implementation.
+
+    This function delegates to the UnifiedRegistry.
 
     Parameters
     ----------
@@ -142,17 +93,17 @@ def is_native_target(target_name: str) -> bool:
 
     Examples
     --------
-    >>> is_native_target("risk_factors")  # Will be True after PR-20
-    False
+    >>> is_native_target("risk_factors")
+    True
     >>> is_native_target("modules")
     False
     """
-    return target_name in native_target_names()
+    from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
+
+    return get_unified_registry().is_native_target(target_name)
 
 
 __all__ = [
-    "NATIVE_TARGETS",
-    "NativeTargetSpec",
     "is_native_target",
     "load_native_modules",
     "native_target_names",

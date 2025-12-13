@@ -9,9 +9,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.plugins._metadata import to_plugin_metadata
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.core.plugins.types.protocol import PluginMetadata
@@ -27,7 +28,6 @@ from codeintel.storage.ibis_types import ibis_bool
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
-    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
     from codeintel.storage.gateway import StorageGateway
 else:
     StorageGateway = object
@@ -53,26 +53,6 @@ AST_EXTRACT_METADATA = CorePluginMetadata(
     supports_incremental=True,
     scope_aware=True,
 )
-
-
-def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
-    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
-
-    Returns
-    -------
-    PluginMetadata
-        Protocol-compatible metadata instance.
-    """
-    return PluginMetadata(
-        name=core.name,
-        version=core.version,
-        description=core.description,
-        kind=cast("PluginKind", core.kind),
-        stage=cast("PluginStage", core.stage or "ast"),
-        provides=core.provides,
-        requires=core.requires,
-        produces_tables=core.produces_tables,
-    )
 
 
 def _paths_to_modules(paths: list[str], repo_root: Path) -> list[ModuleRecord]:
@@ -146,7 +126,7 @@ class AstExtractPlugin(TargetPlugin):
     @property
     def metadata(self) -> PluginMetadata:
         """Return protocol-compatible metadata."""
-        return _to_plugin_metadata(self._core_metadata)
+        return to_plugin_metadata(self._core_metadata)
 
     @property
     def core_metadata(self) -> CorePluginMetadata:

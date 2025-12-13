@@ -66,75 +66,56 @@ class _HttpProfileQueryMixin(_HttpTransportMixin):
 
     Architecture Note
     -----------------
-    Implements HTTP transport path for profile queries. Performs bidirectional
-    domain/response conversion: receives HTTP responses, normalizes to Pydantic
-    models, and converts to domain models via ``to_domain()`` to satisfy the
-    service layer contract.
+    Implements HTTP transport path for profile queries. Uses ``_http_query()``
+    for consistent domain/response conversion.
 
     See ``codeintel.serving.domain_models`` for the full architecture contract.
     """
 
     def get_function_profile(self, *, goid_h128: int) -> dm.FunctionProfileResult:
-        def _run() -> FunctionProfileResponse:
-            payload = self.request_json("/profiles/function", {"goid_h128": goid_h128})
-            if isinstance(payload, dm.FunctionProfileResult):
-                return FunctionProfileResponse.from_domain(payload)
-            if isinstance(payload, FunctionProfileResponse):
-                return payload
-            return FunctionProfileResponse.model_validate(payload)
-
-        pydantic_resp: FunctionProfileResponse = self._http_call("get_function_profile", _run)
-        return pydantic_resp.to_domain()
+        return self._http_query(
+            "get_function_profile",
+            "/profiles/function",
+            {"goid_h128": goid_h128},
+            FunctionProfileResponse,
+            dm.FunctionProfileResult,
+        )
 
     def get_file_profile(self, *, rel_path: str) -> dm.FileProfileResult:
-        def _run() -> FileProfileResponse:
-            payload = self.request_json("/profiles/file", {"rel_path": rel_path})
-            if isinstance(payload, dm.FileProfileResult):
-                return FileProfileResponse.from_domain(payload)
-            if isinstance(payload, FileProfileResponse):
-                return payload
-            return FileProfileResponse.model_validate(payload)
-
-        pydantic_resp: FileProfileResponse = self._http_call("get_file_profile", _run)
-        return pydantic_resp.to_domain()
+        return self._http_query(
+            "get_file_profile",
+            "/profiles/file",
+            {"rel_path": rel_path},
+            FileProfileResponse,
+            dm.FileProfileResult,
+        )
 
     def get_module_profile(self, *, module: str) -> dm.ModuleProfileResult:
-        def _run() -> ModuleProfileResponse:
-            payload = self.request_json("/profiles/module", {"module": module})
-            if isinstance(payload, dm.ModuleProfileResult):
-                return ModuleProfileResponse.from_domain(payload)
-            if isinstance(payload, ModuleProfileResponse):
-                return payload
-            return ModuleProfileResponse.model_validate(payload)
-
-        pydantic_resp: ModuleProfileResponse = self._http_call("get_module_profile", _run)
-        return pydantic_resp.to_domain()
+        return self._http_query(
+            "get_module_profile",
+            "/profiles/module",
+            {"module": module},
+            ModuleProfileResponse,
+            dm.ModuleProfileResult,
+        )
 
     def get_function_architecture(self, *, goid_h128: int) -> dm.FunctionArchitectureResult:
-        def _run() -> FunctionArchitectureResponse:
-            payload = self.request_json("/architecture/function", {"goid_h128": goid_h128})
-            if isinstance(payload, dm.FunctionArchitectureResult):
-                return FunctionArchitectureResponse.from_domain(payload)
-            if isinstance(payload, FunctionArchitectureResponse):
-                return payload
-            return FunctionArchitectureResponse.model_validate(payload)
-
-        pydantic_resp: FunctionArchitectureResponse = self._http_call(
-            "get_function_architecture", _run
+        return self._http_query(
+            "get_function_architecture",
+            "/architecture/function",
+            {"goid_h128": goid_h128},
+            FunctionArchitectureResponse,
+            dm.FunctionArchitectureResult,
         )
-        return pydantic_resp.to_domain()
 
     def get_module_architecture(self, *, module: str) -> dm.ModuleArchitectureResult:
-        def _run() -> ModuleArchitectureResponse:
-            payload = self.request_json("/architecture/module", {"module": module})
-            if isinstance(payload, dm.ModuleArchitectureResult):
-                return ModuleArchitectureResponse.from_domain(payload)
-            if isinstance(payload, ModuleArchitectureResponse):
-                return payload
-            return ModuleArchitectureResponse.model_validate(payload)
-
-        pydantic_resp: ModuleArchitectureResponse = self._http_call("get_module_architecture", _run)
-        return pydantic_resp.to_domain()
+        return self._http_query(
+            "get_module_architecture",
+            "/architecture/module",
+            {"module": module},
+            ModuleArchitectureResponse,
+            dm.ModuleArchitectureResult,
+        )
 
 
 __all__ = ["_HttpProfileQueryMixin", "_ProfileQueryDelegates"]

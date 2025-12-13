@@ -7,23 +7,13 @@ computing useful aggregate metrics and patterns from the raw call graph edges.
 from __future__ import annotations
 
 import logging
-import time
 from typing import TYPE_CHECKING, Any, cast
 
-import duckdb
 import ibis
 from hamilton.function_modifiers import tag
 
-from codeintel.build.hamilton.manifest_hook import compute_target_input_hash
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_tables
-from codeintel.build.hamilton.native.runner import (
-    NativeRunInfo,
-    create_failed_record,
-    create_skipped_record,
-    create_success_record,
-    save_manifest,
-    should_skip_native_target,
-)
 from codeintel.storage.ibis_types import and_predicates
 
 LOG = logging.getLogger(__name__)
@@ -31,7 +21,7 @@ LOG = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import ibis.expr.types as ir
 
-    from codeintel.build.env import BuildEnv
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.targets import TargetGraph
 
@@ -216,79 +206,36 @@ def t__call_graph_views(
     --------
     >>> # This node materializes all view expressions to DuckDB tables
     """
-    start = time.perf_counter()
     LOG.info("Materializing call_graph_views to DuckDB")
 
-    try:
-        target = graph.get("call_graph_views")
-    except KeyError as exc:
-        return create_failed_record(
-            target=graph.all_targets[0],
-            input_hash="",
-            options_hash=None,
-            duration_ms=(time.perf_counter() - start) * 1000,
-            error=exc,
-        )
+    executor = NativeTargetExecutor.for_target(env, graph, "call_graph_views")
 
-    input_hash = compute_target_input_hash(
-        target=target,
-        snapshot=env.snapshot,
-        gateway=env.gateway,
-        manifests=env.manifest_index,
-    )
+    if executor.should_skip():
+        return executor.skip()
 
-    if should_skip_native_target(env, target, input_hash):
-        return create_skipped_record(
-            target=target,
-            env=env,
-            run=NativeRunInfo(
-                input_hash=input_hash,
-                options_hash=None,
-                duration_ms=(time.perf_counter() - start) * 1000,
-            ),
-        )
+    def compute() -> dict[str, int]:
+        views_dict = {
+            "graph.v_function_call_counts": call_graph_function_call_counts,
+            "graph.v_call_depth_stats": call_graph_depth_stats,
+        }
 
-    views_dict = {
-        "graph.v_function_call_counts": call_graph_function_call_counts,
-        "graph.v_call_depth_stats": call_graph_depth_stats,
-    }
-
-    try:
         dataset_refs = materialize_tables(
             MaterializationContext(
                 gateway=env.gateway,
                 snapshot=env.snapshot,
                 validate=env.validate_outputs,
-                owner_target=target.name,
-                input_hash=input_hash,
+                owner_target="call_graph_views",
+                input_hash=executor.input_hash,
             ),
             views_dict,
         )
-    except (OSError, ValueError, RuntimeError, duckdb.Error) as exc:
-        return create_failed_record(
-            target=target,
-            input_hash=input_hash,
-            options_hash=None,
-            duration_ms=(time.perf_counter() - start) * 1000,
-            error=exc,
-        )
 
-    row_counts = {ref.table_key: ref.row_count or 0 for ref in dataset_refs}
-    total_rows = sum(row_counts.values())
-    LOG.info("call_graph_views materialization complete: %d total rows", total_rows)
+        row_counts = {ref.table_key: ref.row_count or 0 for ref in dataset_refs}
+        total_rows = sum(row_counts.values())
+        LOG.info("call_graph_views materialization complete: %d total rows", total_rows)
+        return row_counts
 
-    record = create_success_record(
-        target=target,
-        env=env,
-        run=NativeRunInfo(
-            input_hash=input_hash,
-            options_hash=None,
-            duration_ms=(time.perf_counter() - start) * 1000,
-            row_counts=row_counts,
-        ),
-    )
-    save_manifest(env, record)
-    return record
+    return executor.execute(compute)
 
 
 __all__ = [

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/types.py
+# hypothesis_version: 6.148.7
+
+[0.7, 'BackendFactory', 'BaseBackendProtocol', 'DatasetQueryProtocol', 'DatasetQueryable', 'FunctionQueryable', 'GraphEngineProtocol', 'HasClose', 'HasModelDump', 'HasModelValidate', 'JsonPayload', 'ProfileQueryProtocol', 'ProfileQueryable', 'QueryBackendProtocol', 'QueryServiceProtocol', 'RepoCommitProtocol', 'RepositoryProtocol', 'ResponseMetaLike', 'RowDict', 'ServiceFactory', 'ServiceResult', 'SubsystemQueryable', 'both']

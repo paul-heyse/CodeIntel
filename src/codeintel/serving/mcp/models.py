@@ -409,6 +409,46 @@ def parse_graph_scope(scope: GraphScopePayload | None) -> GraphRunScope | None:
     )
 
 
+def normalize_scope(scope: object | None) -> GraphScopePayload | None:
+    """
+    Normalize scope parameter to GraphScopePayload or None.
+
+    This function consolidates the repeated ``isinstance(scope, GraphScopePayload)``
+    checks that were scattered across backend methods. It handles three cases:
+
+    1. ``scope`` is None → return None
+    2. ``scope`` is already a GraphScopePayload → return as-is
+    3. ``scope`` is a dict → validate and return GraphScopePayload
+
+    Parameters
+    ----------
+    scope
+        Raw scope parameter from backend method calls. May be None, a
+        GraphScopePayload instance, or a dict representation.
+
+    Returns
+    -------
+    GraphScopePayload | None
+        Normalized scope payload, or None if input was None or invalid.
+
+    Examples
+    --------
+    >>> normalize_scope(None)
+    None
+    >>> normalize_scope(GraphScopePayload(paths=("src/",)))
+    GraphScopePayload(paths=('src/',), modules=(), time_window=None)
+    >>> normalize_scope({"paths": ["src/"]})
+    GraphScopePayload(paths=('src/',), modules=(), time_window=None)
+    """
+    if scope is None:
+        return None
+    if isinstance(scope, GraphScopePayload):
+        return scope
+    if isinstance(scope, dict):
+        return GraphScopePayload.model_validate(scope)
+    return None
+
+
 class FunctionSummaryRow(MappingModel):
     """
     Typed row for ``docs.v_function_summary`` used by MCP consumers.

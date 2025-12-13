@@ -9,9 +9,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.plugins._metadata import to_plugin_metadata
 from codeintel.build.protocols import TypeChecker
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
@@ -29,7 +30,6 @@ from codeintel.storage.ibis_types import filter_by
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
-    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
     from codeintel.storage.gateway import StorageGateway
 else:
     StorageGateway = object
@@ -57,26 +57,6 @@ TYPING_INGEST_METADATA = CorePluginMetadata(
     scope_aware=True,
     resource_hints={"requires_tools": ["pyright", "pyrefly", "ruff"]},
 )
-
-
-def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
-    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
-
-    Returns
-    -------
-    PluginMetadata
-        Protocol-compatible metadata instance.
-    """
-    return PluginMetadata(
-        name=core.name,
-        version=core.version,
-        description=core.description,
-        kind=cast("PluginKind", core.kind),
-        stage=cast("PluginStage", core.stage or "typing"),
-        provides=core.provides,
-        requires=core.requires,
-        produces_tables=core.produces_tables,
-    )
 
 
 def _default_type_checker_factory(checker: TypeChecker | None) -> TypeChecker | None:
@@ -176,7 +156,7 @@ class TypingIngestPlugin(TargetPlugin):
     @property
     def metadata(self) -> PluginMetadata:
         """Return protocol-compatible metadata."""
-        return _to_plugin_metadata(self._core_metadata)
+        return to_plugin_metadata(self._core_metadata)
 
     @property
     def core_metadata(self) -> CorePluginMetadata:

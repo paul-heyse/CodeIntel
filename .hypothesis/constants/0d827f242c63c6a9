@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugins/ingestion/coverage_plugin.py
+# hypothesis_version: 6.148.7
+
+['.coverage', '3.0.0', '; ', 'CoverageIngestPlugin', 'Unknown error', 'builder', 'core.modules', 'coverage.json', 'coverage_ingest', 'get_module_paths', 'ingest.coverage', 'paths_to_modules', 'tests']

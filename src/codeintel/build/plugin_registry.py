@@ -109,11 +109,6 @@ _PLUGIN_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         ("graph_metrics",),
     ),
     (
-        "codeintel.build.plugins.graphs.metrics.secondary",
-        "SecondaryMetricsPlugin",
-        ("graph_metrics_secondary",),
-    ),
-    (
         "codeintel.build.plugins.graphs.validation",
         "GraphValidationPlugin",
         ("graph_validation",),

@@ -6,9 +6,10 @@ This module provides `TestsIngestPlugin` that ingests pytest JSON reports.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.plugins._metadata import to_plugin_metadata
 from codeintel.build.plugins.ingestion.helpers import get_module_paths, paths_to_modules
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
-    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
 log = logging.getLogger(__name__)
 
@@ -40,26 +40,6 @@ TESTS_INGEST_METADATA = CorePluginMetadata(
     supports_incremental=True,
     scope_aware=True,
 )
-
-
-def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
-    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
-
-    Returns
-    -------
-    PluginMetadata
-        Protocol-compatible metadata instance.
-    """
-    return PluginMetadata(
-        name=core.name,
-        version=core.version,
-        description=core.description,
-        kind=cast("PluginKind", core.kind),
-        stage=cast("PluginStage", core.stage or "tests"),
-        provides=core.provides,
-        requires=core.requires,
-        produces_tables=core.produces_tables,
-    )
 
 
 class TestsIngestPlugin(TargetPlugin):
@@ -84,7 +64,7 @@ class TestsIngestPlugin(TargetPlugin):
     @property
     def metadata(self) -> PluginMetadata:
         """Return protocol-compatible metadata."""
-        return _to_plugin_metadata(self._core_metadata)
+        return to_plugin_metadata(self._core_metadata)
 
     @property
     def core_metadata(self) -> CorePluginMetadata:

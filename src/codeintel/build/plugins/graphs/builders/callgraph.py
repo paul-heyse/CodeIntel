@@ -33,6 +33,7 @@ import libcst as cst
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.plugins._metadata import to_plugin_metadata
 from codeintel.build.plugins.graphs.builders.callgraph_options import CallGraphOptions
 from codeintel.config.datasets import (
     CallGraphNodeRow,
@@ -63,7 +64,6 @@ if TYPE_CHECKING:
         CallGraphEdgeRow,
     )
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
-    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
     from codeintel.graphs.catalog import (
         FunctionSpanIndex,
     )
@@ -269,26 +269,6 @@ def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | 
     except DuckDBError as exc:
         log.debug("callgraph: Could not get source root: %s", exc)
     return None
-
-
-def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
-    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
-
-    Returns
-    -------
-    PluginMetadata
-        Protocol-compatible metadata instance.
-    """
-    return PluginMetadata(
-        name=core.name,
-        version=core.version,
-        description=core.description,
-        kind=cast("PluginKind", core.kind),
-        stage=cast("PluginStage", core.stage or "edges"),
-        provides=core.provides,
-        requires=core.requires,
-        produces_tables=core.produces_tables,
-    )
 
 
 def _collect_edges_for_file(
@@ -600,7 +580,7 @@ class CallGraphPlugin(TargetPlugin):
         PluginMetadata
             Protocol-compatible metadata.
         """
-        return _to_plugin_metadata(self._core_metadata)
+        return to_plugin_metadata(self._core_metadata)
 
     @property
     def core_metadata(self) -> CorePluginMetadata:

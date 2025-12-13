@@ -11,6 +11,9 @@ passed to plugin execute() methods. It provides:
 Plugins receive everything they need via context, eliminating the need
 for config classes and scattered ClassVars.
 
+TargetExecutionContext extends ExecutionContext from the unified context
+hierarchy, adding write tracking and validation capabilities.
+
 Example
 -------
 >>> async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
@@ -33,6 +36,7 @@ from typing import TYPE_CHECKING, Any
 
 from pandera.errors import SchemaError, SchemaErrors
 
+from codeintel.build.context_base import ExecutionContext
 from codeintel.build.errors import ColumnCountMismatchError, SchemaNotFoundError
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.result import TargetResult
@@ -202,6 +206,9 @@ class TargetExecutionContext:
     - Path helpers (repo_root, build_dir, artifact paths)
     - Write methods (with contract validation)
 
+    This class provides the same interface as ExecutionContext but with
+    additional resource handling and write tracking capabilities.
+
     Attributes
     ----------
     target
@@ -365,6 +372,22 @@ class TargetExecutionContext:
             raise RuntimeError(msg)
         return self.resources.gateway
 
+    def to_execution_context(self) -> ExecutionContext:
+        """Convert to an ExecutionContext.
+
+        Returns
+        -------
+        ExecutionContext
+            Execution context with same target/snapshot/paths.
+        """
+        return ExecutionContext(
+            gateway=self.resources.gateway or self.gateway,
+            snapshot=self.snapshot,
+            paths=self.paths,
+            target=self.target,
+            parameters=self.parameters,
+        )
+
     def write_table(
         self,
         table_key: str,
@@ -401,10 +424,7 @@ class TargetExecutionContext:
         if validate:
             schema = self.contract.get_table(table_key)
             if schema is None:
-                if table_key not in self.target.table_keys:
-                    raise SchemaNotFoundError(self.target_name, table_key)
-
-                schema = None
+                raise SchemaNotFoundError(self.target_name, table_key)
 
             if schema is not None and not (
                 schema.description
