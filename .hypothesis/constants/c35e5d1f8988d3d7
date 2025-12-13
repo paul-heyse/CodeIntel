@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugins/analytics/subsystems/build.py
+# hypothesis_version: 6.148.7
+
+['3.0.0', 'SUBSYSTEMS_METADATA', 'SubsystemsPlugin', 'analytics.subsystems', 'metric', 'subsystem']

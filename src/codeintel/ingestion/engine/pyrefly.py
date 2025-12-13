@@ -7,7 +7,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from anyio import to_thread
 
@@ -17,13 +17,13 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolNotFoundError,
 )
 from codeintel.ingestion.engine.plugins import (
-    ToolPlugin,
+    DiagnosticToolPlugin,
     ToolPluginMetadata,
     ToolPluginResult,
     ToolStatus,
 )
 from codeintel.ingestion.engine.results import DiagnosticReport
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path, repo_relpath
+from codeintel.ingestion.infrastructure.paths import safe_relpath
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -36,29 +36,6 @@ log = logging.getLogger(__name__)
 
 def _mkdir_parents(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
-
-
-def _safe_relpath(repo_root: Path, file_path: Path) -> str | None:
-    """
-    Safely compute repository-relative path.
-
-    Parameters
-    ----------
-    repo_root
-        Repository root path.
-    file_path
-        Absolute or relative file path.
-
-    Returns
-    -------
-    str | None
-        Normalized relative path or None on failure.
-    """
-    try:
-        candidate = file_path if file_path.is_absolute() else repo_root / file_path
-        return normalize_rel_path(repo_relpath(repo_root, candidate))
-    except ValueError:
-        return None
 
 
 def _parse_pyrefly_output(
@@ -90,7 +67,7 @@ def _parse_pyrefly_output(
         file_name = diag.get("path")
         if not file_name:
             continue
-        rel_path = _safe_relpath(repo_root, Path(str(file_name)))
+        rel_path = safe_relpath(repo_root, Path(str(file_name)))
         if rel_path is None:
             continue
         counts[rel_path] = counts.get(rel_path, 0) + 1
@@ -99,9 +76,10 @@ def _parse_pyrefly_output(
 
 
 @dataclass
-class PyreflyPlugin(ToolPlugin):
+class PyreflyPlugin(DiagnosticToolPlugin):
     """Plugin responsible for running pyrefly and parsing diagnostics."""
 
+    tool_name: ClassVar[ToolName] = ToolName.PYREFLY
     runner: ToolRunner
     tools_config: ToolsConfig
     metadata: ToolPluginMetadata = field(
@@ -165,15 +143,8 @@ class PyreflyPlugin(ToolPlugin):
                 output_path=output_path,
                 timeout_s=self.tools_config.default_timeout_s,
             )
-        except ToolNotFoundError as exc:
-            return ToolPluginResult(
-                tool=ToolName.PYREFLY,
-                status=ToolStatus.NOT_FOUND,
-                artifacts={},
-                run=None,
-                error=exc,
-                parsed=DiagnosticReport.empty("pyrefly"),
-            )
+        except ToolNotFoundError:
+            return self._not_found_result()
 
         def _is_file() -> bool:
             return output_path.is_file()

@@ -777,6 +777,7 @@ class DatabaseReadinessView:
 
         return "\n".join(lines)
 
+
 __all__ = [
     "ActionKind",
     "ActionNeeded",

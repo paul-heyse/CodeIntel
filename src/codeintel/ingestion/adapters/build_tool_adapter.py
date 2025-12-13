@@ -16,8 +16,6 @@ from codeintel.ingestion.ports.tools import (
     DiagnosticEntry,
     DiagnosticResult,
     ScipResult,
-    TestCase,
-    TestResult,
     ToolStatus,
 )
 
@@ -27,7 +25,6 @@ if TYPE_CHECKING:
     from codeintel.build.protocols import (
         CoverageCollector,
         ScipIndexer,
-        TestReporter,
         TypeChecker,
     )
 
@@ -48,8 +45,6 @@ class BuildToolAdapter:
         Coverage collector protocol implementation (optional).
     scip_indexer
         SCIP indexer protocol implementation (optional).
-    test_reporter
-        Test reporter protocol implementation (optional).
     """
 
     def __init__(
@@ -58,12 +53,10 @@ class BuildToolAdapter:
         type_checker: TypeChecker | None = None,
         coverage_collector: CoverageCollector | None = None,
         scip_indexer: ScipIndexer | None = None,
-        test_reporter: TestReporter | None = None,
     ) -> None:
         self._type_checker = type_checker
         self._coverage_collector = coverage_collector
         self._scip_indexer = scip_indexer
-        self._test_reporter = test_reporter
 
     async def run_pyright(self, repo_root: Path) -> DiagnosticResult:
         """Run pyright type checker.
@@ -246,58 +239,6 @@ class BuildToolAdapter:
             )
         except (OSError, RuntimeError, ValueError) as exc:
             return ScipResult(
-                status=ToolStatus.FAILED,
-                error=str(exc),
-            )
-
-    async def run_pytest(
-        self,
-        repo_root: Path,
-        *,
-        json_report_path: Path,
-    ) -> TestResult:
-        """Run pytest and generate JSON report.
-
-        Parameters
-        ----------
-        repo_root
-            Repository root directory (unused, included for interface compatibility).
-        json_report_path
-            Path for JSON report output.
-
-        Returns
-        -------
-        TestResult
-            Test execution results.
-        """
-        _ = repo_root
-        if self._test_reporter is None:
-            return TestResult(
-                status=ToolStatus.SKIPPED,
-                error="Test reporter not available",
-            )
-        try:
-            results = await self._test_reporter.collect(json_report_path)
-            tests = [
-                TestCase(
-                    nodeid=t.node_id,
-                    outcome=t.outcome,
-                    duration_s=t.duration_ms / 1000.0,
-                )
-                for t in results
-            ]
-            passed = sum(1 for t in results if t.outcome == "passed")
-            failed = sum(1 for t in results if t.outcome == "failed")
-            skipped = sum(1 for t in results if t.outcome == "skipped")
-            return TestResult(
-                status=ToolStatus.OK,
-                tests=tests,
-                passed=passed,
-                failed=failed,
-                skipped=skipped,
-            )
-        except (OSError, RuntimeError, ValueError) as exc:
-            return TestResult(
                 status=ToolStatus.FAILED,
                 error=str(exc),
             )

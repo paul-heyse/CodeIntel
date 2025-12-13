@@ -24,6 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from codeintel.build.errors import RegistryValidationError
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -112,15 +114,12 @@ class UnifiedRegistry:
 
         Raises
         ------
-        ValueError
+        RegistryValidationError
             If target declares a plugin but no implementation is provided.
         """
         if target.plugin and plugin is None and native_module is None:
-            msg = (
-                f"Target '{target.name}' declares plugin='{target.plugin}' "
-                f"but no implementation provided"
-            )
-            raise ValueError(msg)
+            msg = f"declares plugin='{target.plugin}' but no implementation provided"
+            raise RegistryValidationError(target.name, [msg])
 
         self._registrations[target.name] = TargetRegistration(
             target=target,
@@ -289,9 +288,7 @@ class UnifiedRegistry:
         True
         """
         return frozenset(
-            name
-            for name, reg in self._registrations.items()
-            if reg.native_module is not None
+            name for name, reg in self._registrations.items() if reg.native_module is not None
         )
 
     def is_native_target(self, name: str) -> bool:

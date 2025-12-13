@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.errors import CycleDetectedError
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
@@ -354,7 +355,7 @@ class TestTargetGraph:
         graph.register(t2)
         graph.register(t3)
 
-        with pytest.raises(ValueError, match="Cycle detected"):
+        with pytest.raises(CycleDetectedError, match="Dependency cycle detected"):
             graph.topological_order(["target1"])
 
     @staticmethod

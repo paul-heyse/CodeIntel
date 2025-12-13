@@ -19,7 +19,9 @@ Example
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, ClassVar, Protocol, TypeVar, cast, runtime_checkable
+from collections.abc import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TypeVar, cast, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -29,11 +31,24 @@ if TYPE_CHECKING:
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
     from codeintel.core.plugins.types.metadata import CorePluginMetadata
     from codeintel.core.plugins.types.protocol import PluginMetadata
+    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort
+    from codeintel.ingestion.ports.storage import IngestStoragePort
+    from codeintel.storage.gateway import StorageGateway
 
 TOptions = TypeVar("TOptions")
+TStep = TypeVar("TStep")
+
+# Factory type aliases for ingestion plugins
+StorageFactory = Callable[["StorageGateway"], "IngestStoragePort"]
+DiscoveryFactory = Callable[[Path], "ModuleDiscoveryPort"]
+StepFactory = Callable[..., TStep]
 
 __all__ = [
+    "DiscoveryFactory",
+    "FactoryPlugin",
     "MetadataPlugin",
+    "StepFactory",
+    "StorageFactory",
     "TargetPlugin",
     "TargetPluginProtocol",
 ]
@@ -302,3 +317,96 @@ class MetadataPlugin(TargetPlugin, ABC):
                 dynamic_overrides=dynamic_overrides,
             ),
         )
+
+
+class FactoryPlugin[TStep](MetadataPlugin, ABC):
+    """Base for plugins that use storage/discovery/step factories.
+
+    This base class provides common factory boilerplate for ingestion plugins
+    that need to create storage adapters, discovery adapters, and step instances.
+
+    Subclasses must define:
+    - `_core_metadata`: Plugin metadata
+    - `default_storage_factory`: Default storage adapter factory
+    - `default_discovery_factory`: Default discovery adapter factory
+    - `default_step_factory`: Default step factory
+
+    Example
+    -------
+    >>> class MyExtractPlugin(FactoryPlugin[MyExtractStep]):
+    ...     _core_metadata: ClassVar[CorePluginMetadata] = MY_METADATA
+    ...     default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
+    ...     default_discovery_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
+    ...     default_step_factory: ClassVar[StepFactory[MyExtractStep]] = MyExtractStep
+    ...
+    ...     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
+    ...         storage = self.create_storage(ctx.gateway)
+    ...         discovery = self.create_discovery(ctx.repo_root)
+    ...         step = self._step_factory(storage, discovery)
+    ...         return TargetResult.succeeded()
+    """
+
+    # Class variables are typed loosely to allow various callable types
+    default_storage_factory: ClassVar[Any]
+    default_discovery_factory: ClassVar[Any]
+    default_step_factory: ClassVar[Any]
+
+    _storage_factory: StorageFactory
+    _discovery_factory: DiscoveryFactory
+    _step_factory: StepFactory[TStep]
+
+    def __init__(
+        self,
+        *,
+        storage_adapter_factory: StorageFactory | None = None,
+        discovery_adapter_factory: DiscoveryFactory | None = None,
+        step_factory: StepFactory[TStep] | None = None,
+        options_resolver: PluginOptionsResolver | None = None,
+    ) -> None:
+        """Initialize with optional factory overrides.
+
+        Parameters
+        ----------
+        storage_adapter_factory
+            Optional factory for storage adapter. Defaults to class-level factory.
+        discovery_adapter_factory
+            Optional factory for discovery adapter. Defaults to class-level factory.
+        step_factory
+            Optional factory for step instance. Defaults to class-level factory.
+        options_resolver
+            Optional resolver for plugin configuration options.
+        """
+        super().__init__(options_resolver=options_resolver)
+        self._storage_factory = storage_adapter_factory or type(self).default_storage_factory
+        self._discovery_factory = discovery_adapter_factory or type(self).default_discovery_factory
+        self._step_factory = step_factory or type(self).default_step_factory
+
+    def create_storage(self, gateway: StorageGateway) -> IngestStoragePort:
+        """Create a storage adapter instance.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+
+        Returns
+        -------
+        IngestStoragePort
+            Configured storage adapter.
+        """
+        return self._storage_factory(gateway)
+
+    def create_discovery(self, repo_root: Path) -> ModuleDiscoveryPort:
+        """Create a discovery adapter instance.
+
+        Parameters
+        ----------
+        repo_root
+            Repository root directory.
+
+        Returns
+        -------
+        ModuleDiscoveryPort
+            Configured discovery adapter.
+        """
+        return self._discovery_factory(repo_root)

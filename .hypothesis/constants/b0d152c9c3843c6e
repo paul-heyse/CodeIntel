@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugins/graphs/builders/goid.py
+# hypothesis_version: 6.148.7
+
+['.', '.py', '/test_', '3.0.0', 'Any', 'GoidBuilderPlugin', '_', '__init__', '_test.py', 'builder', 'core.goid_crosswalk', 'core.goids', 'core.modules', 'core.snapshots', 'empty', 'end_lineno', 'goid', 'graph_kinds', 'graphs.goid_builder', 'module', 'python', 'test_', 'tests/', 'utf8']

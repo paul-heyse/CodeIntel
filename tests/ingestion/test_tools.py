@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.engine import ToolPluginResult, ToolStatus, build_default_registry
+from codeintel.ingestion.engine import ToolStatus, build_default_registry
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
@@ -36,7 +36,6 @@ from codeintel.ingestion.engine.results import (
     ScipDocument,
     ScipIndexResult,
     ScipOccurrence,
-    TestCaseResult,
     TestReport,
     parse_scip_occurrence,
     parse_scip_range,
@@ -697,40 +696,6 @@ def test_tool_service_run_coverage_not_found(tmp_path: Path) -> None:
     service = ToolService(runner, tools_cfg)
     report = asyncio.run(service.run_coverage_report(tmp_path))
     expect_true(report.files == ())
-
-
-def test_tool_service_get_test_report_returns_parsed() -> None:
-    """ToolService.get_test_report should extract TestReport from result."""
-    test_report = TestReport(
-        tests=(TestCaseResult(nodeid="t::a", outcome="passed"),),
-        passed_count=1,
-        failed_count=0,
-        skipped_count=0,
-        total_duration_s=1.0,
-    )
-    result = ToolPluginResult(
-        tool=ToolName.PYTEST,
-        status=ToolStatus.OK,
-        artifacts={},
-        run=None,
-        parsed=test_report,
-    )
-    extracted = ToolService.get_test_report(result)
-    expect_true(extracted is test_report)
-
-
-def test_tool_service_get_test_report_returns_empty_for_none() -> None:
-    """ToolService.get_test_report should return empty for non-TestReport."""
-    result = ToolPluginResult(
-        tool=ToolName.PYTEST,
-        status=ToolStatus.OK,
-        artifacts={},
-        run=None,
-        parsed=None,
-    )
-    extracted = ToolService.get_test_report(result)
-    expect_true(extracted.tests == ())
-    expect_true(extracted.passed_count == 0)
 
 
 def test_tool_service_run_pytest_raises_not_found(tmp_path: Path) -> None:

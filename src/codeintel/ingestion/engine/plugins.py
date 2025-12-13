@@ -29,7 +29,13 @@ import logging
 from dataclasses import dataclass, field
 from enum import StrEnum
 from importlib import import_module
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
+
+from codeintel.ingestion.engine.infrastructure import (
+    ToolName,
+    ToolNotFoundError,
+)
+from codeintel.ingestion.engine.results import DiagnosticReport
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, MutableMapping
@@ -37,7 +43,6 @@ if TYPE_CHECKING:
 
     from codeintel.config.models import ToolsConfig
     from codeintel.ingestion.engine.infrastructure import (
-        ToolName,
         ToolRunner,
         ToolRunResult,
     )
@@ -156,6 +161,49 @@ class ToolPlugin(Protocol):
         coverage_file, json_output_path, rel_paths for sharded SCIP).
         """
         ...
+
+
+@dataclass
+class DiagnosticToolPlugin:
+    """Base class for diagnostic tool plugins (pyright, pyrefly, ruff).
+
+    Provides standardized NOT_FOUND handling for diagnostic tools. Subclasses
+    must define ``tool_name`` as a class variable and implement the ``run``
+    method.
+
+    Attributes
+    ----------
+    runner
+        Shared ToolRunner for subprocess execution.
+    tools_config
+        Effective tool configuration.
+    metadata
+        Plugin metadata for registry integration.
+    tool_name
+        Class variable specifying the ToolName for this plugin.
+    """
+
+    tool_name: ClassVar[ToolName]
+    runner: ToolRunner
+    tools_config: ToolsConfig
+    metadata: ToolPluginMetadata
+
+    def _not_found_result(self) -> ToolPluginResult:
+        """Return standard NOT_FOUND response for this tool.
+
+        Returns
+        -------
+        ToolPluginResult
+            Result with NOT_FOUND status and empty diagnostics.
+        """
+        return ToolPluginResult(
+            tool=self.tool_name,
+            status=ToolStatus.NOT_FOUND,
+            artifacts={},
+            run=None,
+            error=ToolNotFoundError(self.tool_name, configured_path="(not found)"),
+            parsed=DiagnosticReport.empty(self.tool_name.value),
+        )
 
 
 @dataclass

@@ -1,36 +1,42 @@
 # Graphs Package Cleanup Plan
 
 > **Generated:** 2025-12-13  
-> **Updated:** 2025-12-13 (Phases 1-3 completed)  
+> **Updated:** 2025-12-13 (Phases 1-6 completed)  
 > **Package:** `codeintel.graphs`  
-> **Status:** Phases 1-3 Complete, Phase 4 Ready for Review
+> **Status:** Phases 1-6 Complete, Phase 7+ Ready for Review
 
 ## Executive Summary
 
-The `graphs` package has undergone significant cleanup with Phases 1-3 now complete:
+The `graphs` package has undergone extensive cleanup with Phases 1-6 now complete:
 
 **Completed:**
 - ~~2 empty directories deleted~~ ✅
 - ~~9 unused backward-compatibility aliases removed~~ ✅
 - ~~1 deprecated stub module removed~~ ✅
 - ~~1 unused protocol removed~~ ✅
+- ~~3 data classes unified into FunctionSpan~~ ✅
+- ~~2 service classes merged into CatalogService~~ ✅
+- ~~3 port protocols marked deprecated~~ ✅
+- ~~compute/__init__.py docstring updated~~ ✅
 
-**Remaining Opportunities (Phase 4+):**
-- Catalog layer consolidation (3 overlapping data classes)
-- Ports layer simplification (3 single-implementation ports)
-- Data loading function consolidation
-- Compute layer documentation improvements
+**Remaining Opportunities (Phase 7+):**
+- Complete consumer migration to CatalogService
+- Remove deprecation shims after migration period
+- Loading function consolidation
+- Cross-package port unification (analytics/ingestion)
+- Test helper modernization
 
 ---
 
 ## Table of Contents
 
 1. [Completed Work](#1-completed-work)
-2. [Catalog Layer Consolidation](#2-catalog-layer-consolidation)
-3. [Data Class Unification](#3-data-class-unification)
-4. [Ports Layer Simplification](#4-ports-layer-simplification)
-5. [Compute Layer Opportunities](#5-compute-layer-opportunities)
-6. [Implementation Checklist](#6-implementation-checklist)
+2. [Current Architecture](#2-current-architecture)
+3. [Consumer Migration Status](#3-consumer-migration-status)
+4. [Cross-Package Consolidation](#4-cross-package-consolidation)
+5. [Deprecation Removal Timeline](#5-deprecation-removal-timeline)
+6. [Future Opportunities](#6-future-opportunities)
+7. [Implementation Checklist](#7-implementation-checklist)
 
 ---
 
@@ -52,7 +58,6 @@ The `graphs` package has undergone significant cleanup with Phases 1-3 now compl
 
 - Deleted `src/codeintel/graphs/adapters/` directory
 - Updated `graphs/__init__.py` to remove adapters import and export
-- Updated module docstring to remove adapters references
 
 ### Phase 3: ParsingPort Protocol Removal ✅
 
@@ -60,280 +65,245 @@ The `graphs` package has undergone significant cleanup with Phases 1-3 now compl
 
 - Removed unused `ParsingPort` protocol from `graphs/ports/parsing.py`
 - Kept data classes: `ParsedFunction`, `ParsedModule`, `ParseError`, `ParseResult`
-- Updated `graphs/ports/__init__.py` exports
+
+### Phase 4: Catalog Layer Consolidation ✅
+
+**Completed 2025-12-13**
+
+- **Unified FunctionSpan**: Added optional `urn` field and `local_name` property
+- **Updated FunctionCatalog**: Now accepts `Iterable[FunctionSpan]` directly
+- **Created CatalogService**: Merged `FunctionCatalogService` and `CatalogResource`
+- **Added deprecation wrappers**:
+  - `FunctionMeta` → compatibility class returning `FunctionSpan`
+  - `FunctionCatalogService` → wrapper returning `CatalogService`
+  - `FunctionSpanData` → compatibility class in `ports/catalog.py`
+
+### Phase 5: Ports Layer Simplification ✅
+
+**Completed 2025-12-13**
+
+- Marked protocols as deprecated with migration guidance:
+  - `StoragePort` in `ports/storage.py`
+  - `CatalogPort` in `ports/catalog.py`
+  - `EnginePort` in `ports/engine.py`
+- Kept active data classes: `QueryResult`, `BatchResult`, `GraphData`
+- Updated `ports/__init__.py` with sorted exports and deprecation notes
+
+### Phase 6: Polish ✅
+
+**Completed 2025-12-13**
+
+- Updated `compute/__init__.py` docstring to reflect current structure
+- Added subpackage documentation for `callgraph/` and `metrics/`
 
 ---
 
-## 2. Catalog Layer Consolidation
+## 2. Current Architecture
 
-### Status: 🟡 Medium Priority (Recommended for Phase 4)
-
-Deep analysis reveals significant overlap between catalog-related classes that creates cognitive overhead and maintenance burden.
-
-### Current Architecture
+### Post-Consolidation Structure
 
 ```
-graphs/catalog.py
-├── FunctionSpan (frozen dataclass)
-├── FunctionSpanIndex (lookup structure)
-├── FunctionMeta (frozen dataclass, adds URN)
-├── FunctionCatalog (main catalog class)
-├── FunctionCatalogProvider (Protocol)
-└── FunctionCatalogService (service wrapper)
-
-graphs/resources/catalog.py
-└── CatalogResource (resource provider wrapper)
-
-graphs/ports/catalog.py
-├── FunctionSpanData (frozen dataclass, duplicates FunctionSpan + URN)
-└── CatalogPort (Protocol)
+graphs/
+├── __init__.py              # Exports CatalogService, FunctionSpan
+├── catalog.py               # Unified catalog layer
+│   ├── FunctionSpan         # Unified data class with urn + local_name
+│   ├── FunctionSpanIndex    # Lookup structure
+│   ├── FunctionCatalog      # Main catalog class
+│   ├── FunctionCatalogProvider  # Protocol for DI
+│   ├── CatalogService       # Unified service (NEW)
+│   ├── FunctionMeta         # DEPRECATED compatibility wrapper
+│   └── FunctionCatalogService   # DEPRECATED compatibility wrapper
+│
+├── ports/
+│   ├── __init__.py          # Re-exports data classes
+│   ├── catalog.py           # CatalogPort (deprecated), FunctionSpanData (deprecated)
+│   ├── engine.py            # EnginePort (deprecated), GraphData (active)
+│   ├── parsing.py           # ParsedFunction, ParsedModule (active)
+│   └── storage.py           # StoragePort (deprecated), QueryResult, BatchResult (active)
+│
+├── resources/
+│   ├── __init__.py          # Exports CatalogService, resources
+│   ├── catalog.py           # CatalogResource (deprecated shim → CatalogService)
+│   ├── graphs.py            # GraphResource (active)
+│   └── storage.py           # StorageResource (active)
+│
+├── compute/                 # Pure stateless computation layer
+│   ├── callgraph/           # Edge collection, resolution, deduplication
+│   ├── metrics/             # Graph metric computations
+│   ├── cfg.py, dfg.py       # Control/data flow graph construction
+│   ├── goid.py              # GOID hash computation
+│   ├── imports.py           # Import analysis
+│   └── symbols.py           # Symbol use analysis
+│
+├── engine/                  # Graph engine implementations
+└── validation/              # Graph validation checks
 ```
 
-### Identified Redundancies
+### New Canonical Types
 
-#### 2.1 Three Overlapping Span Data Classes
-
-| Class | Location | Fields | Used By |
-|-------|----------|--------|---------|
-| `FunctionSpan` | `catalog.py` | goid, rel_path, qualname, start_line, end_line | FunctionSpanIndex, FunctionCatalog |
-| `FunctionMeta` | `catalog.py` | goid, urn, rel_path, qualname, start_line, end_line | FunctionCatalog.functions_by_path |
-| `FunctionSpanData` | `ports/catalog.py` | goid, rel_path, qualname, start_line, end_line, urn, local_name (property) | CatalogResource, CatalogPort |
-
-**Issue:** `FunctionSpanData` is essentially `FunctionSpan` + `urn` + `local_name` property. `FunctionMeta` is `FunctionSpan` + `urn`. All three represent the same concept.
-
-**Recommendation:** Unify into a single `FunctionSpan` class with optional `urn` field:
-
-```python
-@dataclass(frozen=True)
-class FunctionSpan:
-    """Unified function span representation."""
-    goid: int
-    rel_path: str
-    qualname: str
-    start_line: int
-    end_line: int
-    urn: str | None = None  # Optional, populated when available
-    
-    @property
-    def local_name(self) -> str:
-        return self.qualname.rsplit(".", maxsplit=1)[-1]
-```
-
-#### 2.2 Dual Service/Resource Classes
-
-| Class | Purpose | Key Methods |
-|-------|---------|-------------|
-| `FunctionCatalogService` | Analytics-facing wrapper | catalog(), local_name_map(), urn_for_goid(), lookup_goid() |
-| `CatalogResource` | Graph plugin wrapper | function_spans, spans_for_path(), local_name_map(), lookup_goid() |
-
-**Issue:** Both wrap `FunctionCatalog` with nearly identical methods. `CatalogResource` converts to `FunctionSpanData`; `FunctionCatalogService` uses `FunctionSpan` directly.
-
-**Recommendation:** Merge into single `CatalogService` that implements both `FunctionCatalogProvider` and resource protocols:
-
-```python
-@dataclass
-class CatalogService:
-    """Unified catalog access for graphs and analytics."""
-    
-    RESOURCE_NAME: ClassVar[str] = "catalog"
-    _catalog: FunctionCatalog
-    
-    # ResourceProvider protocol
-    def get(self) -> CatalogService: return self
-    def invalidate(self) -> None: ...
-    
-    # FunctionCatalogProvider protocol  
-    def catalog(self) -> FunctionCatalog: ...
-    def urn_for_goid(self, goid: int) -> str | None: ...
-    
-    # Unified span access
-    @property
-    def function_spans(self) -> Sequence[FunctionSpan]: ...
-    def spans_for_path(self, rel_path: str) -> Sequence[FunctionSpan]: ...
-```
-
-### Migration Impact
-
-| Consumer | Current Import | After Consolidation |
-|----------|----------------|---------------------|
-| Analytics plugins | `FunctionCatalogService` | `CatalogService` |
-| Graph builders | `CatalogResource` | `CatalogService` |
-| Tests | Both | `CatalogService` |
-
-**Estimated Effort:** 2-3 hours
-**Risk:** Low (internal refactoring, no API changes)
+| Canonical Type | Replaces | Location |
+|----------------|----------|----------|
+| `FunctionSpan` | `FunctionMeta`, `FunctionSpanData` | `graphs/catalog.py` |
+| `CatalogService` | `FunctionCatalogService`, `CatalogResource` | `graphs/catalog.py` |
 
 ---
 
-## 3. Data Class Unification
+## 3. Consumer Migration Status
 
-### Status: 🟢 Lower Priority (Part of Catalog Consolidation)
+### Files Still Using Deprecated Types
 
-### Current State
+Discovered during implementation - these files import deprecated types and should migrate:
 
-The `graphs/catalog.py` module defines three loading functions with overlapping logic:
+#### High Priority (Core Functionality)
 
-```python
-def load_function_spans(gateway, *, repo, commit) -> list[FunctionSpan]:
-    """Load spans without URN."""
-    
-def load_function_index(gateway, *, repo, commit) -> FunctionSpanIndex:
-    """Load spans and wrap in index."""
-    
-def load_function_catalog(gateway, *, repo, commit) -> FunctionCatalog:
-    """Load spans with URN and module mapping."""
+| File | Deprecated Import | Migration |
+|------|-------------------|-----------|
+| `analytics/resources/catalog.py` | `FunctionCatalogService` | Use `CatalogService` |
+| `analytics/testing/coverage/edges.py` | `FunctionCatalogService` | Use `CatalogService` |
+| `analytics/profiles/__init__.py` | `FunctionCatalogService` | Use `CatalogService` |
+| `analytics/functions/function_effects.py` | `FunctionCatalogService`, `FunctionMeta` | Use `CatalogService`, `FunctionSpan` |
+| `analytics/parsing/ast_cache.py` | `FunctionCatalogService` | Use `CatalogService` |
+
+#### Medium Priority (Build Plugins)
+
+| File | Deprecated Import | Migration |
+|------|-------------------|-----------|
+| `build/plugins/graphs/builders/callgraph.py` | `load_function_index` | Use `load_function_catalog` |
+| `build/plugins/graphs/builders/cfg_dfg.py` | `load_function_index` | Use `load_function_catalog` |
+
+#### Lower Priority (Tests)
+
+| File | Deprecated Import | Migration |
+|------|-------------------|-----------|
+| `tests/analytics/plugins/test_*.py` (6 files) | `FunctionCatalogService` | Use `CatalogService` |
+| `tests/analytics/resources/test_provider_factory.py` | `FunctionMeta` | Use `FunctionSpan` |
+| `tests/graphs/conftest.py` | `FunctionMeta` | Use `FunctionSpan` |
+| `tests/_helpers/rows.py` | `FunctionMeta` | Use `FunctionSpan` |
+| `tests/_helpers/fakes/function_catalogs.py` | `FunctionMeta` | Use `FunctionSpan` |
+
+---
+
+## 4. Cross-Package Consolidation
+
+### Observation: Redundant Port Re-Exports
+
+During implementation, I discovered that multiple packages maintain their own port modules that simply re-export from `graphs.ports`:
+
+```
+analytics/ports/__init__.py  → re-exports from graphs.ports
+ingestion/ports/storage.py   → duplicates StoragePort pattern
 ```
 
 ### Recommendation
 
-Consolidate into a single loader that returns the full catalog (most common use case):
+Consider a single shared ports package:
 
 ```python
-def load_catalog(gateway: StorageGateway, *, repo: str, commit: str) -> FunctionCatalog:
-    """Load function catalog with spans, URNs, and module mapping."""
-    ...
-
-# Convenience accessors if needed
-def load_span_index(gateway, *, repo, commit) -> FunctionSpanIndex:
-    """Load catalog and return just the span index."""
-    return load_catalog(gateway, repo=repo, commit=commit).function_index
+# codeintel/common/ports/__init__.py (or codeintel/core/ports)
+from codeintel.graphs.ports import (
+    BatchResult,
+    CatalogPort,
+    FunctionSpan,
+    GraphData,
+    QueryResult,
+    StoragePort,
+)
 ```
+
+Then have `analytics.ports` and `ingestion.ports` simply re-export from there.
 
 **Benefits:**
-- Single source of truth for loading logic
-- Reduces code duplication
-- Simplifies testing
+- Single source of truth for port definitions
+- Clearer import paths
+- Reduced maintenance burden
+
+**Effort:** Low (1-2 hours)
 
 ---
 
-## 4. Ports Layer Simplification
+## 5. Deprecation Removal Timeline
 
-### Status: 🟢 Lower Priority (Architectural)
+### Current Deprecation Status
 
-### Current State (Post-Phase 3)
+All deprecated items emit `DeprecationWarning` at runtime:
 
-| Port | Location | Implementation | Used By |
-|------|----------|----------------|---------|
-| `StoragePort` | `ports/storage.py` | `StorageResource` | Internal only |
-| `CatalogPort` | `ports/catalog.py` | `CatalogResource` | Internal only |
-| `EnginePort` | `ports/engine.py` | `GraphResource` | Internal only |
+| Deprecated Item | Location | Replacement | Remove After |
+|-----------------|----------|-------------|--------------|
+| `FunctionMeta` | `graphs/catalog.py` | `FunctionSpan` | v6.0.0 |
+| `FunctionCatalogService` | `graphs/catalog.py` | `CatalogService` | v6.0.0 |
+| `FunctionSpanData` | `graphs/ports/catalog.py` | `FunctionSpan` | v6.0.0 |
+| `CatalogResource` | `graphs/resources/catalog.py` | `CatalogService` | v6.0.0 |
+| `CatalogPort` | `graphs/ports/catalog.py` | `CatalogService` | v6.0.0 |
+| `StoragePort` | `graphs/ports/storage.py` | `StorageResource` | v6.0.0 |
+| `EnginePort` | `graphs/ports/engine.py` | `GraphResource` | v6.0.0 |
 
-### Analysis
+### Removal Checklist (Phase 7)
 
-1. **Each port has exactly one implementation**
-2. **Ports are used internally only** - no external consumers
-3. **No DI-based testing** - tests don't swap implementations
-4. **Data classes in ports are used** - `FunctionSpanData`, `GraphData`, `QueryResult`, etc.
+After all consumers migrate:
 
-### Options
-
-#### Option A: Keep Ports (Status Quo)
-- **Pros:** Follows hexagonal architecture, ready for future flexibility
-- **Cons:** Over-engineered for current single-implementation usage
-
-#### Option B: Inline Protocols into Resources
-- **Pros:** Simpler codebase, fewer files
-- **Cons:** Loses architectural clarity
-
-#### Option C: Consolidate Port/Resource Pairs
-- Move `StoragePort` methods into `StorageResource`
-- Move `CatalogPort` methods into `CatalogResource` (or unified `CatalogService`)
-- Move `EnginePort` methods into `GraphResource`
-- Keep data classes in ports (they're used as DTOs)
-
-### Recommendation
-
-**Option C** with catalog consolidation from Section 2. The ports layer adds value for data classes but the protocol/resource split is unnecessary overhead.
-
-**Post-consolidation structure:**
-```
-graphs/ports/
-├── __init__.py          # Export data classes
-├── catalog.py           # FunctionSpanData (if not unified)
-├── engine.py            # GraphData  
-├── parsing.py           # ParsedFunction, ParsedModule, etc.
-└── storage.py           # QueryResult, BatchResult
-
-graphs/resources/
-├── __init__.py
-├── catalog.py           # CatalogService (unified)
-├── graphs.py            # GraphResource (with EnginePort inlined)
-└── storage.py           # StorageResource (with StoragePort inlined)
-```
+1. Remove `_FunctionMetaCompat` class and `FunctionMeta` alias from `catalog.py`
+2. Remove `FunctionCatalogService` wrapper from `catalog.py`
+3. Remove `_FunctionSpanDataCompat` class and `FunctionSpanData` alias from `ports/catalog.py`
+4. Remove `CatalogResource` wrapper from `resources/catalog.py`
+5. Remove `CatalogPort`, `StoragePort`, `EnginePort` protocols
+6. Update all `__all__` exports
 
 ---
 
-## 5. Compute Layer Opportunities
+## 6. Future Opportunities
 
-### Status: 🟢 Lower Priority (Documentation/Polish)
+### 6.1 Loading Function Consolidation
 
-The compute layer is well-structured with clean separation of concerns. Minor improvements identified:
-
-### 5.1 Callgraph Module Organization
-
-**Current:**
-```
-compute/callgraph/
-├── __init__.py       # Re-exports everything
-├── collection.py     # Edge collection visitors (CST/AST)
-├── persistence.py    # dedupe_edge_rows, default_edge_key
-├── resolution.py     # Callee resolution logic
-└── types.py          # CallEdge, ResolutionResult, contexts
-```
-
-**Observation:** Module is well-organized. The `persistence.py` module is minimal (80 lines) after cleanup - could be merged into `collection.py` if desired.
-
-### 5.2 Metrics Module
-
-**Current structure is good:**
-```
-compute/metrics/
-├── bipartite.py      # Bipartite graph metrics
-├── centrality.py     # PageRank, betweenness, etc.
-├── cfg.py            # Control flow metrics
-├── community.py      # Community detection
-├── components.py     # SCC, connected components
-├── coupling.py       # Coupling metrics
-├── dfg.py            # Data flow metrics
-├── paths.py          # Path-related metrics
-├── statistics.py     # Graph statistics
-└── structural.py     # Clustering, triangles, etc.
-```
-
-**Note:** This is properly used by `analytics.compute.graphs` which wraps these pure functions - correct layered architecture.
-
-### 5.3 Documentation Opportunity
-
-The `compute/__init__.py` docstring references outdated module names. Update to reflect current structure:
-
+**Current state:**
 ```python
-"""Pure stateless computation layer for graph operations.
-
-Subpackages
------------
-callgraph/
-    Call edge collection, resolution, and persistence utilities
-metrics/
-    Graph metric computations (centrality, community, structural, etc.)
-
-Modules
--------
-cfg
-    Control-flow graph construction
-dfg  
-    Data-flow graph construction
-goid
-    GOID hash computation and URN building
-imports
-    Import relationship analysis
-symbols
-    Symbol use analysis
-"""
+load_function_spans()   # Returns list[FunctionSpan] without URN
+load_function_index()   # Returns FunctionSpanIndex
+load_function_catalog() # Returns FunctionCatalog with URN
 ```
+
+**Observation:** `load_function_spans()` is now redundant since `FunctionSpan` includes URN.
+
+**Recommendation:** After migration period, consolidate to:
+```python
+load_function_catalog()  # Primary loader
+# load_function_index() and load_function_spans() can delegate to it
+```
+
+### 6.2 Test Helper Modernization
+
+**Observation:** `tests/_helpers/catalogs.py` was updated during implementation but still uses:
+- Direct `FunctionCatalog` iteration patterns
+- Manual row building that duplicates catalog logic
+
+**Recommendation:** Simplify test helpers to use `CatalogService` directly:
+```python
+def seed_goids_from_catalog(ctx: CatalogCtxLike, catalog: CatalogService) -> None:
+    # Use catalog.function_spans directly instead of internal iteration
+    for span in catalog.function_spans:
+        ...
+```
+
+### 6.3 Validation Package Assessment
+
+**Observation:** The `graphs/validation/` package was not touched in this cleanup.
+
+**Potential opportunities:**
+- Check if validation uses deprecated types
+- Assess if validation can use `CatalogService` directly
+- Look for dead code or unused validators
+
+### 6.4 Engine Package Assessment
+
+**Observation:** The `graphs/engine/` package was not deeply analyzed.
+
+**Potential opportunities:**
+- Check for unused backward-compatibility code
+- Assess if `GraphEngine` protocol can be simplified
+- Look for opportunities to use `CatalogService`
 
 ---
 
-## 6. Implementation Checklist
+## 7. Implementation Checklist
 
 ### Completed Phases ✅
 
@@ -352,25 +322,50 @@ symbols
 - [x] Remove `ParsingPort` protocol from `graphs/ports/parsing.py`
 - [x] Update `graphs/ports/__init__.py` exports
 
+#### Phase 4: Catalog Layer Consolidation ✅
+- [x] Add `urn` field and `local_name` property to `FunctionSpan`
+- [x] Update `FunctionCatalog` to use unified `FunctionSpan`
+- [x] Create unified `CatalogService` class
+- [x] Add deprecation wrappers for `FunctionMeta`, `FunctionCatalogService`, `FunctionSpanData`
+- [x] Update `resources/catalog.py` to be deprecation shim
+- [x] Update `resources/__init__.py` exports
+- [x] Update `graphs/__init__.py` exports
+- [x] Update `analytics/ports/__init__.py` exports
+- [x] Update `tests/_helpers/catalogs.py`
+
+#### Phase 5: Ports Layer Simplification ✅
+- [x] Mark `StoragePort` as deprecated in `ports/storage.py`
+- [x] Mark `CatalogPort` as deprecated in `ports/catalog.py`
+- [x] Mark `EnginePort` as deprecated in `ports/engine.py`
+- [x] Update `ports/__init__.py` with deprecation notes
+
+#### Phase 6: Polish ✅
+- [x] Update `compute/__init__.py` docstring
+
 ### Remaining Phases
 
-#### Phase 4: Catalog Layer Consolidation (Recommended Next)
-- [ ] Unify `FunctionSpan`, `FunctionMeta`, `FunctionSpanData` into single class
-- [ ] Merge `FunctionCatalogService` and `CatalogResource` into `CatalogService`
-- [ ] Update all consumers (analytics, graphs, tests)
-- [ ] Consolidate loading functions
+#### Phase 7: Consumer Migration (Recommended Next)
+- [ ] Migrate `analytics/resources/catalog.py` to use `CatalogService`
+- [ ] Migrate `analytics/testing/coverage/edges.py`
+- [ ] Migrate `analytics/profiles/__init__.py`
+- [ ] Migrate `analytics/functions/function_effects.py`
+- [ ] Migrate `analytics/parsing/ast_cache.py`
+- [ ] Migrate `build/plugins/graphs/builders/*.py`
+- [ ] Migrate test files (6+ files)
 - [ ] Run full test suite
 
-#### Phase 5: Ports Layer Simplification (Optional)
-- [ ] Inline `StoragePort` into `StorageResource`
-- [ ] Inline `EnginePort` into `GraphResource`
-- [ ] Remove empty protocol files
-- [ ] Update imports
+#### Phase 8: Deprecation Removal (After v6.0.0)
+- [ ] Remove `FunctionMeta` compatibility wrapper
+- [ ] Remove `FunctionCatalogService` compatibility wrapper
+- [ ] Remove `FunctionSpanData` compatibility wrapper
+- [ ] Remove `CatalogResource` wrapper
+- [ ] Remove deprecated port protocols
+- [ ] Update all `__all__` exports
 
-#### Phase 6: Polish (Optional)
-- [ ] Update `compute/__init__.py` docstring
-- [ ] Consider merging `persistence.py` into `collection.py`
-- [ ] Add module-level examples to key modules
+#### Phase 9: Cross-Package Consolidation (Optional)
+- [ ] Assess `analytics/ports` → `graphs/ports` unification
+- [ ] Assess `ingestion/ports` patterns
+- [ ] Consider shared `core/ports` package
 
 ---
 
@@ -391,6 +386,9 @@ uv run pytest -q
 
 # Verify no dead code introduced
 uv run vulture src/codeintel/graphs --min-confidence 90
+
+# Check for remaining deprecated usage
+grep -r "FunctionCatalogService\|FunctionMeta\|FunctionSpanData" src/ --include="*.py" | grep -v "# Deprecated"
 ```
 
 ---
@@ -400,3 +398,5 @@ uv run vulture src/codeintel/graphs --min-confidence 90
 - [BUILD_CLEANUP_PLAN.md](./BUILD_CLEANUP_PLAN.md)
 - [BUILD_CONSOLIDATION_PLAN.md](./BUILD_CONSOLIDATION_PLAN.md)
 - [BUILD_REFINEMENT_PLAN.md](./BUILD_REFINEMENT_PLAN.md)
+- [ANALYTICS_CLEANUP_PLAN.md](./ANALYTICS_CLEANUP_PLAN.md)
+- [INGESTION_CLEANUP_PLAN.md](./INGESTION_CLEANUP_PLAN.md)

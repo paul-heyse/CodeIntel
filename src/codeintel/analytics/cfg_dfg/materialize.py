@@ -22,6 +22,11 @@ from codeintel.analytics.cfg_dfg.dfg_core import (
     dfg_function_metadata,
     load_dfg_edges,
 )
+from codeintel.analytics.graphs.constants import (
+    MAX_CFG_CENTRALITY_SAMPLE,
+    MAX_CFG_EIGEN_SAMPLE,
+    MAX_DFG_CENTRALITY_SAMPLE,
+)
 from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
@@ -157,10 +162,6 @@ DFG_FUNCTION_METRICS_EXT_COLS = [
     "created_at",
     "metrics_version",
 ]
-
-MAX_CFG_CENTRALITY_SAMPLE = 100
-MAX_CFG_EIGEN_SAMPLE = 200
-MAX_DFG_CENTRALITY_SAMPLE = 100
 
 
 def compute_cfg_metrics(

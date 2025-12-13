@@ -12,7 +12,8 @@ import logging
 from typing import TYPE_CHECKING, ClassVar, SupportsInt, cast
 
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
+from codeintel.build.plugin import MetadataPlugin
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import filter_by, ibis_bool
 
@@ -170,7 +171,28 @@ def _validate_cfg_integrity(
     return errors
 
 
-class GraphValidationPlugin(TargetPlugin):
+GRAPH_VALIDATION_METADATA = CorePluginMetadata(
+    name="analytics.graph_validation",
+    version="3.0.0",
+    description="Validate graph integrity.",
+    domain=PluginDomain.ANALYTICS,
+    kind="validation",
+    stage="graph",
+    provides=("analytics.graph_validation",),
+    requires=("graph.call_graph_edges", "graph.import_graph_edges"),
+    produces_tables=(),
+    consumes_tables=(
+        "graph.call_graph_edges",
+        "graph.call_graph_nodes",
+        "graph.import_graph_edges",
+        "graph.import_modules",
+        "graph.cfg_edges",
+        "graph.cfg_blocks",
+    ),
+)
+
+
+class GraphValidationPlugin(MetadataPlugin):
     """Validate graph integrity.
 
     This plugin performs validation checks on graph data:
@@ -183,9 +205,7 @@ class GraphValidationPlugin(TargetPlugin):
     - graphs.validation_results: Graph validation results (errors logged)
     """
 
-    plugin_name: ClassVar[str] = "graph_validation"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Validate graph integrity."
+    _core_metadata: ClassVar[CorePluginMetadata] = GRAPH_VALIDATION_METADATA
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute graph validation.
@@ -237,4 +257,4 @@ class GraphValidationPlugin(TargetPlugin):
             return TargetResult.failed(f"Graph validation failed: {e}")
 
 
-__all__ = ["GraphValidationPlugin"]
+__all__ = ["GRAPH_VALIDATION_METADATA", "GraphValidationPlugin"]

@@ -8,38 +8,33 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.errors import GatewayNotAvailableError
+from codeintel.build.plugin import DiscoveryFactory, FactoryPlugin, StorageFactory
+from codeintel.build.plugins.ingestion.helpers import get_module_paths, paths_to_modules
 from codeintel.build.protocols import TypeChecker
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.adapters import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
 )
 from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
-from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
 from codeintel.ingestion.ports.storage import IngestStoragePort
-from codeintel.storage.ibis_types import filter_by
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
-    from codeintel.storage.gateway import StorageGateway
-else:
-    StorageGateway = object
+    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort
 
 log = logging.getLogger(__name__)
 
-StorageFactory = Callable[[StorageGateway], IngestStoragePort]
-DiscoveryFactory = Callable[[Path], ModuleDiscoveryPort]
 TypeCheckerFactory = Callable[[TypeChecker | None], TypeChecker | None]
-StepFactory = Callable[[IngestStoragePort, ModuleDiscoveryPort, BuildToolAdapter], TypingIngestStep]
+TypingStepFactory = Callable[
+    [IngestStoragePort, "ModuleDiscoveryPort", BuildToolAdapter], TypingIngestStep
+]
 
 
 TYPING_INGEST_METADATA = CorePluginMetadata(
@@ -70,47 +65,7 @@ def _default_type_checker_factory(checker: TypeChecker | None) -> TypeChecker | 
     return checker
 
 
-def _paths_to_modules(paths: list[str], repo_root: Path) -> list[ModuleRecord]:
-    """Convert string paths to ModuleRecord objects.
-
-    Returns
-    -------
-    list[ModuleRecord]
-        Module records with metadata.
-    """
-    total = len(paths)
-    return [
-        ModuleRecord(
-            rel_path=path,
-            module_name=path.replace("/", ".").removesuffix(".py"),
-            file_path=repo_root / path,
-            index=i + 1,
-            total=total,
-        )
-        for i, path in enumerate(paths)
-    ]
-
-
-def _get_module_paths(ctx: TargetExecutionContext) -> list[str]:
-    """Get module paths from context resources or database.
-
-    Returns
-    -------
-    list[str]
-        List of relative module paths.
-    """
-    if ctx.resources.modules:
-        return list(ctx.resources.modules)
-    try:
-        table = ctx.gateway.ibis.table("core.modules")
-        df = filter_by(table, table.repo == ctx.repo, table.commit == ctx.commit).select("path")
-        result = df.execute()
-        return [str(path) for path in result["path"].tolist()]
-    except (RuntimeError, OSError):
-        return []
-
-
-class TypingIngestPlugin(TargetPlugin):
+class TypingIngestPlugin(FactoryPlugin[TypingIngestStep]):
     """Populate analytics.typedness and analytics.static_diagnostics.
 
     This plugin runs type checkers (pyright, pyrefly) and linters (ruff)
@@ -122,21 +77,13 @@ class TypingIngestPlugin(TargetPlugin):
     - analytics.static_diagnostics: Static analysis diagnostics
     """
 
-    plugin_name: ClassVar[str] = "typing_ingest"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Populate analytics.typedness and analytics.static_diagnostics."
-    )
     _core_metadata: ClassVar[CorePluginMetadata] = TYPING_INGEST_METADATA
 
     default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
     default_discovery_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
-    default_step_factory: ClassVar[StepFactory] = TypingIngestStep
+    default_step_factory: ClassVar[TypingStepFactory] = TypingIngestStep  # type: ignore[assignment]
 
-    _storage_factory: StorageFactory
-    _discovery_factory: DiscoveryFactory
     _type_checker_factory: TypeCheckerFactory
-    _step_factory: StepFactory
 
     def __init__(
         self,
@@ -144,24 +91,16 @@ class TypingIngestPlugin(TargetPlugin):
         storage_adapter_factory: StorageFactory | None = None,
         discovery_adapter_factory: DiscoveryFactory | None = None,
         type_checker_factory: TypeCheckerFactory | None = None,
-        step_factory: StepFactory | None = None,
+        step_factory: TypingStepFactory | None = None,
         options_resolver: PluginOptionsResolver | None = None,
     ) -> None:
-        self._storage_factory = storage_adapter_factory or type(self).default_storage_factory
-        self._discovery_factory = discovery_adapter_factory or type(self).default_discovery_factory
+        super().__init__(
+            storage_adapter_factory=storage_adapter_factory,
+            discovery_adapter_factory=discovery_adapter_factory,
+            step_factory=step_factory,  # type: ignore[arg-type]
+            options_resolver=options_resolver,
+        )
         self._type_checker_factory = type_checker_factory or _default_type_checker_factory
-        self._step_factory = step_factory or type(self).default_step_factory
-        self._options_resolver = options_resolver
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata definition."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute typing analysis.
@@ -178,7 +117,7 @@ class TypingIngestPlugin(TargetPlugin):
 
         Raises
         ------
-        ValueError
+        GatewayNotAvailableError
             If no storage gateway is available.
         """
         type_checker = self._type_checker_factory(ctx.resources.type_checker)
@@ -186,13 +125,13 @@ class TypingIngestPlugin(TargetPlugin):
             log.info("Type checker not available, skipping typing analysis")
             return TargetResult.succeeded(row_counts={})
 
-        paths = _get_module_paths(ctx)
-        modules = _paths_to_modules(paths, ctx.repo_root)
+        paths = get_module_paths(ctx)
+        modules = paths_to_modules(paths, ctx.repo_root)
 
         gateway = ctx.resources.gateway
         if gateway is None:
-            message = "Storage gateway is required for typing ingest"
-            raise ValueError(message)
+            context = "typing ingest"
+            raise GatewayNotAvailableError(context)
         storage = self._storage_factory(gateway)
         discovery = self._discovery_factory(ctx.repo_root)
         tools = BuildToolAdapter(type_checker=type_checker)

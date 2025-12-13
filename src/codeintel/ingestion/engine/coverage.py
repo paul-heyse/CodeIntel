@@ -23,7 +23,7 @@ from codeintel.ingestion.engine.plugins import (
     ToolStatus,
 )
 from codeintel.ingestion.engine.results import CoverageReport
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path, repo_relpath
+from codeintel.ingestion.infrastructure.paths import safe_relpath
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -32,29 +32,6 @@ if TYPE_CHECKING:
     )
 
 log = logging.getLogger(__name__)
-
-
-def _safe_relpath(repo_root: Path, file_path: Path) -> str | None:
-    """
-    Safely compute repository-relative path.
-
-    Parameters
-    ----------
-    repo_root
-        Repository root path.
-    file_path
-        Absolute or relative file path.
-
-    Returns
-    -------
-    str | None
-        Normalized relative path or None on failure.
-    """
-    try:
-        candidate = file_path if file_path.is_absolute() else repo_root / file_path
-        return normalize_rel_path(repo_relpath(repo_root, candidate))
-    except ValueError:
-        return None
 
 
 def _parse_coverage_json(
@@ -92,7 +69,7 @@ def _parse_coverage_json(
         executed = {int(line) for line in data.get("executed_lines", []) if isinstance(line, int)}
         missing = {int(line) for line in data.get("missing_lines", []) if isinstance(line, int)}
 
-        rel_path = _safe_relpath(repo_root, Path(str(file_name)))
+        rel_path = safe_relpath(repo_root, Path(str(file_name)))
         if rel_path is None:
             continue
 

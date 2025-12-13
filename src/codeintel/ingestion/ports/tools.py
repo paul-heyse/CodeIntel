@@ -1,7 +1,7 @@
 """Tool port protocol for external analysis tool execution.
 
 This module defines the port protocol for executing external analysis tools
-like pyright, ruff, coverage, scip-python, and pytest. The protocol abstracts
+like pyright, ruff, coverage, and scip-python. The protocol abstracts
 tool invocation details to enable testing without real tool installations.
 
 Architecture Note
@@ -391,28 +391,6 @@ class IngestToolPort(Protocol):
         -------
         ScipResult
             SCIP indexing results.
-        """
-        ...
-
-    async def run_pytest(
-        self,
-        repo_root: Path,
-        *,
-        json_report_path: Path,
-    ) -> TestResult:
-        """Run pytest and generate JSON report.
-
-        Parameters
-        ----------
-        repo_root
-            Repository root directory.
-        json_report_path
-            Path for JSON report output.
-
-        Returns
-        -------
-        TestResult
-            Test execution results.
         """
         ...
 

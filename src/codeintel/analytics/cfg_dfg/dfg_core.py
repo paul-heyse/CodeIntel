@@ -15,10 +15,9 @@ from codeintel.analytics.compute.graphs import (
     dfg_path_lengths,
     normalize_decimal_id,
 )
+from codeintel.analytics.graphs.constants import MAX_CFG_EIGEN_SAMPLE, MAX_DFG_CENTRALITY_SAMPLE
 from codeintel.storage.gateway import DuckDBError
 
-MAX_CFG_EIGEN_SAMPLE = 200
-MAX_DFG_CENTRALITY_SAMPLE = 100
 MAX_SIMPLE_PATHS = 1000
 MAX_PATH_CUTOFF = 50
 

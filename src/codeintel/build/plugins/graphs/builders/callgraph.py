@@ -32,6 +32,7 @@ import libcst as cst
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
+from codeintel.build.plugins._helpers import get_source_root
 from codeintel.build.plugins.graphs.builders.callgraph_options import CallGraphOptions
 from codeintel.config.datasets import (
     CallGraphNodeRow,
@@ -230,39 +231,6 @@ def _build_def_goids_by_path(
         }
     except DuckDBError:
         return {}
-
-
-def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | None:
-    """Retrieve source root from core.snapshots.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    Path | None
-        Absolute path to source root, or None if not found.
-    """
-    try:
-        snapshots = gateway.ibis.table("core.snapshots")
-        repo_filter = cast("Any", snapshots.repo == repo)
-        commit_filter = cast("Any", snapshots.commit == commit)
-        expr = snapshots.filter(repo_filter & commit_filter).select(snapshots.source_root).limit(1)
-        rows = expr.execute()
-        if getattr(rows, "empty", True):
-            return None
-        source_root = rows.iloc[0][0]
-        if source_root:
-            return Path(str(source_root))
-    except DuckDBError as exc:
-        log.debug("callgraph: Could not get source root: %s", exc)
-    return None
 
 
 def _collect_edges_for_file(
@@ -592,9 +560,7 @@ class CallGraphPlugin(MetadataPlugin):
             global_callees = _build_global_callee_lookup(gateway, repo, commit)
             def_goids = _build_def_goids_by_path(gateway, repo, commit)
 
-            source_root = (
-                snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
-            )
+            source_root = snapshot.repo_root or get_source_root(gateway, repo, commit)
 
             collection_ctx = _EdgeCollectionContext(
                 function_index=function_index,

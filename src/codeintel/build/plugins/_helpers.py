@@ -5,16 +5,23 @@ Provides common functionality used across multiple plugin implementations.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+import logging
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
+    "compute_row_count",
     "compute_row_counts",
+    "get_source_root",
 ]
+
+log = logging.getLogger(__name__)
 
 
 def compute_row_counts(
@@ -50,8 +57,8 @@ def compute_row_counts(
 
     Count rows for specific tables:
 
-    >>> counts = compute_row_counts(ctx, ['analytics.function_metrics'])
-    >>> print(counts['analytics.function_metrics'])
+    >>> counts = compute_row_counts(ctx, ["analytics.function_metrics"])
+    >>> print(counts["analytics.function_metrics"])
     42
     """
     # Lazy imports to avoid circular dependencies
@@ -101,3 +108,48 @@ def compute_row_count(
     """
     counts = compute_row_counts(ctx, [table_key])
     return counts.get(table_key, 0)
+
+
+def get_source_root(
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+    *,
+    fallback: Path | None = None,
+) -> Path:
+    """Retrieve source root from core.snapshots with fallback.
+
+    Look up the source root for the given repository snapshot from the
+    core.snapshots table. Returns a fallback path if not found.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    fallback
+        Fallback path if not found. Defaults to ``Path.cwd()``.
+
+    Returns
+    -------
+    Path
+        Absolute path to the source root.
+    """
+    from codeintel.storage.gateway import DuckDBError  # noqa: PLC0415
+
+    try:
+        snapshots = gateway.ibis.table("core.snapshots")
+        repo_filter = cast("Any", snapshots.repo == repo)
+        commit_filter = cast("Any", snapshots.commit == commit)
+        expr = snapshots.filter(repo_filter & commit_filter).select(snapshots.source_root).limit(1)
+        df = expr.execute()
+        if not getattr(df, "empty", True):
+            value = df.iloc[0][0]
+            if value:
+                return Path(str(value))
+    except DuckDBError as exc:
+        log.debug("get_source_root: Could not get source root: %s", exc)
+    return fallback or Path.cwd()

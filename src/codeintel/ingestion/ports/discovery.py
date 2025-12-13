@@ -86,21 +86,6 @@ class ModuleDiscoveryPort(Protocol):
         """
         ...
 
-    def file_exists(self, path: Path) -> bool:
-        """Check if a file exists.
-
-        Parameters
-        ----------
-        path
-            Path to check.
-
-        Returns
-        -------
-        bool
-            True if file exists.
-        """
-        ...
-
     def read_text(self, path: Path, encoding: str = "utf-8") -> str | None:
         """Read text content from a file.
 

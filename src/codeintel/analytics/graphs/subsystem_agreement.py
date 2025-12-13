@@ -13,16 +13,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-SUBSYSTEM_AGREEMENT_COLS = [
-    "repo",
-    "commit",
-    "module",
-    "subsystem_id",
-    "import_community_id",
-    "agrees",
-    "created_at",
-]
-
 
 def compute_subsystem_agreement(gateway: StorageGateway, *, repo: str, commit: str) -> None:
     """Compare subsystem assignments with import community labels."""
@@ -44,24 +34,19 @@ def compute_subsystem_agreement(gateway: StorageGateway, *, repo: str, commit: s
         [repo, commit],
     ).fetchall()
     now = datetime.now(UTC)
-    inserts = []
+    inserts: list[tuple[object, ...]] = []
     for module, subsystem_id, community_id in rows:
         agrees = True
         if subsystem_id is not None and community_id is not None:
             agrees = str(subsystem_id) == str(community_id)
         inserts.append((repo, commit, str(module), subsystem_id, community_id, agrees, now))
 
-    backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot("analytics.subsystem_agreement", repo=repo, commit=commit)
     if inserts:
-        gateway.ibis.write(
-            "analytics.subsystem_agreement",
-            inserts,
-            columns=SUBSYSTEM_AGREEMENT_COLS,
-        )
+        backend.bulk_insert("analytics.subsystem_agreement", inserts)
     disagreeing = [row for row in inserts if not row[5]]
     if disagreeing:
-        sample = ", ".join(row[2] for row in disagreeing[:5])
+        sample = ", ".join(str(row[2]) for row in disagreeing[:5])
         log.warning(
             "Subsystem/import community disagreement: %d modules (sample: %s) for %s@%s",
             len(disagreeing),

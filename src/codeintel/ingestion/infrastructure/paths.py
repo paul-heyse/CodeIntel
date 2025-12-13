@@ -9,6 +9,7 @@ __all__ = [
     "normalize_rel_path",
     "relpath_to_module",
     "repo_relpath",
+    "safe_relpath",
 ]
 
 
@@ -60,3 +61,28 @@ def relpath_to_module(rel_path: str | Path) -> str:
         Dotted module path for the given relative path.
     """
     return ".".join(Path(rel_path).with_suffix("").parts)
+
+
+def safe_relpath(repo_root: Path, file_path: Path) -> str | None:
+    """Safely compute repository-relative path, returning None on failure.
+
+    Handle both absolute and relative file paths, normalizing them to
+    a repository-relative POSIX path.
+
+    Parameters
+    ----------
+    repo_root
+        Repository root path.
+    file_path
+        Absolute or relative file path.
+
+    Returns
+    -------
+    str | None
+        Normalized relative path or None on failure.
+    """
+    try:
+        candidate = file_path if file_path.is_absolute() else repo_root / file_path
+        return normalize_rel_path(repo_relpath(repo_root, candidate))
+    except ValueError:
+        return None
