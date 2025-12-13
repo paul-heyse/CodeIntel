@@ -10,19 +10,17 @@ directly.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-import pandas as pd
-
 from codeintel.config.datasets import load_columns_by_table
-from codeintel.config.datasets.validation import get_pandera_schema, validate_df
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates, ibis_bool, isin_values
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    import pandas as pd
 
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
@@ -193,79 +191,4 @@ class DuckDBStorageAdapter(IngestStoragePort):
         return self._gateway.execute(sql, param_list).fetch_df()
 
 
-@dataclass
-class IngestStorageService:
-    """Validate and write ingest batches using a storage port."""
-
-    storage: IngestStoragePort
-    validate: bool = True
-
-    def run_batch(
-        self,
-        table_key: str,
-        rows: Sequence[Sequence[object]],
-        *,
-        delete_params: Sequence[object] | None = None,
-        scope: str | None = None,
-    ) -> BatchResult:
-        """Write batch with optional pre-delete and Pandera validation.
-
-        Returns
-        -------
-        BatchResult
-            Result containing rows written and duration.
-        """
-        self.storage.ensure_schema(table_key)
-
-        validated_rows = rows
-        if self.validate and rows:
-            validated_rows = self._validate_rows(table_key, rows)
-
-        if delete_params is not None:
-            self.storage.delete_by_params(table_key, delete_params)
-
-        return self.storage.write_batch(table_key, validated_rows, scope=scope)
-
-    @staticmethod
-    def _validate_rows(
-        table_key: str, rows: Sequence[Sequence[object]]
-    ) -> Sequence[Sequence[object]]:
-        """Validate rows using Pandera schema if available.
-
-        Returns
-        -------
-        Sequence[Sequence[object]]
-            Original rows irrespective of validation outcome.
-        """
-        schema = get_pandera_schema(table_key)
-        if schema is None:
-            return rows
-
-        registry_cols = load_columns_by_table().get(table_key)
-        if registry_cols is None:
-            return rows
-
-        df = pd.DataFrame([list(row) for row in rows], columns=pd.Index(registry_cols))
-        validate_df(table_key, df, mode="warn")
-        return rows
-
-    @classmethod
-    def from_gateway(
-        cls, gateway: StorageGateway, *, validate: bool = True
-    ) -> IngestStorageService:
-        """Create a service instance from a StorageGateway.
-
-        Returns
-        -------
-        IngestStorageService
-            New service instance wrapping the provided gateway.
-        """
-        return cls(storage=DuckDBStorageAdapter(gateway), validate=validate)
-
-
-__all__ = [
-    "SNAPSHOT_PARAM_LEN",
-    "DuckDBStorageAdapter",
-    "IngestStorageService",
-    "build_delete_in_query",
-]
+__all__ = ["SNAPSHOT_PARAM_LEN", "DuckDBStorageAdapter", "build_delete_in_query"]

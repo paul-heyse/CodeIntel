@@ -37,20 +37,20 @@ from tests._helpers.builders import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.gateway.rows.core import (
+    from codeintel.config.datasets.generated_rows.core import (
         CoreFileStateRow,
         CoreGoidsRow,
         CoreModulesRow,
         CoreRepoMapRow,
         CoreScipOccurrencesRow,
     )
-    from codeintel.storage.gateway.rows.graph import (
+    from codeintel.config.datasets.generated_rows.graph import (
         GraphCallGraphEdgesRow,
         GraphCallGraphNodesRow,
         GraphImportGraphEdgesRow,
         GraphSymbolUseEdgesRow,
     )
+    from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 
 

@@ -18,7 +18,6 @@ from codeintel.config.datasets import (
     dict_to_call_graph_node,
 )
 from codeintel.config.datasets.validation import validate_df
-from codeintel.ingestion.adapters import IngestStorageService
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -148,12 +147,11 @@ def persist_call_graph_edges(
     else:
         edges_to_persist = list(edges)
 
-    storage_service = IngestStorageService.from_gateway(gateway)
-    storage_service.run_batch(
+    gateway.policy.ensure_table("graph.call_graph_edges")
+    gateway.policy.delete_for_snapshot("graph.call_graph_edges", repo=repo, commit=commit)
+    gateway.policy.bulk_insert(
         "graph.call_graph_edges",
         [call_graph_edge_to_tuple(dict_to_call_graph_edge(e)) for e in edges_to_persist],
-        delete_params=[repo, commit],
-        scope="call_graph_edges",
     )
     return len(edges_to_persist)
 
@@ -196,12 +194,11 @@ def persist_call_graph_nodes(
     else:
         nodes_to_persist = list(nodes)
 
-    storage_service = IngestStorageService.from_gateway(gateway)
-    storage_service.run_batch(
+    gateway.policy.ensure_table("graph.call_graph_nodes")
+    gateway.policy.delete_for_snapshot("graph.call_graph_nodes", repo=repo, commit=commit)
+    gateway.policy.bulk_insert(
         "graph.call_graph_nodes",
         [call_graph_node_to_tuple(dict_to_call_graph_node(n)) for n in nodes_to_persist],
-        delete_params=[repo, commit],
-        scope="call_graph_nodes",
     )
     return len(nodes_to_persist)
 

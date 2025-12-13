@@ -24,7 +24,8 @@ def load_columns_by_table() -> dict[str, list[str]]:
     """
     table_schemas = get_table_schemas()
     return {
-        table_key: [col.name for col in schema.columns] for table_key, schema in table_schemas.items()
+        table_key: [col.name for col in schema.columns]
+        for table_key, schema in table_schemas.items()
     }
 
 

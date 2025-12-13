@@ -281,9 +281,7 @@ def write_test_profile_rows(
             serialize_row=cast("SerializeRow", serialize_test_profile_row),
             repo=cfg.repo,
             commit=cfg.commit,
-            ensure_schema_fn=lambda gw, table_key: DuckDBPolicyBackend(gw).ensure_table(
-                table_key
-            ),
+            ensure_schema_fn=lambda gw, table_key: DuckDBPolicyBackend(gw).ensure_table(table_key),
         ),
     )
 
@@ -356,9 +354,7 @@ def write_behavioral_coverage_rows(
             serialize_row=cast("SerializeRow", behavioral_coverage_row_to_tuple),
             repo=cfg.repo,
             commit=cfg.commit,
-            ensure_schema_fn=lambda gw, table_key: DuckDBPolicyBackend(gw).ensure_table(
-                table_key
-            ),
+            ensure_schema_fn=lambda gw, table_key: DuckDBPolicyBackend(gw).ensure_table(table_key),
         ),
     )
 

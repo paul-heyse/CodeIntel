@@ -52,7 +52,6 @@ from codeintel.graphs.compute.callgraph import (
     collect_edges_cst,
 )
 from codeintel.graphs.plugins.builders.callgraph_options import CallGraphOptions
-from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import and_predicates
@@ -433,12 +432,11 @@ def _persist_nodes(
     if not nodes:
         return 0
 
-    storage = IngestStorageService.from_gateway(gateway)
-    storage.run_batch(
+    gateway.policy.ensure_table("graph.call_graph_nodes")
+    gateway.policy.delete_for_snapshot("graph.call_graph_nodes", repo=repo, commit=commit)
+    gateway.policy.bulk_insert(
         "graph.call_graph_nodes",
         [call_graph_node_to_tuple(node) for node in nodes],
-        delete_params=[repo, commit],
-        scope="call_graph_nodes",
     )
     return len(nodes)
 
@@ -480,12 +478,11 @@ def _persist_edges(
         else:
             serialized.append(edge)
 
-    storage = IngestStorageService.from_gateway(gateway)
-    storage.run_batch(
+    gateway.policy.ensure_table("graph.call_graph_edges")
+    gateway.policy.delete_for_snapshot("graph.call_graph_edges", repo=repo, commit=commit)
+    gateway.policy.bulk_insert(
         "graph.call_graph_edges",
         [call_graph_edge_to_tuple(e) for e in serialized],
-        delete_params=[repo, commit],
-        scope="call_graph_edges",
     )
     return len(serialized)
 

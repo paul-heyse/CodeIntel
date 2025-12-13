@@ -30,7 +30,9 @@ class Guardrail:
 GUARDRAILS: tuple[Guardrail, ...] = (
     Guardrail(
         name="normalized_macros",
-        pattern=re.compile(r"\b(MacroRequirement|require_normalized_macros|requires_normalized_macro)\b"),
+        pattern=re.compile(
+            r"\b(MacroRequirement|require_normalized_macros|requires_normalized_macro)\b"
+        ),
         message="Normalized macro compatibility is removed; drop this surface.",
     ),
     Guardrail(

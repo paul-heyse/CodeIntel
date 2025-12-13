@@ -8,76 +8,16 @@ real implementations when provided.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.build.executor import BuildResult
-from codeintel.ingestion.adapters.duckdb_storage import IngestStorageService
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from codeintel.build.executor import BuildExecutor
     from codeintel.build.plan import BuildPlan
-    from codeintel.storage.gateway import StorageGateway
-
-BatchCall = tuple[str, Sequence[Sequence[object]], Sequence[object] | None, str | None]
-"""Recorded call tuple for run_batch invocations."""
-
-
-@dataclass
-class RecordingIngestStorageService:
-    """IngestStorageService wrapper that records batches while delegating.
-
-    Parameters
-    ----------
-    service
-        Underlying ingestion storage service to delegate to.
-    record_calls
-        Optional callback invoked with each call for additional recording.
-    """
-
-    service: IngestStorageService
-    record_calls: Callable[[BatchCall], None] | None = None
-    calls: list[BatchCall] = field(default_factory=list)
-
-    def run_batch(
-        self,
-        table_key: str,
-        rows: Sequence[Sequence[object]],
-        *,
-        delete_params: Sequence[object] | None = None,
-        scope: str | None = None,
-    ) -> object:
-        """Record and delegate batch execution.
-
-        Returns
-        -------
-        object
-            BatchResult from the underlying service.
-        """
-        call: BatchCall = (table_key, rows, delete_params, scope)
-        self.calls.append(call)
-        if self.record_calls is not None:
-            self.record_calls(call)
-        return self.service.run_batch(
-            table_key,
-            rows,
-            delete_params=delete_params,
-            scope=scope,
-        )
-
-    @classmethod
-    def from_gateway(cls, gateway: StorageGateway) -> RecordingIngestStorageService:
-        """Build a recording service from a storage gateway.
-
-        Returns
-        -------
-        RecordingIngestStorageService
-            Service that records calls and writes to the provided gateway.
-        """
-        return cls(service=IngestStorageService.from_gateway(gateway))
 
 
 @dataclass
@@ -123,7 +63,5 @@ class RecordingBuildExecutor:
 
 
 __all__ = [
-    "BatchCall",
     "RecordingBuildExecutor",
-    "RecordingIngestStorageService",
 ]

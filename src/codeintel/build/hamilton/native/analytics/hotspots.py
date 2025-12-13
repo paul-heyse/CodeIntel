@@ -80,7 +80,8 @@ def t__hotspots__compute(
         cast(
             "Any",
             and_predicates(
-                q__core__modules.repo == env.snapshot.repo, q__core__modules.commit == env.snapshot.commit
+                q__core__modules.repo == env.snapshot.repo,
+                q__core__modules.commit == env.snapshot.commit,
             ),
         )
     )
@@ -112,7 +113,9 @@ def t__hotspots__compute(
     # Extract complexity from modules (if available)
     # For now, use a placeholder complexity metric based on module size
     modules_complexity = modules_filtered.group_by("rel_path").aggregate(
-        complexity=cast("Any", cast("Any", modules_filtered.loc).sum()).fillna(ibis.literal(0)).cast("float64"),
+        complexity=cast("Any", cast("Any", modules_filtered.loc).sum())
+        .fillna(ibis.literal(0))
+        .cast("float64"),
     )
 
     # Join churn metrics with complexity

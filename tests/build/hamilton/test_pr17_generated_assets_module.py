@@ -117,9 +117,7 @@ def test_assets_module_no_target_nodes() -> None:
         pytest.fail("Assets module should define TARGET_TO_NODE")
     if len(module.TARGET_TO_NODE) != 0:
         keys = list(module.TARGET_TO_NODE.keys())
-        pytest.fail(
-            f"TARGET_TO_NODE should be empty in assets module, found: {keys}"
-        )
+        pytest.fail(f"TARGET_TO_NODE should be empty in assets module, found: {keys}")
 
 
 def test_assets_module_all_node_types_independent() -> None:

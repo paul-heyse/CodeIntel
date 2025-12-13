@@ -6,10 +6,10 @@ mixins for each accessor class (CoreTables, GraphTables, AnalyticsTables).
 Usage
 -----
 Generate registry and row models:
-    uv run python -m tools.generate_accessor_inserts --registry-output src/codeintel/storage/gateway/registry_generated.py --rows-output-dir src/codeintel/storage/gateway/rows
+    uv run python -m tools.generate_accessor_inserts --registry-output src/codeintel/storage/gateway/registry_generated.py --rows-output-dir src/codeintel/config/datasets/generated_rows
 
 Check if files are up-to-date (for CI):
-    uv run python -m tools.generate_accessor_inserts --check --registry-output src/codeintel/storage/gateway/registry_generated.py --rows-output-dir src/codeintel/storage/gateway/rows
+    uv run python -m tools.generate_accessor_inserts --check --registry-output src/codeintel/storage/gateway/registry_generated.py --rows-output-dir src/codeintel/config/datasets/generated_rows
 """
 
 from __future__ import annotations

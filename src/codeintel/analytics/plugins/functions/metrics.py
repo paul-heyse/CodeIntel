@@ -165,7 +165,7 @@ class FunctionMetricsPlugin(TargetPlugin):
         Notes
         -----
         This plugin validates output data against Pandera schemas when available.
-        Schema validation occurs in the persistence layer via validate_dataset_df.
+        Schema validation occurs in the persistence layer via `codeintel.config.datasets.validation.validate_df`.
         """
         _ = self
 

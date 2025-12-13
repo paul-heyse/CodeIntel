@@ -48,7 +48,6 @@ from codeintel.config.datasets import (
     serialize_test_profile_row,
 )
 from codeintel.config.datasets.validation import validate_df
-from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
@@ -282,7 +281,7 @@ def insert_analytics_rows(
     delete_scope: DeleteScope | None = None,
     scope: str | None = None,
 ) -> None:
-    """Insert rows for a dataset contract using run_batch.
+    """Insert rows for a dataset contract using DuckDBPolicyBackend.
 
     Deletions are routed through DuckDBPolicyBackend for centralized SQL
     generation.
@@ -305,12 +304,15 @@ def insert_analytics_rows(
     ValueError
         If delete columns cannot be determined for the requested dataset.
     """
+    _ = scope
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table(contract.table_key)
+
     if delete_scope is not None:
         if not _table_supports_snapshot_delete(contract.table_key):
             message = f"Unsupported delete target: {contract.table_key}"
             raise ValueError(message)
 
-        backend = DuckDBPolicyBackend(gateway)
         backend.delete_for_snapshot(
             contract.table_key,
             repo=delete_scope.repo,
@@ -319,13 +321,7 @@ def insert_analytics_rows(
 
     if rows:
         tuple_rows = [contract.to_tuple(row) for row in rows]
-        storage_service = IngestStorageService.from_gateway(gateway)
-        storage_service.run_batch(
-            contract.table_key,
-            tuple_rows,
-            delete_params=None,
-            scope=scope,
-        )
+        backend.bulk_insert(contract.table_key, tuple_rows)
 
 
 def validate_contract_rows(

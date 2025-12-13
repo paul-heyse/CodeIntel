@@ -1106,9 +1106,13 @@ def build_assets_handler(ctx: CommandContext) -> CliResult[BuildAssetsResult]:
     output_format = ctx.params.get_str("output_format") or "table"
 
     if bool(ctx.params.get_bool("versions")):
-        return _build_assets_versions_result(gateway=gateway, runtime=runtime, output_format=output_format, ctx=ctx)
+        return _build_assets_versions_result(
+            gateway=gateway, runtime=runtime, output_format=output_format, ctx=ctx
+        )
 
-    return _build_assets_legacy_result(gateway=gateway, runtime=runtime, output_format=output_format, ctx=ctx)
+    return _build_assets_legacy_result(
+        gateway=gateway, runtime=runtime, output_format=output_format, ctx=ctx
+    )
 
 
 def _infer_asset_kind(asset_key: str) -> str:
@@ -1157,7 +1161,9 @@ def _build_assets_legacy_result(
         }
         for a in assets
     ]
-    return CliResult.ok(BuildAssetsResult(assets=asset_dicts, count=len(asset_dicts), format=output_format))
+    return CliResult.ok(
+        BuildAssetsResult(assets=asset_dicts, count=len(asset_dicts), format=output_format)
+    )
 
 
 def _build_assets_versions_result(
@@ -1363,7 +1369,11 @@ def _expand_frontier(
                 edge_kind = str(r[3])
                 nodes.setdefault(
                     upstream,
-                    {"asset_kind": upstream[0], "asset_key": upstream[1], "version_hash": upstream[2]},
+                    {
+                        "asset_kind": upstream[0],
+                        "asset_key": upstream[1],
+                        "version_hash": upstream[2],
+                    },
                 )
                 edges.add(((kind, key, version_hash), upstream, edge_kind))
                 next_frontier.add(upstream)
@@ -1383,7 +1393,11 @@ def _expand_frontier(
             edge_kind = str(r[3])
             nodes.setdefault(
                 downstream,
-                {"asset_kind": downstream[0], "asset_key": downstream[1], "version_hash": downstream[2]},
+                {
+                    "asset_kind": downstream[0],
+                    "asset_key": downstream[1],
+                    "version_hash": downstream[2],
+                },
             )
             edges.add((downstream, (kind, key, version_hash), edge_kind))
             next_frontier.add(downstream)
@@ -1501,7 +1515,9 @@ def _resolve_version_spec(
     if _looks_like_hash(spec):
         return spec
 
-    resolved = gateway.assets.resolve_alias(alias=spec, asset_kind=ctx.asset_kind, asset_key=ctx.asset_key)
+    resolved = gateway.assets.resolve_alias(
+        alias=spec, asset_kind=ctx.asset_kind, asset_key=ctx.asset_key
+    )
     if resolved is not None:
         return resolved
 

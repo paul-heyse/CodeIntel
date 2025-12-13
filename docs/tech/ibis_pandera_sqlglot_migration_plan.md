@@ -85,17 +85,14 @@ Cleanup target:
     - `validate_df(table_key, df, *, mode=...) -> df`
     - `validate_rows(table_key, rows) -> list[dict[str, object]]`
 - Migrate callsites to that API:
-  - Ingestion validation (`IngestStorageService._validate_rows`)
+  - Ingestion validation (use `codeintel.config.datasets.validation.validate_df` at write boundaries)
   - Analytics row validators (`src/codeintel/analytics/utilities/datasets.py`)
   - Export validation paths
   - Any remaining direct `validate_dataset_df` / `get_dataset_schema` usage
 - Make `SCHEMA_REGISTRY` authoritative:
   - Ensure `build_all_schemas()` does not require “storage-layer globals” long-term.
-  - Option A (cleanest): move Pandera schema definitions out of `src/codeintel/storage/pandera_schemas.py`
-    into `src/codeintel/config/datasets/pandera_schemas.py` (or similar), and have schema_builder build
-    from there.
-  - Keep `src/codeintel/storage/pandera_schemas.py` temporarily as a thin import-forwarder (with
-    deprecation), then delete in Phase 6.
+  - Keep Pandera schema definitions in `src/codeintel/config/datasets/pandera_schemas.py`, and have
+    schema_builder build from there (no storage-layer schema globals).
 
 ### Exit criteria
 
@@ -176,10 +173,10 @@ Cleanup target:
   - `safe_macro_exists` in `src/codeintel/ingestion/infrastructure/db_queries.py` (and exports in
     `src/codeintel/ingestion/infrastructure/__init__.py`)
 - Delete Pandera legacy module once Phase 2 is complete:
-  - `src/codeintel/storage/pandera_schemas.py`
-- Delete any remaining compatibility shims in ingestion storage if no longer needed:
-  - `src/codeintel/ingestion/adapters/duckdb_storage.py` (and `IngestStorageService`) only after
-    graphs/ingestion plugins call policy/ibis directly.
+  - `src/codeintel/storage/pandera_schemas.py` (forwarder)
+- Delete any remaining ingestion compatibility layers once all callsites are direct:
+  - `IngestStorageService` (removed)
+  - `src/codeintel/ingestion/adapters/duckdb_storage.py` (only if/when ingestion ports are retired)
 
 ### Exit criteria
 

@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.graphs.ports.storage import BatchResult, QueryResult
-from codeintel.ingestion.adapters import IngestStorageService
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -20,6 +19,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
+SNAPSHOT_PARAM_LEN = 2
 
 
 @dataclass
@@ -173,13 +173,16 @@ class DuckDBStorageAdapter:
             Batch operation result.
         """
         try:
-            storage_service = IngestStorageService.from_gateway(self.gateway)
-            storage_service.run_batch(
-                table,
-                list(rows),
-                delete_params=list(delete_params) if delete_params else [],
-                scope=scope or table,
-            )
+            _ = scope
+            self.gateway.policy.ensure_table(table)
+            if delete_params is not None and len(delete_params) == SNAPSHOT_PARAM_LEN:
+                self.gateway.policy.delete_for_snapshot(
+                    table,
+                    repo=str(delete_params[0]),
+                    commit=str(delete_params[1]),
+                )
+            if rows:
+                self.gateway.policy.bulk_insert(table, list(rows))
             return BatchResult.ok(table, len(rows))
         except (RuntimeError, OSError, TypeError, ValueError) as exc:
             log.warning("Batch insert to %s failed: %s", table, exc)

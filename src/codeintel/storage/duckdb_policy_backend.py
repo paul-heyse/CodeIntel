@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
+from sqlglot import parse_one
 
 from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
 
@@ -51,6 +52,51 @@ SCHEMAS = ("build", "core", "graph", "analytics", "docs")
 
 
 _TABLE_CREATION_DENYLIST = frozenset({"docs.v_validation_summary"})
+
+
+def _split_table_key(table_key: str) -> tuple[str, str]:
+    """Split a schema-qualified table key into (schema, table).
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table name (schema.table).
+
+    Returns
+    -------
+    tuple[str, str]
+        Schema and table name.
+
+    Raises
+    ------
+    ValueError
+        If table_key is not schema-qualified.
+    """
+    if "." not in table_key:
+        message = f"Table key must be schema-qualified: {table_key}"
+        raise ValueError(message)
+    schema_name, table_name = table_key.split(".", maxsplit=1)
+    return schema_name, table_name
+
+
+def _infer_table_alias(where_ast: exp.Where) -> str | None:
+    """Infer a table alias from a SQLGlot WHERE clause, if present.
+
+    Parameters
+    ----------
+    where_ast
+        SQLGlot WHERE clause.
+
+    Returns
+    -------
+    str | None
+        Inferred table alias, if present.
+    """
+    for col in where_ast.find_all(exp.Column):
+        table_alias = getattr(col, "table", None)
+        if isinstance(table_alias, str) and table_alias:
+            return table_alias
+    return None
 
 
 def _column_type_to_sqlglot(col_type: str) -> exp.DataType:
@@ -362,6 +408,45 @@ def _build_insert(
     )
 
 
+def _build_insert_select(
+    table_schema: str,
+    table_name: str,
+    columns: Sequence[str],
+    *,
+    select_sql: str,
+) -> exp.Insert:
+    """Build a SQLGlot INSERT...SELECT expression.
+
+    Parameters
+    ----------
+    table_schema
+        Schema containing the table.
+    table_name
+        Table name.
+    columns
+        Column names for the INSERT.
+    select_sql
+        SQL SELECT statement to insert from.
+
+    Returns
+    -------
+    exp.Insert
+        SQLGlot INSERT expression.
+    """
+    select_ast = parse_one(select_sql, dialect=DUCKDB_DIALECT)
+    insert_schema = exp.Schema(
+        this=exp.Table(
+            this=exp.to_identifier(table_name),
+            db=exp.to_identifier(table_schema),
+        ),
+        expressions=[exp.to_identifier(col) for col in columns],
+    )
+    return exp.Insert(
+        this=insert_schema,
+        expression=select_ast,
+    )
+
+
 def _build_upsert(
     table_schema: str,
     table_name: str,
@@ -430,7 +515,6 @@ def _build_upsert(
     return insert_expr.sql(dialect=DUCKDB_DIALECT)
 
 
-
 @dataclass
 class DuckDBPolicyBackend:
     """Centralized policy backend for DDL and mutation operations.
@@ -456,7 +540,7 @@ class DuckDBPolicyBackend:
             SQLGlot expression to execute.
         """
         sql = expr.sql(dialect=DUCKDB_DIALECT)
-        log.debug("Executing DDL: %s", sql)
+        log.debug("Executing statement: %s", sql)
         self.gateway.con.execute(sql)
 
     def _run_many(self, exprs: Iterable[exp.Expression]) -> None:
@@ -485,6 +569,62 @@ class DuckDBPolicyBackend:
             self.gateway.con.execute(sql, params)
         else:
             self.gateway.con.execute(sql)
+
+    def insert_select(
+        self,
+        table_key: str,
+        *,
+        columns: Sequence[str],
+        select_sql: str,
+    ) -> None:
+        """Insert rows produced by a SELECT query into a table.
+
+        Parameters
+        ----------
+        table_key
+            Target table in 'schema.table' format.
+        columns
+            Column names to insert into.
+        select_sql
+            SQL SELECT statement to insert from.
+        """
+        table_schema, table_name = _split_table_key(table_key)
+        insert_expr = _build_insert_select(
+            table_schema,
+            table_name,
+            columns,
+            select_sql=select_sql,
+        )
+        self._run(insert_expr)
+
+    def delete(
+        self,
+        table_key: str,
+        *,
+        where: exp.Where | None = None,
+    ) -> None:
+        """Delete rows from a table.
+
+        Parameters
+        ----------
+        table_key
+            Target table in 'schema.table' format.
+        where
+            SQLGlot WHERE clause; when None, deletes all rows.
+        """
+        table_schema, table_name = _split_table_key(table_key)
+
+        alias: str | None = None
+        if where is not None:
+            alias = _infer_table_alias(where)
+
+        table_expr = exp.Table(
+            this=exp.to_identifier(table_name),
+            db=exp.to_identifier(table_schema),
+            alias=exp.TableAlias(this=exp.to_identifier(alias)) if alias is not None else None,
+        )
+        delete_expr = exp.Delete(this=table_expr, where=where)
+        self._run(delete_expr)
 
     def create_schema_if_not_exists(self, schema_name: str) -> None:
         """Create a schema if it does not exist.

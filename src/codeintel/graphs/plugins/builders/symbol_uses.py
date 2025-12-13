@@ -24,7 +24,6 @@ from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDoma
 from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import symbols as symbols_compute
 from codeintel.graphs.plugins.builders.symbol_uses_options import SymbolUsesOptions
-from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
@@ -420,13 +419,9 @@ def _persist_symbol_use_edges(
 
     rows = symbols_compute.edges_to_rows(edges)
 
-    storage = IngestStorageService.from_gateway(gateway)
-    storage.run_batch(
-        "graph.symbol_use_edges",
-        [row.to_tuple() for row in rows],
-        delete_params=[repo, commit],
-        scope="symbol_use_edges",
-    )
+    gateway.policy.ensure_table("graph.symbol_use_edges")
+    gateway.policy.delete_for_snapshot("graph.symbol_use_edges", repo=repo, commit=commit)
+    gateway.policy.bulk_insert("graph.symbol_use_edges", [row.to_tuple() for row in rows])
     return len(rows)
 
 

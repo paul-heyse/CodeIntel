@@ -14,7 +14,6 @@ import ibis
 
 from codeintel.analytics.compute.graphs import normalize_decimal_id
 from codeintel.analytics.utilities.ast import safe_unparse
-from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates
@@ -225,13 +224,13 @@ def compute_semantic_roles(
         now=now,
     )
 
-    storage_service = IngestStorageService.from_gateway(gateway)
-    storage_service.run_batch(
+    backend.delete_for_snapshot(
         "analytics.semantic_roles_functions",
-        fn_rows,
-        delete_params=[cfg.repo, cfg.commit],
-        scope=f"{cfg.repo}@{cfg.commit}",
+        repo=cfg.repo,
+        commit=cfg.commit,
     )
+    if fn_rows:
+        backend.bulk_insert("analytics.semantic_roles_functions", fn_rows)
 
     module_rows = _classify_modules(
         module_meta=module_meta,
@@ -240,12 +239,13 @@ def compute_semantic_roles(
         commit=cfg.commit,
         now=now,
     )
-    storage_service.run_batch(
+    backend.delete_for_snapshot(
         "analytics.semantic_roles_modules",
-        module_rows,
-        delete_params=[cfg.repo, cfg.commit],
-        scope=f"{cfg.repo}@{cfg.commit}",
+        repo=cfg.repo,
+        commit=cfg.commit,
     )
+    if module_rows:
+        backend.bulk_insert("analytics.semantic_roles_modules", module_rows)
 
     log.info(
         "semantic_roles populated: %d functions, %d modules for %s@%s",
@@ -314,9 +314,7 @@ def _load_function_rows(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> list[tuple[int, str, str, int | None]]:
     table = gateway.ibis.table("analytics.function_metrics")
-    expr = table.filter(
-        and_predicates(table["repo"] == repo, table["commit"] == commit)
-    ).select(
+    expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
         "function_goid_h128",
         "rel_path",
         "qualname",
@@ -336,9 +334,7 @@ def _load_effects(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
     table = gateway.ibis.table("analytics.function_effects")
-    expr = table.filter(
-        and_predicates(table["repo"] == repo, table["commit"] == commit)
-    ).select(
+    expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
         "function_goid_h128",
         "touches_db",
         "uses_io",
@@ -379,9 +375,7 @@ def _load_contracts(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
     table = gateway.ibis.table("analytics.function_contracts")
-    expr = table.filter(
-        and_predicates(table["repo"] == repo, table["commit"] == commit)
-    ).select(
+    expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
         "function_goid_h128",
         "preconditions_json",
         "raises_json",
@@ -389,9 +383,7 @@ def _load_contracts(
     )
     rows = expr.execute()
     mapping: dict[int, dict[str, object]] = {}
-    for goid_raw, preconditions, raises_json, param_nullability in rows.itertuples(
-        index=False
-    ):
+    for goid_raw, preconditions, raises_json, param_nullability in rows.itertuples(index=False):
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -407,9 +399,7 @@ def _load_graph_metrics(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, int]]:
     table = gateway.ibis.table("analytics.graph_metrics_functions")
-    expr = table.filter(
-        and_predicates(table["repo"] == repo, table["commit"] == commit)
-    ).select(
+    expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
         "function_goid_h128",
         "call_fan_in",
         "call_fan_out",

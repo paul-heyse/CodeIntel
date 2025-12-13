@@ -32,7 +32,6 @@ from codeintel.graphs.catalog import load_function_index
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
 from codeintel.graphs.plugins.builders.cfg_dfg_options import CfgDfgOptions
-from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
@@ -257,12 +256,11 @@ def _persist_cfg_blocks(
     if not blocks:
         return 0
 
-    storage = IngestStorageService.from_gateway(gateway)
-    storage.run_batch(
+    gateway.policy.ensure_table("graph.cfg_blocks")
+    gateway.policy.delete_for_snapshot("graph.cfg_blocks", repo=repo, commit=commit)
+    gateway.policy.bulk_insert(
         "graph.cfg_blocks",
         [block.to_tuple() for block in blocks],
-        delete_params=[repo, commit],
-        scope="cfg_blocks",
     )
     return len(blocks)
 
@@ -294,12 +292,11 @@ def _persist_cfg_edges(
     if not edges:
         return 0
 
-    storage = IngestStorageService.from_gateway(gateway)
-    storage.run_batch(
+    gateway.policy.ensure_table("graph.cfg_edges")
+    gateway.policy.delete_for_snapshot("graph.cfg_edges", repo=repo, commit=commit)
+    gateway.policy.bulk_insert(
         "graph.cfg_edges",
         [edge.to_tuple() for edge in edges],
-        delete_params=[repo, commit],
-        scope="cfg_edges",
     )
     return len(edges)
 
@@ -331,12 +328,11 @@ def _persist_dfg_edges(
     if not edges:
         return 0
 
-    storage = IngestStorageService.from_gateway(gateway)
-    storage.run_batch(
+    gateway.policy.ensure_table("graph.dfg_edges")
+    gateway.policy.delete_for_snapshot("graph.dfg_edges", repo=repo, commit=commit)
+    gateway.policy.bulk_insert(
         "graph.dfg_edges",
         [edge.to_tuple() for edge in edges],
-        delete_params=[repo, commit],
-        scope="dfg_edges",
     )
     return len(edges)
 

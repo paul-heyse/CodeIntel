@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import HotspotRow, hotspot_row_to_tuple
-from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import DuckDBError
 
@@ -271,12 +270,11 @@ def build_hotspots(
             )
         )
 
-    storage_service = IngestStorageService.from_gateway(gateway)
-    storage_service.run_batch(
-        "analytics.hotspots",
-        [hotspot_row_to_tuple(row) for row in rows],
-        scope=f"{cfg.repo}@{cfg.commit}",
-    )
+    gateway.policy.ensure_table("analytics.hotspots")
+    if rows:
+        gateway.policy.bulk_insert(
+            "analytics.hotspots", [hotspot_row_to_tuple(row) for row in rows]
+        )
 
     log.info(
         "Hotspots build complete for repo=%s commit=%s: %d files",

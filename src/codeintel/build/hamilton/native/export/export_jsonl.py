@@ -83,7 +83,10 @@ def t__export_jsonl__compute(
 
     # Filter to current snapshot
     modules = q__core__modules.filter(
-        and_predicates(q__core__modules.repo == env.snapshot.repo, q__core__modules.commit == env.snapshot.commit)
+        and_predicates(
+            q__core__modules.repo == env.snapshot.repo,
+            q__core__modules.commit == env.snapshot.commit,
+        )
     )
 
     function_metrics = q__analytics__function_metrics.filter(
@@ -97,7 +100,9 @@ def t__export_jsonl__compute(
     modules_df = cast("pd.DataFrame", modules.execute())
     function_metrics_df = cast("pd.DataFrame", function_metrics.execute())
     modules_data = cast("list[dict[str, Any]]", modules_df.to_dict(orient="records"))
-    function_metrics_data = cast("list[dict[str, Any]]", function_metrics_df.to_dict(orient="records"))
+    function_metrics_data = cast(
+        "list[dict[str, Any]]", function_metrics_df.to_dict(orient="records")
+    )
 
     # Build export metadata
     metadata = {

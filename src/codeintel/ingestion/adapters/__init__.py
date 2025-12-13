@@ -15,7 +15,6 @@ from __future__ import annotations
 from codeintel.ingestion.adapters.build_tool_adapter import BuildToolAdapter
 from codeintel.ingestion.adapters.duckdb_storage import (
     DuckDBStorageAdapter,
-    IngestStorageService,
 )
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
@@ -26,6 +25,5 @@ __all__ = [
     "DuckDBStorageAdapter",
     "FilesystemDiscoveryAdapter",
     "HashChangeDetectionAdapter",
-    "IngestStorageService",
     "ToolRunnerAdapter",
 ]

@@ -108,7 +108,9 @@ class HotspotsPlugin(TargetPlugin):
         for table_key in ctx.contract.table_keys:
             try:
                 table = ctx.gateway.ibis.table(table_key)
-                filtered = table.filter(and_predicates(table.repo == ctx.repo, table.commit == ctx.commit))
+                filtered = table.filter(
+                    and_predicates(table.repo == ctx.repo, table.commit == ctx.commit)
+                )
                 result_df = filtered.aggregate(row_count=table.repo.count()).execute()
                 row_count = int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
                 row_counts[table_key] = row_count

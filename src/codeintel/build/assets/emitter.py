@@ -55,7 +55,9 @@ def _try_table_row_count_for_snapshot(
 ) -> int | None:
     try:
         table = env.gateway.ibis.table(table_key)
-        filtered = table.filter(and_predicates(table.repo == env.snapshot.repo, table.commit == env.snapshot.commit))
+        filtered = table.filter(
+            and_predicates(table.repo == env.snapshot.repo, table.commit == env.snapshot.commit)
+        )
         raw = filtered.count().execute()
         if isinstance(raw, pd.DataFrame):
             if raw.empty:
@@ -140,7 +142,9 @@ def _dataset_version_record(
         recorded_at=created_at,
         meta=meta,
     )
-    key = _AssetVersionKey(asset_kind="table", asset_key=dataset.table_key, version_hash=version_hash)
+    key = _AssetVersionKey(
+        asset_kind="table", asset_key=dataset.table_key, version_hash=version_hash
+    )
     return version, run_map, key
 
 
@@ -198,7 +202,9 @@ def _artifact_version_record(
         recorded_at=created_at,
         meta=meta,
     )
-    key = _AssetVersionKey(asset_kind="artifact", asset_key=artifact.name, version_hash=version_hash)
+    key = _AssetVersionKey(
+        asset_kind="artifact", asset_key=artifact.name, version_hash=version_hash
+    )
     return version, run_map, key
 
 
@@ -207,7 +213,9 @@ def _collect_versions_for_run(
     env: BuildEnv,
     run_id: str,
     records: Sequence[TargetRunRecord],
-) -> tuple[list[AssetVersionRecord], list[RunAssetVersionRecord], dict[str, list[_AssetVersionKey]]]:
+) -> tuple[
+    list[AssetVersionRecord], list[RunAssetVersionRecord], dict[str, list[_AssetVersionKey]]
+]:
     versions: list[AssetVersionRecord] = []
     run_maps: list[RunAssetVersionRecord] = []
     target_outputs: dict[str, list[_AssetVersionKey]] = {}
@@ -219,7 +227,9 @@ def _collect_versions_for_run(
         outputs: list[_AssetVersionKey] = []
 
         for ds in rec.datasets:
-            version, run_map, key = _dataset_version_record(env, run_id=run_id, record=rec, dataset=ds)
+            version, run_map, key = _dataset_version_record(
+                env, run_id=run_id, record=rec, dataset=ds
+            )
             versions.append(version)
             run_maps.append(run_map)
             outputs.append(key)

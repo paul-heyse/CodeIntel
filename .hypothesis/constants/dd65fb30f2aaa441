@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/docs.py
+# hypothesis_version: 6.148.7
+
+['.', 'DocsDependencies', 'DocsExportResult', 'DocsValidateResult', 'Document Output', 'ExportMode', 'Validation failed', 'build_dir', 'build_system', 'datasets', 'direct', 'docs', 'docs_export_handler', 'document_output_dir', 'dry_run', 'issues', 'macro_requirement', 'mode', 'ok', 'passed', 'prereq_mode', 'repo_root', 'require_normalized', 'required', 'run_mode', 'schemas', 'skip', 'skip_prereqs', 'status', 'validate', 'validation', 'validation_mode']
