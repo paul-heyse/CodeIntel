@@ -89,7 +89,9 @@ def call_graph_function_call_counts(
     # Full outer join to get all functions
     result = callee_stats.join(
         caller_stats,
-        predicates=[callee_stats.source_function_goid_h128 == caller_stats.target_function_goid_h128],
+        predicates=[
+            callee_stats.source_function_goid_h128 == caller_stats.target_function_goid_h128
+        ],
         how="outer",
     )
 

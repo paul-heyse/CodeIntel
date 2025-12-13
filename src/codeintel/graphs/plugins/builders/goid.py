@@ -28,7 +28,6 @@ from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDoma
 from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import goid as goid_compute
 from codeintel.graphs.plugins.builders.goid_options import GoidBuilderOptions
-from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
@@ -392,13 +391,9 @@ def _persist_goid_rows(
     if not rows:
         return 0
 
-    storage = IngestStorageService.from_gateway(gateway)
-    storage.run_batch(
-        "core.goids",
-        [row.to_tuple() for row in rows],
-        delete_params=[repo, commit],
-        scope="goids",
-    )
+    gateway.policy.ensure_table("core.goids")
+    gateway.policy.delete_for_snapshot("core.goids", repo=repo, commit=commit)
+    gateway.policy.bulk_insert("core.goids", [row.to_tuple() for row in rows])
     return len(rows)
 
 
@@ -429,13 +424,9 @@ def _persist_crosswalk_rows(
     if not rows:
         return 0
 
-    storage = IngestStorageService.from_gateway(gateway)
-    storage.run_batch(
-        "core.goid_crosswalk",
-        [row.to_tuple() for row in rows],
-        delete_params=[repo, commit],
-        scope="goid_crosswalk",
-    )
+    gateway.policy.ensure_table("core.goid_crosswalk")
+    gateway.policy.delete_for_snapshot("core.goid_crosswalk", repo=repo, commit=commit)
+    gateway.policy.bulk_insert("core.goid_crosswalk", [row.to_tuple() for row in rows])
     return len(rows)
 
 

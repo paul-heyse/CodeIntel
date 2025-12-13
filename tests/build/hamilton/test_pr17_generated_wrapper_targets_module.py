@@ -66,9 +66,7 @@ def test_wrapper_module_no_asset_nodes() -> None:
     # Should NOT have dataframe nodes (df__*)
     dataframe_nodes = [name for name in dir(module) if name.startswith("df__")]
     if dataframe_nodes:
-        pytest.fail(
-            f"Wrapper module should NOT contain dataframe nodes, found: {dataframe_nodes}"
-        )
+        pytest.fail(f"Wrapper module should NOT contain dataframe nodes, found: {dataframe_nodes}")
 
     # Should NOT have artifact nodes (a__*)
     artifact_nodes = [name for name in dir(module) if name.startswith("a__")]

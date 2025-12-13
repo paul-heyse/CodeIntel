@@ -87,7 +87,8 @@ def t__coverage_functions__compute(
         cast(
             "Any",
             and_predicates(
-                q__graph__goids.repo == env.snapshot.repo, q__graph__goids.commit == env.snapshot.commit
+                q__graph__goids.repo == env.snapshot.repo,
+                q__graph__goids.commit == env.snapshot.commit,
             ),
         )
     )

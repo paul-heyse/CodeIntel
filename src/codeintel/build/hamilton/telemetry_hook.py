@@ -121,7 +121,11 @@ class NodeTelemetryHook:
             Additional keyword arguments from Hamilton.
         """
         node_tags_raw = kwargs.get("node_tags")
-        node_tags = cast("dict[str, object] | None", node_tags_raw) if isinstance(node_tags_raw, dict) else None
+        node_tags = (
+            cast("dict[str, object] | None", node_tags_raw)
+            if isinstance(node_tags_raw, dict)
+            else None
+        )
         error_raw = kwargs.get("error")
         error = error_raw if isinstance(error_raw, Exception) else None
         success_raw = kwargs.get("success")

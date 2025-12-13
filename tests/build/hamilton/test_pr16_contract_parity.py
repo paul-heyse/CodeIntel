@@ -70,9 +70,7 @@ def test_artifact_templates_renderable(tmp_path: Path) -> None:
     template_errors = [e for e in errors if "invalid template" in e]
     if template_errors:
         error_list = "\n".join(f"  {err}" for err in template_errors)
-        pytest.fail(
-            f"Found {len(template_errors)} artifact template errors:\n{error_list}"
-        )
+        pytest.fail(f"Found {len(template_errors)} artifact template errors:\n{error_list}")
 
 
 def test_validate_contracts_returns_empty(tmp_path: Path) -> None:
@@ -106,9 +104,7 @@ def test_key_targets_have_contracts() -> None:
         # Check that all expected tables are present
         for table_key in expected_tables:
             if table_key not in actual_tables:
-                pytest.fail(
-                    f"Target '{target_name}' missing expected table_key: '{table_key}'"
-                )
+                pytest.fail(f"Target '{target_name}' missing expected table_key: '{table_key}'")
 
 
 @pytest.mark.parametrize(

@@ -159,46 +159,6 @@ def _split_table_key(table_key: str) -> tuple[str, str]:
     return schema, table
 
 
-def _build_insert_select(
-    schema: str,
-    table: str,
-    columns: Sequence[str],
-    select_sql: str,
-) -> str:
-    """Build INSERT...SELECT statement using SQLGlot.
-
-    Parameters
-    ----------
-    schema
-        Target schema name.
-    table
-        Target table name.
-    columns
-        Column names for the INSERT.
-    select_sql
-        SQL SELECT statement to insert from.
-
-    Returns
-    -------
-    str
-        Generated INSERT...SELECT SQL.
-    """
-    select_ast = parse_one(select_sql, dialect=DUCKDB_DIALECT)
-
-    insert_stmt = exp.Insert(
-        this=exp.Schema(
-            this=exp.Table(
-                this=exp.to_identifier(table),
-                db=exp.to_identifier(schema),
-            ),
-            expressions=[exp.to_identifier(c) for c in columns],
-        ),
-        expression=select_ast,
-    )
-
-    return insert_stmt.sql(dialect=DUCKDB_DIALECT)
-
-
 class IbisGateway:
     """Expose an Ibis backend bound to a `StorageGateway`.
 
@@ -485,12 +445,8 @@ class IbisGateway:
                 write_ctx, df=df, columns=resolved_columns, on_conflict=on_conflict
             )
 
-        insert_sql = _build_insert_select(
-            write_ctx.schema, write_ctx.table, resolved_columns, select_sql
-        )
-        log.debug("write INSERT...SELECT: %s", insert_sql[:200])
-
-        self._gateway.con.execute(insert_sql)
+        backend = DuckDBPolicyBackend(self._gateway)
+        backend.insert_select(write_ctx.table_key, columns=resolved_columns, select_sql=select_sql)
 
         return WriteResult(table_key=write_ctx.table_key, rows_affected=-1, method="insert_select")
 
@@ -612,14 +568,10 @@ class IbisGateway:
         ValueError
             If the WHERE clause cannot be derived from the provided filter.
         """
-        schema, table = _split_table_key(table_key)
+        backend = DuckDBPolicyBackend(self._gateway)
 
         if where is None:
-            table_expr = exp.Table(
-                this=exp.to_identifier(table),
-                db=exp.to_identifier(schema),
-            )
-            delete_expr = exp.Delete(this=table_expr)
+            backend.delete(table_key)
         else:
             t = self.table(table_key)
             filter_expr = t.filter(where).limit(0)
@@ -629,25 +581,6 @@ class IbisGateway:
             if not isinstance(where_ast, exp.Where):
                 message = "Unable to derive WHERE clause for delete()"
                 raise ValueError(message)
-
-            alias: str | None = None
-            for col in where_ast.find_all(exp.Column):
-                table_alias = getattr(col, "table", None)
-                if isinstance(table_alias, str) and table_alias:
-                    alias = table_alias
-                    break
-
-            table_expr = exp.Table(
-                this=exp.to_identifier(table),
-                db=exp.to_identifier(schema),
-                alias=(
-                    exp.TableAlias(this=exp.to_identifier(alias)) if alias is not None else None
-                ),
-            )
-            delete_expr = exp.Delete(this=table_expr, where=where_ast)
-
-        sql = delete_expr.sql(dialect=DUCKDB_DIALECT)
-        log.debug("delete: %s", sql[:200])
-        self._gateway.con.execute(sql)
+            backend.delete(table_key, where=where_ast)
 
         return -1

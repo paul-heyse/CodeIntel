@@ -51,9 +51,7 @@ def build_ide_router(options: RouterOptions | None = None) -> APIRouter:
     path = spec.http_path
 
     auto_pipeline = options is not None and options.auto_pipeline
-    ide_deps = (
-        [Depends(http_deps.make_op_prereq_dependency("ide.hints"))] if auto_pipeline else []
-    )
+    ide_deps = [Depends(http_deps.make_op_prereq_dependency("ide.hints"))] if auto_pipeline else []
 
     @router.get(
         path,

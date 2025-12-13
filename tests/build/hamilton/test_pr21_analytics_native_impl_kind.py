@@ -84,8 +84,7 @@ def test_native_analytics_marked_in_plan(tmp_path: Path) -> None:
         # Assert impl_kind is "native"
         if target_entry.impl_kind != "native":
             pytest.fail(
-                f"Expected impl_kind='native' for {target_name}, "
-                f"got '{target_entry.impl_kind}'"
+                f"Expected impl_kind='native' for {target_name}, got '{target_entry.impl_kind}'"
             )
 
 
@@ -119,8 +118,7 @@ def test_wrapper_targets_still_marked_wrapper(tmp_path: Path) -> None:
         # Assert impl_kind is "wrapper"
         if target_entry.impl_kind != "wrapper":
             pytest.fail(
-                f"Expected impl_kind='wrapper' for {target_name}, "
-                f"got '{target_entry.impl_kind}'"
+                f"Expected impl_kind='wrapper' for {target_name}, got '{target_entry.impl_kind}'"
             )
 
 
@@ -144,6 +142,4 @@ def test_risk_factors_still_native_after_wave2(tmp_path: Path) -> None:
 
     # Assert impl_kind is "native"
     if target_entry.impl_kind != "native":
-        pytest.fail(
-            f"Expected impl_kind='native' for risk_factors, got '{target_entry.impl_kind}'"
-        )
+        pytest.fail(f"Expected impl_kind='native' for risk_factors, got '{target_entry.impl_kind}'")

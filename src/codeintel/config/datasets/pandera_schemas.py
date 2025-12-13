@@ -14,7 +14,7 @@ from pandas.api.extensions import ExtensionDtype
 from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaErrors
 
-from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.config.datasets.contracts import get_dataset_contracts_by_table_key
 
 if TYPE_CHECKING:
     from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
@@ -1208,7 +1208,7 @@ class _LazySchemaDict(MutableMapping[str, DataFrameSchema]):
     --------
     **Before (deprecated):**
 
-    >>> from codeintel.storage.pandera_schemas import DATASET_SCHEMAS
+    >>> from codeintel.config.datasets.pandera_schemas import DATASET_SCHEMAS
     >>> schema = DATASET_SCHEMAS.get("analytics.function_metrics")
 
     **After (recommended):**

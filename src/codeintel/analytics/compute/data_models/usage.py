@@ -507,9 +507,15 @@ def compute_data_model_usage(
         )
 
     function_types = gateway.ibis.table("analytics.function_types")
-    param_rows = function_types.filter(
-        and_predicates(function_types["repo"] == cfg.repo, function_types["commit"] == cfg.commit)
-    ).select("function_goid_h128", "param_types").execute()
+    param_rows = (
+        function_types.filter(
+            and_predicates(
+                function_types["repo"] == cfg.repo, function_types["commit"] == cfg.commit
+            )
+        )
+        .select("function_goid_h128", "param_types")
+        .execute()
+    )
     param_types: dict[int, dict[str, str]] = {}
     for goid_raw, raw_param_types in param_rows.itertuples(index=False):
         goid_int = int(goid_raw)

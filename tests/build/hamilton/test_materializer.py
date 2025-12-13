@@ -143,7 +143,9 @@ def test_materialize_table_uses_policy_and_insert_select() -> None:
     expected_row_count = 5
 
     ref = materialize_table(
-        MaterializationContext(gateway=cast("StorageGateway", gateway), snapshot=snapshot, validate=False),
+        MaterializationContext(
+            gateway=cast("StorageGateway", gateway), snapshot=snapshot, validate=False
+        ),
         "analytics.example",
         cast("ir.Table", table),
     )
@@ -153,8 +155,7 @@ def test_materialize_table_uses_policy_and_insert_select() -> None:
         message=f"Unexpected delete calls: {gateway.policy.calls}",
     )
     expect(
-        condition=bool(gateway.ibis.writes)
-        and gateway.ibis.writes[0].data is table,
+        condition=bool(gateway.ibis.writes) and gateway.ibis.writes[0].data is table,
         message="Expected materializer to write the Ibis expression",
     )
     expect(
@@ -200,7 +201,9 @@ def test_materialize_table_validates_when_schema_available(monkeypatch: pytest.M
     monkeypatch.setattr(materializer, "get_pandera_schema", lambda _: schema)
 
     ref = materialize_table(
-        MaterializationContext(gateway=cast("StorageGateway", gateway), snapshot=snapshot, validate=True),
+        MaterializationContext(
+            gateway=cast("StorageGateway", gateway), snapshot=snapshot, validate=True
+        ),
         "analytics.example",
         cast("ir.Table", table),
     )

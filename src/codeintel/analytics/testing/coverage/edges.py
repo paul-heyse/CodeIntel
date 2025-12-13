@@ -20,7 +20,6 @@ from codeintel.config.datasets import (
 from codeintel.graphs.catalog import (
     FunctionCatalogService,
 )
-from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
@@ -401,13 +400,14 @@ def compute_test_coverage_edges(
             )
         )
 
-    storage_service = IngestStorageService.from_gateway(gateway)
-    storage_service.run_batch(
-        "analytics.test_coverage_edges",
-        [serialize_test_coverage_edge(row) for row in insert_rows],
-        delete_params=[cfg.repo, cfg.commit],
-        scope=f"{cfg.repo}@{cfg.commit}",
-    )
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.test_coverage_edges")
+    backend.delete_for_snapshot("analytics.test_coverage_edges", repo=cfg.repo, commit=cfg.commit)
+    if insert_rows:
+        backend.bulk_insert(
+            "analytics.test_coverage_edges",
+            [serialize_test_coverage_edge(row) for row in insert_rows],
+        )
 
     log.info(
         "test_coverage_edges populated: %d rows for %s@%s",

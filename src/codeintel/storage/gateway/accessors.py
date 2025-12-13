@@ -17,10 +17,7 @@ from codeintel.storage.tracking.run_tracking import PipelineRunTracking
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from codeintel.storage.datasets import DatasetRegistry
-    from codeintel.storage.gateway.config import StorageConfig
-    from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
-    from codeintel.storage.gateway.rows.analytics import (
+    from codeintel.config.datasets.generated_rows.analytics import (
         AnalyticsConfigValuesRow,
         AnalyticsCoverageFunctionsRow,
         AnalyticsCoverageLinesRow,
@@ -33,14 +30,14 @@ if TYPE_CHECKING:
         AnalyticsTestCoverageEdgesRow,
         AnalyticsTypednessRow,
     )
-    from codeintel.storage.gateway.rows.core import (
+    from codeintel.config.datasets.generated_rows.core import (
         CoreFileStateRow,
         CoreGoidsRow,
         CoreModulesRow,
         CoreRepoMapRow,
         CoreScipOccurrencesRow,
     )
-    from codeintel.storage.gateway.rows.graph import (
+    from codeintel.config.datasets.generated_rows.graph import (
         GraphCallGraphEdgesRow,
         GraphCallGraphNodesRow,
         GraphCfgBlocksRow,
@@ -49,6 +46,9 @@ if TYPE_CHECKING:
         GraphImportGraphEdgesRow,
         GraphSymbolUseEdgesRow,
     )
+    from codeintel.storage.datasets import DatasetRegistry
+    from codeintel.storage.gateway.config import StorageConfig
+    from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
 
 __all__ = [
     "AnalyticsTables",

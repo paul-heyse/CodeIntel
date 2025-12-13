@@ -44,8 +44,11 @@ def validate_contracts(graph: TargetGraph, *, repo_root: Path | None = None) -> 
 
     for target in graph.all_targets:
         # Check that all contract table_keys exist in schema registry
-        errors.extend(f"Target '{target.name}' references unknown table_key: '{table_key}'" for table_key in target.table_keys if table_key not in table_schemas)
-
+        errors.extend(
+            f"Target '{target.name}' references unknown table_key: '{table_key}'"
+            for table_key in target.table_keys
+            if table_key not in table_schemas
+        )
 
         # Check artifact path templates are renderable
         if repo_root is not None:

@@ -26,7 +26,6 @@ from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDoma
 from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import imports as imports_compute
 from codeintel.graphs.plugins.builders.import_graph_options import ImportGraphOptions
-from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
@@ -196,13 +195,9 @@ def _persist_import_modules(
     if not rows:
         return 0
 
-    storage = IngestStorageService.from_gateway(gateway)
-    storage.run_batch(
-        "graph.import_modules",
-        [row.to_tuple() for row in rows],
-        delete_params=[repo, commit],
-        scope="import_modules",
-    )
+    gateway.policy.ensure_table("graph.import_modules")
+    gateway.policy.delete_for_snapshot("graph.import_modules", repo=repo, commit=commit)
+    gateway.policy.bulk_insert("graph.import_modules", [row.to_tuple() for row in rows])
     return len(rows)
 
 
@@ -233,13 +228,9 @@ def _persist_import_edges(
     if not rows:
         return 0
 
-    storage = IngestStorageService.from_gateway(gateway)
-    storage.run_batch(
-        "graph.import_graph_edges",
-        [row.to_tuple() for row in rows],
-        delete_params=[repo, commit],
-        scope="import_graph_edges",
-    )
+    gateway.policy.ensure_table("graph.import_graph_edges")
+    gateway.policy.delete_for_snapshot("graph.import_graph_edges", repo=repo, commit=commit)
+    gateway.policy.bulk_insert("graph.import_graph_edges", [row.to_tuple() for row in rows])
     return len(rows)
 
 

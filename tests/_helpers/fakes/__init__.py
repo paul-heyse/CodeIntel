@@ -37,9 +37,7 @@ from tests._helpers.fakes.fake_providers import (
     FakeToolRunner as ProtocolFakeToolRunner,
 )
 from tests._helpers.fakes.ingestion_runtime import (
-    BatchCall,
     RecordingBuildExecutor,
-    RecordingIngestStorageService,
 )
 from tests._helpers.fakes.serving_backends import (
     BackendHandle,
@@ -55,7 +53,6 @@ from tests._helpers.fakes.utilities import utcnow
 
 __all__ = [
     "BackendHandle",
-    "BatchCall",
     "FakeCoverageCollector",
     "FakeGitHistoryProvider",
     "FakeTestReporter",
@@ -67,7 +64,6 @@ __all__ = [
     "ProtocolFakeScipIndexer",
     "ProtocolFakeToolRunner",
     "RecordingBuildExecutor",
-    "RecordingIngestStorageService",
     "ServingBackend",
     "build_serving_backend",
     "utcnow",

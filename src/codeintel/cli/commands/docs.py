@@ -58,6 +58,7 @@ class DocsExportCommand:
         Parameter(
             name="--db-path",
             help="Path to DuckDB database.",
+            converter=Path,
         ),
     ] = None
     build_dir: Annotated[
@@ -65,6 +66,7 @@ class DocsExportCommand:
         Parameter(
             name="--build-dir",
             help="Build directory for docs export.",
+            converter=Path,
         ),
     ] = None
     repo_root: Annotated[
@@ -72,6 +74,7 @@ class DocsExportCommand:
         Parameter(
             name="--repo-root",
             help="Repository root directory.",
+            converter=Path,
         ),
     ] = None
     document_output_dir: Annotated[
@@ -79,6 +82,7 @@ class DocsExportCommand:
         Parameter(
             name="--document-output-dir",
             help="Document Output directory for emitted artifacts.",
+            converter=Path,
         ),
     ] = None
 

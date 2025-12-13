@@ -14,7 +14,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from codeintel.storage.pandera_schemas import (
+from codeintel.config.datasets.pandera_schemas import (
     DATASET_SCHEMAS,
     ValidationResult,
     dataset_json_schema,
