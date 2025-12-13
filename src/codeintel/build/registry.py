@@ -145,6 +145,7 @@ CONFIG_INGEST_TARGET = OutputTarget(
     name="config_ingest",
     module="ingestion",
     plugin="config_ingest",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.config_values"],)),
     dependencies=("modules",),
     description="Configuration file parsing and reference tracking.",
 )
@@ -183,7 +184,10 @@ CALL_GRAPH_VIEWS_TARGET = OutputTarget(
     module="graphs",
     plugin="",  # Native target, no plugin
     contract=OutputContract(
-        tables=()  # Will be updated with actual view schemas
+        tables=(
+            _DATASET_TABLE_SCHEMAS["graph.v_function_call_counts"],
+            _DATASET_TABLE_SCHEMAS["graph.v_call_depth_stats"],
+        )
     ),
     dependencies=("call_graph",),
     description="Derived views over call graph for analytics.",
@@ -231,6 +235,16 @@ CFG_DFG_METRICS_TARGET = OutputTarget(
     name="cfg_dfg_metrics",
     module="analytics",
     plugin="cfg_dfg_metrics",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.cfg_function_metrics"],
+            _DATASET_TABLE_SCHEMAS["analytics.cfg_block_metrics"],
+            _DATASET_TABLE_SCHEMAS["analytics.cfg_function_metrics_ext"],
+            _DATASET_TABLE_SCHEMAS["analytics.dfg_function_metrics"],
+            _DATASET_TABLE_SCHEMAS["analytics.dfg_block_metrics"],
+            _DATASET_TABLE_SCHEMAS["analytics.dfg_function_metrics_ext"],
+        )
+    ),
     dependencies=("cfg", "dfg"),
     description="Control-flow and data-flow graph metrics per function.",
 )
@@ -248,6 +262,7 @@ GRAPH_VALIDATION_TARGET = OutputTarget(
     name="graph_validation",
     module="graphs",
     plugin="graph_validation",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.graph_validation"],)),
     dependencies=("call_graph", "import_graph", "cfg"),
     description="Graph integrity validation checks.",
 )
@@ -280,6 +295,7 @@ FUNCTION_EFFECTS_TARGET = OutputTarget(
     name="function_effects",
     module="analytics",
     plugin="function_effects",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.function_effects"],)),
     dependencies=("function_metrics",),
     description="Function purity and side-effect analysis.",
 )
@@ -288,6 +304,7 @@ FUNCTION_CONTRACTS_TARGET = OutputTarget(
     name="function_contracts",
     module="analytics",
     plugin="function_contracts",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.function_contracts"],)),
     dependencies=("function_metrics", "docstrings"),
     description="Inferred function pre/postconditions.",
 )
@@ -305,6 +322,7 @@ HISTORY_TIMESERIES_TARGET = OutputTarget(
     name="history_timeseries",
     module="analytics",
     plugin="history_timeseries",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.history_timeseries"],)),
     dependencies=("function_history",),
     description="Historical metrics timeseries for trending.",
 )
@@ -331,6 +349,7 @@ DATA_MODELS_TARGET = OutputTarget(
     name="data_models",
     module="analytics",
     plugin="data_models",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.data_models"],)),
     dependencies=("goids", "ast"),
     description="Data model extraction (dataclasses, Pydantic, etc.).",
 )
@@ -339,6 +358,7 @@ DATA_MODEL_USAGE_TARGET = OutputTarget(
     name="data_model_usage",
     module="analytics",
     plugin="data_model_usage",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.data_model_usage"],)),
     dependencies=("data_models", "call_graph"),
     description="Function-level data model usage tracking.",
 )
@@ -347,6 +367,15 @@ CONFIG_DATA_FLOW_TARGET = OutputTarget(
     name="config_data_flow",
     module="analytics",
     plugin="config_data_flow",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.config_data_flow"],
+            _DATASET_TABLE_SCHEMAS["analytics.config_graph_metrics_keys"],
+            _DATASET_TABLE_SCHEMAS["analytics.config_graph_metrics_modules"],
+            _DATASET_TABLE_SCHEMAS["analytics.config_projection_key_edges"],
+            _DATASET_TABLE_SCHEMAS["analytics.config_projection_module_edges"],
+        )
+    ),
     dependencies=("config_ingest", "call_graph"),
     description="Config key usage flow through functions.",
 )
@@ -385,6 +414,12 @@ SEMANTIC_ROLES_TARGET = OutputTarget(
     name="semantic_roles",
     module="analytics",
     plugin="semantic_roles",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.semantic_roles_functions"],
+            _DATASET_TABLE_SCHEMAS["analytics.semantic_roles_modules"],
+        )
+    ),
     dependencies=("function_metrics", "call_graph"),
     description="Semantic role classification (handler, utility, etc.).",
 )
@@ -393,6 +428,12 @@ SUBSYSTEMS_TARGET = OutputTarget(
     name="subsystems",
     module="analytics",
     plugin="subsystems",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.subsystems"],
+            _DATASET_TABLE_SCHEMAS["analytics.subsystem_modules"],
+        )
+    ),
     dependencies=("import_graph", "semantic_roles"),
     description="Architectural subsystem inference.",
 )
@@ -401,6 +442,7 @@ SUBSYSTEM_GRAPH_METRICS_TARGET = OutputTarget(
     name="subsystem_graph_metrics",
     module="analytics",
     plugin="subsystem_graph_metrics",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.subsystem_graph_metrics"],)),
     dependencies=("subsystems", "graph_metrics"),
     description="Graph metrics for subsystems.",
 )
@@ -409,6 +451,7 @@ SUBSYSTEM_AGREEMENT_TARGET = OutputTarget(
     name="subsystem_agreement",
     module="analytics",
     plugin="subsystem_agreement",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.subsystem_agreement"],)),
     dependencies=("subsystems", "graph_metrics"),
     description="Subsystem vs import community agreement.",
 )
@@ -417,6 +460,7 @@ TEST_PROFILE_TARGET = OutputTarget(
     name="test_profile",
     module="analytics",
     plugin="test_profile",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.test_profile"],)),
     dependencies=("coverage_test_edges", "tests_ingest"),
     description="Per-test profile with coverage and characteristics.",
 )
@@ -425,6 +469,12 @@ TEST_GRAPH_METRICS_TARGET = OutputTarget(
     name="test_graph_metrics",
     module="analytics",
     plugin="test_graph_metrics",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.test_graph_metrics_tests"],
+            _DATASET_TABLE_SCHEMAS["analytics.test_graph_metrics_functions"],
+        )
+    ),
     dependencies=("coverage_test_edges",),
     description="Graph metrics from test-function bipartite graph.",
 )
@@ -433,6 +483,12 @@ SYMBOL_GRAPH_METRICS_TARGET = OutputTarget(
     name="symbol_graph_metrics",
     module="analytics",
     plugin="symbol_graph_metrics",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.symbol_graph_metrics_modules"],
+            _DATASET_TABLE_SCHEMAS["analytics.symbol_graph_metrics_functions"],
+        )
+    ),
     dependencies=("symbol_uses",),
     description="Graph metrics from symbol usage patterns.",
 )
@@ -441,6 +497,7 @@ BEHAVIORAL_COVERAGE_TARGET = OutputTarget(
     name="behavioral_coverage",
     module="analytics",
     plugin="behavioral_coverage",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.behavioral_coverage"],)),
     dependencies=("test_profile",),
     description="Behavioral coverage tagging from test patterns.",
 )
@@ -449,6 +506,7 @@ ENTRYPOINTS_TARGET = OutputTarget(
     name="entrypoints",
     module="analytics",
     plugin="entrypoints",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.entrypoints"],)),
     dependencies=("goids", "semantic_roles", "test_profile"),
     description="External entrypoint detection (HTTP, CLI, etc.).",
 )
@@ -457,6 +515,12 @@ EXTERNAL_DEPS_TARGET = OutputTarget(
     name="external_deps",
     module="analytics",
     plugin="external_deps",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.external_dependencies"],
+            _DATASET_TABLE_SCHEMAS["analytics.external_dependency_calls"],
+        )
+    ),
     dependencies=("call_graph",),
     description="External library dependency analysis.",
 )
@@ -465,6 +529,13 @@ PROFILES_TARGET = OutputTarget(
     name="profiles",
     module="analytics",
     plugin="profiles",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.function_profile"],
+            _DATASET_TABLE_SCHEMAS["analytics.file_profile"],
+            _DATASET_TABLE_SCHEMAS["analytics.module_profile"],
+        )
+    ),
     dependencies=(
         "risk_factors",
         "graph_metrics",
@@ -479,6 +550,7 @@ FUNCTION_AST_FEATURES_TARGET = OutputTarget(
     name="function_ast_features",
     module="analytics",
     plugin="function_ast_features",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.function_ast_features"],)),
     dependencies=("goids", "ast"),
     description="AST-derived semantic features for functions.",
 )

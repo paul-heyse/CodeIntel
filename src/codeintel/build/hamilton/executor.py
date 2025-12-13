@@ -18,11 +18,13 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.build.assets.emitter import persist_asset_catalog_for_run
+from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
+from codeintel.build.hamilton.contracts.enforcement_hook import ContractEnforcementHook
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.telemetry_hook import NodeTelemetryHook
@@ -33,6 +35,7 @@ from codeintel.storage.exceptions import StorageError
 if TYPE_CHECKING:
     from codeintel.build.hamilton.driver_factory import HamiltonNodeMode, HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -524,16 +527,29 @@ class HamiltonBuildExecutor:
             Outputs keyed by node name, and optional error string.
         """
         try:
+            execution_env = env
+            if env.strict_contracts:
+                wrapped_gateway = ContractEnforcingStorageGateway(env.gateway)
+                execution_env = replace(
+                    env,
+                    gateway=cast("StorageGateway", wrapped_gateway),
+                )
+
             # Pass hook as adapter if provided
             execute_kwargs: dict[str, Any] = {
                 "final_vars": list(final_vars),
-                "inputs": {"env": env, "graph": runtime.graph},
+                "inputs": {"env": execution_env, "graph": runtime.graph},
             }
 
             # Register hook as adapter if available
             # Hamilton adapters can be passed via adapters parameter to execute()
+            adapters: list[object] = []
+            if env.strict_contracts:
+                adapters.append(ContractEnforcementHook(runtime.graph, strict=True))
             if telemetry_hook is not None:
-                execute_kwargs["adapters"] = [telemetry_hook]
+                adapters.append(telemetry_hook)
+            if adapters:
+                execute_kwargs["adapters"] = adapters
 
             outputs = runtime.dr.execute(**execute_kwargs)
         except Exception as exc:

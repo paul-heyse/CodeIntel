@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-13T12:02:42.162058+00:00",
+  "generated_at": "2025-12-13T13:19:47.456223+00:00",
   "overall_status": "passed",
-  "duration_seconds": 13.402776,
+  "duration_seconds": 14.056192,
   "results": [
     {
       "name": "guardrails",
@@ -15,9 +15,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-13T12:02:28.759112+00:00",
-      "ended_at": "2025-12-13T12:02:29.000157+00:00",
-      "duration_seconds": 0.241045,
+      "started_at": "2025-12-13T13:19:33.399880+00:00",
+      "ended_at": "2025-12-13T13:19:33.646869+00:00",
+      "duration_seconds": 0.246989,
       "stdout": [],
       "stderr": []
     },
@@ -36,9 +36,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-13T12:02:29.000175+00:00",
-      "ended_at": "2025-12-13T12:02:29.021659+00:00",
-      "duration_seconds": 0.021484,
+      "started_at": "2025-12-13T13:19:33.646889+00:00",
+      "ended_at": "2025-12-13T13:19:33.668487+00:00",
+      "duration_seconds": 0.021598,
       "stdout": [
         "All checks passed!"
       ],
@@ -55,9 +55,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-13T12:02:29.021680+00:00",
-      "ended_at": "2025-12-13T12:02:29.049317+00:00",
-      "duration_seconds": 0.027637,
+      "started_at": "2025-12-13T13:19:33.668506+00:00",
+      "ended_at": "2025-12-13T13:19:33.696269+00:00",
+      "duration_seconds": 0.027763,
       "stdout": [
         "All checks passed!"
       ],
@@ -74,9 +74,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-13T12:02:29.049334+00:00",
-      "ended_at": "2025-12-13T12:02:41.520385+00:00",
-      "duration_seconds": 12.471051,
+      "started_at": "2025-12-13T13:19:33.696286+00:00",
+      "ended_at": "2025-12-13T13:19:46.847352+00:00",
+      "duration_seconds": 13.151066,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -92,9 +92,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-13T12:02:41.520400+00:00",
-      "ended_at": "2025-12-13T12:02:42.161888+00:00",
-      "duration_seconds": 0.641488,
+      "started_at": "2025-12-13T13:19:46.847370+00:00",
+      "ended_at": "2025-12-13T13:19:47.456072+00:00",
+      "duration_seconds": 0.608702,
       "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",

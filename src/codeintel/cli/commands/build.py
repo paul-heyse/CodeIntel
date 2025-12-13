@@ -95,7 +95,7 @@ class BuildRunCommand:
         str,
         Parameter(
             name=["--hamilton-mode"],
-            help="Hamilton node mode: generated (default) or phase0 (debug).",
+            help="Hamilton node mode: generated (default), auto, or phase0 (debug).",
             show_choices=True,
         ),
     ] = "generated"

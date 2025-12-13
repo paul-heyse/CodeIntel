@@ -29,7 +29,7 @@ def test_all_contract_tables_in_schema_registry() -> None:
     missing_tables: list[tuple[str, str]] = [
         (target.name, table_key)
         for target in graph.all_targets
-        for table_key in target.table_keys
+        for table_key in target.contract.table_keys
         if table_key not in table_schemas
     ]
 
@@ -44,18 +44,14 @@ def test_no_empty_contracts_for_output_targets() -> None:
     """Verify targets with plugins have non-empty contracts."""
     graph = get_target_graph()
 
-    empty_contracts: list[str] = []
-    for target in graph.all_targets:
-        if target.plugin:
-            # Empty plugin string is allowed (e.g., dfg target)
-            if not target.plugin:
-                continue
-            # Target should have at least one output
-            if not target.table_keys and not target.contract.artifacts:
-                empty_contracts.append(target.name)
+    empty_contracts = [
+        target.name
+        for target in graph.all_targets
+        if target.plugin and not target.contract.tables and not target.contract.artifacts
+    ]
 
     if empty_contracts:
-        contract_list = "\n".join(f"  {name}" for name in empty_contracts)
+        contract_list = "\n".join([f"  {name}" for name in empty_contracts])
         pytest.fail(
             f"Found {len(empty_contracts)} targets with plugins but empty contracts:\n"
             f"{contract_list}"
