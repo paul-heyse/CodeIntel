@@ -33,12 +33,6 @@ The ingestion system follows a port-adapter pattern for clean separation of conc
 **Plugins** (TargetPlugin implementations):
 - `RepoScanPlugin`, `AstExtractPlugin`, etc.: Build system integrated plugins
 
-**Validation** (contract validation):
-- `IngestContractValidator`: Contract validation runner
-- `IngestContractSpec`: Contract specification
-- `ContractValidationResult`: Validation results
-- `run_ingest_validations`: High-level validation entry point
-
 Builtin Plugins
 ---------------
 The following plugins are registered by default:
@@ -118,22 +112,6 @@ from codeintel.ingestion.ports import (
 from codeintel.ingestion.tracker import (
     ChangeTracker,
     ChangeTrackerDatasetView,
-    IncrementalIngestOps,
-    IncrementalIngestPolicy,
-    SupportsFullRebuild,
-    run_incremental_ingest,
-)
-from codeintel.ingestion.validation import (
-    ColumnConstraint,
-    ContractValidationResult,
-    ContractViolation,
-    ForeignKeyConstraint,
-    IngestContractSpec,
-    IngestContractValidator,
-    IngestValidationOptions,
-    foreign_key_contract,
-    not_null_contract,
-    run_ingest_validations,
 )
 
 __all__ = [
@@ -149,10 +127,7 @@ __all__ = [
     "ChangeSet",
     "ChangeTracker",
     "ChangeTrackerDatasetView",
-    "ColumnConstraint",
     "ConfigIngestStep",
-    "ContractValidationResult",
-    "ContractViolation",
     "CoverageFileData",
     "CoverageIngestStep",
     "CoverageResult",
@@ -162,15 +137,9 @@ __all__ = [
     "DuckDBStorageAdapter",
     "FileDigest",
     "FilesystemDiscoveryAdapter",
-    "ForeignKeyConstraint",
     "HashChangeDetectionAdapter",
-    "IncrementalIngestOps",
-    "IncrementalIngestPolicy",
-    "IngestContractSpec",
-    "IngestContractValidator",
     "IngestStoragePort",
     "IngestToolPort",
-    "IngestValidationOptions",
     "ModuleDiscoveryPort",
     "ModuleRecord",
     "QueryResult",
@@ -180,7 +149,6 @@ __all__ = [
     "ScipIngestStep",
     "ScipResult",
     "StepResult",
-    "SupportsFullRebuild",
     "TestResult",
     "TestsIngestStep",
     "ToolRunnerAdapter",
@@ -191,14 +159,10 @@ __all__ = [
     "default_config_profile",
     "ensure_repo_root",
     "executor_factory",
-    "foreign_key_contract",
     "normalize_rel_path",
-    "not_null_contract",
     "profile_from_env",
     "relpath_to_module",
     "repo_relpath",
     "resolve_worker_count",
-    "run_incremental_ingest",
-    "run_ingest_validations",
     "worker_pool",
 ]

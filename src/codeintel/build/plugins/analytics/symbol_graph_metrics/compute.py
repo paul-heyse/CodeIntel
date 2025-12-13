@@ -13,13 +13,11 @@ from codeintel.analytics.graphs.symbol_graph_metrics import (
     compute_symbol_graph_metrics_modules,
 )
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +42,7 @@ SYMBOL_GRAPH_METRICS_METADATA = CorePluginMetadata(
 )
 
 
-class SymbolGraphMetricsPlugin(TargetPlugin):
+class SymbolGraphMetricsPlugin(MetadataPlugin):
     """Compute graph metrics from symbol usage patterns.
 
     Analyzes symbol definition-to-use relationships to compute:
@@ -58,20 +56,7 @@ class SymbolGraphMetricsPlugin(TargetPlugin):
     - analytics.symbol_graph_metrics_modules: Per-module symbol metrics
     """
 
-    plugin_name: ClassVar[str] = "symbol_graph_metrics"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Compute graph metrics from symbol usage patterns."
     _core_metadata: ClassVar[CorePluginMetadata] = SYMBOL_GRAPH_METRICS_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

@@ -1,72 +1,119 @@
 """Catalog port interface for function catalog access.
 
-This module defines the CatalogPort protocol that abstracts function
-catalog operations, providing span lookups and module mappings.
+This module provides backward-compatible exports for catalog operations.
+New code should use the unified types from ``codeintel.graphs.catalog``.
+
+Data Classes
+------------
+- FunctionSpanData: Deprecated alias for FunctionSpan
+
+Deprecated
+----------
+- CatalogPort: Use CatalogService from ``codeintel.graphs.catalog`` directly
+- FunctionSpanData: Use FunctionSpan from ``codeintel.graphs.catalog``
+
+.. deprecated:: 5.0.0
+    The CatalogPort protocol and FunctionSpanData are deprecated.
+    Use CatalogService and FunctionSpan from ``codeintel.graphs.catalog``.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import warnings
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+from codeintel.graphs.catalog import FunctionSpan
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 
-@dataclass(frozen=True)
-class FunctionSpanData:
-    """Function span data for catalog operations.
+def _create_function_span_data(**kwargs: object) -> FunctionSpan:
+    """Create a FunctionSpan from legacy FunctionSpanData arguments.
 
-    Attributes
+    .. deprecated:: 5.0.0
+        Use FunctionSpan from ``codeintel.graphs.catalog`` directly.
+
+    Parameters
     ----------
-    goid
-        Global object identifier.
-    rel_path
-        Relative file path.
-    qualname
-        Fully qualified name.
-    start_line
-        Starting line number.
-    end_line
-        Ending line number.
-    urn
-        Optional URN identifier.
+    **kwargs
+        Arguments matching FunctionSpanData fields.
+
+    Returns
+    -------
+    FunctionSpan
+        Unified function span.
+    """
+    warnings.warn(
+        "FunctionSpanData is deprecated. Use FunctionSpan from codeintel.graphs.catalog.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return FunctionSpan(
+        goid=int(kwargs["goid"]),  # type: ignore[arg-type]
+        rel_path=str(kwargs["rel_path"]),
+        qualname=str(kwargs["qualname"]),
+        start_line=int(kwargs["start_line"]),  # type: ignore[arg-type]
+        end_line=int(kwargs["end_line"]),  # type: ignore[arg-type]
+        urn=kwargs.get("urn"),  # type: ignore[arg-type]
+    )
+
+
+class _FunctionSpanDataCompat:
+    """Compatibility class providing FunctionSpanData-like construction.
+
+    .. deprecated:: 5.0.0
+        Use FunctionSpan from ``codeintel.graphs.catalog`` directly.
     """
 
-    goid: int
-    rel_path: str
-    qualname: str
-    start_line: int
-    end_line: int
-    urn: str | None = None
+    def __new__(  # noqa: PLR0913, PLR0917 - matches legacy dataclass signature
+        cls,
+        goid: int,
+        rel_path: str,
+        qualname: str,
+        start_line: int,
+        end_line: int,
+        urn: str | None = None,
+    ) -> FunctionSpan:
+        """Create a FunctionSpan from legacy FunctionSpanData arguments."""
+        return _create_function_span_data(
+            goid=goid,
+            rel_path=rel_path,
+            qualname=qualname,
+            start_line=start_line,
+            end_line=end_line,
+            urn=urn,
+        )
 
-    @property
-    def local_name(self) -> str:
-        """Extract the local (unqualified) function name.
 
-        Returns
-        -------
-        str
-            Local function name without module/class prefix.
-        """
-        return self.qualname.rsplit(".", maxsplit=1)[-1]
+# Deprecated alias - use FunctionSpan directly
+FunctionSpanData = _FunctionSpanDataCompat
+
+
+# Type alias for backward compatibility in type annotations
+FunctionSpanDataType = FunctionSpan
 
 
 @runtime_checkable
 class CatalogPort(Protocol):
     """Protocol for function catalog operations.
 
+    .. deprecated:: 5.0.0
+        Use CatalogService from ``codeintel.graphs.catalog`` directly.
+        The protocol is retained for backward compatibility but new code should
+        use CatalogService directly.
+
     Implementations provide access to function spans, GOID lookups,
     and module mappings without exposing storage details.
     """
 
     @property
-    def function_spans(self) -> Sequence[FunctionSpanData]:
+    def function_spans(self) -> Sequence[FunctionSpan]:
         """All function spans in the catalog.
 
         Returns
         -------
-        Sequence[FunctionSpanData]
+        Sequence[FunctionSpan]
             All indexed function spans.
         """
         ...
@@ -93,7 +140,7 @@ class CatalogPort(Protocol):
         """
         ...
 
-    def spans_for_path(self, rel_path: str) -> Sequence[FunctionSpanData]:
+    def spans_for_path(self, rel_path: str) -> Sequence[FunctionSpan]:
         """Get function spans for a specific file.
 
         Parameters
@@ -103,7 +150,7 @@ class CatalogPort(Protocol):
 
         Returns
         -------
-        Sequence[FunctionSpanData]
+        Sequence[FunctionSpan]
             Function spans in the file.
         """
         ...
@@ -168,5 +215,7 @@ class CatalogPort(Protocol):
 
 __all__ = [
     "CatalogPort",
-    "FunctionSpanData",
+    "FunctionSpan",  # Re-export for convenience
+    "FunctionSpanData",  # Deprecated alias
+    "FunctionSpanDataType",  # Type alias for annotations
 ]

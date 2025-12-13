@@ -18,6 +18,10 @@ from codeintel.analytics.compute.row_builders import (
     ModuleMetricExtInputs,
     build_module_metric_ext_rows,
 )
+from codeintel.analytics.graphs.constants import (
+    CENTRALITY_SAMPLE_LIMIT,
+    RICH_CLUB_PERCENTILE,
+)
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
 from codeintel.analytics.runtime import (
     GraphRuntime,
@@ -51,9 +55,6 @@ if TYPE_CHECKING:
     from codeintel.config.datasets import GraphMetricsModulesExtRow
     from codeintel.graphs.engine import GraphEngine
     from codeintel.storage.gateway import StorageGateway
-
-CENTRALITY_SAMPLE_LIMIT = 500
-RICH_CLUB_PERCENTILE = 0.1
 
 
 @dataclass(frozen=True)

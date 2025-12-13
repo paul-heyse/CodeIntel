@@ -1,34 +1,31 @@
 """Unified function catalog for graph builders.
 
-This module consolidates function span indexing, function metadata catalog,
-and the catalog service into a single cohesive module.
+This module consolidates function span indexing and the catalog service
+into a single cohesive module.
 
 Key Components
 --------------
-- FunctionSpan: Normalized function metadata (GOID, path, qualname, lines)
+- FunctionSpan: Unified function metadata (GOID, path, qualname, lines, optional URN)
 - FunctionSpanIndex: Lookup structure for resolving GOIDs from file spans
-- FunctionMeta: Extended function metadata including URN
 - FunctionCatalog: Centralized access to spans, URNs, and module mappings
 - FunctionCatalogProvider: Protocol for catalog access (DI)
-- FunctionCatalogService: Service wrapper for catalog operations
+- CatalogService: Unified service for graphs and analytics (replaces FunctionCatalogService)
 
 Hexagonal Architecture Integration
 ----------------------------------
 This module is the production implementation of function catalog functionality.
-It integrates with the hexagonal architecture via:
+CatalogService implements both the FunctionCatalogProvider protocol and the
+resource provider pattern, enabling dependency injection and testability.
 
-- resources/catalog.py: CatalogResource wraps FunctionCatalog for DI
-- ports/catalog.py: CatalogPort defines the abstraction protocol
-- adapters/catalog_adapter.py: CatalogAdapter provides port implementation
-
-For plugin execution, prefer using CatalogResource via ctx.require() rather
-than direct imports, enabling dependency injection and testability.
+For plugin execution, prefer using CatalogService via ctx.require() rather
+than direct imports.
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.helpers.module_index import load_module_map
@@ -36,7 +33,7 @@ from codeintel.storage.ibis_types import filter_by, ibis_bool
 
 if TYPE_CHECKING:
     from collections.abc import Callable as TypingCallable
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping, Sequence
 
     import pandas as pd
 
@@ -45,13 +42,41 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class FunctionSpan:
-    """Normalized function metadata used by graph builders."""
+    """Unified function span representation with optional URN.
+
+    Attributes
+    ----------
+    goid
+        Global object identifier (128-bit hash).
+    rel_path
+        Relative file path within the repository.
+    qualname
+        Fully qualified name of the function.
+    start_line
+        Starting line number (1-indexed).
+    end_line
+        Ending line number (1-indexed).
+    urn
+        Optional URN identifier. Populated when loaded via catalog.
+    """
 
     goid: int
     rel_path: str
     qualname: str
     start_line: int
     end_line: int
+    urn: str | None = None
+
+    @property
+    def local_name(self) -> str:
+        """Extract the local (unqualified) function name.
+
+        Returns
+        -------
+        str
+            Local function name without module/class prefix.
+        """
+        return self.qualname.rsplit(".", maxsplit=1)[-1]
 
 
 class FunctionSpanIndex:
@@ -236,16 +261,67 @@ def load_function_index(gateway: StorageGateway, *, repo: str, commit: str) -> F
     return FunctionSpanIndex(load_function_spans(gateway, repo=repo, commit=commit))
 
 
-@dataclass(frozen=True)
-class FunctionMeta:
-    """Function metadata used across graph builders."""
+def _create_function_meta(**kwargs: object) -> FunctionSpan:
+    """Create a FunctionSpan from legacy FunctionMeta arguments.
 
-    goid: int
-    urn: str
-    rel_path: str
-    qualname: str
-    start_line: int
-    end_line: int
+    .. deprecated:: 5.0.0
+        Use FunctionSpan directly with urn parameter.
+
+    Parameters
+    ----------
+    **kwargs
+        Arguments matching FunctionMeta fields (goid, urn, rel_path, qualname,
+        start_line, end_line).
+
+    Returns
+    -------
+    FunctionSpan
+        Unified function span.
+    """
+    warnings.warn(
+        "FunctionMeta is deprecated. Use FunctionSpan with urn parameter instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return FunctionSpan(
+        goid=int(kwargs["goid"]),  # type: ignore[arg-type]
+        rel_path=str(kwargs["rel_path"]),
+        qualname=str(kwargs["qualname"]),
+        start_line=int(kwargs["start_line"]),  # type: ignore[arg-type]
+        end_line=int(kwargs["end_line"]),  # type: ignore[arg-type]
+        urn=str(kwargs["urn"]),
+    )
+
+
+class _FunctionMetaCompat:
+    """Compatibility class providing FunctionMeta-like construction.
+
+    .. deprecated:: 5.0.0
+        Use FunctionSpan directly with urn parameter.
+    """
+
+    def __new__(  # noqa: PLR0913, PLR0917 - matches legacy dataclass signature
+        cls,
+        goid: int,
+        urn: str,
+        rel_path: str,
+        qualname: str,
+        start_line: int,
+        end_line: int,
+    ) -> FunctionSpan:
+        """Create a FunctionSpan from legacy FunctionMeta arguments."""
+        return _create_function_meta(
+            goid=goid,
+            urn=urn,
+            rel_path=rel_path,
+            qualname=qualname,
+            start_line=start_line,
+            end_line=end_line,
+        )
+
+
+# Deprecated alias - use FunctionSpan directly
+FunctionMeta = _FunctionMetaCompat
 
 
 class FunctionCatalog:
@@ -254,37 +330,28 @@ class FunctionCatalog:
     def __init__(
         self,
         *,
-        functions: Iterable[FunctionMeta],
+        functions: Iterable[FunctionSpan],
         module_by_path: dict[str, str],
     ) -> None:
         """
-        Initialize the catalog from function metadata and module mapping.
+        Initialize the catalog from function spans and module mapping.
 
         Parameters
         ----------
-        functions : Iterable[FunctionMeta]
-            Function metadata to catalog.
+        functions : Iterable[FunctionSpan]
+            Function spans to catalog (with optional URN populated).
         module_by_path : dict[str, str]
             Mapping of file paths to module names.
         """
-        self._functions: list[FunctionMeta] = list(functions)
-        self._index = FunctionSpanIndex(
-            [
-                FunctionSpan(
-                    goid=fn.goid,
-                    rel_path=fn.rel_path,
-                    qualname=fn.qualname,
-                    start_line=fn.start_line,
-                    end_line=fn.end_line,
-                )
-                for fn in self._functions
-            ]
-        )
-        self._urn_by_goid = {fn.goid: fn.urn for fn in self._functions}
+        self._functions: list[FunctionSpan] = list(functions)
+        self._index = FunctionSpanIndex(self._functions)
+        self._urn_by_goid = {
+            fn.goid: fn.urn for fn in self._functions if fn.urn is not None
+        }
         self._module_by_path = {
             normalize_rel_path(path): mod for path, mod in module_by_path.items()
         }
-        self._funcs_by_path: dict[str, list[FunctionMeta]] = {}
+        self._funcs_by_path: dict[str, list[FunctionSpan]] = {}
         for fn in self._functions:
             self._funcs_by_path.setdefault(fn.rel_path, []).append(fn)
 
@@ -309,14 +376,14 @@ class FunctionCatalog:
         return self._index
 
     @property
-    def functions_by_path(self) -> dict[str, list[FunctionMeta]]:
+    def functions_by_path(self) -> dict[str, list[FunctionSpan]]:
         """
         Return functions keyed by normalized path.
 
         Returns
         -------
-        dict[str, list[FunctionMeta]]
-            Mapping of relative path to function metadata.
+        dict[str, list[FunctionSpan]]
+            Mapping of relative path to function spans.
         """
         return self._funcs_by_path
 
@@ -364,7 +431,7 @@ def load_function_catalog(
     commit: str,
 ) -> FunctionCatalog:
     """
-    Load function metadata and module map for a repo snapshot via a gateway.
+    Load function spans and module map for a repo snapshot via a gateway.
 
     Returns
     -------
@@ -386,7 +453,7 @@ def load_function_catalog(
     )
     rows = df.to_dict(orient="records")
 
-    functions: list[FunctionMeta] = []
+    functions: list[FunctionSpan] = []
     for row in rows:
         start_line = row["start_line"]
         end_line = row["end_line"]
@@ -394,13 +461,13 @@ def load_function_catalog(
             continue
         end_val = int(end_line) if end_line is not None else int(start_line)
         functions.append(
-            FunctionMeta(
+            FunctionSpan(
                 goid=int(row["goid_h128"]),
-                urn=str(row["urn"]),
                 rel_path=normalize_rel_path(row["rel_path"]),
                 qualname=str(row["qualname"]),
                 start_line=int(start_line),
                 end_line=end_val,
+                urn=str(row["urn"]),
             )
         )
 
@@ -459,35 +526,74 @@ class FunctionCatalogProvider(Protocol):
 
 
 @dataclass
-class FunctionCatalogService(FunctionCatalogProvider):
-    """Typed wrapper around FunctionCatalog construction and access."""
+class CatalogService(FunctionCatalogProvider):
+    """Unified catalog access for graphs and analytics.
+
+    This class consolidates the functionality of the former FunctionCatalogService
+    and CatalogResource into a single service that implements:
+
+    - FunctionCatalogProvider protocol for analytics
+    - ResourceProvider pattern for dependency injection
+    - CatalogPort-equivalent methods for graph plugins
+
+    Attributes
+    ----------
+    RESOURCE_NAME
+        Resource identifier for DI registration.
+    _catalog
+        Underlying function catalog.
+    """
+
+    RESOURCE_NAME: ClassVar[str] = "catalog"
 
     _catalog: FunctionCatalog
+    _cached_spans: tuple[FunctionSpan, ...] | None = None
 
     @classmethod
-    def from_db(cls, gateway: StorageGateway, *, repo: str, commit: str) -> FunctionCatalogService:
+    def from_db(cls, gateway: StorageGateway, *, repo: str, commit: str) -> CatalogService:
         """
         Load catalog state for a repo snapshot from a storage gateway.
 
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        repo
+            Repository identifier.
+        commit
+            Commit hash.
+
         Returns
         -------
-        FunctionCatalogService
+        CatalogService
             Service wrapping the loaded catalog.
         """
         return cls(load_function_catalog(gateway, repo=repo, commit=commit))
 
-    def get(self) -> FunctionCatalogService:
-        """Return self to satisfy LazyResource-like interface.
-
-        This allows FunctionCatalogService to be used in contexts that expect
-        a .get() method (e.g., analytics CatalogProvider wrapper).
+    def get(self) -> CatalogService:
+        """Return self to satisfy ResourceProvider interface.
 
         Returns
         -------
-        FunctionCatalogService
+        CatalogService
             Self reference.
         """
         return self
+
+    def invalidate(self) -> None:
+        """Invalidate cached data."""
+        self._cached_spans = None
+
+    @property
+    def resource_name(self) -> str:
+        """Resource identifier.
+
+        Returns
+        -------
+        str
+            Resource name.
+        """
+        return self.RESOURCE_NAME
 
     def catalog(self) -> FunctionCatalog:
         """Return the underlying catalog instance.
@@ -499,31 +605,90 @@ class FunctionCatalogService(FunctionCatalogProvider):
         """
         return self._catalog
 
-    def local_name_map(self, rel_path: str) -> dict[str, int]:
-        """
-        Return local name map for a given relative path.
+    @property
+    def function_spans(self) -> Sequence[FunctionSpan]:
+        """All function spans in the catalog.
 
         Returns
         -------
-        dict[str, int]
-            Mapping of local names to GOIDs for the path.
+        Sequence[FunctionSpan]
+            All indexed function spans.
+        """
+        if self._cached_spans is None:
+            self._cached_spans = tuple(self._catalog.function_spans)
+        return self._cached_spans
+
+    @property
+    def paths(self) -> Sequence[str]:
+        """All file paths with indexed functions.
+
+        Returns
+        -------
+        Sequence[str]
+            Unique file paths containing functions.
+        """
+        return tuple(self._catalog.function_index.paths())
+
+    @property
+    def module_by_path(self) -> Mapping[str, str]:
+        """Mapping of file paths to module names.
+
+        Returns
+        -------
+        Mapping[str, str]
+            File path to module name mapping.
+        """
+        return self._catalog.module_by_path
+
+    def spans_for_path(self, rel_path: str) -> Sequence[FunctionSpan]:
+        """Get function spans for a specific file.
+
+        Parameters
+        ----------
+        rel_path
+            Relative file path.
+
+        Returns
+        -------
+        Sequence[FunctionSpan]
+            Function spans in the file.
+        """
+        return tuple(self._catalog.function_index.spans_for_path(rel_path))
+
+    def local_name_map(self, rel_path: str) -> Mapping[str, int]:
+        """Get local name to GOID mapping for a file.
+
+        Parameters
+        ----------
+        rel_path
+            Relative file path.
+
+        Returns
+        -------
+        Mapping[str, int]
+            Local function name to GOID mapping.
         """
         return self._catalog.function_index.local_name_map(rel_path)
 
-    def functions_by_path(self) -> dict[str, list[FunctionMeta]]:
+    def get_functions_by_path(self) -> dict[str, list[FunctionSpan]]:
         """
         Return functions keyed by path.
 
         Returns
         -------
-        dict[str, list[FunctionMeta]]
-            Mapping of normalized path to function metadata.
+        dict[str, list[FunctionSpan]]
+            Mapping of normalized path to function spans.
         """
         return self._catalog.functions_by_path
 
     def urn_for_goid(self, goid: int) -> str | None:
         """
         Return URN for GOID when present.
+
+        Parameters
+        ----------
+        goid
+            Global object identifier.
 
         Returns
         -------
@@ -533,10 +698,25 @@ class FunctionCatalogService(FunctionCatalogProvider):
         return self._catalog.urn_for_goid(goid)
 
     def lookup_goid(
-        self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
+        self,
+        rel_path: str,
+        start_line: int,
+        end_line: int | None = None,
+        qualname: str | None = None,
     ) -> int | None:
         """
         Resolve a GOID using span and optional qualname.
+
+        Parameters
+        ----------
+        rel_path
+            Relative file path.
+        start_line
+            Starting line number.
+        end_line
+            Optional ending line number.
+        qualname
+            Optional qualified name for disambiguation.
 
         Returns
         -------
@@ -548,6 +728,11 @@ class FunctionCatalogService(FunctionCatalogProvider):
     def module_for_path(self, rel_path: str) -> str | None:
         """
         Return module name for a given relative path.
+
+        Parameters
+        ----------
+        rel_path
+            Relative file path.
 
         Returns
         -------
@@ -574,11 +759,40 @@ class FunctionCatalogService(FunctionCatalogProvider):
         return self._catalog.function_spans
 
 
+def FunctionCatalogService(catalog: FunctionCatalog) -> CatalogService:  # noqa: N802
+    """Create a CatalogService from a FunctionCatalog.
+
+    .. deprecated:: 5.0.0
+        Use CatalogService directly.
+
+    Parameters
+    ----------
+    catalog
+        Function catalog to wrap.
+
+    Returns
+    -------
+    CatalogService
+        Unified catalog service.
+    """
+    warnings.warn(
+        "FunctionCatalogService is deprecated. Use CatalogService directly.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return CatalogService(catalog)
+
+
+# Keep a type alias for backward compatibility in type annotations
+FunctionCatalogServiceType = CatalogService
+
+
 __all__ = [
+    "CatalogService",
     "FunctionCatalog",
     "FunctionCatalogProvider",
-    "FunctionCatalogService",
-    "FunctionMeta",
+    "FunctionCatalogService",  # Deprecated alias for CatalogService
+    "FunctionMeta",  # Deprecated alias for FunctionSpan
     "FunctionSpan",
     "FunctionSpanIndex",
     "load_function_catalog",

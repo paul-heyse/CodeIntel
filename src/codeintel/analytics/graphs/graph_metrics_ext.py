@@ -18,6 +18,10 @@ from codeintel.analytics.compute.row_builders import (
     FunctionMetricExtInputs,
     build_function_metric_ext_rows,
 )
+from codeintel.analytics.graphs.constants import (
+    CENTRALITY_SAMPLE_LIMIT,
+    EIGEN_MAX_ITER,
+)
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
 from codeintel.analytics.runtime import (
     GraphRuntime,
@@ -49,9 +53,6 @@ if TYPE_CHECKING:
     from codeintel.config.datasets import GraphMetricsFunctionsExtRow
     from codeintel.graphs.engine import GraphEngine
     from codeintel.storage.gateway import StorageGateway
-
-CENTRALITY_SAMPLE_LIMIT = 500
-EIGEN_MAX_ITER = 200
 
 
 @dataclass(frozen=True)

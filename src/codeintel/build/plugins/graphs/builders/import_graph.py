@@ -20,21 +20,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins.graphs.builders.import_graph_options import ImportGraphOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import imports as imports_compute
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.data_models import ImportEdgeRow, ImportModuleRow
-    from codeintel.core.plugins.execution.options import PluginOptionsResolver
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -250,7 +245,7 @@ def _filter_paths_by_scope(
     return {path: module for path, module in module_by_path.items() if path.startswith(prefixes)}
 
 
-class ImportGraphPlugin(TargetPlugin):
+class ImportGraphPlugin(MetadataPlugin):
     """Build module-level import graph.
 
     This plugin performs full import graph construction:
@@ -265,46 +260,7 @@ class ImportGraphPlugin(TargetPlugin):
     - graph.import_graph_edges: Import relationships
     """
 
-    plugin_name: ClassVar[str] = "import_graph"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Build module-level import graph."
     _core_metadata: ClassVar[CorePluginMetadata] = IMPORT_GRAPH_METADATA
-
-    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
-        self._options_resolver = options_resolver
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return full core metadata."""
-        return self._core_metadata
-
-    def resolve_options(
-        self,
-        *,
-        dynamic_overrides: Mapping[str, Any] | None = None,
-    ) -> ImportGraphOptions:
-        """Resolve typed options from configuration.
-
-        Returns
-        -------
-        ImportGraphOptions
-            Resolved options instance.
-        """
-        if self._options_resolver is None:
-            if dynamic_overrides:
-                return ImportGraphOptions(**dynamic_overrides)
-            return ImportGraphOptions()
-
-        return self._options_resolver.get_options(
-            self._core_metadata,
-            ImportGraphOptions,
-            dynamic_overrides=dynamic_overrides,
-        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute import graph construction.
@@ -320,7 +276,7 @@ class ImportGraphPlugin(TargetPlugin):
             Execution result with row counts.
         """
         _ = self
-        opts = self.resolve_options()
+        opts = self.resolve_options(ImportGraphOptions)
         gateway, repo, commit = ctx.gateway, ctx.snapshot.repo, ctx.snapshot.commit
 
         try:

@@ -13,13 +13,11 @@ from codeintel.analytics.functions.function_effects import (
     FunctionEffectsOptions,
 )
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 FUNCTION_EFFECTS_METADATA = CorePluginMetadata(
@@ -42,7 +40,7 @@ FUNCTION_EFFECTS_METADATA = CorePluginMetadata(
 )
 
 
-class FunctionEffectsPlugin(TargetPlugin):
+class FunctionEffectsPlugin(MetadataPlugin):
     """Classify side effects and purity for functions.
 
     Analyzes functions to classify:
@@ -56,20 +54,7 @@ class FunctionEffectsPlugin(TargetPlugin):
     - analytics.function_effects_evidence: Effect evidence
     """
 
-    plugin_name: ClassVar[str] = "function_effects"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Classify side effects and purity for functions."
     _core_metadata: ClassVar[CorePluginMetadata] = FUNCTION_EFFECTS_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

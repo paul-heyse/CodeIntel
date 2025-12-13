@@ -19,13 +19,18 @@ Example
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, Protocol, TypeVar, cast, runtime_checkable
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from typing import Any
+
     from codeintel.build.context import TargetExecutionContext, TargetResult
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
     from codeintel.core.plugins.types.metadata import CorePluginMetadata
     from codeintel.core.plugins.types.protocol import PluginMetadata
+
+TOptions = TypeVar("TOptions")
 
 __all__ = [
     "MetadataPlugin",
@@ -250,3 +255,50 @@ class MetadataPlugin(TargetPlugin, ABC):
             Options resolver or None if not configured.
         """
         return self._options_resolver
+
+    def resolve_options(
+        self,
+        options_type: type[TOptions] | None = None,
+        *,
+        dynamic_overrides: Mapping[str, Any] | None = None,
+    ) -> TOptions:
+        """Resolve typed options from configuration.
+
+        Use the options_model from _core_metadata if options_type is not
+        provided. Fall back to creating a default instance if no resolver.
+
+        Parameters
+        ----------
+        options_type
+            Optional explicit options type. If None, uses _core_metadata.options_model.
+        dynamic_overrides
+            Runtime overrides to merge into options.
+
+        Returns
+        -------
+        TOptions
+            Resolved options instance.
+
+        Raises
+        ------
+        ValueError
+            If no options type is available (neither passed nor in metadata).
+        """
+        opts_cls = options_type or self._core_metadata.options_model
+        if opts_cls is None:
+            msg = f"No options type for plugin {self.plugin_name}"
+            raise ValueError(msg)
+
+        if self._options_resolver is None:
+            if dynamic_overrides:
+                return opts_cls(**dynamic_overrides)  # type: ignore[return-value]
+            return opts_cls()  # type: ignore[return-value]
+
+        return cast(
+            "TOptions",
+            self._options_resolver.get_options(
+                self._core_metadata,
+                opts_cls,
+                dynamic_overrides=dynamic_overrides,
+            ),
+        )

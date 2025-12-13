@@ -11,13 +11,11 @@ from typing import TYPE_CHECKING, ClassVar
 from codeintel.analytics.entrypoints import EntrypointBuildInputs, build_entrypoints
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +34,7 @@ ENTRYPOINTS_METADATA = CorePluginMetadata(
 )
 
 
-class EntrypointsPlugin(TargetPlugin):
+class EntrypointsPlugin(MetadataPlugin):
     """Detect HTTP/CLI/job entrypoints and map them to handlers and tests.
 
     Identifies and maps:
@@ -51,22 +49,7 @@ class EntrypointsPlugin(TargetPlugin):
     - analytics.entrypoint_tests: Tests covering entrypoints
     """
 
-    plugin_name: ClassVar[str] = "entrypoints"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Detect HTTP/CLI/job entrypoints and map them to handlers and tests."
-    )
     _core_metadata: ClassVar[CorePluginMetadata] = ENTRYPOINTS_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the entrypoints detection.

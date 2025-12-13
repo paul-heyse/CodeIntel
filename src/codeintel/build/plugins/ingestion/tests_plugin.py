@@ -8,12 +8,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins.ingestion.helpers import get_module_paths, paths_to_modules
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.adapters import DuckDBStorageAdapter
 from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
 
@@ -21,7 +19,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.execution.options import PluginOptionsResolver
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +39,7 @@ TESTS_INGEST_METADATA = CorePluginMetadata(
 )
 
 
-class TestsIngestPlugin(TargetPlugin):
+class TestsIngestPlugin(MetadataPlugin):
     """Ingest pytest JSON reports.
 
     This plugin reads pytest's JSON report output and extracts
@@ -53,23 +50,7 @@ class TestsIngestPlugin(TargetPlugin):
     - analytics.test_results: Test execution results
     """
 
-    plugin_name: ClassVar[str] = "tests_ingest"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Ingest pytest JSON reports."
     _core_metadata: ClassVar[CorePluginMetadata] = TESTS_INGEST_METADATA
-
-    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
-        self._options_resolver = options_resolver
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata definition."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute tests ingestion.

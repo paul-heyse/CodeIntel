@@ -11,13 +11,11 @@ from typing import TYPE_CHECKING, ClassVar
 from codeintel.analytics.functions import compute_function_contracts
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +34,7 @@ FUNCTION_CONTRACTS_METADATA = CorePluginMetadata(
 )
 
 
-class FunctionContractsPlugin(TargetPlugin):
+class FunctionContractsPlugin(MetadataPlugin):
     """Infer pre/postconditions and nullability contracts for functions.
 
     Analyzes functions to infer:
@@ -49,22 +47,7 @@ class FunctionContractsPlugin(TargetPlugin):
     - analytics.function_contracts: Contract information
     """
 
-    plugin_name: ClassVar[str] = "function_contracts"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Infer pre/postconditions and nullability contracts for functions."
-    )
     _core_metadata: ClassVar[CorePluginMetadata] = FUNCTION_CONTRACTS_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

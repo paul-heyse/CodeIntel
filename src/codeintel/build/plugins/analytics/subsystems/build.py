@@ -9,13 +9,11 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.subsystems import build_subsystems
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 SUBSYSTEMS_METADATA = CorePluginMetadata(
@@ -40,7 +38,7 @@ SUBSYSTEMS_METADATA = CorePluginMetadata(
 )
 
 
-class SubsystemsPlugin(TargetPlugin):
+class SubsystemsPlugin(MetadataPlugin):
     """Infer subsystems from module coupling and risk signals.
 
     Detects and builds:
@@ -55,20 +53,7 @@ class SubsystemsPlugin(TargetPlugin):
     - analytics.subsystem_functions: Function to subsystem associations
     """
 
-    plugin_name: ClassVar[str] = "subsystems"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Infer subsystems from module coupling and risk signals."
     _core_metadata: ClassVar[CorePluginMetadata] = SUBSYSTEMS_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

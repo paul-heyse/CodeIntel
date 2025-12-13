@@ -9,18 +9,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.execution.options import PluginOptionsResolver
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
@@ -42,7 +39,7 @@ CONFIG_INGEST_METADATA = CorePluginMetadata(
 )
 
 
-class ConfigIngestPlugin(TargetPlugin):
+class ConfigIngestPlugin(MetadataPlugin):
     """Flatten configuration files into config_values table.
 
     This plugin reads various configuration files (YAML, JSON, TOML, INI)
@@ -53,23 +50,7 @@ class ConfigIngestPlugin(TargetPlugin):
     - core.config_values: Flattened config key-value pairs
     """
 
-    plugin_name: ClassVar[str] = "config_ingest"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Flatten configuration files into config_values table."
     _core_metadata: ClassVar[CorePluginMetadata] = CONFIG_INGEST_METADATA
-
-    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
-        self._options_resolver = options_resolver
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata definition."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute config ingestion.

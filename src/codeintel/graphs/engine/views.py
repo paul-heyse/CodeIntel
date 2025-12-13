@@ -596,9 +596,3 @@ __all__ = [
     "normalize_decimal",
     "parse_reference_modules",
 ]
-
-
-_as_int = as_int
-_normalize_decimal = normalize_decimal
-_module_attrs_from_row = module_attrs_from_row
-_parse_reference_modules = parse_reference_modules

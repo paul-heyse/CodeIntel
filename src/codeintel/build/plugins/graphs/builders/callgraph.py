@@ -23,7 +23,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
@@ -32,8 +31,7 @@ import ibis
 import libcst as cst
 
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins.graphs.builders.callgraph_options import CallGraphOptions
 from codeintel.config.datasets import (
     CallGraphNodeRow,
@@ -41,7 +39,6 @@ from codeintel.config.datasets import (
     call_graph_node_to_tuple,
 )
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.catalog import (
     load_function_index,
 )
@@ -57,13 +54,10 @@ from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.build.context import TargetExecutionContext
     from codeintel.config.datasets import (
         CallGraphEdgeRow,
     )
-    from codeintel.core.plugins.execution.options import PluginOptionsResolver
     from codeintel.graphs.catalog import (
         FunctionSpanIndex,
     )
@@ -548,7 +542,7 @@ def _filter_paths_by_scope(paths: list[str], scope_paths: list[str] | None) -> l
     return [path for path in paths if path.startswith(prefixes)]
 
 
-class CallGraphPlugin(TargetPlugin):
+class CallGraphPlugin(MetadataPlugin):
     """Build call graph nodes and edges.
 
     This plugin performs full call graph construction:
@@ -563,58 +557,7 @@ class CallGraphPlugin(TargetPlugin):
     - graph.call_graph_edges: Call graph edges
     """
 
-    plugin_name: ClassVar[str] = "callgraph"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Build call graph nodes and edges."
     _core_metadata: ClassVar[CorePluginMetadata] = CALLGRAPH_METADATA
-
-    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
-        self._options_resolver = options_resolver
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata.
-
-        Returns
-        -------
-        PluginMetadata
-            Protocol-compatible metadata.
-        """
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return full core metadata.
-
-        Returns
-        -------
-        CorePluginMetadata
-            Canonical metadata definition.
-        """
-        return self._core_metadata
-
-    def resolve_options(
-        self,
-        *,
-        dynamic_overrides: Mapping[str, Any] | None = None,
-    ) -> CallGraphOptions:
-        """Resolve typed options from configuration.
-
-        Returns
-        -------
-        CallGraphOptions
-            Resolved options instance.
-        """
-        if self._options_resolver is None:
-            if dynamic_overrides:
-                return CallGraphOptions(**dynamic_overrides)
-            return CallGraphOptions()
-
-        return self._options_resolver.get_options(
-            self._core_metadata,
-            CallGraphOptions,
-            dynamic_overrides=dynamic_overrides,
-        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute call graph construction.
@@ -630,7 +573,7 @@ class CallGraphPlugin(TargetPlugin):
             Execution result with row counts.
         """
         _ = self
-        opts = self.resolve_options()
+        opts = self.resolve_options(CallGraphOptions)
         snapshot = ctx.snapshot
         gateway, repo, commit = ctx.gateway, snapshot.repo, snapshot.commit
 

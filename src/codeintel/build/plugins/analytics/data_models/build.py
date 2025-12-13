@@ -9,13 +9,11 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.data_models import compute_data_models
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 DATA_MODELS_METADATA = CorePluginMetadata(
@@ -40,7 +38,7 @@ DATA_MODELS_METADATA = CorePluginMetadata(
 )
 
 
-class DataModelsPlugin(TargetPlugin):
+class DataModelsPlugin(MetadataPlugin):
     """Extract structured data models from class definitions.
 
     Extracts from class definitions:
@@ -53,20 +51,7 @@ class DataModelsPlugin(TargetPlugin):
     - analytics.data_models: Extracted data models
     """
 
-    plugin_name: ClassVar[str] = "data_models"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Extract structured data models from class definitions."
     _core_metadata: ClassVar[CorePluginMetadata] = DATA_MODELS_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

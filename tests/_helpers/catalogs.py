@@ -5,14 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
+from codeintel.graphs.catalog import CatalogService, FunctionCatalog
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.catalog import FunctionMeta
+    from codeintel.graphs.catalog import FunctionSpan
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 
@@ -25,7 +25,7 @@ class CatalogCtx(Protocol):
     commit: str
 
 
-CatalogLike = FunctionCatalog | FunctionCatalogService | MockFunctionCatalog
+CatalogLike = FunctionCatalog | CatalogService | MockFunctionCatalog
 CatalogInput = CatalogLike | object
 type CatalogCtxLike = CatalogCtx | TestContext
 
@@ -50,7 +50,7 @@ def _normalize_catalog(catalog: CatalogInput) -> FunctionCatalog | MockFunctionC
     """
     if isinstance(catalog, (FunctionCatalog, MockFunctionCatalog)):
         return catalog
-    if isinstance(catalog, FunctionCatalogService):
+    if isinstance(catalog, CatalogService):
         return catalog.catalog()
     maybe = getattr(catalog, "catalog", None)
     if maybe is not None:
@@ -66,13 +66,13 @@ def _normalize_catalog(catalog: CatalogInput) -> FunctionCatalog | MockFunctionC
     raise TypeError(message)
 
 
-def _iter_functions(catalog: FunctionCatalog | MockFunctionCatalog) -> Iterable[FunctionMeta]:
-    """Yield FunctionMeta entries from a catalog using public accessors when possible.
+def _iter_functions(catalog: FunctionCatalog | MockFunctionCatalog) -> Iterable[FunctionSpan]:
+    """Yield FunctionSpan entries from a catalog using public accessors when possible.
 
     Yields
     ------
-    FunctionMeta
-        Function metadata entries from the provided catalog.
+    FunctionSpan
+        Function span entries from the provided catalog.
     """
     funcs_by_path = getattr(catalog, "functions_by_path", {})
     if funcs_by_path:

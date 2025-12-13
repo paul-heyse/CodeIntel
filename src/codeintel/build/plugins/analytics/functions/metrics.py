@@ -7,24 +7,19 @@ It is schema-aware and validates output data against registered Pandera schemas.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.functions import (
     FunctionAnalyticsOptions,
     compute_function_metrics_and_types,
 )
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.execution.options import PluginOptionsResolver
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +48,7 @@ FUNCTION_METRICS_METADATA = CorePluginMetadata(
 )
 
 
-class FunctionMetricsPlugin(TargetPlugin):
+class FunctionMetricsPlugin(MetadataPlugin):
     """Compute function complexity and type coverage metrics.
 
     Output Tables
@@ -62,58 +57,7 @@ class FunctionMetricsPlugin(TargetPlugin):
     - analytics.function_types: Type annotation data
     """
 
-    plugin_name: ClassVar[str] = "function_metrics"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Compute function complexity and type coverage metrics."
     _core_metadata: ClassVar[CorePluginMetadata] = FUNCTION_METRICS_METADATA
-
-    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
-        self._options_resolver = options_resolver
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata.
-
-        Returns
-        -------
-        PluginMetadata
-            Protocol-compatible metadata.
-        """
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return full core metadata.
-
-        Returns
-        -------
-        CorePluginMetadata
-            Canonical metadata definition.
-        """
-        return self._core_metadata
-
-    def resolve_options(
-        self,
-        *,
-        dynamic_overrides: Mapping[str, Any] | None = None,
-    ) -> FunctionAnalyticsOptions:
-        """Resolve typed options from configuration.
-
-        Returns
-        -------
-        FunctionAnalyticsOptions
-            Resolved options instance.
-        """
-        if self._options_resolver is None:
-            if dynamic_overrides:
-                return FunctionAnalyticsOptions(**dynamic_overrides)
-            return FunctionAnalyticsOptions()
-
-        return self._options_resolver.get_options(
-            self._core_metadata,
-            FunctionAnalyticsOptions,
-            dynamic_overrides=dynamic_overrides,
-        )
 
     def check_schemas_available(self) -> dict[str, bool]:
         """Check if output table schemas are registered.
@@ -159,10 +103,11 @@ class FunctionMetricsPlugin(TargetPlugin):
         missing_function_goids: set[int] = set()
 
         opts = self.resolve_options(
+            FunctionAnalyticsOptions,
             dynamic_overrides={
                 "function_ast_map": function_ast_map,
                 "missing_function_goids": missing_function_goids,
-            }
+            },
         )
 
         result = compute_function_metrics_and_types(ctx.gateway, ctx.snapshot, options=opts)

@@ -13,14 +13,12 @@ import networkx as nx
 from codeintel.analytics.graphs import compute_config_data_flow, compute_config_graph_metrics
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +49,7 @@ CONFIG_DATA_FLOW_METADATA = CorePluginMetadata(
 )
 
 
-class ConfigDataFlowPlugin(TargetPlugin):
+class ConfigDataFlowPlugin(MetadataPlugin):
     """Track configuration key usage and data flow at the function level.
 
     Tracks configuration usage:
@@ -68,22 +66,7 @@ class ConfigDataFlowPlugin(TargetPlugin):
     - analytics.config_projection_module_edges: Config module projection edges
     """
 
-    plugin_name: ClassVar[str] = "config_data_flow"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Track configuration key usage and data flow at the function level."
-    )
     _core_metadata: ClassVar[CorePluginMetadata] = CONFIG_DATA_FLOW_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

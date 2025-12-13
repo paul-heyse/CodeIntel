@@ -9,14 +9,12 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.analytics.testing.profiles.types import BehavioralLLMRunner
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 BEHAVIORAL_COVERAGE_METADATA = CorePluginMetadata(
@@ -33,7 +31,7 @@ BEHAVIORAL_COVERAGE_METADATA = CorePluginMetadata(
 )
 
 
-class BehavioralCoveragePlugin(TargetPlugin):
+class BehavioralCoveragePlugin(MetadataPlugin):
     """Assign heuristic behavior tags to tests (unit/integration/etc.).
 
     Classifies tests into categories:
@@ -46,22 +44,7 @@ class BehavioralCoveragePlugin(TargetPlugin):
     - analytics.behavioral_coverage: Test behavioral classifications
     """
 
-    plugin_name: ClassVar[str] = "behavioral_coverage"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Assign heuristic behavior tags to tests (unit/integration/etc.)."
-    )
     _core_metadata: ClassVar[CorePluginMetadata] = BEHAVIORAL_COVERAGE_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

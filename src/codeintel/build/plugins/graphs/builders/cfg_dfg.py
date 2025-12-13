@@ -24,22 +24,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins.graphs.builders.cfg_dfg_options import CfgDfgOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.catalog import load_function_index
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.data_models import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
-    from codeintel.core.plugins.execution.options import PluginOptionsResolver
     from codeintel.graphs.catalog import FunctionSpanIndex
     from codeintel.storage.gateway import StorageGateway
 
@@ -365,7 +360,7 @@ def _process_all_files(
     return blocks, cfg_edges, dfg_edges
 
 
-class CfgDfgPlugin(TargetPlugin):
+class CfgDfgPlugin(MetadataPlugin):
     """Build control flow and data flow graphs.
 
     This plugin performs full CFG/DFG construction:
@@ -381,46 +376,7 @@ class CfgDfgPlugin(TargetPlugin):
     - graph.dfg_edges: DFG data-flow edges
     """
 
-    plugin_name: ClassVar[str] = "cfg_dfg"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Build control flow and data flow graphs."
     _core_metadata: ClassVar[CorePluginMetadata] = CFG_DFG_METADATA
-
-    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
-        self._options_resolver = options_resolver
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return full core metadata."""
-        return self._core_metadata
-
-    def resolve_options(
-        self,
-        *,
-        dynamic_overrides: Mapping[str, Any] | None = None,
-    ) -> CfgDfgOptions:
-        """Resolve typed options from configuration.
-
-        Returns
-        -------
-        CfgDfgOptions
-            Resolved options instance.
-        """
-        if self._options_resolver is None:
-            if dynamic_overrides:
-                return CfgDfgOptions(**dynamic_overrides)
-            return CfgDfgOptions()
-
-        return self._options_resolver.get_options(
-            self._core_metadata,
-            CfgDfgOptions,
-            dynamic_overrides=dynamic_overrides,
-        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute CFG/DFG construction.
@@ -436,7 +392,7 @@ class CfgDfgPlugin(TargetPlugin):
             Execution result with row counts.
         """
         _ = self
-        opts = self.resolve_options()
+        opts = self.resolve_options(CfgDfgOptions)
         snapshot = ctx.snapshot
         gateway, repo, commit = ctx.gateway, snapshot.repo, snapshot.commit
 

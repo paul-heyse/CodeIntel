@@ -394,9 +394,3 @@ __all__ = [
     "resolve_callee",
     "resolve_via_scip",
 ]
-
-
-_attr_to_str = attr_to_str
-_record_import_aliases = record_import_aliases
-_record_import_from_aliases = record_import_from_aliases
-_resolve_base_module = resolve_base_module

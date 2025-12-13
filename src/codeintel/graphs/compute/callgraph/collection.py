@@ -123,9 +123,6 @@ def extract_class_name_from_call(func: cst.BaseExpression) -> str | None:
     return None
 
 
-_extract_class_name_from_call = extract_class_name_from_call
-
-
 FUNCTION_NODE_TYPES = (cst.FunctionDef, getattr(cst, "AsyncFunctionDef", cst.FunctionDef))
 
 

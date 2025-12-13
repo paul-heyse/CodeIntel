@@ -9,13 +9,11 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.subsystems import refresh_subsystem_caches
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
@@ -101,7 +99,7 @@ RISK_FACTORS_METADATA = CorePluginMetadata(
 )
 
 
-class RiskFactorsPlugin(TargetPlugin):
+class RiskFactorsPlugin(MetadataPlugin):
     """Aggregate analytics into per-function risk scores and levels.
 
     Computes per-function risk scores based on:
@@ -115,22 +113,7 @@ class RiskFactorsPlugin(TargetPlugin):
     - analytics.goid_risk_factors: Per-function risk scores
     """
 
-    plugin_name: ClassVar[str] = "risk_factors"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Aggregate analytics into per-function risk scores and levels."
-    )
     _core_metadata: ClassVar[CorePluginMetadata] = RISK_FACTORS_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

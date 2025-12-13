@@ -9,15 +9,13 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.analytics.semantic_roles import compute_semantic_roles
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 SEMANTIC_ROLES_METADATA = CorePluginMetadata(
@@ -34,7 +32,7 @@ SEMANTIC_ROLES_METADATA = CorePluginMetadata(
 )
 
 
-class SemanticRolesPlugin(TargetPlugin):
+class SemanticRolesPlugin(MetadataPlugin):
     """Compute semantic roles for functions and calls.
 
     Classifies functions and calls by:
@@ -47,20 +45,7 @@ class SemanticRolesPlugin(TargetPlugin):
     - analytics.semantic_roles: Semantic role classifications
     """
 
-    plugin_name: ClassVar[str] = "semantic_roles"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Compute semantic roles for functions and calls."
     _core_metadata: ClassVar[CorePluginMetadata] = SEMANTIC_ROLES_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.
