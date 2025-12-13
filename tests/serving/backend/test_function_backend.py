@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Final, cast
 import networkx as nx
 import pytest
 
-from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.config.graph_helpers import GraphRunScope
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.function_backend import FunctionQueryLayer
 from codeintel.serving.mcp import errors

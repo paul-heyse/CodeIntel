@@ -9,7 +9,6 @@ from codeintel.storage.ibis_types import and_predicates, count_gt, ilike, or_pre
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
-
     from codeintel.storage.repositories.base import RowDict
 
 

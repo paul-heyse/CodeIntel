@@ -753,17 +753,19 @@ def _run_prereqs_build(
     )
 
 
-def ensure_prereqs_for_http(
+def ensure_prereqs(
     *,
     op_id: str,
     config: ServingConfig,
     backend: QueryBackend,
+    transport: str = "http",
 ) -> HamiltonBuildResult | None:
-    """Ensure prerequisites are run for an HTTP operation if needed.
+    """
+    Ensure prerequisites are run for an operation if needed.
 
-    This function is called before serving an HTTP request. If auto-pipeline
-    is enabled and no previous successful run exists, it will execute the
-    necessary pipeline stages.
+    This function is called before serving HTTP requests or executing MCP tools.
+    If auto-pipeline is enabled and no previous successful run exists, it will
+    execute the necessary pipeline stages.
 
     Parameters
     ----------
@@ -773,6 +775,8 @@ def ensure_prereqs_for_http(
         Serving configuration.
     backend
         Query backend (must be DuckDBBackend for local_db mode).
+    transport
+        Transport type for logging ("http" or "mcp").
 
     Returns
     -------
@@ -781,14 +785,43 @@ def ensure_prereqs_for_http(
     """
     should_run, gateway, skip_reason = should_run_auto_pipeline(config, backend)
     if not should_run or gateway is None:
-        LOG.debug("auto_pipeline skipped: %s", skip_reason)
+        LOG.debug("auto_pipeline skipped (%s): %s", transport, skip_reason)
         return None
 
     if has_successful_prereq_run(gateway.runs, repo=config.repo, commit=config.commit, op_id=op_id):
-        LOG.debug("auto_pipeline skipped: prereqs already satisfied for %s", op_id)
+        LOG.debug("auto_pipeline skipped (%s): prereqs already satisfied for %s", transport, op_id)
         return None
 
     return _run_prereqs_build(op_id=op_id, config=config, gateway=gateway)
+
+
+def ensure_prereqs_for_http(
+    *,
+    op_id: str,
+    config: ServingConfig,
+    backend: QueryBackend,
+) -> HamiltonBuildResult | None:
+    """
+    Ensure prerequisites for HTTP.
+
+    .. deprecated::
+        Use :func:`ensure_prereqs` instead with ``transport="http"``.
+
+    Parameters
+    ----------
+    op_id
+        Operation identifier.
+    config
+        Serving configuration.
+    backend
+        Query backend.
+
+    Returns
+    -------
+    HamiltonBuildResult | None
+        The build result if a run was executed, None if skipped.
+    """
+    return ensure_prereqs(op_id=op_id, config=config, backend=backend, transport="http")
 
 
 def ensure_prereqs_for_mcp(
@@ -797,11 +830,11 @@ def ensure_prereqs_for_mcp(
     config: ServingConfig,
     backend: QueryBackend,
 ) -> HamiltonBuildResult | None:
-    """Ensure prerequisites are run for an MCP tool invocation if needed.
+    """
+    Ensure prerequisites for MCP.
 
-    This function is called before executing an MCP tool. If auto-pipeline
-    is enabled and no previous successful run exists, it will execute the
-    necessary pipeline stages.
+    .. deprecated::
+        Use :func:`ensure_prereqs` instead with ``transport="mcp"``.
 
     Parameters
     ----------
@@ -810,23 +843,14 @@ def ensure_prereqs_for_mcp(
     config
         Serving configuration.
     backend
-        Query backend (must be DuckDBBackend for local_db mode).
+        Query backend.
 
     Returns
     -------
     HamiltonBuildResult | None
         The build result if a run was executed, None if skipped.
     """
-    should_run, gateway, skip_reason = should_run_auto_pipeline(config, backend)
-    if not should_run or gateway is None:
-        LOG.debug("auto_pipeline skipped: %s", skip_reason)
-        return None
-
-    if has_successful_prereq_run(gateway.runs, repo=config.repo, commit=config.commit, op_id=op_id):
-        LOG.debug("auto_pipeline skipped: prereqs already satisfied for %s", op_id)
-        return None
-
-    return _run_prereqs_build(op_id=op_id, config=config, gateway=gateway)
+    return ensure_prereqs(op_id=op_id, config=config, backend=backend, transport="mcp")
 
 
 __all__ = [
@@ -839,6 +863,7 @@ __all__ = [
     "build_prereq_debug_info",
     "dataset_has_rows_for_snapshot",
     "diagnose_prereq_failure",
+    "ensure_prereqs",
     "ensure_prereqs_for_http",
     "ensure_prereqs_for_mcp",
     "get_required_table_keys_for_operation",

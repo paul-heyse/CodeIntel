@@ -23,18 +23,11 @@ For new code, prefer using transport adapters for unified query execution:
 - ``LocalTransport``: Adapter for local DuckDB queries
 - ``HttpTransport``: Adapter for HTTP API queries
 
-Abstract Base Classes
-~~~~~~~~~~~~~~~~~~~~~
-The ``base`` module defines abstract base classes using the template method
-pattern for query delegates:
+Response Conversion
+~~~~~~~~~~~~~~~~~~~
+Use the unified conversion helper for domain/transport model interop:
 
-- ``BaseFunctionQueries``: Interface for function-related queries
-- ``BaseProfileQueries``: Interface for profile/module queries
-- ``BaseSubsystemQueries``: Interface for subsystem queries
-- ``BaseDatasetQueries``: Interface for dataset queries
-
-These serve as documentation for the intended pattern. Future refactoring
-may migrate existing implementations to inherit from these bases.
+- ``to_domain_result``: Converts raw responses to domain models
 
 See ``codeintel.serving.domain_models`` for the full architecture contract.
 """
@@ -46,43 +39,34 @@ from typing import TYPE_CHECKING
 
 __all__ = [
     "BackendResource",
-    "BaseDatasetQueries",
-    "BaseFunctionQueries",
-    "BaseProfileQueries",
-    "BaseSubsystemQueries",
     "HttpQueryService",
     "HttpTransport",
     "LocalQueryService",
     "LocalTransport",
     "TransportAdapter",
     "build_backend_resource",
+    "to_domain_result",
 ]
 
 if TYPE_CHECKING:
     BackendResource: object
-    BaseDatasetQueries: object
-    BaseFunctionQueries: object
-    BaseProfileQueries: object
-    BaseSubsystemQueries: object
     HttpQueryService: object
     HttpTransport: object
     LocalQueryService: object
     LocalTransport: object
     TransportAdapter: object
     build_backend_resource: object
+    to_domain_result: object
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "BackendResource": ("codeintel.serving.bootstrap", "BackendResource"),
-    "BaseDatasetQueries": ("codeintel.serving.services.base", "BaseDatasetQueries"),
-    "BaseFunctionQueries": ("codeintel.serving.services.base", "BaseFunctionQueries"),
-    "BaseProfileQueries": ("codeintel.serving.services.base", "BaseProfileQueries"),
-    "BaseSubsystemQueries": ("codeintel.serving.services.base", "BaseSubsystemQueries"),
     "HttpQueryService": ("codeintel.serving.services.query_service", "HttpQueryService"),
     "HttpTransport": ("codeintel.serving.services.transport", "HttpTransport"),
     "LocalQueryService": ("codeintel.serving.services.query_service", "LocalQueryService"),
     "LocalTransport": ("codeintel.serving.services.transport", "LocalTransport"),
     "TransportAdapter": ("codeintel.serving.services.transport", "TransportAdapter"),
     "build_backend_resource": ("codeintel.serving.bootstrap", "build_backend_resource"),
+    "to_domain_result": ("codeintel.serving.services.conversion", "to_domain_result"),
 }
 
 

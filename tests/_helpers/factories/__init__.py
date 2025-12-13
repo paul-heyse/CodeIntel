@@ -41,7 +41,7 @@ from tests._helpers.factories.row_factories import (
     sample_module_profile_rows,
     sample_test_profile_rows,
 )
-from tests._helpers.factories.step_config_factories import make_step_config
+from tests._helpers.factories.step_config_factories import make_snapshot
 
 __all__ = [
     "GOLDEN_EXPECTED_COMMUNITIES",
@@ -66,7 +66,7 @@ __all__ = [
     "build_two_communities_graph",
     "make_graph_runtime_options",
     "make_snapshot",
-    "make_step_config",
+    "make_snapshot",
     "sample_behavioral_coverage_rows",
     "sample_file_profile_rows",
     "sample_function_profile_rows",

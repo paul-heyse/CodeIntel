@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/primitives.py
+# hypothesis_version: 6.148.7
+
+[300.0, '.tool_cache', 'BuildLayoutOptions', 'BuildPathOverrides', 'BuildPaths', 'Document Output', 'EntryPointToggles', 'GraphBackendConfig', 'GraphFeatureFlags', 'ScanProfiles', 'SnapshotInit', 'SnapshotRef', 'ToolBinaries', 'auto', 'build', 'build_dir', 'codeintel.duckdb', 'coverage', 'coverage.json', 'coverage_json', 'cpu', 'db', 'db_path', 'document_output_dir', 'git', 'log_db_path', 'nx-cugraph', 'pyrefly', 'pyright', 'pytest', 'pytest-report.json', 'pytest_report', 'repo_root', 'ruff', 'scip', 'scip-python', 'scip_dir', 'test-results', 'tool_cache']

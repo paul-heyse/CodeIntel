@@ -178,7 +178,9 @@ def build_graph_metric_filters(
     module_repo = ModuleRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit)
     function_goids = set(func_repo.list_function_goids())
     modules = set(module_repo.list_modules())
-    subsystem_repo = SubsystemRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit)
+    subsystem_repo = SubsystemRepository(
+        gateway=gateway, repo=snapshot.repo, commit=snapshot.commit
+    )
     subsystem_ids = {row["subsystem_id"] for row in subsystem_repo.list_subsystem_memberships()}
     return GraphMetricFilters(
         function_goids=function_goids or None,

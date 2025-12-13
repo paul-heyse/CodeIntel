@@ -14,7 +14,8 @@ from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.fastapi import BackendResource, create_app
+from codeintel.serving.bootstrap import BackendResource
+from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance

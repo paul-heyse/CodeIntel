@@ -261,7 +261,9 @@ def compute_function_effects(
     gateway.ibis.delete(contract.table_key, where=where)
     if tuple_rows:
         gateway.ibis.insert(contract.table_key, tuple_rows, columns=columns)
-    log.info("function_effects populated: %d rows for %s@%s", len(rows), snapshot.repo, snapshot.commit)
+    log.info(
+        "function_effects populated: %d rows for %s@%s", len(rows), snapshot.repo, snapshot.commit
+    )
 
 
 def _build_effect_rows(
@@ -301,7 +303,9 @@ def _build_effect_rows(
         direct_flags,
         max_depth=inputs.options.max_call_depth,
     )
-    unresolved_calls = _unresolved_call_counts(inputs.gateway, inputs.snapshot.repo, inputs.snapshot.commit)
+    unresolved_calls = _unresolved_call_counts(
+        inputs.gateway, inputs.snapshot.repo, inputs.snapshot.commit
+    )
     if unresolved_calls:
         log.warning(
             "Unresolved call edges detected for %d functions while computing effects: %s",

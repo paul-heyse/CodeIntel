@@ -28,7 +28,6 @@ from codeintel.analytics.testing.coverage.inputs import (
     load_test_graph_metrics,
 )
 from codeintel.analytics.testing.profiles import rows
-from codeintel.analytics.testing.profiles.rows import TestProfileInputs
 from codeintel.analytics.testing.profiles.types import (
     BehavioralCoverageOptions,
     BehavioralLLMResult,
@@ -39,17 +38,16 @@ from codeintel.analytics.testing.profiles.types import (
     TestProfileOptions,
     TestRecord,
 )
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
     behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
+from codeintel.config.primitives import SnapshotRef
 from tests._helpers.factories import (
     blank_behavioral_coverage_row,
     blank_test_profile_row,
-    make_snapshot,
 )
 
 if TYPE_CHECKING:
@@ -170,6 +168,55 @@ def _default_options() -> tuple[TestProfileOptions, BehavioralCoverageOptions]:
     return TestProfileOptions(), BehavioralCoverageOptions()
 
 
+def _make_snapshot(repo_root: Path | None = None) -> SnapshotRef:
+    """Create a standard test snapshot reference.
+
+    Parameters
+    ----------
+    repo_root
+        Optional repo root path; defaults to Path.cwd() if not provided.
+
+    Returns
+    -------
+    SnapshotRef
+        Configured snapshot reference with test defaults.
+    """
+    from pathlib import Path as PathLib
+
+    return SnapshotRef(
+        repo="demo/repo",
+        commit="deadbeef",
+        repo_root=repo_root if repo_root is not None else PathLib.cwd(),
+    )
+
+
+def _snapshot_cfg() -> tuple[SnapshotRef, TestProfileOptions, BehavioralCoverageOptions]:
+    """Create snapshot and options for tests without file I/O.
+
+    Returns
+    -------
+    tuple[SnapshotRef, TestProfileOptions, BehavioralCoverageOptions]
+        Snapshot reference, test profile options, and behavioral coverage options.
+    """
+    return _make_snapshot(), TestProfileOptions(), BehavioralCoverageOptions()
+
+
+def _configs(tmp_path: Path) -> SnapshotRef:
+    """Create snapshot reference for integration-style tests.
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory path for repo root.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot reference with tmp_path as repo root.
+    """
+    return _make_snapshot(repo_root=tmp_path)
+
+
 def test_importance_guardrails_and_monotonicity() -> None:
     """Importance/flakiness scoring should remain bounded and monotonic."""
     io_none = IoFlags()
@@ -264,7 +311,7 @@ def test_importance_and_flakiness_scoring() -> None:
 def test_build_test_profile_rows_round_trip() -> None:
     """Tuple-to-model mapping should align with schema constants for new helpers."""
     created_at = datetime(2024, 1, 1, tzinfo=UTC)
-    test_cfg, _ = _snapshot_cfg()
+    snapshot, test_options, _ = _snapshot_cfg()
     test_record = TestRecord(
         test_id="test-id",
         test_goid_h128=1,
@@ -307,16 +354,21 @@ def test_build_test_profile_rows_round_trip() -> None:
         )
     }
     ast_info = {"test-id": TestAstInfo(assert_count=1, raise_count=0)}
-    ctx = rows.build_test_profile_context(
-        cfg=test_cfg,
+    inputs = rows.TestProfileInputs(
         functions_covered=functions_covered,
         subsystems_covered=subsystems_covered,
         tg_metrics=tg_metrics,
         ast_info=ast_info,
     )
+    ctx = rows.build_test_profile_context(
+        snapshot=snapshot,
+        inputs=inputs,
+        options=test_options,
+    )
 
     frozen_ctx = TestProfileContext(
-        cfg=ctx.cfg,
+        snapshot=ctx.snapshot,
+        options=ctx.options,
         now=created_at,
         max_function_count=ctx.max_function_count,
         max_weighted_degree=ctx.max_weighted_degree,
@@ -400,7 +452,7 @@ def test_build_behavior_rows_mixed_sources() -> None:
     """Behavior rows should preserve mixed heuristic/LLM metadata without legacy hooks."""
     fake_con = _FakeCon()
     gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
-    _, beh_cfg = _snapshot_cfg()
+    snapshot, _, beh_options = _snapshot_cfg()
 
     sample_tests = [
         TestRecord(
@@ -453,15 +505,15 @@ def test_build_behavior_rows_mixed_sources() -> None:
         llm_run_id = "run-123" if test.test_id == "t2" else None
         tags = ["db"] if test.test_id == "t2" else ["network"]
         return (
-            beh_cfg.repo,
-            beh_cfg.commit,
+            snapshot.repo,
+            snapshot.commit,
             test.test_id,
             None,
             test.rel_path,
             test.qualname or test.test_id,
             tags,
             tag_source,
-            beh_cfg.heuristic_version,
+            beh_options.heuristic_version,
             llm_model,
             llm_run_id,
             getattr(ctx, "now", datetime.now(tz=UTC)),
@@ -483,7 +535,8 @@ def test_build_behavior_rows_mixed_sources() -> None:
     ):
         tuples = behavioral_tags.build_behavior_rows(
             gateway,
-            beh_cfg,
+            snapshot,
+            options=beh_options,
             llm_runner=_fake_llm_runner,
             hooks=hooks,
         )
@@ -510,27 +563,27 @@ def test_coverage_wrappers_empty(
     AssertionError
         If any aggregation returns a non-empty result.
     """
-    test_cfg, beh_cfg = _configs(tmp_path)
+    snapshot = _configs(tmp_path)
     if (
-        aggregate_test_coverage_by_function(coverage_profiles_conn, test_cfg, loader=lambda *_: {})
+        aggregate_test_coverage_by_function(coverage_profiles_conn, snapshot, loader=lambda *_: {})
         != {}
     ):
         message = "Expected empty function coverage aggregation."
         raise AssertionError(message)
     if (
-        aggregate_test_coverage_by_subsystem(coverage_profiles_conn, beh_cfg, loader=lambda *_: {})
+        aggregate_test_coverage_by_subsystem(coverage_profiles_conn, snapshot, loader=lambda *_: {})
         != {}
     ):
         message = "Expected empty subsystem coverage aggregation."
         raise AssertionError(message)
-    if load_test_graph_metrics(coverage_profiles_conn, test_cfg, loader=lambda *_: {}) != {}:
+    if load_test_graph_metrics(coverage_profiles_conn, snapshot, loader=lambda *_: {}) != {}:
         message = "Expected empty test graph metrics aggregation."
         raise AssertionError(message)
 
 
 def test_test_profile_model_snapshot() -> None:
     """Deterministic snapshot of test_profile row model to catch drift."""
-    test_cfg, _ = _snapshot_cfg()
+    snapshot, test_options, _ = _snapshot_cfg()
     created_at = datetime(2024, 1, 1, tzinfo=UTC)
     test_record = TestRecord(
         test_id="t1",
@@ -574,15 +627,20 @@ def test_test_profile_model_snapshot() -> None:
         )
     }
     ast_info = {"t1": TestAstInfo(io_flags=IoFlags(uses_network=True))}
-    ctx = rows.build_test_profile_context(
-        cfg=test_cfg,
+    inputs = rows.TestProfileInputs(
         functions_covered=functions,
         subsystems_covered=subsystems,
         tg_metrics=tg_metrics,
         ast_info=ast_info,
     )
+    ctx = rows.build_test_profile_context(
+        snapshot=snapshot,
+        inputs=inputs,
+        options=test_options,
+    )
     frozen_ctx = TestProfileContext(
-        cfg=ctx.cfg,
+        snapshot=ctx.snapshot,
+        options=ctx.options,
         now=created_at,
         max_function_count=ctx.max_function_count,
         max_weighted_degree=ctx.max_weighted_degree,
@@ -648,7 +706,7 @@ def test_behavioral_writer_registry_guard() -> None:
     fake_con = _FakeCon()
     fake_ibis = _FakeIbis()
     gateway = cast("StorageGateway", SimpleNamespace(con=fake_con, ibis=fake_ibis))
-    _, beh_cfg = _snapshot_cfg()
+    snapshot, _, _ = _snapshot_cfg()
     row = blank_behavioral_coverage_row()
     row["repo"] = "r"
     row["commit"] = "c"
@@ -684,7 +742,7 @@ def test_behavioral_writer_registry_guard() -> None:
             )
         )
 
-        inserted = rows.write_behavioral_coverage_rows(gateway, beh_cfg, [row])
+        inserted = rows.write_behavioral_coverage_rows(gateway, snapshot, [row])
         if inserted != 1:
             pytest.fail("Writer did not report one inserted row.")
 
@@ -705,7 +763,7 @@ def test_write_test_profile_rows_with_stubs() -> None:
     fake_con = _FakeCon()
     fake_ibis = _FakeIbis()
     gateway = cast("StorageGateway", SimpleNamespace(con=fake_con, ibis=fake_ibis))
-    test_cfg, _ = _snapshot_cfg()
+    snapshot, _, _ = _snapshot_cfg()
     sample_row = blank_test_profile_row()
     sample_row["repo"] = "r"
     sample_row["commit"] = "c"
@@ -742,7 +800,7 @@ def test_write_test_profile_rows_with_stubs() -> None:
             )
         )
 
-        inserted = rows.write_test_profile_rows(gateway, test_cfg, [sample_row])
+        inserted = rows.write_test_profile_rows(gateway, snapshot, [sample_row])
         if inserted != 1:
             msg = "Writer did not report one inserted row."
             pytest.fail(msg)

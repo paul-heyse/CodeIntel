@@ -11,7 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.http.fastapi import BackendResource, create_app
+from codeintel.serving.bootstrap import BackendResource
+from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.views.creation import create_all_views

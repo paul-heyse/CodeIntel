@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import clamp_limit, clamp_offset
@@ -14,8 +14,9 @@ from codeintel.serving.mcp.models import (
     ResponseMeta,
     ViewRow,
 )
+from codeintel.serving.services.conversion import to_domain_result
 from codeintel.serving.services.errors import DatasetNotFoundError
-from codeintel.serving.services.http_transport import _HttpTransportMixin
+from codeintel.serving.services.transport import _HttpTransportMixin
 from codeintel.storage.datasets import load_dataset_registry
 
 if TYPE_CHECKING:
@@ -24,24 +25,6 @@ if TYPE_CHECKING:
     from codeintel.config.datasets import DatasetContract
     from codeintel.serving.backend import BackendLimits
     from codeintel.serving.backend.query_api import DuckDBQueryApi
-
-
-def _normalize_validation_profile(
-    value: str | None,
-) -> Literal["strict", "lenient"] | None:
-    """
-    Normalize validation profile strings to allowed literal values.
-
-    Returns
-    -------
-    Literal["strict", "lenient"] | None
-        Normalized validation profile when valid.
-    """
-    if value == "strict":
-        return "strict"
-    if value == "lenient":
-        return "lenient"
-    return None
 
 
 class _LocalDatasetMixin:
@@ -156,17 +139,13 @@ class _LocalDatasetMixin:
                 dataset_name=dataset_name, sample_limit=sample_limit
             )
 
-        raw_resp = self._call(
+        raw = self._call(
             "dataset_schema",
             _schema,
             dataset=dataset_name,
             schema_version=schema_version,
         )
-        if isinstance(raw_resp, dm.DatasetSchema):
-            return raw_resp
-        if isinstance(raw_resp, DatasetSchemaResponse):
-            return raw_resp.to_domain()
-        return DatasetSchemaResponse.model_validate(raw_resp).to_domain()
+        return to_domain_result(raw, dm.DatasetSchema, DatasetSchemaResponse)
 
     def read_dataset_rows(
         self,
@@ -381,18 +360,13 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
 
     def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
         def _run() -> object:
-            data = self.request_json(
+            return self.request_json(
                 f"/datasets/{dataset_name}/schema",
                 {"limit": sample_limit},
             )
-            if isinstance(data, dm.DatasetSchema):
-                return data
-            return DatasetSchemaResponse.model_validate(data)
 
-        raw_resp = self._http_call("dataset_schema", _run, dataset=dataset_name)
-        if isinstance(raw_resp, dm.DatasetSchema):
-            return raw_resp
-        return cast("DatasetSchemaResponse", raw_resp).to_domain()
+        raw = self._http_call("dataset_schema", _run, dataset=dataset_name)
+        return to_domain_result(raw, dm.DatasetSchema, DatasetSchemaResponse)
 
 
 __all__ = ["_HttpDatasetQueryMixin", "_LocalDatasetMixin"]

@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, Any
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.http.fastapi import BackendResource, create_app
+from codeintel.serving.bootstrap import BackendResource
+from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.http.routes.functions import RouterOptions
 from tests._helpers.serving_apps import build_service_app
 
