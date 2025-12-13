@@ -231,9 +231,7 @@ class GraphValidationPlugin(TargetPlugin):
                 commit,
             )
 
-            row_counts: dict[str, int] = {
-                "graphs.validation_results": len(all_errors),
-            }
+            row_counts: dict[str, int] = {"analytics.graph_validation": len(all_errors)}
 
             if all_errors:
                 return TargetResult.failed("\n".join(all_errors))

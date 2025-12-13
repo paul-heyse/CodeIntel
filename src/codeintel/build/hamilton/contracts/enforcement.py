@@ -32,6 +32,26 @@ class ContractEnforcer:
     _strict: bool = False
 
     @classmethod
+    def activate(cls, target: OutputTarget, *, strict: bool) -> None:
+        """Activate enforcement for a specific target.
+
+        Parameters
+        ----------
+        target
+            Target whose contract should be enforced for subsequent writes.
+        strict
+            When True, enforce the target contract and raise on violations.
+        """
+        cls._current_target = target
+        cls._strict = strict
+
+    @classmethod
+    def deactivate(cls) -> None:
+        """Deactivate enforcement for subsequent writes."""
+        cls._current_target = None
+        cls._strict = False
+
+    @classmethod
     @contextmanager
     def for_target(
         cls,
@@ -60,14 +80,15 @@ class ContractEnforcer:
         old_target = cls._current_target
         old_strict = cls._strict
 
-        cls._current_target = target
-        cls._strict = strict
+        cls.activate(target, strict=strict)
 
         try:
             yield
         finally:
-            cls._current_target = old_target
-            cls._strict = old_strict
+            if old_target is None:
+                cls.deactivate()
+            else:
+                cls.activate(old_target, strict=old_strict)
 
     @classmethod
     def validate_table_write(cls, table_key: str) -> None:

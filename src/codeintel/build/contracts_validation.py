@@ -46,7 +46,7 @@ def validate_contracts(graph: TargetGraph, *, repo_root: Path | None = None) -> 
         # Check that all contract table_keys exist in schema registry
         errors.extend(
             f"Target '{target.name}' references unknown table_key: '{table_key}'"
-            for table_key in target.table_keys
+            for table_key in target.contract.table_keys
             if table_key not in table_schemas
         )
 
@@ -69,7 +69,7 @@ def validate_contracts(graph: TargetGraph, *, repo_root: Path | None = None) -> 
                     )
 
         # Check for targets with plugins but no contract outputs
-        if target.plugin and not target.table_keys and not target.contract.artifacts:
+        if target.plugin and not target.contract.tables and not target.contract.artifacts:
             errors.append(
                 f"Target '{target.name}' has plugin '{target.plugin}' "
                 f"but declares no contract outputs (tables or artifacts)"

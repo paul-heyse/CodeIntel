@@ -7,6 +7,7 @@ computing useful aggregate metrics and patterns from the raw call graph edges.
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any, cast
 
 import duckdb
@@ -75,31 +76,32 @@ def call_graph_function_call_counts(
         )
     )
 
-    # Aggregate caller stats (how many functions call each target)
-    caller_stats: ir.Table = edges.group_by("target_function_goid_h128").aggregate(
-        num_callers=ibis._.count()
-    )
-
-    # Aggregate callee stats (how many functions each source calls)
-    callee_stats: ir.Table = edges.group_by("source_function_goid_h128").aggregate(
+    # Aggregate call stats per caller
+    callee_stats: ir.Table = edges.group_by(
+        function_goid_h128=edges.caller_goid_h128,
+    ).aggregate(
         num_callees=ibis._.count(),
-        num_unique_callees=cast("Any", edges.target_function_goid_h128).nunique(),
+        num_unique_callees=cast("Any", edges.callee_goid_h128).nunique(),
     )
 
-    # Full outer join to get all functions
+    # Aggregate caller stats per callee (exclude null callees)
+    caller_stats: ir.Table = edges.filter(cast("Any", edges.callee_goid_h128.notnull())).group_by(
+        function_goid_h128=edges.callee_goid_h128,
+    ).aggregate(
+        num_callers=ibis._.count(),
+    )
+
+    # Full outer join to get union of caller/callee populations
     result = callee_stats.join(
         caller_stats,
-        predicates=[
-            callee_stats.source_function_goid_h128 == caller_stats.target_function_goid_h128
-        ],
+        predicates=[callee_stats.function_goid_h128 == caller_stats.function_goid_h128],
         how="outer",
     )
 
-    # Select with consistent naming
     call_counts = result.select(
-        function_goid_h128=cast("Any", result.source_function_goid_h128).fillna(
-            result.target_function_goid_h128
-        ),
+        repo=ibis.literal(env.snapshot.repo),
+        commit=ibis.literal(env.snapshot.commit),
+        function_goid_h128=cast("Any", result.function_goid_h128),
         num_callees=cast("Any", result.num_callees).fillna(ibis.literal(0)),
         num_unique_callees=cast("Any", result.num_unique_callees).fillna(ibis.literal(0)),
         num_callers=cast("Any", result.num_callers).fillna(ibis.literal(0)),
@@ -148,23 +150,33 @@ def call_graph_depth_stats(
         )
     )
 
-    # For simplicity, compute direct call depth (1 for functions that call others)
-    depth_stats = edges.group_by("source_function_goid_h128").aggregate(
-        max_call_depth=ibis.literal(1),  # Simplified: just mark as depth 1 if it calls anything
-        is_leaf=ibis.literal(value=False),
+    caller_funcs: ir.Table = edges.select(
+        caller_function_goid_h128=edges.caller_goid_h128,
+    ).distinct()
+    callee_funcs: ir.Table = edges.filter(cast("Any", edges.callee_goid_h128.notnull())).select(
+        function_goid_h128=edges.callee_goid_h128,
+    ).distinct()
+    all_funcs: ir.Table = (
+        caller_funcs.select(function_goid_h128=caller_funcs.caller_function_goid_h128)
+        .union(callee_funcs)
+        .distinct()
     )
 
-    # Add leaf functions (those that are never sources in call edges)
-    # This would require a more complex query; for now we'll just mark non-leaves
-
-    result = depth_stats.select(
-        function_goid_h128=depth_stats.source_function_goid_h128,
-        max_call_depth=depth_stats.max_call_depth,
-        is_leaf=depth_stats.is_leaf,
+    joined = all_funcs.left_join(
+        caller_funcs,
+        predicates=[all_funcs.function_goid_h128 == caller_funcs.caller_function_goid_h128],
+    )
+    is_leaf = cast("Any", joined.caller_function_goid_h128).isnull()
+    depth_stats = joined.select(
+        repo=ibis.literal(env.snapshot.repo),
+        commit=ibis.literal(env.snapshot.commit),
+        function_goid_h128=joined.function_goid_h128,
+        max_call_depth=ibis.ifelse(is_leaf, ibis.literal(0), ibis.literal(1)),
+        is_leaf=is_leaf,
     )
 
     LOG.info("call_depth_stats compute complete")
-    return result
+    return depth_stats
 
 
 @tag(domain="graphs", target="call_graph_views", node_kind="materialize")
@@ -196,16 +208,18 @@ def t__call_graph_views(
     --------
     >>> # This node materializes all view expressions to DuckDB tables
     """
+    start = time.perf_counter()
     LOG.info("Materializing call_graph_views to DuckDB")
 
-    target = graph.get("call_graph_views")
-    if target is None:
+    try:
+        target = graph.get("call_graph_views")
+    except KeyError as exc:
         return create_failed_record(
-            target=graph.get("modules") or graph.all_targets[0],
+            target=graph.all_targets[0],
             input_hash="",
             options_hash=None,
-            duration_ms=0.0,
-            error=ValueError("call_graph_views target not found in graph"),
+            duration_ms=(time.perf_counter() - start) * 1000,
+            error=exc,
         )
 
     input_hash = compute_target_input_hash(
@@ -219,7 +233,11 @@ def t__call_graph_views(
         return create_skipped_record(
             target=target,
             env=env,
-            run=NativeRunInfo(input_hash=input_hash, options_hash=None, duration_ms=0.0),
+            run=NativeRunInfo(
+                input_hash=input_hash,
+                options_hash=None,
+                duration_ms=(time.perf_counter() - start) * 1000,
+            ),
         )
 
     views_dict = {
@@ -243,7 +261,7 @@ def t__call_graph_views(
             target=target,
             input_hash=input_hash,
             options_hash=None,
-            duration_ms=0.0,
+            duration_ms=(time.perf_counter() - start) * 1000,
             error=exc,
         )
 
@@ -257,7 +275,7 @@ def t__call_graph_views(
         run=NativeRunInfo(
             input_hash=input_hash,
             options_hash=None,
-            duration_ms=0.0,
+            duration_ms=(time.perf_counter() - start) * 1000,
             row_counts=row_counts,
         ),
     )

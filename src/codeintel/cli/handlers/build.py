@@ -114,7 +114,7 @@ class BuildExecutionArgs:
     force: list[str] | None
     run_mode: RunMode
     engine: str
-    hamilton_mode: str
+    hamilton_mode: HamiltonNodeMode
     validate_outputs: bool
     strict_contracts: bool
     wrapper_allowlist: list[str] | None
@@ -127,7 +127,7 @@ class BuildExecutionArgs:
     @property
     def node_mode(self) -> HamiltonNodeMode:
         """Return typed HamiltonNodeMode value."""
-        return "generated" if self.hamilton_mode == "generated" else "phase0"
+        return self.hamilton_mode
 
 
 @dataclass(frozen=True)
@@ -643,7 +643,7 @@ def _validate_build_run_params(
             f"Invalid engine '{params.engine}'. Valid: {', '.join(valid_engines)}"
         )
 
-    valid_modes = ("phase0", "generated")
+    valid_modes = ("phase0", "generated", "auto")
     if params.hamilton_mode not in valid_modes:
         return fail_invalid_target_selection(
             f"Invalid hamilton_mode '{params.hamilton_mode}'. Valid: {', '.join(valid_modes)}"
@@ -705,7 +705,7 @@ def build_run_handler(
         force=params.force,
         run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
         engine=params.engine,
-        hamilton_mode=params.hamilton_mode,
+        hamilton_mode=cast("HamiltonNodeMode", params.hamilton_mode),
         validate_outputs=params.validate_outputs,
         strict_contracts=params.strict_contracts,
         wrapper_allowlist=params.wrapper_allowlist,
