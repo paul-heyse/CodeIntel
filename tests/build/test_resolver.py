@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import pytest
-
-from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import (
     BuildResolver,
     ResolutionReason,
     ResolutionResult,
 )
+
+from codeintel.build.registry import get_target_graph
 from codeintel.build.state import (
     DatabaseState,
     StalenessReason,

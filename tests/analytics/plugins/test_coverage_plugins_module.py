@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.plugins.coverage.functions import CoverageFunctionsPlugin
-from codeintel.analytics.plugins.coverage.test_edges import CoverageTestEdgesPlugin
+from codeintel.build.plugins.analytics.coverage.functions import CoverageFunctionsPlugin
+from codeintel.build.plugins.analytics.coverage.test_edges import CoverageTestEdgesPlugin
 from tests._helpers.assertions import (
     assert_coverage_ratio_between,
     expect_equal,

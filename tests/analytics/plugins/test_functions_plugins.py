@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.plugins.functions.ast_features import FunctionAstFeaturesPlugin
-from codeintel.analytics.plugins.functions.contracts import FunctionContractsPlugin
+from codeintel.build.plugins.analytics.functions.ast_features import FunctionAstFeaturesPlugin
+from codeintel.build.plugins.analytics.functions.contracts import FunctionContractsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.catalogs import ensure_catalog_with_goids

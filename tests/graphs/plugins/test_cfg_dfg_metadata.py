@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from codeintel.build.plugins.graphs.builders.cfg_dfg import CFG_DFG_METADATA, CfgDfgPlugin
+from codeintel.build.plugins.graphs.builders.cfg_dfg_options import CfgDfgOptions
 from codeintel.core.plugins.execution.options import ConfigSource, PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import PluginDomain
-from codeintel.graphs.plugins.builders.cfg_dfg import CFG_DFG_METADATA, CfgDfgPlugin
-from codeintel.graphs.plugins.builders.cfg_dfg_options import CfgDfgOptions
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,

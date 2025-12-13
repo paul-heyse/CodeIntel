@@ -1,1 +1,1 @@
-"""Tests for codeintel.analytics.plugins.semantic_roles modules."""
+"""Tests for codeintel.build.plugins.analytics.semantic_roles modules."""

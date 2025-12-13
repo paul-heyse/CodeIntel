@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from codeintel.build.plugins.graphs.builders.goid import GOID_BUILDER_METADATA, GoidBuilderPlugin
+from codeintel.build.plugins.graphs.builders.goid_options import GoidBuilderOptions
 from codeintel.core.plugins.execution.options import ConfigSource, PluginOptionsResolver
 from codeintel.core.plugins.types.metadata import PluginDomain
-from codeintel.graphs.plugins.builders.goid import GOID_BUILDER_METADATA, GoidBuilderPlugin
-from codeintel.graphs.plugins.builders.goid_options import GoidBuilderOptions
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,

@@ -1,1 +1,1 @@
-"""Tests for codeintel.analytics.plugins.history modules."""
+"""Tests for codeintel.build.plugins.analytics.history modules."""

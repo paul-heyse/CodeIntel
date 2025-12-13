@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from codeintel.core.plugins.execution.options import ConfigSource, PluginOptionsResolver
-from codeintel.core.plugins.types.metadata import PluginDomain
-from codeintel.graphs.plugins.builders.import_graph import (
+from codeintel.build.plugins.graphs.builders.import_graph import (
     IMPORT_GRAPH_METADATA,
     ImportGraphPlugin,
 )
-from codeintel.graphs.plugins.builders.import_graph_options import ImportGraphOptions
+from codeintel.build.plugins.graphs.builders.import_graph_options import ImportGraphOptions
+from codeintel.core.plugins.execution.options import ConfigSource, PluginOptionsResolver
+from codeintel.core.plugins.types.metadata import PluginDomain
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,

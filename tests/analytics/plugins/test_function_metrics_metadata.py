@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from codeintel.analytics.plugins.functions.metrics import (
+from codeintel.build.plugins.analytics.functions.metrics import (
     FUNCTION_METRICS_METADATA,
     FunctionMetricsPlugin,
 )

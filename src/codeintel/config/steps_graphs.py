@@ -41,7 +41,6 @@ if TYPE_CHECKING:
         DFGEdgeRow,
     )
     from codeintel.config.primitives import BuildPaths, ScanProfiles
-    from codeintel.core.execution.retry import RetryPolicy
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
 
 
@@ -197,7 +196,6 @@ class GraphPluginPolicy:
     severity_overrides: dict[str, Literal["fatal", "soft_fail", "skip_on_error"]] = field(
         default_factory=dict
     )
-    retries: dict[str, RetryPolicy] = field(default_factory=dict)
     timeouts_ms: dict[str, int] = field(default_factory=dict)
     skip_on_unchanged: bool = False
     dry_run: bool = False

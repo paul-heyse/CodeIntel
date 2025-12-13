@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.plugins.dependencies.external import ExternalDepsPlugin
+from codeintel.build.plugins.analytics.dependencies.external import ExternalDepsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.assertions.logging_assertions import assert_logged

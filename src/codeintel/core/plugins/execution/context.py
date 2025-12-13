@@ -4,16 +4,8 @@ This module provides a minimal, protocol-driven execution context that
 is used by both graph and analytics plugins. Plugins request what they
 need through typed accessors and resource providers.
 
-The context hierarchy is:
-
-    BaseContext (core/execution/base_context.py)
-        └── PluginExecutionContext
-                ├── IngestExecutionContext
-                ├── GraphPluginExecutionContext
-                └── AnalyticsExecutionContext
-
-PluginExecutionContext adds resource registry, configuration access,
-and scratch storage on top of the base run identity, gateway, and snapshot.
+PluginExecutionContext provides resource registry, configuration access,
+and scratch storage with run identity, gateway, and snapshot.
 """
 
 from __future__ import annotations
@@ -22,7 +14,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
-from codeintel.core.execution.base_context import BaseContext
 from codeintel.core.resources.registry import ResourceNotFoundError, ResourceRegistry
 
 if TYPE_CHECKING:
@@ -641,7 +632,6 @@ class PluginExecutionContextBuilder:
 
 
 __all__ = [
-    "BaseContext",
     "ConfigProvider",
     "PluginExecutionContext",
     "PluginExecutionContextBuilder",

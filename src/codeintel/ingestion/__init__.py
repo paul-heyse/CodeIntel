@@ -55,6 +55,17 @@ The following plugins are registered by default:
 
 from __future__ import annotations
 
+from codeintel.build.plugins.ingestion import (
+    AstExtractPlugin,
+    ConfigIngestPlugin,
+    CoverageIngestPlugin,
+    CstExtractPlugin,
+    DocstringsIngestPlugin,
+    RepoScanPlugin,
+    ScipIngestPlugin,
+    TestsIngestPlugin,
+    TypingIngestPlugin,
+)
 from codeintel.ingestion.adapters import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
@@ -96,25 +107,6 @@ from codeintel.ingestion.infrastructure.workers import (
     resolve_worker_count,
     worker_pool,
 )
-from codeintel.ingestion.plugins import (
-    AstExtractPlugin,
-    ColumnConstraint,
-    ConfigIngestPlugin,
-    ContractValidationResult,
-    ContractViolation,
-    CoverageIngestPlugin,
-    CstExtractPlugin,
-    DocstringsIngestPlugin,
-    ForeignKeyConstraint,
-    IngestContractSpec,
-    IngestContractValidator,
-    RepoScanPlugin,
-    ScipIngestPlugin,
-    TestsIngestPlugin,
-    TypingIngestPlugin,
-    foreign_key_contract,
-    not_null_contract,
-)
 from codeintel.ingestion.ports import (
     BatchResult,
     ChangeDetectionPort,
@@ -141,7 +133,15 @@ from codeintel.ingestion.tracker import (
     run_incremental_ingest,
 )
 from codeintel.ingestion.validation import (
+    ColumnConstraint,
+    ContractValidationResult,
+    ContractViolation,
+    ForeignKeyConstraint,
+    IngestContractSpec,
+    IngestContractValidator,
     IngestValidationOptions,
+    foreign_key_contract,
+    not_null_contract,
     run_ingest_validations,
 )
 

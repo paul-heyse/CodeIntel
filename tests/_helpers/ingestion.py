@@ -10,6 +10,9 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from codeintel.build.contracts import OutputContract
+from codeintel.build.plugins.ingestion.helpers import get_module_paths, paths_to_modules
+from codeintel.build.plugins.ingestion.repo_scan import RepoScanPlugin
+from codeintel.build.plugins.ingestion.tests_plugin import TestsIngestPlugin
 from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget
 from codeintel.config.models import ToolsConfig
@@ -25,9 +28,6 @@ from codeintel.ingestion.compute import DocstringsExtractStep, RepoScanStep
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
-from codeintel.ingestion.plugins.helpers import get_module_paths, paths_to_modules
-from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
-from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.contexts import (
     EnvOverrides,

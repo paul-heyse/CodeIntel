@@ -6,7 +6,7 @@ and analytics subsystems, eliminating protocol duplication.
 Subpackages
 -----------
 - types: Protocol, result, and report types
-- execution: Context, executor, policy, and tracking
+- execution: Context and manifest
 - registry: Base registry and plan types
 """
 
@@ -17,23 +17,6 @@ from codeintel.core.plugins.execution.context import (
     PluginExecutionContext,
     PluginExecutionContextBuilder,
     PluginScratch,
-)
-from codeintel.core.plugins.execution.executor import (
-    BasePluginExecutor,
-    DefaultPluginExecutionStrategy,
-    ExecutionOptions,
-    ExecutionReportContext,
-    ExecutionStrategy,
-    ExecutionStrategyContext,
-    PluginExecutionStrategy,
-)
-from codeintel.core.plugins.execution.executor_context import BaseExecutorContext
-from codeintel.core.plugins.execution.policy import BaseExecutionPolicy
-from codeintel.core.plugins.execution.tracking import (
-    FatalHandling,
-    TrackingOptions,
-    complete_run_from_records,
-    record_plugin_steps,
 )
 from codeintel.core.plugins.registry.base import (
     BasePluginRegistry,
@@ -82,30 +65,20 @@ from codeintel.core.resources.registry import (
 )
 
 __all__ = [
-    "BaseExecutionPolicy",
     "BaseExecutionReport",
-    "BaseExecutorContext",
     "BasePluginExecutionRecord",
-    "BasePluginExecutor",
     "BasePluginRegistry",
     "BasePluginResult",
     "CapabilityKind",
     "CapabilityProvider",
     "ConfigProvider",
-    "DefaultPluginExecutionStrategy",
     "DefaultRegistryHooks",
-    "ExecutionOptions",
-    "ExecutionReportContext",
     "ExecutionStatus",
-    "ExecutionStrategy",
-    "ExecutionStrategyContext",
-    "FatalHandling",
     "InputSource",
     "PluginCapability",
     "PluginExecutionContext",
     "PluginExecutionContextBuilder",
     "PluginExecutionRecord",
-    "PluginExecutionStrategy",
     "PluginInputSpec",
     "PluginIsolation",
     "PluginKind",
@@ -125,11 +98,8 @@ __all__ = [
     "RegistryHooks",
     "ResourceNotFoundError",
     "ResourceRegistry",
-    "TrackingOptions",
     "ValidationResult",
     "build_provider_index",
     "build_provider_index_from_metadata",
-    "complete_run_from_records",
-    "record_plugin_steps",
     "topological_sort",
 ]

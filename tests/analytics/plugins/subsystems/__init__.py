@@ -1,1 +1,1 @@
-"""Tests for codeintel.analytics.plugins.subsystems modules."""
+"""Tests for codeintel.build.plugins.analytics.subsystems modules."""

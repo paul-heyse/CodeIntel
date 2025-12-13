@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
+from codeintel.build.plugins.ingestion.config_plugin import ConfigIngestPlugin
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,

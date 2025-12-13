@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion.plugins.tests_plugin import (
+from codeintel.build.plugins.ingestion.tests_plugin import (
     TestsIngestPlugin,
     get_module_paths,
     resolve_report_file,

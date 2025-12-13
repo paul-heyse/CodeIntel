@@ -85,10 +85,14 @@ def call_graph_function_call_counts(
     )
 
     # Aggregate caller stats per callee (exclude null callees)
-    caller_stats: ir.Table = edges.filter(cast("Any", edges.callee_goid_h128.notnull())).group_by(
-        function_goid_h128=edges.callee_goid_h128,
-    ).aggregate(
-        num_callers=ibis._.count(),
+    caller_stats: ir.Table = (
+        edges.filter(cast("Any", edges.callee_goid_h128.notnull()))
+        .group_by(
+            function_goid_h128=edges.callee_goid_h128,
+        )
+        .aggregate(
+            num_callers=ibis._.count(),
+        )
     )
 
     # Full outer join to get union of caller/callee populations
@@ -153,9 +157,13 @@ def call_graph_depth_stats(
     caller_funcs: ir.Table = edges.select(
         caller_function_goid_h128=edges.caller_goid_h128,
     ).distinct()
-    callee_funcs: ir.Table = edges.filter(cast("Any", edges.callee_goid_h128.notnull())).select(
-        function_goid_h128=edges.callee_goid_h128,
-    ).distinct()
+    callee_funcs: ir.Table = (
+        edges.filter(cast("Any", edges.callee_goid_h128.notnull()))
+        .select(
+            function_goid_h128=edges.callee_goid_h128,
+        )
+        .distinct()
+    )
     all_funcs: ir.Table = (
         caller_funcs.select(function_goid_h128=caller_funcs.caller_function_goid_h128)
         .union(callee_funcs)
