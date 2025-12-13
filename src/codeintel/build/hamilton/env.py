@@ -17,6 +17,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from codeintel.build.assets.fingerprinting import (
+    DEFAULT_FINGERPRINT_POLICY,
+    FingerprintPolicy,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -61,6 +66,9 @@ class BuildEnv:
         When True, validate produced datasets against their Pandera schemas
         after write. Validation failures will mark the target as failed and
         block downstream targets.
+    fingerprint_policy
+        Policy for computing asset version fingerprints. Defaults to STABLE_V1
+        for cross-commit reuse capability.
 
     Examples
     --------
@@ -87,6 +95,7 @@ class BuildEnv:
     validate_outputs: bool = False
     strict_contracts: bool = False
     wrapper_allowlist: frozenset[str] | None = None
+    fingerprint_policy: FingerprintPolicy = field(default_factory=lambda: DEFAULT_FINGERPRINT_POLICY)
 
     @property
     def repo(self) -> str:

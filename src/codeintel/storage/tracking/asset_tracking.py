@@ -143,6 +143,40 @@ class AssetDiffRecord:
     summary: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class RunEnvironmentRecord:
+    """Captured environment for a build run.
+
+    Attributes
+    ----------
+    run_id
+        Build run identifier.
+    python_version
+        Python version string.
+    os_name
+        Operating system name.
+    os_version
+        Operating system release.
+    tool_versions
+        Mapping of tool names to versions.
+    config_hash
+        Hash of build configuration.
+    git_dirty
+        Whether git working tree had uncommitted changes.
+    captured_at
+        When environment was captured.
+    """
+
+    run_id: str
+    python_version: str
+    os_name: str
+    os_version: str
+    tool_versions: dict[str, str] | None = None
+    config_hash: str | None = None
+    git_dirty: bool = False
+    captured_at: datetime | None = None
+
+
 class AssetTracking:
     """Accessor for build asset catalog.
 
@@ -754,6 +788,179 @@ class AssetTracking:
             meta=decode_json_dict(row[16]) if row[16] else None,
         )
 
+    def get_downstream_edges(
+        self,
+        *,
+        upstream_kind: str,
+        upstream_key: str,
+        upstream_version: str | None = None,
+    ) -> list[AssetLineageEdgeRecord]:
+        """Query lineage edges where the given asset is upstream.
+
+        Parameters
+        ----------
+        upstream_kind
+            Kind of upstream asset (table, artifact).
+        upstream_key
+            Key of upstream asset.
+        upstream_version
+            Specific version, or None for all versions.
+
+        Returns
+        -------
+        list[AssetLineageEdgeRecord]
+            Lineage edges with the asset as upstream.
+        """
+        if upstream_version:
+            query = """
+                SELECT downstream_kind, downstream_key, downstream_version,
+                       upstream_kind, upstream_key, upstream_version,
+                       edge_kind, created_at, meta
+                FROM build.asset_lineage
+                WHERE upstream_kind = ? AND upstream_key = ? AND upstream_version = ?
+            """
+            params: list[object] = [upstream_kind, upstream_key, upstream_version]
+        else:
+            query = """
+                SELECT downstream_kind, downstream_key, downstream_version,
+                       upstream_kind, upstream_key, upstream_version,
+                       edge_kind, created_at, meta
+                FROM build.asset_lineage
+                WHERE upstream_kind = ? AND upstream_key = ?
+            """
+            params = [upstream_kind, upstream_key]
+
+        rows = self._con.execute(query, params).fetchall()
+        return [
+            AssetLineageEdgeRecord(
+                downstream_kind=str(row[0]),
+                downstream_key=str(row[1]),
+                downstream_version=str(row[2]),
+                upstream_kind=str(row[3]),
+                upstream_key=str(row[4]),
+                upstream_version=str(row[5]),
+                edge_kind=str(row[6]),
+                created_at=row[7],
+                meta=decode_json_dict(row[8]) if row[8] else None,
+            )
+            for row in rows
+        ]
+
+    def get_asset_target(
+        self,
+        asset_kind: str,
+        asset_key: str,
+    ) -> str | None:
+        """Look up the target that produces an asset.
+
+        Parameters
+        ----------
+        asset_kind
+            Kind of asset (table, artifact).
+        asset_key
+            Key of asset.
+
+        Returns
+        -------
+        str | None
+            Target name, or None if not found.
+        """
+        row = self._con.execute(
+            """
+            SELECT target
+            FROM build.asset_versions
+            WHERE asset_kind = ? AND asset_key = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            [asset_kind, asset_key],
+        ).fetchone()
+
+        if row is None or row[0] is None:
+            return None
+        return str(row[0])
+
+    def record_run_environment(self, record: RunEnvironmentRecord) -> None:
+        """Record the environment for a build run.
+
+        Parameters
+        ----------
+        record
+            Run environment record to save.
+        """
+        captured_at = record.captured_at or datetime.now(tz=UTC)
+        tool_versions_json = encode_json_compact(record.tool_versions or {})
+
+        self._con.execute(
+            """
+            INSERT INTO build.run_environments (
+                run_id, python_version, os_name, os_version,
+                tool_versions, config_hash, git_dirty, captured_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id) DO UPDATE SET
+                python_version = excluded.python_version,
+                os_name = excluded.os_name,
+                os_version = excluded.os_version,
+                tool_versions = excluded.tool_versions,
+                config_hash = excluded.config_hash,
+                git_dirty = excluded.git_dirty,
+                captured_at = excluded.captured_at
+            """,
+            [
+                record.run_id,
+                record.python_version,
+                record.os_name,
+                record.os_version,
+                tool_versions_json,
+                record.config_hash,
+                record.git_dirty,
+                captured_at,
+            ],
+        )
+
+    def get_run_environment(self, run_id: str) -> RunEnvironmentRecord | None:
+        """Get the environment record for a build run.
+
+        Parameters
+        ----------
+        run_id
+            Build run identifier.
+
+        Returns
+        -------
+        RunEnvironmentRecord | None
+            Environment record, or None if not found.
+        """
+        row = self._con.execute(
+            """
+            SELECT run_id, python_version, os_name, os_version,
+                   tool_versions, config_hash, git_dirty, captured_at
+            FROM build.run_environments
+            WHERE run_id = ?
+            """,
+            [run_id],
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        # Parse tool_versions, ensuring string values
+        tool_versions_raw = decode_json_dict(row[4]) if row[4] else None
+        tool_versions: dict[str, str] | None = None
+        if tool_versions_raw:
+            tool_versions = {k: str(v) for k, v in tool_versions_raw.items()}
+
+        return RunEnvironmentRecord(
+            run_id=str(row[0]),
+            python_version=str(row[1]),
+            os_name=str(row[2]),
+            os_version=str(row[3]),
+            tool_versions=tool_versions,
+            config_hash=str(row[5]) if row[5] else None,
+            git_dirty=bool(row[6]),
+            captured_at=row[7],
+        )
+
 
 __all__ = [
     "AssetAliasRecord",
@@ -763,4 +970,5 @@ __all__ = [
     "AssetTracking",
     "AssetVersionRecord",
     "RunAssetVersionRecord",
+    "RunEnvironmentRecord",
 ]
