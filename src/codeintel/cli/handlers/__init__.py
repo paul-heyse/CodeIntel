@@ -61,9 +61,11 @@ from codeintel.cli.handlers.docs import (
 )
 from codeintel.cli.handlers.graphs import (
     GraphPlanResult,
-    GraphPluginsResult,
-    graph_plugins_list_handler,
-    graph_plugins_plan_handler,
+    GraphPlanStage,
+    GraphTargetInfo,
+    GraphTargetsResult,
+    graph_targets_list_handler,
+    graph_targets_plan_handler,
 )
 from codeintel.cli.handlers.health import (
     HealthCheckResult,
@@ -157,7 +159,9 @@ __all__ = [
     "ExportMode",
     "GenerateMacrosResult",
     "GraphPlanResult",
-    "GraphPluginsResult",
+    "GraphPlanStage",
+    "GraphTargetInfo",
+    "GraphTargetsResult",
     "HealthCheckResult",
     "HistoryTimeseriesResult",
     "IdeHintsResult",
@@ -198,8 +202,8 @@ __all__ = [
     "docs_validate_handler",
     "generate_macros_handler",
     "get_handler_logger",
-    "graph_plugins_list_handler",
-    "graph_plugins_plan_handler",
+    "graph_targets_list_handler",
+    "graph_targets_plan_handler",
     "health_check_handler",
     "history_timeseries_handler",
     "ide_hints_handler",

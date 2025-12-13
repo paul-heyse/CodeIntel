@@ -1,7 +1,8 @@
 # Legacy Decommissioning Plan — Phase 2
 
-**Status:** Planning  
+**Status:** Completed  
 **Created:** December 13, 2024  
+**Completed:** December 13, 2024  
 **Predecessor:** [Legacy Decommissioning Summary](./Legacy_Decommissioning_Summary.md)
 
 ---

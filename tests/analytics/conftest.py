@@ -44,6 +44,7 @@ import pytest
 from codeintel.core.plugins.execution.context import PluginExecutionContext
 from tests._helpers.constants import DEFAULT_RUN_ID
 from tests._helpers.context import create_test_context
+from tests._helpers.env import build_test_gateway
 from tests._helpers.fakes.configs import create_test_snapshot
 from tests._helpers.fakes.contexts import (
     ExecutionContextBuilder,
@@ -55,7 +56,6 @@ from tests._helpers.fakes.function_catalogs import (
     create_mock_catalog_realistic,
     create_mock_catalog_with_functions,
 )
-from tests._helpers.fakes.graph_contexts import create_graph_gateway
 from tests._helpers.fakes.graph_runtime import (
     GraphRuntimeDouble as MockGraphRuntime,
 )
@@ -101,7 +101,7 @@ def analytics_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway with schema and macros applied; automatically closed.
     """
-    gateway = create_graph_gateway()
+    gateway = build_test_gateway()
     yield gateway
     gateway.close()
 

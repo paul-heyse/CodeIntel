@@ -6,6 +6,12 @@ Targets should be defined via contracts (``OutputContract`` / ``OutputTarget``
 factories like ``from_tables``) and referenced by ``table_keys``. Avoid adding
 new call sites that pass ``tables=`` directly; the contract is the source of
 truth for outputs.
+
+Note
+----
+The legacy BuildPlan, PlanStage, PlanStep, and StageExecutionResult types were
+removed in Phase 1 decommissioning. Use Hamilton build executor and planner
+for build orchestration.
 """
 
 from __future__ import annotations
@@ -17,9 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
-from codeintel.build.executor import StageExecutionResult
 from codeintel.build.manifest import OutputManifest
-from codeintel.build.plan import MODULE_ORDER, BuildPlan, PlanStage, PlanStep
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugin_registry import PluginRegistryStore
 from codeintel.build.result import TargetResult
@@ -152,46 +156,6 @@ def make_plugin_registry_store(
     return PluginRegistryStore(loader=loader)
 
 
-def sample_build_plan(
-    graph: TargetGraph | None = None,
-    *,
-    requested: Sequence[str] | None = None,
-    reasons: Mapping[str, str] | None = None,
-) -> BuildPlan:
-    """Build a simple BuildPlan derived from a graph.
-
-    Returns
-    -------
-    BuildPlan
-        Plan with stages grouped by module order.
-    """
-    graph = graph or sample_target_graph()
-    reason_map = dict(reasons or {})
-    requested_targets = tuple(requested or tuple(t.name for t in graph.all_targets))
-    stages: list[PlanStage] = []
-    for module in MODULE_ORDER:
-        steps = [
-            PlanStep(
-                target=target.name,
-                module=target.module,
-                plugin=target.plugin,
-                estimated_duration_ms=target.estimated_duration_ms,
-                dependencies=target.dependencies,
-                reason=reason_map.get(target.name, "requested"),
-            )
-            for target in graph.all_targets
-            if target.module == module and target.name in requested_targets
-        ]
-        if steps:
-            stages.append(PlanStage(module=module, steps=tuple(steps)))
-    return BuildPlan(
-        requested_targets=requested_targets,
-        stages=tuple(stages),
-        skipped_targets=(),
-        blocked_targets=(),
-    )
-
-
 @dataclass(frozen=True)
 class ManifestParams:
     """Parameters for constructing manifest fixtures."""
@@ -310,67 +274,6 @@ class RecordingProviders:
         }
 
 
-@dataclass
-class RecordingExecutor:
-    """Record plan stages and produce StageExecutionResult fixtures."""
-
-    executed_stages: list[PlanStage] = field(default_factory=list)
-    results: list[StageExecutionResult] = field(default_factory=list)
-
-    def record(
-        self,
-        stage: PlanStage,
-        *,
-        failed: Sequence[str] | None = None,
-        error: str | None = None,
-        durations_ms: Mapping[str, float] | None = None,
-        row_counts: Mapping[str, int | None] | None = None,
-    ) -> StageExecutionResult:
-        """Record a stage and return a matching StageExecutionResult.
-
-        Parameters
-        ----------
-        stage
-            Stage to record.
-        failed
-            Optional iterable of targets to mark as failed.
-        error
-            Optional stage-level error message.
-        durations_ms
-            Optional duration overrides keyed by target.
-        row_counts
-            Optional row count overrides keyed by target.
-
-        Returns
-        -------
-        StageExecutionResult
-            Execution result matching the provided inputs.
-        """
-        failed_set = set(failed or ())
-        completed = tuple(step.target for step in stage.steps if step.target not in failed_set)
-        failed_targets = tuple(step.target for step in stage.steps if step.target in failed_set)
-        durations: dict[str, float] = {}
-        rows: dict[str, int | None] = {}
-        for step in stage.steps:
-            durations[step.target] = (
-                durations_ms[step.target]
-                if durations_ms and step.target in durations_ms
-                else float(step.estimated_duration_ms or 0)
-            )
-            rows[step.target] = row_counts.get(step.target) if row_counts else None
-        result = StageExecutionResult(
-            module=stage.module,
-            completed=completed,
-            failed=failed_targets,
-            durations_ms=durations,
-            row_counts=rows,
-            error=error,
-        )
-        self.executed_stages.append(stage)
-        self.results.append(result)
-        return result
-
-
 def _format_toml_value(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -418,13 +321,12 @@ def _default_targets() -> tuple[OutputTarget, ...]:
 
 __all__ = [
     "ManifestParams",
-    "RecordingExecutor",
     "RecordingPlugin",
     "RecordingProviders",
     "make_build_config",
     "make_build_paths",
+    "make_plugin_registry_store",
     "make_snapshot",
-    "sample_build_plan",
     "sample_manifest",
     "sample_target_graph",
     "write_build_config",

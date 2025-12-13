@@ -16,8 +16,7 @@ True
 
 from __future__ import annotations
 
-import importlib
-import importlib.util
+import logging
 from functools import cache
 from typing import TYPE_CHECKING
 
@@ -34,22 +33,38 @@ __all__ = [
     "get_schema",
 ]
 
+log = logging.getLogger(__name__)
+
 
 @cache
-def _load_plugin_catalog() -> object | None:
-    """Lazily load the plugin catalog to avoid import cycles.
+def _get_plugin_metadata() -> dict[str, object]:
+    """Load plugin metadata from build registry.
 
     Returns
     -------
-    object | None
-        Plugin catalog if available, otherwise None.
+    dict[str, object]
+        Mapping of target names to plugin instances with core_metadata.
     """
-    spec = importlib.util.find_spec("codeintel.build.plugins")
-    if spec is None:
-        return None
+    try:
+        # Lazy import to avoid circular dependency at module load time
+        from codeintel.build.plugin_registry import get_all_plugins  # noqa: PLC0415
+    except ImportError:
+        log.debug("Build plugin registry not available")
+        return {}
 
-    plugins_module = importlib.import_module("codeintel.build.plugins")
-    return getattr(plugins_module, "PLUGIN_CATALOG", None)
+    registry = get_all_plugins()
+    result: dict[str, object] = {}
+    for name, cls in registry.items():
+        try:
+            plugin = cls()
+        except (TypeError, ValueError, AttributeError):
+            log.debug("Failed to instantiate plugin %s", name)
+            continue
+
+        if hasattr(plugin, "core_metadata"):
+            result[name] = plugin
+
+    return result
 
 
 class DatasetSchemaRegistry:
@@ -257,23 +272,17 @@ class DatasetSchemaRegistry:
 
         Notes
         -----
-        This method requires the plugin catalog to be available. If not,
-        returns an empty list.
+        Uses the build registry as the single source of truth.
         """
-        catalog = _load_plugin_catalog()
-        if catalog is None:
-            return []
-
-        catalog_all = getattr(catalog, "all", None)
-        if catalog_all is None:
-            return []
-
+        plugins = _get_plugin_metadata()
         result: list[str] = []
-        for plugin in catalog_all():
-            if hasattr(plugin, "core_metadata"):
-                produces = getattr(plugin.core_metadata, "produces_tables", None)
-                if produces and table_key in produces:
-                    result.append(plugin.plugin_name)
+        for name, plugin in plugins.items():
+            core_meta = getattr(plugin, "core_metadata", None)
+            if core_meta is None:
+                continue
+            produces = getattr(core_meta, "produces_tables", None)
+            if produces and table_key in produces:
+                result.append(name)
         return result
 
     @staticmethod
@@ -292,23 +301,17 @@ class DatasetSchemaRegistry:
 
         Notes
         -----
-        This method requires the plugin catalog to be available. If not,
-        returns an empty list.
+        Uses the build registry as the single source of truth.
         """
-        catalog = _load_plugin_catalog()
-        if catalog is None:
-            return []
-
-        catalog_all = getattr(catalog, "all", None)
-        if catalog_all is None:
-            return []
-
+        plugins = _get_plugin_metadata()
         result: list[str] = []
-        for plugin in catalog_all():
-            if hasattr(plugin, "core_metadata"):
-                consumes = getattr(plugin.core_metadata, "consumes_tables", None)
-                if consumes and table_key in consumes:
-                    result.append(plugin.plugin_name)
+        for name, plugin in plugins.items():
+            core_meta = getattr(plugin, "core_metadata", None)
+            if core_meta is None:
+                continue
+            consumes = getattr(core_meta, "consumes_tables", None)
+            if consumes and table_key in consumes:
+                result.append(name)
         return result
 
 

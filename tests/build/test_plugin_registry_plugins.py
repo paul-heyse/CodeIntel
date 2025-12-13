@@ -1,8 +1,8 @@
-"""Tests for plugin registry and decorator-based plugin discovery."""
+"""Tests for plugin registry functionality."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -11,15 +11,6 @@ from codeintel.build.plugin_registry import (
     get_all_plugins,
     get_plugin_for_target,
     register_plugin,
-)
-from codeintel.build.plugins import (
-    PluginCatalog,
-    TargetPlugin,
-    all_plugins,
-    get_plugin,
-)
-from codeintel.build.plugins import (
-    register_plugin as decorator_register_plugin,
 )
 from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
 from tests._helpers.build import RecordingPlugin, make_plugin_registry_store
@@ -53,7 +44,7 @@ def test_register_and_get_plugin(registry_store: PluginRegistryStore) -> None:
 
 
 def test_get_all_plugins_returns_copy(registry_store: PluginRegistryStore) -> None:
-    """get_all_plugins should not expose internal registry for mutation."""
+    """Get_all_plugins should not expose internal registry for mutation."""
     register_plugin("record", RecordingPlugin, registry=registry_store)
 
     plugins_before = get_all_plugins(registry=registry_store)
@@ -128,35 +119,12 @@ def test_lazy_registration_handles_attribute_error(
     expect_true(any("Failed to register plugin" in rec.message for rec in caplog.records))
 
 
-def test_register_plugin_decorator() -> None:
-    """Decorator registers plugin class and returns it."""
-    catalog = PluginCatalog()
+def test_registry_store_clear(registry_store: PluginRegistryStore) -> None:
+    """Clear resets the registry state."""
+    register_plugin("record", RecordingPlugin, registry=registry_store)
+    expect_true(len(get_all_plugins(registry=registry_store)) > 0)
 
-    class DecoratedPlugin(RecordingPlugin, TargetPlugin):
-        plugin_name: ClassVar[str] = "decorated"
+    registry_store.clear()
 
-    decorator_register_plugin(plugin_class=DecoratedPlugin, catalog=catalog)
-
-    expect_true(get_plugin("decorated", catalog=catalog) is DecoratedPlugin)
-    expect_in("decorated", all_plugins(catalog=catalog))
-
-
-def test_all_plugins_is_copy() -> None:
-    """all_plugins returns a copy of the registry."""
-    catalog = PluginCatalog()
-
-    class AnotherPlugin(RecordingPlugin, TargetPlugin):
-        plugin_name: ClassVar[str] = "another"
-
-    decorator_register_plugin(plugin_class=AnotherPlugin, catalog=catalog)
-
-    plugins = all_plugins(catalog=catalog)
-    plugins.pop("another")
-
-    expect_in("another", all_plugins(catalog=catalog))
-
-
-def test_get_plugin_missing() -> None:
-    """get_plugin returns None when plugin is absent."""
-    catalog = PluginCatalog()
-    expect_true(get_plugin("absent", catalog=catalog) is None)
+    expect_equal(len(registry_store.plugins), 0)
+    expect_equal(registry_store.registered, False)  # noqa: FBT003

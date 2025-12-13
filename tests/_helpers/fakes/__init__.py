@@ -36,9 +36,6 @@ from tests._helpers.fakes.fake_providers import (
 from tests._helpers.fakes.fake_providers import (
     FakeToolRunner as ProtocolFakeToolRunner,
 )
-from tests._helpers.fakes.ingestion_runtime import (
-    RecordingBuildExecutor,
-)
 from tests._helpers.fakes.serving_backends import (
     BackendHandle,
     ServingBackend,
@@ -63,7 +60,6 @@ __all__ = [
     "ProtocolFakeProviders",
     "ProtocolFakeScipIndexer",
     "ProtocolFakeToolRunner",
-    "RecordingBuildExecutor",
     "ServingBackend",
     "build_serving_backend",
     "utcnow",

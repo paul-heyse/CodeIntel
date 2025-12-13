@@ -162,7 +162,7 @@ def test_contracts_and_catalog(graph_runtime_ctx: GraphRuntimeHarness) -> None:
     catalog = build_plugin_catalog()
     expect_equal(catalog["count"], len(catalog["plugins"]))
     markdown = render_plugin_catalog_markdown(catalog)
-    expect_in("Analytics Plugin Catalog", markdown)
+    expect_in("Plugin Catalog", markdown)
     expect_in(str(len(catalog["plugins"])), markdown)
     expect_true(
         count_rows(

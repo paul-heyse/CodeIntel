@@ -1,7 +1,7 @@
-"""Plugin catalog generation for analytics.
+"""Plugin catalog generation using the build registry.
 
 This module provides functions for generating documentation catalogs
-from registered analytics plugins using the new TargetPlugin system.
+from the unified build registry (codeintel.build.plugin_registry).
 """
 
 from __future__ import annotations
@@ -11,54 +11,70 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.plugins.registration import ALL_PLUGINS
-
 if TYPE_CHECKING:
     from pathlib import Path
-
-    from codeintel.build.plugin import TargetPlugin
 
 log = logging.getLogger(__name__)
 
 
-def _compute_version_hash(plugin: TargetPlugin) -> str:
+def _compute_version_hash(name: str, version: str) -> str:
     """Compute a hash of version-relevant metadata.
 
     Parameters
     ----------
-    plugin
-        Plugin instance.
+    name
+        Plugin name.
+    version
+        Plugin version string.
 
     Returns
     -------
     str
-        Hash string.
+        Hash string (8 characters).
     """
-    raw = f"{plugin.plugin_name}:{plugin.plugin_version}"
+    raw = f"{name}:{version}"
     return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
 
 
 def build_plugin_catalog() -> dict[str, Any]:
     """Build a JSON-serializable catalog of all registered plugins.
 
-    Uses the ALL_PLUGINS tuple from the registration module, which contains
-    all TargetPlugin instances for the analytics system.
+    Uses the build registry as the single source of truth for plugin
+    discovery and metadata.
 
     Returns
     -------
     dict[str, Any]
         Catalog dict with 'plugins' key containing plugin metadata.
     """
+    try:
+        # Lazy import to avoid circular dependency at module load time
+        from codeintel.build.plugin_registry import get_all_plugins  # noqa: PLC0415
+    except ImportError:
+        log.warning("Build plugin registry not available")
+        return {"plugins": {}, "count": 0}
+
+    registry = get_all_plugins()
     plugins: dict[str, dict[str, Any]] = {}
 
-    for plugin in ALL_PLUGINS:
-        plugins[plugin.plugin_name] = {
-            "name": plugin.plugin_name,
-            "description": plugin.plugin_description,
-            "version": plugin.plugin_version,
-            "version_hash": _compute_version_hash(plugin),
-            # Simplified metadata - TargetPlugin doesn't have these legacy fields
-            "stage": "analytics",  # All analytics plugins are in the analytics stage
+    for target_name, plugin_class in registry.items():
+        try:
+            plugin = plugin_class()
+        except (TypeError, ValueError, AttributeError) as exc:
+            log.debug("Failed to instantiate plugin %s: %s", target_name, exc)
+            continue
+
+        plugin_name = getattr(plugin, "plugin_name", target_name)
+        plugin_version = getattr(plugin, "plugin_version", "1.0.0")
+        plugin_description = getattr(plugin, "plugin_description", "")
+
+        plugins[plugin_name] = {
+            "name": plugin_name,
+            "description": plugin_description,
+            "version": plugin_version,
+            "version_hash": _compute_version_hash(plugin_name, plugin_version),
+            "target": target_name,
+            "stage": "build",
             "enabled_by_default": True,
             "depends_on": [],
             "provides": [],
@@ -86,7 +102,7 @@ def render_plugin_catalog_markdown(catalog: dict[str, Any] | None = None) -> str
     plugins = catalog.get("plugins", {})
 
     lines: list[str] = [
-        "# Analytics Plugin Catalog",
+        "# Plugin Catalog",
         "",
         f"Total plugins: {catalog.get('count', 0)}",
         "",
@@ -105,9 +121,10 @@ def render_plugin_catalog_markdown(catalog: dict[str, Any] | None = None) -> str
         for plugin_meta in sorted(by_stage[stage], key=lambda p: p["name"]):
             lines.append(f"### {plugin_meta['name']}")
             lines.append("")
-            lines.append(plugin_meta.get("description", "No description"))
+            lines.append(plugin_meta.get("description", "No description") or "No description")
             lines.append("")
             lines.append(f"- **Version**: {plugin_meta.get('version', 'unknown')}")
+            lines.append(f"- **Target**: {plugin_meta.get('target', 'unknown')}")
             lines.append(
                 f"- **Enabled by default**: {plugin_meta.get('enabled_by_default', False)}"
             )
@@ -148,7 +165,7 @@ def render_plugin_catalog_markdown(catalog: dict[str, Any] | None = None) -> str
         first_meta = plugins[first_name]
         lines.append("```yaml")
         lines.append(f"plugin: {first_name}")
-        lines.append(f"stage: {first_meta.get('stage', 'unknown')}")
+        lines.append(f"target: {first_meta.get('target', 'unknown')}")
         lines.append(f"enabled: {first_meta.get('enabled_by_default', False)}")
         lines.append("```")
     lines.append("")
@@ -170,35 +187,39 @@ def write_plugin_catalog(path: Path) -> None:
     log.info("Wrote plugin catalog to %s", path)
 
 
-def write_plugin_catalog_markdown(path: Path) -> None:
+def write_plugin_catalog_markdown(path: Path, catalog: dict[str, Any] | None = None) -> None:
     """Write the plugin catalog to a Markdown file.
 
     Parameters
     ----------
     path
         Output file path.
+    catalog
+        Pre-built catalog dict. If None, builds a new one.
     """
-    markdown = render_plugin_catalog_markdown()
+    markdown = render_plugin_catalog_markdown(catalog)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(markdown, encoding="utf-8")
     log.info("Wrote plugin catalog markdown to %s", path)
 
 
-def write_plugin_catalog_html(path: Path) -> None:
+def write_plugin_catalog_html(path: Path, catalog: dict[str, Any] | None = None) -> None:
     """Write the plugin catalog to an HTML file.
 
     Parameters
     ----------
     path
         Output file path.
+    catalog
+        Pre-built catalog dict. If None, builds a new one.
     """
-    markdown = render_plugin_catalog_markdown()
+    markdown = render_plugin_catalog_markdown(catalog)
     # Simple HTML wrapper
     html = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Analytics Plugin Catalog</title>
+    <title>Plugin Catalog</title>
     <style>
         body {{ font-family: sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; }}
         h1 {{ color: #333; }}

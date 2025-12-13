@@ -1,22 +1,21 @@
 """Plugin-based constraint extraction for dataset schema introspection.
 
-This module extracts constraints from plugin metadata, specifically from
-produces_tables and consumes_tables declarations. These constraints
-represent data dependencies and producer/consumer relationships that
-are implicit in the plugin DAG.
+This module extracts constraints from plugin metadata using the build
+registry as the single source of truth. It specifically extracts
+produces_tables and consumes_tables declarations to represent data
+dependencies and producer/consumer relationships in the plugin DAG.
 
 Architecture Reference: Section 5.4.1 - Implement ConstraintSet aggregation
 """
 
 from __future__ import annotations
 
-import importlib
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.constraints import Constraint, ConstraintKind, ConstraintSet
-from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
     from codeintel.core.plugins.types.metadata import CorePluginMetadata
@@ -27,34 +26,41 @@ __all__ = [
     "get_consumer_plugins",
     "get_producer_plugins",
     "get_table_plugin_relations",
+    "merge_constraint_sets",
 ]
 
 log = logging.getLogger(__name__)
 
 
-class _PluginCatalogHolder(SingletonHolder[object]):
-    """Singleton holder for plugin catalog registry."""
-
-
-def _get_plugin_catalog() -> object | None:
-    """Lazily load the plugin catalog.
+@lru_cache(maxsize=1)
+def _get_all_plugins_metadata() -> dict[str, CorePluginMetadata]:
+    """Load all plugin metadata from the build registry.
 
     Returns
     -------
-    object | None
-        The plugin catalog if available.
+    dict[str, CorePluginMetadata]
+        Mapping of target name to core metadata.
     """
-    existing = _PluginCatalogHolder.get_or_none()
-    if existing is not None:
-        return existing
-
     try:
-        analytics_registry = importlib.import_module("codeintel.analytics.core.registry")
-        catalog = analytics_registry.ANALYTICS_REGISTRY
+        # Lazy import to avoid circular dependency at module load time
+        from codeintel.build.plugin_registry import get_all_plugins  # noqa: PLC0415
     except ImportError:
-        log.debug("Analytics registry not available for plugin constraint extraction")
-        return None
-    return _PluginCatalogHolder.get(lambda: catalog)
+        log.debug("Build plugin registry not available")
+        return {}
+
+    result: dict[str, CorePluginMetadata] = {}
+    for target_name, plugin_class in get_all_plugins().items():
+        try:
+            plugin = plugin_class()
+        except (TypeError, ValueError, AttributeError):
+            log.debug("Failed to instantiate plugin %s", target_name)
+            continue
+
+        core_meta = getattr(plugin, "core_metadata", None)
+        if core_meta is not None:
+            result[target_name] = core_meta
+
+    return result
 
 
 @dataclass(frozen=True)
@@ -128,34 +134,12 @@ def get_producer_plugins(table_key: str) -> list[CorePluginMetadata]:
     -------
     list[CorePluginMetadata]
         Plugin metadata for all producers of this table.
-
-    Notes
-    -----
-    NOTE(logic-framework): Full functionality requires complete plugin catalog
-    Functional Intent: Return all plugins whose produces_tables includes table_key
-    Architecture Reference: Section 5.4.1 - ConstraintSet aggregation
-    Activation Steps:
-      1. Ensure ANALYTICS_REGISTRY is fully populated at startup
-      2. Add graph and ingest plugin registries to the search
     """
-    catalog = _get_plugin_catalog()
-    if catalog is None:
-        return []
-
-    catalog_all = getattr(catalog, "all", None)
-    if catalog_all is None:
-        return []
-
     result: list[CorePluginMetadata] = []
-    for plugin in catalog_all():
-        core_meta = getattr(plugin, "core_metadata", None)
-        if core_meta is None:
-            continue
-
-        produces = getattr(core_meta, "produces_tables", None)
+    for meta in _get_all_plugins_metadata().values():
+        produces = getattr(meta, "produces_tables", None)
         if produces and table_key in produces:
-            result.append(core_meta)
-
+            result.append(meta)
     return result
 
 
@@ -171,34 +155,12 @@ def get_consumer_plugins(table_key: str) -> list[CorePluginMetadata]:
     -------
     list[CorePluginMetadata]
         Plugin metadata for all consumers of this table.
-
-    Notes
-    -----
-    NOTE(logic-framework): Full functionality requires complete plugin catalog
-    Functional Intent: Return all plugins whose consumes_tables includes table_key
-    Architecture Reference: Section 5.4.1 - ConstraintSet aggregation
-    Activation Steps:
-      1. Ensure ANALYTICS_REGISTRY is fully populated at startup
-      2. Add graph and ingest plugin registries to the search
     """
-    catalog = _get_plugin_catalog()
-    if catalog is None:
-        return []
-
-    catalog_all = getattr(catalog, "all", None)
-    if catalog_all is None:
-        return []
-
     result: list[CorePluginMetadata] = []
-    for plugin in catalog_all():
-        core_meta = getattr(plugin, "core_metadata", None)
-        if core_meta is None:
-            continue
-
-        consumes = getattr(core_meta, "consumes_tables", None)
+    for meta in _get_all_plugins_metadata().values():
+        consumes = getattr(meta, "consumes_tables", None)
         if consumes and table_key in consumes:
-            result.append(core_meta)
-
+            result.append(meta)
     return result
 
 
@@ -274,21 +236,11 @@ def extract_constraints_from_plugins(table_key: str) -> ConstraintSet:
     ConstraintSet
         Constraints derived from plugin producer/consumer relationships.
 
-    Notes
-    -----
-    NOTE(logic-framework): Full constraint extraction requires complete plugin DAG
-    Functional Intent: Generate COMPUTATION constraints from plugin dependencies
-    Architecture Reference: Section 5.4.1 - ConstraintSet aggregation
-    Activation Steps:
-      1. Complete plugin catalog population
-      2. Add column-level dependency tracking in plugins
-      3. Wire to schema_builder for automatic constraint aggregation
-
     Examples
     --------
     >>> cs = extract_constraints_from_plugins("analytics.function_metrics")
-    >>>
-    >>>
+    >>> isinstance(cs, ConstraintSet)
+    True
     """
     cs = ConstraintSet(table_key=table_key)
 
