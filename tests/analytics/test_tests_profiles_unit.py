@@ -486,7 +486,11 @@ def test_build_behavior_rows_mixed_sources() -> None:
         load_profile_ctx=lambda _con, _cfg: profile_ctx,
         row_builder=_fake_build_behavior_row,
     )
-    with _override(behavioral_tags, "ensure_schema", lambda _con, _table: None):
+    with _override(
+        behavioral_tags.DuckDBPolicyBackend,
+        "ensure_table",
+        lambda _self, _table_key: None,
+    ):
         tuples = behavioral_tags.build_behavior_rows(
             gateway,
             beh_cfg,
@@ -666,7 +670,13 @@ def test_behavioral_writer_registry_guard() -> None:
     row["created_at"] = datetime.now(tz=UTC)
 
     with ExitStack() as stack:
-        stack.enter_context(_override(rows, "ensure_schema", lambda _con, _table_key: None))
+        stack.enter_context(
+            _override(
+                rows.DuckDBPolicyBackend,
+                "ensure_table",
+                lambda _self, _table_key: None,
+            )
+        )
         stack.enter_context(
             _override(
                 writer_guard,
@@ -718,7 +728,13 @@ def test_write_test_profile_rows_with_stubs() -> None:
     sample_row["created_at"] = datetime.now(tz=UTC)
 
     with ExitStack() as stack:
-        stack.enter_context(_override(rows, "ensure_schema", lambda _con, _table_key: None))
+        stack.enter_context(
+            _override(
+                rows.DuckDBPolicyBackend,
+                "ensure_table",
+                lambda _self, _table_key: None,
+            )
+        )
         stack.enter_context(
             _override(
                 writer_guard,

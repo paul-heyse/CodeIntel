@@ -98,13 +98,9 @@ def _build_target_to_node_map(
         return dict(targets_phase0.TARGET_TO_NODE)
 
     if mode == "auto":
-        # In auto mode, use generated module's TARGET_TO_NODE which already
-        # excludes native targets
-        mod = get_generated_module()
-        mapping = getattr(mod, "TARGET_TO_NODE", None)
-        if isinstance(mapping, dict) and mapping:
-            return dict(mapping)
-        # Fallback to all targets if mapping is missing
+        # In auto mode, some targets are defined by native modules and others by the generated
+        # module. Both implementations use the canonical `t__<target>` naming, so we can map all
+        # targets directly to their node names.
         return {t.name: target_node(t.name) for t in graph.all_targets}
 
     # Generated mode.
@@ -231,27 +227,8 @@ def list_available_nodes(*, mode: HamiltonNodeMode = "generated") -> list[str]:
     >>> "t__modules" in nodes
     True
     """
-    if mode == "phase0":
-        return list(targets_phase0.TARGET_TO_NODE.values())
-
-    if mode == "auto":
-        # List nodes from both generated and native modules
-        gen_mod = get_generated_module()
-        gen_mapping = getattr(gen_mod, "TARGET_TO_NODE", {})
-        gen_nodes = list(gen_mapping.values()) if gen_mapping else []
-
-        native_nodes: list[str] = []
-        for native_mod in load_native_modules():
-            native_mapping = getattr(native_mod, "TARGET_TO_NODE", {})
-            if native_mapping:
-                native_nodes.extend(native_mapping.values())
-
-        return sorted(set(gen_nodes + native_nodes))
-
-    # Generated mode.
-    mod = get_generated_module()
-    mapping = getattr(mod, "TARGET_TO_NODE", {})
-    return list(mapping.values()) if mapping else []
+    runtime = build_driver(mode=mode)
+    return sorted(runtime.dr.list_available_variables())
 
 
 def target_to_node_name(
