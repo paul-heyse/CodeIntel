@@ -8,7 +8,7 @@ import logging
 from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import ibis
 from ibis.common.exceptions import IbisError

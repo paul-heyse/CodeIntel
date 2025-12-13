@@ -11,9 +11,9 @@ import logging
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import duckdb
-import pandas as pd
 from hamilton.function_modifiers import tag
 
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord, compute_target_input_hash
 from codeintel.build.hamilton.native.artifact_materializer import (
     ArtifactMaterializationContext,
     ArtifactMaterializationSpec,
@@ -33,11 +33,10 @@ LOG = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import ibis.expr.types as ir
+    import pandas as pd
 
     from codeintel.build.env import BuildEnv
     from codeintel.build.targets import TargetGraph
-
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord, compute_target_input_hash
 
 
 class ExportJsonlComputeResult(TypedDict):

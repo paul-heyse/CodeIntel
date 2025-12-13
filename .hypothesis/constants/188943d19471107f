@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/adapters/duckdb_storage.py
+# hypothesis_version: 6.148.7
+
+[0.0, ', ', '?', 'DELETE FROM', 'DuckDBStorageAdapter', 'IngestStorageService', 'SNAPSHOT_PARAM_LEN', 'Sequence[str]', 'WHERE', 'commit', 'rel_path', 'repo', 'warn']

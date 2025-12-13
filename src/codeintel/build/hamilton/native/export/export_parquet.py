@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import duckdb
 from hamilton.function_modifiers import tag
 
-from codeintel.build.hamilton.manifest_hook import compute_target_input_hash
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord, compute_target_input_hash
 from codeintel.build.hamilton.native.artifact_materializer import (
     ArtifactMaterializationContext,
     ArtifactMaterializationSpec,
@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     import ibis.expr.types as ir
 
     from codeintel.build.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.targets import TargetGraph
 
 

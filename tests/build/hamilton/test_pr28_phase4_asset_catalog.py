@@ -16,7 +16,6 @@ from codeintel.storage.tracking.asset_tracking import (
 )
 from tests._helpers.assertions import (
     expect_equal,
-    expect_is_not_none,
     expect_length,
     expect_true,
 )
@@ -128,8 +127,10 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
             to_version_hash="fedcba9876543210",
             diff_kind="schema_rowcount",
         )
-        expect_is_not_none(cached)
-        expect_is_not_none(cached.summary)
+        if cached is None:
+            pytest.fail("Expected cached diff to be present")
+        if cached.summary is None:
+            pytest.fail("Expected cached diff summary to be present")
         expect_equal(cached.summary.get("row_count", {}).get("delta"), 1)
     finally:
         gateway.close()
@@ -164,7 +165,8 @@ def test_pr28_phase4_asset_catalog_lineage_edges_upsert() -> None:
             WHERE downstream_key = 'analytics.down'
             """
         ).fetchone()
-        expect_is_not_none(row)
+        if row is None:
+            pytest.fail("Expected lineage row")
         expect_equal(str(row[0]), "depends_on")
     finally:
         gateway.close()

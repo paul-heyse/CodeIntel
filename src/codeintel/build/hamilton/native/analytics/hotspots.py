@@ -7,7 +7,7 @@ computing file hotspot metrics based on code churn and complexity analysis.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import duckdb
 import ibis
@@ -77,14 +77,22 @@ def t__hotspots__compute(
 
     # Filter modules to the current snapshot
     modules_filtered = q__core__modules.filter(
-        and_predicates(q__core__modules.repo == env.snapshot.repo, q__core__modules.commit == env.snapshot.commit)
+        cast(
+            "Any",
+            and_predicates(
+                q__core__modules.repo == env.snapshot.repo, q__core__modules.commit == env.snapshot.commit
+            ),
+        )
     )
 
     # Filter file_state to the current snapshot
     file_state_filtered = q__core__file_state.filter(
-        and_predicates(
-            q__core__file_state.repo == env.snapshot.repo,
-            q__core__file_state.commit == env.snapshot.commit,
+        cast(
+            "Any",
+            and_predicates(
+                q__core__file_state.repo == env.snapshot.repo,
+                q__core__file_state.commit == env.snapshot.commit,
+            ),
         )
     )
 
@@ -109,16 +117,17 @@ def t__hotspots__compute(
 
     # Join churn metrics with complexity
     hotspots = churn_metrics.left_join(
-        modules_complexity, churn_metrics.rel_path == modules_complexity.rel_path
+        modules_complexity, predicates=[churn_metrics.rel_path == modules_complexity.rel_path]
     )
 
     # Compute hotspot score as a weighted combination of churn and complexity signals.
+    lines_sum = cast("Any", hotspots.lines_added) + cast("Any", hotspots.lines_deleted)
     hotspots = hotspots.mutate(
         score=(
             (cast("Any", hotspots.commit_count).cast("float64") * 0.4)
             + (cast("Any", hotspots.author_count).cast("float64") * 0.2)
-            + (cast("Any", (hotspots.lines_added + hotspots.lines_deleted)).cast("float64") / 1000.0 * 0.2)
-            + (hotspots.complexity / 100.0 * 0.2)
+            + (cast("Any", lines_sum).cast("float64") / ibis.literal(1000.0) * 0.2)
+            + (cast("Any", hotspots.complexity) / ibis.literal(100.0) * 0.2)
         ).fillna(ibis.literal(0.0))
     )
 

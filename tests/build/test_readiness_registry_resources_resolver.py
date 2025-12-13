@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.state import TargetStatus
     from codeintel.storage.datasets import DatasetRegistry
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
     from codeintel.storage.gateway.accessors import (
         AnalyticsTables,
         CoreTables,
@@ -50,7 +51,6 @@ if TYPE_CHECKING:
     from codeintel.storage.tracking import PipelineRunTracking
     from codeintel.storage.tracking.asset_tracking import AssetTracking
     from codeintel.storage.tracking.build_tracking import BuildTracking
-    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 _DURATION_THRESHOLD_MS = 5000
 

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/docs.py
+# hypothesis_version: 6.148.7
+
+['--build-dir', '--commit', '--dataset', '--db-path', '--dry-run', '--no-dry-run', '--no-validate', '--nx-backend', '--nx-gpu-mode', '--prereq-mode', '--repo', '--repo-root', '--run-mode', '--run-prereqs', '--schema', '--skip-prereqs', '--validate', '--validation-mode', 'Commit SHA.', 'Repository slug.', 'auto', 'cpu', 'disabled', 'docs', 'docs.export', 'docs_app', 'execute', 'export', 'nx-cugraph', 'run', 'skip']

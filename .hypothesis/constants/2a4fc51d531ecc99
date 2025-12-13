@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/export/export_exprs.py
+# hypothesis_version: 6.148.7
+
+[9223372036854775807, 'DUCKDB_DIALECT', 'TIMESTAMP', 'TIMESTAMPTZ', 'build_export_expr', 'compile_export_sql', 'duckdb', 'goid_h128', 'int64', 'string']

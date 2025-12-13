@@ -14,6 +14,7 @@ from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.ibis_types import and_predicates
 from codeintel.storage.repositories import fetch_models
 
 if TYPE_CHECKING:
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
 
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config import DataModelUsageStepConfig
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.repositories import DataModelRow
 
 DATA_MODEL_USAGE_COLS = [
@@ -417,20 +418,33 @@ def _load_models(gateway: StorageGateway, repo: str, commit: str) -> list[ModelI
 
 
 def _subsystem_by_module(
-    con: DuckDBConnection, repo: str, commit: str
+    gateway: StorageGateway, repo: str, commit: str
 ) -> dict[str, tuple[str, str]]:
-    rows = con.execute(
-        """
-        SELECT sm.module, sm.subsystem_id, s.name
-        FROM analytics.subsystem_modules sm
-        LEFT JOIN analytics.subsystems s
-          ON s.repo = sm.repo AND s.commit = sm.commit AND s.subsystem_id = sm.subsystem_id
-        WHERE sm.repo = ? AND sm.commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+    modules = gateway.ibis.table("analytics.subsystem_modules")
+    subsystems = gateway.ibis.table("analytics.subsystems")
+    joined = modules.left_join(
+        subsystems,
+        predicates=[
+            and_predicates(
+                modules["repo"] == subsystems["repo"],
+                modules["commit"] == subsystems["commit"],
+                modules["subsystem_id"] == subsystems["subsystem_id"],
+            )
+        ],
+    ).filter(
+        and_predicates(
+            modules["repo"] == repo,
+            modules["commit"] == commit,
+        )
+    )
+    expr = joined.select(
+        modules["module"].name("module"),
+        modules["subsystem_id"],
+        subsystems["name"],
+    )
+    rows = expr.execute()
     mapping: dict[str, tuple[str, str]] = {}
-    for module, subsystem_id, name in rows:
+    for module, subsystem_id, name in rows.itertuples(index=False):
         mapping[str(module)] = (str(subsystem_id), str(name) if name is not None else "")
     return mapping
 
@@ -476,7 +490,6 @@ def compute_data_model_usage(
     """
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.data_model_usage")
-    con = gateway.con
     backend.delete_for_snapshot("analytics.data_model_usage", repo=cfg.repo, commit=cfg.commit)
 
     models = _load_models(gateway, cfg.repo, cfg.commit)
@@ -485,7 +498,7 @@ def compute_data_model_usage(
         return
     model_index = _build_model_index(models)
 
-    subsystem_map = _subsystem_by_module(con, cfg.repo, cfg.commit)
+    subsystem_map = _subsystem_by_module(gateway, cfg.repo, cfg.commit)
     missing = missing_goids or set()
     if missing:
         log.debug(
@@ -493,17 +506,14 @@ def compute_data_model_usage(
             len(missing),
         )
 
-    param_types: dict[int, dict[str, str]] = {
-        int(goid): _parse_param_types(raw_param_types)
-        for goid, raw_param_types in con.execute(
-            """
-            SELECT function_goid_h128, param_types
-            FROM analytics.function_types
-            WHERE repo = ? AND commit = ?
-            """,
-            [cfg.repo, cfg.commit],
-        ).fetchall()
-    }
+    function_types = gateway.ibis.table("analytics.function_types")
+    param_rows = function_types.filter(
+        and_predicates(function_types["repo"] == cfg.repo, function_types["commit"] == cfg.commit)
+    ).select("function_goid_h128", "param_types").execute()
+    param_types: dict[int, dict[str, str]] = {}
+    for goid_raw, raw_param_types in param_rows.itertuples(index=False):
+        goid_int = int(goid_raw)
+        param_types[goid_int] = _parse_param_types(raw_param_types)
 
     artifacts = ModelUsageArtifacts(
         ast_by_goid=ast_by_goid,

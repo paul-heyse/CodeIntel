@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/datasets/pandera_json_schema.py
+# hypothesis_version: 6.148.7
+
+['$schema', '(s >= 0)', '(s >= 1)', '<= 1', '>= 0', '>= 1', 'bool', 'boolean', 'date-time', 'datetime', 'double', 'float', 'format', 'int', 'integer', 'maximum', 'minimum', 'null', 'number', 'object', 'properties', 'required', 'string', 'title', 'type']

@@ -8,16 +8,14 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.driver_factory import build_driver, list_available_nodes
+from codeintel.build.hamilton.driver_factory import list_available_nodes
 
 
 def test_auto_driver_includes_native_analytics_nodes() -> None:
     """Verify auto driver includes compute and materialize nodes for native analytics."""
     # Build driver with mode="auto"
-    runtime = build_driver(mode="auto")
-
     # List all available nodes
-    all_nodes = list_available_nodes(runtime, mode="auto")
+    all_nodes = list_available_nodes(mode="auto")
 
     # Expected native analytics compute nodes
     expected_compute_nodes = [
@@ -47,10 +45,8 @@ def test_auto_driver_includes_native_analytics_nodes() -> None:
 def test_auto_driver_excludes_wrapper_for_native_targets() -> None:
     """Verify auto driver does not include wrapper t__ nodes for native targets."""
     # Build driver with mode="auto"
-    runtime = build_driver(mode="auto")
-
     # List all available nodes
-    all_nodes = list_available_nodes(runtime, mode="auto")
+    all_nodes = list_available_nodes(mode="auto")
 
     # Native targets should not have duplicate wrapper nodes
     # The driver should exclude these from the wrapper module
@@ -76,10 +72,8 @@ def test_auto_driver_excludes_wrapper_for_native_targets() -> None:
 def test_auto_driver_includes_loader_nodes() -> None:
     """Verify auto driver includes loader nodes from assets module."""
     # Build driver with mode="auto"
-    runtime = build_driver(mode="auto")
-
     # List all available nodes
-    all_nodes = list_available_nodes(runtime, mode="auto")
+    all_nodes = list_available_nodes(mode="auto")
 
     # Loader nodes should be present from the assets module
     # Check for a few key loader nodes used by native analytics
@@ -107,10 +101,8 @@ def test_auto_driver_includes_loader_nodes() -> None:
 def test_risk_factors_native_still_present_in_wave2() -> None:
     """Verify Wave 1 native target (risk_factors) is still present in auto driver."""
     # Build driver with mode="auto"
-    runtime = build_driver(mode="auto")
-
     # List all available nodes
-    all_nodes = list_available_nodes(runtime, mode="auto")
+    all_nodes = list_available_nodes(mode="auto")
 
     # risk_factors should have its native nodes
     expected_risk_factors_nodes = [

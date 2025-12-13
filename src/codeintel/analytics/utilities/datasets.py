@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar, cast
 
 import pandas as pd
+from sqlglot import exp
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -76,6 +77,24 @@ def _table_supports_snapshot_delete(table_key: str) -> bool:
         return False
     col_names = contract.schema.column_names()
     return "repo" in col_names and "commit" in col_names
+
+
+def _delete_sql_for_table(table_key: str) -> str:
+    schema, table = table_key.split(".", 1)
+    table_expr = exp.Table(this=exp.to_identifier(table), db=exp.to_identifier(schema))
+    condition = exp.and_(
+        exp.EQ(this=exp.column("repo"), expression=exp.Parameter()),
+        exp.EQ(this=exp.column("commit"), expression=exp.Parameter()),
+    )
+    statement = exp.Delete(this=table_expr, where=condition)
+    return statement.sql(dialect="duckdb")
+
+
+DELETE_SQL_BY_TABLE: dict[str, str] = {
+    table_key: _delete_sql_for_table(table_key)
+    for table_key in DATASET_CONTRACTS_BY_TABLE_KEY
+    if _table_supports_snapshot_delete(table_key)
+}
 
 
 @dataclass(frozen=True)

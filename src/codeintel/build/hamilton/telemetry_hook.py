@@ -10,16 +10,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-try:
-    from hamilton.lifecycle.base import BasePostNodeExecute as _BasePostNodeExecute
-    from hamilton.lifecycle.base import BasePreNodeExecute as _BasePreNodeExecute
-except ImportError:
-    _BasePreNodeExecute = object
-    _BasePostNodeExecute = object
-
-BasePreNodeExecute: type = _BasePreNodeExecute
-BasePostNodeExecute: type = _BasePostNodeExecute
-
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
 
@@ -64,7 +54,7 @@ class NodeExecutionRecord:
     tags: dict[str, object] | None
 
 
-class NodeTelemetryHook(BasePreNodeExecute, BasePostNodeExecute):
+class NodeTelemetryHook:
     """Hamilton lifecycle hook for node telemetry.
 
     Records execution timing and status for each node to enable

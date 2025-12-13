@@ -7,7 +7,7 @@ computing useful aggregate metrics and patterns from the raw call graph edges.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import duckdb
 import ibis
@@ -66,27 +66,31 @@ def call_graph_function_call_counts(
 
     # Filter to current snapshot
     edges = q__graph__call_graph_edges.filter(
-        and_predicates(
-            q__graph__call_graph_edges.repo == env.snapshot.repo,
-            q__graph__call_graph_edges.commit == env.snapshot.commit,
+        cast(
+            "Any",
+            and_predicates(
+                q__graph__call_graph_edges.repo == env.snapshot.repo,
+                q__graph__call_graph_edges.commit == env.snapshot.commit,
+            ),
         )
     )
 
     # Aggregate caller stats (how many functions call each target)
-    caller_stats = edges.group_by("target_function_goid_h128").aggregate(
+    caller_stats: ir.Table = edges.group_by("target_function_goid_h128").aggregate(
         num_callers=ibis._.count()
     )
 
     # Aggregate callee stats (how many functions each source calls)
-    callee_stats = edges.group_by("source_function_goid_h128").aggregate(
+    callee_stats: ir.Table = edges.group_by("source_function_goid_h128").aggregate(
         num_callees=ibis._.count(),
         num_unique_callees=cast("Any", edges.target_function_goid_h128).nunique(),
     )
 
     # Full outer join to get all functions
-    result = callee_stats.full_join(
+    result = callee_stats.join(
         caller_stats,
-        callee_stats.source_function_goid_h128 == caller_stats.target_function_goid_h128,
+        predicates=[callee_stats.source_function_goid_h128 == caller_stats.target_function_goid_h128],
+        how="outer",
     )
 
     # Select with consistent naming
@@ -133,16 +137,19 @@ def call_graph_depth_stats(
 
     # Filter to current snapshot
     edges = q__graph__call_graph_edges.filter(
-        and_predicates(
-            q__graph__call_graph_edges.repo == env.snapshot.repo,
-            q__graph__call_graph_edges.commit == env.snapshot.commit,
+        cast(
+            "Any",
+            and_predicates(
+                q__graph__call_graph_edges.repo == env.snapshot.repo,
+                q__graph__call_graph_edges.commit == env.snapshot.commit,
+            ),
         )
     )
 
     # For simplicity, compute direct call depth (1 for functions that call others)
     depth_stats = edges.group_by("source_function_goid_h128").aggregate(
         max_call_depth=ibis.literal(1),  # Simplified: just mark as depth 1 if it calls anything
-        is_leaf=ibis.literal(False),
+        is_leaf=ibis.literal(value=False),
     )
 
     # Add leaf functions (those that are never sources in call edges)

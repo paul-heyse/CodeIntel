@@ -63,16 +63,20 @@ def _get_policy_backend(con: DuckDBPyConnection) -> DuckDBPolicyBackend:
         graph: Any
         runs: Any
         ibis: IbisGateway
+        assets: Any
+        policy: Any
 
         def __init__(self, connection: DuckDBPyConnection) -> None:
             self._con = connection
             self.analytics = None
+            self.assets = None
             self.build = None
             self.config = None
             self.core = None
             self.datasets = None
             self.docs = None
             self.graph = None
+            self.policy = None
             self.runs = None
             self.ibis = IbisGateway(ibis.duckdb.from_connection(connection))
 

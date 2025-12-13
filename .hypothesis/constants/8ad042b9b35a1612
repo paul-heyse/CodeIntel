@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/assets/fingerprinting.py
+# hypothesis_version: 6.148.7
+
+['BIGINT', 'DECIMAL', 'TIMESTAMPTZ', 'utf-8', '|']
