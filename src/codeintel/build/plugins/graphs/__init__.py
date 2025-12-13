@@ -19,7 +19,7 @@ from codeintel.build.plugins.graphs.builders import (
     ImportGraphPlugin,
     SymbolUsesPlugin,
 )
-from codeintel.build.plugins.graphs.metrics import CoreMetricsPlugin, SecondaryMetricsPlugin
+from codeintel.build.plugins.graphs.metrics import CoreMetricsPlugin
 from codeintel.build.plugins.graphs.validation import GraphValidationPlugin
 
 __all__ = [
@@ -29,6 +29,5 @@ __all__ = [
     "GoidBuilderPlugin",
     "GraphValidationPlugin",
     "ImportGraphPlugin",
-    "SecondaryMetricsPlugin",
     "SymbolUsesPlugin",
 ]

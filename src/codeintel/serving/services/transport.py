@@ -26,6 +26,30 @@ work with either transport without code duplication.
     └─────────────────────────────────────────────────────────┘
 
 See ``codeintel.serving.domain_models`` for the full architecture contract.
+
+HTTP Query Pattern
+------------------
+The ``_HttpTransportMixin._http_query()`` method provides a consolidated pattern
+for HTTP query methods that need:
+
+1. Optional limit/offset clamping with error response on failure
+2. HTTP request via ``request_json()``
+3. Response normalization (domain model → response model → validated model)
+4. Observability tracking via ``_http_call()``
+5. Conversion back to domain models via ``to_domain()``
+
+Example usage::
+
+    def list_items(self, *, limit: int | None = None) -> dm.ItemsResult:
+        return self._http_query(
+            "list_items",
+            "/api/items",
+            {"limit": limit},
+            ItemsResponse,
+            dm.ItemsResult,
+            empty_data=ItemsResponse(items=[]),
+            limit=limit,
+        )
 """
 
 from __future__ import annotations
@@ -34,6 +58,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from codeintel.serving.backend import BackendLimits
+from codeintel.serving.mcp.models import Message, ResponseMeta
+from codeintel.serving.services.http_helpers import clamp_limits
 from codeintel.serving.services.observability import (
     ServiceCallContext,
     ServiceCallMetrics,
@@ -43,6 +69,7 @@ from codeintel.serving.services.observability import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from codeintel.serving import domain_models as dm
     from codeintel.serving.backend.query_api import DuckDBQueryApi
     from codeintel.serving.services.observability import (
         ServiceObservability,
@@ -309,6 +336,82 @@ class _HttpTransportMixin:
                 )
             )
         return result
+
+    def _http_query[DomainT, ResponseT](
+        self,
+        name: str,
+        path: str,
+        params: dict[str, object],
+        response_type: type[ResponseT],
+        domain_type: type[DomainT],
+        *,
+        empty_data: ResponseT | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        dataset: str | None = None,
+        limit_param: str = "limit",
+    ) -> DomainT:
+        """
+        Execute an HTTP query with optional limit clamping and response normalization.
+
+        This method consolidates the common pattern used in HTTP query mixins:
+        1. Optionally clamp limit/offset and return empty response on error
+        2. Make HTTP request via ``request_json()``
+        3. Normalize response (domain model → response model → validated model)
+        4. Track via observability
+        5. Convert to domain model via ``to_domain()``
+
+        Parameters
+        ----------
+        name
+            Operation name for logging.
+        path
+            HTTP endpoint path.
+        params
+            Request parameters (limit will be replaced if clamping is used).
+        response_type
+            Pydantic response model type with ``from_domain()`` and ``to_domain()``.
+        domain_type
+            Domain model type (used for isinstance checks).
+        empty_data
+            Response to return if limit clamping fails. If provided, enables clamping.
+        limit
+            Limit value to clamp (only used if empty_data is provided).
+        offset
+            Offset value to clamp (only used if empty_data is provided).
+        dataset
+            Dataset name for observability.
+        limit_param
+            Parameter name for the clamped limit (default: "limit").
+
+        Returns
+        -------
+        DomainT
+            Domain model result.
+        """
+
+        def _run() -> ResponseT:
+            request_params = dict(params)
+            if empty_data is not None:
+                clamped = clamp_limits(self.limits, limit, offset)
+                if clamped.has_error:
+                    # Add error messages to empty response
+                    if hasattr(empty_data, "meta"):
+                        empty_data.meta = ResponseMeta(messages=clamped.messages)  # type: ignore[union-attr]
+                    return empty_data
+                request_params[limit_param] = clamped.applied_limit
+                if offset is not None:
+                    request_params["offset"] = clamped.applied_offset
+
+            payload = self.request_json(path, request_params)
+            if isinstance(payload, domain_type):
+                return response_type.from_domain(payload)  # type: ignore[return-value,attr-defined]
+            if isinstance(payload, response_type):
+                return payload  # type: ignore[return-value]
+            return response_type.model_validate(payload)  # type: ignore[return-value,attr-defined]
+
+        pydantic_resp: ResponseT = self._http_call(name, _run, dataset=dataset)
+        return pydantic_resp.to_domain()  # type: ignore[return-value,attr-defined]
 
 
 __all__ = [

@@ -7,10 +7,10 @@ for scope parameters. These are internal protocols for the query layer.
 
 The **canonical unified protocols** are in ``codeintel.serving.types``:
 
-- ``FunctionQueryProtocol`` - uses ``GraphScopePayload`` (service-facing)
-- ``ProfileQueryProtocol`` - uses ``GraphScopePayload`` (service-facing)
-- ``SubsystemQueryProtocol`` - uses ``GraphScopePayload`` (service-facing)
-- ``DatasetQueryProtocol`` - uses ``GraphScopePayload`` (service-facing)
+- ``FunctionQueryable`` - uses ``GraphScopePayload`` (service-facing)
+- ``ProfileQueryable`` - uses ``GraphScopePayload`` (service-facing)
+- ``SubsystemQueryable`` - uses ``GraphScopePayload`` (service-facing)
+- ``DatasetQueryable`` - uses ``GraphScopePayload`` (service-facing)
 
 Implementations at the backend layer accept ``GraphRunScope`` and are called
 by service-layer code that converts ``GraphScopePayload`` → ``GraphRunScope``
@@ -48,7 +48,7 @@ class FunctionQueriesApi(Protocol):
     """Function-centric query surface (backend layer).
 
     Note: This protocol uses ``GraphRunScope`` for the scope parameter.
-    Service-layer code should use ``FunctionQueryProtocol`` from
+    Service-layer code should use ``FunctionQueryable`` from
     ``codeintel.serving.types`` which uses ``GraphScopePayload``.
     """
 

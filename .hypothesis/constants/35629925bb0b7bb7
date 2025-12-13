@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/__init__.py
+# hypothesis_version: 6.148.7
+
+['BackendResource', 'HttpQueryService', 'HttpTransport', 'LocalQueryService', 'LocalTransport', 'TransportAdapter', 'to_domain_result', 'to_response_result']

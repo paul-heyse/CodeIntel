@@ -2,6 +2,10 @@
 
 This module provides utilities for materializing file-based artifacts (exports,
 reports, indexes) with atomic write semantics and proper ArtifactRef generation.
+
+The ArtifactMaterializationContext is compatible with BuildContext from the
+unified context hierarchy, enabling seamless integration with the consolidated
+build system.
 """
 
 from __future__ import annotations
@@ -13,13 +17,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.build.artifacts import ArtifactRef
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
+from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.storage.tracking.asset_tracking import AssetRecord
 
 LOG = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from codeintel.build.context_base import BuildContext
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway.protocol import StorageGateway
 
@@ -27,6 +32,9 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class ArtifactMaterializationContext:
     """Context for artifact materialization.
+
+    This context is compatible with BuildContext from the unified hierarchy.
+    Both can be used interchangeably for artifact materialization operations.
 
     Attributes
     ----------
@@ -44,6 +52,37 @@ class ArtifactMaterializationContext:
     gateway: StorageGateway | None = None
     owner_target: str | None = None
     input_hash: str | None = None
+
+    @classmethod
+    def from_build_context(
+        cls,
+        ctx: BuildContext,
+        *,
+        owner_target: str | None = None,
+        input_hash: str | None = None,
+    ) -> ArtifactMaterializationContext:
+        """Create ArtifactMaterializationContext from a BuildContext.
+
+        Parameters
+        ----------
+        ctx
+            BuildContext with gateway and snapshot.
+        owner_target
+            Target name that produced these assets.
+        input_hash
+            Input hash for asset catalog.
+
+        Returns
+        -------
+        ArtifactMaterializationContext
+            New artifact materialization context.
+        """
+        return cls(
+            snapshot=ctx.snapshot,
+            gateway=ctx.gateway,
+            owner_target=owner_target,
+            input_hash=input_hash,
+        )
 
 
 @dataclass(frozen=True)

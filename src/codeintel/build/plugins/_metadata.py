@@ -1,4 +1,8 @@
-"""Shared helpers for analytics plugin metadata."""
+"""Shared helpers for plugin metadata conversion.
+
+This module provides the canonical implementation of metadata conversion
+used by all plugins. Previously duplicated across 16+ plugin files.
+"""
 
 from __future__ import annotations
 
@@ -18,10 +22,33 @@ __all__ = [
 def to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
     """Convert CorePluginMetadata to the protocol-friendly PluginMetadata.
 
+    This is the canonical conversion function used by all plugins to
+    transform their internal CorePluginMetadata into the protocol-compatible
+    PluginMetadata format.
+
+    Parameters
+    ----------
+    core
+        The core plugin metadata containing all plugin information.
+
     Returns
     -------
     PluginMetadata
         Protocol-compatible metadata instance for registry consumers.
+
+    Examples
+    --------
+    >>> from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+    >>> core = CorePluginMetadata(
+    ...     name="test",
+    ...     version="1.0.0",
+    ...     description="Test plugin",
+    ...     domain=PluginDomain.ANALYTICS,
+    ...     kind="compute",
+    ... )
+    >>> meta = to_plugin_metadata(core)
+    >>> meta.name
+    'test'
     """
     return PluginMetadata(
         name=core.name,

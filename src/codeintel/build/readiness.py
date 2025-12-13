@@ -25,6 +25,9 @@ From these facts plus the dependency graph, we derive:
 - Blocker chain (full path from me to the ultimate bottleneck)
 - Action needed (what to do to make me ready)
 
+This module delegates to BuildSession for efficient caching of manifests
+and input hashes, avoiding redundant computation.
+
 Usage
 -----
 >>> from codeintel.build.readiness import DatabaseReadinessView
@@ -50,7 +53,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.hashing import compute_input_hash
+from codeintel.build.session import BuildSession
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -227,33 +230,35 @@ class TargetReadinessView:
     - Input hash computation
     - Dependency graph traversal
 
+    Uses BuildSession for efficient caching of manifests and hashes.
+
     Parameters
     ----------
     target
         The target to compute readiness for.
     graph
         Complete target graph for dependency lookups.
-    gateway
-        Storage gateway for manifest and data queries.
-    snapshot
-        Repository snapshot reference.
+    session
+        Build session for caching and storage access.
     manifest_cache
-        Optional pre-loaded manifests (optimization).
+        Optional pre-loaded manifests (deprecated, use session).
     """
 
     def __init__(
         self,
         target: OutputTarget,
         graph: TargetGraph,
-        gateway: StorageGateway,
-        snapshot: SnapshotRef,
+        session: BuildSession,
         manifest_cache: Mapping[str, OutputManifest] | None = None,
     ) -> None:
         self._target = target
         self._graph = graph
-        self._gateway = gateway
-        self._snapshot = snapshot
-        self._manifest_cache = manifest_cache or {}
+        self._session = session
+        # Legacy manifest_cache support for backward compatibility
+        if manifest_cache:
+            for name, manifest in manifest_cache.items():
+                if name not in self._session._manifest_cache:
+                    self._session._manifest_cache[name] = manifest
 
         self._readiness: TargetReadiness | None = None
 
@@ -355,7 +360,7 @@ class TargetReadinessView:
         if manifest is None:
             return "never_computed"
 
-        current_hash = compute_input_hash(self._target, self._snapshot, self._gateway)
+        current_hash = self._session.get_input_hash(self._target, manifest.options_hash)
         if manifest.input_hash != current_hash:
             return "stale"
 
@@ -376,9 +381,7 @@ class TargetReadinessView:
             dep_view = TargetReadinessView(
                 dep_target,
                 self._graph,
-                self._gateway,
-                self._snapshot,
-                self._manifest_cache,
+                self._session,
             )
 
             if (
@@ -438,9 +441,7 @@ class TargetReadinessView:
                     dep_view = TargetReadinessView(
                         dep_target,
                         self._graph,
-                        self._gateway,
-                        self._snapshot,
-                        self._manifest_cache,
+                        self._session,
                     )
                     dep_chain, dep_bottleneck = dep_view._compute_blocker_chain(
                         dep_view._compute_self_status(),
@@ -513,21 +514,14 @@ class TargetReadinessView:
         return total_ms
 
     def _get_manifest(self) -> OutputManifest | None:
-        """Get manifest from cache or storage.
+        """Get manifest from session cache or storage.
 
         Returns
         -------
         OutputManifest | None
             The manifest if it exists, or None.
         """
-        if self.name in self._manifest_cache:
-            return self._manifest_cache[self.name]
-
-        return self._gateway.build.load_manifest(
-            self.name,
-            self._snapshot.repo,
-            self._snapshot.commit,
-        )
+        return self._session.get_manifest(self.name)
 
     @staticmethod
     def _status_to_reason(status: SelfStatus) -> str:
@@ -553,6 +547,8 @@ class DatabaseReadinessView:
     This class provides a convenient interface to query readiness across
     all targets in the build system.
 
+    Uses BuildSession for efficient caching of manifests and hashes.
+
     Parameters
     ----------
     graph
@@ -573,7 +569,9 @@ class DatabaseReadinessView:
         self._gateway = gateway
         self._snapshot = snapshot
 
-        self._manifest_cache = self._load_manifests()
+        # Create session and preload manifests
+        self._session = BuildSession(snapshot=snapshot, gateway=gateway)
+        self._session.preload_manifests()
 
         self._views: dict[str, TargetReadinessView] = {}
 
@@ -590,9 +588,7 @@ class DatabaseReadinessView:
             self._views[name] = TargetReadinessView(
                 target,
                 self._graph,
-                self._gateway,
-                self._snapshot,
-                self._manifest_cache,
+                self._session,
             )
         return self._views[name]
 
@@ -780,21 +776,6 @@ class DatabaseReadinessView:
             lines.append("")
 
         return "\n".join(lines)
-
-    def _load_manifests(self) -> dict[str, OutputManifest]:
-        """Pre-load all manifests for the snapshot.
-
-        Returns
-        -------
-        dict[str, OutputManifest]
-            Mapping of target names to their manifests.
-        """
-        manifests = self._gateway.build.list_manifests(
-            self._snapshot.repo,
-            self._snapshot.commit,
-        )
-        return {m.target: m for m in manifests}
-
 
 __all__ = [
     "ActionKind",

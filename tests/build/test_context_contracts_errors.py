@@ -66,13 +66,13 @@ def test_write_table_validation_and_recording(tmp_path: Path) -> None:
     expect_equal(record.rows, rows)
 
 
-def test_write_table_legacy_tables_skip_schema(tmp_path: Path) -> None:
-    """Legacy tables in target.table_keys bypass schema lookup."""
+def test_write_table_requires_contract_schema(tmp_path: Path) -> None:
+    """Writing to table not in contract raises SchemaNotFoundError."""
     target = OutputTarget.from_tables(
-        name="legacy",
+        name="demo",
         module="analytics",
-        plugin="legacy_plugin",
-        tables=("core.legacy",),
+        plugin="demo_plugin",
+        tables=("core.declared",),
     )
     ctx = TargetExecutionContext(
         target=target,
@@ -82,10 +82,8 @@ def test_write_table_legacy_tables_skip_schema(tmp_path: Path) -> None:
         parameters=TargetParameters.empty(),
     )
 
-    rows = [(1, "x")]
-    written = ctx.write_table("core.legacy", rows)
-    expect_equal(written, 1)
-    expect_true(ctx.written_tables["core.legacy"].validated is True)
+    with pytest.raises(SchemaNotFoundError):
+        ctx.write_table("core.undeclared", [(1, "x")])
 
 
 def test_write_table_missing_schema_raises(tmp_path: Path) -> None:

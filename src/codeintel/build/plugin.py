@@ -23,8 +23,12 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext, TargetResult
+    from codeintel.core.plugins.execution.options import PluginOptionsResolver
+    from codeintel.core.plugins.types.metadata import CorePluginMetadata
+    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 __all__ = [
+    "MetadataPlugin",
     "TargetPlugin",
     "TargetPluginProtocol",
 ]
@@ -134,3 +138,115 @@ class TargetPlugin(ABC):
         """
         _ = (self, ctx)
         return []
+
+
+class MetadataPlugin(TargetPlugin, ABC):
+    """Enhanced plugin base with automatic metadata handling.
+
+    Subclasses define `_core_metadata` and get `metadata` property
+    automatically, plus standard options resolver handling. Note that
+    subclasses still need to implement the abstract `execute` method.
+
+    This base class reduces boilerplate in plugin implementations by:
+    - Providing automatic metadata conversion via the `metadata` property
+    - Providing automatic class variable population from core metadata
+    - Providing standard options resolver handling
+
+    Class Variables
+    ---------------
+    _core_metadata
+        CorePluginMetadata instance defining the plugin's metadata.
+        Subclasses must define this.
+
+    Example
+    -------
+    >>> from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+    >>> class MyPlugin(MetadataPlugin):
+    ...     _core_metadata: ClassVar[CorePluginMetadata] = CorePluginMetadata(
+    ...         name="my_plugin",
+    ...         version="1.0.0",
+    ...         description="My plugin description",
+    ...         domain=PluginDomain.ANALYTICS,
+    ...         kind="compute",
+    ...     )
+    ...
+    ...     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
+    ...         # Plugin logic here
+    ...         return TargetResult.succeeded()
+    """
+
+    _core_metadata: ClassVar[CorePluginMetadata]
+    _options_resolver: PluginOptionsResolver | None
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        """Initialize subclass by copying metadata to class variables.
+
+        Parameters
+        ----------
+        **kwargs
+            Additional keyword arguments passed to parent __init_subclass__.
+        """
+        super().__init_subclass__(**kwargs)
+
+        # Copy metadata to class variables if _core_metadata is defined
+        # This happens at class definition time, not at instance creation
+        if hasattr(cls, "_core_metadata") and cls._core_metadata is not None:
+            # Only set if not already overridden
+            if "plugin_name" not in cls.__dict__:
+                cls.plugin_name = cls._core_metadata.name  # pyright: ignore[reportIncompatibleVariableOverride]
+            if "plugin_version" not in cls.__dict__:
+                cls.plugin_version = cls._core_metadata.version  # pyright: ignore[reportIncompatibleVariableOverride]
+            if "plugin_description" not in cls.__dict__:
+                cls.plugin_description = cls._core_metadata.description  # pyright: ignore[reportIncompatibleVariableOverride]
+
+    def __init__(
+        self,
+        *,
+        options_resolver: PluginOptionsResolver | None = None,
+    ) -> None:
+        """Initialize with optional options resolver.
+
+        Parameters
+        ----------
+        options_resolver
+            Optional resolver for plugin configuration options.
+        """
+        self._options_resolver = options_resolver
+
+    @property
+    def metadata(self) -> PluginMetadata:
+        """Return protocol-compatible metadata.
+
+        This property automatically converts the `_core_metadata` to the
+        `PluginMetadata` protocol format.
+
+        Returns
+        -------
+        PluginMetadata
+            Protocol-compatible metadata for registry consumers.
+        """
+        from codeintel.build.plugins._metadata import to_plugin_metadata  # noqa: PLC0415
+
+        return to_plugin_metadata(self._core_metadata)
+
+    @property
+    def core_metadata(self) -> CorePluginMetadata:
+        """Return the canonical core metadata.
+
+        Returns
+        -------
+        CorePluginMetadata
+            Full core metadata definition.
+        """
+        return self._core_metadata
+
+    @property
+    def options_resolver(self) -> PluginOptionsResolver | None:
+        """Return the options resolver if configured.
+
+        Returns
+        -------
+        PluginOptionsResolver | None
+            Options resolver or None if not configured.
+        """
+        return self._options_resolver

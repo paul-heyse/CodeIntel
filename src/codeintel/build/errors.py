@@ -38,10 +38,14 @@ __all__ = [
     "CycleDetectedError",
     "DependencyUnavailableError",
     "ExecutionError",
+    "GatewayNotAvailableError",
     "MissingDependencyError",
     "PluginExecutionError",
+    "RegistryValidationError",
     "ResourceError",
     "SchemaNotFoundError",
+    "SchemaValidationError",
+    "SessionNotInitializedError",
     "TargetNotFoundError",
     "TargetTimeoutError",
     "ToolNotAvailableError",
@@ -289,6 +293,87 @@ class ArtifactNotFoundError(ContractError):
         return f"Ensure the dependency that produces '{self.artifact_name}' runs successfully first"
 
 
+class SchemaValidationError(ContractError):
+    """Schema validation failed during materialization.
+
+    This error is raised when data fails Pandera schema validation
+    during table materialization.
+
+    Attributes
+    ----------
+    table_key
+        Fully-qualified table name that failed validation.
+    errors
+        Validation error details from Pandera.
+    target
+        Optional target name that produced the invalid data.
+    """
+
+    def __init__(
+        self,
+        table_key: str,
+        errors: str,
+        target: str | None = None,
+    ) -> None:
+        self.table_key = table_key
+        self.errors = errors
+        self.target = target
+        super().__init__(f"Schema validation failed for '{table_key}': {errors}")
+
+    @property
+    def user_message(self) -> str:
+        """Return human-readable error message."""
+        if self.target:
+            return (
+                f"Target '{self.target}' produced invalid data for table '{self.table_key}': "
+                f"{self.errors}"
+            )
+        return f"Schema validation failed for table '{self.table_key}': {self.errors}"
+
+    @property
+    def actionable_hint(self) -> str:
+        """Return suggestion for fixing the error."""
+        if self.target:
+            return (
+                f"Review the output of target '{self.target}' and ensure it matches "
+                f"the schema for '{self.table_key}'"
+            )
+        return f"Ensure data matches the schema for '{self.table_key}'"
+
+
+class RegistryValidationError(ContractError):
+    """Target registration failed validation.
+
+    This error is raised when a target is registered without
+    any implementation (neither plugin nor native module).
+
+    Attributes
+    ----------
+    target
+        Target name that failed validation.
+    errors
+        List of validation error messages.
+    """
+
+    def __init__(self, target: str, errors: list[str]) -> None:
+        self.target = target
+        self.errors = errors
+        super().__init__(f"Registry validation failed for '{target}': {'; '.join(errors)}")
+
+    @property
+    def user_message(self) -> str:
+        """Return human-readable error message."""
+        return f"Target '{self.target}' failed registry validation: {'; '.join(self.errors)}"
+
+    @property
+    def actionable_hint(self) -> str:
+        """Return suggestion for fixing the error."""
+        return (
+            f"Register a plugin or native module for target '{self.target}' "
+            "in the registrations module"
+        )
+
+
 class ResourceError(BuildError):
     """Base class for resource-related errors.
 
@@ -367,6 +452,60 @@ class DependencyUnavailableError(ResourceError):
     def actionable_hint(self) -> str:
         """Return suggestion for fixing the error."""
         return f"Fix the issue with '{self.dependency}' first, then retry"
+
+
+class GatewayNotAvailableError(ResourceError):
+    """Storage gateway is not available in the execution context.
+
+    This typically indicates a configuration issue where the build
+    context was created without a gateway reference.
+
+    Attributes
+    ----------
+    context
+        Description of the context where the gateway was needed.
+    """
+
+    def __init__(self, context: str = "execution context") -> None:
+        self.context = context
+        super().__init__(f"Gateway not available in {context}")
+
+    @property
+    def user_message(self) -> str:
+        """Return human-readable error message."""
+        return f"Storage gateway is not available in {self.context}"
+
+    @property
+    def actionable_hint(self) -> str:
+        """Return suggestion for fixing the error."""
+        return "Ensure the build context is properly initialized with a gateway"
+
+
+class SessionNotInitializedError(ResourceError):
+    """Build session has not been initialized.
+
+    This typically indicates a lifecycle issue where session-dependent
+    operations are attempted before the session is ready.
+
+    Attributes
+    ----------
+    operation
+        Description of the operation that requires the session.
+    """
+
+    def __init__(self, operation: str = "build operation") -> None:
+        self.operation = operation
+        super().__init__(f"Session not initialized for {operation}")
+
+    @property
+    def user_message(self) -> str:
+        """Return human-readable error message."""
+        return f"Build session is not initialized for {self.operation}"
+
+    @property
+    def actionable_hint(self) -> str:
+        """Return suggestion for fixing the error."""
+        return "Ensure the build session is initialized before executing targets"
 
 
 class ExecutionError(BuildError):

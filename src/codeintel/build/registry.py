@@ -677,6 +677,24 @@ def get_target_graph() -> TargetGraph:
     return build_target_graph()
 
 
+def build_target_graph_from_unified() -> TargetGraph:
+    """Build target graph from the unified registry.
+
+    This function provides a bridge to the new unified registry system.
+    Use this to get a graph that's guaranteed to be consistent with
+    the unified target/plugin registrations.
+
+    Returns
+    -------
+    TargetGraph
+        Graph built from unified registry.
+    """
+    from codeintel.build.unified_registry import get_unified_registry
+
+    unified = get_unified_registry()
+    return build_target_graph(unified.get_all_targets())
+
+
 def derive_schemas_from_targets(
     targets: tuple[OutputTarget, ...],
 ) -> dict[str, TableSchema]:
@@ -799,6 +817,7 @@ __all__ = [
     "TEST_PROFILE_TARGET",
     "TYPING_TARGET",
     "build_target_graph",
+    "build_target_graph_from_unified",
     "derive_schemas_from_targets",
     "get_all_target_table_keys",
     "get_target_by_table",

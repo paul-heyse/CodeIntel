@@ -601,7 +601,7 @@ def _generate_nodes_for_target(
         mappings.target_to_node[target.name] = node_name
 
     if options.include_dataset_nodes:
-        table_keys = target.contract.table_keys or target.table_keys
+        table_keys = target.contract.table_keys
         for table_key in table_keys:
             d_name = dataset_node(table_key)
             setattr(

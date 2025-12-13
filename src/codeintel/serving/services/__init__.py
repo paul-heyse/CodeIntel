@@ -8,6 +8,28 @@ This module provides the Service layer in the serving architecture:
 
     Transport Layer (HTTP/MCP) → Service Layer → Query Layer → Repository
 
+Canonical Imports
+-----------------
+This module re-exports commonly used types for convenience:
+
+**From bootstrap (via this module):**
+
+    from codeintel.serving.services import BackendResource, build_backend_resource
+
+**From conversion:**
+
+    from codeintel.serving.services import to_domain_result
+    # Or directly:
+    from codeintel.serving.services.conversion import to_domain_result, to_response_result
+
+**From transport:**
+
+    from codeintel.serving.services import LocalTransport, HttpTransport, TransportAdapter
+
+**From query_service:**
+
+    from codeintel.serving.services import LocalQueryService, HttpQueryService
+
 Key Components
 ~~~~~~~~~~~~~~
 - ``LocalQueryService``: Wraps ``DuckDBQueryApi`` for local database access
@@ -25,9 +47,10 @@ For new code, prefer using transport adapters for unified query execution:
 
 Response Conversion
 ~~~~~~~~~~~~~~~~~~~
-Use the unified conversion helper for domain/transport model interop:
+Use the unified conversion helpers for domain/transport model interop:
 
-- ``to_domain_result``: Converts raw responses to domain models
+- ``to_domain_result``: Converts raw responses to domain models (service layer)
+- ``to_response_result``: Converts domain models to response models (backend layer)
 
 See ``codeintel.serving.domain_models`` for the full architecture contract.
 """
@@ -46,6 +69,7 @@ __all__ = [
     "TransportAdapter",
     "build_backend_resource",
     "to_domain_result",
+    "to_response_result",
 ]
 
 if TYPE_CHECKING:
@@ -57,6 +81,7 @@ if TYPE_CHECKING:
     TransportAdapter: object
     build_backend_resource: object
     to_domain_result: object
+    to_response_result: object
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "BackendResource": ("codeintel.serving.bootstrap", "BackendResource"),
@@ -67,6 +92,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "TransportAdapter": ("codeintel.serving.services.transport", "TransportAdapter"),
     "build_backend_resource": ("codeintel.serving.bootstrap", "build_backend_resource"),
     "to_domain_result": ("codeintel.serving.services.conversion", "to_domain_result"),
+    "to_response_result": ("codeintel.serving.services.conversion", "to_response_result"),
 }
 
 

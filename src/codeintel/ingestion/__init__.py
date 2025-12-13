@@ -55,17 +55,8 @@ The following plugins are registered by default:
 
 from __future__ import annotations
 
-from codeintel.build.plugins.ingestion import (
-    AstExtractPlugin,
-    ConfigIngestPlugin,
-    CoverageIngestPlugin,
-    CstExtractPlugin,
-    DocstringsIngestPlugin,
-    RepoScanPlugin,
-    ScipIngestPlugin,
-    TestsIngestPlugin,
-    TypingIngestPlugin,
-)
+# Note: Plugin imports are deferred to avoid circular imports.
+# Use `from codeintel.build.plugins.ingestion import FooPlugin` directly.
 from codeintel.ingestion.adapters import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
@@ -148,7 +139,8 @@ from codeintel.ingestion.validation import (
 __all__ = [
     "AST_WORKER_CONFIG",
     "CST_WORKER_CONFIG",
-    "AstExtractPlugin",
+    # Plugin classes moved to codeintel.build.plugins.ingestion to break circular imports.
+    # Import directly: from codeintel.build.plugins.ingestion import AstExtractPlugin
     "AstExtractStep",
     "BatchResult",
     "BuildToolAdapter",
@@ -158,19 +150,15 @@ __all__ = [
     "ChangeTracker",
     "ChangeTrackerDatasetView",
     "ColumnConstraint",
-    "ConfigIngestPlugin",
     "ConfigIngestStep",
     "ContractValidationResult",
     "ContractViolation",
     "CoverageFileData",
-    "CoverageIngestPlugin",
     "CoverageIngestStep",
     "CoverageResult",
-    "CstExtractPlugin",
     "CstExtractStep",
     "DiagnosticResult",
     "DocstringsExtractStep",
-    "DocstringsIngestPlugin",
     "DuckDBStorageAdapter",
     "FileDigest",
     "FilesystemDiscoveryAdapter",
@@ -186,20 +174,16 @@ __all__ = [
     "ModuleDiscoveryPort",
     "ModuleRecord",
     "QueryResult",
-    "RepoScanPlugin",
     "RepoScanStep",
     "ScanProfile",
-    "ScipIngestPlugin",
     "ScipIngestResult",
     "ScipIngestStep",
     "ScipResult",
     "StepResult",
     "SupportsFullRebuild",
     "TestResult",
-    "TestsIngestPlugin",
     "TestsIngestStep",
     "ToolRunnerAdapter",
-    "TypingIngestPlugin",
     "TypingIngestStep",
     "WorkerConfig",
     "create_executor",

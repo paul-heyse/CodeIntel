@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/functions.py
+# hypothesis_version: 6.148.7
+
+[0.7, '/file/summary', '/function/callgraph', '/function/summary', '/function/tests', '/functions/high-risk', 'both', 'call_graph_nodes', 'direction', 'get_file_summary', 'get_function_summary', 'get_import_boundary', 'goid_h128', 'import_graph_edges', 'limit', 'max_edges', 'max_nodes', 'min_risk', 'qualname', 'radius', 'rel_path', 'scope', 'subsystem_id', 'tested_only', 'urn']

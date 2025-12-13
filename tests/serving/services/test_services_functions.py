@@ -14,7 +14,6 @@ from fastapi import status
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.models import GraphScopePayload
-from codeintel.serving.services.base import BaseFunctionQueries, BaseSubsystemQueries
 from codeintel.serving.services.errors import ProblemDetail, ProblemError
 from codeintel.serving.services.transport import HttpTransport, LocalTransport
 from tests._helpers.assertions import (
@@ -666,8 +665,8 @@ def test_import_boundary_missing_subsystem_id(
     assert_problem_detail_response(response, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
-class _RecordedFunctionQueries(BaseFunctionQueries):
-    """Concrete implementation capturing _execute inputs."""
+class _RecordedFunctionQueries:
+    """Test implementation capturing _execute inputs for verification."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str | None]] = []
@@ -784,8 +783,8 @@ class _RecordedFunctionQueries(BaseFunctionQueries):
         )
 
 
-class _RecordedSubsystemQueries(BaseSubsystemQueries):
-    """Concrete subsystem implementation capturing datasets."""
+class _RecordedSubsystemQueries:
+    """Test subsystem implementation capturing datasets for verification."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str | None]] = []
@@ -888,7 +887,7 @@ class _RecordedSubsystemQueries(BaseSubsystemQueries):
 
 
 def test_base_function_queries_executes_and_records_dataset() -> None:
-    """Ensure BaseFunctionQueries subclasses execute and capture dataset context."""
+    """Ensure function query implementations execute and capture dataset context."""
     queries = _RecordedFunctionQueries()
 
     summary = queries.get_function_summary(urn="u", scope=GraphScopePayload())
@@ -906,7 +905,7 @@ def test_base_function_queries_executes_and_records_dataset() -> None:
 
 
 def test_base_subsystem_queries_executes_and_records_dataset() -> None:
-    """Ensure BaseSubsystemQueries subclasses execute and capture dataset context."""
+    """Ensure subsystem query implementations execute and capture dataset context."""
     queries = _RecordedSubsystemQueries()
 
     subs = queries.list_subsystems()

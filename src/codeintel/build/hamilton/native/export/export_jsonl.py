@@ -10,22 +10,19 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
-import duckdb
 from hamilton.function_modifiers import tag
 
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord, compute_target_input_hash
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.artifact_materializer import (
     ArtifactMaterializationContext,
     ArtifactMaterializationSpec,
     materialize_artifact,
 )
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.runner import (
     NativeRunInfo,
-    create_failed_record,
-    create_skipped_record,
-    create_success_record,
+    create_run_record,
     save_manifest,
-    should_skip_native_target,
 )
 from codeintel.storage.ibis_types import and_predicates
 
@@ -35,7 +32,7 @@ if TYPE_CHECKING:
     import ibis.expr.types as ir
     import pandas as pd
 
-    from codeintel.build.env import BuildEnv
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import TargetGraph
 
 
@@ -158,29 +155,10 @@ def t__export_jsonl(
     """
     LOG.info("Materializing export_jsonl to file")
 
-    target = graph.get("export_jsonl")
-    if target is None:
-        return create_failed_record(
-            target=graph.get("modules") or graph.all_targets[0],
-            input_hash="",
-            options_hash=None,
-            duration_ms=0.0,
-            error=ValueError("export_jsonl target not found in graph"),
-        )
+    executor = NativeTargetExecutor.for_target(env, graph, "export_jsonl")
 
-    input_hash = compute_target_input_hash(
-        target=target,
-        snapshot=env.snapshot,
-        gateway=env.gateway,
-        manifests=env.manifest_index,
-    )
-
-    if should_skip_native_target(env, target, input_hash):
-        return create_skipped_record(
-            target=target,
-            env=env,
-            run=NativeRunInfo(input_hash=input_hash, options_hash=None, duration_ms=0.0),
-        )
+    if executor.should_skip():
+        return executor.skip()
 
     output_file = env.paths.document_output_dir / "codeintel.jsonl"
 
@@ -213,8 +191,8 @@ def t__export_jsonl(
             ArtifactMaterializationContext(
                 snapshot=env.snapshot,
                 gateway=env.gateway,
-                owner_target=target.name,
-                input_hash=input_hash,
+                owner_target="export_jsonl",
+                input_hash=executor.input_hash,
             ),
             ArtifactMaterializationSpec(
                 artifact_name="jsonl_export",
@@ -229,23 +207,26 @@ def t__export_jsonl(
                 },
             ),
         )
-    except (OSError, ValueError, RuntimeError, duckdb.Error) as exc:
-        return create_failed_record(
-            target=target,
-            input_hash=input_hash,
-            options_hash=None,
-            duration_ms=0.0,
-            error=exc,
-        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        return executor.fail(exc)
 
     LOG.info("export_jsonl materialization complete: %s", output_file)
 
-    record = create_success_record(
-        target=target,
+    # Create success record with artifact
+    run = NativeRunInfo(
+        input_hash=executor.input_hash,
+        options_hash=executor.options_hash,
+        duration_ms=0.0,
+    )
+    record = create_run_record(
+        executor.target,
+        "succeeded",
+        executor.input_hash,
         env=env,
-        run=NativeRunInfo(input_hash=input_hash, options_hash=None, duration_ms=0.0),
+        run=run,
     )
 
+    # Add artifact to record
     record = TargetRunRecord(
         target=record.target,
         plugin_name=record.plugin_name,

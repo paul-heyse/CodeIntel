@@ -112,11 +112,7 @@ class ContractEnforcer:
         if not cls._strict or cls._current_target is None:
             return
 
-        if not cls._current_target.contract:
-            # No contract defined - allow write (backward compatibility)
-            return
-
-        allowed_tables = set(cls._current_target.contract.table_keys or [])
+        allowed_tables = set(cls._current_target.contract.table_keys)
         if table_key not in allowed_tables:
             raise ContractViolationError(
                 target=cls._current_target.name,
@@ -146,13 +142,7 @@ class ContractEnforcer:
         if not cls._strict or cls._current_target is None:
             return
 
-        if not cls._current_target.contract:
-            # No contract defined - allow write (backward compatibility)
-            return
-
-        artifact_names = {
-            artifact.name for artifact in (cls._current_target.contract.artifacts or [])
-        }
+        artifact_names = {artifact.name for artifact in cls._current_target.contract.artifacts}
         if artifact_name not in artifact_names:
             raise ContractViolationError(
                 target=cls._current_target.name,

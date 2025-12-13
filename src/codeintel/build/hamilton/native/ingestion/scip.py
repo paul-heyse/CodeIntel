@@ -8,26 +8,23 @@ This module implements SCIP indexing as a native Hamilton pipeline with:
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord, compute_target_input_hash
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.outputs import expected_artifacts
 from codeintel.build.hamilton.native.runner import (
     NativeRunInfo,
-    create_failed_record,
-    create_skipped_record,
-    create_success_record,
+    create_run_record,
     save_manifest,
-    should_skip_native_target,
 )
 from codeintel.build.hamilton.native.tools import ToolExecutionResult, ToolExecutionSpec
 from codeintel.build.hamilton.native.tools.executor import execute_tool
 
 if TYPE_CHECKING:
-    from codeintel.build.env import BuildEnv
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import TargetGraph
 
 
@@ -144,16 +141,7 @@ def t__scip(
     TargetRunRecord
         Complete target execution record.
     """
-    start_time = time.perf_counter()
     target = graph.get("scip")
-    if target is None:
-        return create_failed_record(
-            target=graph.get("modules") or graph.all_targets[0],  # Fallback
-            input_hash="",
-            options_hash=None,
-            duration_ms=(time.perf_counter() - start_time) * 1000,
-            error=Exception("SCIP target not found in graph"),
-        )
 
     # Check for upstream failure
     if t__modules.status != "succeeded":
@@ -175,53 +163,35 @@ def t__scip(
                     "scip_dir": str(env.paths.scip_dir),
                     "repo_root": str(env.snapshot.repo_root),
                 },
-            ),
+            ) if target else (),
         )
 
-    input_hash = compute_target_input_hash(
-        target=target,
-        snapshot=env.snapshot,
-        gateway=env.gateway,
-        manifests=env.manifest_index,
-    )
+    executor = NativeTargetExecutor.for_target(env, graph, "scip")
 
     # Check skip logic
-    if should_skip_native_target(env, target, input_hash):
-        duration_ms = (time.perf_counter() - start_time) * 1000
-        return create_skipped_record(
-            target=target,
-            env=env,
-            run=NativeRunInfo(input_hash=input_hash, options_hash=None, duration_ms=duration_ms),
-        )
+    if executor.should_skip():
+        return executor.skip()
 
     # Check tool execution
     if not tool__scip.success:
-        duration_ms = (time.perf_counter() - start_time) * 1000
-        return create_failed_record(
-            target=target,
-            input_hash=input_hash,
-            options_hash=None,
-            duration_ms=duration_ms,
-            error=Exception(tool__scip.stderr or "Tool execution failed"),
-        )
+        return executor.fail(RuntimeError(tool__scip.stderr or "Tool execution failed"))
 
     # Check parsing
     if not parse__scip.get("success"):
-        duration_ms = (time.perf_counter() - start_time) * 1000
-        return create_failed_record(
-            target=target,
-            input_hash=input_hash,
-            options_hash=None,
-            duration_ms=duration_ms,
-            error=Exception(str(parse__scip.get("error", "Parse failed"))),
-        )
+        return executor.fail(RuntimeError(str(parse__scip.get("error", "Parse failed"))))
 
     # Success case - materialization would happen here in full implementation
-    duration_ms = (time.perf_counter() - start_time) * 1000
-    record = create_success_record(
-        target=target,
+    run = NativeRunInfo(
+        input_hash=executor.input_hash,
+        options_hash=executor.options_hash,
+        duration_ms=0.0,
+    )
+    record = create_run_record(
+        executor.target,
+        "succeeded",
+        executor.input_hash,
         env=env,
-        run=NativeRunInfo(input_hash=input_hash, options_hash=None, duration_ms=duration_ms),
+        run=run,
     )
 
     save_manifest(env, record)

@@ -26,7 +26,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.protocols import (
+from codeintel.build.types import (
     CoverageData,
     GitLogEntry,
     ScipIndexResult,

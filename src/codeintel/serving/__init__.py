@@ -36,9 +36,9 @@ The serving layer follows a layered architecture:
 Key Modules
 -----------
 **bootstrap.py** - Service construction entry points
-    - ``build_service_stack()`` - Complete service stack for servers
-    - ``build_backend_resource()`` - Backend + service bundle
-    - ``build_service_from_config()`` - Service from configuration
+    - ``build_service_stack()`` - Complete service stack for servers (recommended)
+    - ``build_backend_resource()`` - Backend + service bundle (recommended)
+    - ``build_service_from_config()`` - Service from configuration (deprecated)
 
 **backend/** - Query services and domain building
     - ``duckdb_service.py`` - DuckDB query service implementation

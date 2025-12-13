@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/auto_pipeline.py
+# hypothesis_version: 6.148.7
+
+[', ', '.codeintel', '1', '<unknown>', 'AUTO_PIPELINE_ENV', 'Contract not found', 'DatasetDebugInfo', 'PrereqDebugInfo', 'PrerequisiteError', 'RunDebugInfo', 'default', 'duckdb.db', 'ensure_prereqs', 'full', 'gateway', 'generated', 'http', 'local_db', 'mcp', 'not enabled', 'on', 'op_prereqs', 'succeeded', 'true', 'yes']

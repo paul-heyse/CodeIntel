@@ -6,25 +6,34 @@ aliases used by both the backend and MCP layers should be defined here.
 
 Import Pattern
 --------------
-Instead of importing from specific modules that might create cycles:
-
+Instead of importing from specific modules that might create cycles::
 
     from codeintel.serving.mcp.backend import QueryBackend
 
-Use this module:
-
+Use this module::
 
     from codeintel.serving.types import QueryBackendProtocol
 
 Protocol Hierarchy
 ------------------
-Backend protocols define the interface for query backends:
+The protocol hierarchy follows a composable design:
 
-- ``BaseBackendProtocol`` - Base protocol with service accessor
-- ``FunctionBackendProtocol`` - Function and graph operations
-- ``ProfileBackendProtocol`` - Profile and architecture operations
-- ``SubsystemBackendProtocol`` - Subsystem and hints operations
-- ``DatasetBackendProtocol`` - Dataset listing and schema operations
+**Base Protocols:**
+
+- ``RepoCommitProtocol`` - Base for repo/commit scoped entities
+- ``HasModelDump``, ``HasModelValidate``, ``HasClose`` - Pydantic utilities
+
+**Queryable Protocols (unified service/backend interface):**
+
+- ``FunctionQueryable`` - Function and graph operations
+- ``ProfileQueryable`` - Profile and architecture operations
+- ``SubsystemQueryable`` - Subsystem and hints operations
+- ``DatasetQueryable`` - Dataset listing and schema operations
+
+**Composite Protocols:**
+
+- ``QueryServiceProtocol`` - Full service interface (all queryables)
+- ``QueryBackendProtocol`` - Full backend interface (all queryables + service)
 
 Note
 ----
@@ -39,34 +48,19 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from codeintel.serving import domain_models as dm
     from codeintel.serving.mcp.models import (
-        CallGraphNeighborsResponse,
-        DatasetDescriptor,
-        DatasetRowsResponse,
-        DatasetSchemaResponse,
         DatasetSpecDescriptor,
-        FileHintsResponse,
-        FileProfileResponse,
-        FileSummaryResponse,
-        FunctionArchitectureResponse,
-        FunctionProfileResponse,
-        FunctionSummaryResponse,
-        GraphNeighborhoodResponse,
         GraphScopePayload,
-        HighRiskFunctionsResponse,
-        ImportBoundaryResponse,
-        ModuleArchitectureResponse,
-        ModuleProfileResponse,
-        ModuleSubsystemResponse,
-        SubsystemModulesResponse,
-        SubsystemSearchResponse,
-        SubsystemSummaryResponse,
-        TestsForFunctionResponse,
     )
     from codeintel.serving.services.query_service import QueryService
 
 
 RowDict = dict[str, object]
 JsonPayload = dict[str, object] | list[object]
+
+
+# =============================================================================
+# Utility Protocols (Pydantic and resource management)
+# =============================================================================
 
 
 class HasModelDump(Protocol):
@@ -111,32 +105,16 @@ class ServiceResult(Protocol):
     meta: ResponseMetaLike
 
 
-class QueryBackendProtocol(Protocol):
-    """
-    Protocol for query backends (local DuckDB or remote HTTP).
-
-    This protocol defines the common interface implemented by both
-    DuckDBBackend and HttpBackend, allowing code to work with either
-    without importing the concrete implementations.
-    """
-
-    @property
-    def repo(self) -> str:
-        """Return the repository identifier."""
-        ...
-
-    @property
-    def commit(self) -> str:
-        """Return the commit hash."""
-        ...
+# =============================================================================
+# Base Protocols
+# =============================================================================
 
 
-class QueryServiceProtocol(Protocol):
-    """
-    Protocol for query services that provide the business logic layer.
+class RepoCommitProtocol(Protocol):
+    """Base protocol for repo/commit scoped entities.
 
-    This protocol defines the common interface for LocalQueryService
-    and HttpQueryService.
+    This protocol provides the common interface for identifying the repository
+    and commit context that all serving-layer components operate within.
     """
 
     @property
@@ -151,10 +129,9 @@ class QueryServiceProtocol(Protocol):
 
 
 class StorageGatewayProtocol(Protocol):
-    """
-    Protocol for storage gateway access.
+    """Protocol for storage gateway access.
 
-    Defines the minimal interface needed by serving components
+    Define the minimal interface needed by serving components
     without requiring the full StorageGateway import.
     """
 
@@ -169,10 +146,9 @@ class StorageGatewayProtocol(Protocol):
 
 
 class GraphEngineProtocol(Protocol):
-    """
-    Protocol for graph engine access.
+    """Protocol for graph engine access.
 
-    Defines the minimal interface needed for graph operations
+    Define the minimal interface needed for graph operations
     without requiring the full GraphEngine import.
     """
 
@@ -185,18 +161,13 @@ class GraphEngineProtocol(Protocol):
         ...
 
 
-class RepositoryProtocol(Protocol):
+# =============================================================================
+# Repository Protocols
+# =============================================================================
+
+
+class RepositoryProtocol(RepoCommitProtocol, Protocol):
     """Base protocol for all repository types."""
-
-    @property
-    def repo(self) -> str:
-        """Return the repository identifier."""
-        ...
-
-    @property
-    def commit(self) -> str:
-        """Return the commit hash."""
-        ...
 
 
 class FunctionRepositoryProtocol(RepositoryProtocol, Protocol):
@@ -245,20 +216,19 @@ class SubsystemRepositoryProtocol(RepositoryProtocol, Protocol):
         ...
 
 
-ServiceFactory = Callable[..., QueryServiceProtocol]
+# =============================================================================
+# Queryable Protocols (Unified Service/Backend Interface)
+# =============================================================================
 
 
-BackendFactory = Callable[..., QueryBackendProtocol]
-
-
-class FunctionQueryProtocol(Protocol):
+class FunctionQueryable(Protocol):
     """Unified protocol for function query operations.
 
     This protocol is the **single source of truth** for function-related query
     methods. Implementations include:
 
     - Service layer: ``LocalQueryService``, ``HttpQueryService``
-    - Backend layer: ``DuckDBQueryService`` (via ``FunctionQueryLayer``)
+    - Backend layer: ``DuckDBBackend``, ``HttpBackend``
 
     Note: The ``scope`` parameter uses ``GraphScopePayload | None`` at the service
     layer. Backend implementations convert this to ``GraphRunScope`` internally.
@@ -338,7 +308,7 @@ class FunctionQueryProtocol(Protocol):
         ...
 
 
-class ProfileQueryProtocol(Protocol):
+class ProfileQueryable(Protocol):
     """Unified protocol for profile and architecture query operations.
 
     This protocol defines file/module profile and architecture metrics queries.
@@ -369,7 +339,7 @@ class ProfileQueryProtocol(Protocol):
         ...
 
 
-class SubsystemQueryProtocol(Protocol):
+class SubsystemQueryable(Protocol):
     """Unified protocol for subsystem query operations.
 
     This protocol defines subsystem, hints, and search queries.
@@ -434,7 +404,7 @@ class SubsystemQueryProtocol(Protocol):
         ...
 
 
-class DatasetQueryProtocol(Protocol):
+class DatasetQueryable(Protocol):
     """Unified protocol for dataset query operations.
 
     This protocol defines dataset listing, schema, and row retrieval queries.
@@ -468,215 +438,80 @@ class DatasetQueryProtocol(Protocol):
         ...
 
 
-class BaseBackendProtocol(Protocol):
-    """Base backend interface providing shared service access."""
+# =============================================================================
+# Composite Protocols
+# =============================================================================
+
+
+class QueryServiceProtocol(
+    FunctionQueryable,
+    ProfileQueryable,
+    SubsystemQueryable,
+    DatasetQueryable,
+    RepoCommitProtocol,
+    Protocol,
+):
+    """Composite query service interface.
+
+    This protocol combines all queryable protocols into a single interface
+    for query services. Use this when type-hinting service parameters.
+    """
+
+
+class QueryBackendProtocol(
+    FunctionQueryable,
+    ProfileQueryable,
+    SubsystemQueryable,
+    DatasetQueryable,
+    RepoCommitProtocol,
+    Protocol,
+):
+    """Composite backend interface for MCP tools.
+
+    This protocol combines all queryable protocols into a single interface
+    for query backends. It also provides access to the underlying service.
+    """
 
     service: QueryService
 
 
-class FunctionBackendProtocol(BaseBackendProtocol, Protocol):
-    """Function and graph operations surfaced by backends."""
-
-    def get_function_summary(
-        self,
-        *,
-        urn: str | None = None,
-        goid_h128: int | None = None,
-        rel_path: str | None = None,
-        qualname: str | None = None,
-        scope: object | None = None,
-    ) -> FunctionSummaryResponse:
-        """Return a function summary from analytics and docs views."""
-        ...
-
-    def list_high_risk_functions(
-        self,
-        *,
-        min_risk: float = 0.7,
-        limit: int | None = None,
-        tested_only: bool = False,
-        scope: object | None = None,
-    ) -> HighRiskFunctionsResponse:
-        """List high-risk functions with optional tested-only filtering."""
-        ...
-
-    def get_callgraph_neighbors(
-        self,
-        *,
-        goid_h128: int,
-        direction: str = "both",
-        limit: int | None = None,
-        scope: object | None = None,
-    ) -> CallGraphNeighborsResponse:
-        """Return incoming and outgoing call graph neighbors."""
-        ...
-
-    def get_callgraph_neighborhood(
-        self,
-        *,
-        goid_h128: int,
-        radius: int = 1,
-        max_nodes: int | None = None,
-    ) -> GraphNeighborhoodResponse:
-        """Return a bounded ego neighborhood in the call graph."""
-        ...
-
-    def get_import_boundary(
-        self,
-        *,
-        subsystem_id: str,
-        max_edges: int | None = None,
-    ) -> ImportBoundaryResponse:
-        """Return import graph edges crossing a subsystem boundary."""
-        ...
-
-    def get_tests_for_function(
-        self,
-        *,
-        goid_h128: int | None = None,
-        urn: str | None = None,
-        limit: int | None = None,
-        scope: object | None = None,
-    ) -> TestsForFunctionResponse:
-        """List tests that exercised a function."""
-        ...
-
-    def get_file_summary(
-        self,
-        *,
-        rel_path: str,
-        scope: object | None = None,
-    ) -> FileSummaryResponse:
-        """Return a file summary with nested function rows."""
-        ...
+# =============================================================================
+# Factory Types
+# =============================================================================
 
 
-class ProfileBackendProtocol(BaseBackendProtocol, Protocol):
-    """Profile and architecture operations surfaced by backends."""
-
-    def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
-        """Return a denormalized function profile."""
-        ...
-
-    def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
-        """Return a denormalized file profile."""
-        ...
-
-    def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
-        """Return a profile for a module."""
-        ...
-
-    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
-        """Return architecture metrics for a function."""
-        ...
-
-    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
-        """Return architecture metrics for a module."""
-        ...
-
-
-class SubsystemBackendProtocol(BaseBackendProtocol, Protocol):
-    """Subsystem, IDE hints, and search operations."""
-
-    def list_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSummaryResponse:
-        """List inferred subsystems with optional filters."""
-        ...
-
-    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
-        """Return subsystem memberships for a module."""
-        ...
-
-    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
-        """Return IDE-focused hints for a file."""
-        ...
-
-    def get_subsystem_modules(
-        self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
-        """Return subsystem detail and member modules."""
-        ...
-
-    def search_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSearchResponse:
-        """Search subsystems by role or label."""
-        ...
-
-    def summarize_subsystem(
-        self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
-        """Summarize a subsystem with optional module truncation."""
-        ...
-
-
-class DatasetBackendProtocol(BaseBackendProtocol, Protocol):
-    """Dataset listing and schema operations surfaced by backends."""
-
-    def list_datasets(self) -> list[DatasetDescriptor]:
-        """List datasets available to browse."""
-        ...
-
-    def read_dataset_rows(
-        self,
-        *,
-        dataset_name: str,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> DatasetRowsResponse:
-        """Read a slice of rows from a dataset."""
-        ...
-
-    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
-        """Return canonical dataset specifications."""
-        ...
-
-    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
-        """Return schema and sample rows for a dataset."""
-        ...
-
-
-class AggregatedBackendProtocol(
-    DatasetBackendProtocol,
-    FunctionBackendProtocol,
-    ProfileBackendProtocol,
-    SubsystemBackendProtocol,
-    Protocol,
-):
-    """Aggregated backend interface consumed by MCP tools.
-
-    This protocol combines all domain-specific backend protocols into a single
-    interface. Use this when a component needs access to all backend operations.
-    """
+ServiceFactory = Callable[..., QueryServiceProtocol]
+BackendFactory = Callable[..., QueryBackendProtocol]
 
 
 __all__ = [
-    "AggregatedBackendProtocol",
-    "BackendFactory",
-    "BaseBackendProtocol",
-    "DatasetBackendProtocol",
-    "DatasetQueryProtocol",
-    "FunctionBackendProtocol",
-    "FunctionQueryProtocol",
+    # Composite protocols (primary)
+    "QueryBackendProtocol",
+    "QueryServiceProtocol",
+    # Queryable protocols
+    "DatasetQueryable",
+    "FunctionQueryable",
+    "ProfileQueryable",
+    "SubsystemQueryable",
+    # Base protocols
+    "RepoCommitProtocol",
+    # Repository protocols
     "FunctionRepositoryProtocol",
+    "ModuleRepositoryProtocol",
+    "RepositoryProtocol",
+    "SubsystemRepositoryProtocol",
+    # Utility protocols
     "GraphEngineProtocol",
     "HasClose",
     "HasModelDump",
     "HasModelValidate",
-    "JsonPayload",
-    "ModuleRepositoryProtocol",
-    "ProfileBackendProtocol",
-    "ProfileQueryProtocol",
-    "QueryBackendProtocol",
-    "QueryServiceProtocol",
-    "RepositoryProtocol",
     "ResponseMetaLike",
-    "RowDict",
-    "ServiceFactory",
     "ServiceResult",
     "StorageGatewayProtocol",
-    "SubsystemBackendProtocol",
-    "SubsystemQueryProtocol",
-    "SubsystemRepositoryProtocol",
+    # Factory types
+    "BackendFactory",
+    "ServiceFactory",
+    # Type aliases
+    "JsonPayload",
+    "RowDict",
 ]

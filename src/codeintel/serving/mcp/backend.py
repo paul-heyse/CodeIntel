@@ -15,6 +15,7 @@ from codeintel.serving.backend import (
     BackendLimits,
 )
 from codeintel.serving.mcp import errors
+from codeintel.serving.mcp.backend_dispatch import BackendDispatchMixin
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
@@ -27,7 +28,6 @@ from codeintel.serving.mcp.models import (
     FunctionProfileResponse,
     FunctionSummaryResponse,
     GraphNeighborhoodResponse,
-    GraphScopePayload,
     HighRiskFunctionsResponse,
     ImportBoundaryResponse,
     ModuleArchitectureResponse,
@@ -46,11 +46,10 @@ from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,
 )
-from codeintel.serving.types import AggregatedBackendProtocol
+from codeintel.serving.types import QueryBackendProtocol
 
 if TYPE_CHECKING:
     from codeintel.graphs.engine import GraphEngine
-    from codeintel.serving import domain_models as dm
     from codeintel.serving.backend import (
         DuckDBQueryService,
     )
@@ -89,13 +88,77 @@ async def _get_async(
     return await client.get(path, params=params)
 
 
-QueryBackend = AggregatedBackendProtocol
+QueryBackend = QueryBackendProtocol
 
 
 class DatasetBackendMixin:
-    """Common dataset helpers shared by backend implementations."""
+    """Common dataset helpers shared by backend implementations.
 
-    service: QueryService
+    This mixin provides dataset-related methods for both DuckDBBackend and
+    HttpBackend. It relies on concrete classes also inheriting from
+    BackendDispatchMixin, which provides the ``is_local`` property.
+
+    The ``_dispatch_dataset`` helper method is similar to ``BackendDispatchMixin._dispatch``
+    but adds handling for ``DatasetNotFoundError`` in addition to ``ProblemError``.
+
+    Note
+    ----
+    This mixin expects the concrete class to also inherit from
+    ``BackendDispatchMixin`` which provides ``is_local`` and ``service``.
+    """
+
+    if TYPE_CHECKING:
+        # These are provided by BackendDispatchMixin at runtime
+        service: QueryService
+        is_local: bool
+
+    def _dispatch_dataset[R](
+        self,
+        method_name: str,
+        response_type: type[R],
+        **kwargs: object,
+    ) -> R:
+        """
+        Dispatch a dataset method with error handling and response conversion.
+
+        Similar to ``BackendDispatchMixin._dispatch`` but handles
+        ``DatasetNotFoundError`` in addition to ``ProblemError``.
+
+        Parameters
+        ----------
+        method_name
+            Name of the method on ``self.service`` to call.
+        response_type
+            Pydantic response model type for conversion.
+        **kwargs
+            Keyword arguments to pass to the service method.
+
+        Returns
+        -------
+        R
+            Response model instance.
+
+        Raises
+        ------
+        errors.McpError
+            When the underlying service reports a problem detail or
+            dataset is not found (local only).
+        """
+        method = getattr(self.service, method_name)
+
+        if self.is_local:
+            try:
+                domain_result = method(**kwargs)
+            except DatasetNotFoundError as exc:
+                raise errors.McpError(exc.detail) from exc
+            except ProblemError as exc:
+                raise errors.McpError(exc.detail) from exc
+            return response_type.from_domain(domain_result)  # type: ignore[attr-defined]
+
+        result = method(**kwargs)
+        if isinstance(result, response_type):
+            return result
+        return response_type.from_domain(result)  # type: ignore[attr-defined]
 
     def list_datasets(self) -> list[DatasetDescriptor]:
         """
@@ -142,17 +205,13 @@ class DatasetBackendMixin:
         errors.McpError
             When the service reports a problem detail.
         """
-        try:
-            domain_rows: dm.DatasetRows = self.service.read_dataset_rows(
-                dataset_name=dataset_name,
-                limit=limit,
-                offset=offset,
-            )
-        except DatasetNotFoundError as exc:
-            raise errors.McpError(exc.detail) from exc
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return DatasetRowsResponse.from_domain(domain_rows)
+        return self._dispatch_dataset(
+            "read_dataset_rows",
+            DatasetRowsResponse,
+            dataset_name=dataset_name,
+            limit=limit,
+            offset=offset,
+        )
 
     def dataset_specs(self) -> list[DatasetSpecDescriptor]:
         """
@@ -179,16 +238,12 @@ class DatasetBackendMixin:
         errors.McpError
             When the service reports a problem detail.
         """
-        try:
-            domain_schema: dm.DatasetSchema = self.service.dataset_schema(
-                dataset_name=dataset_name,
-                sample_limit=sample_limit,
-            )
-        except DatasetNotFoundError as exc:
-            raise errors.McpError(exc.detail) from exc
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return DatasetSchemaResponse.from_domain(domain_schema)
+        return self._dispatch_dataset(
+            "dataset_schema",
+            DatasetSchemaResponse,
+            dataset_name=dataset_name,
+            sample_limit=sample_limit,
+        )
 
 
 def _require_identifier(
@@ -235,12 +290,19 @@ def _validate_direction(direction: str) -> str:
 
 
 @dataclass
-class DuckDBBackend(DatasetBackendMixin, QueryBackend):
+class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
     """DuckDB-backed implementation of QueryBackend.
+
+    This class implements the ``QueryBackend`` protocol via duck typing
+    (not direct inheritance to avoid dataclass field ordering issues
+    with Python 3.13's protocol annotation handling).
 
     The backend requires a pre-constructed ``LocalQueryService`` which provides
     query capabilities. Use ``build_backend_resource()`` from
     ``codeintel.serving.bootstrap`` to construct the service.
+
+    This class uses ``BackendDispatchMixin`` to consolidate the repetitive
+    error handling and response conversion pattern across all methods.
 
     Example
     -------
@@ -257,6 +319,11 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
     observability: ServiceObservability | None = None
     query: DuckDBQueryApi | DuckDBQueryService | None = field(init=False, default=None)
     query_engine: GraphEngine | None = None
+
+    @property
+    def is_local(self) -> bool:
+        """Return True since this is a local DuckDB backend."""
+        return True
 
     def __post_init__(self) -> None:
         """Initialize internal state from the provided service."""
@@ -286,18 +353,15 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
             When the underlying service reports a problem detail.
         """
         _require_identifier(urn=urn, goid_h128=goid_h128, rel_path=rel_path)
-        scope_payload = scope if isinstance(scope, GraphScopePayload) else None
-        try:
-            domain_summary = self.service.get_function_summary(
-                urn=urn,
-                goid_h128=goid_h128,
-                rel_path=rel_path,
-                qualname=qualname,
-                scope=scope_payload,
-            )
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return FunctionSummaryResponse.from_domain(domain_summary)
+        return self._dispatch(
+            "get_function_summary",
+            FunctionSummaryResponse,
+            urn=urn,
+            goid_h128=goid_h128,
+            rel_path=rel_path,
+            qualname=qualname,
+            scope=scope,
+        )
 
     def list_high_risk_functions(
         self,
@@ -320,16 +384,14 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_response = self.service.list_high_risk_functions(
-                min_risk=min_risk,
-                limit=limit,
-                tested_only=tested_only,
-                scope=scope if isinstance(scope, GraphScopePayload) else None,
-            )
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return HighRiskFunctionsResponse.from_domain(domain_response)
+        return self._dispatch(
+            "list_high_risk_functions",
+            HighRiskFunctionsResponse,
+            min_risk=min_risk,
+            limit=limit,
+            tested_only=tested_only,
+            scope=scope,
+        )
 
     def get_callgraph_neighbors(
         self,
@@ -353,16 +415,14 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
             When the underlying service reports a problem detail.
         """
         direction = _validate_direction(direction)
-        try:
-            domain_neighbors = self.service.get_callgraph_neighbors(
-                goid_h128=goid_h128,
-                direction=direction,
-                limit=limit,
-                scope=scope if isinstance(scope, GraphScopePayload) else None,
-            )
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return CallGraphNeighborsResponse.from_domain(domain_neighbors)
+        return self._dispatch(
+            "get_callgraph_neighbors",
+            CallGraphNeighborsResponse,
+            goid_h128=goid_h128,
+            direction=direction,
+            limit=limit,
+            scope=scope,
+        )
 
     def get_callgraph_neighborhood(
         self,
@@ -384,15 +444,13 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_neighborhood = self.service.get_callgraph_neighborhood(
-                goid_h128=goid_h128,
-                radius=radius,
-                max_nodes=max_nodes,
-            )
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return GraphNeighborhoodResponse.from_domain(domain_neighborhood)
+        return self._dispatch(
+            "get_callgraph_neighborhood",
+            GraphNeighborhoodResponse,
+            goid_h128=goid_h128,
+            radius=radius,
+            max_nodes=max_nodes,
+        )
 
     def get_import_boundary(
         self,
@@ -413,14 +471,12 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_boundary = self.service.get_import_boundary(
-                subsystem_id=subsystem_id,
-                max_edges=max_edges,
-            )
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return ImportBoundaryResponse.from_domain(domain_boundary)
+        return self._dispatch(
+            "get_import_boundary",
+            ImportBoundaryResponse,
+            subsystem_id=subsystem_id,
+            max_edges=max_edges,
+        )
 
     def get_tests_for_function(
         self,
@@ -444,16 +500,14 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
             When the underlying service reports a problem detail.
         """
         _require_identifier(urn=urn, goid_h128=goid_h128)
-        try:
-            domain_tests = self.service.get_tests_for_function(
-                goid_h128=goid_h128,
-                urn=urn,
-                limit=limit,
-                scope=scope if isinstance(scope, GraphScopePayload) else None,
-            )
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return TestsForFunctionResponse.from_domain(domain_tests)
+        return self._dispatch(
+            "get_tests_for_function",
+            TestsForFunctionResponse,
+            goid_h128=goid_h128,
+            urn=urn,
+            limit=limit,
+            scope=scope,
+        )
 
     def get_file_summary(
         self,
@@ -474,14 +528,12 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_summary = self.service.get_file_summary(
-                rel_path=rel_path,
-                scope=scope if isinstance(scope, GraphScopePayload) else None,
-            )
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return FileSummaryResponse.from_domain(domain_summary)
+        return self._dispatch(
+            "get_file_summary",
+            FileSummaryResponse,
+            rel_path=rel_path,
+            scope=scope,
+        )
 
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
         """
@@ -497,11 +549,11 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_profile = self.service.get_function_profile(goid_h128=goid_h128)
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return FunctionProfileResponse.from_domain(domain_profile)
+        return self._dispatch(
+            "get_function_profile",
+            FunctionProfileResponse,
+            goid_h128=goid_h128,
+        )
 
     def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
         """
@@ -517,11 +569,11 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_profile = self.service.get_file_profile(rel_path=rel_path)
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return FileProfileResponse.from_domain(domain_profile)
+        return self._dispatch(
+            "get_file_profile",
+            FileProfileResponse,
+            rel_path=rel_path,
+        )
 
     def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
         """
@@ -537,11 +589,11 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_profile = self.service.get_module_profile(module=module)
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return ModuleProfileResponse.from_domain(domain_profile)
+        return self._dispatch(
+            "get_module_profile",
+            ModuleProfileResponse,
+            module=module,
+        )
 
     def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
         """
@@ -557,11 +609,11 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_arch = self.service.get_function_architecture(goid_h128=goid_h128)
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return FunctionArchitectureResponse.from_domain(domain_arch)
+        return self._dispatch(
+            "get_function_architecture",
+            FunctionArchitectureResponse,
+            goid_h128=goid_h128,
+        )
 
     def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
         """
@@ -577,11 +629,11 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_arch = self.service.get_module_architecture(module=module)
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return ModuleArchitectureResponse.from_domain(domain_arch)
+        return self._dispatch(
+            "get_module_architecture",
+            ModuleArchitectureResponse,
+            module=module,
+        )
 
     def list_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
@@ -599,11 +651,13 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_subsystems = self.service.list_subsystems(limit=limit, role=role, q=q)
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return SubsystemSummaryResponse.from_domain(domain_subsystems)
+        return self._dispatch(
+            "list_subsystems",
+            SubsystemSummaryResponse,
+            limit=limit,
+            role=role,
+            q=q,
+        )
 
     def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
         """
@@ -619,11 +673,11 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_memberships = self.service.get_module_subsystems(module=module)
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return ModuleSubsystemResponse.from_domain(domain_memberships)
+        return self._dispatch(
+            "get_module_subsystems",
+            ModuleSubsystemResponse,
+            module=module,
+        )
 
     def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
         """
@@ -639,11 +693,11 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_hints = self.service.get_file_hints(rel_path=rel_path)
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return FileHintsResponse.from_domain(domain_hints)
+        return self._dispatch(
+            "get_file_hints",
+            FileHintsResponse,
+            rel_path=rel_path,
+        )
 
     def get_subsystem_modules(
         self, *, subsystem_id: str, module_limit: int | None = None
@@ -661,14 +715,12 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_subsystem = self.service.get_subsystem_modules(
-                subsystem_id=subsystem_id,
-                module_limit=module_limit,
-            )
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return SubsystemModulesResponse.from_domain(domain_subsystem)
+        return self._dispatch(
+            "get_subsystem_modules",
+            SubsystemModulesResponse,
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
+        )
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
@@ -686,11 +738,13 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_search = self.service.search_subsystems(limit=limit, role=role, q=q)
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return SubsystemSearchResponse.from_domain(domain_search)
+        return self._dispatch(
+            "search_subsystems",
+            SubsystemSearchResponse,
+            limit=limit,
+            role=role,
+            q=q,
+        )
 
     def summarize_subsystem(
         self, *, subsystem_id: str, module_limit: int | None = None
@@ -708,19 +762,25 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         errors.McpError
             When the underlying service reports a problem detail.
         """
-        try:
-            domain_summary = self.service.summarize_subsystem(
-                subsystem_id=subsystem_id,
-                module_limit=module_limit,
-            )
-        except ProblemError as exc:
-            raise errors.McpError(exc.detail) from exc
-        return SubsystemModulesResponse.from_domain(domain_summary)
+        return self._dispatch(
+            "summarize_subsystem",
+            SubsystemModulesResponse,
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
+        )
 
 
 @dataclass
-class HttpBackend(DatasetBackendMixin, QueryBackend):
-    """HTTP-backed QueryBackend that talks to the FastAPI server."""
+class HttpBackend(BackendDispatchMixin, DatasetBackendMixin):
+    """HTTP-backed QueryBackend that talks to the FastAPI server.
+
+    This class implements the ``QueryBackend`` protocol via duck typing
+    (not direct inheritance to avoid dataclass field ordering issues
+    with Python 3.13's protocol annotation handling).
+
+    This class uses ``BackendDispatchMixin`` to consolidate the repetitive
+    response conversion pattern across all methods.
+    """
 
     base_url: str
     repo: str
@@ -740,6 +800,11 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
     consecutive_failures: int = field(init=False, default=0)
     last_failure_ts: float | None = field(init=False, default=None)
     last_retry_attempts: int = field(init=False, default=1)
+
+    @property
+    def is_local(self) -> bool:
+        """Return False since this is an HTTP backend."""
+        return False
 
     def __post_init__(self) -> None:
         """Initialize the HTTP client and verify server health."""
@@ -859,16 +924,15 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FunctionSummaryResponse
             Summary payload with found flag.
         """
-        result = self.service.get_function_summary(
+        return self._dispatch(
+            "get_function_summary",
+            FunctionSummaryResponse,
             urn=urn,
             goid_h128=goid_h128,
             rel_path=rel_path,
             qualname=qualname,
-            scope=scope if isinstance(scope, GraphScopePayload) else None,
+            scope=scope,
         )
-        if isinstance(result, FunctionSummaryResponse):
-            return result
-        return FunctionSummaryResponse.from_domain(result)
 
     def list_high_risk_functions(
         self,
@@ -886,15 +950,14 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         HighRiskFunctionsResponse
             Functions ordered by risk with truncation metadata.
         """
-        result = self.service.list_high_risk_functions(
+        return self._dispatch(
+            "list_high_risk_functions",
+            HighRiskFunctionsResponse,
             min_risk=min_risk,
             limit=limit,
             tested_only=tested_only,
-            scope=scope if isinstance(scope, GraphScopePayload) else None,
+            scope=scope,
         )
-        if isinstance(result, HighRiskFunctionsResponse):
-            return result
-        return HighRiskFunctionsResponse.from_domain(result)
 
     def get_callgraph_neighbors(
         self,
@@ -912,16 +975,14 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         CallGraphNeighborsResponse
             Neighbor edges and metadata.
         """
-        _ = scope
-        result = self.service.get_callgraph_neighbors(
+        return self._dispatch(
+            "get_callgraph_neighbors",
+            CallGraphNeighborsResponse,
             goid_h128=goid_h128,
             direction=direction,
             limit=limit,
-            scope=scope if isinstance(scope, GraphScopePayload) else None,
+            scope=scope,
         )
-        if isinstance(result, CallGraphNeighborsResponse):
-            return result
-        return CallGraphNeighborsResponse.from_domain(result)
 
     def get_callgraph_neighborhood(
         self,
@@ -938,14 +999,13 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         GraphNeighborhoodResponse
             Nodes and edges for the neighborhood plus metadata.
         """
-        result = self.service.get_callgraph_neighborhood(
+        return self._dispatch(
+            "get_callgraph_neighborhood",
+            GraphNeighborhoodResponse,
             goid_h128=goid_h128,
             radius=radius,
             max_nodes=max_nodes,
         )
-        if isinstance(result, GraphNeighborhoodResponse):
-            return result
-        return GraphNeighborhoodResponse.from_domain(result)
 
     def get_import_boundary(
         self,
@@ -961,13 +1021,12 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         ImportBoundaryResponse
             Boundary edges and truncation metadata.
         """
-        result = self.service.get_import_boundary(
+        return self._dispatch(
+            "get_import_boundary",
+            ImportBoundaryResponse,
             subsystem_id=subsystem_id,
             max_edges=max_edges,
         )
-        if isinstance(result, ImportBoundaryResponse):
-            return result
-        return ImportBoundaryResponse.from_domain(result)
 
     def get_tests_for_function(
         self,
@@ -985,16 +1044,14 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         TestsForFunctionResponse
             Tests hitting the function plus messages.
         """
-        _ = scope
-        result = self.service.get_tests_for_function(
+        return self._dispatch(
+            "get_tests_for_function",
+            TestsForFunctionResponse,
             goid_h128=goid_h128,
             urn=urn,
             limit=limit,
-            scope=scope if isinstance(scope, GraphScopePayload) else None,
+            scope=scope,
         )
-        if isinstance(result, TestsForFunctionResponse):
-            return result
-        return TestsForFunctionResponse.from_domain(result)
 
     def get_file_summary(
         self,
@@ -1010,13 +1067,12 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FileSummaryResponse
             File-level summary payload with functions.
         """
-        _ = scope
-        result = self.service.get_file_summary(
-            rel_path=rel_path, scope=scope if isinstance(scope, GraphScopePayload) else None
+        return self._dispatch(
+            "get_file_summary",
+            FileSummaryResponse,
+            rel_path=rel_path,
+            scope=scope,
         )
-        if isinstance(result, FileSummaryResponse):
-            return result
-        return FileSummaryResponse.from_domain(result)
 
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
         """
@@ -1027,10 +1083,11 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FunctionProfileResponse
             Profile payload including found flag.
         """
-        result = self.service.get_function_profile(goid_h128=goid_h128)
-        if isinstance(result, FunctionProfileResponse):
-            return result
-        return FunctionProfileResponse.from_domain(result)
+        return self._dispatch(
+            "get_function_profile",
+            FunctionProfileResponse,
+            goid_h128=goid_h128,
+        )
 
     def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
         """
@@ -1041,10 +1098,11 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FileProfileResponse
             Profile payload including found flag.
         """
-        result = self.service.get_file_profile(rel_path=rel_path)
-        if isinstance(result, FileProfileResponse):
-            return result
-        return FileProfileResponse.from_domain(result)
+        return self._dispatch(
+            "get_file_profile",
+            FileProfileResponse,
+            rel_path=rel_path,
+        )
 
     def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
         """
@@ -1055,10 +1113,11 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         ModuleProfileResponse
             Profile payload including found flag.
         """
-        result = self.service.get_module_profile(module=module)
-        if isinstance(result, ModuleProfileResponse):
-            return result
-        return ModuleProfileResponse.from_domain(result)
+        return self._dispatch(
+            "get_module_profile",
+            ModuleProfileResponse,
+            module=module,
+        )
 
     def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
         """
@@ -1069,10 +1128,11 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FunctionArchitectureResponse
             Architecture payload including found flag.
         """
-        result = self.service.get_function_architecture(goid_h128=goid_h128)
-        if isinstance(result, FunctionArchitectureResponse):
-            return result
-        return FunctionArchitectureResponse.from_domain(result)
+        return self._dispatch(
+            "get_function_architecture",
+            FunctionArchitectureResponse,
+            goid_h128=goid_h128,
+        )
 
     def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
         """
@@ -1083,10 +1143,11 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         ModuleArchitectureResponse
             Architecture payload including found flag.
         """
-        result = self.service.get_module_architecture(module=module)
-        if isinstance(result, ModuleArchitectureResponse):
-            return result
-        return ModuleArchitectureResponse.from_domain(result)
+        return self._dispatch(
+            "get_module_architecture",
+            ModuleArchitectureResponse,
+            module=module,
+        )
 
     def list_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
@@ -1099,10 +1160,13 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         SubsystemSummaryResponse
             Subsystem rows and metadata.
         """
-        result = self.service.list_subsystems(limit=limit, role=role, q=q)
-        if isinstance(result, SubsystemSummaryResponse):
-            return result
-        return SubsystemSummaryResponse.from_domain(result)
+        return self._dispatch(
+            "list_subsystems",
+            SubsystemSummaryResponse,
+            limit=limit,
+            role=role,
+            q=q,
+        )
 
     def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
         """
@@ -1113,10 +1177,11 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         ModuleSubsystemResponse
             Membership rows and metadata.
         """
-        result = self.service.get_module_subsystems(module=module)
-        if isinstance(result, ModuleSubsystemResponse):
-            return result
-        return ModuleSubsystemResponse.from_domain(result)
+        return self._dispatch(
+            "get_module_subsystems",
+            ModuleSubsystemResponse,
+            module=module,
+        )
 
     def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
         """
@@ -1127,10 +1192,11 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FileHintsResponse
             Hint rows and metadata for the path.
         """
-        result = self.service.get_file_hints(rel_path=rel_path)
-        if isinstance(result, FileHintsResponse):
-            return result
-        return FileHintsResponse.from_domain(result)
+        return self._dispatch(
+            "get_file_hints",
+            FileHintsResponse,
+            rel_path=rel_path,
+        )
 
     def get_subsystem_modules(
         self, *, subsystem_id: str, module_limit: int | None = None
@@ -1143,13 +1209,12 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         SubsystemModulesResponse
             Subsystem detail payload.
         """
-        result = self.service.get_subsystem_modules(
+        return self._dispatch(
+            "get_subsystem_modules",
+            SubsystemModulesResponse,
             subsystem_id=subsystem_id,
             module_limit=module_limit,
         )
-        if isinstance(result, SubsystemModulesResponse):
-            return result
-        return SubsystemModulesResponse.from_domain(result)
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
@@ -1162,10 +1227,13 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         SubsystemSearchResponse
             Subsystem rows and metadata.
         """
-        result = self.service.search_subsystems(limit=limit, role=role, q=q)
-        if isinstance(result, SubsystemSearchResponse):
-            return result
-        return SubsystemSearchResponse.from_domain(result)
+        return self._dispatch(
+            "search_subsystems",
+            SubsystemSearchResponse,
+            limit=limit,
+            role=role,
+            q=q,
+        )
 
     def summarize_subsystem(
         self, *, subsystem_id: str, module_limit: int | None = None
@@ -1178,10 +1246,9 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         SubsystemModulesResponse
             Subsystem detail payload.
         """
-        result = self.service.summarize_subsystem(
+        return self._dispatch(
+            "summarize_subsystem",
+            SubsystemModulesResponse,
             subsystem_id=subsystem_id,
             module_limit=module_limit,
         )
-        if isinstance(result, SubsystemModulesResponse):
-            return result
-        return SubsystemModulesResponse.from_domain(result)

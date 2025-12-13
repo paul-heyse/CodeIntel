@@ -440,7 +440,7 @@ def _compute_entry_for_target(
     node = target_node(target_name)
     module = target.module
 
-    table_keys = target.contract.table_keys or target.table_keys
+    table_keys = target.contract.table_keys
     blocked_deps = [
         dep for dep in target.dependencies if upstream_status.get(dep) in {"missing", "blocked"}
     ]

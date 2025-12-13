@@ -170,16 +170,9 @@ class OutputTarget:
         -------
         tuple[str, ...]
             Fully-qualified table names this target writes to.
+            Returns empty tuple for artifact-only targets.
         """
-        if self.contract.table_keys:
-            return self.contract.table_keys
-        schema_prefix = {
-            "ingestion": "core",
-            "graphs": "graph",
-            "analytics": "analytics",
-            "export": "export",
-        }.get(self.module, "core")
-        return (f"{schema_prefix}.{self.name}",)
+        return self.contract.table_keys
 
     @property
     def estimated_duration_ms(self) -> int:

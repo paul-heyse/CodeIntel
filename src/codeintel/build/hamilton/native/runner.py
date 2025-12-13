@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.hamilton.dataset_ref import DatasetRef
+from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.manifest_hook import (
     SkipCheckRequest,
     TargetRunRecord,
@@ -20,7 +20,7 @@ from codeintel.build.hamilton.native.outputs import expected_artifacts, expected
 from codeintel.build.manifest import OutputManifest
 
 if TYPE_CHECKING:
-    from codeintel.build.env import BuildEnv
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import OutputTarget
 
 
@@ -91,47 +91,104 @@ def should_skip_native_target(
     return should_skip(request)
 
 
-def create_success_record(
+def create_run_record(  # noqa: PLR0913
     target: OutputTarget,
-    env: BuildEnv,
-    run: NativeRunInfo,
+    status: Literal["succeeded", "skipped", "failed"],
+    input_hash: str,
+    *,
+    env: BuildEnv | None = None,
+    run: NativeRunInfo | None = None,
+    error: Exception | None = None,
 ) -> TargetRunRecord:
-    """Create a successful TargetRunRecord for a native target.
+    """Create a TargetRunRecord for any completion status.
+
+    This is the unified factory function for creating run records. Use this
+    instead of the status-specific functions (create_success_record,
+    create_skipped_record, create_failed_record) for new code.
 
     Parameters
     ----------
     target
         Target that was executed.
+    status
+        Completion status: succeeded, skipped, or failed.
+    input_hash
+        Input hash for this execution.
     env
-        Build environment with snapshot info.
+        Build environment (required for succeeded/skipped).
     run
-        Run metadata (hashes, duration, row counts).
+        Run metadata (required for succeeded/skipped).
+    error
+        Exception that caused failure (required for failed).
 
     Returns
     -------
     TargetRunRecord
-        Record with status="succeeded" and populated datasets/artifacts.
+        Record with appropriate datasets/artifacts based on status.
+
+    Raises
+    ------
+    ValueError
+        If required parameters for the given status are not provided.
 
     Examples
     --------
-    >>> record = create_success_record(
-    ...     target=my_target,
-    ...     env=env,
-    ...     run=NativeRunInfo(
-    ...         input_hash="abc123",
-    ...         options_hash="def456",
-    ...         duration_ms=1500.0,
-    ...         row_counts={"analytics.my_table": 100},
-    ...     ),
+    >>> # Success record
+    >>> record = create_run_record(
+    ...     target, "succeeded", run.input_hash, env=env, run=run
     ... )
     >>> record.status
     'succeeded'
+
+    >>> # Skipped record
+    >>> record = create_run_record(
+    ...     target, "skipped", run.input_hash, env=env, run=run
+    ... )
+    >>> record.status
+    'skipped'
+
+    >>> # Failed record
+    >>> record = create_run_record(
+    ...     target, "failed", input_hash, error=error
+    ... )
+    >>> record.status
+    'failed'
     """
+    plugin_name = f"native:{target.name}"
+
+    if status == "failed":
+        return TargetRunRecord(
+            target=target.name,
+            plugin_name=plugin_name,
+            status="failed",
+            input_hash=input_hash,
+            options_hash=run.options_hash if run else None,
+            duration_ms=run.duration_ms if run else 0.0,
+            row_counts={},
+            error=str(error) if error else None,
+            datasets=(),
+            artifacts=(),
+        )
+
+    if env is None or run is None:
+        msg = f"env and run are required for status '{status}'"
+        raise ValueError(msg)
+
     # Generate expected refs from contract
     datasets = expected_datasets(target, env.snapshot)
+    artifacts = expected_artifacts(
+        target,
+        env.snapshot,
+        path_formatter={
+            "build_dir": str(env.paths.build_dir),
+            "scip_dir": str(env.paths.scip_dir),
+            "export_dir": str(env.paths.document_output_dir),
+            "repo_root": str(env.snapshot.repo_root),
+        },
+    )
 
-    # Update row counts if available
-    if run.row_counts:
+    # Update row counts for success
+    if status == "succeeded" and run.row_counts:
         updated_datasets: list[DatasetRef] = []
         for ds in datasets:
             row_count = run.row_counts.get(ds.table_key, ds.row_count)
@@ -145,142 +202,17 @@ def create_success_record(
             )
         datasets = tuple(updated_datasets)
 
-    artifacts = expected_artifacts(
-        target,
-        env.snapshot,
-        path_formatter={
-            "build_dir": str(env.paths.build_dir),
-            "scip_dir": str(env.paths.scip_dir),
-            "export_dir": str(env.paths.document_output_dir),
-            "repo_root": str(env.snapshot.repo_root),
-        },
-    )
-
     return TargetRunRecord(
         target=target.name,
-        plugin_name=f"native:{target.name}",
-        status="succeeded",
-        input_hash=run.input_hash,
+        plugin_name=plugin_name,
+        status=status,
+        input_hash=input_hash,
         options_hash=run.options_hash,
         duration_ms=run.duration_ms,
         row_counts=run.row_counts or {},
         error=None,
         datasets=datasets,
         artifacts=artifacts,
-    )
-
-
-def create_skipped_record(
-    target: OutputTarget,
-    env: BuildEnv,
-    run: NativeRunInfo,
-) -> TargetRunRecord:
-    """Create a skipped TargetRunRecord for a native target.
-
-    Parameters
-    ----------
-    target
-        Target that was skipped.
-    env
-        Build environment with snapshot info.
-    run
-        Run metadata (hashes, duration).
-
-    Returns
-    -------
-    TargetRunRecord
-        Record with status="skipped" and expected datasets/artifacts.
-
-    Examples
-    --------
-    >>> record = create_skipped_record(
-    ...     target=my_target,
-    ...     env=env,
-    ...     run=NativeRunInfo(input_hash="abc123", options_hash="def456", duration_ms=0.0),
-    ... )
-    >>> record.status
-    'skipped'
-    """
-    # Generate expected refs (row counts unknown for skipped targets)
-    datasets = expected_datasets(target, env.snapshot)
-    artifacts = expected_artifacts(
-        target,
-        env.snapshot,
-        path_formatter={
-            "build_dir": str(env.paths.build_dir),
-            "scip_dir": str(env.paths.scip_dir),
-            "export_dir": str(env.paths.document_output_dir),
-            "repo_root": str(env.snapshot.repo_root),
-        },
-    )
-
-    return TargetRunRecord(
-        target=target.name,
-        plugin_name=f"native:{target.name}",
-        status="skipped",
-        input_hash=run.input_hash,
-        options_hash=run.options_hash,
-        duration_ms=run.duration_ms,
-        row_counts={},
-        error=None,
-        datasets=datasets,
-        artifacts=artifacts,
-    )
-
-
-def create_failed_record(
-    target: OutputTarget,
-    input_hash: str,
-    options_hash: str | None,
-    duration_ms: float,
-    error: Exception,
-) -> TargetRunRecord:
-    """Create a failed TargetRunRecord for a native target.
-
-    Parameters
-    ----------
-    target
-        Target that failed.
-    input_hash
-        Input hash that was used for this execution.
-    options_hash
-        Options hash from configuration.
-    duration_ms
-        Execution duration before failure.
-    error
-        Exception that caused the failure.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record with status="failed" and error message.
-
-    Examples
-    --------
-    >>> try:
-    ...     raise ValueError("Something went wrong")
-    ... except Exception as e:
-    ...     record = create_failed_record(
-    ...         target=my_target,
-    ...         input_hash="abc123",
-    ...         options_hash="def456",
-    ...         duration_ms=500.0,
-    ...         error=e,
-    ...     )
-    >>> record.status
-    'failed'
-    """
-    return TargetRunRecord(
-        target=target.name,
-        plugin_name=f"native:{target.name}",
-        status="failed",
-        input_hash=input_hash,
-        options_hash=options_hash,
-        duration_ms=duration_ms,
-        row_counts={},
-        error=str(error),
-        datasets=(),
-        artifacts=(),
     )
 
 
@@ -318,9 +250,7 @@ def save_manifest(
 
 __all__ = [
     "NativeRunInfo",
-    "create_failed_record",
-    "create_skipped_record",
-    "create_success_record",
+    "create_run_record",
     "save_manifest",
     "should_skip_native_target",
 ]

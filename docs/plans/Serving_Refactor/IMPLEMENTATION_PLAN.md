@@ -1,8 +1,9 @@
 # Serving Module Refactoring Implementation Plan
 
-> **Document Version:** 1.0  
+> **Document Version:** 1.3  
 > **Created:** 2025-12-13  
-> **Status:** Proposed  
+> **Last Updated:** 2025-12-13  
+> **Status:** Phase 1-3 Complete, Phase 4 Pending  
 > **Scope:** `src/codeintel/serving/`
 
 ## Table of Contents
@@ -34,11 +35,13 @@
 |-------|---------------|------------|--------|----------|--------|
 | Phase 1 | ~630 lines | Low | 2-3 days | High | ✅ Complete |
 | Phase 2 | ~150 lines | Medium | 1-2 days | Medium | ✅ Complete |
-| Phase 3 | ~960 lines | Medium-High | 4-5 days | Medium | Pending |
-| Phase 4 | ~500 lines | High | 5+ days | Low | Pending |
-| **Total** | **~2,240 lines** | - | **12-16 days** | - |
+| Phase 3 | ~400 lines | Medium-High | 4-5 days | Medium | ✅ Complete |
+| Phase 4 | ~600 lines | Medium | 3-4 days | Low | Pending |
+| **Total** | **~1,780 lines** | - | **10-14 days** | - |
 
-> **Phase 3/4 Updated:** Added new optimization items discovered during Phase 1/2 implementation.
+> **Phase 3 Complete:** Implemented `BackendDispatchMixin`, `to_response_result()`, `normalize_scope()`, and refactored all 40 backend methods. Protocol consolidation deferred to Phase 4.
+
+> **Phase 4 Updated:** Revised based on Phase 3 learnings. Added new opportunities and adjusted estimates.
 
 ---
 
@@ -526,13 +529,22 @@ class HttpTransport(TransportAdapter):
 
 ## Phase 3: Backend Consolidation
 
-> **Note:** Updated based on learnings from Phase 1/2 implementation.
+> **Status:** ✅ Complete (2025-12-13)
+>
+> **Implementation Summary:**
+> - Created `mcp/backend_dispatch.py` with `BackendDispatchMixin`
+> - Added `HasFromDomain` protocol and `to_response_result()` to `services/conversion.py`
+> - Added `normalize_scope()` utility to `mcp/models.py`
+> - Refactored all 40 backend methods (20 in `DuckDBBackend`, 20 in `HttpBackend`)
+> - Fixed test file import errors from Phase 1/2 deleted base classes
+> - Protocol consolidation deferred to Phase 4
 
-### 3.0 Add `to_response_result()` Helper (NEW)
+### 3.0 Add `to_response_result()` Helper ✅
 
 **Priority:** P1 (enables 3.1)  
 **Estimated Effort:** 1-2 hours  
-**Lines Saved:** ~50 (from backend methods)
+**Lines Saved:** ~50 (from backend methods)  
+**Status:** Complete
 
 #### Problem
 
@@ -577,11 +589,12 @@ This creates symmetry with `to_domain_result()` and enables cleaner backend code
 
 ---
 
-### 3.1 Create `BackendDispatchMixin`
+### 3.1 Create `BackendDispatchMixin` ✅
 
 **Priority:** P2  
 **Estimated Effort:** 3-4 days  
-**Lines Saved:** ~600
+**Lines Saved:** ~400  
+**Status:** Complete
 
 #### Problem
 
@@ -755,11 +768,12 @@ class HttpBackend(BackendDispatchMixin, DatasetBackendMixin):
 
 ---
 
-### 3.2 Consolidate Protocols in `types.py`
+### 3.2 Consolidate Protocols in `types.py` → Deferred to Phase 4
 
-**Priority:** P2  
+**Priority:** P3 (moved from P2)  
 **Estimated Effort:** 1 day  
-**Lines Saved:** ~250
+**Lines Saved:** ~250  
+**Status:** Deferred - Lower priority, can be done independently
 
 #### Problem
 
@@ -880,11 +894,12 @@ This reduces from 15+ protocols to 6 core protocols.
 
 ---
 
-### 3.3 Centralize Scope Normalization (NEW)
+### 3.3 Centralize Scope Normalization ✅
 
 **Priority:** P2  
 **Estimated Effort:** 2-3 hours  
-**Lines Saved:** ~30
+**Lines Saved:** ~30  
+**Status:** Complete
 
 #### Problem
 
@@ -925,11 +940,12 @@ Update all callers to use this single function.
 
 ---
 
-### 3.4 HTTP Mixin Limit/Error Pattern Consolidation (NEW)
+### 3.4 HTTP Mixin Limit/Error Pattern Consolidation → Deferred to Phase 4
 
-**Priority:** P2  
+**Priority:** P3 (moved from P2)  
 **Estimated Effort:** 3-4 hours  
-**Lines Saved:** ~80
+**Lines Saved:** ~80  
+**Status:** Deferred - Can be done independently, lower impact
 
 #### Problem
 
@@ -999,9 +1015,15 @@ def with_clamped_limits(
 
 ---
 
-## Phase 4: Layer Simplification (Long-term)
+## Phase 4: Layer Simplification & Cleanup
 
-> **Note:** Updated based on learnings from Phase 1/2 implementation.
+> **Status:** Pending
+>
+> **Updated based on Phase 3 implementation learnings:**
+> - Protocol consolidation moved here from Phase 3 (lower priority)
+> - HTTP mixin helpers moved here from Phase 3 (lower impact)
+> - New opportunities identified for DatasetBackendMixin and test cleanup
+> - Reduced scope of bootstrap consolidation based on actual usage patterns
 
 ### 4.1 Simplify Bootstrap Entry Points
 
@@ -1160,7 +1182,7 @@ Currently, MCP Backend → Service → Query Layer all do thin wrapping.
 
 ---
 
-### 4.5 Dead Code Audit (NEW)
+### 4.5 Dead Code Audit
 
 **Priority:** P3  
 **Estimated Effort:** 2-3 hours  
@@ -1183,6 +1205,134 @@ Review results and remove confirmed dead code. Candidates to check:
 - Functions defined but never called
 - Classes defined but never instantiated
 - Protocol methods never implemented
+
+---
+
+### 4.6 Protocol Consolidation (From Phase 3)
+
+**Priority:** P3  
+**Estimated Effort:** 1 day  
+**Lines Saved:** ~250
+
+#### Problem
+
+15+ protocols in `types.py` with significant overlap. Moved from Phase 3 as lower priority.
+
+#### Solution
+
+Consolidate to domain-based protocols:
+- `RepoCommitProtocol` - Base for repo/commit identification
+- `FunctionQueryable` - Function query operations
+- `ProfileQueryable` - Profile query operations
+- `SubsystemQueryable` - Subsystem query operations
+- `DatasetQueryable` - Dataset query operations
+- `QueryService` / `QueryBackend` - Composite interfaces
+
+---
+
+### 4.7 HTTP Mixin Limit/Error Helpers (From Phase 3)
+
+**Priority:** P3  
+**Estimated Effort:** 3-4 hours  
+**Lines Saved:** ~80
+
+#### Problem
+
+HTTP mixins repeat limit clamping and error response patterns. Moved from Phase 3 as lower priority.
+
+#### Solution
+
+Create `with_clamped_limits()` helper in `services/http_helpers.py` that encapsulates:
+- Limit application with defaults
+- Offset clamping
+- Early return with empty responses on errors
+- Message collection
+
+---
+
+### 4.8 DatasetBackendMixin Dispatch Pattern (NEW)
+
+**Priority:** P3  
+**Estimated Effort:** 2-3 hours  
+**Lines Saved:** ~40
+
+#### Problem
+
+During Phase 3, only `DuckDBBackend` and `HttpBackend` methods were refactored to use `_dispatch()`. The `DatasetBackendMixin` class still has methods that could benefit from this pattern:
+
+```python
+# Current pattern in DatasetBackendMixin
+def read_dataset_rows(self, ...) -> DatasetRowsResponse:
+    try:
+        domain_rows = self.service.read_dataset_rows(...)
+    except DatasetNotFoundError as exc:
+        raise errors.McpError(exc.detail) from exc
+    except ProblemError as exc:
+        raise errors.McpError(exc.detail) from exc
+    return DatasetRowsResponse.from_domain(domain_rows)
+```
+
+#### Solution
+
+Extend `BackendDispatchMixin._dispatch()` to handle `DatasetNotFoundError` or create a specialized `_dispatch_dataset()` method. Update `DatasetBackendMixin` to use the dispatch pattern.
+
+---
+
+### 4.9 Test File Cleanup (NEW)
+
+**Priority:** P2  
+**Estimated Effort:** 1-2 hours  
+**Lines Saved:** N/A (test quality improvement)
+
+#### Problem
+
+During Phase 3, discovered that `tests/serving/services/test_services_functions.py` imported deleted base classes (`BaseFunctionQueries`, `BaseSubsystemQueries`). This was fixed by making the test classes standalone, but there may be other test files with:
+- Stale imports
+- Tests for deleted functionality
+- Outdated patterns
+
+#### Solution
+
+1. Run a grep for any remaining imports from deleted modules:
+   ```bash
+   grep -r "from codeintel.serving.services.base import" tests/
+   grep -r "from codeintel.serving.services.http_transport import" tests/
+   ```
+
+2. Review test file imports for canonical locations
+3. Update tests to match current architecture
+
+---
+
+### 4.10 Observability Enhancement (NEW - Future)
+
+**Priority:** P4  
+**Estimated Effort:** 1-2 days  
+**Lines Saved:** N/A (feature enhancement)
+
+#### Opportunity
+
+The `BackendDispatchMixin._dispatch()` method provides a natural injection point for enhanced observability:
+- Automatic span creation for tracing
+- Metric collection for method call durations
+- Error rate tracking by method
+
+#### Solution (Future)
+
+```python
+def _dispatch(self, method_name: str, response_type: type[R], **kwargs) -> R:
+    with self._start_span(method_name) as span:
+        try:
+            # ... existing logic ...
+            span.set_status(Status.OK)
+            return result
+        except Exception as e:
+            span.set_status(Status.ERROR)
+            span.record_exception(e)
+            raise
+```
+
+This would provide consistent observability across all 40+ backend methods.
 
 ---
 
@@ -1245,26 +1395,34 @@ uv run ruff check src/codeintel/serving/ --fix
 - [x] Delete `services/http_transport.py`
 - [x] Run tests, type checking, and linting
 
-### Phase 3 Checklist
+### Phase 3 Checklist ✅
 
-- [ ] Add `HasFromDomain` protocol and `to_response_result()` to `services/conversion.py`
-- [ ] Create `mcp/backend_base.py` with `BackendDispatchMixin`
-- [ ] Refactor `DuckDBBackend` to use `_dispatch()`
-- [ ] Refactor `HttpBackend` to use `_dispatch()`
-- [ ] Consolidate protocols in `types.py`
-- [ ] Create `normalize_scope()` utility and update callers
-- [ ] Create HTTP limit/error helpers (optional, can defer)
-- [ ] Run tests, type checking, and linting
+- [x] Add `HasFromDomain` protocol and `to_response_result()` to `services/conversion.py`
+- [x] Create `mcp/backend_dispatch.py` with `BackendDispatchMixin`
+- [x] Refactor `DuckDBBackend` to use `_dispatch()` (20 methods)
+- [x] Refactor `HttpBackend` to use `_dispatch()` (20 methods)
+- [x] Create `normalize_scope()` utility in `mcp/models.py`
+- [x] Fix test file import errors from deleted base classes
+- [x] Run tests, type checking, and linting
+- [ ] ~~Consolidate protocols in `types.py`~~ → Moved to Phase 4
+- [ ] ~~Create HTTP limit/error helpers~~ → Moved to Phase 4
 
 ### Phase 4 Checklist
 
+**Priority P2 (Recommended):**
+- [ ] Test file cleanup - verify no stale imports from deleted modules
 - [ ] Document canonical import locations in module docstrings
-- [ ] Run dead code audit with vulture
-- [ ] Remove confirmed dead code
-- [ ] Consolidate bootstrap entry points
-- [ ] Update all callers to new entry points
-- [ ] Deprecate old entry points
-- [ ] Run full test suite
+
+**Priority P3 (Optional):**
+- [ ] Protocol consolidation in `types.py` (from Phase 3)
+- [ ] HTTP mixin limit/error helpers (from Phase 3)
+- [ ] DatasetBackendMixin dispatch pattern
+- [ ] Dead code audit with vulture
+- [ ] Bootstrap entry point consolidation
+
+**Priority P4 (Future):**
+- [ ] Observability enhancement in `_dispatch()`
+- [ ] Layer collapse analysis (MCP Backend → Query Layer)
 
 ---
 
@@ -1302,12 +1460,64 @@ def get_something(self, ...) -> SomeResponse:
     return SomeResponse.from_domain(domain)
 ```
 
-### Pattern D: Backend Method (After Phase 3)
+### Pattern D: Backend Method (After Phase 3) ✅ Implemented
 
 ```python
-# Both backends (~2 lines per method)
-def get_something(self, ...) -> SomeResponse:
-    return self._dispatch("get_something", SomeResponse, ...)
+# Both backends use identical pattern (~4-6 lines per method)
+def get_function_summary(
+    self,
+    *,
+    urn: str | None = None,
+    goid_h128: int | None = None,
+    rel_path: str | None = None,
+    qualname: str | None = None,
+    scope: object | None = None,
+) -> FunctionSummaryResponse:
+    _require_identifier(urn=urn, goid_h128=goid_h128, rel_path=rel_path)
+    return self._dispatch(
+        "get_function_summary",
+        FunctionSummaryResponse,
+        urn=urn,
+        goid_h128=goid_h128,
+        rel_path=rel_path,
+        qualname=qualname,
+        scope=scope,  # normalize_scope() called inside _dispatch
+    )
+```
+
+### Pattern E: BackendDispatchMixin (Phase 3 Implementation)
+
+```python
+# mcp/backend_dispatch.py
+class BackendDispatchMixin(ABC):
+    service: QueryService
+
+    @property
+    @abstractmethod
+    def is_local(self) -> bool:
+        ...
+
+    def _dispatch(
+        self,
+        method_name: str,
+        response_type: type[R],
+        **kwargs: object,
+    ) -> R:
+        # Normalize scope if present
+        if "scope" in kwargs:
+            kwargs["scope"] = normalize_scope(kwargs["scope"])
+
+        method = getattr(self.service, method_name)
+
+        if self.is_local:
+            try:
+                domain_result = method(**kwargs)
+            except ProblemError as exc:
+                raise errors.McpError(exc.detail) from exc
+            return response_type.from_domain(domain_result)
+        else:
+            result = method(**kwargs)
+            return to_response_result(result, response_type)
 ```
 
 ---
@@ -1319,4 +1529,5 @@ def get_something(self, ...) -> SomeResponse:
 | 1.0 | 2025-12-13 | AI Assistant | Initial comprehensive plan |
 | 1.1 | 2025-12-13 | AI Assistant | Completed Phase 1 and Phase 2 implementation |
 | 1.2 | 2025-12-13 | AI Assistant | Updated Phase 3/4 with learnings from implementation: added `to_response_result()`, scope normalization, HTTP helpers, canonical imports, transport migration options, dead code audit |
+| 1.3 | 2025-12-13 | AI Assistant | Completed Phase 3 implementation: `BackendDispatchMixin`, refactored 40 backend methods. Updated Phase 4 with new opportunities: DatasetBackendMixin dispatch, test cleanup, observability enhancement. Moved protocol consolidation and HTTP helpers to Phase 4. |
 

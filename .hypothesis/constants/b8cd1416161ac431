@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/registry.py
+# hypothesis_version: 6.148.7
+
+['NATIVE_TARGETS', 'NativeTargetSpec', 'call_graph_views', 'coverage_functions', 'export_jsonl', 'export_parquet', 'hotspots', 'is_native_target', 'load_native_modules', 'native_target_names', 'risk_factors', 'scip', 'subsystems', 'typing']

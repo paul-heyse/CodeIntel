@@ -8,29 +8,19 @@ This module demonstrates Phase 3 native execution with:
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING, Any, cast
 
-import duckdb
 import ibis
 from hamilton.function_modifiers import tag
 
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
-from codeintel.build.hamilton.native.runner import (
-    NativeRunInfo,
-    create_failed_record,
-    create_skipped_record,
-    create_success_record,
-    save_manifest,
-    should_skip_native_target,
-)
-from codeintel.build.hashing import compute_input_hash
 from codeintel.storage.ibis_types import ge, gt
 
 if TYPE_CHECKING:
     import ibis.expr.types as ir
 
-    from codeintel.build.env import BuildEnv
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.targets import TargetGraph
 
@@ -176,37 +166,12 @@ def t__risk_factors(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    target = graph.get("risk_factors")
-    if target is None:
-        return create_failed_record(
-            target=graph.get("modules") or graph.all_targets[0],
-            input_hash="",
-            options_hash=None,
-            duration_ms=0.0,
-            error=ValueError("risk_factors target not found in graph"),
-        )
+    executor = NativeTargetExecutor.for_target(env, graph, "risk_factors")
 
-    start_time = time.perf_counter()
+    if executor.should_skip():
+        return executor.skip()
 
-    # Compute hashes
-    input_hash = compute_input_hash(
-        target=target,
-        snapshot=env.snapshot,
-        gateway=env.gateway,
-        options_hash=None,
-        manifests=env.manifest_index,
-    )
-
-    # Check if we can skip
-    if should_skip_native_target(env, target, input_hash):
-        return create_skipped_record(
-            target=target,
-            env=env,
-            run=NativeRunInfo(input_hash=input_hash, options_hash=None, duration_ms=0.0),
-        )
-
-    # Execute: materialize to DuckDB
-    try:
+    def compute() -> dict[str, int]:
         ref = materialize_table(
             MaterializationContext(
                 gateway=env.gateway,
@@ -216,30 +181,9 @@ def t__risk_factors(
             "analytics.goid_risk_factors",
             t__risk_factors__compute,
         )
-    except (OSError, ValueError, RuntimeError, duckdb.Error) as exc:
-        duration_ms = (time.perf_counter() - start_time) * 1000
-        return create_failed_record(
-            target=target,
-            input_hash=input_hash,
-            options_hash=None,
-            duration_ms=duration_ms,
-            error=exc,
-        )
+        return {ref.table_key: ref.row_count or 0}
 
-    duration_ms = (time.perf_counter() - start_time) * 1000
-    record = create_success_record(
-        target=target,
-        env=env,
-        run=NativeRunInfo(
-            input_hash=input_hash,
-            options_hash=None,
-            duration_ms=duration_ms,
-            row_counts={"analytics.goid_risk_factors": ref.row_count or 0},
-        ),
-    )
-
-    save_manifest(env, record)
-    return record
+    return executor.execute(compute)
 
 
 # Export node names for Hamilton discovery

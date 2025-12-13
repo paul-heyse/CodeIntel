@@ -10,12 +10,12 @@ from __future__ import annotations
 from contextlib import suppress
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.artifact_ref import ArtifactRef
-from codeintel.build.hamilton.dataset_ref import DatasetRef
+from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
+from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 
 if TYPE_CHECKING:
-    from codeintel.build.snapshot import SnapshotRef
     from codeintel.build.targets import OutputTarget
+    from codeintel.config.primitives import SnapshotRef
 
 
 def expected_datasets(
@@ -38,7 +38,7 @@ def expected_datasets(
 
     Examples
     --------
-    >>> from codeintel.build.snapshot import SnapshotRef
+    >>> from codeintel.config.primitives import SnapshotRef
     >>> from codeintel.build.registry import get_target_graph
     >>> graph = get_target_graph()
     >>> target = graph.get("function_metrics")
@@ -49,7 +49,7 @@ def expected_datasets(
     >>> refs[0].table_key
     'analytics.function_metrics'
     """
-    if not target.contract or not target.contract.table_keys:
+    if not target.contract.table_keys:
         return ()
 
     return tuple(
@@ -87,7 +87,7 @@ def expected_artifacts(
 
     Examples
     --------
-    >>> from codeintel.build.snapshot import SnapshotRef
+    >>> from codeintel.config.primitives import SnapshotRef
     >>> from codeintel.build.registry import get_target_graph
     >>> graph = get_target_graph()
     >>> target = graph.get("scip")
@@ -96,7 +96,7 @@ def expected_artifacts(
     >>> len(refs) > 0
     True
     """
-    if not target.contract or not target.contract.artifacts:
+    if not target.contract.artifacts:
         return ()
 
     formatter = path_formatter or {}

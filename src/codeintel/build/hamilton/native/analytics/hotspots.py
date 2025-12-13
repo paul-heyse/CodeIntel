@@ -9,20 +9,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-import duckdb
 import ibis
 from hamilton.function_modifiers import tag
 
-from codeintel.build.hamilton.manifest_hook import compute_target_input_hash
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
-from codeintel.build.hamilton.native.runner import (
-    NativeRunInfo,
-    create_failed_record,
-    create_skipped_record,
-    create_success_record,
-    save_manifest,
-    should_skip_native_target,
-)
 from codeintel.storage.ibis_types import and_predicates
 
 LOG = logging.getLogger(__name__)
@@ -30,7 +21,7 @@ LOG = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import ibis.expr.types as ir
 
-    from codeintel.build.env import BuildEnv
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.targets import TargetGraph
 
@@ -181,63 +172,26 @@ def t__hotspots(
     """
     LOG.info("Materializing hotspots to DuckDB")
 
-    target = graph.get("hotspots")
-    if target is None:
-        return create_failed_record(
-            target=graph.get("modules") or graph.all_targets[0],
-            input_hash="",
-            options_hash=None,
-            duration_ms=0.0,
-            error=ValueError("hotspots target not found in graph"),
-        )
+    executor = NativeTargetExecutor.for_target(env, graph, "hotspots")
 
-    input_hash = compute_target_input_hash(
-        target=target,
-        snapshot=env.snapshot,
-        gateway=env.gateway,
-        manifests=env.manifest_index,
-    )
+    if executor.should_skip():
+        return executor.skip()
 
-    if should_skip_native_target(env, target, input_hash):
-        return create_skipped_record(
-            target=target,
-            env=env,
-            run=NativeRunInfo(input_hash=input_hash, options_hash=None, duration_ms=0.0),
-        )
-
-    try:
+    def compute() -> dict[str, int]:
         ref = materialize_table(
             MaterializationContext(
                 gateway=env.gateway,
                 snapshot=env.snapshot,
                 validate=env.validate_outputs,
-                owner_target=target.name,
-                input_hash=input_hash,
+                owner_target="hotspots",
+                input_hash=executor.input_hash,
             ),
             "analytics.hotspots",
             t__hotspots__compute,
         )
-    except (ValueError, RuntimeError, duckdb.Error) as exc:
-        return create_failed_record(
-            target=target,
-            input_hash=input_hash,
-            options_hash=None,
-            duration_ms=0.0,
-            error=exc,
-        )
+        return {ref.table_key: ref.row_count or 0}
 
-    record = create_success_record(
-        target=target,
-        env=env,
-        run=NativeRunInfo(
-            input_hash=input_hash,
-            options_hash=None,
-            duration_ms=0.0,
-            row_counts={"analytics.hotspots": ref.row_count or 0},
-        ),
-    )
-    save_manifest(env, record)
-    return record
+    return executor.execute(compute)
 
 
 __all__ = ["t__hotspots", "t__hotspots__compute"]

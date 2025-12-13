@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.plugins._metadata import to_plugin_metadata
 from codeintel.build.plugins.analytics.types.options import TypeCoverageOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.core.plugins.types.protocol import PluginMetadata
@@ -15,7 +16,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
-    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
 
 TYPE_COVERAGE_METADATA = CorePluginMetadata(
@@ -33,26 +33,6 @@ TYPE_COVERAGE_METADATA = CorePluginMetadata(
     options_model=TypeCoverageOptions,
     resource_hints={"max_memory_mb": 512},
 )
-
-
-def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
-    """Convert CorePluginMetadata to protocol metadata.
-
-    Returns
-    -------
-    PluginMetadata
-        Protocol-compatible metadata instance.
-    """
-    return PluginMetadata(
-        name=core.name,
-        version=core.version,
-        description=core.description,
-        kind=cast("PluginKind", core.kind),
-        stage=cast("PluginStage", core.stage or "function"),
-        provides=core.provides,
-        requires=core.requires,
-        produces_tables=core.produces_tables,
-    )
 
 
 class TypeCoveragePlugin(TargetPlugin):
@@ -75,7 +55,7 @@ class TypeCoveragePlugin(TargetPlugin):
         PluginMetadata
             Protocol metadata facade.
         """
-        return _to_plugin_metadata(self._core_metadata)
+        return to_plugin_metadata(self._core_metadata)
 
     @property
     def core_metadata(self) -> CorePluginMetadata:

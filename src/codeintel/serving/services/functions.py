@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import clamp_limit
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     FileSummaryResponse,
@@ -18,6 +17,7 @@ from codeintel.serving.mcp.models import (
     parse_graph_scope,
 )
 from codeintel.serving.services.conversion import to_domain_result
+from codeintel.serving.services.http_helpers import clamp_limits
 from codeintel.serving.services.transport import _HttpTransportMixin
 
 if TYPE_CHECKING:
@@ -157,26 +157,19 @@ class _FunctionQueryDelegates:
         return to_domain_result(raw, dm.FileSummaryResult, FileSummaryResponse)
 
 
+def _serialize_scope(scope: GraphScopePayload | None) -> dict[str, object] | None:
+    """Serialize a GraphScopePayload for HTTP requests."""
+    return scope.model_dump() if scope is not None else None
+
+
 class _HttpFunctionQueryMixin(_HttpTransportMixin):
     """HTTP-based implementation of the function query API.
 
     Architecture Note
     -----------------
     This mixin implements the **HTTP transport path** for ``HttpQueryService``.
-    It performs bidirectional domain/response conversion to maintain the
-    service layer contract:
-
-    1. **Outgoing**: Calls remote HTTP API, receives JSON/response model
-    2. **Normalize**: Converts response to Pydantic model if needed
-       - If domain model received (rare): ``Response.from_domain(payload)``
-       - If response model received: use directly
-       - If dict received: ``Response.model_validate(payload)``
-    3. **Return**: Converts response → domain via ``to_domain()``
-
-    The ``from_domain()`` call inside ``_run()`` handles the edge case where
-    the remote API returns a domain model instead of a response model. The
-    final ``to_domain()`` call ensures we return domain models to satisfy
-    the service layer contract.
+    It uses ``_http_query()`` for methods with limit clamping and the standard
+    pattern for methods without limits.
 
     See ``codeintel.serving.domain_models`` for the full architecture contract.
     """
@@ -189,36 +182,19 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         tested_only: bool = False,
         scope: GraphScopePayload | None = None,
     ) -> dm.HighRiskFunctionsResult:
-        def _run() -> HighRiskFunctionsResponse:
-            applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit(
-                applied_limit,
-                default=applied_limit,
-                max_limit=self.limits.max_rows_per_call,
-            )
-            if clamp.has_error:
-                return HighRiskFunctionsResponse(
-                    functions=[],
-                    truncated=False,
-                    meta=ResponseMeta(),
-                )
-            payload = self.request_json(
-                "/functions/high-risk",
-                {
-                    "min_risk": min_risk,
-                    "limit": clamp.applied,
-                    "tested_only": tested_only,
-                    "scope": scope.model_dump() if scope is not None else None,
-                },
-            )
-            if isinstance(payload, dm.HighRiskFunctionsResult):
-                return HighRiskFunctionsResponse.from_domain(payload)
-            if isinstance(payload, HighRiskFunctionsResponse):
-                return payload
-            return HighRiskFunctionsResponse.model_validate(payload)
-
-        pydantic_resp: HighRiskFunctionsResponse = self._http_call("list_high_risk_functions", _run)
-        return pydantic_resp.to_domain()
+        return self._http_query(
+            "list_high_risk_functions",
+            "/functions/high-risk",
+            {
+                "min_risk": min_risk,
+                "tested_only": tested_only,
+                "scope": _serialize_scope(scope),
+            },
+            HighRiskFunctionsResponse,
+            dm.HighRiskFunctionsResult,
+            empty_data=HighRiskFunctionsResponse(functions=[], truncated=False),
+            limit=limit,
+        )
 
     def get_function_summary(
         self,
@@ -237,7 +213,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
                     "goid_h128": goid_h128,
                     "rel_path": rel_path,
                     "qualname": qualname,
-                    "scope": scope.model_dump() if scope is not None else None,
+                    "scope": _serialize_scope(scope),
                 },
             )
             if isinstance(payload, dm.FunctionSummaryResult):
@@ -257,32 +233,19 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         limit: int | None = None,
         scope: GraphScopePayload | None = None,
     ) -> dm.CallGraphNeighbors:
-        def _run() -> CallGraphNeighborsResponse:
-            applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit(
-                applied_limit,
-                default=applied_limit,
-                max_limit=self.limits.max_rows_per_call,
-            )
-            if clamp.has_error:
-                return CallGraphNeighborsResponse(outgoing=[], incoming=[], meta=ResponseMeta())
-            payload = self.request_json(
-                "/function/callgraph",
-                {
-                    "goid_h128": goid_h128,
-                    "direction": direction,
-                    "limit": clamp.applied,
-                    "scope": scope.model_dump() if scope is not None else None,
-                },
-            )
-            if isinstance(payload, dm.CallGraphNeighbors):
-                return CallGraphNeighborsResponse.from_domain(payload)
-            if isinstance(payload, CallGraphNeighborsResponse):
-                return payload
-            return CallGraphNeighborsResponse.model_validate(payload)
-
-        pydantic_resp: CallGraphNeighborsResponse = self._http_call("get_callgraph_neighbors", _run)
-        return pydantic_resp.to_domain()
+        return self._http_query(
+            "get_callgraph_neighbors",
+            "/function/callgraph",
+            {
+                "goid_h128": goid_h128,
+                "direction": direction,
+                "scope": _serialize_scope(scope),
+            },
+            CallGraphNeighborsResponse,
+            dm.CallGraphNeighbors,
+            empty_data=CallGraphNeighborsResponse(outgoing=[], incoming=[]),
+            limit=limit,
+        )
 
     def get_callgraph_neighborhood(
         self,
@@ -291,35 +254,17 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         radius: int = 1,
         max_nodes: int | None = None,
     ) -> dm.GraphNeighborhood:
-        def _run() -> GraphNeighborhoodResponse:
-            applied_limit = self.limits.default_limit if max_nodes is None else max_nodes
-            clamp = clamp_limit(
-                applied_limit,
-                default=applied_limit,
-                max_limit=self.limits.max_rows_per_call,
-            )
-            if clamp.has_error:
-                return GraphNeighborhoodResponse(nodes=[], edges=[], meta=ResponseMeta())
-            payload = self.request_json(
-                "/graph/call/neighborhood",
-                {
-                    "goid_h128": goid_h128,
-                    "radius": radius,
-                    "max_nodes": clamp.applied,
-                },
-            )
-            if isinstance(payload, dm.GraphNeighborhood):
-                return GraphNeighborhoodResponse.from_domain(payload)
-            if isinstance(payload, GraphNeighborhoodResponse):
-                return payload
-            return GraphNeighborhoodResponse.model_validate(payload)
-
-        pydantic_resp: GraphNeighborhoodResponse = self._http_call(
+        return self._http_query(
             "get_callgraph_neighborhood",
-            _run,
+            "/graph/call/neighborhood",
+            {"goid_h128": goid_h128, "radius": radius},
+            GraphNeighborhoodResponse,
+            dm.GraphNeighborhood,
+            empty_data=GraphNeighborhoodResponse(nodes=[], edges=[]),
+            limit=max_nodes,
+            limit_param="max_nodes",
             dataset="call_graph_nodes",
         )
-        return pydantic_resp.to_domain()
 
     def get_import_boundary(
         self,
@@ -327,29 +272,17 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         subsystem_id: str,
         max_edges: int | None = None,
     ) -> dm.ImportBoundary:
-        def _run() -> ImportBoundaryResponse:
-            applied_limit = self.limits.default_limit if max_edges is None else max_edges
-            clamp = clamp_limit(
-                applied_limit,
-                default=applied_limit,
-                max_limit=self.limits.max_rows_per_call,
-            )
-            if clamp.has_error:
-                return ImportBoundaryResponse(nodes=[], edges=[], meta=ResponseMeta())
-            payload = self.request_json(
-                "/graph/import/boundary",
-                {"subsystem_id": subsystem_id, "max_edges": clamp.applied},
-            )
-            if isinstance(payload, dm.ImportBoundary):
-                return ImportBoundaryResponse.from_domain(payload)
-            if isinstance(payload, ImportBoundaryResponse):
-                return payload
-            return ImportBoundaryResponse.model_validate(payload)
-
-        pydantic_resp: ImportBoundaryResponse = self._http_call(
-            "get_import_boundary", _run, dataset="import_graph_edges"
+        return self._http_query(
+            "get_import_boundary",
+            "/graph/import/boundary",
+            {"subsystem_id": subsystem_id},
+            ImportBoundaryResponse,
+            dm.ImportBoundary,
+            empty_data=ImportBoundaryResponse(nodes=[], edges=[]),
+            limit=max_edges,
+            limit_param="max_edges",
+            dataset="import_graph_edges",
         )
-        return pydantic_resp.to_domain()
 
     def get_tests_for_function(
         self,
@@ -359,32 +292,19 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         limit: int | None = None,
         scope: GraphScopePayload | None = None,
     ) -> dm.TestsForFunctionResult:
-        def _run() -> TestsForFunctionResponse:
-            applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit(
-                applied_limit,
-                default=applied_limit,
-                max_limit=self.limits.max_rows_per_call,
-            )
-            if clamp.has_error:
-                return TestsForFunctionResponse(tests=[], meta=ResponseMeta())
-            payload = self.request_json(
-                "/function/tests",
-                {
-                    "goid_h128": goid_h128,
-                    "urn": urn,
-                    "limit": clamp.applied,
-                    "scope": scope.model_dump() if scope is not None else None,
-                },
-            )
-            if isinstance(payload, dm.TestsForFunctionResult):
-                return TestsForFunctionResponse.from_domain(payload)
-            if isinstance(payload, TestsForFunctionResponse):
-                return payload
-            return TestsForFunctionResponse.model_validate(payload)
-
-        pydantic_resp: TestsForFunctionResponse = self._http_call("get_tests_for_function", _run)
-        return pydantic_resp.to_domain()
+        return self._http_query(
+            "get_tests_for_function",
+            "/function/tests",
+            {
+                "goid_h128": goid_h128,
+                "urn": urn,
+                "scope": _serialize_scope(scope),
+            },
+            TestsForFunctionResponse,
+            dm.TestsForFunctionResult,
+            empty_data=TestsForFunctionResponse(tests=[]),
+            limit=limit,
+        )
 
     def get_file_summary(
         self, *, rel_path: str, scope: GraphScopePayload | None = None
@@ -392,10 +312,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         def _run() -> FileSummaryResponse:
             payload = self.request_json(
                 "/file/summary",
-                {
-                    "rel_path": rel_path,
-                    "scope": scope.model_dump() if scope is not None else None,
-                },
+                {"rel_path": rel_path, "scope": _serialize_scope(scope)},
             )
             if isinstance(payload, dm.FileSummaryResult):
                 return FileSummaryResponse.from_domain(payload)

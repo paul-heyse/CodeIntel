@@ -7,7 +7,7 @@ It is schema-aware and validates output data against registered Pandera schemas.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.analytics.functions import (
     FunctionAnalyticsOptions,
@@ -15,6 +15,7 @@ from codeintel.analytics.functions import (
 )
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
+from codeintel.build.plugins._metadata import to_plugin_metadata
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.core.plugins.types.protocol import PluginMetadata
@@ -24,7 +25,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
-    from codeintel.core.plugins.types.protocol import PluginKind, PluginStage
 
 log = logging.getLogger(__name__)
 
@@ -53,26 +53,6 @@ FUNCTION_METRICS_METADATA = CorePluginMetadata(
 )
 
 
-def _to_plugin_metadata(core: CorePluginMetadata) -> PluginMetadata:
-    """Convert CorePluginMetadata to PluginMetadata for protocol compliance.
-
-    Returns
-    -------
-    PluginMetadata
-        Protocol-compatible metadata instance.
-    """
-    return PluginMetadata(
-        name=core.name,
-        version=core.version,
-        description=core.description,
-        kind=cast("PluginKind", core.kind),
-        stage=cast("PluginStage", core.stage or "function"),
-        provides=core.provides,
-        requires=core.requires,
-        produces_tables=core.produces_tables,
-    )
-
-
 class FunctionMetricsPlugin(TargetPlugin):
     """Compute function complexity and type coverage metrics.
 
@@ -99,7 +79,7 @@ class FunctionMetricsPlugin(TargetPlugin):
         PluginMetadata
             Protocol-compatible metadata.
         """
-        return _to_plugin_metadata(self._core_metadata)
+        return to_plugin_metadata(self._core_metadata)
 
     @property
     def core_metadata(self) -> CorePluginMetadata:

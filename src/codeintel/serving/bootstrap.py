@@ -3,31 +3,52 @@
 This module provides a single entry point for constructing query services,
 backends, and their dependencies.
 
-Usage
------
-For most use cases, use the high-level builder:
+Canonical Entry Points
+----------------------
+**For HTTP serving (recommended for FastAPI/server applications):**
 
-    from codeintel.serving.bootstrap import build_service_stack
+::
+
+    from codeintel.serving.bootstrap import build_service_stack, ServiceStack
 
     stack = build_service_stack(config, gateway=gateway)
+    try:
+        result = stack.service.get_function_summary(goid_h128=123)
+    finally:
+        stack.close()
 
+**For MCP backends (recommended for MCP tool servers):**
 
-For backend resource construction (includes both local and remote modes):
+::
 
-    from codeintel.serving.bootstrap import build_backend_resource
+    from codeintel.serving.bootstrap import build_backend_resource, BackendResource
 
-For more control, use the component builders:
+    resource = build_backend_resource(config, gateway=gateway)
+    try:
+        result = resource.backend.get_function_summary(goid_h128=123)
+    finally:
+        resource.close()
 
-    from codeintel.serving.bootstrap import (
-        build_backend_context,
-        build_repositories,
-        build_query_service,
-    )
+**For direct query service access (lower-level API):**
+
+::
+
+    from codeintel.serving.bootstrap import build_query_service
+
+Deprecated Functions
+--------------------
+The following functions are deprecated and will be removed in v2.0:
+
+- ``build_local_query_service()`` - Use ``build_service_stack()`` instead
+- ``build_http_query_service()`` - Use ``build_backend_resource()`` instead
+- ``build_service_from_config()`` - Use ``build_service_stack()`` or
+  ``build_backend_resource()`` instead
 """
 
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass, field
 from importlib import import_module
 from typing import TYPE_CHECKING
@@ -426,6 +447,10 @@ def build_local_query_service(
     """
     Construct a LocalQueryService with identity verification and dataset registry.
 
+    .. deprecated:: 1.0
+        Use :func:`build_service_stack` instead, which provides a complete
+        service stack with lifecycle management.
+
     Parameters
     ----------
     gateway
@@ -444,6 +469,11 @@ def build_local_query_service(
     LocalQueryService
         Service bound to the provided DuckDB connection.
     """
+    warnings.warn(
+        "build_local_query_service is deprecated. Use build_service_stack() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     verify_db_identity(gateway, cfg)
     opts = registry or DatasetRegistryOptions()
     if opts.validate:
@@ -464,6 +494,10 @@ def build_http_query_service(
     """
     Construct an HttpQueryService for remote API delegation.
 
+    .. deprecated:: 1.0
+        Use :func:`build_backend_resource` with ``mode="remote_api"`` instead,
+        which provides a unified interface for both local and remote backends.
+
     Parameters
     ----------
     request_json
@@ -478,6 +512,11 @@ def build_http_query_service(
     HttpQueryService
         Service wrapper for remote transport.
     """
+    warnings.warn(
+        "build_http_query_service is deprecated. Use build_backend_resource() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return HttpQueryService(
         request_json=request_json,
         limits=limits,
@@ -494,6 +533,10 @@ def build_service_from_config(
 ) -> LocalQueryService | HttpQueryService:
     """
     Construct a query service from ServingConfig using local or remote transport.
+
+    .. deprecated:: 1.0
+        Use :func:`build_service_stack` for local services or
+        :func:`build_backend_resource` for MCP backends instead.
 
     Parameters
     ----------
@@ -517,6 +560,12 @@ def build_service_from_config(
         When required inputs (gateway for local_db or request_json for remote_api)
         are missing or the serving mode is unsupported.
     """
+    warnings.warn(
+        "build_service_from_config is deprecated. "
+        "Use build_service_stack() or build_backend_resource() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     _, limits = build_registry_and_limits(cfg)
     resolved_options = options or ServiceBuildOptions()
     resolved_observability = resolved_options.observability or get_observability_from_config(cfg)

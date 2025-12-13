@@ -18,7 +18,7 @@ Integration Points
 ------------------
 - Uses `TargetGraph` from Phase 1 for dependency traversal
 - Uses `BuildTracking` from Phase 7 for manifest storage
-- Uses `compute_input_hash` for cache invalidation detection
+- Delegates to `StateComputer` for unified state computation
 """
 
 from __future__ import annotations
@@ -27,13 +27,16 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.hashing import compute_input_hash
+from codeintel.build.session import BuildSession
+from codeintel.build.state_computer import StateComputer
+from codeintel.build.state_types import BuildState as UnifiedBuildState
+from codeintel.build.state_types import TargetState as UnifiedTargetState
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.build.manifest import OutputManifest
-    from codeintel.build.targets import OutputTarget, TargetGraph
+    from codeintel.build.targets import TargetGraph
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
@@ -87,6 +90,67 @@ class StalenessReason:
     details: str
 
 
+def _unified_to_legacy_status(status: str) -> TargetStatus:
+    """Convert unified status to legacy status.
+
+    Parameters
+    ----------
+    status
+        Unified status string.
+
+    Returns
+    -------
+    TargetStatus
+        Legacy status.
+    """
+    status_map: dict[str, TargetStatus] = {
+        "current": "computed",
+        "stale": "stale",
+        "missing": "missing",
+        "blocked": "blocked",
+    }
+    return status_map.get(status, "missing")
+
+
+def _unified_to_legacy_reason(
+    unified: UnifiedTargetState,
+) -> StalenessReason | None:
+    """Convert unified blocking reason to legacy staleness reason.
+
+    Parameters
+    ----------
+    unified
+        Unified target state.
+
+    Returns
+    -------
+    StalenessReason | None
+        Legacy staleness reason.
+    """
+    if unified.blocking_reason is None:
+        return None
+
+    reason_map: dict[str, StalenessKind] = {
+        "input_hash_mismatch": "input_hash_mismatch",
+        "dependency_missing": "dependency_missing",
+        "dependency_stale": "dependency_stale",
+        "dependency_blocked": "dependency_blocked",
+        "options_hash_mismatch": "options_hash_mismatch",
+        "data_missing": "input_hash_mismatch",  # Map to closest equivalent
+    }
+    kind = reason_map.get(unified.blocking_reason, "input_hash_mismatch")
+
+    # Build details message
+    if unified.blocking_deps:
+        details = f"Blocked by: {', '.join(unified.blocking_deps)}"
+    elif unified.current_hash and unified.stored_hash:
+        details = f"Stored hash '{unified.stored_hash}' != current hash '{unified.current_hash}'"
+    else:
+        details = f"Reason: {unified.blocking_reason}"
+
+    return StalenessReason(kind=kind, details=details)
+
+
 @dataclass(frozen=True)
 class TargetState:
     """Current state of a single build target.
@@ -131,6 +195,29 @@ class TargetState:
     blocking_deps: tuple[str, ...]
     current_input_hash: str | None
 
+    @classmethod
+    def from_unified(cls, unified: UnifiedTargetState) -> TargetState:
+        """Create legacy TargetState from unified TargetState.
+
+        Parameters
+        ----------
+        unified
+            Unified target state from StateComputer.
+
+        Returns
+        -------
+        TargetState
+            Legacy target state.
+        """
+        return cls(
+            name=unified.name,
+            status=_unified_to_legacy_status(unified.status),
+            manifest=unified.manifest,
+            staleness_reason=_unified_to_legacy_reason(unified),
+            blocking_deps=unified.blocking_deps,
+            current_input_hash=unified.current_hash,
+        )
+
 
 @dataclass(frozen=True)
 class DatabaseState:
@@ -158,6 +245,30 @@ class DatabaseState:
     repo: str
     commit: str
     targets: Mapping[str, TargetState]
+
+    @classmethod
+    def from_unified(cls, unified: UnifiedBuildState) -> DatabaseState:
+        """Create legacy DatabaseState from unified BuildState.
+
+        Parameters
+        ----------
+        unified
+            Unified build state from StateComputer.
+
+        Returns
+        -------
+        DatabaseState
+            Legacy database state.
+        """
+        legacy_targets = {
+            name: TargetState.from_unified(state)
+            for name, state in unified.targets.items()
+        }
+        return cls(
+            repo=unified.repo,
+            commit=unified.commit,
+            targets=legacy_targets,
+        )
 
     def get(self, name: str) -> TargetState:
         """Retrieve state for a specific target.
@@ -261,6 +372,9 @@ class StateValidator:
        against current input hashes.
     2. **Pass 2**: Propagate blocking status from dependencies to dependents.
 
+    This class delegates to StateComputer for the actual computation,
+    preserving the legacy API for backward compatibility.
+
     Parameters
     ----------
     graph
@@ -304,51 +418,29 @@ class StateValidator:
         self._gateway = gateway
         self._snapshot = snapshot
 
+        # Validate graph
         errors = graph.validate()
         if errors:
             error_msg = "\n".join(errors)
             msg = f"Target graph validation failed:\n{error_msg}"
             raise ValueError(msg)
 
+        # Create session and computer for delegation
+        self._session = BuildSession(snapshot=snapshot, gateway=gateway)
+        self._computer = StateComputer(graph=graph, session=self._session)
+
     def validate(self) -> DatabaseState:
         """Validate state of all targets in the graph.
 
-        Performs two-pass validation:
-        1. Compute individual states from manifests and hashes
-        2. Propagate blocking status from dependencies
+        Delegates to StateComputer and wraps result in legacy types.
 
         Returns
         -------
         DatabaseState
             Complete state snapshot for all targets.
         """
-        manifests = self._gateway.build.list_manifests(
-            repo=self._snapshot.repo,
-            commit=self._snapshot.commit,
-        )
-        manifest_lookup: dict[str, OutputManifest] = {m.target: m for m in manifests}
-
-        known_targets = set(self._graph)
-        for target_name in manifest_lookup:
-            if target_name not in known_targets:
-                log.warning(
-                    "Found manifest for unknown target '%s' (may have been removed)",
-                    target_name,
-                )
-
-        preliminary_states: dict[str, TargetState] = {}
-        for target_name in self._graph:
-            target = self._graph.get(target_name)
-            manifest = manifest_lookup.get(target_name)
-            preliminary_states[target_name] = self._compute_individual_state(target, manifest)
-
-        final_states = self._propagate_blocking(preliminary_states)
-
-        return DatabaseState(
-            repo=self._snapshot.repo,
-            commit=self._snapshot.commit,
-            targets=final_states,
-        )
+        unified_state = self._computer.compute_all()
+        return DatabaseState.from_unified(unified_state)
 
     def validate_target(self, name: str) -> TargetState:
         """Validate state of a single target.
@@ -375,223 +467,8 @@ class StateValidator:
         if name not in self._graph:
             msg = f"Target '{name}' not found in graph"
             raise KeyError(msg)
-        return self.validate().get(name)
-
-    def _compute_individual_state(
-        self,
-        target: OutputTarget,
-        manifest: OutputManifest | None,
-    ) -> TargetState:
-        """Compute state for a single target without considering dependencies.
-
-        Parameters
-        ----------
-        target
-            Target to compute state for.
-        manifest
-            Stored manifest if one exists, None otherwise.
-
-        Returns
-        -------
-        TargetState
-            Preliminary state (may be upgraded to blocked in Pass 2).
-        """
-        if manifest is None:
-            return TargetState(
-                name=target.name,
-                status="missing",
-                manifest=None,
-                staleness_reason=None,
-                blocking_deps=(),
-                current_input_hash=None,
-            )
-
-        is_current, current_hash = self._check_input_hash(target, manifest)
-
-        if is_current:
-            return TargetState(
-                name=target.name,
-                status="computed",
-                manifest=manifest,
-                staleness_reason=None,
-                blocking_deps=(),
-                current_input_hash=current_hash,
-            )
-
-        reason = self._determine_staleness_reason(manifest, current_hash)
-        return TargetState(
-            name=target.name,
-            status="stale",
-            manifest=manifest,
-            staleness_reason=reason,
-            blocking_deps=(),
-            current_input_hash=current_hash,
-        )
-
-    def _check_input_hash(
-        self,
-        target: OutputTarget,
-        manifest: OutputManifest,
-    ) -> tuple[bool, str]:
-        """Compare stored input_hash against current computation.
-
-        Parameters
-        ----------
-        target
-            Target to check.
-        manifest
-            Stored manifest with input_hash to compare.
-
-        Returns
-        -------
-        tuple[bool, str]
-            (is_current, current_hash) where is_current is True if hashes match.
-        """
-        current_hash = compute_input_hash(
-            target=target,
-            snapshot=self._snapshot,
-            gateway=self._gateway,
-            options_hash=manifest.options_hash,
-        )
-        return (manifest.input_hash == current_hash, current_hash)
-
-    @staticmethod
-    def _determine_staleness_reason(
-        manifest: OutputManifest,
-        current_hash: str,
-    ) -> StalenessReason:
-        """Determine why a target is stale based on hash comparison.
-
-        Parameters
-        ----------
-        manifest
-            Stored manifest with old hash.
-        current_hash
-            Newly computed hash.
-
-        Returns
-        -------
-        StalenessReason
-            Explanation of why hashes differ.
-        """
-        return StalenessReason(
-            kind="input_hash_mismatch",
-            details=f"Stored hash '{manifest.input_hash}' != current hash '{current_hash}'",
-        )
-
-    def _propagate_blocking(
-        self,
-        preliminary_states: dict[str, TargetState],
-    ) -> dict[str, TargetState]:
-        """Propagate blocking status from dependencies to dependents.
-
-        A target is blocked if any of its dependencies is missing, stale,
-        or blocked. This propagates transitively through the dependency graph.
-
-        Parameters
-        ----------
-        preliminary_states
-            States computed in Pass 1.
-
-        Returns
-        -------
-        dict[str, TargetState]
-            Final states with blocking propagated.
-        """
-        final_states = dict(preliminary_states)
-
-        topo_order = self._graph.topological_order(list(self._graph))
-
-        for target_name in topo_order:
-            current_state = final_states[target_name]
-
-            if current_state.status == "missing":
-                continue
-
-            target = self._graph.get(target_name)
-            blocking_deps, blocking_reason = self._find_blocking_deps(
-                target.dependencies, final_states
-            )
-
-            if blocking_deps:
-                final_states[target_name] = TargetState(
-                    name=target_name,
-                    status="blocked",
-                    manifest=current_state.manifest,
-                    staleness_reason=blocking_reason,
-                    blocking_deps=tuple(sorted(blocking_deps)),
-                    current_input_hash=current_state.current_input_hash,
-                )
-
-        return final_states
-
-    def _find_blocking_deps(
-        self,
-        dependencies: tuple[str, ...],
-        states: dict[str, TargetState],
-    ) -> tuple[list[str], StalenessReason | None]:
-        """Find dependencies that block a target.
-
-        Parameters
-        ----------
-        dependencies
-            Names of dependencies to check.
-        states
-            Current state of all targets.
-
-        Returns
-        -------
-        tuple[list[str], StalenessReason | None]
-            List of blocking dependency names and reason for first blocker.
-        """
-        blocking_deps: list[str] = []
-        blocking_reason: StalenessReason | None = None
-
-        for dep_name in dependencies:
-            dep_state = states[dep_name]
-            reason = self._check_dependency_blocking(dep_name, dep_state)
-            if reason is not None:
-                blocking_deps.append(dep_name)
-                if blocking_reason is None:
-                    blocking_reason = reason
-
-        return blocking_deps, blocking_reason
-
-    @staticmethod
-    def _check_dependency_blocking(
-        dep_name: str,
-        dep_state: TargetState,
-    ) -> StalenessReason | None:
-        """Check if a dependency causes blocking.
-
-        Parameters
-        ----------
-        dep_name
-            Name of the dependency.
-        dep_state
-            Current state of the dependency.
-
-        Returns
-        -------
-        StalenessReason | None
-            Reason if dependency causes blocking, None otherwise.
-        """
-        if dep_state.status == "missing":
-            return StalenessReason(
-                kind="dependency_missing",
-                details=f"Dependency '{dep_name}' has not been computed",
-            )
-        if dep_state.status == "stale":
-            return StalenessReason(
-                kind="dependency_stale",
-                details=f"Dependency '{dep_name}' is stale and needs recomputation",
-            )
-        if dep_state.status == "blocked":
-            return StalenessReason(
-                kind="dependency_blocked",
-                details=f"Dependency '{dep_name}' is blocked by its own dependencies",
-            )
-        return None
+        unified_state = self._computer.compute_single(name)
+        return TargetState.from_unified(unified_state)
 
 
 __all__ = [
