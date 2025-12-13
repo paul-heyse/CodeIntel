@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.build.plugins.graphs.builders import CallGraphPlugin, CfgDfgPlugin, SymbolUsesPlugin
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
-from codeintel.graphs.plugins.builders import CallGraphPlugin, CfgDfgPlugin, SymbolUsesPlugin
 from tests._helpers.builders import (
     GoidRow,
     ModuleRow,

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.plugins.ingestion.repo_scan import RepoScanPlugin
 from codeintel.ingestion.infrastructure.db_queries import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
@@ -36,7 +37,6 @@ from codeintel.ingestion.infrastructure.db_queries import (
     safe_not_null_fraction,
     safe_table_exists,
 )
-from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,

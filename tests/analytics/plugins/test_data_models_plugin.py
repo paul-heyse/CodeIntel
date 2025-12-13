@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.plugins.data_models.build import DataModelsPlugin
+from codeintel.build.plugins.analytics.data_models.build import DataModelsPlugin
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.plugin_harness import PluginHarnessFactory
 

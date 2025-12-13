@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from codeintel.build.plan import (
     BuildPlan,
     PlanGenerator,
@@ -13,8 +12,9 @@ from codeintel.build.plan import (
     PlanStep,
     format_duration,
 )
-from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import ResolutionReason, ResolutionResult
+
+from codeintel.build.registry import get_target_graph
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (

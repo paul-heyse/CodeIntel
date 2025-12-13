@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.ingestion.compute.base import StepResult
-from codeintel.ingestion.plugins.typing_plugin import (
+from codeintel.build.plugins.ingestion.typing_plugin import (
     TypingIngestPlugin,
 )
+from codeintel.ingestion.compute.base import StepResult
 from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.fakes.ingestion_plugins import (
@@ -29,7 +29,7 @@ from tests._helpers.ingestion_samples import TYPED_SOURCE
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.ingestion.plugins.typing_plugin import (
+    from codeintel.build.plugins.ingestion.typing_plugin import (
         StepFactory,
         StorageFactory,
     )

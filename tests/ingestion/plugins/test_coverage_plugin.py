@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.protocols import CoverageData
-from codeintel.ingestion.plugins.coverage_plugin import (
+from codeintel.build.plugins.ingestion.coverage_plugin import (
     CoverageIngestPlugin,
     get_module_paths,
     paths_to_modules,
     resolve_coverage_file,
 )
+from codeintel.build.protocols import CoverageData
 from tests._helpers.assertions import assert_logged, expect_equal, expect_true
 from tests._helpers.factories.row_factories import sample_coverage_payload
 from tests._helpers.fakes.contexts import TargetResourceOverrides

@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.ingestion.compute.base import StepResult
-from codeintel.ingestion.plugins.cst_extract import (
+from codeintel.build.plugins.ingestion.cst_extract import (
     CstExtractPlugin,
 )
+from codeintel.ingestion.compute.base import StepResult
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes.ingestion_plugins import (
     StepCallCapture,
@@ -26,7 +26,7 @@ from tests.ingestion.plugins._wiring import ResourceCase, run_sync_plugin_wiring
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.ingestion.plugins.cst_extract import (
+    from codeintel.build.plugins.ingestion.cst_extract import (
         StepFactory,
         StorageFactory,
     )

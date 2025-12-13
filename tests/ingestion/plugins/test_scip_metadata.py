@@ -5,15 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from codeintel.build.plugins.ingestion.scip_plugin import (
+    SCIP_INGEST_METADATA,
+    ScipIngestPlugin,
+)
 from codeintel.core.plugins.execution.options import (
     ConfigSource,
     PluginOptionsResolver,
 )
 from codeintel.core.plugins.types.metadata import PluginDomain
-from codeintel.ingestion.plugins.scip_plugin import (
-    SCIP_INGEST_METADATA,
-    ScipIngestPlugin,
-)
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,

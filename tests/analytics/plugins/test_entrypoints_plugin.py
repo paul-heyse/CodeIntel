@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.plugins.entrypoints.build import EntrypointsPlugin
+from codeintel.build.plugins.analytics.entrypoints.build import EntrypointsPlugin
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from tests._helpers.assertions import expect_false, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides

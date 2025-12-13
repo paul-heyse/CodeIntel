@@ -750,6 +750,59 @@ from codeintel.analytics.core.plugin_protocol import PluginStage
 
 ---
 
+## Implementation Summary (Completed)
+
+### Files Deleted
+
+| File | Lines | Reason |
+|------|-------|--------|
+| `src/codeintel/analytics/core/__init__.py` | 9 | Empty stub |
+| `src/codeintel/analytics/plugins/registration.py` | 133 | Replaced by build registry |
+| `src/codeintel/build/plugins.py` | 242 | Duplicate of plugin_registry |
+| `src/codeintel/ingestion/plugins/modules_plugin.py` | 237 | Replaced by RepoScanPlugin |
+| `tests/analytics/core/__init__.py` | 1 | Tests for deleted module |
+| `tests/analytics/core/test_plugin_registration.py` | 105 | Tests for deleted module |
+| `tests/build/test_executor.py` | 671 | Tests for Phase 1 deleted executor |
+| `tests/_helpers/fakes/ingestion_runtime.py` | 68 | References deleted Phase 1 modules |
+
+**Total: 8 files, ~1,466 lines removed**
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `src/codeintel/config/datasets/plugin_constraints.py` | Rewrote to use build registry |
+| `src/codeintel/config/datasets/schema_registry.py` | Rewrote producers_of/consumers_of |
+| `src/codeintel/analytics/graphs/plugin_catalog.py` | Rewrote to use build registry |
+| `src/codeintel/analytics/plugins/__init__.py` | Removed ALL_PLUGINS exports |
+| `src/codeintel/ingestion/plugins/__init__.py` | Removed ModuleIngestPlugin export |
+| `src/codeintel/cli/handlers/__init__.py` | Fixed renamed graph handler exports |
+| `scripts/render_graph_plugin_catalog.py` | Fixed import path |
+| `tests/_helpers/build.py` | Removed Phase 1 legacy types |
+| `tests/_helpers/__init__.py` | Updated exports |
+| `tests/_helpers/fakes/__init__.py` | Removed RecordingBuildExecutor |
+| `tests/analytics/conftest.py` | Fixed graph gateway import |
+| `tests/core/conftest.py` | Fixed graph gateway import |
+| `tests/build/test_plugin_registry_plugins.py` | Removed PluginCatalog tests |
+| `tests/analytics/graphs/test_graph_metrics_integration.py` | Updated assertion |
+
+### Phase 1 Cleanup Issues Discovered
+
+During Phase 2, the following leftover issues from Phase 1 were discovered and addressed:
+
+1. **Handler Exports** - `cli/handlers/__init__.py` still exported `GraphPluginsResult` and `graph_plugins_*_handler` which were renamed in Phase 1
+2. **Test Helpers** - `tests/_helpers/build.py` still imported from deleted `build.executor` and `build.plan` modules
+3. **Graph Contexts** - `tests/_helpers/fakes/graph_contexts.py` was deleted but still imported by conftest files
+
+### Remaining Work (Out of Scope)
+
+The following issues were discovered but are out of scope for Phase 2:
+
+1. **graph_executor_env fixture** - Several test files reference `GraphTestEnv` from deleted `graph_contexts.py`. These tests will need migration.
+2. **GraphTestEnv type hints** - TYPE_CHECKING imports in `tests/graphs/test_*.py` files reference deleted types
+
+---
+
 ## References
 
 - [Legacy Decommissioning Summary](./Legacy_Decommissioning_Summary.md) — Phase 1 completion
