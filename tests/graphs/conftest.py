@@ -13,10 +13,6 @@ graph_snapshot
     Standard snapshot reference for testing.
 graph_executor_env
     Combined gateway + snapshot environment with automatic cleanup.
-graph_plugin_context
-    Full GraphPluginExecutionContext ready for plugin testing.
-graph_telemetry_context
-    Context configured for telemetry/span testing.
 """
 
 from __future__ import annotations
@@ -26,16 +22,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.core.plugins.execution.context import PluginScratch
 from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.catalog import FunctionCatalog, FunctionMeta
-from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.resources.catalog import CatalogResource
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.configs import create_test_snapshot
-from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_runtime import GraphRuntimeDouble as MockGraphRuntime
 from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_all_graphs,
@@ -92,59 +85,6 @@ def graph_snapshot(tmp_path: Path) -> SnapshotRef:
         Standard test snapshot with demo/repo and deadbeef commit.
     """
     return create_test_snapshot(tmp_path)
-
-
-@pytest.fixture
-def graph_executor_env(tmp_path: Path) -> Iterator[GraphTestEnv]:
-    """Provide a combined gateway + snapshot environment for executor tests.
-
-    This fixture handles all setup and cleanup, eliminating try/finally blocks
-    in test code. The environment includes:
-    - In-memory gateway with full schema
-    - Standard snapshot reference
-    - Automatic cleanup on test completion
-
-    Yields
-    ------
-    GraphTestEnv
-        Environment with gateway and snapshot; automatically closed.
-    """
-    env = GraphTestEnv.create(tmp_path, repo="demo/repo", commit="deadbeef")
-    try:
-        yield env
-    finally:
-        env.close()
-
-
-@pytest.fixture
-def graph_plugin_context(
-    graph_gateway: StorageGateway,
-    graph_snapshot: SnapshotRef,
-) -> GraphPluginExecutionContext:
-    """Provide a GraphPluginExecutionContext for plugin testing.
-
-    Combines the gateway and snapshot fixtures into a full execution context
-    ready for graph plugin tests.
-
-    Parameters
-    ----------
-    graph_gateway
-        Gateway fixture with full schema.
-    graph_snapshot
-        Snapshot reference fixture.
-
-    Returns
-    -------
-    GraphPluginExecutionContext
-        Configured execution context for plugin testing.
-    """
-    return GraphPluginExecutionContext(
-        gateway=graph_gateway,
-        snapshot=graph_snapshot,
-        scratch=PluginScratch(),
-        plugin_name="test_plugin",
-        run_id="test-run-123",
-    )
 
 
 @pytest.fixture
@@ -381,9 +321,7 @@ def mock_runtime_all_graphs() -> MockGraphRuntime:
 __all__ = [
     "golden_gateway",
     "golden_snapshot",
-    "graph_executor_env",
     "graph_gateway",
-    "graph_plugin_context",
     "graph_snapshot",
     "mock_graph_runtime",
     "mock_runtime_all_graphs",

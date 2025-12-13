@@ -1,14 +1,13 @@
 """Hamilton Driver factory for build execution.
 
 This module provides the factory function for constructing Hamilton Driver
-instances configured for the build system. The driver is built from the
-Phase 0 node modules and target graph.
+instances configured for the build system.
 
 Design Principles
 -----------------
 1. HamiltonRuntime bundles the Driver with the TargetGraph for convenience.
 2. build_driver() is the single entry point for constructing runtimes.
-3. Supports both "phase0" (explicit nodes) and "generated" (dynamic) modes.
+3. Supports "generated" (dynamic) and "auto" (native + generated) modes.
 4. Target-to-node mappings are carried in the runtime for correct lookups.
 """
 
@@ -21,7 +20,6 @@ from hamilton import driver
 
 from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hamilton.native.registry import load_native_modules, native_target_names
-from codeintel.build.hamilton.nodes import targets_phase0
 from codeintel.build.hamilton.nodes.node_factory import (
     GenerationOptions,
     get_generated_module,
@@ -32,7 +30,7 @@ if TYPE_CHECKING:
     from codeintel.build.targets import TargetGraph
 
 
-HamiltonNodeMode = Literal["phase0", "generated", "auto"]
+HamiltonNodeMode = Literal["generated", "auto"]
 
 
 @dataclass(frozen=True)
@@ -50,7 +48,7 @@ class HamiltonRuntime:
     graph
         Target graph containing all registered targets.
     mode
-        Node mode: "phase0" for explicit nodes, "generated" for dynamic.
+        Node mode: "generated" for dynamic nodes, "auto" for native + generated.
     target_to_node
         Mapping from target names to Hamilton node names.
     node_to_target
@@ -87,16 +85,13 @@ def _build_target_to_node_map(
     graph
         Target graph containing all registered targets.
     mode
-        Node mode: "phase0", "generated", or "auto".
+        Node mode: "generated" or "auto".
 
     Returns
     -------
     dict[str, str]
         Mapping from target names to Hamilton node names.
     """
-    if mode == "phase0":
-        return dict(targets_phase0.TARGET_TO_NODE)
-
     if mode == "auto":
         # In auto mode, some targets are defined by native modules and others by the generated
         # module. Both implementations use the canonical `t__<target>` naming, so we can map all
@@ -129,7 +124,6 @@ def build_driver(
         Can include profile name and other settings.
     mode
         Node mode selection:
-        - "phase0": Use explicit Phase 0 nodes (risk_factors chain only)
         - "generated": Use dynamically generated nodes for all targets
         - "auto": Use native modules where available, generated elsewhere
 
@@ -141,8 +135,7 @@ def build_driver(
     Notes
     -----
     Generated nodes are created from TargetGraph metadata and include
-    all registered targets. Phase 0 nodes are hand-written and cover
-    only the risk_factors execution chain.
+    all registered targets.
 
     In "auto" mode, the driver composes native target modules with
     generated wrapper nodes. Native targets are excluded from the
@@ -150,12 +143,6 @@ def build_driver(
 
     Examples
     --------
-    >>> runtime = build_driver(config={"profile": "fast"}, mode="phase0")
-    >>> outputs = runtime.dr.execute(
-    ...     ["t__modules"],
-    ...     inputs={"env": env, "graph": runtime.graph},
-    ... )
-
     >>> runtime = build_driver(mode="generated")
     >>> len(runtime.target_to_node) > 0
     True
@@ -183,17 +170,12 @@ def build_driver(
             generated_mod,
             *native_mods,
         )
-    elif mode == "generated":
+    else:
+        # Generated mode.
         nodes_module = get_generated_module()
         dr = driver.Driver(
             config or {},
             nodes_module,
-        )
-    else:
-        # Phase 0 mode.
-        dr = driver.Driver(
-            config or {},
-            targets_phase0,
         )
 
     t2n = _build_target_to_node_map(graph, mode=mode)
@@ -214,7 +196,7 @@ def list_available_nodes(*, mode: HamiltonNodeMode = "generated") -> list[str]:
     Parameters
     ----------
     mode
-        Node mode: "phase0", "generated", or "auto".
+        Node mode: "generated" or "auto".
 
     Returns
     -------
@@ -223,7 +205,7 @@ def list_available_nodes(*, mode: HamiltonNodeMode = "generated") -> list[str]:
 
     Examples
     --------
-    >>> nodes = list_available_nodes(mode="phase0")
+    >>> nodes = list_available_nodes(mode="generated")
     >>> "t__modules" in nodes
     True
     """
@@ -235,7 +217,6 @@ def target_to_node_name(
     target_name: str,
     *,
     runtime: HamiltonRuntime | None = None,
-    mode: HamiltonNodeMode = "generated",
 ) -> str | None:
     """Convert a target name to its Hamilton node name.
 
@@ -245,8 +226,6 @@ def target_to_node_name(
         The build target name (e.g., "modules", "function_metrics").
     runtime
         Optional runtime to use for lookup (preferred if available).
-    mode
-        Fallback mode if runtime not provided.
 
     Returns
     -------
@@ -266,9 +245,6 @@ def target_to_node_name(
     """
     if runtime is not None:
         return runtime.target_to_node.get(target_name)
-
-    if mode == "phase0":
-        return targets_phase0.TARGET_TO_NODE.get(target_name)
 
     return target_node(target_name)
 

@@ -1,8 +1,7 @@
 """Build system for computing minimal execution plans.
 
-This package provides the target graph, state validation, resolution,
-plan generation, execution, and readiness infrastructure for the
-CodeIntel build system.
+This package provides the target graph, state validation, Hamilton-based
+execution, and readiness infrastructure for the CodeIntel build system.
 
 Key concepts:
 
@@ -35,9 +34,7 @@ Import patterns::
     from codeintel.build.errors import BuildError, BuildErrorCollection
 
 
-    from codeintel.build.executor import BuildExecutor, BuildResult
-    from codeintel.build.plan import BuildPlan, PlanGenerator
-    from codeintel.build.resolver import BuildResolver
+    from codeintel.build.hamilton import HamiltonBuildExecutor, HamiltonBuildResult
     from codeintel.build.state import StateValidator
     from codeintel.build.readiness import DatabaseReadinessView
 

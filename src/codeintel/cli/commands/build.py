@@ -84,19 +84,11 @@ class BuildRunCommand:
             help="Force recompute of specific targets (repeatable).",
         ),
     ] = None
-    engine: Annotated[
-        str,
-        Parameter(
-            name=["--engine", "-e"],
-            help="Build engine to use: hamilton (default) or legacy.",
-            show_choices=True,
-        ),
-    ] = "hamilton"
     hamilton_mode: Annotated[
         str,
         Parameter(
             name=["--hamilton-mode"],
-            help="Hamilton node mode: generated (default), auto, or phase0 (debug).",
+            help="Hamilton node mode: generated (default) or auto.",
             show_choices=True,
         ),
     ] = "generated"

@@ -8,26 +8,40 @@ Design Principles
 -----------------
 1. Nodes are created dynamically with proper Hamilton signatures.
 2. Dependencies are derived from the TargetGraph.
-3. Generated nodes reuse _run_target from targets_phase0.py.
-4. The generated module can replace explicit Phase 0 nodes.
-5. Dataset nodes (d__*) are generated for all contract tables.
+3. Generated nodes reuse shared _run_target execution logic.
+4. Dataset nodes (d__*) are generated for all contract tables.
 """
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
+import time
 from dataclasses import dataclass
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, cast
 
 from hamilton.function_modifiers import tag
 
+from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
-from codeintel.build.hamilton.io.dataset_ref import DatasetRef
+from codeintel.build.hamilton.io.dataset_ref import (
+    DatasetRef,
+    refs_from_target_result,
+    refs_to_tuple,
+)
 from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df, load_dataset_ibis
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.manifest_hook import (
+    ManifestSaveRequest,
+    SkipCheckRequest,
+    TargetRunRecord,
+    compute_target_input_hash,
+    compute_target_options_hash,
+    save_manifest,
+    should_skip,
+)
 from codeintel.build.hamilton.metadata_bridge import from_target
 from codeintel.build.hamilton.naming import (
     artifact_node,
@@ -36,14 +50,14 @@ from codeintel.build.hamilton.naming import (
     query_node,
     target_node,
 )
-from codeintel.build.hamilton.nodes.targets_phase0 import _run_target
+from codeintel.build.parameters import EMPTY_PARAMETERS
+from codeintel.build.plugin import TargetPluginProtocol
+from codeintel.build.plugin_registry import get_plugin_for_target
 from codeintel.build.registry import get_target_graph
-from codeintel.build.targets import TargetGraph
+from codeintel.build.targets import OutputTarget, TargetGraph
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-    from codeintel.build.targets import OutputTarget
 
 __all__ = [
     "GenerationOptions",
@@ -86,6 +100,194 @@ class GenerationOptions:
     include_artifact_nodes: bool = True
     include_targets: set[str] | None = None
     exclude_targets: set[str] | None = None
+
+
+@dataclass(frozen=True)
+class _PluginExecContext:
+    """Bundled context for plugin execution."""
+
+    plugin: TargetPluginProtocol
+    plugin_name: str
+    input_hash: str
+    options_hash: str | None
+
+
+def _run_target(
+    *,
+    env: BuildEnv,
+    graph: TargetGraph,
+    target_name: str,
+    upstream: tuple[TargetRunRecord, ...],
+) -> TargetRunRecord:
+    """Execute a target plugin and return the run record.
+
+    This is the core execution wrapper for generated Hamilton nodes.
+    It handles skip checks, upstream failure gating, plugin execution,
+    and manifest persistence.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway, snapshot, and providers.
+    graph
+        Target graph for looking up target metadata.
+    target_name
+        Name of the target to execute.
+    upstream
+        Records from upstream dependencies.
+
+    Returns
+    -------
+    TargetRunRecord
+        Execution record with status, timing, and dataset refs.
+    """
+    # Check for upstream failures
+    failed_upstream = [rec.target for rec in upstream if rec.status == "failed"]
+    if failed_upstream:
+        return TargetRunRecord(
+            target=target_name,
+            plugin_name="skipped",
+            status="failed",
+            input_hash=None,
+            options_hash=None,
+            error=f"Upstream target(s) failed: {', '.join(failed_upstream)}",
+        )
+
+    target = graph.get(target_name)
+    plugin = get_plugin_for_target(target_name)
+    meta = from_target(target)
+    plugin_name = meta.name  # Canonical name like "analytics.function_metrics"
+
+    # Compute hashes
+    input_hash = compute_target_input_hash(
+        target=target,
+        snapshot=env.snapshot,
+        gateway=env.gateway,
+        manifests=env.manifest_index,
+    )
+    options_hash = compute_target_options_hash(None)  # No raw parameters available here
+
+    # Check for skip
+    skip_request = SkipCheckRequest(
+        gateway=env.gateway,
+        target=target_name,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        input_hash=input_hash,
+        manifest_index=env.manifest_index,
+    )
+
+    if target_name not in env.force_targets and should_skip(skip_request):
+        return TargetRunRecord(
+            target=target_name,
+            plugin_name=plugin_name,
+            status="skipped",
+            input_hash=input_hash,
+            options_hash=options_hash,
+        )
+
+    exec_ctx = _PluginExecContext(
+        plugin=plugin,
+        plugin_name=plugin_name,
+        input_hash=input_hash,
+        options_hash=options_hash,
+    )
+    return _execute_plugin(env, target, exec_ctx)
+
+
+def _execute_plugin(
+    env: BuildEnv,
+    target: OutputTarget,
+    exec_ctx: _PluginExecContext,
+) -> TargetRunRecord:
+    """Execute the plugin and return a TargetRunRecord.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway, snapshot, and providers.
+    target
+        Target to execute.
+    exec_ctx
+        Bundled plugin and hash context.
+
+    Returns
+    -------
+    TargetRunRecord
+        Execution record with status, timing, and dataset refs.
+    """
+    resources = ContextResources(
+        gateway=env.gateway,
+        providers=env.providers,
+    )
+    ctx = TargetExecutionContext(
+        target=target,
+        resources=resources,
+        parameters=EMPTY_PARAMETERS,
+        snapshot=env.snapshot,
+        paths=env.paths,
+    )
+
+    start_time = time.perf_counter()
+    try:
+        raw_result = exec_ctx.plugin.execute(ctx)
+        # Handle async plugins
+        if asyncio.iscoroutine(raw_result):
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(raw_result)
+        else:
+            result = raw_result
+    except (RuntimeError, ValueError, OSError, KeyError, TypeError) as exc:
+        log.exception("Plugin execution failed for %s", target.name)
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        return TargetRunRecord(
+            target=target.name,
+            plugin_name=exec_ctx.plugin_name,
+            status="failed",
+            input_hash=exec_ctx.input_hash,
+            options_hash=exec_ctx.options_hash,
+            duration_ms=duration_ms,
+            error=str(exc),
+        )
+
+    duration_ms = (time.perf_counter() - start_time) * 1000
+    row_counts = dict(result.row_counts) if result.row_counts else {}
+    table_keys = target.table_keys
+    datasets_dict = refs_from_target_result(
+        target_name=target.name,
+        table_keys=table_keys,
+        row_counts=row_counts,
+        snapshot=env.snapshot,
+    )
+    datasets = refs_to_tuple(datasets_dict)
+
+    # Save manifest
+    save_request = ManifestSaveRequest(
+        target=target.name,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        plugin=exec_ctx.plugin_name,
+        duration_ms=duration_ms,
+        input_hash=exec_ctx.input_hash,
+        row_count=sum(row_counts.values()) if row_counts else None,
+        options_hash=exec_ctx.options_hash,
+    )
+    save_manifest(gateway=env.gateway, request=save_request)
+
+    return TargetRunRecord(
+        target=target.name,
+        plugin_name=exec_ctx.plugin_name,
+        status="succeeded",
+        input_hash=exec_ctx.input_hash,
+        options_hash=exec_ctx.options_hash,
+        duration_ms=duration_ms,
+        row_counts=row_counts,
+        datasets=datasets,
+    )
 
 
 def _create_node_function(
