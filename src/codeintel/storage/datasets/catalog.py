@@ -118,15 +118,18 @@ def describe_dataset_for_catalog(
 def _handle_sampling_failure(
     *,
     dataset_name: str,
-    strict: bool,
     warn: Callable[[str], None] | None,
-    exc: Exception,
 ) -> list[dict[str, object]]:
-    message = f"Failed to sample rows for {dataset_name}: {exc}"
-    if strict:
-        raise RuntimeError(message) from exc
+    """Log or emit a warning when dataset sampling fails.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Empty sample placeholder after a failure.
+    """
+    message = f"Failed to sample rows for {dataset_name}"
     if warn is not None:
-        warn(message)
+        warn(f"{message}; returning empty sample")
     return []
 
 
@@ -173,12 +176,10 @@ def _sample_rows(
         RuntimeError,
         ValueError,
     ) as exc:
-        return _handle_sampling_failure(
-            dataset_name=dataset.name,
-            strict=strict,
-            warn=warn,
-            exc=exc,
-        )
+        message = f"Failed to sample rows for {dataset.name}: {exc}"
+        if strict:
+            raise RuntimeError(message) from exc
+        return _handle_sampling_failure(dataset_name=dataset.name, warn=warn)
 
 
 def _schema_digest(dataset: DatasetContract) -> str | None:

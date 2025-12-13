@@ -15,7 +15,6 @@ from codeintel.serving.mcp.models import (
     DataflowNodePayload,
     DatasetMetaResponse,
     OperationMetaResponse,
-    ProblemDetail,
 )
 from codeintel.serving.mcp.tool_utils import _wrap
 from codeintel.serving.operations.catalog import (
@@ -28,6 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
     from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
+    from codeintel.serving.mcp.models import ProblemDetail
     from codeintel.serving.mcp.tool_builder import McpToolRegistrar
     from codeintel.serving.mcp.tool_utils import QueryBackendOrService
     from codeintel.serving.services.query_service import QueryService

@@ -19,7 +19,6 @@ from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.sql.builder import ensure_schema
 
 ENTRYPOINTS_COLS = [
     "repo",
@@ -161,11 +160,10 @@ def build_entrypoints(
     features_map
         Mapping of function GOID to feature vector.
     """
-    con = gateway.con
-    ensure_schema(con, "analytics.entrypoints")
-    ensure_schema(con, "analytics.entrypoint_tests")
-
     backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.entrypoints")
+    backend.ensure_table("analytics.entrypoint_tests")
+    con = gateway.con
     backend.delete_for_snapshot("analytics.entrypoints", repo=cfg.repo, commit=cfg.commit)
     backend.delete_for_snapshot("analytics.entrypoint_tests", repo=cfg.repo, commit=cfg.commit)
 

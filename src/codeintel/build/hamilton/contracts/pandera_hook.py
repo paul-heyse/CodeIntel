@@ -13,7 +13,6 @@ Design Principles
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from functools import wraps
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
@@ -22,6 +21,8 @@ import pandas as pd
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import pandera as pa
 
     from codeintel.build.hamilton.io.dataset_ref import DatasetRef

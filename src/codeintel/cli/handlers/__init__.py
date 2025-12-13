@@ -55,6 +55,7 @@ from codeintel.cli.handlers.datasets import (
 from codeintel.cli.handlers.docs import (
     DocsExportResult,
     DocsValidateResult,
+    ExportMode,
     docs_export_handler,
     docs_validate_handler,
 )
@@ -121,7 +122,6 @@ from codeintel.cli.handlers.plugins import (
 )
 from codeintel.cli.handlers.storage import (
     GenerateMacrosResult,
-    MacroRequirement,
     ProfileStorageResult,
     ValidateMacrosResult,
     generate_macros_handler,
@@ -154,6 +154,7 @@ __all__ = [
     "DatasetVerifyResult",
     "DocsExportResult",
     "DocsValidateResult",
+    "ExportMode",
     "GenerateMacrosResult",
     "GraphPlanResult",
     "GraphPluginsResult",
@@ -165,7 +166,6 @@ __all__ = [
     "JobStatusResult",
     "JobsCleanupResult",
     "JobsListResult",
-    "MacroRequirement",
     "OperationCallResult",
     "OperationListResult",
     "PluginInfoResult",

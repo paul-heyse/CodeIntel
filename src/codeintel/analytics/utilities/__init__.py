@@ -41,7 +41,6 @@ from codeintel.analytics.utilities.ast import (
     snippet_from_lines,
 )
 from codeintel.analytics.utilities.datasets import (
-    DELETE_SQL_BY_TABLE,
     AnalyticsDatasetContract,
     build_analytics_dataset_contracts,
     get_analytics_dataset_contract,
@@ -50,7 +49,6 @@ from codeintel.analytics.utilities.datasets import (
 )
 
 __all__ = [
-    "DELETE_SQL_BY_TABLE",
     "AnalyticsDatasetContract",
     "CallTarget",
     "build_analytics_dataset_contracts",

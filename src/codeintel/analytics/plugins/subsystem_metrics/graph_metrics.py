@@ -95,7 +95,7 @@ class SubsystemGraphMetricsPlugin(TargetPlugin):
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Subsystem graph metrics failed: {e}")
 
-        row = ctx.gateway.con.execute(
+        row = ctx.gateway.execute(
             """
             SELECT COUNT(*) FROM analytics.subsystem_graph_metrics
             WHERE repo = ? AND commit = ?

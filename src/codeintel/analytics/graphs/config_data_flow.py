@@ -16,7 +16,6 @@ from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -328,9 +327,9 @@ def compute_config_data_flow(
     missing_goids
         Optional set of function GOIDs that could not be parsed.
     """
-    con = gateway.con
-    ensure_schema(con, "analytics.config_data_flow")
     backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.config_data_flow")
+    con = gateway.con
     backend.delete_for_snapshot("analytics.config_data_flow", repo=cfg.repo, commit=cfg.commit)
 
     refs_by_path = _config_references(con, cfg.repo, cfg.commit)

@@ -10,7 +10,6 @@ import networkx as nx
 
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.graphs.catalog import FunctionCatalog
-from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.builders import (
     ConfigValueRow,
     ModuleRow,
@@ -355,7 +354,6 @@ def insert_modules(
     paths: Mapping[str, Path],
 ) -> None:
     """Insert module rows for provided paths."""
-    ensure_schema(gateway.con, "core.modules")
     rows = [
         ModuleRow(
             module=module,
@@ -377,7 +375,6 @@ def insert_goids(
 ) -> None:
     """Insert GOID rows for provided FunctionAst map using catalog-based seeding."""
     _ = now
-    ensure_schema(gateway.con, "core.goids")
     kinds = {
         func_ast.goid: "class" if isinstance(func_ast.node, ast.ClassDef) else "function"
         for func_ast in ast_by_goid.values()
@@ -403,7 +400,6 @@ def insert_config_values(
     ast_by_goid: Mapping[int, FunctionAst],
 ) -> None:
     """Seed config_values rows for API_TOKEN and FEATURE_FLAG."""
-    ensure_schema(gateway.con, "analytics.config_values")
     insert_rows(
         gateway,
         [
@@ -443,7 +439,7 @@ def insert_entrypoints(
     now: datetime,
 ) -> None:
     """Seed analytics.entrypoints with a single FastAPI handler."""
-    ensure_schema(gateway.con, "analytics.entrypoints")
+    gateway.policy.ensure_schemas_preserve()
     gateway.con.execute(
         """
         INSERT INTO analytics.entrypoints (
@@ -470,7 +466,6 @@ def insert_entrypoints(
 
 def insert_subsystems(gateway: StorageGateway, snapshot: SnapshotRef) -> None:
     """Seed subsystem-module memberships."""
-    ensure_schema(gateway.con, "analytics.subsystem_modules")
     insert_rows(
         gateway,
         [
@@ -505,7 +500,6 @@ def insert_symbol_edges(
     ast_by_goid: Mapping[int, FunctionAst],
 ) -> None:
     """Seed symbol use edges between api/service/utils."""
-    ensure_schema(gateway.con, "graph.symbol_use_edges")
     insert_symbol_use_edges(
         gateway,
         [

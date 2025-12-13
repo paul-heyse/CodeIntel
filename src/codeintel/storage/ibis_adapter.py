@@ -633,9 +633,7 @@ class IbisGateway:
                 this=exp.to_identifier(table),
                 db=exp.to_identifier(schema),
                 alias=(
-                    exp.TableAlias(this=exp.to_identifier(alias))
-                    if alias is not None
-                    else None
+                    exp.TableAlias(this=exp.to_identifier(alias)) if alias is not None else None
                 ),
             )
             delete_expr = exp.Delete(this=table_expr, where=where_ast)

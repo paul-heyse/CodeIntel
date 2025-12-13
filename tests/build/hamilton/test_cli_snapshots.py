@@ -30,11 +30,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.build.hamilton.snapshots._manifest import SnapshotCase, load_snapshot_manifest
+from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest
 from tests.build.hamilton.snapshots._runner import execute_and_assert_snapshot
 
 if TYPE_CHECKING:
-    from tests.build.hamilton.snapshots._manifest import SnapshotManifest
+    from tests.build.hamilton.snapshots._manifest import SnapshotCase, SnapshotManifest
 
 
 def _default_snapshots_dir() -> Path:

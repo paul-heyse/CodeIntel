@@ -7,7 +7,6 @@ using the Command[T] pattern.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Annotated
 
@@ -28,6 +27,8 @@ from codeintel.graphs.core.registry import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)

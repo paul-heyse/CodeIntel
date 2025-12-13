@@ -66,7 +66,7 @@ def seed_catalog_modules(
 
     df = pd.DataFrame(rows)
 
-    gateway.con.execute(f"DROP TABLE IF EXISTS {CATALOG_MODULE_TABLE}")
+    gateway.execute(f"DROP TABLE IF EXISTS {CATALOG_MODULE_TABLE}")
 
     gateway.ibis.con.create_table(
         CATALOG_MODULE_TABLE.rsplit(".", maxsplit=1)[-1], df, temp=True, overwrite=True

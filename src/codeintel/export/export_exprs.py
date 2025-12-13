@@ -14,11 +14,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import ibis
-import ibis.expr.types as it
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 
 if TYPE_CHECKING:
+    import ibis.expr.types as it
+
     from codeintel.storage.gateway import StorageGateway
 
 DUCKDB_DIALECT = "duckdb"

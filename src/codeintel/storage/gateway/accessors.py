@@ -10,6 +10,7 @@ from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.gateway.insert_helpers import insert_rows
 from codeintel.storage.ibis_adapter import IbisGateway
+from codeintel.storage.tracking.asset_tracking import AssetTracking
 from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking
 
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AnalyticsTables",
+    "AssetTracking",
     "BaseTableAccessor",
     "BuildTracking",
     "CoreTables",
@@ -1030,6 +1032,7 @@ class DuckDBGateway:
     ibis: IbisGateway = field(init=False)
     policy: DuckDBPolicyBackend = field(init=False)
     analytics: AnalyticsTables = field(init=False)
+    assets: AssetTracking = field(init=False)
     build: BuildTracking = field(init=False)
     core: CoreTables = field(init=False)
     docs: DocsViews = field(init=False)
@@ -1041,6 +1044,7 @@ class DuckDBGateway:
         self.ibis = IbisGateway(self)
         self.policy = DuckDBPolicyBackend(self)
         self.analytics = AnalyticsTables(self)
+        self.assets = AssetTracking(self)
         self.build = BuildTracking(self)
         self.core = CoreTables(self)
         self.docs = DocsViews(self)

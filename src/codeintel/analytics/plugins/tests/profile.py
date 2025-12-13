@@ -87,7 +87,7 @@ class TestProfilePlugin(TargetPlugin):
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Test profile build failed: {e}")
 
-        row = ctx.gateway.con.execute(
+        row = ctx.gateway.execute(
             """
             SELECT COUNT(*) FROM analytics.test_profile
             WHERE repo = ? AND commit = ?

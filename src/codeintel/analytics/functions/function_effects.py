@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
+import ibis
 from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
@@ -23,7 +24,6 @@ from codeintel.analytics.runtime import (
 )
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
-from codeintel.config import FunctionEffectsStepConfig
 from codeintel.graphs.catalog import (
     FunctionCatalogService,
 )
@@ -40,6 +40,7 @@ if TYPE_CHECKING:
         GraphRuntime,
         GraphRuntimeOptions,
     )
+    from codeintel.config import FunctionEffectsStepConfig
     from codeintel.graphs.catalog import (
         FunctionCatalogProvider,
     )
@@ -315,14 +316,16 @@ def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> 
     counts: dict[int, int] = {}
     try:
         edges = gateway.ibis.table("graph.call_graph_edges")
+        sentinel = cast("Any", ibis.literal(-1)).cast(cast("Any", edges.callee_goid_h128.type()))
+        callee_is_null = ibis.coalesce(edges.callee_goid_h128, sentinel) == sentinel
         expr = (
             edges.filter(
-                    and_predicates(
-                        edges.repo == repo,
-                        edges.commit == commit,
-                        edges.callee_goid_h128.isnull(),
-                    )
+                and_predicates(
+                    edges.repo == repo,
+                    edges.commit == commit,
+                    callee_is_null,
                 )
+            )
             .group_by(edges.caller_goid_h128)
             .aggregate(unresolved_count=edges.caller_goid_h128.count())
         )

@@ -18,15 +18,15 @@ from codeintel.build.hamilton.planner import (
     compute_plan,
 )
 from codeintel.build.manifest import OutputManifest
-from codeintel.build.providers import Providers
 from codeintel.build.targets import OutputTarget, TargetGraph
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.build import make_build_config, make_build_paths, make_snapshot
 from tests._helpers.fakes.fake_providers import FakeProviders
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from codeintel.build.providers import Providers
+    from codeintel.storage.gateway import StorageGateway
     from tests.build.hamilton.conftest import FakeGateway
 
 EXPECTED_LINEAR_CLOSURE = 3

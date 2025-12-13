@@ -846,6 +846,135 @@ class BuildExecutionResult:
 
 
 @dataclass(frozen=True)
+class BuildAssetsResult:
+    """Result from build assets command.
+
+    Parameters
+    ----------
+    assets
+        List of asset record dictionaries.
+    count
+        Total number of assets.
+    format
+        Output format used (table, json, csv).
+    """
+
+    assets: list[dict[str, Any]]
+    count: int
+    format: str = "table"
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "assets": self.assets,
+            "count": self.count,
+            "format": self.format,
+        }
+
+
+@dataclass(frozen=True)
+class BuildLineageResult:
+    """Result from build lineage command."""
+
+    asset: str
+    asset_kind: str
+    root_version_hash: str
+    direction: str
+    depth: int
+    nodes: list[dict[str, Any]]
+    edges: list[dict[str, Any]]
+    format: str = "json"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "asset": self.asset,
+            "asset_kind": self.asset_kind,
+            "root_version_hash": self.root_version_hash,
+            "direction": self.direction,
+            "depth": self.depth,
+            "nodes": self.nodes,
+            "edges": self.edges,
+            "format": self.format,
+        }
+
+
+@dataclass(frozen=True)
+class BuildPromoteResult:
+    """Result from build promote command."""
+
+    asset: str
+    asset_kind: str
+    alias: str
+    version_hash: str
+    note: str | None = None
+    format: str = "json"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "asset": self.asset,
+            "asset_kind": self.asset_kind,
+            "alias": self.alias,
+            "version_hash": self.version_hash,
+            "note": self.note,
+            "format": self.format,
+        }
+
+
+@dataclass(frozen=True)
+class BuildResolveResult:
+    """Result from build resolve command."""
+
+    asset: str
+    asset_kind: str
+    alias: str
+    version_hash: str
+    format: str = "json"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "asset": self.asset,
+            "asset_kind": self.asset_kind,
+            "alias": self.alias,
+            "version_hash": self.version_hash,
+            "format": self.format,
+        }
+
+
+@dataclass(frozen=True)
+class BuildDiffResult:
+    """Result from build diff command."""
+
+    asset: str
+    asset_kind: str
+    from_spec: str
+    to_spec: str
+    from_version_hash: str
+    to_version_hash: str
+    diffs: dict[str, Any]
+    cached: bool
+    format: str = "json"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "asset": self.asset,
+            "asset_kind": self.asset_kind,
+            "from": self.from_spec,
+            "to": self.to_spec,
+            "from_version_hash": self.from_version_hash,
+            "to_version_hash": self.to_version_hash,
+            "diffs": self.diffs,
+            "cached": self.cached,
+            "format": self.format,
+        }
+
+
+@dataclass(frozen=True)
 class BuildHistoryResult:
     """Result from build history command.
 
@@ -1668,6 +1797,7 @@ class HealthCheckResult:
 
 __all__ = [
     "ActionResult",
+    "BuildAssetsResult",
     "BuildExecutionResult",
     "BuildExplainResult",
     "BuildHistoryResult",

@@ -35,7 +35,7 @@ from codeintel.analytics.testing.profiles.types import (
 from codeintel.analytics.utilities.ast import resolve_call_target
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.ingestion.infrastructure.paths import relpath_to_module
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -117,8 +117,9 @@ def build_test_profile(gateway: StorageGateway, cfg: TestProfileStepConfig) -> N
     cfg
         Configuration containing repo identity and parsing options.
     """
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.test_profile")
     con = gateway.con
-    ensure_schema(con, "analytics.test_profile")
     tests: list[TestRecord] = _load_test_records(con, cfg.repo, cfg.commit)
     if not tests:
         log.info("No tests found for %s@%s; skipping test_profile", cfg.repo, cfg.commit)

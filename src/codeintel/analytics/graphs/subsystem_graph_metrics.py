@@ -29,7 +29,6 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.repositories.subsystems import SubsystemRepository
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -127,7 +126,8 @@ def compute_subsystem_graph_metrics(
         snapshot,
         runtime_opts,
     )
-    ensure_schema(gateway.con, "analytics.subsystem_graph_metrics")
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.subsystem_graph_metrics")
     graph_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -145,7 +145,6 @@ def compute_subsystem_graph_metrics(
     ]
     membership_rows = active_filters.filter_subsystem_memberships(membership_rows)
     if not membership_rows:
-        backend = DuckDBPolicyBackend(gateway)
         backend.delete_for_snapshot("analytics.subsystem_graph_metrics", repo=repo, commit=commit)
         return
 

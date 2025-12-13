@@ -99,7 +99,7 @@ class DataModelUsagePlugin(TargetPlugin):
             log.info("data_model_usage: No catalog available, skipping")
             return TargetResult.succeeded(row_counts={"analytics.data_model_usage": 0})
 
-        module_rows = ctx.gateway.con.execute(
+        module_rows = ctx.gateway.execute(
             "SELECT path, module FROM core.modules WHERE repo = ? AND commit = ?",
             [ctx.repo, ctx.commit],
         ).fetchall()

@@ -102,7 +102,7 @@ class SymbolGraphMetricsPlugin(TargetPlugin):
                 commit=commit,
                 runtime=graph_runtime,
             )
-            row = ctx.gateway.con.execute(
+            row = ctx.gateway.execute(
                 """
                 SELECT COUNT(*) FROM analytics.symbol_graph_metrics_modules
                 WHERE repo = ? AND commit = ?
@@ -121,7 +121,7 @@ class SymbolGraphMetricsPlugin(TargetPlugin):
                 commit=commit,
                 runtime=graph_runtime,
             )
-            row = ctx.gateway.con.execute(
+            row = ctx.gateway.execute(
                 """
                 SELECT COUNT(*) FROM analytics.symbol_graph_metrics_functions
                 WHERE repo = ? AND commit = ?

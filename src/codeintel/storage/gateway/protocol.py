@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway.config import StorageConfig
     from codeintel.storage.ibis_adapter import IbisGateway
     from codeintel.storage.tracking import PipelineRunTracking
+    from codeintel.storage.tracking.asset_tracking import AssetTracking
     from codeintel.storage.tracking.build_tracking import BuildTracking
 
 __all__ = [
@@ -53,6 +54,7 @@ class StorageGateway(Protocol):
     """Expose DuckDB access along with dataset registry metadata."""
 
     analytics: AnalyticsTables
+    assets: AssetTracking
     build: BuildTracking
     config: StorageConfig
     core: CoreTables

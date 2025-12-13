@@ -25,7 +25,7 @@ from codeintel.analytics.runtime.context import (
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -191,10 +191,11 @@ def compute_config_graph_metrics(
         snapshot,
         runtime_opts,
     )
-    ensure_schema(gateway.con, "analytics.config_graph_metrics_keys")
-    ensure_schema(gateway.con, "analytics.config_graph_metrics_modules")
-    ensure_schema(gateway.con, "analytics.config_projection_key_edges")
-    ensure_schema(gateway.con, "analytics.config_projection_module_edges")
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.config_graph_metrics_keys")
+    backend.ensure_table("analytics.config_graph_metrics_modules")
+    backend.ensure_table("analytics.config_projection_key_edges")
+    backend.ensure_table("analytics.config_projection_module_edges")
 
     graph = resolved_runtime.ensure_config_module_bipartite()
     if graph.number_of_nodes() == 0:
@@ -212,8 +213,6 @@ def compute_config_graph_metrics(
             betweenness_weight="weight",
         )
     )
-    created_at = ctx.resolved_now()
-
     keys = {node for node, data in graph.nodes(data=True) if data.get("bipartite") == 0}
     modules = set(graph) - keys
     if len(keys) == 0 or len(modules) == 0:
@@ -229,7 +228,7 @@ def compute_config_graph_metrics(
     projection_ctx = ProjectionContext(
         repo=repo,
         commit=commit,
-        created_at=created_at,
+        created_at=ctx.resolved_now(),
         graph_ctx=ctx,
     )
     key_targets = ProjectionTargets(

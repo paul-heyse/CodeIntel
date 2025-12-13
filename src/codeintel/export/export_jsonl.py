@@ -30,7 +30,6 @@ from codeintel.serving.services.errors import ExportError, ProblemDetails, log_p
 from codeintel.storage.gateway import (
     DuckDBError,
 )
-from codeintel.storage.sql.builder import prepared_statements_dynamic
 from codeintel.storage.validation import _schema_path
 
 if TYPE_CHECKING:
@@ -48,10 +47,6 @@ log = logging.getLogger(__name__)
 MAX_EXPORT_LIMIT = 9_223_372_036_854_775_807
 AUDIT_LOG_PATH = os.getenv("CODEINTEL_EXPORT_AUDIT_LOG")
 AUDIT_TABLE_ENABLED = os.getenv("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
-
-
-def _env_flag(name: str) -> bool:
-    return os.getenv(name, "false").lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -72,7 +67,6 @@ class ExportCallOptions:
     validate_exports: bool = True
     schemas: list[str] | None = None
     datasets: list[str] | None = None
-    require_normalized_macros: bool = False
     validation_profile: Literal["strict", "lenient"] | None = None
     force_full_export: bool = False
 
@@ -173,13 +167,10 @@ def _schema_digest(dataset: DatasetContract | None) -> str | None:
     return compute_file_hash(schema_file)
 
 
-def _row_count(con: DuckDBConnection, table_name: str) -> int | None:
+def _row_count(gateway: StorageGateway, table_name: str) -> int | None:
     try:
-        stmts = prepared_statements_dynamic(con, table_name)
-        if stmts.select_sql is None:
-            return None
-        relation = con.sql(stmts.select_sql, params=stmts.select_params or [])
-        row = relation.count("*").fetchone()
+        table = gateway.ibis.table(table_name)
+        row = table.count().execute()
     except DuckDBError:
         log.debug("Row count unavailable for %s", table_name, exc_info=True)
         return None
@@ -255,8 +246,6 @@ def export_jsonl_for_table(
     gateway: StorageGateway,
     table_name: str,
     output_path: Path,
-    *,
-    require_normalized_macros: bool = False,
 ) -> None:
     """
     Export a single DuckDB table to JSONL.
@@ -269,8 +258,6 @@ def export_jsonl_for_table(
         Fully qualified table name (schema.table) to export.
     output_path : Path
         Destination path for the JSONL file.
-    require_normalized_macros : bool, optional
-        Deprecated; exports are macro-free and always use Ibis normalization.
 
     Notes
     -----
@@ -304,10 +291,6 @@ def export_jsonl_for_table(
             return
 
     start = perf_counter()
-    if require_normalized_macros:
-        log.warning(
-            "require_normalized_macros is deprecated; exports are macro-free and use Ibis normalization"
-        )
     rel = _export_relation(gateway, table_name, MAX_EXPORT_LIMIT, 0)
     macro_name = "ibis_export"
     write_json = getattr(rel, "write_json", None)
@@ -358,8 +341,6 @@ def export_dataset_to_jsonl(
     gateway: StorageGateway,
     dataset_name: str,
     output_dir: Path,
-    *,
-    require_normalized_macros: bool = False,
 ) -> Path:
     """
     Export a dataset resolved through the dataset registry to JSONL.
@@ -372,8 +353,6 @@ def export_dataset_to_jsonl(
         Logical dataset name to export (e.g., ``function_profile``).
     output_dir : Path
         Destination directory for the JSONL file.
-    require_normalized_macros : bool, optional
-        When True, raise if a normalized macro is not available for this dataset.
 
     Returns
     -------
@@ -397,7 +376,6 @@ def export_dataset_to_jsonl(
         gateway,
         table_name,
         output_path,
-        require_normalized_macros=require_normalized_macros,
     )
     return output_path
 
@@ -407,7 +385,6 @@ def _export_dataset_jsonl(
     target: ExportTarget,
     *,
     opts: ExportCallOptions,
-    require_normalized_macros: bool,
 ) -> Path | None:
     if target.dataset is not None:
         caps = target.dataset.capabilities()
@@ -419,7 +396,7 @@ def _export_dataset_jsonl(
     marker = read_incremental_marker(target.output_path)
     current_row_count: int | None = None
     if target.dataset is None or not target.dataset.is_view:
-        current_row_count = _row_count(gateway.con, target.table_name)
+        current_row_count = _row_count(gateway, target.table_name)
     criteria = SkipCriteria(
         row_count=current_row_count,
         schema_version=target.dataset.schema_version if target.dataset else None,
@@ -443,14 +420,13 @@ def _export_dataset_jsonl(
             gateway,
             target.table_name,
             target.output_path,
-            require_normalized_macros=require_normalized_macros,
         )
         data_hash = compute_file_hash(target.output_path)
         completed_at = datetime.now(UTC)
         final_row_count = (
             current_row_count
             if current_row_count is not None
-            else _row_count(gateway.con, target.table_name)
+            else _row_count(gateway, target.table_name)
         )
     except (DuckDBError, OSError, ValueError) as exc:
         log.warning(
@@ -559,9 +535,6 @@ def export_all_jsonl(
     dataset_mapping = gateway.datasets.mapping
     jsonl_mapping = gateway.datasets.jsonl_mapping or {}
     registry_meta = gateway.datasets.meta or {}
-    require_normalized = opts.require_normalized_macros or _env_flag(
-        "CODEINTEL_REQUIRE_NORMALIZED_MACROS"
-    )
     selected = _select_dataset_tables(dataset_mapping, jsonl_mapping, opts.datasets)
     for table_name in sorted(set(jsonl_mapping) - set(dataset_mapping.values())):
         log.warning("Skipping %s; table not present in dataset registry", table_name)
@@ -580,7 +553,6 @@ def export_all_jsonl(
             gateway,
             target,
             opts=opts,
-            require_normalized_macros=require_normalized,
         )
         if exported is not None:
             written.append(exported)

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends
 
-from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http import dependencies as http_deps
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     FileProfileResponse,
@@ -64,9 +64,17 @@ def build_profiles_router(options: RouterOptions | None = None) -> APIRouter:
     module_path = spec_module.http_path
 
     auto_pipeline = options is not None and options.auto_pipeline
-    func_deps = [Depends(make_op_prereq_dependency("profiles.function"))] if auto_pipeline else []
-    file_deps = [Depends(make_op_prereq_dependency("profiles.file"))] if auto_pipeline else []
-    module_deps = [Depends(make_op_prereq_dependency("profiles.module"))] if auto_pipeline else []
+    func_deps = (
+        [Depends(http_deps.make_op_prereq_dependency("profiles.function"))]
+        if auto_pipeline
+        else []
+    )
+    file_deps = (
+        [Depends(http_deps.make_op_prereq_dependency("profiles.file"))] if auto_pipeline else []
+    )
+    module_deps = (
+        [Depends(http_deps.make_op_prereq_dependency("profiles.module"))] if auto_pipeline else []
+    )
 
     @router.get(
         function_path,
@@ -77,7 +85,7 @@ def build_profiles_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def function_profile(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         goid_h128: int,
     ) -> FunctionProfileResponse:
         """
@@ -109,7 +117,7 @@ def build_profiles_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def file_profile(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         rel_path: str,
     ) -> FileProfileResponse:
         """
@@ -141,7 +149,7 @@ def build_profiles_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def module_profile(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         module: str,
     ) -> ModuleProfileResponse:
         """

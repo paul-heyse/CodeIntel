@@ -92,7 +92,7 @@ class EntrypointsPlugin(TargetPlugin):
         if catalog is None:
             return TargetResult.failed("CatalogProvider is required")
 
-        rows = ctx.gateway.con.execute(
+        rows = ctx.gateway.execute(
             """
             SELECT path, module
             FROM core.modules

@@ -14,15 +14,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 import pandas as pd
-from pandera.errors import SchemaErrors
 
 from codeintel.config.datasets import load_columns_by_table
+from codeintel.config.datasets.validation import get_pandera_schema, validate_df
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates, ibis_bool, isin_values
-from codeintel.storage.pandera_schemas import get_dataset_schema
-from codeintel.storage.sql import render_sql
-from codeintel.storage.sql.primitives import quote_identifier, quote_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -43,7 +40,7 @@ def build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
     """
     placeholders = ", ".join(["?"] * count)
     delete_clause = f"{column_sql} IN ({placeholders})"
-    return render_sql(["DELETE FROM", table_sql, "WHERE", delete_clause])
+    return " ".join(part for part in ("DELETE FROM", table_sql, "WHERE", delete_clause) if part)
 
 
 class DuckDBStorageAdapter(IngestStoragePort):
@@ -175,7 +172,7 @@ class DuckDBStorageAdapter(IngestStoragePort):
             Container holding rows, columns, and row count.
         """
         param_list = list(params) if params else []
-        result = self.con.execute(sql, param_list)
+        result = self._gateway.execute(sql, param_list)
         rows = result.fetchall()
         columns = tuple(desc[0] for desc in result.description) if result.description else ()
         return QueryResult(rows=list(rows), columns=columns, row_count=len(rows))
@@ -193,7 +190,7 @@ class DuckDBStorageAdapter(IngestStoragePort):
             Resulting dataframe from the query execution.
         """
         param_list = list(params) if params else []
-        return self.con.execute(sql, param_list).fetch_df()
+        return self._gateway.execute(sql, param_list).fetch_df()
 
 
 @dataclass
@@ -240,7 +237,7 @@ class IngestStorageService:
         Sequence[Sequence[object]]
             Original rows irrespective of validation outcome.
         """
-        schema = get_dataset_schema(table_key)
+        schema = get_pandera_schema(table_key)
         if schema is None:
             return rows
 
@@ -249,14 +246,7 @@ class IngestStorageService:
             return rows
 
         df = pd.DataFrame([list(row) for row in rows], columns=pd.Index(registry_cols))
-        try:
-            schema.validate(df, lazy=True)
-        except SchemaErrors as exc:
-            log.warning(
-                "Pandera validation warning for %s: %s",
-                table_key,
-                str(exc)[:200],
-            )
+        validate_df(table_key, df, mode="warn")
         return rows
 
     @classmethod
@@ -278,6 +268,4 @@ __all__ = [
     "DuckDBStorageAdapter",
     "IngestStorageService",
     "build_delete_in_query",
-    "quote_identifier",
-    "quote_table_key",
 ]

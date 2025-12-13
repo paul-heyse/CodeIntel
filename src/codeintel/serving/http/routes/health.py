@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter
 
-from codeintel.serving.http.dependencies import BackendDep, ConfigDep
+from codeintel.serving.http import dependencies as deps
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.operations import get_operation
@@ -14,6 +14,9 @@ from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.serving.operations import Operation
+
+BackendDep = deps.BackendDep
+ConfigDep = deps.ConfigDep
 
 
 def _require_spec(op_id: str) -> Operation:

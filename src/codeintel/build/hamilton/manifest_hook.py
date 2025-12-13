@@ -14,7 +14,6 @@ Design Principles
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -27,6 +26,8 @@ from codeintel.build.hashing import (
 from codeintel.build.manifest import OutputManifest
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
     from codeintel.build.hamilton.io.dataset_ref import DatasetRef
     from codeintel.build.targets import OutputTarget

@@ -22,7 +22,7 @@ from codeintel.graphs.catalog import (
 )
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -146,7 +146,7 @@ def _backfill_test_goids(
     if not tests_rows:
         return {}, {}
 
-    goid_rows = gateway.con.execute(
+    goid_rows = gateway.execute(
         """
         SELECT goid_h128, urn, rel_path, qualname
         FROM core.goids
@@ -180,7 +180,8 @@ def _backfill_test_goids(
             updates.append((goid, urn, test_id, rel_path))
 
     if updates:
-        ensure_schema(con, "analytics.test_catalog")
+        backend = DuckDBPolicyBackend(gateway)
+        backend.ensure_table("analytics.test_catalog")
         con.executemany(
             TEST_CATALOG_UPDATE_GOIDS,
             [(g, u, tid, rel, cfg.repo, cfg.commit) for g, u, tid, rel in updates],
@@ -320,7 +321,7 @@ def _test_status_and_meta(
 ) -> tuple[dict[str, str], dict[str, tuple[int | None, str | None]]]:
     status_by_test = {
         row[0]: row[1]
-        for row in gateway.con.execute(
+        for row in gateway.execute(
             """
             SELECT test_id, status
             FROM analytics.test_catalog

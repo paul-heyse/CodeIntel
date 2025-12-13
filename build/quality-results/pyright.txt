@@ -1,0 +1,428 @@
+/home/paul/CodeIntel/src/codeintel/analytics/adapters/graphs/graph_metrics.py
+  /home/paul/CodeIntel/src/codeintel/analytics/adapters/graphs/graph_metrics.py:213:62 - error: Cannot access attribute "length" for class "Value"
+    Attribute "length" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/analytics/adapters/graphs/graph_metrics.py:214:62 - error: Cannot access attribute "length" for class "Value"
+    Attribute "length" is unknown (reportAttributeAccessIssue)
+/home/paul/CodeIntel/src/codeintel/analytics/functions/function_effects.py
+  /home/paul/CodeIntel/src/codeintel/analytics/functions/function_effects.py:319:20 - error: No overloads for "cast" match the provided arguments (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/analytics/functions/function_effects.py:319:42 - error: Argument of type "DataType" cannot be assigned to parameter "target_type" of type "type[UUID] | Literal['uuid']" in function "cast"
+    Type "DataType" is not assignable to type "type[UUID] | Literal['uuid']"
+      Type "DataType" is not assignable to type "type[UUID]"
+      "DataType" is not assignable to "Literal['uuid']" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/analytics/plugins/cfg_dfg/metrics.py
+  /home/paul/CodeIntel/src/codeintel/analytics/plugins/cfg_dfg/metrics.py:111:37 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/analytics/plugins/hotspots/build.py
+  /home/paul/CodeIntel/src/codeintel/analytics/plugins/hotspots/build.py:110:41 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/analytics/plugins/tests/graph_metrics.py
+  /home/paul/CodeIntel/src/codeintel/analytics/plugins/tests/graph_metrics.py:112:36 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/analytics/profiles/files.py
+  /home/paul/CodeIntel/src/codeintel/analytics/profiles/files.py:209:78 - error: Argument of type "Literal[0]" cannot be assigned to parameter "null_if_expr" of type "Value" in function "nullif"
+    "Literal[0]" is not assignable to "Value" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/build/assets/emitter.py
+  /home/paul/CodeIntel/src/codeintel/build/assets/emitter.py:58:13 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/driver_factory.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/driver_factory.py:178:57 - error: Argument of type "frozenset[str]" cannot be assigned to parameter "exclude_targets" of type "set[str] | None" in function "__init__"
+    Type "frozenset[str]" is not assignable to type "set[str] | None"
+      "frozenset[str]" is not assignable to "set[str]"
+      "frozenset[str]" is not assignable to "None" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:24:6 - error: Import "codeintel.metrics" could not be resolved (reportMissingImports)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:83:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:89:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:96:61 - error: Cannot access attribute "sum" for class "Column"
+    Attribute "sum" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:97:55 - error: Cannot access attribute "sum" for class "Column"
+    Attribute "sum" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:102:23 - error: Argument of type "BooleanValue" cannot be assigned to parameter "predicates" of type "str | Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]" in function "f"
+    Type "BooleanValue" is not assignable to type "str | Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]"
+      "BooleanValue" is not assignable to "str"
+      "BooleanValue" is not assignable to "Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:108:13 - error: No overloads for "cast" match the provided arguments (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:108:39 - error: Argument of type "Literal['DOUBLE']" cannot be assigned to parameter "target_type" of type "type[UUID] | Literal['uuid']" in function "cast"
+    Type "Literal['DOUBLE']" is not assignable to type "type[UUID] | Literal['uuid']"
+      Type "Literal['DOUBLE']" is not assignable to type "type[UUID]"
+      "Literal['DOUBLE']" is not assignable to type "Literal['uuid']" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:108:51 - error: No overloads for "cast" match the provided arguments (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:108:80 - error: Argument of type "Literal['DOUBLE']" cannot be assigned to parameter "target_type" of type "type[UUID] | Literal['uuid']" in function "cast"
+    Type "Literal['DOUBLE']" is not assignable to type "type[UUID] | Literal['uuid']"
+      Type "Literal['DOUBLE']" is not assignable to type "type[UUID]"
+      "Literal['DOUBLE']" is not assignable to type "Literal['uuid']" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:124:57 - error: Argument of type "Literal[0]" cannot be assigned to parameter "fill_value" of type "Scalar" in function "fillna"
+    "Literal[0]" is not assignable to "Scalar" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py:125:51 - error: Argument of type "Literal[0]" cannot be assigned to parameter "fill_value" of type "Scalar" in function "fillna"
+    "Literal[0]" is not assignable to "Scalar" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:25:6 - error: Import "codeintel.metrics" could not be resolved (reportMissingImports)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:77:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:83:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:90:53 - error: Cannot access attribute "sum" for class "Column"
+    Attribute "sum" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:91:57 - error: Cannot access attribute "sum" for class "Column"
+    Attribute "sum" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:103:41 - error: Cannot access attribute "sum" for class "Column"
+    Attribute "sum" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:108:29 - error: Argument of type "BooleanValue" cannot be assigned to parameter "predicates" of type "str | Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]" in function "f"
+    Type "BooleanValue" is not assignable to type "str | Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]"
+      "BooleanValue" is not assignable to "str"
+      "BooleanValue" is not assignable to "Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:114:14 - error: No overloads for "cast" match the provided arguments (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:114:41 - error: Argument of type "Literal['DOUBLE']" cannot be assigned to parameter "target_type" of type "type[UUID] | Literal['uuid']" in function "cast"
+    Type "Literal['DOUBLE']" is not assignable to type "type[UUID] | Literal['uuid']"
+      Type "Literal['DOUBLE']" is not assignable to type "type[UUID]"
+      "Literal['DOUBLE']" is not assignable to type "Literal['uuid']" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:115:16 - error: No overloads for "cast" match the provided arguments (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:115:43 - error: Argument of type "Literal['DOUBLE']" cannot be assigned to parameter "target_type" of type "type[UUID] | Literal['uuid']" in function "cast"
+    Type "Literal['DOUBLE']" is not assignable to type "type[UUID] | Literal['uuid']"
+      Type "Literal['DOUBLE']" is not assignable to type "type[UUID]"
+      "Literal['DOUBLE']" is not assignable to type "Literal['uuid']" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:116:16 - error: Operator "+" not supported for types "Column" and "Column" (reportOperatorIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:117:16 - error: Operator "/" not supported for types "Column" and "float" (reportOperatorIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/hotspots.py:128:47 - error: Argument of type "float" cannot be assigned to parameter "fill_value" of type "Scalar" in function "fillna"
+    "float" is not assignable to "Scalar" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/risk_factors.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/risk_factors.py:101:17 - error: Argument of type "BooleanValue" cannot be assigned to parameter "predicates" of type "str | Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]" in function "f"
+    Type "BooleanValue" is not assignable to type "str | Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]"
+      "BooleanValue" is not assignable to "str"
+      "BooleanValue" is not assignable to "Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/risk_factors.py:112:18 - error: Argument of type "BooleanValue" cannot be assigned to parameter "predicates" of type "str | Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]" in function "f"
+    Type "BooleanValue" is not assignable to type "str | Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]"
+      "BooleanValue" is not assignable to "str"
+      "BooleanValue" is not assignable to "Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/risk_factors.py:125:10 - error: Operator ">" not supported for types "Column" and "Literal[10]" (reportOperatorIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/risk_factors.py:128:19 - error: Operator "/" not supported for types "Column" and "Literal[5]" (reportOperatorIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/risk_factors.py:129:19 - error: Operator "/" not supported for types "Column" and "Literal[10]" (reportOperatorIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/risk_factors.py:142:14 - error: Operator ">=" not supported for types "Value" and "Literal[5]" (reportOperatorIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/risk_factors.py:143:14 - error: Operator ">=" not supported for types "Value" and "Literal[3]" (reportOperatorIssue)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:25:6 - error: Import "codeintel.metrics" could not be resolved (reportMissingImports)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:77:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:83:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:88:57 - error: Argument of type "BooleanValue" cannot be assigned to parameter "predicates" of type "str | Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]" in function "f"
+    Type "BooleanValue" is not assignable to type "str | Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]"
+      "BooleanValue" is not assignable to "str"
+      "BooleanValue" is not assignable to "Sequence[str | BooleanColumn | tuple[str | Column | Deferred, str | Column | Deferred] | BooleanValue | bool]" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:100:48 - error: Cannot access attribute "split" for class "Column"
+    Attribute "split" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:101:40 - error: Cannot access attribute "split" for class "Column"
+    Attribute "split" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:102:21 - error: No overloads for "cast" match the provided arguments (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:102:45 - error: Argument of type "Literal['STRING']" cannot be assigned to parameter "target_type" of type "type[UUID] | Literal['uuid']" in function "cast"
+    Type "Literal['STRING']" is not assignable to type "type[UUID] | Literal['uuid']"
+      Type "Literal['STRING']" is not assignable to type "type[UUID]"
+      "Literal['STRING']" is not assignable to type "Literal['uuid']" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:103:22 - error: Operator "+" not supported for types "Column" and "Literal[1]" (reportOperatorIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:105:26 - error: No overloads for "cast" match the provided arguments (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/subsystems.py:105:50 - error: Argument of type "Literal['STRING']" cannot be assigned to parameter "target_type" of type "type[UUID] | Literal['uuid']" in function "cast"
+    Type "Literal['STRING']" is not assignable to type "type[UUID] | Literal['uuid']"
+      Type "Literal['STRING']" is not assignable to type "type[UUID]"
+      "Literal['STRING']" is not assignable to type "Literal['uuid']" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/artifact_materializer.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/artifact_materializer.py:17:6 - error: Import "codeintel.metrics" could not be resolved (reportMissingImports)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py:28:6 - error: Import "codeintel.metrics" could not be resolved (reportMissingImports)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py:77:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py:82:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py:87:20 - error: No overloads for "to_dict" match the provided arguments
+    Argument types: (Literal['records']) (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py:88:29 - error: No overloads for "to_dict" match the provided arguments
+    Argument types: (Literal['records']) (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py:182:86 - error: "object" is not iterable
+    "__iter__" method not defined (reportGeneralTypeIssues)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py:187:27 - error: "object" is not iterable
+    "__iter__" method not defined (reportGeneralTypeIssues)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py:210:42 - error: Argument of type "object" cannot be assigned to parameter "obj" of type "Sized" in function "len"
+    "object" is incompatible with protocol "Sized"
+      "__len__" is not present (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py:211:51 - error: Argument of type "object" cannot be assigned to parameter "obj" of type "Sized" in function "len"
+    "object" is incompatible with protocol "Sized"
+      "__len__" is not present (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_parquet.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_parquet.py:28:6 - error: Import "codeintel.metrics" could not be resolved (reportMissingImports)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_parquet.py:70:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/graphs/call_graph_views.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/graphs/call_graph_views.py:25:6 - error: Import "codeintel.metrics" could not be resolved (reportMissingImports)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/graphs/call_graph_views.py:66:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/graphs/call_graph_views.py:82:14 - error: Object of type "Column" is not callable
+    Attribute "__call__" is unknown (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/graphs/call_graph_views.py:131:9 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/ingestion/scip.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/ingestion/scip.py:73:27 - error: Cannot access attribute "repo_root" for class "BuildPaths"
+    Attribute "repo_root" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/ingestion/scip.py:176:48 - error: Cannot access attribute "repo_root" for class "BuildPaths"
+    Attribute "repo_root" is unknown (reportAttributeAccessIssue)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/ingestion/typing.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/ingestion/typing.py:81:27 - error: Cannot access attribute "repo_root" for class "BuildPaths"
+    Attribute "repo_root" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/ingestion/typing.py:127:27 - error: Cannot access attribute "repo_root" for class "BuildPaths"
+    Attribute "repo_root" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/ingestion/typing.py:173:27 - error: Cannot access attribute "repo_root" for class "BuildPaths"
+    Attribute "repo_root" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/ingestion/typing.py:285:48 - error: Cannot access attribute "repo_root" for class "BuildPaths"
+    Attribute "repo_root" is unknown (reportAttributeAccessIssue)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/outputs.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/outputs.py:115:45 - error: Cannot access attribute "artifact_type" for class "ArtifactSpec"
+    Attribute "artifact_type" is unknown (reportAttributeAccessIssue)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:154:40 - error: Cannot access attribute "repo_root" for class "BuildPaths"
+    Attribute "repo_root" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:212:40 - error: Cannot access attribute "repo_root" for class "BuildPaths"
+    Attribute "repo_root" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:314:5 - error: Argument missing for parameter "manifest" (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:315:9 - error: No parameter named "target" (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:316:9 - error: No parameter named "repo" (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:317:9 - error: No parameter named "commit" (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:318:9 - error: No parameter named "plugin" (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:319:9 - error: No parameter named "duration_ms" (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:320:9 - error: No parameter named "input_hash" (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:321:9 - error: No parameter named "row_count" (reportCallIssue)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py:322:9 - error: No parameter named "options_hash" (reportCallIssue)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/native/tools/executor.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/native/tools/executor.py:70:27 - error: Cannot access attribute "repo_root" for class "BuildPaths"
+    Attribute "repo_root" is unknown (reportAttributeAccessIssue)
+/home/paul/CodeIntel/src/codeintel/build/hamilton/telemetry_hook.py
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/telemetry_hook.py:64:25 - error: Argument to class must be a base class (reportGeneralTypeIssues)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/telemetry_hook.py:64:45 - error: Argument to class must be a base class (reportGeneralTypeIssues)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/telemetry_hook.py:144:20 - error: Argument of type "object | None" cannot be assigned to parameter "target" of type "str | None" in function "__init__"
+    Type "object | None" is not assignable to type "str | None"
+      Type "object" is not assignable to type "str | None"
+        "object" is not assignable to "str"
+        "object" is not assignable to "None" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/build/hamilton/telemetry_hook.py:145:23 - error: Argument of type "object | None" cannot be assigned to parameter "node_kind" of type "str | None" in function "__init__"
+    Type "object | None" is not assignable to type "str | None"
+      Type "object" is not assignable to type "str | None"
+        "object" is not assignable to "str"
+        "object" is not assignable to "None" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/cli/errors/_cli_errors.py
+  /home/paul/CodeIntel/src/codeintel/cli/errors/_cli_errors.py:192:20 - error: Argument of type "dict[str, object] | None" cannot be assigned to parameter "extensions" of type "dict[str, Any]" in function "__init__"
+    Type "dict[str, object] | None" is not assignable to type "dict[str, Any]"
+      "None" is not assignable to "dict[str, Any]" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/cli/handlers/docs.py
+  /home/paul/CodeIntel/src/codeintel/cli/handlers/docs.py:182:15 - error: Invalid exception class or object
+    "ProblemDetail" does not derive from BaseException (reportGeneralTypeIssues)
+  /home/paul/CodeIntel/src/codeintel/cli/handlers/docs.py:183:33 - error: Cannot access attribute "INVALID_CHOICE" for class "type[ValidationErrorCode]"
+    Attribute "INVALID_CHOICE" is unknown (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/src/codeintel/cli/handlers/docs.py:289:31 - error: Argument of type "ValidationError" cannot be assigned to parameter "error" of type "ProblemDetail" in function "fail"
+    "ValidationError" is not assignable to "ProblemDetail" (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/cli/handlers/docs.py:335:18 - error: Argument of type "str" cannot be assigned to parameter "mode" of type "ExportMode" in function "__init__"
+    "str" is not assignable to "ExportMode" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/config/datasets/validation.py
+  /home/paul/CodeIntel/src/codeintel/config/datasets/validation.py:109:41 - error: Argument of type "tuple[Any, ...]" cannot be assigned to parameter "columns" of type "Axes | None" in function "__init__"
+    Type "tuple[Any, ...]" is not assignable to type "Axes | None"
+      "tuple[Any, ...]" is not assignable to "ExtensionArray"
+      "tuple[Any, ...]" is not assignable to "ndarray[_AnyShape, dtype[Any]]"
+      "tuple[Any, ...]" is not assignable to "Index"
+      "tuple[Any, ...]" is not assignable to "Series"
+      "tuple[Any, ...]" is incompatible with protocol "SequenceNotStr[Unknown]"
+        "index" is an incompatible type
+          Type "(value: Any, start: SupportsIndex = 0, stop: SupportsIndex = sys.maxsize, /) -> int" is not assignable to type "(value: Any, /, start: int = 0, stop: int = ...) -> int"
+    ... (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/config/datasets/validation.py:111:41 - error: Argument of type "tuple[Any, ...]" cannot be assigned to parameter "columns" of type "Axes | None" in function "__init__"
+    Type "tuple[Any, ...]" is not assignable to type "Axes | None"
+      "tuple[Any, ...]" is not assignable to "ExtensionArray"
+      "tuple[Any, ...]" is not assignable to "ndarray[_AnyShape, dtype[Any]]"
+      "tuple[Any, ...]" is not assignable to "Index"
+      "tuple[Any, ...]" is not assignable to "Series"
+      "tuple[Any, ...]" is incompatible with protocol "SequenceNotStr[Unknown]"
+        "index" is an incompatible type
+          Type "(value: Any, start: SupportsIndex = 0, stop: SupportsIndex = sys.maxsize, /) -> int" is not assignable to type "(value: Any, /, start: int = 0, stop: int = ...) -> int"
+    ... (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/export/export_jsonl.py
+  /home/paul/CodeIntel/src/codeintel/export/export_jsonl.py:179:16 - error: Argument of type "Series | Unknown | DataFrame | Any | ndarray[_AnyShape, dtype[Any]]" cannot be assigned to parameter "x" of type "ConvertibleToInt" in function "__new__"
+    Type "Series | Unknown | DataFrame | Any | ndarray[_AnyShape, dtype[Any]]" is not assignable to type "ConvertibleToInt"
+      Type "DataFrame" is not assignable to type "ConvertibleToInt"
+        "DataFrame" is not assignable to "str"
+        "DataFrame" is incompatible with protocol "Buffer"
+          "__buffer__" is not present
+        "DataFrame" is incompatible with protocol "SupportsInt"
+          "__int__" is not present
+        "DataFrame" is incompatible with protocol "SupportsIndex"
+    ... (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/export/export_jsonl.py:179:16 - error: Argument of type "Series | Unknown | DataFrame | Any | ndarray[_AnyShape, dtype[Any]]" cannot be assigned to parameter "x" of type "ConvertibleToInt" in function "__new__"
+    Type "Series | Unknown | DataFrame | Any | ndarray[_AnyShape, dtype[Any]]" is not assignable to type "ConvertibleToInt"
+      Type "DataFrame" is not assignable to type "ConvertibleToInt"
+        "DataFrame" is not assignable to "str"
+        "DataFrame" is incompatible with protocol "Buffer"
+          "__buffer__" is not present
+        "DataFrame" is incompatible with protocol "SupportsInt"
+          "__int__" is not present
+        "DataFrame" is incompatible with protocol "SupportsIndex" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/export/export_parquet.py
+  /home/paul/CodeIntel/src/codeintel/export/export_parquet.py:153:16 - error: Argument of type "Series | Unknown | DataFrame | Any | ndarray[_AnyShape, dtype[Any]]" cannot be assigned to parameter "x" of type "ConvertibleToInt" in function "__new__"
+    Type "Series | Unknown | DataFrame | Any | ndarray[_AnyShape, dtype[Any]]" is not assignable to type "ConvertibleToInt"
+      Type "DataFrame" is not assignable to type "ConvertibleToInt"
+        "DataFrame" is not assignable to "str"
+        "DataFrame" is incompatible with protocol "Buffer"
+          "__buffer__" is not present
+        "DataFrame" is incompatible with protocol "SupportsInt"
+          "__int__" is not present
+        "DataFrame" is incompatible with protocol "SupportsIndex"
+    ... (reportArgumentType)
+  /home/paul/CodeIntel/src/codeintel/export/export_parquet.py:153:16 - error: Argument of type "Series | Unknown | DataFrame | Any | ndarray[_AnyShape, dtype[Any]]" cannot be assigned to parameter "x" of type "ConvertibleToInt" in function "__new__"
+    Type "Series | Unknown | DataFrame | Any | ndarray[_AnyShape, dtype[Any]]" is not assignable to type "ConvertibleToInt"
+      Type "DataFrame" is not assignable to type "ConvertibleToInt"
+        "DataFrame" is not assignable to "str"
+        "DataFrame" is incompatible with protocol "Buffer"
+          "__buffer__" is not present
+        "DataFrame" is incompatible with protocol "SupportsInt"
+          "__int__" is not present
+        "DataFrame" is incompatible with protocol "SupportsIndex" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/graphs/plugins/metrics/core.py
+  /home/paul/CodeIntel/src/codeintel/graphs/plugins/metrics/core.py:109:40 - error: Argument of type "bool" cannot be assigned to parameter "predicates" of type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred" in function "filter"
+    Type "bool" is not assignable to type "BooleanValue | Sequence[BooleanValue] | IfAnyAll | Deferred"
+      "bool" is not assignable to "BooleanValue"
+      "bool" is not assignable to "Sequence[BooleanValue]"
+      "bool" is not assignable to "IfAnyAll"
+      "bool" is not assignable to "Deferred" (reportArgumentType)
+/home/paul/CodeIntel/src/codeintel/storage/ibis_adapter.py
+  /home/paul/CodeIntel/src/codeintel/storage/ibis_adapter.py:227:16 - error: Type "Backend | None" is not assignable to return type "Backend"
+    Type "Backend | None" is not assignable to type "Backend"
+      "None" is not assignable to "Backend" (reportReturnType)
+/home/paul/CodeIntel/src/codeintel/storage/schema/ddl.py
+  /home/paul/CodeIntel/src/codeintel/storage/schema/ddl.py:92:40 - error: Argument of type "_MinimalGateway" cannot be assigned to parameter "gateway" of type "StorageGateway" in function "__init__"
+    "_MinimalGateway" is incompatible with protocol "StorageGateway"
+      "assets" is not present
+      "policy" is not present
+        "StorageGateway" is not assignable to "_MinimalGateway" (reportArgumentType)
+/home/paul/CodeIntel/tests/_helpers/fakes/contexts.py
+  /home/paul/CodeIntel/tests/_helpers/fakes/contexts.py:312:22 - error: Argument of type "SnapshotRef | None" cannot be assigned to parameter "snapshot" of type "SnapshotRef" in function "__init__"
+    Type "SnapshotRef | None" is not assignable to type "SnapshotRef"
+      "None" is not assignable to "SnapshotRef" (reportArgumentType)
+/home/paul/CodeIntel/tests/build/hamilton/test_materializer.py
+  /home/paul/CodeIntel/tests/build/hamilton/test_materializer.py:145:11 - error: Argument missing for parameter "ctx" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_materializer.py:146:9 - error: No parameter named "gateway" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_materializer.py:149:9 - error: No parameter named "snapshot" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_materializer.py:150:9 - error: No parameter named "validate" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_materializer.py:204:11 - error: Argument missing for parameter "ctx" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_materializer.py:205:9 - error: No parameter named "gateway" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_materializer.py:208:9 - error: No parameter named "snapshot" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_materializer.py:209:9 - error: No parameter named "validate" (reportCallIssue)
+/home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_driver.py
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_driver.py:20:38 - error: Expected 0 positional arguments (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_driver.py:53:38 - error: Expected 0 positional arguments (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_driver.py:82:38 - error: Expected 0 positional arguments (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_driver.py:113:38 - error: Expected 0 positional arguments (reportCallIssue)
+/home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:17:41 - error: "BuildConfig" is unknown import symbol (reportAttributeAccessIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:44:16 - error: Arguments missing for parameters "env", "requested" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:45:13 - error: No parameter named "runtime" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:47:13 - error: No parameter named "targets" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:48:13 - error: No parameter named "snapshot" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:49:13 - error: No parameter named "config" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:86:16 - error: Arguments missing for parameters "env", "requested" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:87:13 - error: No parameter named "runtime" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:89:13 - error: No parameter named "targets" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:90:13 - error: No parameter named "snapshot" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:91:13 - error: No parameter named "config" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:119:12 - error: Arguments missing for parameters "env", "requested" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:120:9 - error: No parameter named "runtime" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:122:9 - error: No parameter named "targets" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:123:9 - error: No parameter named "snapshot" (reportCallIssue)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr21_analytics_native_impl_kind.py:124:9 - error: No parameter named "config" (reportCallIssue)
+/home/paul/CodeIntel/tests/build/hamilton/test_pr28_phase4_asset_catalog.py
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr28_phase4_asset_catalog.py:132:35 - error: "summary" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr28_phase4_asset_catalog.py:133:29 - error: "summary" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr28_phase4_asset_catalog.py:133:37 - error: "get" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /home/paul/CodeIntel/tests/build/hamilton/test_pr28_phase4_asset_catalog.py:168:26 - error: Object of type "None" is not subscriptable (reportOptionalSubscript)
+/home/paul/CodeIntel/tests/build/test_readiness_registry_resources_resolver.py
+  /home/paul/CodeIntel/tests/build/test_readiness_registry_resources_resolver.py:195:12 - error: Cannot instantiate abstract class "FakeGateway"
+    "StorageGateway.assets" is not implemented
+    "StorageGateway.policy" is not implemented (reportAbstractUsage)
+/home/paul/CodeIntel/tests/cli/handlers/test_docs.py
+  /home/paul/CodeIntel/tests/cli/handlers/test_docs.py:34:14 - error: Argument of type "Literal['build_system']" cannot be assigned to parameter "mode" of type "ExportMode" in function "__init__"
+    "Literal['build_system']" is not assignable to "ExportMode" (reportArgumentType)
+  /home/paul/CodeIntel/tests/cli/handlers/test_docs.py:55:14 - error: Argument of type "Literal['direct']" cannot be assigned to parameter "mode" of type "ExportMode" in function "__init__"
+    "Literal['direct']" is not assignable to "ExportMode" (reportArgumentType)
+/home/paul/CodeIntel/tests/config/test_dataset_contract.py
+  /home/paul/CodeIntel/tests/config/test_dataset_contract.py:7:52 - error: "DELETE_SQL_BY_TABLE" is unknown import symbol (reportAttributeAccessIssue)
+/home/paul/CodeIntel/tests/ingestion/plugins/_wiring.py
+  /home/paul/CodeIntel/tests/ingestion/plugins/_wiring.py:110:26 - error: Type "ConnectionRecordingGateway" is not assignable to declared type "StorageGateway"
+    "ConnectionRecordingGateway" is incompatible with protocol "StorageGateway"
+      "assets" is not present
+      "policy" is not present
+        "StorageGateway" is not assignable to "ConnectionRecordingGateway" (reportAssignmentType)
+/home/paul/CodeIntel/tests/ingestion/plugins/test_docstrings_plugin.py
+  /home/paul/CodeIntel/tests/ingestion/plugins/test_docstrings_plugin.py:98:21 - error: Argument of type "FailingGateway" cannot be assigned to parameter "gateway" of type "StorageGateway | None" in function "__init__"
+    Type "FailingGateway" is not assignable to type "StorageGateway | None"
+      "FailingGateway" is incompatible with protocol "StorageGateway"
+        "assets" is not present
+        "policy" is not present
+          "StorageGateway" is not assignable to "FailingGateway"
+      "FailingGateway" is not assignable to "None" (reportArgumentType)
+/home/paul/CodeIntel/tests/ingestion/test_ast_utils.py
+  /home/paul/CodeIntel/tests/ingestion/test_ast_utils.py:15:39 - error: "get_table_columns" is unknown import symbol (reportAttributeAccessIssue)
+147 errors, 0 warnings, 0 informations

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,22 +29,8 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
-class ExportValidationMode(Enum):
-    """Validation strategy for docs exports."""
-
-    REQUIRED = "required"
-    SKIP = "skip"
-
-
-class MacroRequirement(Enum):
-    """Requirement policy for normalized macros."""
-
-    REQUIRE_NORMALIZED = "require_normalized"
-    ALLOW_PARTIAL = "allow_partial"
-
-
-class ExportMode(Enum):
-    """Execution mode for docs exports."""
+class ExportMode(StrEnum):
+    """Execution mode for docs export operations."""
 
     BUILD_SYSTEM = "build_system"
     DIRECT = "direct"
@@ -61,8 +47,6 @@ class DocsExportResult:
         Export status (ok, dry_run, failed).
     validation
         Validation mode used.
-    macro_requirement
-        Macro requirement mode used.
     datasets
         Datasets exported (or None for all).
     schemas
@@ -73,10 +57,10 @@ class DocsExportResult:
 
     status: str
     validation: str
-    macro_requirement: str
     datasets: list[str] | None
     schemas: list[str] | None
-    mode: str
+    mode: ExportMode
+    macro_requirement: str
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -86,13 +70,14 @@ class DocsExportResult:
         dict[str, object]
             Dictionary representation.
         """
+        mode_value = self.mode.value if isinstance(self.mode, ExportMode) else str(self.mode)
         return {
             "status": self.status,
             "validation": self.validation,
-            "macro_requirement": self.macro_requirement,
             "datasets": self.datasets,
             "schemas": self.schemas,
-            "mode": self.mode,
+            "mode": mode_value,
+            "macro_requirement": self.macro_requirement,
         }
 
 
@@ -180,18 +165,23 @@ def _collect_export_params(ctx: CommandContext) -> DocsExportParams:
     -------
     DocsExportParams
         Parsed parameters used for export orchestration.
+
+    Raises
+    ------
+    ValidationError
+        If provided CLI parameters fail validation checks.
     """
     validation_mode = _normalize_flag(
         ctx.params.raw.get("validation_mode") or ctx.params.raw.get("validation")
     )
-    if ctx.params.get_bool("validate"):
-        validation = ExportValidationMode.REQUIRED.value
-    else:
-        validation = validation_mode or ExportValidationMode.REQUIRED.value
-
+    validation = (
+        "required" if ctx.params.get_bool("validate") else (validation_mode or "required")
+    )
+    allowed_validation_modes = {"required", "skip"}
+    if validation_mode and validation_mode not in allowed_validation_modes:
+        raise ValidationError('Invalid value for "--validation-mode"')
     macro_requirement = (
-        _normalize_flag(ctx.params.raw.get("macro_requirement"))
-        or MacroRequirement.REQUIRE_NORMALIZED.value
+        _normalize_flag(ctx.params.raw.get("macro_requirement")) or "require_normalized"
     )
 
     datasets = ctx.params.get_list("datasets") or None
@@ -242,8 +232,6 @@ def _build_export_options(params: DocsExportParams) -> ExportOptions:
             validate_exports=params.require_validation,
             schemas=params.schemas,
             datasets=params.datasets,
-            require_normalized_macros=params.macro_requirement
-            == MacroRequirement.REQUIRE_NORMALIZED.value,
         ),
         validator=validate_dataset_registry
         if params.require_validation
@@ -251,19 +239,19 @@ def _build_export_options(params: DocsExportParams) -> ExportOptions:
     )
 
 
-def _resolve_mode(*, dry_run: bool, skip_prereqs: bool) -> tuple[str, str]:
+def _resolve_mode(*, dry_run: bool, skip_prereqs: bool) -> tuple[ExportMode, str]:
     """Resolve export mode and status labels.
 
     Returns
     -------
-    tuple[str, str]
+    tuple[ExportMode, str]
         Mode identifier and status string.
     """
     if dry_run:
-        return ExportMode.DRY_RUN.value, "dry_run"
+        return ExportMode.DRY_RUN, "dry_run"
     if skip_prereqs:
-        return ExportMode.DIRECT.value, "ok"
-    return ExportMode.BUILD_SYSTEM.value, "ok"
+        return ExportMode.DIRECT, "ok"
+    return ExportMode.BUILD_SYSTEM, "ok"
 
 
 def docs_export_handler(
@@ -278,7 +266,6 @@ def docs_export_handler(
         Command context with params:
         - project_root: Optional project root override.
         - validation: Validation mode (required, skip).
-        - macro_requirement: Macro requirement mode.
         - datasets: Optional list of datasets to export.
         - schemas: Optional list of schemas to export.
         - dry_run: Whether to run in dry-run mode.
@@ -292,7 +279,16 @@ def docs_export_handler(
         Export result.
     """
     deps = deps or DEFAULT_DOCS_DEPS
-    params = _collect_export_params(ctx)
+    try:
+        params = _collect_export_params(ctx)
+    except ValidationError as exc:
+        return CliResult.fail(
+            validation_error(
+                ValidationErrorCode.INVALID_FORMAT,
+                "docs",
+                str(exc),
+            )
+        )
 
     try:
         _ = deps.runtime_builder(ctx)
@@ -335,7 +331,7 @@ def docs_export_handler(
         DocsExportResult(
             status=status,
             validation=params.validation or "required",
-            macro_requirement=params.macro_requirement or "require_normalized",
+            macro_requirement=params.macro_requirement,
             datasets=params.datasets,
             schemas=params.schemas,
             mode=mode,
@@ -394,8 +390,6 @@ __all__ = [
     "DocsExportResult",
     "DocsValidateResult",
     "ExportMode",
-    "ExportValidationMode",
-    "MacroRequirement",
     "docs_export_handler",
     "docs_validate_handler",
 ]

@@ -38,12 +38,13 @@ from hamilton.function_modifiers import tag
 from codeintel.build.parameters import EMPTY_PARAMETERS
 
 if TYPE_CHECKING:
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.parameters import TargetParameters
     from codeintel.build.plugin import TargetPluginProtocol
     from codeintel.build.result import TargetResult
+    from codeintel.build.targets import OutputTarget, TargetGraph
 
 from codeintel.build.context import ContextResources, TargetExecutionContext
-from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.dataset_ref import refs_from_target_result, refs_to_tuple
 from codeintel.build.hamilton.manifest_hook import (
     ManifestSaveRequest,
@@ -56,7 +57,6 @@ from codeintel.build.hamilton.manifest_hook import (
 )
 from codeintel.build.hamilton.metadata_bridge import from_plugin_or_target
 from codeintel.build.plugin_registry import get_plugin_for_target
-from codeintel.build.targets import OutputTarget, TargetGraph
 
 log = logging.getLogger(__name__)
 

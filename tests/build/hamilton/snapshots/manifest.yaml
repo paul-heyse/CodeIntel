@@ -21,6 +21,71 @@ defaults:
 
 cases:
   # ========================================================================
+  # PR-16: Contract Parity - Verify complete contracts for key targets
+  # ========================================================================
+
+  - name: "pr16_plan_function_metrics_contract"
+    tags: ["pr16", "plan", "json", "tiny"]
+    args: ["build", "plan", "function_metrics", "--format", "json", "--help"]
+    exit_code: 0
+    snapshot: "pr16_plan_function_metrics_contract.json"
+    kind: "text"
+
+  - name: "pr16_plan_risk_factors_contract"
+    tags: ["pr16", "plan", "json", "tiny"]
+    args: ["build", "plan", "risk_factors", "--format", "json", "--help"]
+    exit_code: 0
+    snapshot: "pr16_plan_risk_factors_contract.json"
+    kind: "text"
+
+  # ========================================================================
+  # PR-21: Native Analytics Targets - coverage_functions, hotspots, subsystems
+  # ========================================================================
+
+  - name: "pr21_plan_coverage_functions_native"
+    tags: ["pr21", "plan", "native", "json", "analytics", "tiny"]
+    args: ["build", "plan", "coverage_functions", "--format", "json", "--help"]
+    exit_code: 0
+    snapshot: "pr21_plan_coverage_functions_native.json"
+    kind: "text"
+
+  - name: "pr21_plan_hotspots_native"
+    tags: ["pr21", "plan", "native", "json", "analytics", "tiny"]
+    args: ["build", "plan", "hotspots", "--format", "json", "--help"]
+    exit_code: 0
+    snapshot: "pr21_plan_hotspots_native.json"
+    kind: "text"
+
+  # ========================================================================
+  # PR-22: Call Graph Views
+  # ========================================================================
+
+  - name: "pr22_plan_call_graph_views"
+    tags: ["pr22", "plan", "native", "json", "graphs", "tiny"]
+    args: ["build", "plan", "call_graph_views", "--format", "json", "--help"]
+    exit_code: 0
+    snapshot: "pr22_plan_call_graph_views.json"
+    kind: "text"
+
+  # ========================================================================
+  # PR-23: Export Targets - JSONL and Parquet
+  # ========================================================================
+
+  - name: "pr23_plan_export_jsonl_native"
+    tags: ["pr23", "plan", "native", "json", "export", "tiny"]
+    args: ["build", "plan", "export_jsonl", "--format", "json", "--help"]
+    exit_code: 0
+    snapshot: "pr23_plan_export_jsonl_native.json"
+    kind: "text"
+
+  - name: "pr23_plan_export_parquet_native"
+    tags: ["pr23", "plan", "native", "json", "export", "tiny"]
+    args: ["build", "plan", "export_parquet", "--format", "json", "--help"]
+    exit_code: 0
+    snapshot: "pr23_plan_export_parquet_native.json"
+    kind: "text"
+
+  # ========================================================================
   # PR-08: Hamilton Default Mode - Verify generated mode is default
   # ========================================================================
 
@@ -98,3 +163,41 @@ cases:
     snapshot: "build_run_help.txt"
     kind: "text"
 
+  # ========================================================================
+  # Phase 4 PR-28+: Asset catalog CLI surfaces (help-only)
+  # ========================================================================
+
+  - name: "pr28_assets_help"
+    tags: ["pr28", "phase4", "assets", "text", "tiny"]
+    args: ["build", "assets", "--help"]
+    exit_code: 0
+    snapshot: "pr28_assets_help.txt"
+    kind: "text"
+
+  - name: "pr28_lineage_help"
+    tags: ["pr28", "phase4", "lineage", "text", "tiny"]
+    args: ["build", "lineage", "--help"]
+    exit_code: 0
+    snapshot: "pr28_lineage_help.txt"
+    kind: "text"
+
+  - name: "pr32_promote_help"
+    tags: ["pr32", "phase4", "promote", "text", "tiny"]
+    args: ["build", "promote", "--help"]
+    exit_code: 0
+    snapshot: "pr32_promote_help.txt"
+    kind: "text"
+
+  - name: "pr32_resolve_help"
+    tags: ["pr32", "phase4", "resolve", "text", "tiny"]
+    args: ["build", "resolve", "--help"]
+    exit_code: 0
+    snapshot: "pr32_resolve_help.txt"
+    kind: "text"
+
+  - name: "pr33_diff_help"
+    tags: ["pr33", "phase4", "diff", "text", "tiny"]
+    args: ["build", "diff", "--help"]
+    exit_code: 0
+    snapshot: "pr33_diff_help.txt"
+    kind: "text"

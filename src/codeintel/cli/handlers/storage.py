@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -61,13 +60,6 @@ def _readonly_gateway(db_path: Path) -> Iterator[StorageGateway]:
         gw.close()
 
 
-class MacroRequirement(Enum):
-    """Policy for ingest macro validation."""
-
-    REQUIRE = "require"
-    ALLOW_MISSING = "allow_missing"
-
-
 def validate_macros_handler(
     ctx: CommandContext,
 ) -> CliResult[ValidateMacrosResult]:
@@ -78,7 +70,6 @@ def validate_macros_handler(
     ctx
         Command context with params:
         - db_path: Path to database (optional, uses runtime if not provided)
-        - macro_requirement: MacroRequirement enum value or string
 
     Returns
     -------
@@ -90,16 +81,12 @@ def validate_macros_handler(
     Uses explicit gateway when db_path is provided, otherwise uses ctx.gateway.
     """
     db_path_str = ctx.params.get_str("db_path")
-    macro_requirement = (
-        ctx.params.get_enum("macro_requirement", MacroRequirement, MacroRequirement.REQUIRE)
-        or MacroRequirement.REQUIRE
-    )
 
     if db_path_str is not None:
         db_path = Path(db_path_str)
         try:
             with _readonly_gateway(db_path) as gateway:
-                return _validate_macros(gateway, macro_requirement)
+                return _validate_macros(gateway)
         except StorageConnectionError as exc:
             LOG.warning("Failed to connect to database at %s: %s", db_path, exc)
             return CliResult.ok(
@@ -112,12 +99,11 @@ def validate_macros_handler(
                 )
             )
     else:
-        return _validate_macros(ctx.gateway, macro_requirement)
+        return _validate_macros(ctx.gateway)
 
 
 def _validate_macros(
     gateway: StorageGateway,
-    macro_requirement: MacroRequirement,
 ) -> CliResult[ValidateMacrosResult]:
     """Perform macro validation against a gateway.
 
@@ -125,8 +111,6 @@ def _validate_macros(
     ----------
     gateway
         Open storage gateway.
-    macro_requirement
-        Policy for missing ingest macros.
 
     Returns
     -------
@@ -140,8 +124,6 @@ def _validate_macros(
 
     try:
         validate_dataset_schema_registry(connection)
-        if macro_requirement is MacroRequirement.REQUIRE and missing_ingest:
-            error_msg = f"Ingest macros missing: {', '.join(missing_ingest)}"
     except RuntimeError as exc:
         error_msg = str(exc)
 
@@ -251,7 +233,6 @@ def profile_storage_handler(
 
 __all__ = [
     "GenerateMacrosResult",
-    "MacroRequirement",
     "ProfileStorageResult",
     "ValidateMacrosResult",
     "generate_macros_handler",

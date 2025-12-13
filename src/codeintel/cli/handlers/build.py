@@ -10,12 +10,12 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.build.config import load_build_config
 from codeintel.build.executor import BuildExecutor, ExecutorEnv
 from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
-from codeintel.build.hamilton.driver_factory import HamiltonNodeMode, build_driver
+from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
     export_dag_json,
@@ -30,9 +30,14 @@ from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
+    BuildAssetsResult,
+    BuildDiffResult,
     BuildExplainResult,
     BuildHistoryResult,
+    BuildLineageResult,
     BuildPlanResult,
+    BuildPromoteResult,
+    BuildResolveResult,
     BuildRunResult,
     BuildStatusResult,
 )
@@ -47,10 +52,12 @@ from codeintel.cli.errors.results import (
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.resolution.errors import ResolutionError
+from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 
 if TYPE_CHECKING:
     from codeintel.build.executor import BuildResult
     from codeintel.build.hamilton import HamiltonBuildResult
+    from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
     from codeintel.build.manifest import BuildRunRecord
     from codeintel.build.plan import BuildPlan
     from codeintel.build.targets import TargetGraph, TargetModule
@@ -109,6 +116,8 @@ class BuildExecutionArgs:
     engine: str
     hamilton_mode: str
     validate_outputs: bool
+    strict_contracts: bool
+    wrapper_allowlist: list[str] | None
 
     @property
     def is_dry_run(self) -> bool:
@@ -377,6 +386,10 @@ def _execute_build_hamilton(
     manifest_index = {m.target: m for m in manifests_list}
     LOG.debug("build.cli.hamilton.manifest_index count=%d", len(manifest_index))
 
+    wrapper_allowlist_frozen = (
+        frozenset(execution.wrapper_allowlist) if execution.wrapper_allowlist else None
+    )
+
     env = BuildEnv(
         gateway=gateway,
         snapshot=runtime.snapshot,
@@ -387,6 +400,8 @@ def _execute_build_hamilton(
         force_targets=frozenset(execution.force or ()),
         manifest_index=manifest_index,
         validate_outputs=execution.validate_outputs,
+        strict_contracts=execution.strict_contracts,
+        wrapper_allowlist=wrapper_allowlist_frozen,
     )
 
     executor = HamiltonBuildExecutor(profile="default", mode=execution.node_mode)
@@ -550,6 +565,8 @@ class _BuildRunParams:
     engine: str
     hamilton_mode: str
     validate_outputs: bool
+    strict_contracts: bool
+    wrapper_allowlist: list[str] | None
 
 
 def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
@@ -571,6 +588,17 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
     force_list = ctx.params.get_list("force")
     force: list[str] | None = force_list if force_list else None
 
+    wrapper_allowlist_list = None
+    wrapper_allowlist_raw = ctx.params.get_list("wrapper_allowlist")
+    if wrapper_allowlist_raw:
+        # Handle comma-separated string or list
+        wrapper_allowlist_list = []
+        for item in wrapper_allowlist_raw:
+            if isinstance(item, str) and "," in item:
+                wrapper_allowlist_list.extend(item.split(","))
+            else:
+                wrapper_allowlist_list.append(str(item))
+
     return _BuildRunParams(
         targets=targets,
         module=ctx.params.get_str("module"),
@@ -580,6 +608,8 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         engine=ctx.params.get_str("engine") or "hamilton",
         hamilton_mode=ctx.params.get_str("hamilton_mode") or "generated",
         validate_outputs=ctx.params.get_bool("validate_outputs"),
+        strict_contracts=ctx.params.get_bool("strict_contracts"),
+        wrapper_allowlist=wrapper_allowlist_list,
     )
 
 
@@ -677,6 +707,8 @@ def build_run_handler(
         engine=params.engine,
         hamilton_mode=params.hamilton_mode,
         validate_outputs=params.validate_outputs,
+        strict_contracts=params.strict_contracts,
+        wrapper_allowlist=params.wrapper_allowlist,
     )
     return _execute_and_format_result(runtime, execution_args)
 
@@ -1054,6 +1086,598 @@ def build_explain_handler(
     return CliResult.ok(result)
 
 
+def build_assets_handler(ctx: CommandContext) -> CliResult[BuildAssetsResult]:
+    """Handle build assets command.
+
+    Lists materialized assets for the current snapshot with optional filters.
+
+    Parameters
+    ----------
+    ctx
+        Command context with gateway and runtime access.
+
+    Returns
+    -------
+    CliResult[BuildAssetsResult]
+        Result containing asset records and count.
+    """
+    gateway = ctx.gateway
+    runtime = ctx.runtime
+    output_format = ctx.params.get_str("output_format") or "table"
+
+    if bool(ctx.params.get_bool("versions")):
+        return _build_assets_versions_result(gateway=gateway, runtime=runtime, output_format=output_format, ctx=ctx)
+
+    return _build_assets_legacy_result(gateway=gateway, runtime=runtime, output_format=output_format, ctx=ctx)
+
+
+def _infer_asset_kind(asset_key: str) -> str:
+    return "table" if "." in asset_key else "artifact"
+
+
+def _looks_like_hash(value: str) -> bool:
+    if len(value) not in {16, 32, 40, 64}:
+        return False
+    return all(c in "0123456789abcdef" for c in value.lower())
+
+
+def _build_assets_legacy_result(
+    *,
+    gateway: StorageGateway,
+    runtime: ResolvedRuntime,
+    output_format: str,
+    ctx: CommandContext,
+) -> CliResult[BuildAssetsResult]:
+    asset = ctx.params.get_str("asset")
+    target = ctx.params.get_str("target")
+    asset_type = ctx.params.get_str("asset_type")
+
+    assets = gateway.assets.list_assets(
+        repo=runtime.snapshot.repo,
+        commit=runtime.snapshot.commit,
+        asset_type=asset_type,
+        owner_target=target,
+    )
+    if asset is not None:
+        assets = [a for a in assets if a.asset_key == asset]
+
+    asset_dicts = [
+        {
+            "asset_key": a.asset_key,
+            "asset_type": a.asset_type,
+            "repo": a.repo,
+            "commit": a.commit,
+            "owner_target": a.owner_target,
+            "schema_version": a.schema_version,
+            "row_count": a.row_count,
+            "file_size_bytes": a.file_size_bytes,
+            "materialized_at": a.materialized_at.isoformat() if a.materialized_at else None,
+            "input_hash": a.input_hash,
+            "metadata": a.metadata,
+        }
+        for a in assets
+    ]
+    return CliResult.ok(BuildAssetsResult(assets=asset_dicts, count=len(asset_dicts), format=output_format))
+
+
+def _build_assets_versions_result(
+    *,
+    gateway: StorageGateway,
+    runtime: ResolvedRuntime,
+    output_format: str,
+    ctx: CommandContext,
+) -> CliResult[BuildAssetsResult]:
+    asset = ctx.params.get_str("asset")
+    target = ctx.params.get_str("target")
+    asset_type = ctx.params.get_str("asset_type")
+
+    repo = runtime.snapshot.repo
+    commit = runtime.snapshot.commit
+
+    if asset is None:
+        rows = gateway.execute(
+            """
+            SELECT DISTINCT asset_kind, asset_key
+            FROM build.asset_versions
+            WHERE repo = ? AND commit = ?
+            ORDER BY asset_kind, asset_key
+            """,
+            [repo, commit],
+        ).fetchall()
+        assets_to_show = [(str(r[0]), str(r[1])) for r in rows]
+    else:
+        assets_to_show = [(_infer_asset_kind(asset), asset)]
+
+    if target is not None:
+        rows = gateway.execute(
+            """
+            SELECT DISTINCT asset_kind, asset_key
+            FROM build.asset_versions
+            WHERE repo = ? AND commit = ? AND target = ?
+            ORDER BY asset_kind, asset_key
+            """,
+            [repo, commit, target],
+        ).fetchall()
+        allowed = {(str(r[0]), str(r[1])) for r in rows}
+        assets_to_show = [pair for pair in assets_to_show if pair in allowed]
+
+    if asset_type is not None:
+        allowed_kinds = {"table": "table", "view": "view", "artifact": "artifact"}
+        kind = allowed_kinds.get(asset_type)
+        if kind is None:
+            return fail_invalid_target_selection(f"Unknown asset type: {asset_type}")
+        assets_to_show = [(k, a) for k, a in assets_to_show if k == kind]
+
+    payload: list[dict[str, object]] = []
+    for asset_kind, asset_key in assets_to_show:
+        versions = gateway.assets.get_asset_versions(
+            repo=repo,
+            commit=commit,
+            asset_kind=asset_kind,
+            asset_key=asset_key,
+            limit=50,
+        )
+        payload.append(
+            {
+                "asset_kind": asset_kind,
+                "asset_key": asset_key,
+                "versions": [
+                    {
+                        "version_hash": v.version_hash,
+                        "status": v.status,
+                        "run_id": v.run_id,
+                        "target": v.target,
+                        "impl_kind": v.impl_kind,
+                        "location": v.location,
+                        "input_hash": v.input_hash,
+                        "options_hash": v.options_hash,
+                        "schema_hash": v.schema_hash,
+                        "row_count": v.row_count,
+                        "bytes": v.bytes,
+                        "created_at": v.created_at.isoformat() if v.created_at else None,
+                        "meta": v.meta,
+                    }
+                    for v in versions
+                ],
+            }
+        )
+
+    return CliResult.ok(BuildAssetsResult(assets=payload, count=len(payload), format=output_format))
+
+
+def build_lineage_handler(ctx: CommandContext) -> CliResult[BuildLineageResult]:
+    """Handle build lineage command.
+
+    Parameters
+    ----------
+    ctx
+        Command context.
+
+    Returns
+    -------
+    CliResult[BuildLineageResult]
+        Lineage traversal result.
+    """
+    gateway = ctx.gateway
+    runtime = ctx.runtime
+
+    asset = ctx.params.get_str("asset")
+    direction = (ctx.params.get_str("direction") or "up").lower()
+    depth = ctx.params.get_int("depth", 1)
+    output_format = ctx.params.get_str("output_format") or "json"
+
+    if not asset:
+        return fail_invalid_target_selection("Missing --asset")
+    if direction not in {"up", "down"}:
+        return fail_invalid_target_selection("direction must be 'up' or 'down'")
+    if depth < 0:
+        return fail_invalid_target_selection("depth must be >= 0")
+
+    asset_kind = _infer_asset_kind(asset)
+    root_version = gateway.assets.get_latest_version_hash(
+        repo=runtime.snapshot.repo,
+        commit=runtime.snapshot.commit,
+        asset_kind=asset_kind,
+        asset_key=asset,
+    )
+    if root_version is None:
+        return fail_invalid_targets(f"No versions recorded for asset: {asset}")
+
+    start = (asset_kind, asset, root_version)
+    node_list, edge_list = _traverse_lineage(
+        gateway=gateway,
+        start=start,
+        direction=direction,
+        depth=depth,
+    )
+
+    return CliResult.ok(
+        BuildLineageResult(
+            asset=asset,
+            asset_kind=asset_kind,
+            root_version_hash=root_version,
+            direction=direction,
+            depth=depth,
+            nodes=node_list,
+            edges=edge_list,
+            format=output_format,
+        )
+    )
+
+
+def _traverse_lineage(
+    *,
+    gateway: StorageGateway,
+    start: tuple[str, str, str],
+    direction: str,
+    depth: int,
+) -> tuple[list[dict[str, str]], list[dict[str, object]]]:
+    nodes: dict[tuple[str, str, str], dict[str, str]] = {
+        start: {"asset_kind": start[0], "asset_key": start[1], "version_hash": start[2]}
+    }
+    edges: set[tuple[tuple[str, str, str], tuple[str, str, str], str]] = set()
+    frontier: set[tuple[str, str, str]] = {start}
+
+    for _ in range(depth):
+        if not frontier:
+            break
+        frontier = _expand_frontier(
+            gateway=gateway, nodes=nodes, edges=edges, frontier=frontier, direction=direction
+        )
+
+    node_list = [nodes[k] for k in sorted(nodes)]
+    edge_list = [
+        {
+            "from": {"asset_kind": a[0], "asset_key": a[1], "version_hash": a[2]},
+            "to": {"asset_kind": b[0], "asset_key": b[1], "version_hash": b[2]},
+            "edge_kind": edge_kind,
+        }
+        for a, b, edge_kind in sorted(edges)
+    ]
+    return node_list, edge_list
+
+
+def _expand_frontier(
+    *,
+    gateway: StorageGateway,
+    nodes: dict[tuple[str, str, str], dict[str, str]],
+    edges: set[tuple[tuple[str, str, str], tuple[str, str, str], str]],
+    frontier: set[tuple[str, str, str]],
+    direction: str,
+) -> set[tuple[str, str, str]]:
+    next_frontier: set[tuple[str, str, str]] = set()
+    for kind, key, version_hash in sorted(frontier):
+        if direction == "up":
+            rows = gateway.execute(
+                """
+                SELECT upstream_kind, upstream_key, upstream_version, edge_kind
+                FROM build.asset_lineage
+                WHERE downstream_kind = ? AND downstream_key = ? AND downstream_version = ?
+                ORDER BY upstream_kind, upstream_key, upstream_version, edge_kind
+                """,
+                [kind, key, version_hash],
+            ).fetchall()
+            for r in rows:
+                upstream = (str(r[0]), str(r[1]), str(r[2]))
+                edge_kind = str(r[3])
+                nodes.setdefault(
+                    upstream,
+                    {"asset_kind": upstream[0], "asset_key": upstream[1], "version_hash": upstream[2]},
+                )
+                edges.add(((kind, key, version_hash), upstream, edge_kind))
+                next_frontier.add(upstream)
+            continue
+
+        rows = gateway.execute(
+            """
+            SELECT downstream_kind, downstream_key, downstream_version, edge_kind
+            FROM build.asset_lineage
+            WHERE upstream_kind = ? AND upstream_key = ? AND upstream_version = ?
+            ORDER BY downstream_kind, downstream_key, downstream_version, edge_kind
+            """,
+            [kind, key, version_hash],
+        ).fetchall()
+        for r in rows:
+            downstream = (str(r[0]), str(r[1]), str(r[2]))
+            edge_kind = str(r[3])
+            nodes.setdefault(
+                downstream,
+                {"asset_kind": downstream[0], "asset_key": downstream[1], "version_hash": downstream[2]},
+            )
+            edges.add((downstream, (kind, key, version_hash), edge_kind))
+            next_frontier.add(downstream)
+
+    return next_frontier
+
+
+def build_promote_handler(ctx: CommandContext) -> CliResult[BuildPromoteResult]:
+    """Handle build promote command.
+
+    Parameters
+    ----------
+    ctx
+        Command context.
+
+    Returns
+    -------
+    CliResult[BuildPromoteResult]
+        Promotion result.
+    """
+    gateway = ctx.gateway
+    _ = ctx.runtime
+
+    asset = ctx.params.get_str("asset")
+    alias = ctx.params.get_str("alias")
+    version_hash = ctx.params.get_str("version_hash")
+    from_run_id = ctx.params.get_str("from_run_id")
+    note = ctx.params.get_str("note")
+    output_format = ctx.params.get_str("output_format") or "json"
+
+    if not asset or not alias:
+        return fail_invalid_target_selection("Missing --asset or --alias")
+
+    asset_kind = _infer_asset_kind(asset)
+
+    resolved_hash: str | None = version_hash
+    if resolved_hash is None and from_run_id is not None:
+        mappings = gateway.assets.get_run_asset_versions(run_id=from_run_id)
+        for m in mappings:
+            if m.asset_kind == asset_kind and m.asset_key == asset:
+                resolved_hash = m.version_hash
+                break
+
+    if resolved_hash is None:
+        return fail_invalid_target_selection("Provide --version-hash or --from-run-id")
+
+    gateway.assets.set_alias(
+        AssetAliasRecord(
+            alias=alias,
+            asset_kind=asset_kind,
+            asset_key=asset,
+            version_hash=resolved_hash,
+            set_by_run_id=from_run_id,
+            note=note,
+        )
+    )
+
+    return CliResult.ok(
+        BuildPromoteResult(
+            asset=asset,
+            asset_kind=asset_kind,
+            alias=alias,
+            version_hash=resolved_hash,
+            note=note,
+            format=output_format,
+        )
+    )
+
+
+def build_resolve_handler(ctx: CommandContext) -> CliResult[BuildResolveResult]:
+    """Handle build resolve command.
+
+    Parameters
+    ----------
+    ctx
+        Command context.
+
+    Returns
+    -------
+    CliResult[BuildResolveResult]
+        Alias resolution result.
+    """
+    gateway = ctx.gateway
+    _ = ctx.runtime
+
+    asset = ctx.params.get_str("asset")
+    alias = ctx.params.get_str("alias")
+    output_format = ctx.params.get_str("output_format") or "json"
+
+    if not asset or not alias:
+        return fail_invalid_target_selection("Missing --asset or --alias")
+
+    asset_kind = _infer_asset_kind(asset)
+    version_hash = gateway.assets.resolve_alias(alias=alias, asset_kind=asset_kind, asset_key=asset)
+    if version_hash is None:
+        return fail_invalid_targets(f"Alias not found: {alias} for {asset}")
+
+    return CliResult.ok(
+        BuildResolveResult(
+            asset=asset,
+            asset_kind=asset_kind,
+            alias=alias,
+            version_hash=version_hash,
+            format=output_format,
+        )
+    )
+
+
+def _resolve_version_spec(
+    gateway: StorageGateway,
+    *,
+    spec: str,
+    ctx: AssetVersionResolutionContext,
+) -> str | None:
+    if _looks_like_hash(spec):
+        return spec
+
+    resolved = gateway.assets.resolve_alias(alias=spec, asset_kind=ctx.asset_kind, asset_key=ctx.asset_key)
+    if resolved is not None:
+        return resolved
+
+    if spec == "latest":
+        return gateway.assets.get_latest_version_hash(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            asset_kind=ctx.asset_kind,
+            asset_key=ctx.asset_key,
+        )
+    return None
+
+
+@dataclass(frozen=True)
+class AssetVersionResolutionContext:
+    repo: str
+    commit: str
+    asset_kind: str
+    asset_key: str
+
+
+@dataclass(frozen=True)
+class _AssetVersionRow:
+    schema_hash: str | None
+    row_count: int | None
+    bytes: int | None
+
+
+SCHEMA_ROWCOUNT_DIFF_KIND = "schema_rowcount"
+
+
+def _load_asset_version_row(
+    gateway: StorageGateway,
+    ctx: AssetVersionResolutionContext,
+    version_hash: str,
+) -> _AssetVersionRow | None:
+    row = gateway.execute(
+        """
+        SELECT schema_hash, row_count, bytes
+        FROM build.asset_versions
+        WHERE repo = ? AND commit = ? AND asset_kind = ? AND asset_key = ? AND version_hash = ?
+        """,
+        [ctx.repo, ctx.commit, ctx.asset_kind, ctx.asset_key, version_hash],
+    ).fetchone()
+    if row is None:
+        return None
+    return _AssetVersionRow(
+        schema_hash=str(row[0]) if row[0] else None,
+        row_count=int(row[1]) if row[1] is not None else None,
+        bytes=int(row[2]) if row[2] is not None else None,
+    )
+
+
+def _compute_schema_rowcount_diff_summary(
+    from_row: _AssetVersionRow,
+    to_row: _AssetVersionRow,
+) -> dict[str, object]:
+    row_count_delta: int | None = None
+    if isinstance(from_row.row_count, int) and isinstance(to_row.row_count, int):
+        row_count_delta = to_row.row_count - from_row.row_count
+
+    bytes_delta: int | None = None
+    if isinstance(from_row.bytes, int) and isinstance(to_row.bytes, int):
+        bytes_delta = to_row.bytes - from_row.bytes
+
+    return {
+        "schema": {"from": from_row.schema_hash, "to": to_row.schema_hash},
+        "row_count": {"from": from_row.row_count, "to": to_row.row_count, "delta": row_count_delta},
+        "bytes": {"from": from_row.bytes, "to": to_row.bytes, "delta": bytes_delta},
+    }
+
+
+def _get_or_compute_schema_rowcount_diff(
+    gateway: StorageGateway,
+    *,
+    version_ctx: AssetVersionResolutionContext,
+    from_hash: str,
+    to_hash: str,
+) -> tuple[dict[str, Any] | None, bool]:
+    cached_record = gateway.assets.get_cached_diff(
+        asset_kind=version_ctx.asset_kind,
+        asset_key=version_ctx.asset_key,
+        from_version_hash=from_hash,
+        to_version_hash=to_hash,
+        diff_kind=SCHEMA_ROWCOUNT_DIFF_KIND,
+    )
+    if cached_record is not None and cached_record.summary is not None:
+        return cast("dict[str, Any]", cached_record.summary), True
+
+    from_row = _load_asset_version_row(gateway, version_ctx, from_hash)
+    to_row = _load_asset_version_row(gateway, version_ctx, to_hash)
+    if from_row is None or to_row is None:
+        return None, False
+
+    summary = _compute_schema_rowcount_diff_summary(from_row, to_row)
+    gateway.assets.save_cached_diff(
+        AssetDiffRecord(
+            asset_kind=version_ctx.asset_kind,
+            asset_key=version_ctx.asset_key,
+            from_version_hash=from_hash,
+            to_version_hash=to_hash,
+            diff_kind=SCHEMA_ROWCOUNT_DIFF_KIND,
+            summary=summary,
+            computed_by_run_id=None,
+        )
+    )
+    return cast("dict[str, Any]", summary), False
+
+
+def build_diff_handler(ctx: CommandContext) -> CliResult[BuildDiffResult]:
+    """Handle build diff command.
+
+    Parameters
+    ----------
+    ctx
+        Command context.
+
+    Returns
+    -------
+    CliResult[BuildDiffResult]
+        Diff result.
+    """
+    gateway = ctx.gateway
+
+    asset = ctx.params.get_str("asset")
+    from_spec = ctx.params.get_str("from_spec")
+    to_spec = ctx.params.get_str("to_spec")
+    output_format = ctx.params.get_str("output_format") or "json"
+
+    if not asset or not from_spec or not to_spec:
+        return fail_invalid_target_selection("Missing --asset, --from, or --to")
+
+    asset_kind = _infer_asset_kind(asset)
+    version_ctx = AssetVersionResolutionContext(
+        repo=ctx.runtime.snapshot.repo,
+        commit=ctx.runtime.snapshot.commit,
+        asset_kind=asset_kind,
+        asset_key=asset,
+    )
+
+    from_hash = _resolve_version_spec(
+        gateway,
+        spec=from_spec,
+        ctx=version_ctx,
+    )
+    to_hash = _resolve_version_spec(
+        gateway,
+        spec=to_spec,
+        ctx=version_ctx,
+    )
+    if from_hash is None or to_hash is None:
+        return fail_invalid_targets("Unable to resolve from/to version specs")
+
+    diffs, cached = _get_or_compute_schema_rowcount_diff(
+        gateway,
+        version_ctx=version_ctx,
+        from_hash=from_hash,
+        to_hash=to_hash,
+    )
+    if diffs is None:
+        return fail_invalid_targets("Version hashes not found in current snapshot catalog")
+
+    return CliResult.ok(
+        BuildDiffResult(
+            asset=asset,
+            asset_kind=asset_kind,
+            from_spec=from_spec,
+            to_spec=to_spec,
+            from_version_hash=from_hash,
+            to_version_hash=to_hash,
+            diffs=diffs,
+            cached=cached,
+            format=output_format,
+        )
+    )
+
+
 __all__ = [
     "BuildGraphResult",
     "BuildHistoryResult",
@@ -1062,10 +1686,15 @@ __all__ = [
     "BuildStatusResult",
     "RunMode",
     "TargetScope",
+    "build_assets_handler",
+    "build_diff_handler",
     "build_explain_handler",
     "build_graph_handler",
     "build_history_handler",
+    "build_lineage_handler",
     "build_plan_handler",
+    "build_promote_handler",
+    "build_resolve_handler",
     "build_run_handler",
     "build_status_handler",
 ]

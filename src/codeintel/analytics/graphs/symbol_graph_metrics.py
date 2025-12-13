@@ -30,7 +30,6 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -56,7 +55,8 @@ def compute_symbol_graph_metrics_modules(
         snapshot,
         runtime_opts,
     )
-    ensure_schema(gateway.con, "analytics.symbol_graph_metrics_modules")
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.symbol_graph_metrics_modules")
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -162,7 +162,8 @@ def compute_symbol_graph_metrics_functions(
         snapshot,
         runtime_opts,
     )
-    ensure_schema(gateway.con, "analytics.symbol_graph_metrics_functions")
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.symbol_graph_metrics_functions")
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,

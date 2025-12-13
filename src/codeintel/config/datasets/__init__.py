@@ -36,6 +36,23 @@ from codeintel.config.datasets.contracts import (
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
 
+from codeintel.config.datasets.columns import (
+    AST_METRICS_DELETE,
+    AST_NODES_DELETE,
+    CALL_GRAPH_EDGES_DELETE,
+    CALL_GRAPH_NODES_DELETE,
+    CFG_BLOCKS_DELETE,
+    CFG_EDGES_DELETE,
+    CST_NODES_DELETE,
+    DFG_EDGES_DELETE,
+    FILE_STATE_DELETE,
+    GOID_CROSSWALK_UPDATE_SCIP,
+    SYMBOL_USE_DELETE,
+    TAGS_INDEX_DELETE,
+    TEST_CATALOG_UPDATE_GOIDS,
+    load_columns_by_table,
+    serialize_row,
+)
 from codeintel.config.datasets.constraints import (
     Constraint,
     ConstraintKind,
@@ -198,30 +215,29 @@ from codeintel.config.datasets.schema_registry import (
     DatasetSchemaRegistry,
     get_schema,
 )
-from codeintel.config.datasets.sql import (
-    AST_METRICS_DELETE,
-    AST_NODES_DELETE,
-    CALL_GRAPH_NODES_DELETE,
-    CFG_BLOCKS_DELETE,
-    CFG_EDGES_DELETE,
-    CST_NODES_DELETE,
-    DFG_EDGES_DELETE,
-    FILE_STATE_DELETE,
-    GOID_CROSSWALK_UPDATE_SCIP,
-    SYMBOL_USE_DELETE,
-    TAGS_INDEX_DELETE,
-    TEST_CATALOG_UPDATE_GOIDS,
-    build_delete_sql,
-    build_delete_sql_by_table,
-    build_insert_sql,
-    build_insert_sql_by_table,
-    get_contract_columns,
-    get_delete_sql_by_table,
-    get_insert_sql_by_table,
-    get_table_columns,
-    load_columns_by_table,
-    serialize_row,
+from codeintel.config.datasets.validation import (
+    ValidationMode,
+    get_pandera_schema,
+    validate_df,
+    validate_rows,
 )
+
+
+def get_table_columns(table_key: str) -> list[str]:
+    """Return ordered column names for a specific table.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (e.g., "core.ast_nodes").
+
+    Returns
+    -------
+    list[str]
+        Column names in storage order.
+    """
+    return list(load_columns_by_table().get(table_key, []))
+
 
 _EXPORTS_FOR_API: dict[str, object] = {
     "Constraint": Constraint,
@@ -257,9 +273,6 @@ COMPOSITE_SCHEMAS: dict[str, CompositeSchema] = get_composite_schemas()
 DATASET_CONTRACTS: dict[str, DatasetContract] = get_dataset_contracts()
 DATASET_CONTRACTS_BY_TABLE_KEY: dict[str, DatasetContract] = get_dataset_contracts_by_table_key()
 ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = get_row_bindings()
-INSERT_SQL_BY_TABLE: dict[str, str] = get_insert_sql_by_table()
-DELETE_SQL_BY_TABLE: dict[str, str] = get_delete_sql_by_table()
-
 
 JSON_SCHEMA_BY_DATASET_NAME: dict[str, str] = {
     name: contract.json_schema_id
@@ -328,6 +341,7 @@ __all__ = [
     "AST_METRICS_DELETE",
     "AST_NODES_DELETE",
     "BEHAVIORAL_COVERAGE_COLUMNS",
+    "CALL_GRAPH_EDGES_DELETE",
     "CALL_GRAPH_NODES_DELETE",
     "CFG_BLOCKS_DELETE",
     "CFG_EDGES_DELETE",
@@ -340,7 +354,6 @@ __all__ = [
     "DATASET_CONTRACTS_BY_TABLE_KEY",
     "DEFAULT_JSONL_FILENAMES",
     "DEFAULT_PARQUET_FILENAMES",
-    "DELETE_SQL_BY_TABLE",
     "DEPENDENCIES_BY_DATASET_NAME",
     "DESCRIPTION_BY_DATASET_NAME",
     "DFG_EDGES_DELETE",
@@ -360,7 +373,6 @@ __all__ = [
     "GRAPH_METRICS_FUNCTIONS_EXT_COLUMNS",
     "GRAPH_METRICS_MODULES_COLUMNS",
     "GRAPH_METRICS_MODULES_EXT_COLUMNS",
-    "INSERT_SQL_BY_TABLE",
     "JSON_SCHEMA_BY_DATASET_NAME",
     "MODULE_ENTITY_COLS",
     "MODULE_PROFILE_COLUMNS",
@@ -439,14 +451,11 @@ __all__ = [
     "TestCatalogRowModel",
     "TestCoverageEdgeRow",
     "TypednessRow",
+    "ValidationMode",
     "behavioral_coverage_row_to_tuple",
     "build_all_schemas",
     "build_contract_dataflow_graph",
     "build_dataset_schema",
-    "build_delete_sql",
-    "build_delete_sql_by_table",
-    "build_insert_sql",
-    "build_insert_sql_by_table",
     "call_graph_edge_to_tuple",
     "call_graph_node_to_tuple",
     "config_value_to_tuple",
@@ -463,11 +472,9 @@ __all__ = [
     "function_types_row_to_tuple",
     "function_validation_row_to_tuple",
     "get_composite_schemas",
-    "get_contract_columns",
     "get_dataset_contracts",
     "get_dataset_contracts_by_table_key",
-    "get_delete_sql_by_table",
-    "get_insert_sql_by_table",
+    "get_pandera_schema",
     "get_row_bindings",
     "get_schema",
     "get_table_columns",
@@ -496,6 +503,8 @@ __all__ = [
     "subsystem_profile_cache_to_tuple",
     "typed_dict_from_pandera",
     "typedness_row_to_tuple",
+    "validate_df",
+    "validate_rows",
 ]
 
 __all__ += [name for name in _EXPORTS_FOR_API if name not in __all__]

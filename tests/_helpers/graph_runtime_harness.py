@@ -24,7 +24,6 @@ from codeintel.analytics.graphs.symbol_graph_metrics import (
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import ConfigDataFlowStepConfig, GraphMetricsStepConfig
-from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.fakes.graph_runtime import (
     CountingGraphEngineAdapter,
     build_graph_engine_double,
@@ -136,13 +135,8 @@ def build_graph_runtime_harness(tmp_path: Path) -> GraphRuntimeHarness:
     snapshot = SnapshotRef(repo="demo/repo", commit="abc123", repo_root=tmp_path / "repo")
     paths = build_source_files(snapshot.repo_root)
     gateway = GatewayFactory().with_snapshot(snapshot.repo, snapshot.commit).open()
+    gateway.policy.ensure_schemas_preserve()
     now = datetime.now(tz=UTC)
-
-    for table in (
-        "analytics.graph_metrics_functions_ext",
-        "analytics.graph_metrics_modules_ext",
-    ):
-        ensure_schema(gateway.con, table)
 
     goids = {
         "func_a": GOID_FUNC_A,

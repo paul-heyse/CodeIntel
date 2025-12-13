@@ -11,10 +11,10 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
 from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import (
     DuckDBConnection,
 )
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -138,8 +138,9 @@ def compute_history_timeseries(
         log.info("No commits provided for history_timeseries; skipping.")
         return
 
+    backend = DuckDBPolicyBackend(history_gateway)
+    backend.ensure_table("analytics.history_timeseries")
     history_con = history_gateway.con
-    ensure_schema(history_con, "analytics.history_timeseries")
 
     history_con.execute(
         "DELETE FROM analytics.history_timeseries WHERE repo = ?",

@@ -148,69 +148,48 @@ def _exception_to_problem(exc: BaseException) -> ProblemDetail:
     ProblemDetail
         Structured problem representation.
     """
+    detail = str(exc) if str(exc) else None
+    extensions: dict[str, object] | None = None
+    error_type = ErrorType.INTERNAL
+    title = "Internal Error"
+    status = CLI_EXIT_VALIDATION
+
     if isinstance(exc, CliError):
         error_type = ErrorType.VALIDATION
         if isinstance(exc, UnknownOptionCliError):
             error_type = ErrorType.UNKNOWN_OPTION
         elif isinstance(exc, UnknownCommandCliError):
             error_type = ErrorType.UNKNOWN_COMMAND
-        return ProblemDetail(
-            type=error_type.value,
-            title=error_type.name.replace("_", " ").title(),
-            status=exc.exit_code,
-            detail=exc.message,
-        )
-
-    if isinstance(exc, UnknownOptionError):
-        message = _format_unknown_option(exc)
-        return ProblemDetail(
-            type=ErrorType.UNKNOWN_OPTION.value,
-            title="Unknown Option",
-            status=CLI_EXIT_USAGE,
-            detail=message,
-        )
-
-    if isinstance(exc, UnknownCommandError):
-        message = _format_unknown_command(exc)
-        return ProblemDetail(
-            type=ErrorType.UNKNOWN_COMMAND.value,
-            title="Unknown Command",
-            status=CLI_EXIT_USAGE,
-            detail=message,
-        )
-
-    if isinstance(exc, CoercionError):
-        return ProblemDetail(
-            type=ErrorType.VALIDATION.value,
-            title="Validation Error",
-            status=CLI_EXIT_VALIDATION,
-            detail=str(exc) if str(exc) else None,
-        )
-
-    if isinstance(exc, ResolutionError):
-        return ProblemDetail(
-            type=ErrorType.VALIDATION.value,
-            title="Validation Error",
-            status=CLI_EXIT_VALIDATION,
-            detail=str(exc) if str(exc) else None,
-        )
-
-    if isinstance(exc, SystemExit):
-        exit_code = exc.code if isinstance(exc.code, int) else CLI_EXIT_VALIDATION
-        message = str(exc) if str(exc) else None
-        return ProblemDetail(
-            type=ErrorType.RUNTIME.value,
-            title="System Exit",
-            status=exit_code,
-            detail=message,
-        )
+        title = error_type.name.replace("_", " ").title()
+        status = exc.exit_code
+        detail = exc.message
+    elif isinstance(exc, UnknownOptionError):
+        error_type = ErrorType.UNKNOWN_OPTION
+        title = "Unknown Option"
+        status = CLI_EXIT_USAGE
+        detail = _format_unknown_option(exc)
+    elif isinstance(exc, UnknownCommandError):
+        error_type = ErrorType.UNKNOWN_COMMAND
+        title = "Unknown Command"
+        status = CLI_EXIT_USAGE
+        detail = _format_unknown_command(exc)
+    elif isinstance(exc, (CoercionError, ResolutionError)):
+        error_type = ErrorType.VALIDATION
+        title = "Validation Error"
+        status = CLI_EXIT_VALIDATION
+    elif isinstance(exc, SystemExit):
+        error_type = ErrorType.RUNTIME
+        title = "System Exit"
+        status = exc.code if isinstance(exc.code, int) else CLI_EXIT_VALIDATION
+    else:
+        extensions = {"exception_type": type(exc).__name__}
 
     return ProblemDetail(
-        type=ErrorType.INTERNAL.value,
-        title="Internal Error",
-        status=CLI_EXIT_VALIDATION,
-        detail=str(exc) if str(exc) else None,
-        extensions={"exception_type": type(exc).__name__},
+        type=error_type.value,
+        title=title,
+        status=status,
+        detail=detail,
+        extensions=extensions,
     )
 
 

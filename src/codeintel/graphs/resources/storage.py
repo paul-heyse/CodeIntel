@@ -89,9 +89,9 @@ class StorageResource:
         """
         try:
             if params is not None:
-                result = self.gateway.con.execute(sql, list(params))
+                result = self.gateway.execute(sql, list(params))
             else:
-                result = self.gateway.con.execute(sql)
+                result = self.gateway.execute(sql)
             rows = result.fetchall()
             return QueryResult.from_rows([tuple(row) for row in rows])
         except (RuntimeError, OSError, TypeError, ValueError) as exc:
@@ -119,9 +119,9 @@ class StorageResource:
         """
         try:
             if params is not None:
-                result = self.gateway.con.execute(sql, list(params))
+                result = self.gateway.execute(sql, list(params))
             else:
-                result = self.gateway.con.execute(sql)
+                result = self.gateway.execute(sql)
 
             row = result.fetchone()
             return row[0] if row else 0

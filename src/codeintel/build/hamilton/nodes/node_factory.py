@@ -17,10 +17,9 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from hamilton.function_modifiers import tag
 
@@ -39,7 +38,12 @@ from codeintel.build.hamilton.naming import (
 )
 from codeintel.build.hamilton.nodes.targets_phase0 import _run_target
 from codeintel.build.registry import get_target_graph
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import TargetGraph
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.build.targets import OutputTarget
 
 __all__ = [
     "GenerationOptions",
@@ -54,7 +58,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class _GeneratedModuleCache:
     module: ModuleType | None = None
-    config_key: tuple[bool, bool, bool, frozenset[str], frozenset[str]] | None = None
+    config_key: tuple[bool, bool, bool, bool, frozenset[str], frozenset[str]] | None = None
 
 
 _MODULE_CACHE = _GeneratedModuleCache()
@@ -76,11 +80,12 @@ def _set_signature[T](fn: Callable[..., T], signature: inspect.Signature) -> Cal
 class GenerationOptions:
     """Configuration for generated Hamilton node modules."""
 
-    include_targets: set[str] | None = None
-    exclude_targets: set[str] | None = None
+    include_target_nodes: bool = True
     include_dataset_nodes: bool = True
     include_loader_nodes: bool = True
     include_artifact_nodes: bool = True
+    include_targets: set[str] | None = None
+    exclude_targets: set[str] | None = None
 
 
 def _create_node_function(
@@ -381,15 +386,17 @@ def _generate_nodes_for_target(
     options: GenerationOptions,
     mappings: _GeneratedMappings,
 ) -> None:
-    dep_node_names = [target_node(dep) for dep in target.dependencies]
-    node_fn = _create_node_function(
-        target=target,
-        dep_node_names=dep_node_names,
-        domain=meta_domain,
-    )
-    node_name = target_node(target.name)
-    setattr(module, node_name, node_fn)
-    mappings.target_to_node[target.name] = node_name
+    # Generate target node only if enabled
+    if options.include_target_nodes:
+        dep_node_names = [target_node(dep) for dep in target.dependencies]
+        node_fn = _create_node_function(
+            target=target,
+            dep_node_names=dep_node_names,
+            domain=meta_domain,
+        )
+        node_name = target_node(target.name)
+        setattr(module, node_name, node_fn)
+        mappings.target_to_node[target.name] = node_name
 
     if options.include_dataset_nodes:
         table_keys = target.contract.table_keys or target.table_keys
@@ -505,8 +512,9 @@ def build_target_module(
 
 def _cache_key(
     options: GenerationOptions,
-) -> tuple[bool, bool, bool, frozenset[str], frozenset[str]]:
+) -> tuple[bool, bool, bool, bool, frozenset[str], frozenset[str]]:
     return (
+        options.include_target_nodes,
         options.include_dataset_nodes,
         options.include_loader_nodes,
         options.include_artifact_nodes,
@@ -515,7 +523,7 @@ def _cache_key(
     )
 
 
-def _should_use_cache(key: tuple[bool, bool, bool, frozenset[str], frozenset[str]]) -> bool:
+def _should_use_cache(key: tuple[bool, bool, bool, bool, frozenset[str], frozenset[str]]) -> bool:
     return _MODULE_CACHE.module is not None and _MODULE_CACHE.config_key == key
 
 

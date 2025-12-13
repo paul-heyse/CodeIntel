@@ -8,7 +8,6 @@ This package provides foundational infrastructure used across the ingestion syst
 - `cst_utils`: CST visitor helpers for LibCST-based parsing
 - `ast_utils`: AST parsing and span lookup utilities
 - `safe_sql`: Validated SQL identifiers preventing injection vulnerabilities
-- `macros`: DuckDB ingestion macro utilities and table registry
 - `db_queries`: Safe database query helpers
 
 NOTE: This package was renamed from 'utilities' to 'infrastructure' for alignment
@@ -45,15 +44,10 @@ from codeintel.ingestion.infrastructure.db_queries import (
     safe_count_orphan_refs,
     safe_count_with_scope,
     safe_get_columns,
-    safe_macro_exists,
     safe_max_value,
     safe_min_value,
     safe_not_null_fraction,
     safe_table_exists,
-)
-from codeintel.ingestion.infrastructure.macros import (
-    INGEST_MACRO_TABLES,
-    macro_exists,
 )
 from codeintel.ingestion.infrastructure.paths import (
     ensure_repo_root,
@@ -97,7 +91,6 @@ __all__ = [
     "DEFAULT_MIN_WORKERS",
     "DUCKDB_QUERY_ERRORS",
     "IGNORES",
-    "INGEST_MACRO_TABLES",
     "AstSpanIndex",
     "ColumnNotFoundError",
     "CstCaptureConfig",
@@ -119,7 +112,6 @@ __all__ = [
     "default_config_profile",
     "ensure_repo_root",
     "executor_factory",
-    "macro_exists",
     "normalize_rel_path",
     "parse_python_module",
     "profile_from_env",
@@ -134,7 +126,6 @@ __all__ = [
     "safe_count_orphan_refs",
     "safe_count_with_scope",
     "safe_get_columns",
-    "safe_macro_exists",
     "safe_max_value",
     "safe_min_value",
     "safe_not_null_fraction",

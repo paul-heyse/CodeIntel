@@ -31,7 +31,6 @@ from codeintel.serving.services.errors import ExportError, ProblemDetails, log_p
 from codeintel.storage.gateway import (
     DuckDBError,
 )
-from codeintel.storage.sql.builder import prepared_statements_dynamic
 from codeintel.storage.validation import _schema_path
 
 if TYPE_CHECKING:
@@ -49,10 +48,6 @@ log = logging.getLogger(__name__)
 MAX_EXPORT_LIMIT = 9_223_372_036_854_775_807
 AUDIT_LOG_PATH = os.getenv("CODEINTEL_EXPORT_AUDIT_LOG")
 AUDIT_TABLE_ENABLED = os.getenv("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
-
-
-def _env_flag(name: str) -> bool:
-    return os.getenv(name, "false").lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -146,13 +141,10 @@ def _schema_digest(dataset: DatasetContract | None) -> str | None:
     return compute_file_hash(schema_file)
 
 
-def _row_count(con: DuckDBConnection, table_name: str) -> int | None:
+def _row_count(gateway: StorageGateway, table_name: str) -> int | None:
     try:
-        stmts = prepared_statements_dynamic(con, table_name)
-        if stmts.select_sql is None:
-            return None
-        relation = con.sql(stmts.select_sql, params=stmts.select_params or [])
-        row = relation.count("*").fetchone()
+        table = gateway.ibis.table(table_name)
+        row = table.count().execute()
     except DuckDBError:
         log.debug("Row count unavailable for %s", table_name, exc_info=True)
         return None
@@ -227,8 +219,6 @@ def export_parquet_for_table(
     gateway: StorageGateway,
     table_name: str,
     output_path: Path,
-    *,
-    require_normalized_macros: bool = False,
 ) -> None:
     """
     Export a single DuckDB table to Parquet.
@@ -245,10 +235,6 @@ def export_parquet_for_table(
         raise ValueError(message)
     log.info("Exporting %s -> %s", table_name, output_path)
     start = perf_counter()
-    if require_normalized_macros:
-        log.warning(
-            "require_normalized_macros is deprecated; exports are macro-free and use Ibis normalization"
-        )
     rel = _export_relation(gateway, table_name, MAX_EXPORT_LIMIT, 0)
     macro_name = "ibis_export"
     write_parquet = getattr(rel, "write_parquet", None)
@@ -316,6 +302,7 @@ def export_dataset_to_parquet(
     ValueError
         If the dataset name is unknown.
     """
+    _ = options
     dataset_mapping = gateway.datasets.mapping
     parquet_mapping = gateway.datasets.parquet_mapping or {}
     if dataset_name not in dataset_mapping:
@@ -324,12 +311,10 @@ def export_dataset_to_parquet(
     table_name = dataset_mapping[dataset_name]
     filename = parquet_mapping.get(table_name, f"{dataset_name}.parquet")
     output_path = output_dir / filename
-    opts = options or ExportCallOptions()
     export_parquet_for_table(
         gateway,
         table_name,
         output_path,
-        require_normalized_macros=opts.require_normalized_macros,
     )
     return output_path
 
@@ -339,7 +324,6 @@ def _export_dataset_parquet(
     target: ExportTarget,
     *,
     opts: ExportCallOptions,
-    require_normalized_macros: bool,
 ) -> Path | None:
     if target.dataset is not None and not target.dataset.capabilities()["can_export_parquet"]:
         log.warning("Skipping dataset %s; Parquet export not supported", target.dataset_name)
@@ -349,7 +333,7 @@ def _export_dataset_parquet(
     marker = read_incremental_marker(target.output_path)
     current_row_count: int | None = None
     if target.dataset is None or not target.dataset.is_view:
-        current_row_count = _row_count(gateway.con, target.table_name)
+        current_row_count = _row_count(gateway, target.table_name)
     criteria = SkipCriteria(
         row_count=current_row_count,
         schema_version=target.dataset.schema_version if target.dataset else None,
@@ -373,14 +357,13 @@ def _export_dataset_parquet(
             gateway,
             target.table_name,
             target.output_path,
-            require_normalized_macros=require_normalized_macros,
         )
         data_hash = compute_file_hash(target.output_path)
         completed_at = datetime.now(UTC)
         final_row_count = (
             current_row_count
             if current_row_count is not None
-            else _row_count(gateway.con, target.table_name)
+            else _row_count(gateway, target.table_name)
         )
     except (DuckDBError, OSError, ValueError) as exc:
         log.warning(
@@ -480,9 +463,6 @@ def export_all_parquet(
         log.warning("Skipping %s; table not present in dataset registry", table_name)
 
     written: list[Path] = []
-    require_normalized = opts.require_normalized_macros or _env_flag(
-        "CODEINTEL_REQUIRE_NORMALIZED_MACROS"
-    )
 
     for dataset_name, table_name in sorted(selected.items()):
         filename = parquet_mapping.get(table_name, f"{dataset_name}.parquet")
@@ -496,7 +476,6 @@ def export_all_parquet(
             gateway,
             target,
             opts=opts,
-            require_normalized_macros=require_normalized,
         )
         if exported is not None:
             written.append(exported)

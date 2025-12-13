@@ -43,8 +43,8 @@ from codeintel.analytics.parsing.validation import FunctionValidationReporter
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
 )
+from codeintel.config.datasets.validation import validate_df
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.pandera_schemas import validate_dataset_df
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -624,7 +624,7 @@ def persist_function_analytics(
         if not rows:
             return []
         df = pd.DataFrame(rows)
-        validated = validate_dataset_df(table_key, df)
+        validated = validate_df(table_key, df)
         return validated.where(pd.notna(validated), None).to_dict(orient="records")
 
     validated_metrics = _validated_records(metrics_contract.table_key, list(metrics_rows))

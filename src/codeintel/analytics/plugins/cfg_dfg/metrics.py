@@ -13,6 +13,7 @@ from codeintel.analytics.plugins._metadata import to_plugin_metadata
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -108,7 +109,7 @@ class CfgDfgMetricsPlugin(TargetPlugin):
 
         def _count_rows(table_key: str) -> int:
             table = ctx.gateway.ibis.table(table_key)
-            filtered = table.filter((table.repo == repo) & (table.commit == commit))
+            filtered = table.filter(and_predicates(table.repo == repo, table.commit == commit))
             result_df = filtered.aggregate(row_count=table.repo.count()).execute()
             return int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
 

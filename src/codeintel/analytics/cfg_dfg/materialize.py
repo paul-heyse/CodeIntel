@@ -24,7 +24,6 @@ from codeintel.analytics.cfg_dfg.dfg_core import (
 )
 from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from codeintel.analytics.cfg_dfg.cfg_core import (
@@ -171,10 +170,10 @@ def compute_cfg_metrics(
     commit: str,
 ) -> None:
     """Populate cfg_function_metrics and cfg_block_metrics tables."""
-    con = gateway.con
-    ensure_schema(con, "analytics.cfg_function_metrics")
-    ensure_schema(con, "analytics.cfg_block_metrics")
-    ensure_schema(con, "analytics.cfg_function_metrics_ext")
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.cfg_function_metrics")
+    backend.ensure_table("analytics.cfg_block_metrics")
+    backend.ensure_table("analytics.cfg_function_metrics_ext")
 
     blocks_by_fn, edges_by_fn = load_cfg_blocks(gateway, repo, commit)
     metadata = cfg_function_metadata(gateway, repo, commit)
@@ -214,7 +213,6 @@ def compute_cfg_metrics(
         fn_ext_rows.append(rows.ext_row)
         block_rows.extend(rows.block_rows)
 
-    backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot("analytics.cfg_function_metrics", repo=repo, commit=commit)
     backend.delete_for_snapshot("analytics.cfg_function_metrics_ext", repo=repo, commit=commit)
     backend.delete_for_snapshot("analytics.cfg_block_metrics", repo=repo, commit=commit)
@@ -246,10 +244,10 @@ def compute_dfg_metrics(
     commit: str,
 ) -> None:
     """Populate dfg_function_metrics and dfg_block_metrics tables."""
-    con = gateway.con
-    ensure_schema(con, "analytics.dfg_function_metrics")
-    ensure_schema(con, "analytics.dfg_block_metrics")
-    ensure_schema(con, "analytics.dfg_function_metrics_ext")
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.dfg_function_metrics")
+    backend.ensure_table("analytics.dfg_block_metrics")
+    backend.ensure_table("analytics.dfg_function_metrics_ext")
 
     edges_by_fn = load_dfg_edges(gateway, repo, commit)
     metadata = dfg_function_metadata(gateway, repo, commit)
@@ -288,7 +286,6 @@ def compute_dfg_metrics(
         fn_ext_rows.append(dfg_ext_row(ctx))
         block_rows.extend(dfg_block_rows(ctx))
 
-    backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot("analytics.dfg_function_metrics", repo=repo, commit=commit)
     backend.delete_for_snapshot("analytics.dfg_block_metrics", repo=repo, commit=commit)
     backend.delete_for_snapshot("analytics.dfg_function_metrics_ext", repo=repo, commit=commit)

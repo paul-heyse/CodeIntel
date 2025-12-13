@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends
 
-from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http import dependencies as http_deps
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import FileHintsResponse
 from codeintel.serving.operations import get_operation
@@ -51,7 +51,9 @@ def build_ide_router(options: RouterOptions | None = None) -> APIRouter:
     path = spec.http_path
 
     auto_pipeline = options is not None and options.auto_pipeline
-    ide_deps = [Depends(make_op_prereq_dependency("ide.hints"))] if auto_pipeline else []
+    ide_deps = (
+        [Depends(http_deps.make_op_prereq_dependency("ide.hints"))] if auto_pipeline else []
+    )
 
     @router.get(
         path,
@@ -62,7 +64,7 @@ def build_ide_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def ide_hints(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         rel_path: str,
     ) -> FileHintsResponse:
         """

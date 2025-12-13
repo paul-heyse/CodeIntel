@@ -714,7 +714,6 @@ def _build_local_resource(
     if cfg.db_path is None:
         message = "db_path is required for local_db mode"
         raise ValueError(message)
-    connection = gateway.con
     effective_read_only = gateway.config.read_only
 
     verify_db_identity(gateway, cfg)

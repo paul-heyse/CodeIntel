@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 
 from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
-    DELETE_SQL_BY_TABLE,
     BehavioralCoverageRowModel,
     FunctionAstFeaturesRow,
     FunctionContractsRow,
@@ -47,10 +46,10 @@ from codeintel.config.datasets import (
     graph_metrics_modules_row_to_tuple,
     serialize_test_profile_row,
 )
+from codeintel.config.datasets.validation import validate_df
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.pandera_schemas import validate_dataset_df
 
 type RowType = Mapping[str, object]
 RowT = TypeVar("RowT", bound=RowType)
@@ -325,13 +324,12 @@ def validate_contract_rows(
     """
     if not rows:
         return []
-    df = validate_dataset_df(table_key, pd.DataFrame(rows))
+    df = validate_df(table_key, pd.DataFrame(rows))
     normalized = df.where(pd.notna(df), None)
     return normalized.to_dict(orient="records")
 
 
 __all__ = [
-    "DELETE_SQL_BY_TABLE",
     "AnalyticsDatasetContract",
     "build_analytics_dataset_contracts",
     "get_analytics_dataset_contract",
@@ -393,7 +391,7 @@ def validate_tuple_rows(
         tuple_rows = cast("Sequence[Sequence[object]]", rows)
         df = pd.DataFrame(tuple_rows, columns=columns_index)
 
-    validated = validate_dataset_df(table_key, df)
+    validated = validate_df(table_key, df)
     normalized = validated.where(pd.notna(validated), None)
     ordered = normalized.loc[:, columns_index]
     return [tuple(row) for row in ordered.itertuples(index=False, name=None)]

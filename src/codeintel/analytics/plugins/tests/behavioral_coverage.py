@@ -97,7 +97,7 @@ class BehavioralCoveragePlugin(TargetPlugin):
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Behavioral coverage build failed: {e}")
 
-        row = ctx.gateway.con.execute(
+        row = ctx.gateway.execute(
             """
             SELECT COUNT(*) FROM analytics.behavioral_coverage
             WHERE repo = ? AND commit = ?

@@ -493,34 +493,6 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
         return 0
 
 
-def safe_macro_exists(gateway: StorageGateway, macro_name: str) -> bool:
-    """Check if a DuckDB macro exists.
-
-    Note: This function uses raw SQL as it queries DuckDB system functions
-    which are not accessible via Ibis table interface.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway providing database access.
-    macro_name
-        Name of the macro to check.
-
-    Returns
-    -------
-    bool
-        True if macro exists, False otherwise.
-    """
-    try:
-        result = gateway.ibis.con.raw_sql(
-            "SELECT * FROM duckdb_functions() WHERE function_name = ?",
-            parameters=[macro_name],
-        ).fetchone()
-    except DUCKDB_QUERY_ERRORS:
-        return False
-    return result is not None
-
-
 __all__ = [
     "DUCKDB_QUERY_ERRORS",
     "ColumnNotFoundError",
@@ -534,7 +506,6 @@ __all__ = [
     "safe_count_orphan_refs",
     "safe_count_with_scope",
     "safe_get_columns",
-    "safe_macro_exists",
     "safe_max_value",
     "safe_min_value",
     "safe_not_null_fraction",

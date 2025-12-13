@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
+from codeintel.config.datasets.validation import dataset_json_schema
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend.domain_builders import DatasetSchemaInput, build_dataset_schema
 from codeintel.serving.backend.pagination import clamp_limit, clamp_offset
@@ -33,7 +34,6 @@ from codeintel.serving.backend.query_api import DatasetQueriesApi
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import DatasetSchemaColumn, DatasetSpecDescriptor
 from codeintel.storage.datasets import dataset_for_name, list_dataset_specs, load_dataset_registry
-from codeintel.storage.pandera_schemas import dataset_json_schema
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

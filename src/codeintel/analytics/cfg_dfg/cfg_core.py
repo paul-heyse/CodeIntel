@@ -119,7 +119,7 @@ def load_cfg_blocks(
     edges_by_fn: dict[int, list[tuple[int, int, str]]] = defaultdict(list)
 
     try:
-        block_rows: Iterable[tuple[int, int, str, int, int]] = gateway.con.execute(
+        block_rows: Iterable[tuple[int, int, str, int, int]] = gateway.execute(
             """
             SELECT function_goid_h128, block_idx, kind, in_degree, out_degree
             FROM graph.cfg_blocks
@@ -131,7 +131,7 @@ def load_cfg_blocks(
         blocks_by_fn[int(fn)].append((int(idx), str(kind), int(in_deg), int(out_deg)))
 
     try:
-        edge_rows: Iterable[tuple[int, int, int, str]] = gateway.con.execute(
+        edge_rows: Iterable[tuple[int, int, int, str]] = gateway.execute(
             """
             SELECT function_goid_h128, src_block_id, dst_block_id, edge_kind
             FROM graph.cfg_edges
@@ -428,7 +428,7 @@ def function_metadata(
     dict[int, tuple[str, str | None, str | None]]
         Mapping of GOID -> (rel_path, module, qualname).
     """
-    rows: Iterable[tuple[object, str, str | None, str | None]] = gateway.con.execute(
+    rows: Iterable[tuple[object, str, str | None, str | None]] = gateway.execute(
         """
         SELECT g.goid_h128,
                g.rel_path,

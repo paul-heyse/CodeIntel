@@ -14,6 +14,7 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.steps_analytics import HotspotsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -107,7 +108,7 @@ class HotspotsPlugin(TargetPlugin):
         for table_key in ctx.contract.table_keys:
             try:
                 table = ctx.gateway.ibis.table(table_key)
-                filtered = table.filter((table.repo == ctx.repo) & (table.commit == ctx.commit))
+                filtered = table.filter(and_predicates(table.repo == ctx.repo, table.commit == ctx.commit))
                 result_df = filtered.aggregate(row_count=table.repo.count()).execute()
                 row_count = int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
                 row_counts[table_key] = row_count
