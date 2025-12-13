@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, get_type_hints
 
 import pytest
 
-from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.datasets import (
     BehavioralCoverageRowModel,
     FunctionMetricsRow,

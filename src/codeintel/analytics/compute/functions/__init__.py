@@ -24,6 +24,11 @@ from codeintel.analytics.compute.functions.complexity import (
     ComplexityMetrics,
     compute_complexity,
 )
+from codeintel.analytics.compute.functions.goids import (
+    FunctionGoid,
+    FunctionGoidLoader,
+    GoidRow,
+)
 from codeintel.analytics.compute.functions.loc import (
     LinesOfCode,
     compute_loc,
@@ -41,7 +46,10 @@ from codeintel.analytics.compute.functions.typedness import (
 
 __all__ = [
     "ComplexityMetrics",
+    "FunctionGoid",
+    "FunctionGoidLoader",
     "FunctionSignature",
+    "GoidRow",
     "LinesOfCode",
     "ParamStats",
     "TypednessFlags",

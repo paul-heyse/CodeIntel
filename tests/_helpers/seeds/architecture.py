@@ -6,11 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.datasets import (
     GraphMetricsFunctionsExtRow,
     GraphMetricsFunctionsRow,

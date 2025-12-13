@@ -120,7 +120,6 @@ PENDING_IBIS_MIGRATION_ANALYTICS = frozenset(
         Path("src/codeintel/analytics/plugins/risk/factors.py"),
         # Other
         Path("src/codeintel/analytics/parsing/validation.py"),
-        Path("src/codeintel/analytics/adapters/dependencies.py"),
         # CLI handlers with history SQL
         Path("src/codeintel/cli/handlers/history.py"),
         # CLI services with test-related SQL examples

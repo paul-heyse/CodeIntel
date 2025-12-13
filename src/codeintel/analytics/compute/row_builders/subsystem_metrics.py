@@ -39,8 +39,7 @@ class SubsystemMetricInputs:
 
 
 def build_subsystem_graph_rows(inputs: SubsystemMetricInputs) -> list[SubsystemMetricRow]:
-    """
-    Construct rows for analytics.subsystem_graph_metrics.
+    """Construct rows for analytics.subsystem_graph_metrics.
 
     Returns
     -------
@@ -64,4 +63,4 @@ def build_subsystem_graph_rows(inputs: SubsystemMetricInputs) -> list[SubsystemM
     ]
 
 
-__all__ = ["SubsystemMetricInputs", "build_subsystem_graph_rows"]
+__all__ = ["SubsystemMetricInputs", "SubsystemMetricRow", "build_subsystem_graph_rows"]

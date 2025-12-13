@@ -26,8 +26,7 @@ if TYPE_CHECKING:
 
 
 def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
-    """
-    Convert DataFrame rows into a list of dictionaries.
+    """Convert DataFrame rows into a list of dictionaries.
 
     Returns
     -------
@@ -66,12 +65,11 @@ class ModuleGraphMetricInputs:
 def build_function_graph_metric_rows(
     inputs: FunctionGraphMetricInputs,
 ) -> list[GraphMetricsFunctionsRow]:
-    """
-    Construct rows for analytics.graph_metrics_functions.
+    """Construct rows for analytics.graph_metrics_functions.
 
     Parameters
     ----------
-    inputs :
+    inputs
         Aggregated inputs capturing configuration, metrics, and ordering.
 
     Returns
@@ -157,8 +155,7 @@ def merge_component_metadata(
     computed: Mapping[str, Mapping[Any, int | bool]],
     cached: Mapping[str, Mapping[Any, int | bool]] | None,
 ) -> dict[str, dict[Any, int | bool]]:
-    """
-    Overlay cached component metadata on computed values when available.
+    """Overlay cached component metadata on computed values when available.
 
     Returns
     -------
@@ -255,12 +252,11 @@ def load_symbol_module_edges(
 def build_module_graph_metric_rows(
     inputs: ModuleGraphMetricInputs,
 ) -> list[GraphMetricsModulesRow]:
-    """
-    Construct rows for analytics.graph_metrics_modules.
+    """Construct rows for analytics.graph_metrics_modules.
 
     Parameters
     ----------
-    inputs :
+    inputs
         Aggregated inputs capturing configuration, metrics, and derived mappings.
 
     Returns
@@ -300,6 +296,8 @@ def build_module_graph_metric_rows(
 
 
 __all__ = [
+    "FunctionGraphMetricInputs",
+    "ModuleGraphMetricInputs",
     "build_function_graph_metric_rows",
     "build_module_graph_metric_rows",
     "component_metadata_from_import_table",

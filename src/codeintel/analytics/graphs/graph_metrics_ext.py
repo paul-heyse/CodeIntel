@@ -9,15 +9,14 @@ from typing import TYPE_CHECKING, cast
 
 import networkx as nx
 
-from codeintel.analytics.adapters.base import DeleteScope
-from codeintel.analytics.adapters.graphs import (
-    FunctionMetricExtInputs,
-    build_function_metric_ext_rows,
-)
 from codeintel.analytics.compute.graphs import (
     centrality_directed,
     component_metadata,
     structural_metrics,
+)
+from codeintel.analytics.compute.row_builders import (
+    FunctionMetricExtInputs,
+    build_function_metric_ext_rows,
 )
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
 from codeintel.analytics.runtime import (
@@ -34,6 +33,7 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
     validate_contract_rows,
 )
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 

@@ -8,13 +8,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.utilities.datasets import (
     get_function_ast_features_contract,
     insert_analytics_rows,
 )
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata

@@ -18,6 +18,8 @@ subsystems
     Subsystem clustering and classification.
 semantic_roles
     Semantic role classification for functions and modules.
+row_builders
+    Row builder functions for constructing typed rows from computed metrics.
 """
 
 from __future__ import annotations

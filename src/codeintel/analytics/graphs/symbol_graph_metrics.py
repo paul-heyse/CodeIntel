@@ -6,17 +6,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.adapters.graphs import (
-    SymbolFunctionMetricInputs,
-    SymbolModuleMetricInputs,
-    build_symbol_function_rows,
-    build_symbol_module_rows,
-)
 from codeintel.analytics.compute.graphs import (
     centrality_undirected,
     component_ids_undirected,
     log_empty_graph,
     structural_metrics,
+)
+from codeintel.analytics.compute.row_builders import (
+    SymbolFunctionMetricInputs,
+    SymbolModuleMetricInputs,
+    build_symbol_function_rows,
+    build_symbol_module_rows,
 )
 from codeintel.analytics.runtime import (
     GraphRuntime,

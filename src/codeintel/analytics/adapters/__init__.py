@@ -1,84 +1,67 @@
-"""Persistence adapters for analytics data access.
+"""DEPRECATED: Analytics adapters have been removed.
 
-This package provides adapter classes that handle all database I/O for
-analytics modules. Adapters encapsulate:
-- Loading data from DuckDB tables
-- Persisting computed results
-- Managing transaction boundaries
+.. deprecated:: 4.0.0
+    The analytics adapters package has been removed. Migrate to:
 
-By separating I/O into adapters, the computation layer remains pure
-and easily testable.
+    - For ``DeleteScope``: Use ``codeintel.analytics.utilities.persistence.DeleteScope``
+    - For row builders: Use ``codeintel.analytics.compute.row_builders``
+    - For dependency types: Use ``codeintel.config.datasets.dependencies``
+    - For semantic role types: Use ``codeintel.config.datasets.semantic_roles``
+    - For GOID types: Use ``codeintel.analytics.compute.functions.goids``
+    - For table writes: Use ``ctx.write_table()`` in Hamilton plugins
 
-Modules
--------
-functions
-    Adapters for function metrics and types tables.
-graphs
-    Adapters for graph metrics tables.
-profiles
-    Adapters for profile aggregation tables.
-subsystems
-    Adapters for subsystem classification tables.
-semantic_roles
-    Adapters for semantic role classification tables.
-entrypoints
-    Adapters for entrypoint detection tables.
-data_models
-    Adapters for data model usage tables.
-base
-    Base adapter classes and protocols.
+This stub module exists only to provide helpful error messages.
 """
 
 from __future__ import annotations
 
-from codeintel.analytics.adapters.base import (
-    AnalyticsAdapter,
-    DeleteScope,
-)
-from codeintel.analytics.adapters.data_models import (
-    DataModelUsageAdapter,
-)
-from codeintel.analytics.adapters.entrypoints import (
-    EntrypointsAdapter,
-    EntrypointTestsAdapter,
-)
-from codeintel.analytics.adapters.functions import (
-    FunctionMetricsAdapter,
-    FunctionTypesAdapter,
-)
-from codeintel.analytics.adapters.profiles import (
-    FileProfileAdapter,
-    FunctionProfileAdapter,
-    ModuleProfileAdapter,
-)
-from codeintel.analytics.adapters.schema_adapter import (
-    SchemaAwareBatchAdapter,
-    SchemaValidationMixin,
-)
-from codeintel.analytics.adapters.semantic_roles import (
-    SemanticRolesFunctionsAdapter,
-    SemanticRolesModulesAdapter,
-)
-from codeintel.analytics.adapters.subsystems import (
-    SubsystemModulesAdapter,
-    SubsystemsAdapter,
-)
 
-__all__ = [
-    "AnalyticsAdapter",
-    "DataModelUsageAdapter",
-    "DeleteScope",
-    "EntrypointTestsAdapter",
-    "EntrypointsAdapter",
-    "FileProfileAdapter",
-    "FunctionMetricsAdapter",
-    "FunctionProfileAdapter",
-    "FunctionTypesAdapter",
-    "ModuleProfileAdapter",
-    "SchemaAwareBatchAdapter",
-    "SchemaValidationMixin",
-    "SemanticRolesFunctionsAdapter",
-    "SemanticRolesModulesAdapter",
-    "SubsystemModulesAdapter",
-    "SubsystemsAdapter",
-]
+def __getattr__(name: str) -> object:
+    """Provide helpful error messages for deprecated imports.
+
+    Parameters
+    ----------
+    name
+        Name of the attribute being accessed.
+
+    Raises
+    ------
+    ImportError
+        Raised for known deprecated imports with migration guidance.
+    AttributeError
+        Raised for unknown attributes.
+    """
+    migration_map = {
+        "DeleteScope": "codeintel.analytics.utilities.persistence.DeleteScope",
+        "BatchAdapter": "use ctx.write_table() in Hamilton plugins",
+        "AnalyticsAdapter": "use ctx.write_table() in Hamilton plugins",
+        "SimpleBatchAdapter": "use ctx.write_table() in Hamilton plugins",
+        "ComputeAdapter": "use ctx.write_table() in Hamilton plugins",
+        "InputAdapter": "use ctx.write_table() in Hamilton plugins",
+        "OutputAdapter": "use ctx.write_table() in Hamilton plugins",
+        "DependencyCallRow": "codeintel.config.datasets.dependencies.DependencyCallRow",
+        "DependencyAggregateRow": "codeintel.config.datasets.dependencies.DependencyAggregateRow",
+        "compute_dep_id": "codeintel.config.datasets.dependencies.compute_dep_id",
+        "to_decimal": "codeintel.config.datasets.dependencies.to_decimal",
+        "FunctionGoid": "codeintel.analytics.compute.functions.goids.FunctionGoid",
+        "FunctionGoidLoader": "codeintel.analytics.compute.functions.goids.FunctionGoidLoader",
+        "GoidRow": "codeintel.analytics.compute.functions.goids.GoidRow",
+        "FunctionSemanticRoleRow": "codeintel.config.datasets.semantic_roles.FunctionSemanticRoleRow",
+        "ModuleSemanticRoleRow": "codeintel.config.datasets.semantic_roles.ModuleSemanticRoleRow",
+        "SchemaValidationMixin": "use ctx.write_validated_table() in Hamilton plugins",
+        "SchemaAwareBatchAdapter": "use ctx.write_validated_table() in Hamilton plugins",
+    }
+
+    if name in migration_map:
+        suggestion = migration_map[name]
+        message = (
+            f"'{name}' has been removed from codeintel.analytics.adapters. "
+            f"Use {suggestion} instead."
+        )
+        raise ImportError(message)
+
+    message = f"module 'codeintel.analytics.adapters' has no attribute '{name}'"
+    raise AttributeError(message)
+
+
+__all__: list[str] = []

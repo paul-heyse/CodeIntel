@@ -42,8 +42,7 @@ class SymbolFunctionMetricInputs:
 
 
 def build_symbol_module_rows(inputs: SymbolModuleMetricInputs) -> list[SymbolModuleRow]:
-    """
-    Construct rows for analytics.symbol_graph_metrics_modules.
+    """Construct rows for analytics.symbol_graph_metrics_modules.
 
     Returns
     -------
@@ -72,8 +71,7 @@ def build_symbol_module_rows(inputs: SymbolModuleMetricInputs) -> list[SymbolMod
 
 
 def build_symbol_function_rows(inputs: SymbolFunctionMetricInputs) -> list[SymbolFunctionRow]:
-    """
-    Construct rows for analytics.symbol_graph_metrics_functions.
+    """Construct rows for analytics.symbol_graph_metrics_functions.
 
     Returns
     -------
@@ -103,7 +101,9 @@ def build_symbol_function_rows(inputs: SymbolFunctionMetricInputs) -> list[Symbo
 
 __all__ = [
     "SymbolFunctionMetricInputs",
+    "SymbolFunctionRow",
     "SymbolModuleMetricInputs",
+    "SymbolModuleRow",
     "build_symbol_function_rows",
     "build_symbol_module_rows",
 ]

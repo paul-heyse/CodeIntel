@@ -1,27 +1,23 @@
-"""Adapters for semantic roles analytics persistence.
+"""Semantic role row types and normalization utilities.
 
-This module provides adapters for persisting semantic role classification
-results to DuckDB.
+This module provides data types for semantic role classification tables:
+- FunctionSemanticRoleRow for analytics.semantic_roles_functions
+- ModuleSemanticRoleRow for analytics.semantic_roles_modules
+
+These types were originally in analytics.adapters.semantic_roles and were
+extracted to support direct usage without the deprecated adapter layer.
 """
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.adapters.base import BatchAdapter
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Sequence
 
-    from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
-
-log = logging.getLogger(__name__)
 
 FUNCTION_COLUMNS: tuple[str, ...] = (
     "repo",
@@ -48,7 +44,27 @@ LEGACY_MODULE_TUPLE_LEN = 5
 
 @dataclass(frozen=True)
 class FunctionSemanticRoleRow:
-    """Normalized row for analytics.semantic_roles_functions."""
+    """Normalized row for analytics.semantic_roles_functions.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    function_goid_h128
+        Function global ID.
+    role
+        Semantic role classification.
+    framework
+        Associated framework (if any).
+    role_confidence
+        Confidence score for the classification.
+    role_sources_json
+        JSON-encoded list of evidence sources.
+    created_at
+        ISO timestamp string.
+    """
 
     repo: str
     commit: str
@@ -81,7 +97,25 @@ class FunctionSemanticRoleRow:
 
 @dataclass(frozen=True)
 class ModuleSemanticRoleRow:
-    """Normalized row for analytics.semantic_roles_modules."""
+    """Normalized row for analytics.semantic_roles_modules.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    module
+        Module path.
+    role
+        Semantic role classification.
+    role_confidence
+        Confidence score for the classification.
+    role_sources_json
+        JSON-encoded list of evidence sources.
+    created_at
+        ISO timestamp string.
+    """
 
     repo: str
     commit: str
@@ -110,11 +144,44 @@ class ModuleSemanticRoleRow:
         )
 
 
-def _timestamp_str(timestamp: datetime | None) -> str:
+def timestamp_str(timestamp: datetime | None = None) -> str:
+    """Convert timestamp to ISO format string.
+
+    Parameters
+    ----------
+    timestamp
+        Timestamp to convert. If None, uses current UTC time.
+
+    Returns
+    -------
+    str
+        ISO formatted timestamp string.
+    """
     return (timestamp or datetime.now(tz=UTC)).isoformat()
 
 
 def _coerce_int(value: object, field: str) -> int:
+    """Coerce value to integer with error handling.
+
+    Parameters
+    ----------
+    value
+        Value to convert.
+    field
+        Field name for error messages.
+
+    Returns
+    -------
+    int
+        Integer value.
+
+    Raises
+    ------
+    TypeError
+        If value is not convertible to int.
+    ValueError
+        If conversion fails.
+    """
     if not isinstance(value, (int, float, str)):
         message = f"{field} must be int-convertible"
         raise TypeError(message)
@@ -126,6 +193,27 @@ def _coerce_int(value: object, field: str) -> int:
 
 
 def _coerce_optional_float(value: object | None, field: str) -> float | None:
+    """Coerce value to optional float with error handling.
+
+    Parameters
+    ----------
+    value
+        Value to convert.
+    field
+        Field name for error messages.
+
+    Returns
+    -------
+    float | None
+        Float value or None.
+
+    Raises
+    ------
+    TypeError
+        If value is not convertible to float.
+    ValueError
+        If conversion fails.
+    """
     if value is None:
         return None
     if not isinstance(value, (int, float, str)):
@@ -138,12 +226,35 @@ def _coerce_optional_float(value: object | None, field: str) -> float | None:
         raise ValueError(message) from exc
 
 
-def _normalize_function_row(
+def normalize_function_row(
     raw: FunctionSemanticRoleRow | Mapping[str, Any] | Sequence[object],
     repo: str,
     commit: str,
     created_at: str,
 ) -> FunctionSemanticRoleRow:
+    """Normalize a function semantic role row from various input formats.
+
+    Parameters
+    ----------
+    raw
+        Input row as dataclass, mapping, or sequence.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    created_at
+        Default timestamp if not in input.
+
+    Returns
+    -------
+    FunctionSemanticRoleRow
+        Normalized row.
+
+    Raises
+    ------
+    ValueError
+        If required fields are missing or sequence has wrong length.
+    """
     if isinstance(raw, FunctionSemanticRoleRow):
         return FunctionSemanticRoleRow(
             repo=repo,
@@ -211,12 +322,35 @@ def _normalize_function_row(
     )
 
 
-def _normalize_module_row(
+def normalize_module_row(
     raw: ModuleSemanticRoleRow | Mapping[str, Any] | Sequence[object],
     repo: str,
     commit: str,
     created_at: str,
 ) -> ModuleSemanticRoleRow:
+    """Normalize a module semantic role row from various input formats.
+
+    Parameters
+    ----------
+    raw
+        Input row as dataclass, mapping, or sequence.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    created_at
+        Default timestamp if not in input.
+
+    Returns
+    -------
+    ModuleSemanticRoleRow
+        Normalized row.
+
+    Raises
+    ------
+    ValueError
+        If required fields are missing or sequence has wrong length.
+    """
     if isinstance(raw, ModuleSemanticRoleRow):
         return ModuleSemanticRoleRow(
             repo=repo,
@@ -279,181 +413,14 @@ def _normalize_module_row(
     )
 
 
-class SemanticRolesFunctionsAdapter(BatchAdapter[tuple[object, ...]]):
-    """Adapter for analytics.semantic_roles_functions table.
-
-    Handle persisting function semantic role classifications.
-    """
-
-    def __init__(
-        self,
-        gateway: StorageGateway,
-        snapshot: SnapshotRef,
-        *,
-        timestamp: datetime | None = None,
-    ) -> None:
-        """Initialize the adapter.
-
-        Parameters
-        ----------
-        gateway
-            Storage gateway for database access.
-        snapshot
-            Repository snapshot reference.
-        timestamp
-            Optional timestamp for created_at field.
-        """
-        super().__init__(gateway, snapshot)
-        self._timestamp = timestamp
-
-    @property
-    def table_name(self) -> str:
-        """Return the target table name."""
-        return "analytics.semantic_roles_functions"
-
-    def load(self) -> Iterator[tuple[object, ...]]:
-        """Raise NotImplementedError as roles are computed not loaded.
-
-        Raises
-        ------
-        NotImplementedError
-            This adapter is write-only.
-        """
-        message = "SemanticRolesFunctionsAdapter does not support loading"
-        raise NotImplementedError(message)
-
-    def persist(self, rows: Sequence[tuple[object, ...]]) -> int:
-        """Persist function semantic role rows.
-
-        Parameters
-        ----------
-        rows
-            Rows to persist.
-
-        Returns
-        -------
-        int
-            Number of rows persisted.
-        """
-        if not rows:
-            return 0
-
-        normalized_timestamp = _timestamp_str(self._timestamp)
-        normalized_rows = [
-            _normalize_function_row(
-                row,
-                repo=self.repo,
-                commit=self.commit,
-                created_at=normalized_timestamp,
-            ).to_tuple()
-            for row in rows
-        ]
-
-        backend = DuckDBPolicyBackend(self._gateway)
-        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
-        backend.bulk_insert(
-            self.table_name,
-            normalized_rows,
-            columns=FUNCTION_COLUMNS,
-        )
-
-        log.info(
-            "Persisted %d function semantic role rows for %s@%s",
-            len(rows),
-            self.repo,
-            self.commit,
-        )
-        return len(rows)
-
-
-class SemanticRolesModulesAdapter(BatchAdapter[tuple[object, ...]]):
-    """Adapter for analytics.semantic_roles_modules table.
-
-    Handle persisting module semantic role classifications.
-    """
-
-    def __init__(
-        self,
-        gateway: StorageGateway,
-        snapshot: SnapshotRef,
-        *,
-        timestamp: datetime | None = None,
-    ) -> None:
-        """Initialize the adapter.
-
-        Parameters
-        ----------
-        gateway
-            Storage gateway for database access.
-        snapshot
-            Repository snapshot reference.
-        timestamp
-            Optional timestamp for created_at field.
-        """
-        super().__init__(gateway, snapshot)
-        self._timestamp = timestamp
-
-    @property
-    def table_name(self) -> str:
-        """Return the target table name."""
-        return "analytics.semantic_roles_modules"
-
-    def load(self) -> Iterator[tuple[object, ...]]:
-        """Raise NotImplementedError as roles are computed not loaded.
-
-        Raises
-        ------
-        NotImplementedError
-            This adapter is write-only.
-        """
-        message = "SemanticRolesModulesAdapter does not support loading"
-        raise NotImplementedError(message)
-
-    def persist(self, rows: Sequence[tuple[object, ...]]) -> int:
-        """Persist module semantic role rows.
-
-        Parameters
-        ----------
-        rows
-            Rows to persist.
-
-        Returns
-        -------
-        int
-            Number of rows persisted.
-        """
-        if not rows:
-            return 0
-
-        normalized_timestamp = _timestamp_str(self._timestamp)
-        normalized_rows = [
-            _normalize_module_row(
-                row,
-                repo=self.repo,
-                commit=self.commit,
-                created_at=normalized_timestamp,
-            ).to_tuple()
-            for row in rows
-        ]
-
-        backend = DuckDBPolicyBackend(self._gateway)
-        backend.delete_for_snapshot(self.table_name, repo=self.repo, commit=self.commit)
-        backend.bulk_insert(
-            self.table_name,
-            normalized_rows,
-            columns=MODULE_COLUMNS,
-        )
-
-        log.info(
-            "Persisted %d module semantic role rows for %s@%s",
-            len(rows),
-            self.repo,
-            self.commit,
-        )
-        return len(rows)
-
-
 __all__ = [
-    "SemanticRolesFunctionsAdapter",
-    "SemanticRolesModulesAdapter",
+    "FUNCTION_COLUMNS",
+    "LEGACY_FUNCTION_TUPLE_LEN",
+    "LEGACY_MODULE_TUPLE_LEN",
+    "MODULE_COLUMNS",
+    "FunctionSemanticRoleRow",
+    "ModuleSemanticRoleRow",
+    "normalize_function_row",
+    "normalize_module_row",
+    "timestamp_str",
 ]
