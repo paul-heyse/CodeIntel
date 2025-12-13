@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends
 
-from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http import dependencies as http_deps
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     ModuleSubsystemResponse,
@@ -82,7 +82,7 @@ def _build_prereq_deps(
     """
     if options is None or not options.auto_pipeline:
         return {}
-    return {op_id: [Depends(make_op_prereq_dependency(op_id))] for op_id in specs}
+    return {op_id: [Depends(http_deps.make_op_prereq_dependency(op_id))] for op_id in specs}
 
 
 def build_subsystem_router(options: RouterOptions | None = None) -> APIRouter:
@@ -132,7 +132,7 @@ def build_subsystem_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def list_subsystems(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         limit: int | None = None,
         role: str | None = None,
         q: str | None = None,
@@ -157,7 +157,7 @@ def build_subsystem_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def list_subsystem_profiles(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         limit: int | None = None,
     ) -> SubsystemProfileResponse:
         """
@@ -180,7 +180,7 @@ def build_subsystem_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def list_subsystem_coverage(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         limit: int | None = None,
     ) -> SubsystemCoverageResponse:
         """
@@ -203,7 +203,7 @@ def build_subsystem_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def module_subsystems(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         module: str,
     ) -> ModuleSubsystemResponse:
         """
@@ -235,7 +235,7 @@ def build_subsystem_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def subsystem_modules(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         subsystem_id: str,
         module_limit: int | None = None,
     ) -> SubsystemModulesResponse:

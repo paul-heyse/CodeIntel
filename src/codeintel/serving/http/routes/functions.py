@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http import dependencies as http_deps
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -44,6 +44,7 @@ class RouterOptions:
 
 
 LOG = logging.getLogger("codeintel.serving.http.routes.functions")
+_GRAPH_SCOPE_PAYLOAD = GraphScopePayload
 
 
 class FunctionSummaryParams(BaseModel):
@@ -130,7 +131,7 @@ def _register_summary_and_risk_routes(
     )
     def function_summary(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         params: Annotated[FunctionSummaryParams, Depends(_function_summary_params)],
     ) -> FunctionSummaryResponse:
         """
@@ -168,7 +169,7 @@ def _register_summary_and_risk_routes(
     )
     def list_high_risk_functions(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
@@ -211,7 +212,7 @@ def _register_graph_and_tests_routes(
     )
     def function_callgraph(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         goid_h128: int,
         direction: Literal["in", "out", "both"] = "both",
         limit: int | None = None,
@@ -242,7 +243,7 @@ def _register_graph_and_tests_routes(
     )
     def tests_for_function(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
@@ -281,7 +282,7 @@ def _register_graph_and_tests_routes(
     )
     def callgraph_neighborhood(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         goid_h128: int,
         radius: Annotated[int, Field(ge=1)] = 1,
         max_nodes: int | None = None,
@@ -338,7 +339,7 @@ def _register_graph_and_tests_routes(
     )
     def import_boundary(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         subsystem_id: str,
         max_edges: int | None = None,
     ) -> ImportBoundaryResponse:
@@ -399,7 +400,7 @@ def _register_file_summary_route(
     )
     def file_summary(
         *,
-        service: ServiceDep,
+        service: http_deps.ServiceDep,
         rel_path: str,
         scope: GraphScopePayload | None = None,
     ) -> FileSummaryResponse:
@@ -444,7 +445,7 @@ def _build_prereq_deps(
     """
     if options is None or not options.auto_pipeline:
         return {}
-    return {op_id: [Depends(make_op_prereq_dependency(op_id))] for op_id in specs}
+    return {op_id: [Depends(http_deps.make_op_prereq_dependency(op_id))] for op_id in specs}
 
 
 def build_functions_router(options: RouterOptions | None = None) -> APIRouter:

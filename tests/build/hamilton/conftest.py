@@ -17,11 +17,12 @@ import pytest
 
 from codeintel.build.manifest import OutputManifest
 from codeintel.build.targets import OutputTarget, TargetGraph
-from codeintel.storage.gateway import StorageGateway
 from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from codeintel.storage.gateway import StorageGateway
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

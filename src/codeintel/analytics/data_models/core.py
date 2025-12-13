@@ -22,7 +22,6 @@ from codeintel.analytics.utilities.ast import (
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -981,12 +980,11 @@ def compute_data_models(
     cfg
         Data model extraction configuration.
     """
-    con = gateway.con
-    ensure_schema(con, "analytics.data_models")
-    ensure_schema(con, "analytics.data_model_fields")
-    ensure_schema(con, "analytics.data_model_relationships")
-
     backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.data_models")
+    backend.ensure_table("analytics.data_model_fields")
+    backend.ensure_table("analytics.data_model_relationships")
+    con = gateway.con
     backend.delete_for_snapshot("analytics.data_models", repo=cfg.repo, commit=cfg.commit)
     backend.delete_for_snapshot("analytics.data_model_fields", repo=cfg.repo, commit=cfg.commit)
     backend.delete_for_snapshot(

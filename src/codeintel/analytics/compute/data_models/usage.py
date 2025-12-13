@@ -15,7 +15,6 @@ from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.repositories import fetch_models
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -475,9 +474,9 @@ def compute_data_model_usage(
     missing_goids
         Optional set of function GOIDs that could not be parsed.
     """
-    con = gateway.con
-    ensure_schema(con, "analytics.data_model_usage")
     backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.data_model_usage")
+    con = gateway.con
     backend.delete_for_snapshot("analytics.data_model_usage", repo=cfg.repo, commit=cfg.commit)
 
     models = _load_models(gateway, cfg.repo, cfg.commit)

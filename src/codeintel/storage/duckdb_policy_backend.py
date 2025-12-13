@@ -27,13 +27,13 @@ from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
 
+from codeintel.config.datasets.contracts import get_dataset_contracts_by_table_key
 from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
     from codeintel.config.datasets import TableSchema
-    from codeintel.config.datasets.contracts import DatasetContract
     from codeintel.storage.gateway.protocol import StorageGateway
 
 __all__ = [
@@ -51,13 +51,6 @@ SCHEMAS = ("build", "core", "graph", "analytics", "docs")
 
 
 _TABLE_CREATION_DENYLIST = frozenset({"docs.v_validation_summary"})
-
-
-def _get_dataset_contracts_by_table_key() -> dict[str, DatasetContract]:
-    """Lazy import to avoid circular imports at module import time."""
-    from codeintel.config.datasets import get_dataset_contracts_by_table_key
-
-    return get_dataset_contracts_by_table_key()
 
 
 def _column_type_to_sqlglot(col_type: str) -> exp.DataType:
@@ -356,30 +349,6 @@ def _build_insert(
     )
 
 
-def _quote_identifier(name: str) -> str:
-    """Quote a SQL identifier safely.
-
-    Parameters
-    ----------
-    name
-        Identifier name to quote.
-
-    Returns
-    -------
-    str
-        Double-quoted identifier.
-
-    Raises
-    ------
-    ValueError
-        If the identifier contains invalid characters.
-    """
-    if not name or not all(c.isalnum() or c == "_" for c in name):
-        message = f"Invalid identifier: {name}"
-        raise ValueError(message)
-    return f'"{name}"'
-
-
 def _build_upsert(
     table_schema: str,
     table_name: str,
@@ -413,30 +382,40 @@ def _build_upsert(
     str
         SQL string for upsert operation.
     """
-    table_sql = ".".join((_quote_identifier(table_schema), _quote_identifier(table_name)))
-    cols_sql = ", ".join(_quote_identifier(col) for col in columns)
-    placeholders = ", ".join("?" for _ in columns)
-    conflict_cols_sql = ", ".join(_quote_identifier(col) for col in conflict_columns)
-
     cols_to_update = (
         [col for col in columns if col not in conflict_columns]
         if update_columns is None
         else [col for col in update_columns if col not in conflict_columns]
     )
 
-    if cols_to_update:
-        updates_sql = ", ".join(
-            f"{_quote_identifier(col)} = excluded.{_quote_identifier(col)}"
-            for col in cols_to_update
-        )
-        action_sql = f"DO UPDATE SET {updates_sql}"
-    else:
-        action_sql = "DO NOTHING"
+    insert_expr = _build_insert(table_schema, table_name, columns)
+    conflict_keys = [exp.to_identifier(col) for col in conflict_columns]
 
-    return (
-        f"INSERT INTO {table_sql} ({cols_sql}) VALUES ({placeholders}) "
-        f"ON CONFLICT ({conflict_cols_sql}) {action_sql}"
-    )
+    if cols_to_update:
+        assignments = [
+            exp.EQ(
+                this=exp.Column(this=exp.to_identifier(col)),
+                expression=exp.Column(
+                    this=exp.to_identifier(col),
+                    table=exp.to_identifier("excluded"),
+                ),
+            )
+            for col in cols_to_update
+        ]
+        conflict = exp.OnConflict(
+            conflict_keys=conflict_keys,
+            action=exp.Var(this="DO UPDATE"),
+            expressions=assignments,
+        )
+    else:
+        conflict = exp.OnConflict(
+            conflict_keys=conflict_keys,
+            action=exp.Var(this="DO NOTHING"),
+        )
+
+    insert_expr.set("conflict", conflict)
+    return insert_expr.sql(dialect=DUCKDB_DIALECT)
+
 
 
 @dataclass
@@ -706,7 +685,7 @@ class DuckDBPolicyBackend:
         for schema_name in SCHEMAS:
             self.create_schema_if_not_exists(schema_name)
 
-        contracts = _get_dataset_contracts_by_table_key()
+        contracts = get_dataset_contracts_by_table_key()
         for table_key, contract in contracts.items():
             if contract.schema is None:
                 continue
@@ -774,6 +753,52 @@ class DuckDBPolicyBackend:
         """
         self.ensure_all_schemas(drop_existing=False, extra_ddl=extra_ddl)
 
+    def ensure_table(self, table_key: str, *, create_if_missing: bool = True) -> None:
+        """
+        Ensure a table exists and matches the registry column order.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified dataset name.
+        create_if_missing
+            When True, create the table if it does not yet exist.
+
+        Raises
+        ------
+        KeyError
+            If no dataset contract is registered for the table.
+        RuntimeError
+            If the table is missing and creation is disabled.
+        """
+        contract = get_dataset_contracts_by_table_key().get(table_key)
+        if contract is None:
+            message = f"Unknown dataset contract for {table_key}"
+            raise KeyError(message)
+
+        table_schema = contract.schema
+        if table_schema is None or contract.is_view:
+            return
+
+        qualified_name = f"{table_schema.schema}.{table_schema.name}"
+        info = self.gateway.con.execute(f"PRAGMA table_info({qualified_name})").fetchall()
+        expected_columns = [col.name for col in table_schema.columns]
+        if not info:
+            if not create_if_missing:
+                message = f"Missing table {table_key}"
+                raise RuntimeError(message)
+            create_stmt = _build_create_table(table_schema, if_not_exists=True)
+            self.gateway.con.execute(create_stmt.sql(dialect=DUCKDB_DIALECT))
+            return
+
+        actual_columns = [row[1] for row in info]
+        if actual_columns != expected_columns:
+            message = (
+                f"Column order mismatch for {table_key}: "
+                f"db={actual_columns}, registry={expected_columns}"
+            )
+            raise RuntimeError(message)
+
     def bulk_insert(
         self,
         table_key: str,
@@ -817,7 +842,7 @@ class DuckDBPolicyBackend:
         schema, table = table_key.split(".", 1)
 
         if columns is None:
-            contracts = _get_dataset_contracts_by_table_key()
+            contracts = get_dataset_contracts_by_table_key()
             contract = contracts.get(table_key)
             if contract is None or contract.schema is None:
                 message = f"No TableSchema found for {table_key}; columns must be provided"
@@ -858,6 +883,11 @@ class DuckDBPolicyBackend:
         -------
         int
             Number of rows inserted.
+
+        Raises
+        ------
+        ValueError
+            When no columns can be derived for the provided table_key.
         """
         row_list = list(rows)
         if not row_list:
@@ -865,7 +895,7 @@ class DuckDBPolicyBackend:
 
         resolved_columns: Sequence[str] | None = columns
         if resolved_columns is None:
-            contracts = _get_dataset_contracts_by_table_key()
+            contracts = get_dataset_contracts_by_table_key()
             contract = contracts.get(table_key)
             if contract is None or contract.schema is None:
                 message = f"No TableSchema found for {table_key}; columns must be provided"

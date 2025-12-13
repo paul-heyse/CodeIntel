@@ -114,6 +114,7 @@ def insert_rows(
     for col in columns:
         validate_identifier(col, kind="column")
 
+    gateway.policy.ensure_schemas_preserve()
     return gateway.policy.bulk_insert(
         table,
         [r.to_tuple() for r in row_list],

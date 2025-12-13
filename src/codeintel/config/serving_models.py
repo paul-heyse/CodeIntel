@@ -227,7 +227,7 @@ def verify_db_identity(gateway: StorageGateway, cfg: ServingConfig) -> None:
         If the repo/commit cannot be read or does not match the configuration.
     """
     try:
-        row = gateway.con.execute(
+        row = gateway.execute(
             "SELECT repo, commit FROM core.repo_map LIMIT 1",
         ).fetchone()
     except DuckDBError as exc:

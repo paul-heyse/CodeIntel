@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.storage.pandera_schemas import validate_dataset_df
+from codeintel.config.datasets.validation import validate_df
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -51,7 +51,7 @@ class DatasetReadRepository(BaseRepository):
             expr = expr.limit(limit_value, offset=offset)
 
         df = pd.DataFrame(expr.execute())
-        return validate_dataset_df(table_key, df)
+        return validate_df(table_key, df)
 
     def read_dataset_rows(self, table_key: str, *, limit: int, offset: int) -> list[RowDict]:
         """

@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -27,8 +26,9 @@ SUBSYSTEM_AGREEMENT_COLS = [
 
 def compute_subsystem_agreement(gateway: StorageGateway, *, repo: str, commit: str) -> None:
     """Compare subsystem assignments with import community labels."""
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.subsystem_agreement")
     con = gateway.con
-    ensure_schema(con, "analytics.subsystem_agreement")
     rows = con.execute(
         """
         SELECT sm.module,

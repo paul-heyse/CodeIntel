@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 from ibis.common.exceptions import IbisError
 
-from codeintel.storage.pandera_schemas import validate_dataset_df
+from codeintel.config.datasets.validation import validate_df
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -355,7 +355,7 @@ class BaseRepository:
         _ = self
         df = pd.DataFrame(expr.execute())
         if table_key:
-            return validate_dataset_df(table_key, df)
+            return validate_df(table_key, df)
         return df
 
     def _ibis_to_dicts(
@@ -539,7 +539,7 @@ class BaseRepository:
         df = pd.DataFrame(limited_expr.execute())
 
         if table_key:
-            df = validate_dataset_df(table_key, df)
+            df = validate_df(table_key, df)
 
         all_rows = df.to_dict(orient="records")
         truncated = len(all_rows) > limit

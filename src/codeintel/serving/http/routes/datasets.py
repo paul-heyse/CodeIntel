@@ -8,10 +8,10 @@ import logging
 from dataclasses import asdict, is_dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, status
 from starlette.responses import Response
 
-from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http import dependencies as deps
 from codeintel.serving.mcp.models import (
     DatasetDescriptor,
     DatasetRowsResponse,
@@ -21,6 +21,8 @@ from codeintel.serving.mcp.models import (
 from codeintel.serving.operations import get_operation
 
 if TYPE_CHECKING:
+    from fastapi import Request
+
     from codeintel.serving import domain_models as dm
     from codeintel.serving.http.routes.functions import RouterOptions
     from codeintel.serving.operations import Operation
@@ -110,7 +112,7 @@ def _build_dataset_deps(options: RouterOptions | None) -> dict[str, list[Any]]:
     if options is None or not options.auto_pipeline:
         return {}
     ids = ["datasets.list", "datasets.specs", "datasets.rows", "datasets.schema"]
-    return {op_id: [Depends(make_op_prereq_dependency(op_id))] for op_id in ids}
+    return {op_id: [Depends(deps.make_op_prereq_dependency(op_id))] for op_id in ids}
 
 
 def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
@@ -145,7 +147,7 @@ def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def list_datasets(
         *,
-        service: ServiceDep,
+        service: deps.ServiceDep,
         request: Request,
         response: Response,
         docs_view: Literal["include", "exclude", "only"] = "include",
@@ -191,7 +193,7 @@ def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def list_dataset_specs(
         *,
-        service: ServiceDep,
+        service: deps.ServiceDep,
         request: Request,
         response: Response,
     ) -> Response | list[DatasetSpecDescriptor]:
@@ -222,7 +224,7 @@ def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def read_dataset_rows(
         *,
-        service: ServiceDep,
+        service: deps.ServiceDep,
         dataset_name: str,
         limit: int | None = None,
         offset: int = 0,
@@ -257,7 +259,7 @@ def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
     )
     def dataset_schema(
         *,
-        service: ServiceDep,
+        service: deps.ServiceDep,
         dataset_name: str,
         limit: int = 5,
     ) -> DatasetSchemaResponse:

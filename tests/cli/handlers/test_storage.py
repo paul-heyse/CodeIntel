@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from codeintel.cli.handlers.storage import (
     GenerateMacrosResult,
-    MacroRequirement,
     ProfileStorageResult,
     ValidateMacrosResult,
     generate_macros_handler,
@@ -32,9 +31,7 @@ def test_validate_macros_handler_returns_ok_when_valid(
     storage_macro_harness_fixture: StorageHandlerHarness,
 ) -> None:
     """Handler returns success when macros are valid."""
-    with storage_macro_harness_fixture.command_context(
-        {"macro_requirement": MacroRequirement.REQUIRE}
-    ) as ctx:
+    with storage_macro_harness_fixture.command_context({}) as ctx:
         result = validate_macros_handler(ctx)
 
     expect_true(result.success)

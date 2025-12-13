@@ -18,7 +18,7 @@ from codeintel.analytics.testing.profiles.types import (
 )
 from codeintel.analytics.utilities.ast import resolve_call_target
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -139,8 +139,9 @@ def build_behavior_rows(
     list[tuple[object, ...]]
         Rows aligned with ``analytics.behavioral_coverage`` column order.
     """
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.behavioral_coverage")
     con = gateway.con
-    ensure_schema(con, "analytics.behavioral_coverage")
     load_tests_fn = hooks.load_tests if hooks is not None else None
     if load_tests_fn is None:
         load_tests_fn = _default_load_test_records

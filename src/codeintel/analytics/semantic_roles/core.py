@@ -14,7 +14,7 @@ from codeintel.analytics.compute.graphs import normalize_decimal_id
 from codeintel.analytics.utilities.ast import safe_unparse
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
-from codeintel.storage.sql.builder import ensure_schema
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -193,9 +193,10 @@ def compute_semantic_roles(
     features_map
         Mapping of function GOID to feature vector.
     """
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.semantic_roles_functions")
+    backend.ensure_table("analytics.semantic_roles_modules")
     con = gateway.con
-    ensure_schema(con, "analytics.semantic_roles_functions")
-    ensure_schema(con, "analytics.semantic_roles_modules")
 
     module_meta = _load_module_meta(con, repo=cfg.repo, commit=cfg.commit)
     function_rows = _load_function_rows(con, repo=cfg.repo, commit=cfg.commit)

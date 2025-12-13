@@ -17,8 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from codeintel.config.datasets.pandera_json_schema import pandera_to_json_schema
 from codeintel.config.datasets.row_factory import typed_dict_from_pandera
-from codeintel.storage.pandera_schemas import pandera_to_json_schema
 
 if TYPE_CHECKING:
     import pandas as pd

@@ -111,7 +111,7 @@ def load_dfg_edges(
     """
     edges_by_fn: dict[int, list[tuple[int, int, str, str, bool, str]]] = defaultdict(list)
     try:
-        rows: Iterable[tuple[int, int, int, str, str, bool, str]] = gateway.con.execute(
+        rows: Iterable[tuple[int, int, int, str, str, bool, str]] = gateway.execute(
             """
             SELECT function_goid_h128, src_block_id, dst_block_id,
                    src_var, dst_var, via_phi, use_kind
@@ -344,7 +344,7 @@ def dfg_function_metadata(
     dict[int, tuple[str, str | None, str | None]]
         Mapping of GOID -> (rel_path, module, qualname).
     """
-    rows: Iterable[tuple[object, str, str | None, str | None]] = gateway.con.execute(
+    rows: Iterable[tuple[object, str, str | None, str | None]] = gateway.execute(
         """
         SELECT g.goid_h128,
                g.rel_path,

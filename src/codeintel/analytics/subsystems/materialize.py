@@ -29,7 +29,6 @@ from codeintel.analytics.subsystems.edge_stats import (
 )
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -118,11 +117,9 @@ def build_subsystems(
     engine :
         Deprecated direct graph engine override; prefer `runtime`.
     """
-    con = gateway.con
-    ensure_schema(con, "analytics.subsystems")
-    ensure_schema(con, "analytics.subsystem_modules")
-
     backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.subsystems")
+    backend.ensure_table("analytics.subsystem_modules")
     backend.delete_for_snapshot("analytics.subsystems", repo=cfg.repo, commit=cfg.commit)
     backend.delete_for_snapshot("analytics.subsystem_modules", repo=cfg.repo, commit=cfg.commit)
 
@@ -258,8 +255,9 @@ def refresh_subsystem_profile_cache(gateway: StorageGateway, *, repo: str, commi
     commit:
         Commit identifier.
     """
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.subsystem_profile_cache")
     con = gateway.con
-    ensure_schema(con, "analytics.subsystem_profile_cache")
     con.execute(
         "DELETE FROM analytics.subsystem_profile_cache WHERE repo = ? AND commit = ?",
         [repo, commit],
@@ -289,8 +287,9 @@ def refresh_subsystem_coverage_cache(gateway: StorageGateway, *, repo: str, comm
     commit:
         Commit identifier.
     """
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.subsystem_coverage_cache")
     con = gateway.con
-    ensure_schema(con, "analytics.subsystem_coverage_cache")
     con.execute(
         "DELETE FROM analytics.subsystem_coverage_cache WHERE repo = ? AND commit = ?",
         [repo, commit],

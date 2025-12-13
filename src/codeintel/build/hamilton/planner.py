@@ -13,6 +13,7 @@ Design Principles
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
@@ -21,6 +22,7 @@ from codeintel.build.hamilton.manifest_hook import (
     compute_target_options_hash,
 )
 from codeintel.build.hamilton.naming import target_node
+from codeintel.build.hamilton.native.registry import is_native_target
 from codeintel.build.registry import get_target_graph
 
 if TYPE_CHECKING:
@@ -439,10 +441,11 @@ def _compute_entry_for_target(
     module = target.module
 
     table_keys = target.contract.table_keys or target.table_keys
-
     blocked_deps = [
         dep for dep in target.dependencies if upstream_status.get(dep) in {"missing", "blocked"}
     ]
+    impl_kind: ImplKind = "native" if is_native_target(target_name) else "wrapper"
+
     if blocked_deps:
         return PlanEntry(
             target=target_name,
@@ -455,6 +458,7 @@ def _compute_entry_for_target(
             prior_input_hash=None,
             dependencies=tuple(target.dependencies),
             table_keys=tuple(table_keys),
+            impl_kind=impl_kind,
         )
 
     raw_params = env.config.parameters_for(target_name)
@@ -484,6 +488,7 @@ def _compute_entry_for_target(
             table_keys=tuple(table_keys),
             dep_hashes=dep_hashes,
             prior_dep_hashes=prior_dep_hashes,
+            impl_kind=impl_kind,
         )
 
     if prior is None:
@@ -500,6 +505,7 @@ def _compute_entry_for_target(
             table_keys=tuple(table_keys),
             dep_hashes=dep_hashes,
             prior_dep_hashes={},
+            impl_kind=impl_kind,
         )
 
     if prior.input_hash != input_hash:
@@ -516,6 +522,7 @@ def _compute_entry_for_target(
             table_keys=tuple(table_keys),
             dep_hashes=dep_hashes,
             prior_dep_hashes=prior_dep_hashes,
+            impl_kind=impl_kind,
         )
 
     return PlanEntry(
@@ -531,6 +538,7 @@ def _compute_entry_for_target(
         table_keys=tuple(table_keys),
         dep_hashes=dep_hashes,
         prior_dep_hashes=prior_dep_hashes,
+        impl_kind=impl_kind,
     )
 
 
@@ -614,6 +622,17 @@ def compute_plan(
         entry = _compute_entry_for_target(target, env, manifests, upstream_status)
         entries.append(entry)
         upstream_status[target_name] = entry.status
+
+    # Check wrapper deprecation if allowlist is set
+    if env.wrapper_allowlist is not None:
+        for entry in entries:
+            if entry.impl_kind == "wrapper" and entry.target not in env.wrapper_allowlist:
+                warnings.warn(
+                    f"Target '{entry.target}' uses wrapper implementation "
+                    f"but is not in allowlist. Consider migrating to native.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
 
     return HamiltonBuildPlan(
         requested=requested,

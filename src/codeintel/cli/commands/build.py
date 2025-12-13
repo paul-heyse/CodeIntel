@@ -17,10 +17,15 @@ from cyclopts import App, Parameter
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.build import (
+    build_assets_handler,
+    build_diff_handler,
     build_explain_handler,
     build_graph_handler,
     build_history_handler,
+    build_lineage_handler,
     build_plan_handler,
+    build_promote_handler,
+    build_resolve_handler,
     build_run_handler,
     build_status_handler,
 )
@@ -102,6 +107,21 @@ class BuildRunCommand:
             negative=(),
         ),
     ] = False
+    strict_contracts: Annotated[
+        bool,
+        Parameter(
+            name=["--strict-contracts"],
+            help="Fail if target writes outside declared contract.",
+            negative=(),
+        ),
+    ] = False
+    wrapper_allowlist: Annotated[
+        list[str] | None,
+        Parameter(
+            name=["--wrapper-allowlist"],
+            help="Only allow wrapper implementation for these targets (comma-separated).",
+        ),
+    ] = None
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
@@ -257,6 +277,207 @@ class BuildGraphCommand:
             help="Output file path (stdout if not specified).",
         ),
     ] = None
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("build.assets", handler=build_assets_handler, config=_BUILD_CONFIG)
+@build_app.command(name="assets")
+@dataclass
+class BuildAssetsCommand:
+    """List materialized assets for the current snapshot."""
+
+    asset: Annotated[
+        str | None,
+        Parameter(
+            name=["--asset"],
+            help="Filter to a specific asset key (e.g., analytics.function_metrics).",
+        ),
+    ] = None
+    target: Annotated[
+        str | None,
+        Parameter(
+            name=["--target", "-t"],
+            help="Filter to assets produced by a specific target.",
+        ),
+    ] = None
+    versions: Annotated[
+        bool,
+        Parameter(
+            name=["--versions"],
+            help="Include asset versions from the Phase 4 catalog.",
+            negative=(),
+        ),
+    ] = False
+    asset_type: Annotated[
+        str | None,
+        Parameter(
+            name=["--type"],
+            help="Filter by asset type: table, view, or artifact.",
+        ),
+    ] = None
+    output_format: Annotated[
+        str,
+        Parameter(
+            name=["--format", "-f"],
+            help="Output format: table (default), json, or csv.",
+        ),
+    ] = "table"
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("build.lineage", handler=build_lineage_handler, config=_BUILD_CONFIG)
+@build_app.command(name="lineage")
+@dataclass
+class BuildLineageCommand:
+    """Show asset lineage for the current snapshot."""
+
+    asset: Annotated[
+        str,
+        Parameter(
+            name=["--asset"],
+            help="Asset key to traverse (e.g., analytics.goid_risk_factors).",
+        ),
+    ]
+    direction: Annotated[
+        str,
+        Parameter(
+            name=["--direction", "-d"],
+            help="Traversal direction: up (dependencies) or down (dependents).",
+            show_choices=True,
+        ),
+    ] = "up"
+    depth: Annotated[
+        int,
+        Parameter(
+            name=["--depth"],
+            help="Traversal depth (number of hops).",
+        ),
+    ] = 1
+    output_format: Annotated[
+        str,
+        Parameter(
+            name=["--format", "-f"],
+            help="Output format: json (default) or text.",
+        ),
+    ] = "json"
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("build.promote", handler=build_promote_handler, config=_BUILD_CONFIG)
+@build_app.command(name="promote")
+@dataclass
+class BuildPromoteCommand:
+    """Set an alias for an asset version."""
+
+    asset: Annotated[
+        str,
+        Parameter(
+            name=["--asset"],
+            help="Asset key to promote.",
+        ),
+    ]
+    alias: Annotated[
+        str,
+        Parameter(
+            name=["--alias"],
+            help="Alias to set (e.g., main, latest, release-2025.01).",
+        ),
+    ]
+    version_hash: Annotated[
+        str | None,
+        Parameter(
+            name=["--version-hash"],
+            help="Version hash to pin (preferred).",
+        ),
+    ] = None
+    from_run_id: Annotated[
+        str | None,
+        Parameter(
+            name=["--from-run-id"],
+            help="Use the version recorded for this run_id.",
+        ),
+    ] = None
+    note: Annotated[
+        str | None,
+        Parameter(
+            name=["--note"],
+            help="Optional note describing the promotion.",
+        ),
+    ] = None
+    output_format: Annotated[
+        str,
+        Parameter(
+            name=["--format", "-f"],
+            help="Output format: json (default) or text.",
+        ),
+    ] = "json"
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("build.resolve", handler=build_resolve_handler, config=_BUILD_CONFIG)
+@build_app.command(name="resolve")
+@dataclass
+class BuildResolveCommand:
+    """Resolve an alias to a version hash."""
+
+    asset: Annotated[
+        str,
+        Parameter(
+            name=["--asset"],
+            help="Asset key to resolve.",
+        ),
+    ]
+    alias: Annotated[
+        str,
+        Parameter(
+            name=["--alias"],
+            help="Alias to resolve (e.g., main, latest).",
+        ),
+    ]
+    output_format: Annotated[
+        str,
+        Parameter(
+            name=["--format", "-f"],
+            help="Output format: json (default) or text.",
+        ),
+    ] = "json"
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("build.diff", handler=build_diff_handler, config=_BUILD_CONFIG)
+@build_app.command(name="diff")
+@dataclass
+class BuildDiffCommand:
+    """Diff two versions of an asset."""
+
+    asset: Annotated[
+        str,
+        Parameter(
+            name=["--asset"],
+            help="Asset key to diff.",
+        ),
+    ]
+    from_spec: Annotated[
+        str,
+        Parameter(
+            name=["--from"],
+            help="Baseline version spec (alias or version hash).",
+        ),
+    ]
+    to_spec: Annotated[
+        str,
+        Parameter(
+            name=["--to"],
+            help="Target version spec (alias or version hash).",
+        ),
+    ]
+    output_format: Annotated[
+        str,
+        Parameter(
+            name=["--format", "-f"],
+            help="Output format: json (default) or text.",
+        ),
+    ] = "json"
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

@@ -12,7 +12,6 @@ import networkx as nx
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers.contracts import count_rows
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import (
@@ -203,11 +202,8 @@ def write_sample_repo(
 
     snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
     gateway = GatewayFactory().with_snapshot(repo=repo, commit=commit).open()
+    gateway.policy.ensure_schemas_preserve()
     now = datetime.now(tz=UTC)
-
-    ensure_schema(gateway.con, "analytics.coverage_functions")
-    ensure_schema(gateway.con, "analytics.test_coverage_edges")
-    ensure_schema(gateway.con, "analytics.test_catalog")
 
     paths = {"pkg.api": api_path}
     insert_modules(gateway, snapshot, paths)

@@ -20,15 +20,19 @@ from typing import TYPE_CHECKING, Any, Literal
 from hamilton import driver
 
 from codeintel.build.hamilton.naming import target_node
+from codeintel.build.hamilton.native.registry import load_native_modules, native_target_names
 from codeintel.build.hamilton.nodes import targets_phase0
-from codeintel.build.hamilton.nodes.node_factory import get_generated_module
+from codeintel.build.hamilton.nodes.node_factory import (
+    GenerationOptions,
+    get_generated_module,
+)
 from codeintel.build.registry import get_target_graph
 
 if TYPE_CHECKING:
     from codeintel.build.targets import TargetGraph
 
 
-HamiltonNodeMode = Literal["phase0", "generated"]
+HamiltonNodeMode = Literal["phase0", "generated", "auto"]
 
 
 @dataclass(frozen=True)
@@ -83,7 +87,7 @@ def _build_target_to_node_map(
     graph
         Target graph containing all registered targets.
     mode
-        Node mode: "phase0" or "generated".
+        Node mode: "phase0", "generated", or "auto".
 
     Returns
     -------
@@ -93,6 +97,17 @@ def _build_target_to_node_map(
     if mode == "phase0":
         return dict(targets_phase0.TARGET_TO_NODE)
 
+    if mode == "auto":
+        # In auto mode, use generated module's TARGET_TO_NODE which already
+        # excludes native targets
+        mod = get_generated_module()
+        mapping = getattr(mod, "TARGET_TO_NODE", None)
+        if isinstance(mapping, dict) and mapping:
+            return dict(mapping)
+        # Fallback to all targets if mapping is missing
+        return {t.name: target_node(t.name) for t in graph.all_targets}
+
+    # Generated mode.
     mod = get_generated_module()
     mapping = getattr(mod, "TARGET_TO_NODE", None)
     if isinstance(mapping, dict) and mapping:
@@ -120,6 +135,7 @@ def build_driver(
         Node mode selection:
         - "phase0": Use explicit Phase 0 nodes (risk_factors chain only)
         - "generated": Use dynamically generated nodes for all targets
+        - "auto": Use native modules where available, generated elsewhere
 
     Returns
     -------
@@ -132,6 +148,10 @@ def build_driver(
     all registered targets. Phase 0 nodes are hand-written and cover
     only the risk_factors execution chain.
 
+    In "auto" mode, the driver composes native target modules with
+    generated wrapper nodes. Native targets are excluded from the
+    generated module to avoid name collisions.
+
     Examples
     --------
     >>> runtime = build_driver(config={"profile": "fast"}, mode="phase0")
@@ -143,15 +163,42 @@ def build_driver(
     >>> runtime = build_driver(mode="generated")
     >>> len(runtime.target_to_node) > 0
     True
+
+    >>> runtime = build_driver(mode="auto")
+    >>> # Loads native modules + generated wrappers
     """
     graph = get_target_graph()
 
-    nodes_module = get_generated_module() if mode == "generated" else targets_phase0
+    if mode == "auto":
+        # Auto mode: compose native + generated (with exclusions)
+        # Get native target names to exclude from generated module
+        native_names = set(native_target_names())
 
-    dr = driver.Driver(
-        config or {},
-        nodes_module,
-    )
+        # Build generated module excluding native targets
+        gen_options = GenerationOptions(exclude_targets=native_names)
+        generated_mod = get_generated_module(options=gen_options)
+
+        # Load native modules
+        native_mods = load_native_modules()
+
+        # Compose: generated module + native modules
+        dr = driver.Driver(
+            config or {},
+            generated_mod,
+            *native_mods,
+        )
+    elif mode == "generated":
+        nodes_module = get_generated_module()
+        dr = driver.Driver(
+            config or {},
+            nodes_module,
+        )
+    else:
+        # Phase 0 mode.
+        dr = driver.Driver(
+            config or {},
+            targets_phase0,
+        )
 
     t2n = _build_target_to_node_map(graph, mode=mode)
     n2t = {v: k for k, v in t2n.items()}
@@ -171,12 +218,12 @@ def list_available_nodes(*, mode: HamiltonNodeMode = "generated") -> list[str]:
     Parameters
     ----------
     mode
-        Node mode: "phase0" or "generated".
+        Node mode: "phase0", "generated", or "auto".
 
     Returns
     -------
     list[str]
-        Names of nodes defined in the selected module.
+        Names of nodes defined in the selected module(s).
 
     Examples
     --------
@@ -187,6 +234,21 @@ def list_available_nodes(*, mode: HamiltonNodeMode = "generated") -> list[str]:
     if mode == "phase0":
         return list(targets_phase0.TARGET_TO_NODE.values())
 
+    if mode == "auto":
+        # List nodes from both generated and native modules
+        gen_mod = get_generated_module()
+        gen_mapping = getattr(gen_mod, "TARGET_TO_NODE", {})
+        gen_nodes = list(gen_mapping.values()) if gen_mapping else []
+
+        native_nodes: list[str] = []
+        for native_mod in load_native_modules():
+            native_mapping = getattr(native_mod, "TARGET_TO_NODE", {})
+            if native_mapping:
+                native_nodes.extend(native_mapping.values())
+
+        return sorted(set(gen_nodes + native_nodes))
+
+    # Generated mode.
     mod = get_generated_module()
     mapping = getattr(mod, "TARGET_TO_NODE", {})
     return list(mapping.values()) if mapping else []

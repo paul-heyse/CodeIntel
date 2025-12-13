@@ -48,7 +48,9 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway.config import StorageConfig
     from codeintel.storage.ibis_adapter import IbisGateway
     from codeintel.storage.tracking import PipelineRunTracking
+    from codeintel.storage.tracking.asset_tracking import AssetTracking
     from codeintel.storage.tracking.build_tracking import BuildTracking
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 _DURATION_THRESHOLD_MS = 5000
 
@@ -134,12 +136,14 @@ class FakeGateway(StorageGateway):
         self.build = cast("BuildTracking", build)
         placeholder = SimpleNamespace()
         self.analytics = cast("AnalyticsTables", placeholder)
+        self.assets = cast("AssetTracking", placeholder)
         self.config = cast("StorageConfig", placeholder)
         self.core = cast("CoreTables", placeholder)
         self.datasets = cast("DatasetRegistry", placeholder)
         self.docs = cast("DocsViews", placeholder)
         self.graph = cast("GraphTables", placeholder)
         self.runs = cast("PipelineRunTracking", placeholder)
+        self.policy = cast("DuckDBPolicyBackend", placeholder)
         self._con = duckdb.connect(":memory:")
         self.ibis = cast("IbisGateway", _FakeIbisGateway(self._con))
         self.executions: list[tuple[str, tuple[object, ...] | None]] = []

@@ -7,11 +7,9 @@ golden snapshot files.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from tests._helpers.cli import CliResult, run_cli
-from tests.build.hamilton.snapshots._manifest import SnapshotCase, SnapshotManifest
+from tests._helpers.cli import run_cli
 from tests.build.hamilton.snapshots._snapshot import (
     DEFAULT_DYNAMIC_KEYS,
     assert_or_update_snapshot,
@@ -21,6 +19,10 @@ from tests.build.hamilton.snapshots._snapshot import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
+
+    from tests._helpers.cli import CliResult
+    from tests.build.hamilton.snapshots._manifest import SnapshotCase, SnapshotManifest
 
 
 @dataclass(frozen=True)

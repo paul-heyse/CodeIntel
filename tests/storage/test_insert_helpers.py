@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.storage.gateway import insert_helpers
-from codeintel.storage.gateway.protocol import StorageGateway
 from tests._helpers.assertions import expect_equal
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway.protocol import StorageGateway
 
 
 def test_insert_rows_normalizes_mapping(fresh_gateway: StorageGateway) -> None:

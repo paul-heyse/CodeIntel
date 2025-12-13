@@ -18,7 +18,6 @@ from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse, snippet_from_lines
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.sql.builder import ensure_schema
 
 EXTERNAL_DEPENDENCY_CALLS_COLS = [
     "repo",
@@ -234,9 +233,8 @@ def build_external_dependency_calls(
         log.warning("No dependency patterns loaded; skipping dependency call analysis")
         return
 
-    con = gateway.con
-    ensure_schema(con, "analytics.external_dependency_calls")
     backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.external_dependency_calls")
     backend.delete_for_snapshot(
         "analytics.external_dependency_calls", repo=cfg.repo, commit=cfg.commit
     )
@@ -400,8 +398,8 @@ def build_external_dependencies(
 def _prepare_external_dependencies(
     gateway: StorageGateway, cfg: ExternalDependenciesStepConfig
 ) -> None:
-    ensure_schema(gateway.con, "analytics.external_dependencies")
     backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.external_dependencies")
     backend.delete_for_snapshot("analytics.external_dependencies", repo=cfg.repo, commit=cfg.commit)
 
 

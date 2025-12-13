@@ -43,10 +43,10 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
     validate_contract_rows,
 )
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
 from codeintel.storage.repositories.subsystems import SubsystemRepository
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from codeintel.analytics.runtime.context import (
@@ -212,9 +212,9 @@ def compute_graph_metrics(
     )
     use_gpu = resolved_runtime.backend.use_gpu
 
-    con = gateway.con
-    ensure_schema(con, "analytics.graph_metrics_functions")
-    ensure_schema(con, "analytics.graph_metrics_modules")
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.graph_metrics_functions")
+    backend.ensure_table("analytics.graph_metrics_modules")
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=cfg.repo,

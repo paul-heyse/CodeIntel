@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+    from codeintel.build.hamilton.telemetry_hook import NodeExecutionRecord
     from codeintel.build.manifest import BuildStatus
     from codeintel.storage.gateway.protocol import StorageGateway
 
@@ -528,6 +529,112 @@ class BuildTracking:
                 "row_counts": decode_json_list(row[6]) if row[6] else {},
                 "error": row[7],
                 "recorded_at": row[8],
+            }
+            for row in results
+        ]
+
+    def save_run_nodes(
+        self,
+        run_id: str,
+        records: Sequence[NodeExecutionRecord],
+    ) -> int:
+        """Save node-level execution records for a build run.
+
+        Parameters
+        ----------
+        run_id
+            Parent run identifier.
+        records
+            Sequence of NodeExecutionRecord objects.
+
+        Returns
+        -------
+        int
+            Number of records inserted.
+        """
+        if not records:
+            return 0
+
+        rows = [
+            (
+                run_id,
+                r.node_name,
+                r.target,
+                r.node_kind,
+                r.status,
+                r.started_at,
+                r.completed_at,
+                r.duration_ms,
+                r.error,
+                encode_json_compact(r.tags or {}),
+            )
+            for r in records
+        ]
+
+        return self._backend.bulk_insert(
+            "build.run_nodes",
+            rows,
+            columns=(
+                "run_id",
+                "node_name",
+                "target",
+                "node_kind",
+                "status",
+                "started_at",
+                "completed_at",
+                "duration_ms",
+                "error",
+                "tags",
+            ),
+        )
+
+    def list_run_nodes(
+        self,
+        run_id: str,
+        *,
+        target: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List node records for a specific run.
+
+        Parameters
+        ----------
+        run_id
+            Run identifier to fetch nodes for.
+        target
+            Optional target filter.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            List of node record dictionaries.
+        """
+        query = """
+            SELECT node_name, target, node_kind, status, started_at,
+                   completed_at, duration_ms, error, tags
+            FROM build.run_nodes
+            WHERE run_id = ?
+        """
+        params: list[Any] = [run_id]
+
+        if target:
+            query += " AND target = ?"
+            params.append(target)
+
+        query += " ORDER BY started_at"
+
+        results = self._con.execute(query, params).fetchall()
+
+        return [
+            {
+                "node_name": row[0],
+                "target": row[1],
+                "node_kind": row[2],
+                "status": row[3],
+                "started_at": row[4],
+                "completed_at": row[5],
+                "duration_ms": row[6],
+                "error": row[7],
+                "tags": decode_json_list(row[8]) if row[8] else {},
             }
             for row in results
         ]

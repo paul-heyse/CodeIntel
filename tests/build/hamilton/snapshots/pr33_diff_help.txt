@@ -1,0 +1,27 @@
+Usage: codeintel build diff ASSET FROM TO [ARGS]
+
+Diff two versions of an asset.
+
+╭─ Parameters ─────────────────────────────────────────────────────────────────╮
+│ *  ASSET --asset         Asset key to diff. [env var:                        │
+│                          CODEINTEL_BUILD_DIFF_ASSET] [required]              │
+│ *  FROM --from           Baseline version spec (alias or version hash). [env │
+│                          var: CODEINTEL_BUILD_DIFF_FROM] [required]          │
+│ *  TO --to               Target version spec (alias or version hash). [env   │
+│                          var: CODEINTEL_BUILD_DIFF_TO] [required]            │
+│    FORMAT --format -f    Output format: json (default) or text. [env var:    │
+│                          CODEINTEL_BUILD_DIFF_FORMAT] [default: json]        │
+│    --flags               [env var: CODEINTEL_BUILD_DIFF_FLAGS] [default:     │
+│                          --flags]                                            │
+│    ROOT --root -r        Explicit project root directory. [env var:          │
+│                          CODEINTEL_BUILD_DIFF_ROOT] [default: (none)]        │
+│    OUTPUT-FORMAT         Output format. [choices: text, json, jsonl] [env    │
+│      --output-format     var: CODEINTEL_BUILD_DIFF_OUTPUT_FORMAT] [default:  │
+│                          text]                                               │
+│    JSON --json           Alias for --output-format json. [env var:           │
+│                          CODEINTEL_BUILD_DIFF_JSON] [default: false]         │
+│    VERBOSE --verbose -v  Increase verbosity (0=warnings, 1=info, 2=debug).   │
+│                          [env var: CODEINTEL_BUILD_DIFF_VERBOSE] [default:   │
+│                          0]                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+

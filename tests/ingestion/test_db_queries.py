@@ -9,7 +9,6 @@ Covers all safe_* functions for 80%+ coverage:
 - safe_min_value, safe_max_value
 - safe_count_non_positive, safe_count_duplicates
 - safe_not_null_fraction, safe_count_orphan_refs
-- safe_macro_exists
 """
 
 from __future__ import annotations
@@ -32,7 +31,6 @@ from codeintel.ingestion.infrastructure.db_queries import (
     safe_count_orphan_refs,
     safe_count_with_scope,
     safe_get_columns,
-    safe_macro_exists,
     safe_max_value,
     safe_min_value,
     safe_not_null_fraction,
@@ -701,28 +699,3 @@ def test_foreign_key_ref_default_allow_null() -> None:
     )
 
     expect_true(fk.allow_null)
-
-
-def test_safe_macro_exists_existing_macro(fresh_gateway: StorageGateway) -> None:
-    """safe_macro_exists should return True for existing macros."""
-    fresh_gateway.con.execute("""
-        CREATE OR REPLACE MACRO test_macro_exists() AS 1 + 1
-    """)
-
-    result = safe_macro_exists(fresh_gateway, "test_macro_exists")
-
-    expect_true(result)
-
-
-def test_safe_macro_exists_nonexistent_macro(fresh_gateway: StorageGateway) -> None:
-    """safe_macro_exists should return False for nonexistent macros."""
-    result = safe_macro_exists(fresh_gateway, "nonexistent_macro_xyz")
-
-    expect_false(result)
-
-
-def test_safe_macro_exists_builtin_function(fresh_gateway: StorageGateway) -> None:
-    """safe_macro_exists should detect built-in functions."""
-    result = safe_macro_exists(fresh_gateway, "count")
-
-    expect_true(result)

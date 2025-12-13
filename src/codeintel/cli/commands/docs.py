@@ -7,14 +7,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from cyclopts import App, Parameter
 
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.docs import docs_export_handler
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 docs_app = App(
     name="docs",
@@ -28,42 +30,6 @@ class NxBackend(Enum):
     AUTO = "auto"
     CPU = "cpu"
     NX_CUGRAPH = "nx-cugraph"
-
-
-class NxGpuMode(Enum):
-    """GPU backend mode for NetworkX."""
-
-    DISABLED = "disabled"
-    ENABLED = "enabled"
-    STRICT = "strict"
-
-
-class ExportValidationMode(Enum):
-    """Validation strategy for docs exports."""
-
-    REQUIRED = "required"
-    SKIP = "skip"
-
-
-class MacroRequirement(Enum):
-    """Requirement policy for normalized macros."""
-
-    REQUIRE_NORMALIZED = "require_normalized"
-    ALLOW_PARTIAL = "allow_partial"
-
-
-class DryRunMode(Enum):
-    """Execution mode for docs exports."""
-
-    EXECUTE = "execute"
-    DRY_RUN = "dry_run"
-
-
-class PrereqMode(Enum):
-    """Prerequisite execution strategy."""
-
-    RUN = "run"
-    SKIP = "skip"
 
 
 _DOCS_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
@@ -127,29 +93,21 @@ class DocsExportCommand:
         ),
     ] = NxBackend.AUTO
     nx_gpu_mode: Annotated[
-        NxGpuMode,
+        str,
         Parameter(
             name="--nx-gpu-mode",
             help="GPU backend preference: disabled, enabled, or strict.",
         ),
-    ] = NxGpuMode.DISABLED
+    ] = "disabled"
 
     validation_mode: Annotated[
-        ExportValidationMode,
+        str,
         Parameter(
             name="--validation-mode",
             help="Validation strategy: required or skip.",
             show_choices=True,
         ),
-    ] = ExportValidationMode.SKIP
-    macro_requirement: Annotated[
-        MacroRequirement,
-        Parameter(
-            name="--macro-requirement",
-            help="Normalized macro requirement policy.",
-            show_choices=True,
-        ),
-    ] = MacroRequirement.ALLOW_PARTIAL
+    ] = "skip"
     validate: Annotated[
         bool,
         Parameter(
@@ -181,13 +139,13 @@ class DocsExportCommand:
         ),
     ] = None
     run_mode: Annotated[
-        DryRunMode,
+        str,
         Parameter(
             name="--run-mode",
             help="Execution mode for docs export.",
             show_choices=True,
         ),
-    ] = DryRunMode.EXECUTE
+    ] = "execute"
     dry_run: Annotated[
         bool,
         Parameter(
@@ -197,13 +155,13 @@ class DocsExportCommand:
         ),
     ] = False
     prereq_mode: Annotated[
-        PrereqMode,
+        str,
         Parameter(
             name="--prereq-mode",
             help="Prerequisite execution mode.",
             show_choices=True,
         ),
-    ] = PrereqMode.RUN
+    ] = "run"
 
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 

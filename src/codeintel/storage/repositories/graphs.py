@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from codeintel.config.datasets.validation import validate_df
 from codeintel.storage.ibis_types import and_predicates
-from codeintel.storage.pandera_schemas import validate_dataset_df
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -39,7 +39,7 @@ class GraphRepository(BaseRepository):
             Validated records with ``None`` substituted for missing values.
         """
         df = pd.DataFrame(expr.execute())
-        validated = validate_dataset_df(expr_key, df)
+        validated = validate_df(expr_key, df)
         return validated.where(pd.notna(validated), None).to_dict(orient="records")
 
     def get_outgoing_callgraph_neighbors(

@@ -84,7 +84,7 @@ class DuckDBManifestStore(ManifestStore):
         backend = DuckDBPolicyBackend(self._gateway)
         backend.create_schema_if_not_exists("core")
 
-        self._gateway.con.execute(
+        self._gateway.execute(
             """
             CREATE TABLE IF NOT EXISTS core.plugin_execution_manifest (
                 id BIGINT,
@@ -105,7 +105,7 @@ class DuckDBManifestStore(ManifestStore):
             )
             """
         )
-        self._gateway.con.execute(
+        self._gateway.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_manifest_lookup
             ON core.plugin_execution_manifest (plugin_name, repo, commit, scope_id, variant)

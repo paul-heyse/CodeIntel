@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from codeintel.serving.auto_pipeline import build_prereq_debug_info
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.http.dependencies import BackendDep, ConfigDep, ServiceDep
+from codeintel.serving.http import dependencies as deps
 from codeintel.serving.mcp.models import (
     DataflowEdgePayload,
     DataflowGraphResponse,
@@ -30,6 +30,9 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 LOG_ROUTE_PREFIX = "/meta"
+BackendDep = deps.BackendDep
+ConfigDep = deps.ConfigDep
+ServiceDep = deps.ServiceDep
 
 
 def build_meta_router() -> APIRouter:

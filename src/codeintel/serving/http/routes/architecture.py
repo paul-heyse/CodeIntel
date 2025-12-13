@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends
 
-from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http import dependencies as deps
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import FunctionArchitectureResponse, ModuleArchitectureResponse
 from codeintel.serving.operations import get_operation
@@ -57,9 +57,11 @@ def build_architecture_router(options: RouterOptions | None = None) -> APIRouter
 
     auto_pipeline = options is not None and options.auto_pipeline
     func_deps = (
-        [Depends(make_op_prereq_dependency("architecture.function"))] if auto_pipeline else []
+        [Depends(deps.make_op_prereq_dependency("architecture.function"))] if auto_pipeline else []
     )
-    mod_deps = [Depends(make_op_prereq_dependency("architecture.module"))] if auto_pipeline else []
+    mod_deps = (
+        [Depends(deps.make_op_prereq_dependency("architecture.module"))] if auto_pipeline else []
+    )
 
     @router.get(
         function_path,
@@ -70,7 +72,7 @@ def build_architecture_router(options: RouterOptions | None = None) -> APIRouter
     )
     def function_architecture(
         *,
-        service: ServiceDep,
+        service: deps.ServiceDep,
         goid_h128: int,
     ) -> FunctionArchitectureResponse:
         """
@@ -101,7 +103,7 @@ def build_architecture_router(options: RouterOptions | None = None) -> APIRouter
     )
     def module_architecture(
         *,
-        service: ServiceDep,
+        service: deps.ServiceDep,
         module: str,
     ) -> ModuleArchitectureResponse:
         """

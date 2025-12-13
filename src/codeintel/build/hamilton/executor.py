@@ -22,17 +22,16 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from codeintel.build.hamilton.driver_factory import (
-    HamiltonNodeMode,
-    HamiltonRuntime,
-    build_driver,
-    target_to_node_name,
-)
+from codeintel.build.assets.emitter import persist_asset_catalog_for_run
+from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.telemetry_hook import NodeTelemetryHook
 from codeintel.build.manifest import BuildRunRecord
+from codeintel.build.registry import get_target_graph
 from codeintel.storage.exceptions import StorageError
 
 if TYPE_CHECKING:
+    from codeintel.build.hamilton.driver_factory import HamiltonNodeMode, HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
 
 log = logging.getLogger(__name__)
@@ -216,6 +215,29 @@ def _persist_run_targets(
         log.warning("build.hamilton.executor.run_targets_failed run_id=%s error=%s", run_id, exc)
 
 
+def _persist_asset_catalog(
+    env: BuildEnv,
+    run_id: str,
+    outputs: dict[str, Any],
+) -> None:
+    """Persist Phase 4 asset catalog records (versions + lineage + run mapping)."""
+    try:
+        records: list[TargetRunRecord] = [
+            value for value in outputs.values() if isinstance(value, TargetRunRecord)
+        ]
+        if not records:
+            return
+
+        persist_asset_catalog_for_run(
+            env=env,
+            run_id=run_id,
+            graph=get_target_graph(),
+            records=records,
+        )
+    except StorageError as exc:
+        log.warning("build.hamilton.executor.asset_catalog_failed run_id=%s error=%s", run_id, exc)
+
+
 @dataclass(frozen=True)
 class HamiltonBuildResult:
     """Result of a Hamilton-based build execution.
@@ -341,18 +363,27 @@ class HamiltonBuildExecutor:
             return self._make_missing_result(context, closure, missing)
 
         _start_build_run(context.env, context.run_id, targets, context.started_at)
+
+        telemetry_hook = NodeTelemetryHook(context.run_id, context.env.gateway)
+
         outputs, error = self._execute_dag(
             context.runtime,
             final_vars,
             context.env,
             context.run_id,
+            telemetry_hook=telemetry_hook,
         )
+
+        # Flush telemetry after execution
+        if telemetry_hook:
+            telemetry_hook.flush()
 
         computed, skipped, failed = _categorize_outputs(closure, outputs, context.runtime)
         duration_ms = context.duration_ms
         success = not failed and error is None
 
         _persist_run_targets(context.env, context.run_id, outputs)
+        _persist_asset_catalog(context.env, context.run_id, outputs)
 
         error_summary = error or (f"{len(failed)} targets failed" if failed else None)
         completion_params = _RunCompletionParams(
@@ -469,8 +500,23 @@ class HamiltonBuildExecutor:
         final_vars: list[str],
         env: BuildEnv,
         run_id: str,
+        *,
+        telemetry_hook: object | None = None,
     ) -> tuple[dict[str, Any], str | None]:
         """Execute the Hamilton DAG, returning (outputs, error).
+
+        Parameters
+        ----------
+        runtime
+            Hamilton runtime with driver and graph.
+        final_vars
+            List of node names to execute.
+        env
+            Build environment.
+        run_id
+            Run identifier for tracking.
+        telemetry_hook
+            Optional telemetry hook for node-level tracking.
 
         Returns
         -------
@@ -478,10 +524,18 @@ class HamiltonBuildExecutor:
             Outputs keyed by node name, and optional error string.
         """
         try:
-            outputs = runtime.dr.execute(
-                final_vars=list(final_vars),
-                inputs={"env": env, "graph": runtime.graph},
-            )
+            # Pass hook as adapter if provided
+            execute_kwargs: dict[str, Any] = {
+                "final_vars": list(final_vars),
+                "inputs": {"env": env, "graph": runtime.graph},
+            }
+
+            # Register hook as adapter if available
+            # Hamilton adapters can be passed via adapters parameter to execute()
+            if telemetry_hook is not None:
+                execute_kwargs["adapters"] = [telemetry_hook]
+
+            outputs = runtime.dr.execute(**execute_kwargs)
         except Exception as exc:
             log.exception("build.hamilton.executor.error run_id=%s", run_id)
             return {}, str(exc)

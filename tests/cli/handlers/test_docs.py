@@ -31,7 +31,7 @@ def test_docs_export_result_to_dict() -> None:
         macro_requirement="require_normalized",
         datasets=["dataset1", "dataset2"],
         schemas=["schema1"],
-        mode="build_system",
+        mode=ExportMode.BUILD_SYSTEM,
     )
 
     data = result.to_dict()
@@ -52,7 +52,7 @@ def test_docs_export_result_with_none_datasets() -> None:
         macro_requirement="require_normalized",
         datasets=None,
         schemas=None,
-        mode="direct",
+        mode=ExportMode.DIRECT,
     )
 
     data = result.to_dict()
@@ -109,7 +109,7 @@ def test_docs_export_handler_default_params(
     if data is not None:
         expect_equal(data.validation, "required")
         expect_equal(data.macro_requirement, "require_normalized")
-        expect_equal(data.mode, "build_system")
+        expect_equal(data.mode, ExportMode.BUILD_SYSTEM)
 
 
 def test_docs_export_handler_dry_run_mode(
@@ -123,7 +123,7 @@ def test_docs_export_handler_dry_run_mode(
     data = result.data
     if data is not None:
         expect_equal(data.status, "dry_run")
-        expect_equal(data.mode, "dry_run")
+        expect_equal(data.mode, ExportMode.DRY_RUN)
 
 
 def test_docs_export_handler_skip_prereqs(
@@ -136,7 +136,7 @@ def test_docs_export_handler_skip_prereqs(
     expect_true(result.success)
     data = result.data
     if data is not None:
-        expect_equal(data.mode, "direct")
+        expect_equal(data.mode, ExportMode.DIRECT)
 
 
 def test_docs_export_handler_with_datasets_filter(

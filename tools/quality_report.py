@@ -224,6 +224,16 @@ def main() -> int:
 
     commands = [
         CommandSpec(
+            name="guardrails",
+            args=[
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "tools.guardrails",
+            ],
+        ),
+        CommandSpec(
             name="import_hygiene",
             args=[
                 "uv",

@@ -85,6 +85,8 @@ class BuildEnv:
     force_targets: frozenset[str] = field(default_factory=frozenset)
     manifest_index: Mapping[str, OutputManifest] | None = None
     validate_outputs: bool = False
+    strict_contracts: bool = False
+    wrapper_allowlist: frozenset[str] | None = None
 
     @property
     def repo(self) -> str:

@@ -17,8 +17,8 @@ from codeintel.config.datasets import (
     dict_to_call_graph_edge,
     dict_to_call_graph_node,
 )
+from codeintel.config.datasets.validation import validate_df
 from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.storage.pandera_schemas import validate_dataset_df
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -104,7 +104,7 @@ def _validate_rows(table_key: str, rows: Sequence[Mapping[str, object]]) -> list
     if not rows:
         return []
     df = pd.DataFrame(rows)
-    validated = validate_dataset_df(table_key, df)
+    validated = validate_df(table_key, df)
     return validated.where(pd.notna(validated), None).to_dict(orient="records")
 
 

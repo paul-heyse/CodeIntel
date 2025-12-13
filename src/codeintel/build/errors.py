@@ -27,12 +27,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+
 __all__ = [
     "ArtifactNotFoundError",
     "BuildError",
     "BuildErrorCollection",
     "ColumnCountMismatchError",
     "ContractError",
+    "ContractViolationError",
     "CycleDetectedError",
     "DependencyUnavailableError",
     "ExecutionError",
@@ -179,6 +181,84 @@ class ColumnCountMismatchError(ContractError):
         )
 
 
+class ContractViolationError(ContractError):
+    """Target attempted to write outside its declared contract.
+
+    This error is raised when strict_contracts mode is enabled and a target
+    attempts to write to a table or artifact that is not in its OutputContract.
+
+    Attributes
+    ----------
+    target
+        Target name that violated the contract.
+    table_key
+        Table key that was written to (if applicable).
+    artifact_name
+        Artifact name that was written to (if applicable).
+    allowed_tables
+        Set of table keys allowed by the contract.
+    """
+
+    def __init__(
+        self,
+        target: str,
+        *,
+        table_key: str | None = None,
+        artifact_name: str | None = None,
+        allowed_tables: set[str] | None = None,
+    ) -> None:
+        self.target = target
+        self.table_key = table_key
+        self.artifact_name = artifact_name
+        self.allowed_tables = allowed_tables or set()
+        if table_key:
+            msg = (
+                f"Target '{target}' attempted to write to '{table_key}' "
+                f"which is not in its contract"
+            )
+        elif artifact_name:
+            msg = (
+                f"Target '{target}' attempted to write artifact '{artifact_name}' "
+                f"which is not in its contract"
+            )
+        else:
+            msg = f"Target '{target}' violated its output contract"
+        super().__init__(msg)
+
+    @property
+    def user_message(self) -> str:
+        """Return human-readable error message."""
+        if self.table_key:
+            return (
+                f"Target '{self.target}' attempted to write to '{self.table_key}' "
+                f"which is not in its contract"
+            )
+        if self.artifact_name:
+            return (
+                f"Target '{self.target}' attempted to write artifact '{self.artifact_name}' "
+                f"which is not in its contract"
+            )
+        return f"Target '{self.target}' violated its output contract"
+
+    @property
+    def actionable_hint(self) -> str:
+        """Return suggestion for fixing the error."""
+        if self.table_key and self.allowed_tables:
+            return (
+                f"Add '{self.table_key}' to the OutputContract for '{self.target}' "
+                f"or remove the write. Allowed tables: {sorted(self.allowed_tables)}"
+            )
+        if self.artifact_name:
+            return (
+                f"Add '{self.artifact_name}' to the OutputContract for '{self.target}' "
+                f"or remove the write"
+            )
+        return (
+            f"Review the OutputContract for '{self.target}' and ensure all writes "
+            f"match declared outputs"
+        )
+
+
 class ArtifactNotFoundError(ContractError):
     """Required input artifact does not exist.
 
@@ -278,7 +358,10 @@ class DependencyUnavailableError(ResourceError):
     @property
     def user_message(self) -> str:
         """Return human-readable error message."""
-        return f"Target '{self.target}' cannot run because dependency '{self.dependency}' {self.reason}"
+        return (
+            f"Target '{self.target}' cannot run because "
+            f"dependency '{self.dependency}' {self.reason}"
+        )
 
     @property
     def actionable_hint(self) -> str:
@@ -419,7 +502,10 @@ class MissingDependencyError(BuildError):
     @property
     def actionable_hint(self) -> str:
         """Return suggestion for fixing the error."""
-        return f"Either register target '{self.dependency}' or remove it from '{self.target}' dependencies"
+        return (
+            f"Either register target '{self.dependency}' or "
+            f"remove it from '{self.target}' dependencies"
+        )
 
 
 class CycleDetectedError(BuildError):

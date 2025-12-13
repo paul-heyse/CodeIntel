@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+import ibis
 from ibis.common.exceptions import IbisError
 
 from codeintel.config.datasets import (
@@ -209,15 +210,17 @@ def load_symbol_module_edges(
         m_def = gateway.ibis.table("core.modules").view()
         m_use = gateway.ibis.table("core.modules").view()
 
+        def_module_present = cast("Any", ibis.coalesce(m_def.module, "")).length() > 0
+        use_module_present = cast("Any", ibis.coalesce(m_use.module, "")).length() > 0
         joined = (
             su.left_join(m_def, cast("Any", su.def_path == m_def.path))
             .left_join(m_use, cast("Any", su.use_path == m_use.path))
-                .filter(
-                    cast(
-                        "Any",
-                        m_def.module.notnull() & m_use.module.notnull(),
-                    )
+            .filter(
+                cast(
+                    "Any",
+                    def_module_present & use_module_present,
                 )
+            )
             .select(
                 use_module=m_use.module,
                 def_module=m_def.module,

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 try:
@@ -20,6 +19,7 @@ from tests.build.hamilton.snapshots._snapshot import TextReplace
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
 
 SnapshotKind = Literal["json", "text"]
 OutputSelect = Literal["stdout", "stderr", "both"]

@@ -23,7 +23,6 @@ from codeintel.analytics.runtime.context import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -169,9 +168,10 @@ def compute_test_graph_metrics(
     resolved_options = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime
     ) or GraphRuntimeOptions()
+    backend = DuckDBPolicyBackend(gateway)
+    backend.ensure_table("analytics.test_graph_metrics_tests")
+    backend.ensure_table("analytics.test_graph_metrics_functions")
     con = gateway.con
-    ensure_schema(con, "analytics.test_graph_metrics_tests")
-    ensure_schema(con, "analytics.test_graph_metrics_functions")
 
     snapshot = resolved_options.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
     resolved_runtime = resolve_graph_runtime(gateway, snapshot, resolved_options)

@@ -69,7 +69,10 @@ def open_handler_gateway(
         Open gateway.
     """
     storage_config = StorageConfig(db_path=db_path, read_only=read_only)
-    return open_gateway(storage_config)
+    gateway = open_gateway(storage_config)
+    if not read_only:
+        gateway.policy.ensure_schemas_preserve()
+    return gateway
 
 
 @contextmanager

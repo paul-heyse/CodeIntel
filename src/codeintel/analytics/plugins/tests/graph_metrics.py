@@ -13,6 +13,7 @@ from codeintel.analytics.testing.graph_metrics import compute_test_graph_metrics
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -109,7 +110,7 @@ class TestGraphMetricsPlugin(TargetPlugin):
             "analytics.test_graph_metrics_functions",
         ):
             expr = ctx.gateway.ibis.table(table)
-            filtered = expr.filter((expr.repo == repo) & (expr.commit == commit))
+            filtered = expr.filter(and_predicates(expr.repo == repo, expr.commit == commit))
             result_df = filtered.aggregate(row_count=expr.repo.count()).execute()
             row_counts[table] = int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
 

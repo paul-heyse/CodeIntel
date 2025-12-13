@@ -56,7 +56,8 @@ def _expect_in(member: object, container: Sequence[object], message: str) -> Non
 def _as_mapping(row: tuple[object, ...], table_key: str) -> dict[str, object]:
     schema = TABLE_SCHEMAS.get(table_key)
     if schema is None:
-        raise AssertionError(f"Unknown table key: {table_key}")
+        message = f"Unknown table key: {table_key}"
+        raise AssertionError(message)
     columns = tuple(schema.column_names())
     return dict(zip(columns, row, strict=True))
 

@@ -27,7 +27,6 @@ from codeintel.serving.mcp.models import (
     GraphPlanResponse,
     ModuleArchitectureResponse,
     ModuleSubsystemResponse,
-    ProblemDetail,
     SubsystemModulesResponse,
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
@@ -44,6 +43,7 @@ if TYPE_CHECKING:
 
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.backend import QueryBackend
+    from codeintel.serving.mcp.models import ProblemDetail
     from codeintel.serving.mcp.serialization import (
         SupportsFromDomain,
         SupportsModelDump,

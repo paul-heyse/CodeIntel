@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
+
+import sqlglot.expressions as exp
 
 from codeintel.analytics.profiles.utils import optional_int
 from codeintel.analytics.profiles.writer_guard import (
@@ -32,10 +35,8 @@ from codeintel.config.datasets import (
     behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
-from codeintel.storage.sql.builder import ensure_schema
-from codeintel.storage.sql.builder import (
-    prepared_statements_dynamic as _prepared_statements_dynamic,
-)
+from codeintel.config.datasets.contracts import get_dataset_contracts_by_table_key
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -51,7 +52,16 @@ if TYPE_CHECKING:
     )
     from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.gateway.protocol import DuckDBConnection
+
+
+@dataclass(frozen=True)
+class PreparedStatements:
+    """Container for prepared SQL statements (legacy test hook surface)."""
+
+    insert_sql: str
+    delete_sql: str | None
+    select_sql: str | None
+    select_params: list[object] | None
 
 
 def prepared_statements_dynamic(con: object, table_key: str) -> object:
@@ -61,8 +71,52 @@ def prepared_statements_dynamic(con: object, table_key: str) -> object:
     -------
     object
         Prepared statements object for the given table.
+
+    Raises
+    ------
+    RuntimeError
+        If the contract or schema for the table key is missing.
     """
-    return _prepared_statements_dynamic(cast("DuckDBConnection", con), table_key)
+    _ = con  # maintained for signature compatibility
+    contract = get_dataset_contracts_by_table_key().get(table_key)
+    if contract is None or contract.schema is None:
+        message = f"Table {table_key} missing contract schema for prepared statements"
+        raise RuntimeError(message)
+
+    schema_name, table_name = table_key.split(".", 1)
+    columns = [col.name for col in contract.schema.columns]
+    insert_table = exp.Table(this=exp.to_identifier(table_name), db=exp.to_identifier(schema_name))
+    insert_schema = exp.Schema(
+        this=insert_table,
+        expressions=[exp.to_identifier(col) for col in columns],
+    )
+    insert_values = exp.Values(
+        expressions=[exp.Tuple(expressions=[exp.Placeholder() for _ in columns])],
+    )
+    insert_sql = exp.Insert(this=insert_schema, expression=insert_values).sql(dialect="duckdb")
+    select_sql = (
+        exp.select("*")
+        .from_(insert_table)
+        .where(
+            exp.and_(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("repo")),
+                    expression=exp.Placeholder(),
+                ),
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("commit")),
+                    expression=exp.Placeholder(),
+                ),
+            )
+        )
+        .sql(dialect="duckdb")
+    )
+    return PreparedStatements(
+        insert_sql=insert_sql,
+        delete_sql=None,
+        select_sql=select_sql,
+        select_params=None,
+    )
 
 
 def build_test_profile_context(
@@ -227,7 +281,9 @@ def write_test_profile_rows(
             serialize_row=cast("SerializeRow", serialize_test_profile_row),
             repo=cfg.repo,
             commit=cfg.commit,
-            ensure_schema_fn=lambda gw, table_key: ensure_schema(gw.con, table_key),
+            ensure_schema_fn=lambda gw, table_key: DuckDBPolicyBackend(gw).ensure_table(
+                table_key
+            ),
         ),
     )
 
@@ -300,7 +356,9 @@ def write_behavioral_coverage_rows(
             serialize_row=cast("SerializeRow", behavioral_coverage_row_to_tuple),
             repo=cfg.repo,
             commit=cfg.commit,
-            ensure_schema_fn=lambda gw, table_key: ensure_schema(gw.con, table_key),
+            ensure_schema_fn=lambda gw, table_key: DuckDBPolicyBackend(gw).ensure_table(
+                table_key
+            ),
         ),
     )
 

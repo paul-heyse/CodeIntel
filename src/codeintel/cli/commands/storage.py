@@ -14,7 +14,6 @@ from cyclopts import App, Parameter
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.storage import (
-    MacroRequirement,
     generate_macros_handler,
     profile_storage_handler,
     validate_macros_handler,
@@ -42,14 +41,6 @@ class ValidateMacrosCommand:
             help="Path to DuckDB database.",
         ),
     ] = None
-    macro_requirement: Annotated[
-        MacroRequirement,
-        Parameter(
-            name="--macros",
-            help="Ingest macro requirement policy.",
-            show_choices=True,
-        ),
-    ] = MacroRequirement.REQUIRE
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

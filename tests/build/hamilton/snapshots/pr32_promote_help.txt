@@ -1,0 +1,41 @@
+Usage: codeintel build promote ASSET ALIAS [ARGS]
+
+Set an alias for an asset version.
+
+╭─ Parameters ─────────────────────────────────────────────────────────────────╮
+│ *  ASSET --asset                Asset key to promote. [env var:              │
+│                                 CODEINTEL_BUILD_PROMOTE_ASSET] [required]    │
+│ *  ALIAS --alias                Alias to set (e.g., main, latest,            │
+│                                 release-2025.01). [env var:                  │
+│                                 CODEINTEL_BUILD_PROMOTE_ALIAS] [required]    │
+│    VERSION-HASH --version-hash  Version hash to pin (preferred). [env var:   │
+│                                 CODEINTEL_BUILD_PROMOTE_VERSION_HASH]        │
+│                                 [default: (none)]                            │
+│    FROM-RUN-ID --from-run-id    Use the version recorded for this run_id.    │
+│                                 [env var:                                    │
+│                                 CODEINTEL_BUILD_PROMOTE_FROM_RUN_ID]         │
+│                                 [default: (none)]                            │
+│    NOTE --note                  Optional note describing the promotion. [env │
+│                                 var: CODEINTEL_BUILD_PROMOTE_NOTE] [default: │
+│                                 (none)]                                      │
+│    FORMAT --format -f           Output format: json (default) or text. [env  │
+│                                 var: CODEINTEL_BUILD_PROMOTE_FORMAT]         │
+│                                 [default: json]                              │
+│    --flags                      [env var: CODEINTEL_BUILD_PROMOTE_FLAGS]     │
+│                                 [default: --flags]                           │
+│    ROOT --root -r               Explicit project root directory. [env var:   │
+│                                 CODEINTEL_BUILD_PROMOTE_ROOT] [default:      │
+│                                 (none)]                                      │
+│    OUTPUT-FORMAT                Output format. [choices: text, json, jsonl]  │
+│      --output-format            [env var:                                    │
+│                                 CODEINTEL_BUILD_PROMOTE_OUTPUT_FORMAT]       │
+│                                 [default: text]                              │
+│    JSON --json                  Alias for --output-format json. [env var:    │
+│                                 CODEINTEL_BUILD_PROMOTE_JSON] [default:      │
+│                                 false]                                       │
+│    VERBOSE --verbose -v         Increase verbosity (0=warnings, 1=info,      │
+│                                 2=debug). [env var:                          │
+│                                 CODEINTEL_BUILD_PROMOTE_VERBOSE] [default:   │
+│                                 0]                                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+

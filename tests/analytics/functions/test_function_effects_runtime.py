@@ -16,7 +16,6 @@ from codeintel.analytics.functions.function_effects import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
-from codeintel.storage.sql.builder import ensure_schema
 from tests._helpers import CORE_PACK, create_test_context
 from tests._helpers.assertions import assert_logged, expect_equal, expect_false, expect_true
 from tests._helpers.builders import CallGraphEdgeRow, insert_rows
@@ -135,7 +134,6 @@ def test_compute_function_effects_with_transitive_and_missing(
         threading_apis={"threading": ["Thread"]},
     )
 
-    ensure_schema(gateway.con, "graph.call_graph_edges")
     insert_rows(
         gateway,
         [

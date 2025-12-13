@@ -12,11 +12,16 @@ Design Principles
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from hamilton.function_modifiers import tag
 
-from codeintel.build.hamilton.io.dataset_ref import DatasetRef, refs_from_target_result
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.io.dataset_ref import refs_from_target_result
 from codeintel.build.hamilton.naming import dataset_node
+
+if TYPE_CHECKING:
+    from codeintel.build.hamilton.io.dataset_ref import DatasetRef
+    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 
 __all__ = [
     "DATASET_NODES",

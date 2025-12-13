@@ -206,10 +206,9 @@ def build_file_profile_rows(
             fm.high_risk_function_count,
             fm.medium_risk_function_count,
             fm.max_risk_score,
-            (
-                fm.sum_covered_lines.cast("float64")
-                / ibis.nullif(fm.sum_exec_lines, ibis.literal(0))
-            ).name("file_coverage_ratio"),
+            (fm.sum_covered_lines.cast("float64") / fm.sum_exec_lines.nullif(ibis.literal(0))).name(
+                "file_coverage_ratio"
+            ),
             fm.tested_function_count,
             fm.untested_function_count,
             fm.tests_touching,

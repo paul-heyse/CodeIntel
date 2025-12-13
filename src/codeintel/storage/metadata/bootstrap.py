@@ -156,7 +156,14 @@ def apply_metadata_ddl(con: DuckDBPyConnection) -> None:
 
 
 def load_dataset_schema_registry(con: DuckDBPyConnection) -> dict[str, str]:
-    """Return the dataset schema hashes recorded in metadata.dataset_schema_registry."""
+    """
+    Return the dataset schema hashes recorded in metadata.dataset_schema_registry.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of table_key to recorded schema hash.
+    """
     rows = con.execute(
         "SELECT table_key, schema_hash FROM metadata.dataset_schema_registry"
     ).fetchall()
@@ -180,7 +187,14 @@ def _register_dataset_schema_hashes(con: DuckDBPyConnection) -> None:
 
 
 def validate_dataset_schema_registry(con: DuckDBPyConnection) -> None:
-    """Validate dataset_schema_registry matches DatasetContract TableSchema hashes."""
+    """
+    Validate dataset_schema_registry matches DatasetContract TableSchema hashes.
+
+    Raises
+    ------
+    RuntimeError
+        When entries are missing or do not match expected schema hashes.
+    """
     expected = {
         table_key: _expected_schema_hash(table_key)
         for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()

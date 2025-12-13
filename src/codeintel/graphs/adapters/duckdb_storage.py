@@ -79,8 +79,8 @@ class DuckDBStorageAdapter:
         (and tests) can observe failures.
         """
         if params is None:
-            return self.gateway.con.execute(sql)
-        return self.gateway.con.execute(sql, list(params))
+            return self.gateway.execute(sql)
+        return self.gateway.execute(sql, list(params))
 
     def execute_query(
         self,
@@ -103,9 +103,9 @@ class DuckDBStorageAdapter:
         """
         try:
             if params is not None:
-                result = self.gateway.con.execute(sql, list(params))
+                result = self.gateway.execute(sql, list(params))
             else:
-                result = self.gateway.con.execute(sql)
+                result = self.gateway.execute(sql)
             rows = result.fetchall()
             return QueryResult.from_rows([tuple(row) for row in rows])
         except (RuntimeError, OSError, TypeError, ValueError) as exc:
@@ -133,9 +133,9 @@ class DuckDBStorageAdapter:
         """
         try:
             if params is not None:
-                result = self.gateway.con.execute(sql, list(params))
+                result = self.gateway.execute(sql, list(params))
             else:
-                result = self.gateway.con.execute(sql)
+                result = self.gateway.execute(sql)
         except (RuntimeError, OSError, TypeError, ValueError) as exc:
             log.warning("Mutation execution failed: %s", exc)
             return 0

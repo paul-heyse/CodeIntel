@@ -38,6 +38,13 @@ MODULES_TARGET = OutputTarget(
     name="modules",
     module="ingestion",
     plugin="repo_scan",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["core.modules"],
+            _DATASET_TABLE_SCHEMAS["core.file_state"],
+            _DATASET_TABLE_SCHEMAS["core.repo_map"],
+        )
+    ),
     dependencies=(),
     description="Repository module and file index from scanning.",
 )
@@ -46,6 +53,12 @@ AST_TARGET = OutputTarget(
     name="ast",
     module="ingestion",
     plugin="ast_extract",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["core.ast_nodes"],
+            _DATASET_TABLE_SCHEMAS["core.ast_metrics"],
+        )
+    ),
     dependencies=("modules",),
     resources=TargetResources(tracker=True, modules=True),
     execution=CPU_INTENSIVE_EXECUTION,
@@ -56,6 +69,7 @@ CST_TARGET = OutputTarget(
     name="cst",
     module="ingestion",
     plugin="cst_extract",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["core.cst_nodes"],)),
     dependencies=("modules",),
     description="Concrete syntax tree extraction.",
 )
@@ -84,6 +98,12 @@ TYPING_TARGET = OutputTarget(
     name="typing",
     module="ingestion",
     plugin="typing_ingest",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.typedness"],
+            _DATASET_TABLE_SCHEMAS["analytics.static_diagnostics"],
+        )
+    ),
     dependencies=("modules",),
     resources=TargetResources(
         tracker=True,
@@ -98,6 +118,7 @@ COVERAGE_INGEST_TARGET = OutputTarget(
     name="coverage_ingest",
     module="ingestion",
     plugin="coverage_ingest",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.coverage_lines"],)),
     dependencies=("modules",),
     description="Line-level test coverage ingestion.",
 )
@@ -106,6 +127,7 @@ TESTS_INGEST_TARGET = OutputTarget(
     name="tests_ingest",
     module="ingestion",
     plugin="tests_ingest",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.test_catalog"],)),
     dependencies=("modules",),
     description="Test catalog ingestion from pytest.",
 )
@@ -114,6 +136,7 @@ DOCSTRINGS_TARGET = OutputTarget(
     name="docstrings",
     module="ingestion",
     plugin="docstrings_ingest",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["core.docstrings"],)),
     dependencies=("ast",),
     description="Docstring extraction and parsing.",
 )
@@ -153,6 +176,17 @@ CALL_GRAPH_TARGET = OutputTarget(
     ),
     dependencies=("goids", "scip"),
     description="Function call graph construction.",
+)
+
+CALL_GRAPH_VIEWS_TARGET = OutputTarget(
+    name="call_graph_views",
+    module="graphs",
+    plugin="",  # Native target, no plugin
+    contract=OutputContract(
+        tables=()  # Will be updated with actual view schemas
+    ),
+    dependencies=("call_graph",),
+    description="Derived views over call graph for analytics.",
 )
 
 IMPORT_GRAPH_TARGET = OutputTarget(
@@ -223,6 +257,7 @@ HOTSPOTS_TARGET = OutputTarget(
     name="hotspots",
     module="analytics",
     plugin="hotspots",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.hotspots"],)),
     dependencies=("modules",),
     description="File hotspot analysis based on churn.",
 )
@@ -231,6 +266,12 @@ FUNCTION_METRICS_TARGET = OutputTarget(
     name="function_metrics",
     module="analytics",
     plugin="function_metrics",
+    contract=OutputContract(
+        tables=(
+            _DATASET_TABLE_SCHEMAS["analytics.function_metrics"],
+            _DATASET_TABLE_SCHEMAS["analytics.function_types"],
+        )
+    ),
     dependencies=("goids", "ast"),
     description="Function structural metrics and type annotations.",
 )
@@ -255,6 +296,7 @@ FUNCTION_HISTORY_TARGET = OutputTarget(
     name="function_history",
     module="analytics",
     plugin="function_history",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.function_history"],)),
     dependencies=("goids",),
     description="Function git history and churn metrics.",
 )
@@ -271,6 +313,7 @@ COVERAGE_FUNCTIONS_TARGET = OutputTarget(
     name="coverage_functions",
     module="analytics",
     plugin="coverage_functions",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.coverage_functions"],)),
     dependencies=("goids", "coverage_ingest"),
     description="Per-function coverage aggregation.",
 )
@@ -279,6 +322,7 @@ COVERAGE_TEST_EDGES_TARGET = OutputTarget(
     name="coverage_test_edges",
     module="analytics",
     plugin="coverage_test_edges",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.test_coverage_edges"],)),
     dependencies=("coverage_functions", "tests_ingest"),
     description="Test-to-function coverage edges.",
 )
@@ -311,6 +355,7 @@ RISK_FACTORS_TARGET = OutputTarget(
     name="risk_factors",
     module="analytics",
     plugin="risk_factors",
+    contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.goid_risk_factors"],)),
     dependencies=(
         "function_metrics",
         "coverage_functions",
@@ -443,6 +488,15 @@ EXPORT_JSONL_TARGET = OutputTarget(
     name="export_jsonl",
     module="export",
     plugin="export_jsonl",
+    contract=OutputContract(
+        artifacts=(
+            ArtifactSpec(
+                "jsonl_export",
+                "{export_dir}/codeintel.jsonl",
+                "JSONL export of analytics datasets",
+            ),
+        )
+    ),
     dependencies=("profiles",),
     description="Export datasets to JSONL format for Document Output.",
 )
@@ -451,6 +505,15 @@ EXPORT_PARQUET_TARGET = OutputTarget(
     name="export_parquet",
     module="export",
     plugin="export_parquet",
+    contract=OutputContract(
+        artifacts=(
+            ArtifactSpec(
+                "parquet_export",
+                "{export_dir}/codeintel.parquet",
+                "Parquet export of analytics datasets",
+            ),
+        )
+    ),
     dependencies=("profiles",),
     description="Export datasets to Parquet format for Document Output.",
 )
@@ -468,6 +531,7 @@ ALL_TARGETS: tuple[OutputTarget, ...] = (
     CONFIG_INGEST_TARGET,
     GOIDS_TARGET,
     CALL_GRAPH_TARGET,
+    CALL_GRAPH_VIEWS_TARGET,
     IMPORT_GRAPH_TARGET,
     CFG_TARGET,
     DFG_TARGET,
@@ -620,6 +684,7 @@ __all__ = [
     "AST_TARGET",
     "BEHAVIORAL_COVERAGE_TARGET",
     "CALL_GRAPH_TARGET",
+    "CALL_GRAPH_VIEWS_TARGET",
     "CFG_DFG_METRICS_TARGET",
     "CFG_TARGET",
     "CONFIG_DATA_FLOW_TARGET",

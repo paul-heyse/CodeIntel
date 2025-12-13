@@ -224,7 +224,6 @@ class DatasetContract:
         """
         docs_view = self.table_key.startswith("docs.")
         read_only = self.is_view or docs_view or "read_only" in self.tags
-        requires_normalized_macro = self.schema is not None and "dataset_rows_only" not in self.tags
         return {
             "can_validate": self.json_schema_id is not None,
             "can_export_jsonl": self.jsonl_filename is not None,
@@ -234,7 +233,6 @@ class DatasetContract:
             "docs_view": docs_view,
             "read_only": read_only,
             "dataset_rows_only": "dataset_rows_only" in self.tags,
-            "requires_normalized_macro": requires_normalized_macro,
         }
 
     def column_names(self) -> tuple[str, ...]:

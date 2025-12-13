@@ -83,6 +83,7 @@ class ConnectionRecordingGateway:
         self._gateway = gateway
         self.executions: list[tuple[str, list[object]]] = []
         self.analytics = gateway.analytics
+        self.assets = gateway.assets
         self.build = gateway.build
         self.config = gateway.config
         self.core = gateway.core
@@ -90,6 +91,7 @@ class ConnectionRecordingGateway:
         self.docs = gateway.docs
         self.graph = gateway.graph
         self.ibis = gateway.ibis
+        self.policy = gateway.policy
         self.runs = gateway.runs
         self._recording_con = RecordingConnection(gateway.con, self.executions)
 
@@ -242,6 +244,7 @@ class FailingGateway:
         self._error_message = error_message
         self.records: list[tuple[str, tuple[object, ...]]] = []
         self.analytics = gateway.analytics
+        self.assets = gateway.assets
         self.build = gateway.build
         self.config = gateway.config
         self.core = gateway.core
@@ -249,6 +252,7 @@ class FailingGateway:
         self.docs = gateway.docs
         self.graph = gateway.graph
         self.ibis = cast("Any", _FailingIbisProxy(error_message))
+        self.policy = gateway.policy
         self.runs = gateway.runs
 
     @property
