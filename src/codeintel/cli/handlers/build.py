@@ -12,6 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
+from codeintel.build.assets.impact import compute_impact
 from codeintel.build.config import load_build_config
 from codeintel.build.executor import BuildExecutor, ExecutorEnv
 from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
@@ -1695,9 +1696,82 @@ def build_diff_handler(ctx: CommandContext) -> CliResult[BuildDiffResult]:
     )
 
 
+def build_impact_handler(ctx: CommandContext) -> CliResult[BuildImpactResult]:
+    """Handle build impact command.
+
+    Analyze downstream impact of an asset change by traversing the lineage graph.
+
+    Parameters
+    ----------
+    ctx
+        Command context with parameters and runtime.
+
+    Returns
+    -------
+    CliResult[BuildImpactResult]
+        Result containing impacted assets and targets.
+    """
+    gateway = ctx.gateway
+
+    asset_kind = ctx.params.get_str("asset_kind") or "table"
+    asset_key = ctx.params.get_str("asset_key") or ""
+    version_hash = ctx.params.get_str("version_hash")
+    show_targets = ctx.params.get_bool("show_targets")
+    max_depth = ctx.params.get_int("max_depth") or 10
+    output_format = ctx.params.get_str("output_format") or "json"
+
+    if not asset_key:
+        return fail_invalid_target_selection("Missing --asset-key")
+
+    result = compute_impact(
+        gateway,
+        asset_kind=asset_kind,
+        asset_key=asset_key,
+        version_hash=version_hash,
+        max_depth=max_depth,
+    )
+
+    impacted_list = [
+        {
+            "asset_kind": asset.asset_kind,
+            "asset_key": asset.asset_key,
+            "version_hash": asset.version_hash,
+            "target": asset.target,
+            "depth": asset.depth,
+        }
+        for asset in result.impacted_assets
+    ]
+
+    targets_list = sorted(result.impacted_targets) if show_targets else []
+
+    return CliResult.ok(
+        BuildImpactResult(
+            source_kind=result.source_kind,
+            source_key=result.source_key,
+            source_version=result.source_version,
+            impacted_assets=impacted_list,
+            impacted_targets=targets_list,
+            format=output_format,
+        )
+    )
+
+
+@dataclass(frozen=True)
+class BuildImpactResult:
+    """Result of build impact analysis."""
+
+    source_kind: str
+    source_key: str
+    source_version: str | None
+    impacted_assets: list[dict[str, Any]]
+    impacted_targets: list[str]
+    format: str = "json"
+
+
 __all__ = [
     "BuildGraphResult",
     "BuildHistoryResult",
+    "BuildImpactResult",
     "BuildPlanResult",
     "BuildRunResult",
     "BuildStatusResult",
@@ -1708,6 +1782,7 @@ __all__ = [
     "build_explain_handler",
     "build_graph_handler",
     "build_history_handler",
+    "build_impact_handler",
     "build_lineage_handler",
     "build_plan_handler",
     "build_promote_handler",

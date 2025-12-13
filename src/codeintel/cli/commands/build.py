@@ -22,6 +22,7 @@ from codeintel.cli.handlers.build import (
     build_explain_handler,
     build_graph_handler,
     build_history_handler,
+    build_impact_handler,
     build_lineage_handler,
     build_plan_handler,
     build_promote_handler,
@@ -471,6 +472,62 @@ class BuildDiffCommand:
             help="Target version spec (alias or version hash).",
         ),
     ]
+    output_format: Annotated[
+        str,
+        Parameter(
+            name=["--format", "-f"],
+            help="Output format: json (default) or text.",
+        ),
+    ] = "json"
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("build.impact", handler=build_impact_handler, config=_BUILD_CONFIG)
+@build_app.command(name="impact")
+@dataclass
+class BuildImpactCommand:
+    """Analyze downstream impact of an asset change.
+
+    Traverses the asset lineage graph to identify which assets and targets
+    would be affected by changes to the specified asset.
+    """
+
+    asset_kind: Annotated[
+        str,
+        Parameter(
+            name=["--asset-kind"],
+            help="Kind of source asset: table or artifact.",
+        ),
+    ] = "table"
+    asset_key: Annotated[
+        str,
+        Parameter(
+            name=["--asset-key"],
+            help="Key of source asset (e.g., analytics.function_metrics).",
+        ),
+    ] = ""
+    version_hash: Annotated[
+        str | None,
+        Parameter(
+            name=["--version-hash"],
+            help="Specific version hash to analyze (optional).",
+        ),
+    ] = None
+    show_targets: Annotated[
+        bool,
+        Parameter(
+            name=["--show-targets"],
+            help="Include target names that would need to re-run.",
+            negative=(),
+        ),
+    ] = False
+    max_depth: Annotated[
+        int,
+        Parameter(
+            name=["--max-depth"],
+            help="Maximum traversal depth.",
+        ),
+    ] = 10
     output_format: Annotated[
         str,
         Parameter(
