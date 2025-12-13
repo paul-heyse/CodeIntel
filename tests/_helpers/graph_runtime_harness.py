@@ -23,7 +23,6 @@ from codeintel.analytics.graphs.symbol_graph_metrics import (
 )
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
-from codeintel.config.steps_graphs import ConfigDataFlowStepConfig, GraphMetricsStepConfig
 from tests._helpers.fakes.graph_runtime import (
     CountingGraphEngineAdapter,
     build_graph_engine_double,
@@ -204,7 +203,7 @@ def run_graph_metrics_pipeline(
     """Run the full analytics graph metrics pipeline for a harness."""
     compute_config_data_flow(
         ctx.gateway,
-        ConfigDataFlowStepConfig(snapshot=ctx.snapshot),
+        ctx.snapshot,
         call_graph=ctx.fixtures.call_graph,
         ast_by_goid=ctx.ast_by_goid,
     )
@@ -216,7 +215,7 @@ def run_graph_metrics_pipeline(
     )
     compute_graph_metrics(
         ctx.gateway,
-        GraphMetricsStepConfig(snapshot=ctx.snapshot),
+        ctx.snapshot,
         deps=GraphMetricsDeps(
             runtime=ctx.runtime_options,
             filters=filters,

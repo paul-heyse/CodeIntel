@@ -26,6 +26,7 @@ from codeintel.analytics.testing.profiles.types import (
     ImportanceInputs,
     TestAstInfo,
     TestProfileContext,
+    TestProfileOptions,
 )
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
@@ -50,8 +51,16 @@ if TYPE_CHECKING:
         TestGraphMetricsProtocol,
         TestRecord,
     )
-    from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
+else:
+    from collections.abc import Mapping
+
+    from codeintel.analytics.testing.profiles.types import (
+        FunctionCoverageEntryProtocol,
+        SubsystemCoverageEntryProtocol,
+        TestGraphMetricsProtocol,
+    )
 
 
 @dataclass(frozen=True)
@@ -62,6 +71,30 @@ class PreparedStatements:
     delete_sql: str | None
     select_sql: str | None
     select_params: list[object] | None
+
+
+@dataclass(frozen=True)
+class TestProfileInputs:
+    """Bundled inputs for test profile context construction.
+
+    Groups coverage and metric data needed to build test profiles.
+
+    Parameters
+    ----------
+    functions_covered
+        Function coverage entries keyed by test_id.
+    subsystems_covered
+        Subsystem coverage entries keyed by test_id.
+    tg_metrics
+        Test graph metrics keyed by test_id.
+    ast_info
+        AST-derived info keyed by test_id.
+    """
+
+    functions_covered: Mapping[str, FunctionCoverageEntryProtocol]
+    subsystems_covered: Mapping[str, SubsystemCoverageEntryProtocol]
+    tg_metrics: Mapping[str, TestGraphMetricsProtocol]
+    ast_info: Mapping[str, TestAstInfo]
 
 
 def prepared_statements_dynamic(con: object, table_key: str) -> object:
@@ -121,37 +154,48 @@ def prepared_statements_dynamic(con: object, table_key: str) -> object:
 
 def build_test_profile_context(
     *,
-    cfg: TestProfileStepConfig,
-    functions_covered: Mapping[str, FunctionCoverageEntryProtocol],
-    subsystems_covered: Mapping[str, SubsystemCoverageEntryProtocol],
-    tg_metrics: Mapping[str, TestGraphMetricsProtocol],
-    ast_info: Mapping[str, TestAstInfo],
+    snapshot: SnapshotRef,
+    inputs: TestProfileInputs,
+    options: TestProfileOptions | None = None,
 ) -> TestProfileContext:
     """Construct the shared context required for test_profile row assembly.
+
+    Parameters
+    ----------
+    snapshot
+        Snapshot reference.
+    inputs
+        Bundled coverage and metric inputs.
+    options
+        Optional test profile options.
 
     Returns
     -------
     TestProfileContext
         Snapshot-scoped context used when building test profile rows.
     """
-    max_function_count = max((entry.count for entry in functions_covered.values()), default=0)
+    opts = options or TestProfileOptions()
+    max_function_count = max(
+        (entry.count for entry in inputs.functions_covered.values()), default=0
+    )
     max_weighted_degree = max(
-        (metrics.weighted_degree or 0.0 for metrics in tg_metrics.values()), default=0.0
+        (metrics.weighted_degree or 0.0 for metrics in inputs.tg_metrics.values()), default=0.0
     )
     max_subsystem_risk = max(
-        (entry.max_risk_score or 0.0 for entry in subsystems_covered.values()),
+        (entry.max_risk_score or 0.0 for entry in inputs.subsystems_covered.values()),
         default=0.0,
     )
     return TestProfileContext(
-        cfg=cfg,
+        snapshot=snapshot,
+        options=opts,
         now=datetime.now(tz=UTC),
         max_function_count=max_function_count,
         max_weighted_degree=max_weighted_degree,
         max_subsystem_risk=max_subsystem_risk,
-        functions_covered=functions_covered,
-        subsystems_covered=subsystems_covered,
-        tg_metrics=tg_metrics,
-        ast_info=ast_info,
+        functions_covered=inputs.functions_covered,
+        subsystems_covered=inputs.subsystems_covered,
+        tg_metrics=inputs.tg_metrics,
+        ast_info=inputs.ast_info,
     )
 
 
@@ -203,7 +247,7 @@ def _build_test_profile_model(test: TestRecord, ctx: TestProfileContext) -> Prof
         markers=markers,
         duration_ms=test.duration_ms,
         io_flags=ast_details.io_flags,
-        slow_test_threshold_ms=ctx.cfg.slow_test_threshold_ms,
+        slow_test_threshold_ms=ctx.options.slow_test_threshold_ms,
     )
     importance_inputs = ImportanceInputs(
         functions_covered_count=cov_entry.count,
@@ -216,8 +260,8 @@ def _build_test_profile_model(test: TestRecord, ctx: TestProfileContext) -> Prof
     importance = compute_importance_score(importance_inputs)
     now = ctx.now
     return ProfileRowModel(
-        repo=ctx.cfg.repo,
-        commit=ctx.cfg.commit,
+        repo=ctx.snapshot.repo,
+        commit=ctx.snapshot.commit,
         test_id=test.test_id,
         test_goid_h128=test.test_goid_h128,
         urn=test.urn,
@@ -261,10 +305,19 @@ def _build_test_profile_model(test: TestRecord, ctx: TestProfileContext) -> Prof
 
 def write_test_profile_rows(
     gateway: StorageGateway,
-    cfg: TestProfileStepConfig,
+    snapshot: SnapshotRef,
     rows: Iterable[ProfileRowModel],
 ) -> int:
     """Insert rows into analytics.test_profile with registry alignment checks.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    snapshot
+        Snapshot reference.
+    rows
+        Row models to insert.
 
     Returns
     -------
@@ -279,8 +332,8 @@ def write_test_profile_rows(
             table_key="analytics.test_profile",
             columns=TEST_PROFILE_COLUMNS,
             serialize_row=cast("SerializeRow", serialize_test_profile_row),
-            repo=cfg.repo,
-            commit=cfg.commit,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
             ensure_schema_fn=lambda gw, table_key: DuckDBPolicyBackend(gw).ensure_table(table_key),
         ),
     )
@@ -334,10 +387,19 @@ def build_behavioral_coverage_rows(
 
 def write_behavioral_coverage_rows(
     gateway: StorageGateway,
-    cfg: BehavioralCoverageStepConfig,
+    snapshot: SnapshotRef,
     rows: Iterable[BehavioralCoverageRowModel],
 ) -> int:
     """Insert rows into analytics.behavioral_coverage with registry alignment checks.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    snapshot
+        Snapshot reference.
+    rows
+        Row models to insert.
 
     Returns
     -------
@@ -352,8 +414,8 @@ def write_behavioral_coverage_rows(
             table_key="analytics.behavioral_coverage",
             columns=BEHAVIORAL_COVERAGE_COLUMNS,
             serialize_row=cast("SerializeRow", behavioral_coverage_row_to_tuple),
-            repo=cfg.repo,
-            commit=cfg.commit,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
             ensure_schema_fn=lambda gw, table_key: DuckDBPolicyBackend(gw).ensure_table(table_key),
         ),
     )

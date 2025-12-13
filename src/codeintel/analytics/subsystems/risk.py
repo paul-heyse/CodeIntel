@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codeintel.config import SubsystemsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 MEDIUM_RISK_THRESHOLD = 0.4
@@ -50,7 +50,7 @@ class RiskTally:
 
 
 def aggregate_risk(
-    gateway: StorageGateway, cfg: SubsystemsStepConfig, labels: dict[str, str]
+    gateway: StorageGateway, snapshot: SnapshotRef, labels: dict[str, str]
 ) -> dict[str, SubsystemRisk]:
     """
     Aggregate risk across subsystems based on function risk factors.
@@ -73,7 +73,7 @@ def aggregate_risk(
           ON m.path = fm.rel_path
         WHERE rf.repo = ? AND rf.commit = ?
         """,
-        [cfg.repo, cfg.commit],
+        [snapshot.repo, snapshot.commit],
     ).fetchall()
     for risk_score, risk_level, module in rows:
         if module is None:

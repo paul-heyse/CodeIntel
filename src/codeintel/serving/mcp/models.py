@@ -83,7 +83,7 @@ from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.config.graph_helpers import GraphRunScope
 from codeintel.serving import domain_models as dm
 from codeintel.serving.mcp.view_utils import normalize_entrypoints_payload
 from codeintel.serving.services.errors import ProblemDetail as DomainProblemDetail

@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.parsing.ast_cache import FunctionAst
-    from codeintel.config import SemanticRolesStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -173,7 +173,7 @@ class ModuleRecord:
 
 def compute_semantic_roles(
     gateway: StorageGateway,
-    cfg: SemanticRolesStepConfig,
+    snapshot: SnapshotRef,
     *,
     module_by_path: dict[str, str],
     ast_map: dict[int, FunctionAst],
@@ -186,8 +186,8 @@ def compute_semantic_roles(
     ----------
     gateway
         Storage gateway providing DuckDB access.
-    cfg
-        Semantic role configuration.
+    snapshot
+        Repository and commit identifiers.
     module_by_path
         Mapping of file path to module name.
     ast_map
@@ -199,11 +199,11 @@ def compute_semantic_roles(
     backend.ensure_table("analytics.semantic_roles_functions")
     backend.ensure_table("analytics.semantic_roles_modules")
 
-    module_meta = _load_module_meta(gateway, repo=cfg.repo, commit=cfg.commit)
-    function_rows = _load_function_rows(gateway, repo=cfg.repo, commit=cfg.commit)
-    effects = _load_effects(gateway, repo=cfg.repo, commit=cfg.commit)
-    contracts = _load_contracts(gateway, repo=cfg.repo, commit=cfg.commit)
-    graph_metrics = _load_graph_metrics(gateway, repo=cfg.repo, commit=cfg.commit)
+    module_meta = _load_module_meta(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    function_rows = _load_function_rows(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    effects = _load_effects(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    contracts = _load_contracts(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    graph_metrics = _load_graph_metrics(gateway, repo=snapshot.repo, commit=snapshot.commit)
 
     artifacts = RoleArtifacts(
         module_by_path=module_by_path,
@@ -219,15 +219,15 @@ def compute_semantic_roles(
     fn_rows, roles_by_module = _build_function_role_rows(
         function_rows=function_rows,
         artifacts=artifacts,
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
         now=now,
     )
 
     backend.delete_for_snapshot(
         "analytics.semantic_roles_functions",
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
     if fn_rows:
         backend.bulk_insert("analytics.semantic_roles_functions", fn_rows)
@@ -235,14 +235,14 @@ def compute_semantic_roles(
     module_rows = _classify_modules(
         module_meta=module_meta,
         roles_by_module=roles_by_module,
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
         now=now,
     )
     backend.delete_for_snapshot(
         "analytics.semantic_roles_modules",
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
     if module_rows:
         backend.bulk_insert("analytics.semantic_roles_modules", module_rows)
@@ -251,8 +251,8 @@ def compute_semantic_roles(
         "semantic_roles populated: %d functions, %d modules for %s@%s",
         len(fn_rows),
         len(module_rows),
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
     )
 
 

@@ -67,7 +67,7 @@ def test_write_table_validation_and_recording(tmp_path: Path) -> None:
 
 
 def test_write_table_legacy_tables_skip_schema(tmp_path: Path) -> None:
-    """Legacy tables in target.tables bypass schema lookup."""
+    """Legacy tables in target.table_keys bypass schema lookup."""
     target = OutputTarget.from_tables(
         name="legacy",
         module="analytics",

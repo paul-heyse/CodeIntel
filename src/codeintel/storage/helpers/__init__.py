@@ -29,18 +29,24 @@ For row count operations, use `codeintel.storage.validation.data_checks`.
 
 from __future__ import annotations
 
-from codeintel.storage.errors import DUCKDB_ERRORS
 from codeintel.storage.helpers.json import (
     decode_json,
     decode_json_dict,
     decode_json_list,
+    deserialize_str_tuple,
     encode_json_compact,
+    serialize_str_sequence,
 )
+from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.helpers.time import utc_now
 
 __all__ = [
-    "DUCKDB_ERRORS",
     "decode_json",
     "decode_json_dict",
     "decode_json_list",
+    "deserialize_str_tuple",
     "encode_json_compact",
+    "serialize_str_sequence",
+    "split_table_key",
+    "utc_now",
 ]

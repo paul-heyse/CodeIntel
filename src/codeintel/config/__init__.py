@@ -2,19 +2,19 @@
 
 This package provides:
 - **Primitives** (`primitives.py`): Core types like `SnapshotRef`, `BuildPaths`, `ToolBinaries`
-- **Builder** (`builder.py`): `ConfigBuilder` for constructing step configs from shared context
+- **Builder** (`builder.py`): `ConfigBuilder` for constructing pipeline contexts
 - **CLI Models** (`models.py`): Pydantic models for CLI argument parsing and validation
 - **Serving** (`serving_models.py`): API server configuration models
+- **Graph Helpers** (`graph_helpers.py`): Graph-related configuration types
 
-Preferred Import Patterns
--------------------------
-For step configurations (new, preferred):
+Import Patterns
+---------------
+For pipeline context construction:
     from codeintel.config import ConfigBuilder, SnapshotInit
 
     builder = ConfigBuilder.from_snapshot(
         snapshot=SnapshotInit(repo="my-org/repo", commit="abc", repo_root=Path(".")),
     )
-    cfg = builder.graph_metrics(max_betweenness_sample=100)
 
 For primitives:
     from codeintel.config import (
@@ -28,10 +28,19 @@ For primitives:
 For CLI boundary models:
     from codeintel.config import RepoConfig, CliPathsInput, ToolsConfig, CodeIntelConfig
 
-Use `ConfigBuilder.from_snapshot()` to create step configurations.
+For analytics and graph computations, use SnapshotRef + options dataclasses
+directly from their respective modules instead of deprecated step configurations.
 """
 
 from codeintel.config.builder import BuilderDependencies, ConfigBuilder
+from codeintel.config.graph_helpers import (
+    GraphMetricPluginOverrides,
+    GraphMetricPluginSelection,
+    GraphMetricsTuning,
+    GraphMetricWeights,
+    GraphPluginPolicy,
+    GraphRunScope,
+)
 from codeintel.config.models import (
     CliPathsInput,
     CodeIntelConfig,
@@ -42,86 +51,36 @@ from codeintel.config.primitives import (
     BuildLayoutOptions,
     BuildPathOverrides,
     BuildPaths,
+    EntryPointToggles,
     GraphBackendConfig,
+    GraphFeatureFlags,
     ScanProfiles,
     SnapshotInit,
     SnapshotRef,
     ToolBinaries,
 )
-from codeintel.config.steps_analytics import (
-    BehavioralCoverageStepConfig,
-    CoverageAnalyticsStepConfig,
-    DataModelsStepConfig,
-    DataModelUsageStepConfig,
-    EntryPointsStepConfig,
-    EntryPointToggles,
-    FunctionAnalyticsStepConfig,
-    FunctionContractsStepConfig,
-    FunctionEffectsStepConfig,
-    FunctionHistoryStepConfig,
-    HistoryTimeseriesStepConfig,
-    HotspotsStepConfig,
-    ProfilesAnalyticsStepConfig,
-    SemanticRolesStepConfig,
-    SubsystemsStepConfig,
-    TestCoverageStepConfig,
-    TestProfileStepConfig,
-)
-from codeintel.config.steps_graphs import (
-    CallGraphStepConfig,
-    CFGBuilderStepConfig,
-    ConfigDataFlowStepConfig,
-    ExternalDependenciesStepConfig,
-    GoidBuilderStepConfig,
-    GraphMetricsStepConfig,
-    GraphMetricsTuning,
-    GraphPluginPolicy,
-    GraphRunScope,
-    ImportGraphStepConfig,
-    SymbolUsesStepConfig,
-)
 
 __all__ = [
-    "BehavioralCoverageStepConfig",
     "BuildLayoutOptions",
     "BuildPathOverrides",
     "BuildPaths",
     "BuilderDependencies",
-    "CFGBuilderStepConfig",
-    "CallGraphStepConfig",
     "CliPathsInput",
     "CodeIntelConfig",
     "ConfigBuilder",
-    "ConfigDataFlowStepConfig",
-    "CoverageAnalyticsStepConfig",
-    "DataModelUsageStepConfig",
-    "DataModelsStepConfig",
     "EntryPointToggles",
-    "EntryPointsStepConfig",
-    "ExternalDependenciesStepConfig",
-    "FunctionAnalyticsStepConfig",
-    "FunctionContractsStepConfig",
-    "FunctionEffectsStepConfig",
-    "FunctionHistoryStepConfig",
-    "GoidBuilderStepConfig",
     "GraphBackendConfig",
-    "GraphMetricsStepConfig",
+    "GraphFeatureFlags",
+    "GraphMetricPluginOverrides",
+    "GraphMetricPluginSelection",
+    "GraphMetricWeights",
     "GraphMetricsTuning",
     "GraphPluginPolicy",
     "GraphRunScope",
-    "HistoryTimeseriesStepConfig",
-    "HotspotsStepConfig",
-    "ImportGraphStepConfig",
-    "ProfilesAnalyticsStepConfig",
     "RepoConfig",
     "ScanProfiles",
-    "SemanticRolesStepConfig",
     "SnapshotInit",
     "SnapshotRef",
-    "SubsystemsStepConfig",
-    "SymbolUsesStepConfig",
-    "TestCoverageStepConfig",
-    "TestProfileStepConfig",
     "ToolBinaries",
     "ToolsConfig",
 ]

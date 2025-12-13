@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
-from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from tests._helpers import create_test_context
 from tests._helpers.assertions import (
     assert_component_counts,
@@ -112,9 +111,8 @@ def test_filter_import_graph_noop_without_modules() -> None:
 def test_build_filters_safe_when_repos_empty(tmp_path: Path) -> None:
     """Building filters from empty repositories should yield no-op filters."""
     ctx = create_test_context(tmp_path)
-    cfg_snapshot = make_snapshot(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
-    cfg = GraphMetricsStepConfig(snapshot=cfg_snapshot)
-    filters = build_graph_metric_filters(ctx.gateway, cfg)
+    snapshot = make_snapshot(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
+    filters = build_graph_metric_filters(ctx.gateway, snapshot)
     expect_equal(filters.function_goids, None)
     expect_equal(filters.modules, None)
     ctx.close()

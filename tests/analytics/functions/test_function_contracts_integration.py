@@ -18,7 +18,7 @@ from codeintel.analytics.functions.function_contracts import (
     compute_function_contracts,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.config import FunctionContractsStepConfig
+from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -70,8 +70,8 @@ def ctx(tmp_path: Path) -> Iterator[TestContext]:
 
 
 @pytest.fixture
-def contracts_config(ctx: TestContext) -> FunctionContractsStepConfig:
-    """Create a test configuration for function contracts.
+def contracts_snapshot(ctx: TestContext) -> SnapshotRef:
+    """Create a test snapshot for function contracts.
 
     Parameters
     ----------
@@ -80,13 +80,10 @@ def contracts_config(ctx: TestContext) -> FunctionContractsStepConfig:
 
     Returns
     -------
-    FunctionContractsStepConfig
-        Configuration for testing.
+    SnapshotRef
+        Snapshot reference for testing.
     """
-    return FunctionContractsStepConfig(
-        snapshot=ctx.snapshot,
-        max_conditions_per_func=TEST_MAX_CONDITIONS,
-    )
+    return ctx.snapshot
 
 
 def _create_function_ast(
@@ -233,7 +230,7 @@ def _seed_function_types(
 
 def test_compute_contracts_with_catalog_goid_iteration(
     ctx: TestContext,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts iterates over GOIDs from catalog."""
     code = """def simple(x):
@@ -251,7 +248,7 @@ def test_compute_contracts_with_catalog_goid_iteration(
 
     compute_function_contracts(
         ctx.gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
@@ -271,7 +268,7 @@ def test_compute_contracts_with_catalog_goid_iteration(
 
 def test_compute_contracts_with_missing_ast(
     ctx: TestContext,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts handles GOIDs without AST gracefully."""
     spans = [MockFunctionSpan(GOID_MISSING, "missing.py", "missing_func", 1, 3)]
@@ -280,7 +277,7 @@ def test_compute_contracts_with_missing_ast(
 
     compute_function_contracts(
         ctx.gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={},
         catalog=catalog,
     )
@@ -301,7 +298,7 @@ def test_compute_contracts_with_missing_ast(
 
 def test_compute_contracts_with_docstring_data(
     ctx: TestContext,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts uses docstring data for nullability inference."""
     code = """def with_docs(x, y):
@@ -329,7 +326,7 @@ def test_compute_contracts_with_docstring_data(
 
     compute_function_contracts(
         ctx.gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
@@ -351,7 +348,7 @@ def test_compute_contracts_with_docstring_data(
 
 def test_compute_contracts_with_type_annotations(
     ctx: TestContext,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts uses type annotations for nullability inference."""
     code = """def typed_func(x, y):
@@ -376,7 +373,7 @@ def test_compute_contracts_with_type_annotations(
 
     compute_function_contracts(
         ctx.gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_TYPED: func_ast},
         catalog=catalog,
     )
@@ -399,7 +396,7 @@ def test_compute_contracts_with_type_annotations(
 
 def test_compute_contracts_with_guards_and_catalog(
     ctx: TestContext,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts extracts preconditions from guard clauses."""
     code = """def guarded(x, y):
@@ -421,7 +418,7 @@ def test_compute_contracts_with_guards_and_catalog(
 
     compute_function_contracts(
         ctx.gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_GUARDED: func_ast},
         catalog=catalog,
     )
@@ -444,7 +441,7 @@ def test_compute_contracts_with_guards_and_catalog(
 
 def test_compute_contracts_with_bool_return_type(
     ctx: TestContext,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts detects bool return type for postconditions."""
     code = """def is_valid(x):
@@ -469,7 +466,7 @@ def test_compute_contracts_with_bool_return_type(
 
     compute_function_contracts(
         ctx.gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
@@ -492,7 +489,7 @@ def test_compute_contracts_with_bool_return_type(
 
 def test_compute_contracts_confidence_score(
     ctx: TestContext,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts calculates confidence score based on available data."""
     code = """def well_documented(x):
@@ -525,7 +522,7 @@ def test_compute_contracts_confidence_score(
 
     compute_function_contracts(
         ctx.gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
@@ -547,7 +544,7 @@ def test_compute_contracts_confidence_score(
 
 def test_compute_contracts_multiple_goids(
     fresh_gateway: StorageGateway,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts processes multiple GOIDs from catalog."""
     code1 = """def func1(x):
@@ -567,7 +564,7 @@ def test_compute_contracts_multiple_goids(
 
     compute_function_contracts(
         fresh_gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_SIMPLE: ast1, GOID_TYPED: ast2},
         catalog=catalog,
     )
@@ -587,7 +584,7 @@ def test_compute_contracts_multiple_goids(
 
 def test_compute_contracts_with_nullable_return(
     fresh_gateway: StorageGateway,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts detects nullable return types."""
     code = """def maybe_return(x):
@@ -613,7 +610,7 @@ def test_compute_contracts_with_nullable_return(
 
     compute_function_contracts(
         fresh_gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
@@ -633,7 +630,7 @@ def test_compute_contracts_with_nullable_return(
 
 def test_compute_contracts_with_isinstance_guard(
     fresh_gateway: StorageGateway,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts extracts isinstance guards."""
     code = """def typed_guard(x):
@@ -652,7 +649,7 @@ def test_compute_contracts_with_isinstance_guard(
 
     compute_function_contracts(
         fresh_gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
@@ -675,7 +672,7 @@ def test_compute_contracts_with_isinstance_guard(
 
 def test_compute_contracts_with_len_check(
     fresh_gateway: StorageGateway,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts extracts len() checks."""
     code = """def check_len(items):
@@ -694,7 +691,7 @@ def test_compute_contracts_with_len_check(
 
     compute_function_contracts(
         fresh_gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
@@ -713,7 +710,7 @@ def test_compute_contracts_with_len_check(
 
 def test_compute_contracts_with_predicate_name(
     fresh_gateway: StorageGateway,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts detects predicate function names (is_*, has_*, etc.)."""
     code = """def is_valid(x):
@@ -730,7 +727,7 @@ def test_compute_contracts_with_predicate_name(
 
     compute_function_contracts(
         fresh_gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )
@@ -749,7 +746,7 @@ def test_compute_contracts_with_predicate_name(
 
 def test_compute_contracts_with_doc_return_none(
     fresh_gateway: StorageGateway,
-    contracts_config: FunctionContractsStepConfig,
+    contracts_snapshot: SnapshotRef,
 ) -> None:
     """Compute contracts infers nullable from doc return mentioning None."""
     code = """def maybe_find(x):
@@ -774,7 +771,7 @@ def test_compute_contracts_with_doc_return_none(
 
     compute_function_contracts(
         fresh_gateway,
-        contracts_config,
+        contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
         catalog=catalog,
     )

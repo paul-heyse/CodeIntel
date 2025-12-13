@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/utilities/datasets.py
+# hypothesis_version: 6.148.7
+
+['.', 'RowT', 'commit', 'duckdb', 'records', 'repo', 'validate_tuple_rows']

@@ -15,10 +15,13 @@ from codeintel.analytics.graphs import (
     compute_graph_stats,
 )
 from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps
-from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
+from codeintel.analytics.runtime import (
+    GraphMetricsOptions,
+    GraphRuntimeOptions,
+    build_graph_runtime,
+)
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
-from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.storage.ibis_types import and_predicates
 
@@ -57,44 +60,45 @@ class CoreMetricsPlugin(TargetPlugin):
             Execution result.
         """
         _ = self
-
-        cfg = GraphMetricsStepConfig(snapshot=ctx.snapshot)
+        snapshot = ctx.snapshot
+        repo, commit = snapshot.repo, snapshot.commit
 
         try:
             log.info(
                 "core_metrics.execute repo=%s commit=%s",
-                cfg.repo,
-                cfg.commit,
+                repo,
+                commit,
             )
 
             backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
-            runtime_options = GraphRuntimeOptions(snapshot=ctx.snapshot, backend=backend_config)
+            runtime_options = GraphRuntimeOptions(snapshot=snapshot, backend=backend_config)
             runtime = build_graph_runtime(ctx.gateway, runtime_options)
 
+            options = GraphMetricsOptions()
             deps = GraphMetricsDeps(
                 catalog_provider=ctx.resources.catalog,
                 runtime=runtime,
             )
-            compute_graph_metrics(ctx.gateway, cfg, deps=deps)
+            compute_graph_metrics(ctx.gateway, snapshot, options=options, deps=deps)
 
             compute_graph_metrics_functions_ext(
                 ctx.gateway,
-                repo=cfg.repo,
-                commit=cfg.commit,
+                repo=repo,
+                commit=commit,
                 runtime=runtime,
             )
 
             compute_graph_metrics_modules_ext(
                 ctx.gateway,
-                repo=cfg.repo,
-                commit=cfg.commit,
+                repo=repo,
+                commit=commit,
                 runtime=runtime,
             )
 
             compute_graph_stats(
                 ctx.gateway,
-                repo=cfg.repo,
-                commit=cfg.commit,
+                repo=repo,
+                commit=commit,
                 runtime=runtime,
             )
 
@@ -108,7 +112,7 @@ class CoreMetricsPlugin(TargetPlugin):
             ]:
                 expr = ctx.gateway.ibis.table(table)
                 filtered = expr.filter(
-                    and_predicates(expr.repo == cfg.repo, expr.commit == cfg.commit)
+                    and_predicates(expr.repo == repo, expr.commit == commit)
                 )
                 result_df = filtered.aggregate(row_count=expr.repo.count()).execute()
                 row_counts[table] = (

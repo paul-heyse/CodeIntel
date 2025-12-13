@@ -247,17 +247,6 @@ def and_predicates(*predicates: object) -> it.BooleanValue:
     return result
 
 
-def bool_and(*predicates: it.BooleanValue) -> it.BooleanValue:
-    """Alias for ``and_predicates`` for backward compatibility.
-
-    Returns
-    -------
-    it.BooleanValue
-        Combined predicate.
-    """
-    return and_predicates(*predicates)
-
-
 def or_predicates(*predicates: object) -> it.BooleanValue:
     """Combine multiple Ibis predicates with OR.
 
@@ -429,7 +418,6 @@ def window_over(
 
 __all__ = [
     "and_predicates",
-    "bool_and",
     "bool_not",
     "col_count",
     "col_max",

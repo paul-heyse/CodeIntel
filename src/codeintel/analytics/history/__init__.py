@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.history.git_history import FileCommitDelta, iter_file_history
 from codeintel.analytics.history.history_timeseries import (
+    HistoryTimeseriesOptions,
     compute_history_timeseries,
     compute_history_timeseries_gateways,
 )
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "FileCommitDelta",
+    "HistoryTimeseriesOptions",
     "compute_function_history",
     "compute_history_timeseries",
     "compute_history_timeseries_gateways",

@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.graphs.builders.symbol_uses_options import SymbolUsesOptions
-from codeintel.config import SymbolUsesStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import symbols as symbols_compute
@@ -495,15 +494,11 @@ class SymbolUsesPlugin(TargetPlugin):
         """
         _ = self
         opts = self.resolve_options()
-
-        cfg = SymbolUsesStepConfig(
-            snapshot=ctx.snapshot,
-            paths=ctx.paths,
-        )
+        snapshot = ctx.snapshot
 
         gateway = ctx.gateway
-        repo = cfg.repo
-        commit = cfg.commit
+        repo = snapshot.repo
+        commit = snapshot.commit
 
         try:
             occurrences = _load_symbol_occurrences(gateway, repo, commit)

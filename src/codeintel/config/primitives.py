@@ -15,7 +15,7 @@ Design Principles
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Self, TypedDict, Unpack
+from typing import TYPE_CHECKING, Literal, Self
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -237,16 +237,6 @@ class BuildPathOverrides:
         return (anchor / path).resolve()
 
 
-class _LegacyBuildPathOverrides(TypedDict, total=False):
-    db_path: Path | None
-    document_output_dir: Path | None
-    scip_dir: Path | None
-    coverage_json: Path | None
-    pytest_report: Path | None
-    tool_cache: Path | None
-    log_db_path: Path | None
-
-
 @dataclass(frozen=True)
 class BuildPaths:
     """Derived paths for a pipeline run.
@@ -338,7 +328,6 @@ class BuildPaths:
         *,
         build_dir: Path,
         overrides: BuildPathOverrides | None = None,
-        **legacy_overrides: Unpack[_LegacyBuildPathOverrides],
     ) -> Self:
         """Construct BuildPaths with explicit overrides for specific paths.
 
@@ -348,8 +337,6 @@ class BuildPaths:
             Root build directory (required).
         overrides
             Optional bundle of path overrides.
-        legacy_overrides
-            Backward-compatible individual overrides (e.g., db_path, coverage_json).
 
         Returns
         -------
@@ -357,7 +344,7 @@ class BuildPaths:
             BuildPaths with specified overrides applied.
         """
         resolved_build = build_dir.resolve()
-        override_bundle = overrides or BuildPathOverrides(**legacy_overrides)
+        override_bundle = overrides or BuildPathOverrides()
         override_bundle.validate(resolved_build)
         normalized = override_bundle.resolved(resolved_build)
         return cls(
@@ -557,10 +544,26 @@ class GraphFeatureFlags:
             raise ValueError(message)
 
 
+@dataclass(frozen=True)
+class EntryPointToggles:
+    """Toggle flags for entrypoint detection frameworks."""
+
+    detect_fastapi: bool = True
+    detect_flask: bool = True
+    detect_click: bool = True
+    detect_typer: bool = True
+    detect_cron: bool = True
+    detect_django: bool = True
+    detect_celery: bool = True
+    detect_airflow: bool = True
+    detect_generic_routes: bool = True
+
+
 __all__ = [
     "BuildLayoutOptions",
     "BuildPathOverrides",
     "BuildPaths",
+    "EntryPointToggles",
     "GraphBackendConfig",
     "GraphFeatureFlags",
     "ScanProfiles",

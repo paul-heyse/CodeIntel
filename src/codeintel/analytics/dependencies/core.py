@@ -61,7 +61,7 @@ if TYPE_CHECKING:
 
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.parsing.ast_cache import FunctionAst
-    from codeintel.config import ExternalDependenciesStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
@@ -212,9 +212,10 @@ class ExternalDependencyInputs:
 
 def build_external_dependency_calls(
     gateway: StorageGateway,
-    cfg: ExternalDependenciesStepConfig,
+    snapshot: SnapshotRef,
     *,
     inputs: ExternalDependencyInputs,
+    dependency_patterns_path: Path | None = None,
 ) -> None:
     """
     Populate analytics.external_dependency_calls from AST traversal.
@@ -223,12 +224,14 @@ def build_external_dependency_calls(
     ----------
     gateway
         Storage gateway with live DuckDB connection.
-    cfg
-        External dependency configuration (repo context, patterns).
+    snapshot
+        Repository and commit identifiers.
     inputs
         Grouped inputs containing catalog, module map, AST data, and features.
+    dependency_patterns_path
+        Optional path to dependency patterns YAML file.
     """
-    patterns = _load_dependency_patterns(cfg)
+    patterns = _load_dependency_patterns(snapshot.repo_root, dependency_patterns_path)
     if not patterns:
         log.warning("No dependency patterns loaded; skipping dependency call analysis")
         return
@@ -236,7 +239,7 @@ def build_external_dependency_calls(
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.external_dependency_calls")
     backend.delete_for_snapshot(
-        "analytics.external_dependency_calls", repo=cfg.repo, commit=cfg.commit
+        "analytics.external_dependency_calls", repo=snapshot.repo, commit=snapshot.commit
     )
 
     missing = inputs.missing_goids or set()
@@ -244,11 +247,11 @@ def build_external_dependency_calls(
         log.debug(
             "Skipping %d functions without AST spans during dependency analysis", len(missing)
         )
-    alias_maps = _build_alias_maps(cfg.repo_root, inputs.module_map)
+    alias_maps = _build_alias_maps(snapshot.repo_root, inputs.module_map)
     now = datetime.now(tz=UTC)
     dep_context = DependencyContext(
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
         alias_maps=alias_maps,
         patterns=patterns,
         module_map=inputs.module_map,
@@ -277,8 +280,8 @@ def build_external_dependency_calls(
     log.info(
         "external_dependency_calls populated: %d rows for %s@%s",
         len(rows),
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
     )
 
 
@@ -356,7 +359,10 @@ def _function_call_rows(
 
 def build_external_dependencies(
     gateway: StorageGateway,
-    cfg: ExternalDependenciesStepConfig,
+    snapshot: SnapshotRef,
+    *,
+    dependency_patterns_path: Path | None = None,
+    language: str = "python",
 ) -> None:
     """
     Aggregate dependency usage into analytics.external_dependencies.
@@ -365,21 +371,27 @@ def build_external_dependencies(
     ----------
     gateway
         Storage gateway with live DuckDB connection.
-    cfg
-        External dependency configuration.
+    snapshot
+        Repository and commit identifiers.
+    dependency_patterns_path
+        Optional path to dependency patterns YAML file.
+    language
+        Programming language for the dependencies.
     """
-    patterns = _load_dependency_patterns(cfg)
+    patterns = _load_dependency_patterns(snapshot.repo_root, dependency_patterns_path)
     if not patterns:
         log.warning("No dependency patterns loaded; skipping dependency aggregation")
         return
 
     con = gateway.con
-    _prepare_external_dependencies(gateway, cfg)
+    _prepare_external_dependencies(gateway, snapshot)
 
-    config_keys_by_module = _load_config_keys(con, cfg.repo, cfg.commit)
-    rows = _fetch_dependency_call_rows(con, cfg)
+    config_keys_by_module = _load_config_keys(con, snapshot.repo, snapshot.commit)
+    rows = _fetch_dependency_call_rows(con, snapshot)
     aggregates = _aggregate_dependency_calls(rows, patterns)
-    dep_rows = _serialize_dependency_rows(aggregates, config_keys_by_module, cfg)
+    dep_rows = _serialize_dependency_rows(
+        aggregates, config_keys_by_module, snapshot, language=language
+    )
 
     if dep_rows:
         gateway.ibis.write(
@@ -390,21 +402,21 @@ def build_external_dependencies(
     log.info(
         "external_dependencies populated: %d rows for %s@%s",
         len(dep_rows),
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
     )
 
 
-def _prepare_external_dependencies(
-    gateway: StorageGateway, cfg: ExternalDependenciesStepConfig
-) -> None:
+def _prepare_external_dependencies(gateway: StorageGateway, snapshot: SnapshotRef) -> None:
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.external_dependencies")
-    backend.delete_for_snapshot("analytics.external_dependencies", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot(
+        "analytics.external_dependencies", repo=snapshot.repo, commit=snapshot.commit
+    )
 
 
 def _fetch_dependency_call_rows(
-    con: DuckDBConnection, cfg: ExternalDependenciesStepConfig
+    con: DuckDBConnection, snapshot: SnapshotRef
 ) -> list[tuple[object, ...]]:
     return con.execute(
         """
@@ -413,7 +425,7 @@ def _fetch_dependency_call_rows(
         FROM analytics.external_dependency_calls
         WHERE repo = ? AND commit = ?
         """,
-        [cfg.repo, cfg.commit],
+        [snapshot.repo, snapshot.commit],
     ).fetchall()
 
 
@@ -479,7 +491,9 @@ def _aggregate_dependency_calls(
 def _serialize_dependency_rows(
     aggregates: dict[str, DependencyAggregate],
     config_keys_by_module: dict[str, set[str]],
-    cfg: ExternalDependenciesStepConfig,
+    snapshot: SnapshotRef,
+    *,
+    language: str = "python",
 ) -> list[tuple[object, ...]]:
     dep_rows: list[tuple[object, ...]] = []
     now = datetime.now(tz=UTC)
@@ -490,13 +504,13 @@ def _serialize_dependency_rows(
         risk_level = aggregate.severity or _risk_level(aggregate.modes, aggregate.callsite_count)
         dep_rows.append(
             (
-                cfg.repo,
-                cfg.commit,
+                snapshot.repo,
+                snapshot.commit,
                 dep_id,
                 aggregate.library,
                 aggregate.service_name,
                 aggregate.category,
-                cfg.language,
+                language,
                 aggregate.severity,
                 aggregate.criticality,
                 aggregate.risk_score,
@@ -542,10 +556,12 @@ def _as_str(value: object | None) -> str | None:
     return str(value) if isinstance(value, str) else None
 
 
-def _load_dependency_patterns(cfg: ExternalDependenciesStepConfig) -> dict[str, LibraryPattern]:
-    path = cfg.dependency_patterns_path
+def _load_dependency_patterns(
+    repo_root: Path, dependency_patterns_path: Path | None
+) -> dict[str, LibraryPattern]:
+    path = dependency_patterns_path
     if path is None:
-        path = cfg.repo_root / "config" / "dependency_patterns.yml"
+        path = repo_root / "config" / "dependency_patterns.yml"
     if not path.is_file():
         log.warning("Dependency patterns file not found at %s", path)
         return {}

@@ -19,7 +19,7 @@ from codeintel.config.datasets.contracts import (
     get_dataset_contracts,
     get_dataset_contracts_by_table_key,
 )
-from codeintel.storage.views import ALIAS_DOCS_VIEWS
+from codeintel.storage.view_names import ALIAS_DOCS_VIEWS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator

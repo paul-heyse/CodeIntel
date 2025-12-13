@@ -11,7 +11,6 @@ from codeintel.analytics.subsystems import build_subsystems
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import SubsystemsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -86,16 +85,12 @@ class SubsystemsPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = SubsystemsStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         graph_runtime = ctx.resources.graph_runtime
 
         try:
             build_subsystems(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 runtime=graph_runtime,
             )
         except (RuntimeError, ValueError, OSError) as e:

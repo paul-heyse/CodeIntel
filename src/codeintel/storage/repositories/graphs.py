@@ -5,42 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import pandas as pd
-
-from codeintel.config.datasets.validation import validate_df
 from codeintel.storage.ibis_types import and_predicates
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
-    import ibis.expr.types as it
-
     from codeintel.storage.repositories.base import RowDict
 
 
 @dataclass(frozen=True)
 class GraphRepository(BaseRepository):
     """Read call graph neighbors and related graph data."""
-
-    @staticmethod
-    def _validated_records(expr_key: str, expr: it.Table) -> list[RowDict]:
-        """
-        Execute an Ibis expression and return validated row dictionaries.
-
-        Parameters
-        ----------
-        expr_key
-            Dataset key used for Pandera validation.
-        expr
-            Ibis table expression to execute.
-
-        Returns
-        -------
-        list[RowDict]
-            Validated records with ``None`` substituted for missing values.
-        """
-        df = pd.DataFrame(expr.execute())
-        validated = validate_df(expr_key, df)
-        return validated.where(pd.notna(validated), None).to_dict(orient="records")
 
     def get_outgoing_callgraph_neighbors(
         self, caller_goid_h128: int, *, limit: int

@@ -11,12 +11,18 @@ on parse failures.
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 __all__ = [
     "decode_json",
     "decode_json_dict",
     "decode_json_list",
+    "deserialize_str_tuple",
     "encode_json_compact",
+    "serialize_str_sequence",
 ]
 
 
@@ -130,3 +136,61 @@ def encode_json_compact(value: object) -> str:
     '[1,2,3]'
     """
     return json.dumps(value, separators=(",", ":"))
+
+
+def serialize_str_sequence(items: Sequence[str]) -> str:
+    """Serialize a sequence of strings to compact JSON array.
+
+    This is a convenience wrapper for encoding string sequences (like
+    dataset names or target names) to JSON for storage in DuckDB columns.
+
+    Parameters
+    ----------
+    items
+        Sequence of strings to serialize.
+
+    Returns
+    -------
+    str
+        JSON-encoded array string.
+
+    Examples
+    --------
+    >>> serialize_str_sequence(["a", "b", "c"])
+    '["a","b","c"]'
+    >>> serialize_str_sequence(())
+    '[]'
+    """
+    return encode_json_compact(list(items))
+
+
+def deserialize_str_tuple(raw: str | None) -> tuple[str, ...]:
+    """Deserialize JSON array to string tuple.
+
+    This is a convenience wrapper for decoding JSON arrays stored in
+    DuckDB columns back to typed string tuples. Handles None and empty
+    strings gracefully.
+
+    Parameters
+    ----------
+    raw
+        JSON-encoded array or None.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Tuple of strings, empty if raw is None or empty.
+
+    Examples
+    --------
+    >>> deserialize_str_tuple('["a","b"]')
+    ('a', 'b')
+    >>> deserialize_str_tuple(None)
+    ()
+    >>> deserialize_str_tuple("")
+    ()
+    """
+    if not raw:
+        return ()
+    items = decode_json_list(raw)
+    return tuple(str(x) for x in items)

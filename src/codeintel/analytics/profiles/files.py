@@ -42,17 +42,24 @@ if TYPE_CHECKING:
     from codeintel.analytics.profiles.writer_guard import (
         SerializeRow,
     )
-    from codeintel.config import ProfilesAnalyticsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
 
 def compute_file_profile_inputs(
-    gateway: StorageGateway, cfg: ProfilesAnalyticsStepConfig
+    gateway: StorageGateway, snapshot: SnapshotRef
 ) -> FileProfileInputs:
     """
     Construct snapshot inputs for file profile generation.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    snapshot
+        Repository and commit identifiers.
 
     Returns
     -------
@@ -62,8 +69,8 @@ def compute_file_profile_inputs(
     return FileProfileInputs(
         gateway=gateway,
         con=gateway.con,
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
         created_at=datetime.now(tz=UTC),
         slow_test_threshold_ms=0.0,
     )
@@ -359,18 +366,27 @@ def write_file_profile_rows(gateway: StorageGateway, rows: Iterable[FileProfileR
 
 def build_file_profile(
     gateway: StorageGateway,
-    cfg: ProfilesAnalyticsStepConfig,
+    snapshot: SnapshotRef,
     *,
     module_table: str = DEFAULT_MODULE_TABLE,
 ) -> int:
     """
     Compute and persist analytics.file_profile rows.
 
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    snapshot
+        Repository and commit identifiers.
+    module_table
+        Name of the module table to use.
+
     Returns
     -------
     int
         Number of rows inserted.
     """
-    inputs = compute_file_profile_inputs(gateway, cfg)
+    inputs = compute_file_profile_inputs(gateway, snapshot)
     rows = build_file_profile_rows(inputs, module_table=module_table)
     return write_file_profile_rows(gateway, rows)

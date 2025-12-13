@@ -12,30 +12,6 @@ if TYPE_CHECKING:
     import ibis.expr.types as it
 
 
-def bool_and(*predicates: it.BooleanValue) -> it.BooleanValue:
-    """
-    Combine predicates with AND in a type-safe way.
-
-    Returns
-    -------
-    BooleanValue
-        Combined predicate.
-
-    Raises
-    ------
-    ValueError
-        If no predicates are provided.
-    """
-    if not predicates:
-        msg = "At least one predicate is required"
-        raise ValueError(msg)
-
-    result = predicates[0]
-    for predicate in predicates[1:]:
-        result &= predicate
-    return result
-
-
 def bool_or(*predicates: it.BooleanValue) -> it.BooleanValue:
     """
     Combine predicates with OR in a type-safe way.
@@ -109,7 +85,6 @@ def safe_ratio(
 
 
 __all__ = [
-    "bool_and",
     "bool_or",
     "literal_sequence",
     "safe_ratio",

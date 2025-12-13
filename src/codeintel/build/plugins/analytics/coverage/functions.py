@@ -11,7 +11,6 @@ from codeintel.analytics.compute.coverage.functions import compute_coverage_func
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -76,12 +75,8 @@ class CoverageFunctionsPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = CoverageAnalyticsStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         try:
-            compute_coverage_functions(ctx.gateway, cfg)
+            compute_coverage_functions(ctx.gateway, ctx.snapshot)
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Coverage functions computation failed: {e}")
 

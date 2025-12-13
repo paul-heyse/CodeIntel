@@ -14,7 +14,7 @@ from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT
 from codeintel.storage.gateway import StorageConfig, open_gateway
-from codeintel.storage.views import create_all_views
+from codeintel.storage.views.creation import create_all_views
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.gateway import build_duckdb_backend
 from tests._helpers.orchestration import seed_coverage_rows

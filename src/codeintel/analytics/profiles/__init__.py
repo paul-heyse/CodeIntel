@@ -17,7 +17,7 @@ from codeintel.graphs.catalog import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.config import ProfilesAnalyticsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import (
         FunctionCatalogProvider,
     )
@@ -28,64 +28,100 @@ log = logging.getLogger(__name__)
 
 def build_function_profile(
     gateway: StorageGateway,
-    cfg: ProfilesAnalyticsStepConfig,
+    snapshot: SnapshotRef,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     module_map: dict[str, str] | None = None,
 ) -> None:
-    """Populate analytics.function_profile for a snapshot."""
+    """Populate analytics.function_profile for a snapshot.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    snapshot
+        Repository and commit identifiers.
+    catalog_provider
+        Optional function catalog provider.
+    module_map
+        Optional module map override.
+    """
     effective_catalog = catalog_provider or FunctionCatalogService.from_db(
         gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
     module_table = seed_catalog_modules(
         gateway,
         effective_catalog,
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
         module_map_override=module_map,
     )
-    count = build_function_profile_recipe(gateway, cfg, module_table=module_table)
-    log.info("function_profile populated: %s rows for %s@%s", count, cfg.repo, cfg.commit)
+    count = build_function_profile_recipe(gateway, snapshot, module_table=module_table)
+    log.info("function_profile populated: %s rows for %s@%s", count, snapshot.repo, snapshot.commit)
 
 
 def build_file_profile(
     gateway: StorageGateway,
-    cfg: ProfilesAnalyticsStepConfig,
+    snapshot: SnapshotRef,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     module_map: dict[str, str] | None = None,
 ) -> None:
-    """Populate analytics.file_profile by aggregating function_profile."""
+    """Populate analytics.file_profile by aggregating function_profile.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    snapshot
+        Repository and commit identifiers.
+    catalog_provider
+        Optional function catalog provider.
+    module_map
+        Optional module map override.
+    """
     module_table = seed_catalog_modules(
         gateway,
         catalog_provider,
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
         module_map_override=module_map,
     )
-    count = _build_file_profile(gateway, cfg, module_table=module_table)
-    log.info("file_profile populated: %s rows for %s@%s", count, cfg.repo, cfg.commit)
+    count = _build_file_profile(gateway, snapshot, module_table=module_table)
+    log.info("file_profile populated: %s rows for %s@%s", count, snapshot.repo, snapshot.commit)
 
 
 def build_module_profile(
     gateway: StorageGateway,
-    cfg: ProfilesAnalyticsStepConfig,
+    snapshot: SnapshotRef,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     module_map: dict[str, str] | None = None,
 ) -> None:
-    """Populate analytics.module_profile by aggregating file/function profiles."""
+    """Populate analytics.module_profile by aggregating file/function profiles.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    snapshot
+        Repository and commit identifiers.
+    catalog_provider
+        Optional function catalog provider.
+    module_map
+        Optional module map override.
+    """
     module_table = seed_catalog_modules(
         gateway,
         catalog_provider,
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
         module_map_override=module_map,
     )
-    count = _build_module_profile(gateway, cfg, module_table=module_table)
-    log.info("module_profile populated: %s rows for %s@%s", count, cfg.repo, cfg.commit)
+    count = _build_module_profile(gateway, snapshot, module_table=module_table)
+    log.info("module_profile populated: %s rows for %s@%s", count, snapshot.repo, snapshot.commit)
 
 
 __all__ = [

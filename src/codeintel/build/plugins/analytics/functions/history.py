@@ -11,7 +11,6 @@ from codeintel.analytics.functions import compute_function_history
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import FunctionHistoryStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -76,17 +75,10 @@ class FunctionHistoryPlugin(TargetPlugin):
         """
         _ = self
 
-        max_history_days = ctx.parameters.get("max_history_days", int, default=365)
-
-        cfg = FunctionHistoryStepConfig(
-            snapshot=ctx.snapshot,
-            max_history_days=max_history_days,
-        )
-
         try:
             compute_function_history(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 runner=None,
             )
         except (RuntimeError, ValueError, OSError) as e:

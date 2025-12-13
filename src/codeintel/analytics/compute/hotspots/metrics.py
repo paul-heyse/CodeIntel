@@ -19,8 +19,9 @@ from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from pathlib import Path
 
-    from codeintel.config import HotspotsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -56,7 +57,8 @@ class FileChurn:
 
 
 def _collect_git_file_stats(
-    cfg: HotspotsStepConfig,
+    repo_root: Path,
+    max_commits: int,
     runner: ToolRunner | None = None,
 ) -> dict[str, ChurnSummary]:
     """
@@ -69,9 +71,11 @@ def _collect_git_file_stats(
 
     Parameters
     ----------
-    cfg : HotspotsStepConfig
-        Repository context including the root directory and log depth limit.
-    runner : ToolRunner | None
+    repo_root
+        Repository root directory.
+    max_commits
+        Maximum number of commits to scan.
+    runner
         Optional shared ToolRunner for git invocations.
 
     Returns
@@ -86,28 +90,30 @@ def _collect_git_file_stats(
     pipelines to proceed even in shallow or detached checkouts. Complexity is
     proportional to the number of git log entries inspected.
     """
-    if cfg.max_commits <= 0:
+    if max_commits <= 0:
         return {}
 
-    git_lines = _run_git_log(cfg, runner=runner)
+    git_lines = _run_git_log(repo_root, max_commits, runner=runner)
     if git_lines is None:
         return {}
     return _parse_git_log_lines(git_lines)
 
 
-def _run_git_log(cfg: HotspotsStepConfig, runner: ToolRunner | None = None) -> list[str] | None:
-    repo_root = cfg.repo_root.resolve()
-    active_runner = runner or ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
+def _run_git_log(
+    repo_root: Path, max_commits: int, runner: ToolRunner | None = None
+) -> list[str] | None:
+    resolved_root = repo_root.resolve()
+    active_runner = runner or ToolRunner(cache_dir=resolved_root / "build" / ".tool_cache")
     args = [
         "git",
         "log",
-        f"--max-count={cfg.max_commits}",
+        f"--max-count={max_commits}",
         "--numstat",
         "--date=short",
         "--pretty=format:COMMIT\t%H\t%an",
         "--no-renames",
     ]
-    result = active_runner.run("git", args, cwd=repo_root)
+    result = active_runner.run("git", args, cwd=resolved_root)
     if result.returncode not in {0, 1}:
         log.warning(
             "git log exited with code %s; stdout=%s stderr=%s",
@@ -163,8 +169,9 @@ def parse_git_log_lines(lines: Iterable[str]) -> dict[str, ChurnSummary]:
 
 def build_hotspots(
     gateway: StorageGateway,
-    cfg: HotspotsStepConfig,
+    snapshot: SnapshotRef,
     *,
+    max_commits: int = 2000,
     runner: ToolRunner | None = None,
 ) -> None:
     """
@@ -179,12 +186,14 @@ def build_hotspots(
 
     Parameters
     ----------
-    gateway :
+    gateway
         StorageGateway providing access to `core.ast_metrics` and `analytics.hotspots`
         tables.
-    cfg : HotspotsStepConfig
-        Repository metadata and git scan configuration used to scope the build.
-    runner : ToolRunner | None
+    snapshot
+        Repository and commit identifiers.
+    max_commits
+        Maximum number of commits to scan for churn data.
+    runner
         Optional shared ToolRunner for git invocations (defaults to a local cache).
 
     Notes
@@ -198,6 +207,7 @@ def build_hotspots(
     Examples
     --------
     >>> from pathlib import Path
+    >>> from codeintel.config.primitives import SnapshotRef
     >>> from codeintel.storage.gateway import open_memory_gateway
     >>> gateway = open_memory_gateway()
     >>> con = gateway.con
@@ -210,13 +220,8 @@ def build_hotspots(
     ...     " complexity DOUBLE, score DOUBLE)"
     ... )
     >>> _ = con.execute("INSERT INTO core.ast_metrics VALUES ('sample.py', 3.0)")
-    >>> cfg = HotspotsStepConfig(
-    ...     repo="demo",
-    ...     commit="abc123",
-    ...     repo_root=Path("."),
-    ...     max_commits=0,
-    ... )
-    >>> build_hotspots(gateway, cfg)
+    >>> snapshot = SnapshotRef(repo="demo", commit="abc123", repo_root=Path("."))
+    >>> build_hotspots(gateway, snapshot, max_commits=0)
     >>> con.execute("SELECT rel_path, score FROM analytics.hotspots").fetchall()
     [('sample.py', 0.17328679513998632)]
     """
@@ -229,7 +234,7 @@ def build_hotspots(
         log.info("No rows in core.ast_metrics; skipping hotspots.")
         return
 
-    git_stats = _collect_git_file_stats(cfg, runner=runner)
+    git_stats = _collect_git_file_stats(snapshot.repo_root, max_commits, runner=runner)
 
     gateway.ibis.delete("analytics.hotspots")
 
@@ -278,7 +283,7 @@ def build_hotspots(
 
     log.info(
         "Hotspots build complete for repo=%s commit=%s: %d files",
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
         len(rows),
     )

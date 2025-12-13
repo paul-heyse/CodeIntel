@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from codeintel.analytics.compute.graphs import ComponentBundle, NeighborStats
-    from codeintel.config import GraphMetricsStepConfig
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -40,7 +39,8 @@ def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
 class FunctionGraphMetricInputs:
     """Inputs required to build graph_metrics_functions rows."""
 
-    cfg: GraphMetricsStepConfig
+    repo: str
+    commit: str
     stats: NeighborStats
     centrality: Mapping[str, Mapping[Any, float]]
     components: ComponentBundle
@@ -52,7 +52,8 @@ class FunctionGraphMetricInputs:
 class ModuleGraphMetricInputs:
     """Inputs required to build graph_metrics_modules rows."""
 
-    cfg: GraphMetricsStepConfig
+    repo: str
+    commit: str
     modules: set[str]
     import_stats: NeighborStats
     centrality: Mapping[str, Mapping[Any, float]]
@@ -79,8 +80,8 @@ def build_function_graph_metric_rows(
     """
     return [
         GraphMetricsFunctionsRow(
-            repo=inputs.cfg.repo,
-            commit=inputs.cfg.commit,
+            repo=inputs.repo,
+            commit=inputs.commit,
             function_goid_h128=int(node),
             call_fan_in=len(inputs.stats.in_neighbors.get(node, ())),
             call_fan_out=len(inputs.stats.out_neighbors.get(node, ())),
@@ -266,8 +267,8 @@ def build_module_graph_metric_rows(
     """
     return [
         GraphMetricsModulesRow(
-            repo=inputs.cfg.repo,
-            commit=inputs.cfg.commit,
+            repo=inputs.repo,
+            commit=inputs.commit,
             module=module,
             import_fan_in=len(inputs.import_stats.in_neighbors.get(module, ())),
             import_fan_out=len(inputs.import_stats.out_neighbors.get(module, ())),

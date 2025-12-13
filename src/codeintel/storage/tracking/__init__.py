@@ -3,6 +3,8 @@
 This package provides utilities for tracking pipeline execution:
 
 - tracking.run_tracking: Pipeline run and step tracking persistence
+- tracking.build_tracking: Build manifest and run tracking
+- tracking.asset_tracking: Asset catalog tracking
 """
 
 from __future__ import annotations

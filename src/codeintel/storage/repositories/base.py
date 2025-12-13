@@ -28,13 +28,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-from ibis.common.exceptions import IbisError
 
 from codeintel.config.datasets.validation import validate_df
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
-
     from ibis.expr import types as it
 
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -76,139 +73,6 @@ class PaginatedRows:
         return len(self.rows)
 
 
-def fetch_one_dict(con: DuckDBConnection, sql: str, params: Sequence[object]) -> RowDict | None:
-    """
-    Execute a query and return the first row as a mapping.
-
-    .. deprecated::
-        Use ``BaseRepository._ibis_to_one()`` instead. Raw SQL helpers will
-        be removed in a future release. Migrate to Ibis-based queries.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    sql
-        SQL query to execute.
-    params
-        Query parameters.
-
-    Returns
-    -------
-    RowDict | None
-        Mapping of column to value when a row exists; otherwise ``None``.
-    """
-    result = con.execute(sql, list(params))
-    row = result.fetchone()
-    if row is None:
-        return None
-    cols = [desc[0] for desc in result.description]
-    return {col: row[idx] for idx, col in enumerate(cols)}
-
-
-def fetch_all_dicts(con: DuckDBConnection, sql: str, params: Sequence[object]) -> list[RowDict]:
-    """
-    Execute a query and return all rows as mappings.
-
-    .. deprecated::
-        Use ``BaseRepository._ibis_to_dicts()`` instead. Raw SQL helpers will
-        be removed in a future release. Migrate to Ibis-based queries.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    sql
-        SQL query to execute.
-    params
-        Query parameters.
-
-    Returns
-    -------
-    list[RowDict]
-        List of rows represented as dictionaries keyed by column name.
-    """
-    result = con.execute(sql, list(params))
-    rows = result.fetchall()
-    cols = [desc[0] for desc in result.description]
-    return [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
-
-
-def fetch_paginated(
-    con: DuckDBConnection,
-    sql: str,
-    params: Sequence[object],
-    *,
-    limit: int,
-) -> PaginatedRows:
-    """
-    Execute a query with pagination and truncation detection.
-
-    Fetch limit+1 rows to detect if more data exists beyond the page.
-
-    .. deprecated::
-        Use ``BaseRepository._ibis_paginated()`` instead. Raw SQL helpers will
-        be removed in a future release. Migrate to Ibis-based queries.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    sql
-        SQL query to execute (should include LIMIT placeholder).
-    params
-        Query parameters (limit will be appended).
-    limit
-        Maximum rows to return.
-
-    Returns
-    -------
-    PaginatedRows
-        Paginated result with truncation metadata.
-
-    Examples
-    --------
-    >>> sql = "SELECT * FROM table WHERE x = ? LIMIT ?"
-    >>> result = fetch_paginated(con, sql, [value], limit=10)
-    >>> result.truncated
-    """
-    fetch_limit = limit + 1
-    result = con.execute(sql, [*params, fetch_limit])
-    all_rows = result.fetchall()
-    cols = [desc[0] for desc in result.description]
-
-    truncated = len(all_rows) > limit
-    rows = [{col: row[idx] for idx, col in enumerate(cols)} for row in all_rows[:limit]]
-
-    return PaginatedRows(rows=rows, limit=limit, truncated=truncated)
-
-
-def row_exists(con: DuckDBConnection, sql: str, params: Sequence[object]) -> bool:
-    """
-    Check if at least one row matches the query.
-
-    .. deprecated::
-        Use ``BaseRepository._ibis_exists()`` instead. Raw SQL helpers will
-        be removed in a future release. Migrate to Ibis-based queries.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    sql
-        SQL query to execute.
-    params
-        Query parameters.
-
-    Returns
-    -------
-    bool
-        True if at least one row matches.
-    """
-    result = con.execute(sql, list(params))
-    return result.fetchone() is not None
-
-
 @dataclass(frozen=True)
 class BaseRepository:
     """
@@ -235,86 +99,6 @@ class BaseRepository:
     def con(self) -> DuckDBConnection:
         """Return the underlying DuckDB connection."""
         return self.gateway.con
-
-    def _fetch_one(self, sql: str, params: Sequence[object]) -> RowDict | None:
-        """
-        Execute a query and return the first row.
-
-        Parameters
-        ----------
-        sql
-            SQL query to execute.
-        params
-            Query parameters.
-
-        Returns
-        -------
-        RowDict | None
-            First row as a dict, or None if no rows match.
-        """
-        return fetch_one_dict(self.con, sql, params)
-
-    def _fetch_all(self, sql: str, params: Sequence[object]) -> list[RowDict]:
-        """
-        Execute a query and return all rows.
-
-        Parameters
-        ----------
-        sql
-            SQL query to execute.
-        params
-            Query parameters.
-
-        Returns
-        -------
-        list[RowDict]
-            All matching rows as dicts.
-        """
-        return fetch_all_dicts(self.con, sql, params)
-
-    def _fetch_paginated(
-        self,
-        sql: str,
-        params: Sequence[object],
-        *,
-        limit: int,
-    ) -> PaginatedRows:
-        """
-        Execute a paginated query with truncation detection.
-
-        Parameters
-        ----------
-        sql
-            SQL query (should include LIMIT placeholder at end).
-        params
-            Query parameters (limit appended automatically).
-        limit
-            Maximum rows to return.
-
-        Returns
-        -------
-        PaginatedRows
-            Paginated result with truncation metadata.
-        """
-        return fetch_paginated(self.con, sql, params, limit=limit)
-
-    def _exists(self, sql: str, params: Sequence[object]) -> bool:
-        """
-        Check if at least one row matches.
-
-        Parameters
-        ----------
-        sql
-            SQL query to execute.
-        params
-            Query parameters.
-
-        Returns
-        -------
-        bool
-            True if at least one row matches.
-        """
-        return row_exists(self.con, sql, params)
 
     def _ibis_table(self, table_key: str) -> it.Table:
         """
@@ -405,80 +189,6 @@ class BaseRepository:
         dicts = self._ibis_to_dicts(expr.limit(1), table_key)
         return dicts[0] if dicts else None
 
-    def _ibis_with_fallback(
-        self,
-        ibis_fn: Callable[[], it.Table],
-        sql_fallback: str,
-        params: Sequence[object],
-        *,
-        table_key: str | None = None,
-    ) -> list[RowDict]:
-        """
-        Execute Ibis query with SQL fallback on error.
-
-        Parameters
-        ----------
-        ibis_fn
-            Callable returning an Ibis expression.
-        sql_fallback
-            SQL query to execute if Ibis fails.
-        params
-            Parameters for the SQL fallback.
-        table_key
-            Optional table key for Pandera validation.
-
-        Returns
-        -------
-        list[RowDict]
-            Query results as dictionaries.
-
-        .. deprecated::
-            Use ``_ibis_to_dicts`` directly. SQL fallbacks will be removed.
-        """
-        try:
-            expr = ibis_fn()
-            return self._ibis_to_dicts(expr, table_key)
-        except IbisError:
-            log.debug("Falling back to SQL for query")
-            return self._fetch_all(sql_fallback, params)
-
-    def _ibis_one_with_fallback(
-        self,
-        ibis_fn: Callable[[], it.Table],
-        sql_fallback: str,
-        params: Sequence[object],
-        *,
-        table_key: str | None = None,
-    ) -> RowDict | None:
-        """
-        Execute Ibis query for single row with SQL fallback.
-
-        Parameters
-        ----------
-        ibis_fn
-            Callable returning an Ibis expression.
-        sql_fallback
-            SQL query to execute if Ibis fails.
-        params
-            Parameters for the SQL fallback.
-        table_key
-            Optional table key for Pandera validation.
-
-        Returns
-        -------
-        RowDict | None
-            Query result or None.
-
-        .. deprecated::
-            Use ``_ibis_to_one`` directly. SQL fallbacks will be removed.
-        """
-        try:
-            expr = ibis_fn()
-            return self._ibis_to_one(expr, table_key)
-        except IbisError:
-            log.debug("Falling back to SQL for single-row query")
-            return self._fetch_one(sql_fallback, params)
-
     def _ibis_exists(
         self,
         expr: it.Table,
@@ -487,7 +197,7 @@ class BaseRepository:
         Check if at least one row exists in the Ibis expression result.
 
         Execute an Ibis expression and return True if at least one row
-        is present. This is the Ibis equivalent of ``_exists()``.
+        is present.
 
         Parameters
         ----------
@@ -546,3 +256,32 @@ class BaseRepository:
         rows = all_rows[:limit]
 
         return PaginatedRows(rows=rows, limit=limit, truncated=truncated)
+
+    @staticmethod
+    def _validated_records(
+        table_key: str,
+        expr: it.Table,
+    ) -> list[RowDict]:
+        """
+        Execute an Ibis expression and return validated row dictionaries.
+
+        This method combines execution, Pandera validation, and null normalization
+        into a single operation. Use this when you need validated records with
+        consistent null handling.
+
+        Parameters
+        ----------
+        table_key
+            Dataset key used for Pandera schema lookup.
+        expr
+            Ibis table expression to execute.
+
+        Returns
+        -------
+        list[RowDict]
+            Validated records with ``None`` substituted for missing values.
+        """
+        df = pd.DataFrame(expr.execute())
+        validated = validate_df(table_key, df)
+        sanitized = validated.astype("object").where(pd.notna(validated), None)
+        return sanitized.to_dict(orient="records")

@@ -17,11 +17,11 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.testing.coverage.edges import (
     EdgeContext,
+    TestCoverageOptions,
     backfill_test_goids_for_catalog,
     build_edges_for_file_for_tests,
     compute_test_coverage_edges,
 )
-from codeintel.config import ConfigBuilder, SnapshotInit, TestCoverageStepConfig
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers import CORE_PACK, COVERAGE_PACK
 from tests._helpers.assertions import (
@@ -86,11 +86,10 @@ class TestBuildEdgesForFile:
         EdgeContext
             Configured edge context for testing.
         """
-        snapshot = make_snapshot(repo_root=repo_root)
-        cfg = TestCoverageStepConfig(snapshot=snapshot)
         return EdgeContext(
             status_by_test={"test_func": "passed"},
-            cfg=cfg,
+            repo=DEFAULT_REPO,
+            commit=DEFAULT_COMMIT,
             now=datetime.now(UTC),
             test_meta_by_id={"test_func": (999, "urn:test_func")},
         )
@@ -216,11 +215,10 @@ class TestBuildEdgesForFile:
     @staticmethod
     def test_uses_unknown_status_for_unmapped_test(tmp_path: Path) -> None:
         """Verify uses 'unknown' status for tests not in status_by_test."""
-        snapshot = make_snapshot(repo_root=tmp_path)
-        cfg = TestCoverageStepConfig(snapshot=snapshot)
         ctx = EdgeContext(
             status_by_test={},  # No status mapping
-            cfg=cfg,
+            repo=DEFAULT_REPO,
+            commit=DEFAULT_COMMIT,
             now=datetime.now(UTC),
             test_meta_by_id={},
         )
@@ -254,13 +252,13 @@ class TestBackfillTestGoids:
     def test_returns_empty_dicts_when_no_tests(test_ctx: TestContext) -> None:
         """Verify returns empty dicts when no test catalog entries."""
         # No COVERAGE_PACK applied - empty test catalog
-        cfg = ConfigBuilder.from_snapshot(
-            snapshot=SnapshotInit(
-                repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
-            ),
-        ).analytics.test_coverage()
+        snapshot = make_snapshot(
+            repo_root=test_ctx.repo_root,
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+        )
 
-        goid_by_id, urn_by_id = backfill_test_goids_for_catalog(test_ctx.gateway, cfg)
+        goid_by_id, urn_by_id = backfill_test_goids_for_catalog(test_ctx.gateway, snapshot)
 
         expect_equal(goid_by_id, {})
         expect_equal(urn_by_id, {})
@@ -274,9 +272,8 @@ class TestBackfillTestGoids:
             commit=coverage_ctx.commit,
             repo_root=coverage_ctx.repo_root,
         )
-        cfg = TestCoverageStepConfig(snapshot=snapshot)
 
-        goid_by_id, urn_by_id = backfill_test_goids_for_catalog(coverage_ctx.gateway, cfg)
+        goid_by_id, urn_by_id = backfill_test_goids_for_catalog(coverage_ctx.gateway, snapshot)
 
         expect_equal(goid_by_id, {})
         expect_equal(urn_by_id, {})
@@ -290,15 +287,15 @@ class TestComputeTestCoverageEdges:
         """Verify returns early when coverage file doesn't exist."""
         test_ctx.require(CORE_PACK, COVERAGE_PACK)
 
-        cfg = ConfigBuilder.from_snapshot(
-            snapshot=SnapshotInit(
-                repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
-            ),
-        ).analytics.test_coverage()
+        snapshot = make_snapshot(
+            repo_root=test_ctx.repo_root,
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+        )
         # Coverage file path doesn't exist by default in test context
 
         # Should not raise - just logs warning and returns
-        compute_test_coverage_edges(test_ctx.gateway, cfg)
+        compute_test_coverage_edges(test_ctx.gateway, snapshot)
 
         # No edges should be created
         edge_count = test_ctx.query_count(
@@ -312,18 +309,20 @@ class TestComputeTestCoverageEdges:
         """Verify accepts custom coverage loader function."""
         test_ctx.require(CORE_PACK, COVERAGE_PACK)
 
-        cfg = ConfigBuilder.from_snapshot(
-            snapshot=SnapshotInit(
-                repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
-            ),
-        ).analytics.test_coverage()
+        snapshot = make_snapshot(
+            repo_root=test_ctx.repo_root,
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+        )
 
         # Custom loader that returns None (no coverage data)
-        def null_loader(_cfg: TestCoverageStepConfig) -> None:
+        def null_loader(_snapshot: SnapshotRef, _path: Path | None) -> None:
             return None
 
+        options = TestCoverageOptions(coverage_loader=null_loader)
+
         # Should not raise - custom loader returns None
-        compute_test_coverage_edges(test_ctx.gateway, cfg, coverage_loader=null_loader)
+        compute_test_coverage_edges(test_ctx.gateway, snapshot, options=options)
 
     @staticmethod
     def test_handles_empty_function_catalog(test_ctx: TestContext) -> None:
@@ -331,15 +330,17 @@ class TestComputeTestCoverageEdges:
         # Just CORE_PACK - no function spans seeded
         test_ctx.require(CORE_PACK)
 
-        cfg = ConfigBuilder.from_snapshot(
-            snapshot=SnapshotInit(
-                repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
-            ),
-        ).analytics.test_coverage()
+        snapshot = make_snapshot(
+            repo_root=test_ctx.repo_root,
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+        )
 
         # Custom loader that returns None
-        def null_loader(_cfg: TestCoverageStepConfig) -> None:
+        def null_loader(_snapshot: SnapshotRef, _path: Path | None) -> None:
             return None
 
+        options = TestCoverageOptions(coverage_loader=null_loader)
+
         # Should not raise
-        compute_test_coverage_edges(test_ctx.gateway, cfg, coverage_loader=null_loader)
+        compute_test_coverage_edges(test_ctx.gateway, snapshot, options=options)

@@ -57,7 +57,7 @@ class TestOutputTarget:
         expect_equal(target.name, "test_target")
         expect_equal(target.module, "ingestion")
         expect_equal(target.plugin, "test_plugin")
-        expect_equal(target.tables, ("core.test_table",))
+        expect_equal(target.table_keys, ("core.test_table",))
         expect_equal(target.dependencies, ())
         expect_true(not target.description)
 

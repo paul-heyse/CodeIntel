@@ -34,7 +34,6 @@ import libcst as cst
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.graphs.builders.callgraph_options import CallGraphOptions
-from codeintel.config import CallGraphStepConfig
 from codeintel.config.datasets import (
     CallGraphNodeRow,
     call_graph_edge_to_tuple,
@@ -42,7 +41,6 @@ from codeintel.config.datasets import (
 )
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.core.plugins.types.protocol import PluginMetadata
-from codeintel.graphs.adapters.callgraph_persistence import dedupe_edge_rows
 from codeintel.graphs.catalog import (
     load_function_index,
 )
@@ -52,6 +50,7 @@ from codeintel.graphs.compute.callgraph import (
     collect_edges_ast,
     collect_edges_cst,
 )
+from codeintel.graphs.compute.callgraph.persistence import dedupe_edge_rows
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import and_predicates
@@ -652,8 +651,8 @@ class CallGraphPlugin(TargetPlugin):
         """
         _ = self
         opts = self.resolve_options()
-        cfg = CallGraphStepConfig(snapshot=ctx.snapshot)
-        gateway, repo, commit = ctx.gateway, cfg.repo, cfg.commit
+        snapshot = ctx.snapshot
+        gateway, repo, commit = ctx.gateway, snapshot.repo, snapshot.commit
 
         try:
             _log_repo_state(gateway, repo, commit)
@@ -671,7 +670,7 @@ class CallGraphPlugin(TargetPlugin):
             def_goids = _build_def_goids_by_path(gateway, repo, commit)
 
             source_root = (
-                ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
+                snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
             )
 
             collection_ctx = _EdgeCollectionContext(

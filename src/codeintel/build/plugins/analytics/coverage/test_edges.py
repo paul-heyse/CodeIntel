@@ -11,7 +11,6 @@ from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import TestCoverageStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -78,16 +77,12 @@ class CoverageTestEdgesPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = TestCoverageStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         catalog_provider = ctx.resources.catalog
 
         try:
             compute_test_coverage_edges(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 catalog_provider=catalog_provider,
             )
         except (RuntimeError, ValueError, OSError) as e:

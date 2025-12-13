@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import logging
-import warnings
-from collections.abc import MutableMapping
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from pandas.api.extensions import ExtensionDtype
@@ -17,13 +15,12 @@ from pandera.errors import SchemaErrors
 from codeintel.config.datasets.contracts import get_dataset_contracts_by_table_key
 
 if TYPE_CHECKING:
-    from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
+    from collections.abc import Mapping
 
     from codeintel.config.datasets.contracts import DatasetContract
     from codeintel.config.datasets.primitives import ColumnType, TableSchema
 
 __all__ = [
-    "DATASET_SCHEMAS",
     "ValidationResult",
     "dataset_json_schema",
     "dataset_json_schemas",
@@ -35,7 +32,6 @@ __all__ = [
 
 
 PanderaDtype = type | str | ExtensionDtype
-_DefaultT = TypeVar("_DefaultT")
 
 _STRING_DTYPE: PanderaDtype = pd.StringDtype()
 _INT_DTYPE: PanderaDtype = pd.Int64Dtype()
@@ -1196,96 +1192,6 @@ def _get_dataset_schemas() -> dict[str, DataFrameSchema]:
     return schemas
 
 
-class _LazySchemaDict(MutableMapping[str, DataFrameSchema]):
-    """Lazy dict wrapper that initializes schemas on first access.
-
-    .. deprecated::
-        Direct access to DATASET_SCHEMAS is deprecated.
-        Use ``SCHEMA_REGISTRY`` from ``codeintel.config.datasets.schema_registry``
-        instead, which provides a unified interface with metadata support.
-
-    Examples
-    --------
-    **Before (deprecated):**
-
-    >>> from codeintel.config.datasets.pandera_schemas import DATASET_SCHEMAS
-    >>> schema = DATASET_SCHEMAS.get("analytics.function_metrics")
-
-    **After (recommended):**
-
-    >>> from codeintel.config.datasets import SCHEMA_REGISTRY
-    >>> dataset_schema = SCHEMA_REGISTRY.require("analytics.function_metrics")
-    >>> pandera_schema = dataset_schema.pandera_schema
-    """
-
-    def __init__(self) -> None:
-        self._initialized = False
-        self._deprecation_warned = False
-        self._data: dict[str, DataFrameSchema] = {}
-
-    def _ensure_initialized(self) -> None:
-        if not self._initialized:
-            self._initialized = True
-            self._data.update(_get_dataset_schemas())
-        if not self._deprecation_warned:
-            self._deprecation_warned = True
-            warnings.warn(
-                "Direct access to DATASET_SCHEMAS is deprecated. "
-                "Use SCHEMA_REGISTRY from codeintel.config.datasets.schema_registry instead. "
-                "See codeintel.config.datasets.DatasetSchema for the unified schema interface.",
-                DeprecationWarning,
-                stacklevel=4,
-            )
-
-    def __getitem__(self, key: str) -> DataFrameSchema:
-        self._ensure_initialized()
-        return self._data[key]
-
-    def __setitem__(self, key: str, value: DataFrameSchema) -> None:
-        self._ensure_initialized()
-        self._data[key] = value
-
-    def __delitem__(self, key: str) -> None:
-        self._ensure_initialized()
-        del self._data[key]
-
-    def __iter__(self) -> Iterator[str]:
-        self._ensure_initialized()
-        return iter(self._data)
-
-    def __len__(self) -> int:
-        self._ensure_initialized()
-        return len(self._data)
-
-    @overload
-    def get(self, key: str) -> DataFrameSchema | None: ...
-
-    @overload
-    def get(self, key: str, default: DataFrameSchema) -> DataFrameSchema: ...
-
-    @overload
-    def get(self, key: str, default: _DefaultT) -> DataFrameSchema | _DefaultT: ...
-
-    def get(self, key: str, default: object | None = None) -> DataFrameSchema | object | None:
-        self._ensure_initialized()
-        return self._data.get(key, default)
-
-    def items(self) -> ItemsView[str, DataFrameSchema]:
-        self._ensure_initialized()
-        return self._data.items()
-
-    def keys(self) -> KeysView[str]:
-        self._ensure_initialized()
-        return self._data.keys()
-
-    def values(self) -> ValuesView[DataFrameSchema]:
-        self._ensure_initialized()
-        return self._data.values()
-
-
-DATASET_SCHEMAS: _LazySchemaDict = _LazySchemaDict()
-
-
 def get_dataset_schema(table_key: str) -> DataFrameSchema | None:
     """Return the Pandera schema for a dataset when registered.
 
@@ -1298,8 +1204,20 @@ def get_dataset_schema(table_key: str) -> DataFrameSchema | None:
     -------
     DataFrameSchema | None
         Schema when registered, otherwise ``None``.
+
+    Examples
+    --------
+    >>> schema = get_dataset_schema("analytics.function_metrics")
+    >>> schema is not None
+    True
     """
-    return DATASET_SCHEMAS.get(table_key)
+    # Lazy import to avoid circular dependency
+    from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY  # noqa: PLC0415
+
+    ds_schema = SCHEMA_REGISTRY.get(table_key)
+    if ds_schema is None:
+        return None
+    return ds_schema.pandera_schema
 
 
 def validate_dataset_df(table_key: str, df: pd.DataFrame) -> pd.DataFrame:
@@ -1581,6 +1499,11 @@ def dataset_json_schemas() -> dict[str, dict[str, Any]]:
     dict[str, dict[str, Any]]
         Mapping from dataset table key to JSON Schema.
     """
-    return {
-        table_key: pandera_to_json_schema(schema) for table_key, schema in DATASET_SCHEMAS.items()
-    }
+    # Lazy import to avoid circular dependency
+    from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY  # noqa: PLC0415
+
+    result: dict[str, dict[str, Any]] = {}
+    for table_key, ds_schema in SCHEMA_REGISTRY.items():
+        if ds_schema.pandera_schema is not None:
+            result[table_key] = pandera_to_json_schema(ds_schema.pandera_schema)
+    return result

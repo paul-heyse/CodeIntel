@@ -19,7 +19,7 @@ from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp.backend import HttpBackend
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
 from codeintel.storage.gateway import StorageConfig, open_gateway
-from codeintel.storage.views import create_all_views
+from codeintel.storage.views.creation import create_all_views
 from tests._helpers import GatewayOptions, provision_gateway_with_repo
 from tests._helpers.builders import RepoMapRow, insert_rows
 

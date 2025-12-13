@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.functions import compute_function_metrics_and_types
-from codeintel.config import SnapshotInit
+from codeintel.analytics.functions import (
+    compute_function_metrics_and_types,
+)
+from codeintel.config.primitives import SnapshotRef
 from tests._helpers.builders import GoidRow, insert_rows
-from tests._helpers.config_factory import function_analytics_cfg
 from tests._helpers.context import create_test_context
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.sql import run_query
@@ -19,7 +20,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
     from tests._helpers.context import TestContext
 
 
@@ -51,14 +51,8 @@ def _insert_goid(
     )
 
 
-def _function_analytics_cfg(
-    ctx: TestContext, *, fail_on_missing_spans: bool = False
-) -> FunctionAnalyticsStepConfig:
-    snapshot = SnapshotInit(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
-    return function_analytics_cfg(
-        snapshot,
-        fail_on_missing_spans=fail_on_missing_spans,
-    )
+def _get_snapshot(ctx: TestContext) -> SnapshotRef:
+    return SnapshotRef(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
 
 
 @pytest.fixture
@@ -86,8 +80,8 @@ def test_records_validation_when_parse_fails(ctx: TestContext) -> None:
     file_path.write_text("def broken(:\n    return 1\n", encoding="utf-8")
     _insert_goid(ctx, rel_path=rel_path, qualname="pkg.mod.broken")
 
-    cfg = _function_analytics_cfg(ctx, fail_on_missing_spans=False)
-    summary = compute_function_metrics_and_types(ctx.gateway, cfg)
+    snapshot = _get_snapshot(ctx)
+    summary = compute_function_metrics_and_types(ctx.gateway, snapshot, fail_on_missing_spans=False)
 
     metrics_rows = run_query(ctx.gateway, "SELECT * FROM analytics.function_metrics")
     validation_rows = run_query(
@@ -116,8 +110,8 @@ def test_span_not_found_is_recorded(ctx: TestContext) -> None:
     file_path.write_text("def foo():\n    return 1\n", encoding="utf-8")
     _insert_goid(ctx, rel_path=rel_path, qualname="pkg.mod.foo", start_line=50, end_line=55)
 
-    cfg = _function_analytics_cfg(ctx, fail_on_missing_spans=False)
-    summary = compute_function_metrics_and_types(ctx.gateway, cfg)
+    snapshot = _get_snapshot(ctx)
+    summary = compute_function_metrics_and_types(ctx.gateway, snapshot, fail_on_missing_spans=False)
 
     validation_rows = run_query(
         ctx.gateway,

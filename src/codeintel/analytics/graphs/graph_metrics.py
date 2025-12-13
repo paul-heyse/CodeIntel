@@ -29,6 +29,7 @@ from codeintel.analytics.compute.row_builders import (
     merge_component_metadata,
 )
 from codeintel.analytics.runtime import (
+    GraphMetricsOptions,
     GraphRuntime,
     GraphRuntimeOptions,
     resolve_graph_runtime,
@@ -52,7 +53,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.runtime.context import (
         GraphContext,
     )
-    from codeintel.config import GraphMetricsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
@@ -153,23 +154,31 @@ class GraphMetricFilters:
 
 
 def build_graph_metric_filters(
-    gateway: StorageGateway, cfg: GraphMetricsStepConfig
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
 ) -> GraphMetricFilters:
     """
     Construct repository-backed filters for graph metrics.
 
     When repositories return no data, filters default to no-ops.
 
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    snapshot
+        Repository snapshot reference (repo, commit, repo_root).
+
     Returns
     -------
     GraphMetricFilters
         Filter set derived from repository contents.
     """
-    func_repo = FunctionRepository(gateway=gateway, repo=cfg.repo, commit=cfg.commit)
-    module_repo = ModuleRepository(gateway=gateway, repo=cfg.repo, commit=cfg.commit)
+    func_repo = FunctionRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit)
+    module_repo = ModuleRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit)
     function_goids = set(func_repo.list_function_goids())
     modules = set(module_repo.list_modules())
-    subsystem_repo = SubsystemRepository(gateway=gateway, repo=cfg.repo, commit=cfg.commit)
+    subsystem_repo = SubsystemRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit)
     subsystem_ids = {row["subsystem_id"] for row in subsystem_repo.list_subsystem_memberships()}
     return GraphMetricFilters(
         function_goids=function_goids or None,
@@ -180,8 +189,9 @@ def build_graph_metric_filters(
 
 def compute_graph_metrics(
     gateway: StorageGateway,
-    cfg: GraphMetricsStepConfig,
+    snapshot: SnapshotRef,
     *,
+    options: GraphMetricsOptions | None = None,
     deps: GraphMetricsDeps | None = None,
 ) -> None:
     """
@@ -189,13 +199,16 @@ def compute_graph_metrics(
 
     Parameters
     ----------
-    gateway :
+    gateway
         Storage gateway used for graph reads and metric writes.
-    cfg :
-        Graph metrics configuration for the current repository snapshot.
-    deps :
+    snapshot
+        Repository snapshot reference (repo, commit, repo_root).
+    options
+        Graph metrics configuration options.
+    deps
         Optional dependencies container (catalog_provider, runtime, filters, module_by_path).
     """
+    opts = options or GraphMetricsOptions()
     deps = deps or GraphMetricsDeps()
     catalog_provider = deps.catalog_provider
     runtime = deps.runtime
@@ -207,7 +220,7 @@ def compute_graph_metrics(
     )
     resolved_runtime = resolve_graph_runtime(
         gateway,
-        cfg.snapshot_ref,
+        snapshot,
         runtime_input,
     )
     use_gpu = resolved_runtime.backend.use_gpu
@@ -217,38 +230,38 @@ def compute_graph_metrics(
     backend.ensure_table("analytics.graph_metrics_modules")
     ctx = resolve_graph_context(
         GraphContextSpec(
-            repo=cfg.repo,
-            commit=cfg.commit,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
             use_gpu=use_gpu,
-            metrics_cfg=cfg,
+            options=opts,
             now=datetime.now(tz=UTC),
             community_detection_limit=runtime_opts.features.community_detection_limit,
         )
     )
-    active_filters = deps.filters or build_graph_metric_filters(gateway, cfg)
+    active_filters = deps.filters or build_graph_metric_filters(gateway, snapshot)
     log.info(
         "graph_metrics.filters repo=%s commit=%s functions=%d modules=%d subsystems=%d",
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
         len(active_filters.function_goids or ()),
         len(active_filters.modules or ()),
         len(active_filters.subsystems or ()),
     )
     _compute_function_graph_metrics(
-        gateway, cfg, ctx=ctx, runtime=resolved_runtime, filters=active_filters
+        gateway, snapshot, ctx=ctx, runtime=resolved_runtime, filters=active_filters
     )
     module_by_path = deps.module_by_path
     if module_by_path is None and catalog_provider is not None:
         module_by_path = catalog_provider.catalog().module_by_path
     module_options = ModuleMetricOptions(module_by_path=module_by_path, filters=active_filters)
     _compute_module_graph_metrics(
-        gateway, cfg, ctx=ctx, runtime=resolved_runtime, options=module_options
+        gateway, snapshot, ctx=ctx, runtime=resolved_runtime, options=module_options
     )
 
 
 def _compute_function_graph_metrics(
     gateway: StorageGateway,
-    cfg: GraphMetricsStepConfig,
+    snapshot: SnapshotRef,
     *,
     ctx: GraphContext,
     runtime: GraphRuntime,
@@ -268,7 +281,8 @@ def _compute_function_graph_metrics(
 
     rows = build_function_graph_metric_rows(
         FunctionGraphMetricInputs(
-            cfg=cfg,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
             stats=stats,
             centrality=centrality,
             components=components,
@@ -283,21 +297,21 @@ def _compute_function_graph_metrics(
         gateway,
         contract,
         validated_rows,
-        delete_scope=DeleteScope(repo=cfg.repo, commit=cfg.commit),
-        scope=f"{cfg.repo}@{cfg.commit}",
+        delete_scope=DeleteScope(repo=snapshot.repo, commit=snapshot.commit),
+        scope=f"{snapshot.repo}@{snapshot.commit}",
     )
     if validated_rows:
         log.info(
             "graph_metrics_functions populated: %d rows for %s@%s",
             len(validated_rows),
-            cfg.repo,
-            cfg.commit,
+            snapshot.repo,
+            snapshot.commit,
         )
 
 
 def _compute_module_graph_metrics(
     gateway: StorageGateway,
-    cfg: GraphMetricsStepConfig,
+    snapshot: SnapshotRef,
     *,
     ctx: GraphContext,
     runtime: GraphRuntime,
@@ -308,7 +322,7 @@ def _compute_module_graph_metrics(
     symbol_edges = load_symbol_module_edges(gateway, options.module_by_path)
     modules = set(graph.nodes) | symbol_edges[0]
     modules.update(
-        ModuleRepository(gateway=gateway, repo=cfg.repo, commit=cfg.commit).list_modules()
+        ModuleRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit).list_modules()
     )
     if filters.modules is not None:
         modules = modules.intersection(filters.modules)
@@ -318,7 +332,9 @@ def _compute_module_graph_metrics(
     import_stats = neighbor_stats(graph, weight=ctx.betweenness_weight)
     centrality_bundle = centrality_directed(graph, ctx)
     component_raw = component_metadata(graph)
-    cached_component_meta = component_metadata_from_import_table(gateway, cfg.repo, cfg.commit)
+    cached_component_meta = component_metadata_from_import_table(
+        gateway, snapshot.repo, snapshot.commit
+    )
     component_meta = merge_component_metadata(
         modules,
         {
@@ -336,7 +352,8 @@ def _compute_module_graph_metrics(
     }
     rows_to_insert = build_module_graph_metric_rows(
         ModuleGraphMetricInputs(
-            cfg=cfg,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
             modules=modules,
             import_stats=import_stats,
             centrality=centrality,
@@ -353,13 +370,13 @@ def _compute_module_graph_metrics(
         gateway,
         contract,
         validated_rows,
-        delete_scope=DeleteScope(repo=cfg.repo, commit=cfg.commit),
-        scope=f"{cfg.repo}@{cfg.commit}",
+        delete_scope=DeleteScope(repo=snapshot.repo, commit=snapshot.commit),
+        scope=f"{snapshot.repo}@{snapshot.commit}",
     )
     if validated_rows:
         log.info(
             "graph_metrics_modules populated: %d rows for %s@%s",
             len(validated_rows),
-            cfg.repo,
-            cfg.commit,
+            snapshot.repo,
+            snapshot.commit,
         )

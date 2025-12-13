@@ -13,7 +13,7 @@ from codeintel.analytics.graphs import (
 )
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
-from codeintel.storage.views import create_all_views
+from codeintel.storage.views.creation import create_all_views
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,

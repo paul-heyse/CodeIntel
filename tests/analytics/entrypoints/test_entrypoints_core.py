@@ -7,8 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
-from codeintel.analytics.entrypoints.core import build_entrypoints
-from codeintel.config.steps_analytics import EntryPointsStepConfig
+from codeintel.analytics.entrypoints.core import EntrypointBuildInputs, build_entrypoints
 from tests._helpers import coverage_and_graph_context
 from tests._helpers.assertions import (
     assert_mapping_value,
@@ -174,12 +173,15 @@ def test_entrypoints_materialize_with_test_summary(tmp_path: Path) -> None:
     )
 
     try:
-        build_entrypoints(
-            ctx.gateway,
-            EntryPointsStepConfig(snapshot=ctx.snapshot),
+        inputs = EntrypointBuildInputs(
             catalog_provider=catalog,
             module_map=module_map,
             features_map={features.goid: features},
+        )
+        build_entrypoints(
+            ctx.gateway,
+            ctx.snapshot,
+            inputs,
         )
 
         entry_row = ctx.gateway.con.execute(
@@ -230,12 +232,15 @@ def test_entrypoints_no_modules_skip_detection(tmp_path: Path) -> None:
         [ctx.repo, ctx.commit],
     )
 
-    build_entrypoints(
-        ctx.gateway,
-        EntryPointsStepConfig(snapshot=ctx.snapshot),
+    inputs = EntrypointBuildInputs(
         catalog_provider=MockFunctionCatalog(),
         module_map={},
         features_map={},
+    )
+    build_entrypoints(
+        ctx.gateway,
+        ctx.snapshot,
+        inputs,
     )
 
     count = ctx.gateway.con.execute(

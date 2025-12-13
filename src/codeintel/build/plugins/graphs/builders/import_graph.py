@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.graphs.builders.import_graph_options import ImportGraphOptions
-from codeintel.config import ImportGraphStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import imports as imports_compute
@@ -342,8 +341,7 @@ class ImportGraphPlugin(TargetPlugin):
         """
         _ = self
         opts = self.resolve_options()
-        config = ImportGraphStepConfig(snapshot=ctx.snapshot)
-        gateway, repo, commit = ctx.gateway, config.repo, config.commit
+        gateway, repo, commit = ctx.gateway, ctx.snapshot.repo, ctx.snapshot.commit
 
         try:
             source_root = (

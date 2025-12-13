@@ -10,14 +10,36 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from pathlib import Path
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from codeintel.config import GraphMetricsStepConfig
+from codeintel.config.primitives import SnapshotRef
 
 DEFAULT_BETWEENNESS_SAMPLE = 500
+
+
+@dataclass(frozen=True)
+class GraphMetricsOptions:
+    """Configuration options for graph metrics computation.
+
+    Parameters
+    ----------
+    max_betweenness_sample
+        Maximum sample size for betweenness centrality estimation.
+    eigen_max_iter
+        Maximum iterations for eigenvector centrality convergence.
+    seed
+        Random seed for reproducible computations.
+    pagerank_weight
+        Edge attribute to use as weight for PageRank (None for unweighted).
+    betweenness_weight
+        Edge attribute to use as weight for betweenness (None for unweighted).
+    """
+
+    max_betweenness_sample: int | None = 200
+    eigen_max_iter: int = 200
+    seed: int = 0
+    pagerank_weight: str | None = "weight"
+    betweenness_weight: str | None = "weight"
 
 
 @dataclass(frozen=True)
@@ -54,7 +76,7 @@ class GraphContextSpec:
     repo: str
     commit: str
     use_gpu: bool
-    metrics_cfg: GraphMetricsStepConfig | None = None
+    options: GraphMetricsOptions | None = None
     ctx: GraphContext | None = None
     now: datetime | None = None
     betweenness_cap: int | None = None
@@ -75,19 +97,22 @@ class GraphContextCaps:
 
 
 def build_graph_context(
-    cfg: GraphMetricsStepConfig,
+    snapshot: SnapshotRef,
     *,
+    options: GraphMetricsOptions | None = None,
     now: datetime | None = None,
     caps: GraphContextCaps | None = None,
     use_gpu: bool = False,
 ) -> GraphContext:
     """
-    Construct a GraphContext from GraphMetricsStepConfig with optional caps.
+    Construct a GraphContext from SnapshotRef and GraphMetricsOptions.
 
     Parameters
     ----------
-    cfg
-        Graph metrics configuration values.
+    snapshot
+        Repository snapshot reference (repo, commit, repo_root).
+    options
+        Graph metrics configuration options.
     now
         Optional timestamp; defaults to UTC now when omitted.
     caps
@@ -100,24 +125,25 @@ def build_graph_context(
     GraphContext
         Graph context with caps and seeds applied.
     """
+    opts = options or GraphMetricsOptions()
     resolved_caps = caps or GraphContextCaps()
-    betweenness_sample = cfg.max_betweenness_sample or DEFAULT_BETWEENNESS_SAMPLE
+    betweenness_sample = opts.max_betweenness_sample or DEFAULT_BETWEENNESS_SAMPLE
     if resolved_caps.betweenness_cap is not None:
         betweenness_sample = min(betweenness_sample, resolved_caps.betweenness_cap)
     eigen_max_iter = (
-        cfg.eigen_max_iter
+        opts.eigen_max_iter
         if resolved_caps.eigen_cap is None
-        else min(cfg.eigen_max_iter, resolved_caps.eigen_cap)
+        else min(opts.eigen_max_iter, resolved_caps.eigen_cap)
     )
     return GraphContext(
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
         now=now,
         betweenness_sample=betweenness_sample,
         eigen_max_iter=eigen_max_iter,
-        seed=cfg.seed,
-        pagerank_weight=cfg.pagerank_weight,
-        betweenness_weight=cfg.betweenness_weight,
+        seed=opts.seed,
+        pagerank_weight=opts.pagerank_weight,
+        betweenness_weight=opts.betweenness_weight,
         use_gpu=use_gpu,
         community_detection_limit=resolved_caps.community_detection_limit,
     )
@@ -148,14 +174,16 @@ def resolve_graph_context(
 def _base_context(spec: GraphContextSpec, base_now: datetime) -> GraphContext:
     if spec.ctx is not None:
         return spec.ctx
-    if spec.metrics_cfg is not None:
+    if spec.options is not None:
+        snapshot = SnapshotRef(repo=spec.repo, commit=spec.commit, repo_root=Path())
         caps = GraphContextCaps(
             betweenness_cap=spec.betweenness_cap,
             eigen_cap=spec.eigen_cap,
             community_detection_limit=spec.community_detection_limit,
         )
         return build_graph_context(
-            spec.metrics_cfg,
+            snapshot,
+            options=spec.options,
             now=base_now,
             caps=caps,
             use_gpu=spec.use_gpu,

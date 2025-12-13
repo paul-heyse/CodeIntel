@@ -11,14 +11,14 @@ if TYPE_CHECKING:
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
     from codeintel.analytics.parsing.validation import FunctionValidationReporter
-    from codeintel.config import FunctionAnalyticsStepConfig
+    from codeintel.config.primitives import SnapshotRef
 
 
 @dataclass(frozen=True)
 class ProcessContext:
     """Shared context for building analytics rows."""
 
-    cfg: FunctionAnalyticsStepConfig
+    snapshot: SnapshotRef
     now: datetime
 
 
@@ -125,7 +125,7 @@ class FunctionAnalyticsOptions:
 class ProcessState:
     """Mutable state shared across per-file processing."""
 
-    cfg: FunctionAnalyticsStepConfig
+    snapshot: SnapshotRef
     cache: dict[str, ParsedModule | None]
     span_index: dict[int, SourceSpan]
     reporter: FunctionValidationReporter

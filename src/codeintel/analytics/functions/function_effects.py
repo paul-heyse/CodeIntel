@@ -6,7 +6,7 @@ import ast
 import json
 import logging
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
@@ -40,13 +40,89 @@ if TYPE_CHECKING:
         GraphRuntime,
         GraphRuntimeOptions,
     )
-    from codeintel.config import FunctionEffectsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import (
         FunctionCatalogProvider,
     )
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+def _default_io_apis() -> dict[str, list[str]]:
+    return {
+        "builtins": ["open", "print"],
+        "pathlib": ["Path.open", "Path.write_text", "Path.write_bytes"],
+        "logging": ["debug", "info", "warning", "error", "exception", "critical", "log"],
+        "requests": ["get", "post", "put", "delete", "patch", "head", "options"],
+        "httpx": ["get", "post", "put", "delete", "patch", "head", "options"],
+    }
+
+
+def _default_db_apis() -> dict[str, list[str]]:
+    return {
+        "sqlite3": ["connect"],
+        "psycopg": ["connect"],
+        "psycopg2": ["connect"],
+        "asyncpg": ["connect", "create_pool"],
+        "sqlalchemy": ["create_engine", "Session"],
+    }
+
+
+def _default_time_apis() -> dict[str, list[str]]:
+    return {
+        "time": ["sleep", "time"],
+        "asyncio": ["sleep"],
+        "datetime": ["datetime.now", "datetime.utcnow", "date.today"],
+    }
+
+
+def _default_random_apis() -> dict[str, list[str]]:
+    return {
+        "random": ["random", "randint", "choice", "randrange", "shuffle"],
+        "secrets": ["token_hex", "token_urlsafe"],
+        "uuid": ["uuid4", "uuid1"],
+    }
+
+
+def _default_threading_apis() -> dict[str, list[str]]:
+    return {
+        "threading": ["Thread", "Timer"],
+        "multiprocessing": ["Process", "Pool"],
+        "asyncio": ["create_task", "ensure_future", "gather"],
+        "concurrent.futures": ["ThreadPoolExecutor", "ProcessPoolExecutor"],
+    }
+
+
+@dataclass(frozen=True)
+class FunctionEffectsOptions:
+    """Configuration options for function effects computation.
+
+    Parameters
+    ----------
+    max_call_depth
+        Maximum depth to trace transitive effects.
+    require_all_callees_pure
+        Whether all callees must be pure for function to be pure.
+    io_apis
+        Mapping of modules to I/O API function names.
+    db_apis
+        Mapping of modules to database API function names.
+    time_apis
+        Mapping of modules to time-related API function names.
+    random_apis
+        Mapping of modules to randomness API function names.
+    threading_apis
+        Mapping of modules to threading/async API function names.
+    """
+
+    max_call_depth: int = 3
+    require_all_callees_pure: bool = True
+    io_apis: dict[str, list[str]] = field(default_factory=_default_io_apis)
+    db_apis: dict[str, list[str]] = field(default_factory=_default_db_apis)
+    time_apis: dict[str, list[str]] = field(default_factory=_default_time_apis)
+    random_apis: dict[str, list[str]] = field(default_factory=_default_random_apis)
+    threading_apis: dict[str, list[str]] = field(default_factory=_default_threading_apis)
 
 
 @dataclass(frozen=True)
@@ -91,7 +167,8 @@ class FunctionEffectsInputs:
 @dataclass(frozen=True)
 class _EffectInputs:
     gateway: StorageGateway
-    cfg: FunctionEffectsStepConfig
+    snapshot: SnapshotRef
+    options: FunctionEffectsOptions
     catalog: FunctionCatalogProvider
     runtime: GraphRuntime
     ast_map: dict[int, FunctionAst] | None = None
@@ -134,8 +211,9 @@ def _effects_payload(
 
 def compute_function_effects(
     gateway: StorageGateway,
-    cfg: FunctionEffectsStepConfig,
+    snapshot: SnapshotRef,
     *,
+    options: FunctionEffectsOptions | None = None,
     inputs: FunctionEffectsInputs | None = None,
 ) -> None:
     """
@@ -143,30 +221,34 @@ def compute_function_effects(
 
     Parameters
     ----------
-    gateway:
+    gateway
         Storage gateway for DuckDB.
-    cfg:
-        Function effects configuration.
-    inputs:
+    snapshot
+        Snapshot reference (repo, commit, repo_root).
+    options
+        Configuration options for effects detection.
+    inputs
         Optional inputs containing catalog, runtime, AST map, and missing GOIDs.
     """
-    opts = inputs or FunctionEffectsInputs()
-    catalog = opts.catalog_provider or FunctionCatalogService.from_db(
-        gateway, repo=cfg.repo, commit=cfg.commit
+    opts = options or FunctionEffectsOptions()
+    input_opts = inputs or FunctionEffectsInputs()
+    catalog = input_opts.catalog_provider or FunctionCatalogService.from_db(
+        gateway, repo=snapshot.repo, commit=snapshot.commit
     )
     active_runtime = resolve_graph_runtime(
         gateway,
-        cfg.snapshot,
-        opts.runtime,
+        snapshot,
+        input_opts.runtime,
     )
 
     effect_inputs = _EffectInputs(
         gateway=gateway,
-        cfg=cfg,
+        snapshot=snapshot,
+        options=opts,
         catalog=catalog,
         runtime=active_runtime,
-        ast_map=opts.ast_map,
-        missing_goids=opts.missing_goids,
+        ast_map=input_opts.ast_map,
+        missing_goids=input_opts.missing_goids,
     )
     rows = _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
 
@@ -175,11 +257,11 @@ def compute_function_effects(
     tuple_rows = [contract.to_tuple(row) for row in rows]
 
     table = gateway.ibis.table(contract.table_key)
-    where = and_predicates(table.repo == cfg.repo, table.commit == cfg.commit)
+    where = and_predicates(table.repo == snapshot.repo, table.commit == snapshot.commit)
     gateway.ibis.delete(contract.table_key, where=where)
     if tuple_rows:
         gateway.ibis.insert(contract.table_key, tuple_rows, columns=columns)
-    log.info("function_effects populated: %d rows for %s@%s", len(rows), cfg.repo, cfg.commit)
+    log.info("function_effects populated: %d rows for %s@%s", len(rows), snapshot.repo, snapshot.commit)
 
 
 def _build_effect_rows(
@@ -193,9 +275,9 @@ def _build_effect_rows(
         ast_by_goid, missing = load_function_asts(
             inputs.gateway,
             FunctionAstLoadRequest(
-                repo=inputs.cfg.repo,
-                commit=inputs.cfg.commit,
-                repo_root=inputs.cfg.repo_root,
+                repo=inputs.snapshot.repo,
+                commit=inputs.snapshot.commit,
+                repo_root=inputs.snapshot.repo_root,
                 catalog_provider=inputs.catalog,
             ),
         )
@@ -207,7 +289,7 @@ def _build_effect_rows(
         )
     all_goids = {span.goid for span in inputs.catalog.catalog().function_spans}
     analyses: dict[int, EffectAnalysis] = {
-        goid: _analyze_function(info, inputs.cfg) for goid, info in ast_by_goid.items()
+        goid: _analyze_function(info, inputs.options) for goid, info in ast_by_goid.items()
     }
     direct_flags: dict[int, bool] = {
         goid: analysis.direct_effectful for goid, analysis in analyses.items()
@@ -217,9 +299,9 @@ def _build_effect_rows(
     transitive_hits = _compute_transitive_effects(
         call_graph,
         direct_flags,
-        max_depth=inputs.cfg.max_call_depth,
+        max_depth=inputs.options.max_call_depth,
     )
-    unresolved_calls = _unresolved_call_counts(inputs.gateway, inputs.cfg.repo, inputs.cfg.commit)
+    unresolved_calls = _unresolved_call_counts(inputs.gateway, inputs.snapshot.repo, inputs.snapshot.commit)
     if unresolved_calls:
         log.warning(
             "Unresolved call edges detected for %d functions while computing effects: %s",
@@ -264,8 +346,8 @@ def _build_effect_rows(
 
         rows.append(
             {
-                "repo": inputs.cfg.repo,
-                "commit": inputs.cfg.commit,
+                "repo": inputs.snapshot.repo,
+                "commit": inputs.snapshot.commit,
                 "function_goid_h128": goid,
                 "is_pure": is_pure,
                 "uses_io": analysis.uses_io,
@@ -348,8 +430,22 @@ def _purity_confidence(*, parsed: bool, unresolved_call_count: int) -> float:
     return max(0.0, 1.0 - penalty)
 
 
-def _analyze_function(func: FunctionAst, cfg: FunctionEffectsStepConfig) -> EffectAnalysis:
-    visitor = _EffectVisitor(cfg, rel_path=func.rel_path, lines=func.lines)
+def _analyze_function(func: FunctionAst, options: FunctionEffectsOptions) -> EffectAnalysis:
+    """Analyze a function AST for side effects.
+
+    Parameters
+    ----------
+    func
+        Parsed function AST.
+    options
+        Detection options controlling which APIs are flagged.
+
+    Returns
+    -------
+    EffectAnalysis
+        Detected side-effect flags and supporting evidence.
+    """
+    visitor = _EffectVisitor(options, rel_path=func.rel_path, lines=func.lines)
     visitor.visit(func.node)
     if visitor.modifies_globals:
         visitor.record_scope_change("globals", func.start_line)
@@ -370,8 +466,8 @@ def _analyze_function(func: FunctionAst, cfg: FunctionEffectsStepConfig) -> Effe
 class _EffectVisitor(ast.NodeVisitor):
     """Lightweight AST visitor to spot side-effectful operations."""
 
-    def __init__(self, cfg: FunctionEffectsStepConfig, *, rel_path: str, lines: list[str]) -> None:
-        self.cfg = cfg
+    def __init__(self, options: FunctionEffectsOptions, *, rel_path: str, lines: list[str]) -> None:
+        self.options = options
         self.uses_io = False
         self.touches_db = False
         self.uses_time = False
@@ -399,19 +495,19 @@ class _EffectVisitor(ast.NodeVisitor):
         lineno = getattr(node, "lineno", None)
         end_lineno = getattr(node, "end_lineno", lineno)
 
-        if _matches_api(name, self.cfg.io_apis):
+        if _matches_api(name, self.options.io_apis):
             self.uses_io = True
             self._record_call("io_calls", name, lineno, end_lineno)
-        if _matches_api(name, self.cfg.db_apis):
+        if _matches_api(name, self.options.db_apis):
             self.touches_db = True
             self._record_call("db_calls", name, lineno, end_lineno)
-        if _matches_api(name, self.cfg.time_apis):
+        if _matches_api(name, self.options.time_apis):
             self.uses_time = True
             self._record_call("time_calls", name, lineno, end_lineno)
-        if _matches_api(name, self.cfg.random_apis):
+        if _matches_api(name, self.options.random_apis):
             self.uses_randomness = True
             self._record_call("random_calls", name, lineno, end_lineno)
-        if _matches_api(name, self.cfg.threading_apis):
+        if _matches_api(name, self.options.threading_apis):
             self.spawns_threads_or_tasks = True
             self._record_call("thread_calls", name, lineno, end_lineno)
 

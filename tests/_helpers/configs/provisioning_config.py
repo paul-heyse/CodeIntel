@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Self
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.config import GraphMetricsStepConfig
+    from codeintel.analytics.runtime.context import GraphMetricsOptions
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths
     from codeintel.ingestion import (
@@ -177,7 +177,7 @@ class GraphMetricsGatewayOptions:
 
     repo: str = DEFAULT_REPO
     commit: str = DEFAULT_COMMIT
-    graph_cfg: GraphMetricsStepConfig | None = None
+    metrics_options: GraphMetricsOptions | None = None
     include_symbol_edges: bool = True
     file_backed: bool = False
     db_path: Path | None = None

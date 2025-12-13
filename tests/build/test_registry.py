@@ -64,7 +64,7 @@ class TestTargetRegistry:
         for target in ALL_TARGETS:
             if target.module == "export":
                 continue
-            expect_true(len(target.tables) > 0, message=f"No tables for {target.name}")
+            expect_true(len(target.table_keys) > 0, message=f"No tables for {target.name}")
 
     @staticmethod
     def test_target_names_are_unique() -> None:

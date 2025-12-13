@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.testing import compute_test_coverage_edges
+from codeintel.analytics.testing.coverage.edges import TestCoverageOptions
 from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageEdgeEnv, CoverageSeedConfig
@@ -18,7 +20,6 @@ if TYPE_CHECKING:
 
     from coverage import Coverage
 
-    from codeintel.config import TestCoverageStepConfig
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.orchestration.tooling import CoverageArtifact
 
@@ -108,7 +109,7 @@ def compute_coverage_edges(
     env: CoverageEdgeEnv,
     *,
     coverage_file: Path,
-    coverage_loader: Callable[[TestCoverageStepConfig], Coverage | None] | None = None,
+    coverage_loader: Callable[[SnapshotRef, Path | None], Coverage | None] | None = None,
 ) -> None:
     """Invoke coverage edge computation with the seeded catalog and GOIDs.
 
@@ -121,11 +122,15 @@ def compute_coverage_edges(
     coverage_loader
         Optional custom coverage loader function.
     """
-    cfg = env.builder.analytics.test_coverage(coverage_file=coverage_file)
+    snapshot = env.builder.snapshot
+    options = TestCoverageOptions(
+        coverage_file=coverage_file,
+        coverage_loader=coverage_loader,
+    )
     compute_test_coverage_edges(
         env.gateway,
-        cfg,
-        coverage_loader=coverage_loader,
+        snapshot,
+        options=options,
     )
 
 

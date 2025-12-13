@@ -5,14 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import pandas as pd
-
-from codeintel.config.datasets.validation import validate_df
 from codeintel.storage.ibis_types import and_predicates, count_gt, ilike, or_predicates
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
-    import ibis.expr.types as it
 
     from codeintel.storage.repositories.base import RowDict
 
@@ -20,27 +16,6 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class SubsystemRepository(BaseRepository):
     """Read subsystem summaries and memberships."""
-
-    @staticmethod
-    def _validated_records(table_key: str, expr: it.Table) -> list[RowDict]:
-        """
-        Execute an Ibis expression and return validated row dictionaries.
-
-        Parameters
-        ----------
-        table_key
-            Dataset key used for Pandera validation.
-        expr
-            Ibis table expression to execute.
-
-        Returns
-        -------
-        list[RowDict]
-            Validated records with ``None`` substituted for missing values.
-        """
-        df = pd.DataFrame(expr.execute())
-        validated = validate_df(table_key, df)
-        return validated.where(pd.notna(validated), None).to_dict(orient="records")
 
     def list_subsystems(
         self,
@@ -88,7 +63,7 @@ class SubsystemRepository(BaseRepository):
             )
 
         expr = expr.order_by([table.module_count.desc(), table.subsystem_id]).limit(limit)
-        return self._validated_records("docs.v_subsystem_summary", expr)
+        return self._ibis_to_dicts(expr, "docs.v_subsystem_summary")
 
     def get_subsystem_summary(self, subsystem_id: str) -> RowDict | None:
         """
@@ -112,7 +87,7 @@ class SubsystemRepository(BaseRepository):
                 table.subsystem_id == subsystem_id,
             )
         ).limit(1)
-        rows = self._validated_records("docs.v_subsystem_summary", expr)
+        rows = self._ibis_to_dicts(expr, "docs.v_subsystem_summary")
         return rows[0] if rows else None
 
     def search_subsystems(
@@ -163,7 +138,7 @@ class SubsystemRepository(BaseRepository):
                 table.subsystem_id == subsystem_id,
             )
         ).order_by(table.module)
-        return self._validated_records("docs.v_module_with_subsystem", expr)
+        return self._ibis_to_dicts(expr, "docs.v_module_with_subsystem")
 
     def list_subsystem_memberships(self) -> list[RowDict]:
         """
@@ -202,7 +177,7 @@ class SubsystemRepository(BaseRepository):
                 table.module == module,
             )
         )
-        return self._validated_records("docs.v_module_with_subsystem", expr)
+        return self._ibis_to_dicts(expr, "docs.v_module_with_subsystem")
 
     def _has_cache(self, cache_table: str) -> bool:
         """
@@ -246,7 +221,7 @@ class SubsystemRepository(BaseRepository):
                 .order_by([table.module_count.desc(), table.subsystem_id])
                 .limit(limit)
             )
-            return self._validated_records(cache_table, expr)
+            return self._ibis_to_dicts(expr, cache_table)
 
         table = self._ibis_table("docs.v_subsystem_profile")
         expr = (
@@ -254,7 +229,7 @@ class SubsystemRepository(BaseRepository):
             .order_by([table.module_count.desc(), table.subsystem_id])
             .limit(limit)
         )
-        return self._validated_records("docs.v_subsystem_profile", expr)
+        return self._ibis_to_dicts(expr, "docs.v_subsystem_profile")
 
     def list_subsystem_coverage(self, *, limit: int) -> list[RowDict]:
         """
@@ -283,7 +258,7 @@ class SubsystemRepository(BaseRepository):
                 )
                 .limit(limit)
             )
-            return self._validated_records(cache_table, expr)
+            return self._ibis_to_dicts(expr, cache_table)
 
         table = self._ibis_table("docs.v_subsystem_coverage")
         expr = (
@@ -296,4 +271,4 @@ class SubsystemRepository(BaseRepository):
             )
             .limit(limit)
         )
-        return self._validated_records("docs.v_subsystem_coverage", expr)
+        return self._ibis_to_dicts(expr, "docs.v_subsystem_coverage")

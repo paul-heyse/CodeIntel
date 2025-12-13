@@ -14,25 +14,22 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.analytics.functions.config import FunctionAnalyticsOptions
-from codeintel.config import FunctionAnalyticsStepConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from codeintel.analytics.functions.function_effects import FunctionEffectsInputs
-    from codeintel.analytics.parsing.ast_cache import FunctionAst
-    from codeintel.config import (
-        FunctionContractsStepConfig,
-        FunctionEffectsStepConfig,
-        FunctionHistoryStepConfig,
+    from codeintel.analytics.functions.function_effects import (
+        FunctionEffectsInputs,
+        FunctionEffectsOptions,
     )
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.ingestion.engine.infrastructure import ToolRunner
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
     "FunctionAnalyticsOptions",
-    "FunctionAnalyticsStepConfig",
     "compute_function_contracts",
     "compute_function_effects",
     "compute_function_history",
@@ -70,17 +67,26 @@ def _load(name: str) -> Callable[..., Any]:
 
 def compute_function_contracts(
     gateway: StorageGateway,
-    cfg: FunctionContractsStepConfig,
+    snapshot: SnapshotRef,
     *,
     function_ast_map: dict[int, FunctionAst] | None = None,
     catalog: FunctionCatalogProvider | None = None,
+    max_conditions_per_func: int = 64,
 ) -> None:
     """Compute contract coverage for functions using the configured backend.
 
-    Returns
-    -------
-    None
-        Results are written to storage; return value is unused.
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DuckDB access.
+    snapshot
+        Repository and commit identifiers.
+    function_ast_map
+        Mapping of GOID to parsed function AST (from AstProvider).
+    catalog
+        Function catalog provider (from CatalogProvider).
+    max_conditions_per_func
+        Maximum number of preconditions/postconditions/raises per function.
     """
     func = cast(
         "Callable[..., None]",
@@ -88,59 +94,87 @@ def compute_function_contracts(
     )
     return func(
         gateway,
-        cfg,
+        snapshot,
         function_ast_map=function_ast_map,
         catalog=catalog,
+        max_conditions_per_func=max_conditions_per_func,
     )
 
 
 def compute_function_effects(
     gateway: StorageGateway,
-    cfg: FunctionEffectsStepConfig,
+    snapshot: SnapshotRef,
     *,
+    options: FunctionEffectsOptions | None = None,
     inputs: FunctionEffectsInputs | None = None,
 ) -> None:
     """Compute function side effects and control-flow metadata.
 
-    Returns
-    -------
-    None
-        Results are persisted; return value is not used.
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DuckDB access.
+    snapshot
+        Repository and commit identifiers.
+    options
+        Configuration options for effects detection.
+    inputs
+        Optional inputs containing catalog, runtime, AST map, and missing GOIDs.
     """
     func = cast(
         "Callable[..., None]",
         _load("compute_function_effects"),
     )
-    return func(gateway, cfg, inputs=inputs)
+    return func(gateway, snapshot, options=options, inputs=inputs)
 
 
 def compute_function_history(
     gateway: StorageGateway,
-    cfg: FunctionHistoryStepConfig,
+    snapshot: SnapshotRef,
     *,
     runner: ToolRunner | None = None,
 ) -> None:
     """Compute historical metrics for functions from SCM or tool outputs.
 
-    Returns
-    -------
-    None
-        This function persists results via storage; return is for parity.
+    Parameters
+    ----------
+    gateway
+        StorageGateway bound to the CodeIntel DuckDB database.
+    snapshot
+        Repository and commit identifiers.
+    runner
+        Optional shared ToolRunner for git invocations.
     """
     func = cast(
         "Callable[..., None]",
         _load("compute_function_history"),
     )
-    return func(gateway, cfg, runner=runner)
+    return func(
+        gateway,
+        snapshot,
+        runner=runner,
+    )
 
 
 def compute_function_metrics_and_types(
     gateway: StorageGateway,
-    cfg: FunctionAnalyticsStepConfig,
+    snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
+    fail_on_missing_spans: bool = False,
 ) -> dict[str, int]:
     """Compute combined metrics and typedness for functions.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DuckDB access.
+    snapshot
+        Repository and commit identifiers.
+    options
+        Optional configuration for metrics computation.
+    fail_on_missing_spans
+        Whether to raise an error if any spans are missing.
 
     Returns
     -------
@@ -151,7 +185,7 @@ def compute_function_metrics_and_types(
         "Callable[..., dict[str, int]]",
         _load("compute_function_metrics_and_types"),
     )
-    return func(gateway, cfg, options=options)
+    return func(gateway, snapshot, options=options, fail_on_missing_spans=fail_on_missing_spans)
 
 
 def __getattr__(name: str) -> object:

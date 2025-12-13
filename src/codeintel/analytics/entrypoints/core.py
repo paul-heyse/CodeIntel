@@ -72,7 +72,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.compute.entrypoints.detection import (
         EntryPointCandidate,
     )
-    from codeintel.config import EntryPointsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -136,13 +136,25 @@ class TestSummary:
     last_test_status: str
 
 
+@dataclass(frozen=True)
+class EntrypointBuildInputs:
+    """Bundled inputs for entrypoint detection.
+
+    This dataclass groups the data dependencies for entrypoint detection,
+    reducing function parameter count.
+    """
+
+    catalog_provider: FunctionCatalogProvider
+    module_map: dict[str, str]
+    features_map: Mapping[int, FunctionAstFeatures]
+    settings: DetectorSettings | None = None
+    scan_profile: ScanProfile | None = None
+
+
 def build_entrypoints(
     gateway: StorageGateway,
-    cfg: EntryPointsStepConfig,
-    *,
-    catalog_provider: FunctionCatalogProvider,
-    module_map: dict[str, str],
-    features_map: Mapping[int, FunctionAstFeatures],
+    snapshot: SnapshotRef,
+    inputs: EntrypointBuildInputs,
 ) -> None:
     """
     Populate analytics.entrypoints and analytics.entrypoint_tests.
@@ -151,49 +163,39 @@ def build_entrypoints(
     ----------
     gateway
         Storage gateway with active DuckDB connection.
-    cfg
-        EntryPointsStepConfig specifying repo context and detection toggles.
-    catalog_provider
-        Function catalog providing span lookups.
-    module_map
-        Mapping of file path to module name.
-    features_map
-        Mapping of function GOID to feature vector.
+    snapshot
+        Repository and commit identifiers.
+    inputs
+        Bundled inputs containing catalog, module map, features, and settings.
     """
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.entrypoints")
     backend.ensure_table("analytics.entrypoint_tests")
     con = gateway.con
-    backend.delete_for_snapshot("analytics.entrypoints", repo=cfg.repo, commit=cfg.commit)
-    backend.delete_for_snapshot("analytics.entrypoint_tests", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot("analytics.entrypoints", repo=snapshot.repo, commit=snapshot.commit)
+    backend.delete_for_snapshot(
+        "analytics.entrypoint_tests", repo=snapshot.repo, commit=snapshot.commit
+    )
 
     entrypoint_context = _build_entrypoint_context(
         con,
-        cfg,
-        catalog_provider,
-        module_map_override=module_map,
-        features=features_map,
+        snapshot,
+        inputs.catalog_provider,
+        module_map_override=inputs.module_map,
+        features=inputs.features_map,
     )
     if entrypoint_context is None:
-        log.warning("No modules available to scan for entrypoints in %s@%s", cfg.repo, cfg.commit)
+        log.warning(
+            "No modules available to scan for entrypoints in %s@%s", snapshot.repo, snapshot.commit
+        )
         return
 
-    settings = DetectorSettings(
-        detect_fastapi=cfg.detect_fastapi,
-        detect_flask=cfg.detect_flask,
-        detect_click=cfg.detect_click,
-        detect_typer=cfg.detect_typer,
-        detect_cron=cfg.detect_cron,
-        detect_django=cfg.detect_django,
-        detect_celery=cfg.detect_celery,
-        detect_airflow=cfg.detect_airflow,
-        detect_generic_routes=cfg.detect_generic_routes,
-    )
+    effective_settings = inputs.settings or DetectorSettings()
     entrypoint_rows, test_rows = _collect_entrypoint_rows(
         context=entrypoint_context,
-        repo_root=cfg.repo_root,
-        settings=settings,
-        scan_profile=cfg.scan_profile,
+        repo_root=snapshot.repo_root,
+        settings=effective_settings,
+        scan_profile=inputs.scan_profile,
     )
 
     if entrypoint_rows:
@@ -213,8 +215,8 @@ def build_entrypoints(
         "entrypoints populated: %d entrypoints, %d entrypoint_test edges for %s@%s",
         len(entrypoint_rows),
         len(test_rows),
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
     )
 
 
@@ -255,12 +257,12 @@ def _collect_entrypoint_rows(
 
 def _build_entrypoint_context(
     con: DuckDBConnection,
-    cfg: EntryPointsStepConfig,
+    snapshot: SnapshotRef,
     catalog: FunctionCatalogProvider,
     module_map_override: dict[str, str] | None = None,
     features: Mapping[int, FunctionAstFeatures] | None = None,
 ) -> EntryPointContext | None:
-    module_ctx = _load_module_context(con, cfg.repo, cfg.commit)
+    module_ctx = _load_module_context(con, snapshot.repo, snapshot.commit)
     if not module_ctx:
         catalog_modules = module_map_override or catalog.catalog().module_by_path
         module_ctx = {
@@ -269,14 +271,14 @@ def _build_entrypoint_context(
         }
     if not module_ctx:
         return None
-    coverage_by_goid = _load_coverage_by_goid(con, cfg.repo, cfg.commit)
-    edges_by_goid = _load_test_edges(con, cfg.repo, cfg.commit)
-    test_meta = _load_test_meta(con, cfg.repo, cfg.commit)
-    subsystem_by_module, subsystem_names = _load_subsystem_maps(con, cfg.repo, cfg.commit)
+    coverage_by_goid = _load_coverage_by_goid(con, snapshot.repo, snapshot.commit)
+    edges_by_goid = _load_test_edges(con, snapshot.repo, snapshot.commit)
+    test_meta = _load_test_meta(con, snapshot.repo, snapshot.commit)
+    subsystem_by_module, subsystem_names = _load_subsystem_maps(con, snapshot.repo, snapshot.commit)
     module_map = {path: ctx.module for path, ctx in module_ctx.items()}
     return EntryPointContext(
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
         module_ctx=module_ctx,
         module_map=module_map,
         coverage_by_goid=coverage_by_goid,

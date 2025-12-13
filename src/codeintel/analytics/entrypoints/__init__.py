@@ -1,7 +1,8 @@
 """Entrypoint analytics plugins package."""
 
-from codeintel.analytics.entrypoints.core import build_entrypoints
+from codeintel.analytics.entrypoints.core import EntrypointBuildInputs, build_entrypoints
 
 __all__ = [
+    "EntrypointBuildInputs",
     "build_entrypoints",
 ]

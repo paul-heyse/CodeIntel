@@ -18,7 +18,6 @@ from codeintel.analytics.compute.hotspots.metrics import (
     build_hotspots,
     parse_git_log_lines,
 )
-from codeintel.config import HotspotsStepConfig
 from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunResult
 from tests._helpers.assertions import (
     assert_logged,
@@ -80,22 +79,6 @@ FUNC_C_LINES = (1, 2)
 HELPER_LINES = (1, 2)
 
 
-@pytest.fixture
-def hotspots_config(tmp_path: Path) -> HotspotsStepConfig:
-    """Create a HotspotsStepConfig for testing.
-
-    Parameters
-    ----------
-    tmp_path
-        Temporary directory.
-
-    Returns
-    -------
-    HotspotsStepConfig
-        Configured step config.
-    """
-    snapshot = make_snapshot(repo_root=tmp_path)
-    return HotspotsStepConfig(snapshot=snapshot, max_commits=100)
 
 
 @pytest.fixture
@@ -273,10 +256,11 @@ def test_file_churn_to_summary_keys() -> None:
 
 def test_build_hotspots_empty_ast_metrics(
     memory_gateway: StorageGateway,
-    hotspots_config: HotspotsStepConfig,
+    tmp_path: Path,
 ) -> None:
     """Build hotspots with empty AST metrics produces no rows."""
-    build_hotspots(memory_gateway, hotspots_config)
+    snapshot = make_snapshot(repo_root=tmp_path)
+    build_hotspots(memory_gateway, snapshot, max_commits=100)
 
     result = memory_gateway.con.execute("SELECT COUNT(*) FROM analytics.hotspots").fetchone()
     expect_is_not_none(result)
@@ -293,9 +277,7 @@ def test_build_hotspots_with_ast_data(
     _insert_ast_metrics(memory_gateway, [AstMetricSeed(rel_path="test_file.py", complexity=5.0)])
 
     snapshot = make_snapshot(repo_root=tmp_path)
-    cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
-
-    build_hotspots(memory_gateway, cfg)
+    build_hotspots(memory_gateway, snapshot, max_commits=0)
 
     result = memory_gateway.con.execute(
         "SELECT rel_path, score FROM analytics.hotspots WHERE rel_path = ?",
@@ -325,9 +307,7 @@ def test_build_hotspots_multiple_files(
     )
 
     snapshot = make_snapshot(repo_root=tmp_path)
-    cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
-
-    build_hotspots(memory_gateway, cfg)
+    build_hotspots(memory_gateway, snapshot, max_commits=0)
 
     result = memory_gateway.con.execute("SELECT COUNT(*) FROM analytics.hotspots").fetchone()
 
@@ -348,9 +328,7 @@ def test_build_hotspots_score_calculation(
     )
 
     snapshot = make_snapshot(repo_root=tmp_path)
-    cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
-
-    build_hotspots(memory_gateway, cfg)
+    build_hotspots(memory_gateway, snapshot, max_commits=0)
 
     result = memory_gateway.con.execute(
         """
@@ -384,9 +362,7 @@ def test_build_hotspots_high_complexity(
     )
 
     snapshot = make_snapshot(repo_root=tmp_path)
-    cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
-
-    build_hotspots(memory_gateway, cfg)
+    build_hotspots(memory_gateway, snapshot, max_commits=0)
 
     result = memory_gateway.con.execute(
         "SELECT complexity, score FROM analytics.hotspots WHERE rel_path = ?",
@@ -413,9 +389,7 @@ def test_build_hotspots_idempotent(
     )
 
     snapshot = make_snapshot(repo_root=tmp_path)
-    cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
-
-    build_hotspots(memory_gateway, cfg)
+    build_hotspots(memory_gateway, snapshot, max_commits=0)
     build_hotspots(memory_gateway, cfg)
 
     result = memory_gateway.con.execute(
@@ -462,9 +436,7 @@ def test_build_hotspots_windows_path_handling(
     )
 
     snapshot = make_snapshot(repo_root=tmp_path)
-    cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
-
-    build_hotspots(memory_gateway, cfg)
+    build_hotspots(memory_gateway, snapshot, max_commits=0)
 
     result = memory_gateway.con.execute(
         "SELECT rel_path FROM analytics.hotspots WHERE rel_path LIKE '%file.py'"
@@ -484,9 +456,7 @@ def test_build_hotspots_zero_complexity(
     )
 
     snapshot = make_snapshot(repo_root=tmp_path)
-    cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
-
-    build_hotspots(memory_gateway, cfg)
+    build_hotspots(memory_gateway, snapshot, max_commits=0)
 
     result = memory_gateway.con.execute(
         "SELECT complexity, score FROM analytics.hotspots WHERE rel_path = ?",
@@ -514,9 +484,7 @@ def test_build_hotspots_negative_complexity(
     )
 
     snapshot = make_snapshot(repo_root=tmp_path)
-    cfg = HotspotsStepConfig(snapshot=snapshot, max_commits=0)
-
-    build_hotspots(memory_gateway, cfg)
+    build_hotspots(memory_gateway, snapshot, max_commits=0)
 
     result = memory_gateway.con.execute(
         "SELECT complexity, score FROM analytics.hotspots WHERE rel_path = ?",
@@ -534,11 +502,11 @@ def test_build_hotspots_negative_complexity(
 
 def test_build_hotspots_from_seeded_ast_metrics(ast_metrics_ctx: TestContext) -> None:
     """Build hotspots using seeded AST metrics pack data."""
-    cfg = HotspotsStepConfig(snapshot=ast_metrics_ctx.to_snapshot_ref(), max_commits=0)
+    snapshot = ast_metrics_ctx.to_snapshot_ref()
     con = ast_metrics_ctx.con
     con.execute("DELETE FROM analytics.hotspots")
 
-    build_hotspots(ast_metrics_ctx.gateway, cfg)
+    build_hotspots(ast_metrics_ctx.gateway, snapshot, max_commits=0)
 
     result = con.execute(
         """
@@ -593,10 +561,10 @@ def test_build_hotspots_logs_git_failure(
                 duration_s=0.0,
             )
 
-    cfg = HotspotsStepConfig(snapshot=ast_metrics_ctx.to_snapshot_ref(), max_commits=5)
+    snapshot = ast_metrics_ctx.to_snapshot_ref()
     caplog.set_level("WARNING", logger="codeintel.analytics.compute.hotspots.metrics")
 
-    build_hotspots(ast_metrics_ctx.gateway, cfg, runner=_FailingRunner())
+    build_hotspots(ast_metrics_ctx.gateway, snapshot, max_commits=5, runner=_FailingRunner())
 
     row = ast_metrics_ctx.con.execute(
         "SELECT commit_count, author_count FROM analytics.hotspots LIMIT 1"

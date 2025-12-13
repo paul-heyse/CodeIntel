@@ -11,7 +11,6 @@ from codeintel.analytics.semantic_roles import compute_semantic_roles
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import SemanticRolesStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -78,10 +77,6 @@ class SemanticRolesPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = SemanticRolesStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         catalog = ctx.resources.catalog
         module_by_path: dict[str, str] = {}
         ast_map: dict[int, FunctionAst] = {}
@@ -102,7 +97,7 @@ class SemanticRolesPlugin(TargetPlugin):
         try:
             compute_semantic_roles(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 module_by_path=module_by_path,
                 ast_map=ast_map,
                 features_map=features_map,

@@ -13,7 +13,7 @@ import libcst as cst
 from libcst import MetadataWrapper, metadata
 
 from codeintel.config.datasets import CallGraphEdgeRow
-from codeintel.graphs.adapters.callgraph_persistence import (
+from codeintel.graphs.compute.callgraph.persistence import (
     dedupe_edge_rows,
     default_edge_key,
 )

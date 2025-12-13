@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from codeintel.config.steps_graphs import GraphRunScope
+    from codeintel.config.graph_helpers import GraphRunScope
     from codeintel.serving import domain_models as dm
     from codeintel.serving.backend.pagination import BackendLimits
     from codeintel.serving.mcp.models import DatasetSpecDescriptor

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
 import ibis
 
+from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import (
@@ -23,11 +24,32 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
-    from codeintel.config import HistoryTimeseriesStepConfig
     from codeintel.storage.gateway import (
         SnapshotGatewayResolver,
         StorageGateway,
     )
+
+
+@dataclass(frozen=True)
+class HistoryTimeseriesOptions:
+    """Configuration options for history timeseries computation.
+
+    Parameters
+    ----------
+    commits
+        Tuple of commit SHAs to include in the timeseries.
+    entity_kind
+        Kind of entity to track: "function", "module", or "both".
+    max_entities
+        Maximum number of entities to include per kind.
+    selection_strategy
+        Strategy for selecting top entities: "risk_score" or others.
+    """
+
+    commits: tuple[str, ...]
+    entity_kind: str = "function"
+    max_entities: int = 500
+    selection_strategy: str = "risk_score"
 
 HISTORY_TIMESERIES_COLS = [
     "repo",
@@ -118,9 +140,10 @@ def _safe_number(value: NumericLike | None) -> float | None:
 
 def compute_history_timeseries(
     history_gateway: StorageGateway,
-    cfg: HistoryTimeseriesStepConfig,
+    snapshot: SnapshotRef,
     db_resolver: DBResolver,
     *,
+    options: HistoryTimeseriesOptions,
     runner: ToolRunner | None = None,
 ) -> None:
     """
@@ -128,16 +151,18 @@ def compute_history_timeseries(
 
     Parameters
     ----------
-    history_gateway:
+    history_gateway
         Gateway to the database where history rows will be written.
-    cfg:
-        History aggregation configuration.
-    db_resolver:
+    snapshot
+        Snapshot reference with repo, commit, and repo_root.
+    db_resolver
         Callable returning a DuckDB connection for a given commit.
-    runner:
+    options
+        History timeseries configuration options.
+    runner
         Optional ToolRunner for git timestamp lookups.
     """
-    if not cfg.commits:
+    if not options.commits:
         log.info("No commits provided for history_timeseries; skipping.")
         return
 
@@ -145,34 +170,36 @@ def compute_history_timeseries(
     backend.ensure_table("analytics.history_timeseries")
 
     history_table = history_gateway.ibis.table("analytics.history_timeseries")
-    delete_predicate = and_predicates(history_table["repo"] == cfg.repo)
+    delete_predicate = and_predicates(history_table["repo"] == snapshot.repo)
     history_gateway.ibis.delete("analytics.history_timeseries", where=delete_predicate)
 
-    selection = _select_entities(cfg, db_resolver)
+    selection = _select_entities(snapshot, options, db_resolver)
     if not selection.functions and not selection.modules:
         log.info("No entities selected for history_timeseries; skipping.")
         return
 
     now = datetime.now(tz=UTC)
     rows: list[tuple[object, ...]] = []
-    for commit in cfg.commits:
+    for commit in options.commits:
         con_ci = db_resolver(commit)
-        commit_ts = _fetch_commit_timestamp(cfg.repo_root, commit, runner) or now
+        commit_ts = _fetch_commit_timestamp(snapshot.repo_root, commit, runner) or now
         commit_ctx = CommitContext(commit=commit, commit_ts=commit_ts, created_at=now)
 
-        if cfg.entity_kind in {"function", "both"}:
+        if options.entity_kind in {"function", "both"}:
             rows.extend(
                 _collect_function_rows_for_commit(
-                    cfg,
+                    snapshot,
+                    options,
                     con_ci,
                     commit_ctx=commit_ctx,
                     selection=selection.functions,
                 )
             )
-        if cfg.entity_kind in {"module", "both"}:
+        if options.entity_kind in {"module", "both"}:
             rows.extend(
                 _collect_module_rows_for_commit(
-                    cfg,
+                    snapshot,
+                    options,
                     con_ci,
                     commit_ctx=commit_ctx,
                     selection=selection.modules,
@@ -188,15 +215,16 @@ def compute_history_timeseries(
     log.info(
         "history_timeseries populated: %s rows for %s commits",
         len(rows),
-        len(cfg.commits),
+        len(options.commits),
     )
 
 
 def compute_history_timeseries_gateways(
     history_gateway: StorageGateway,
-    cfg: HistoryTimeseriesStepConfig,
+    snapshot: SnapshotRef,
     snapshot_resolver: SnapshotGatewayResolver,
     *,
+    options: HistoryTimeseriesOptions,
     runner: ToolRunner | None = None,
 ) -> None:
     """
@@ -204,13 +232,15 @@ def compute_history_timeseries_gateways(
 
     Parameters
     ----------
-    history_gateway:
+    history_gateway
         StorageGateway for the destination history DuckDB database.
-    cfg:
-        History aggregation configuration.
-    snapshot_resolver:
+    snapshot
+        Snapshot reference with repo, commit, and repo_root.
+    snapshot_resolver
         Callable returning a StorageGateway bound to the per-commit snapshot DB.
-    runner:
+    options
+        History timeseries configuration options.
+    runner
         Optional ToolRunner for git timestamp lookups.
     """
     snapshot_gateways: dict[str, StorageGateway] = {}
@@ -233,8 +263,9 @@ def compute_history_timeseries_gateways(
     try:
         compute_history_timeseries(
             history_gateway,
-            cfg,
+            snapshot,
             _db_resolver,
+            options=options,
             runner=runner,
         )
     finally:
@@ -244,32 +275,71 @@ def compute_history_timeseries_gateways(
             gateway.close()
 
 
-def _select_entities(cfg: HistoryTimeseriesStepConfig, db_resolver: DBResolver) -> EntitySelection:
-    base_commit = cfg.commits[0]
+def _select_entities(
+    snapshot: SnapshotRef,
+    options: HistoryTimeseriesOptions,
+    db_resolver: DBResolver,
+) -> EntitySelection:
+    """Select top entities from the first commit for tracking.
+
+    Parameters
+    ----------
+    snapshot
+        Snapshot reference.
+    options
+        Timeseries options.
+    db_resolver
+        Callable to resolve DuckDB connection by commit.
+
+    Returns
+    -------
+    EntitySelection
+        Selected function and module stable IDs.
+    """
+    base_commit = options.commits[0]
     con = db_resolver(base_commit)
-    functions = _select_top_functions(con, cfg, base_commit)
-    modules = _select_top_modules(con, cfg, base_commit)
+    functions = _select_top_functions(con, snapshot, options, base_commit)
+    modules = _select_top_modules(con, snapshot, options, base_commit)
     return EntitySelection(functions=functions, modules=modules)
 
 
 def _select_top_functions(
     con: DuckDBConnection,
-    cfg: HistoryTimeseriesStepConfig,
+    snapshot: SnapshotRef,
+    options: HistoryTimeseriesOptions,
     commit: str,
 ) -> set[str]:
+    """Select top functions by risk score.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    snapshot
+        Snapshot reference.
+    options
+        Timeseries options.
+    commit
+        Commit SHA.
+
+    Returns
+    -------
+    set[str]
+        Set of stable entity IDs.
+    """
     conn = ibis.duckdb.from_connection(con)
     table = conn.table("function_profile", database="analytics")
     rows_df = (
-        table.filter((table.repo == cfg.repo) & (table.commit == commit))
+        table.filter((table.repo == snapshot.repo) & (table.commit == commit))
         .order_by(ibis.desc(table.risk_score))
         .select("rel_path", "language", "qualname")
-        .limit(cfg.max_entities)
+        .limit(options.max_entities)
         .execute()
     )
     rows = rows_df.itertuples(index=False, name=None)
     return {
         make_entity_stable_id(
-            repo=cfg.repo,
+            repo=snapshot.repo,
             rel_path=str(rel_path),
             language=str(language),
             kind="function",
@@ -281,22 +351,41 @@ def _select_top_functions(
 
 def _select_top_modules(
     con: DuckDBConnection,
-    cfg: HistoryTimeseriesStepConfig,
+    snapshot: SnapshotRef,
+    options: HistoryTimeseriesOptions,
     commit: str,
 ) -> set[str]:
+    """Select top modules by max risk score.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    snapshot
+        Snapshot reference.
+    options
+        Timeseries options.
+    commit
+        Commit SHA.
+
+    Returns
+    -------
+    set[str]
+        Set of stable entity IDs.
+    """
     conn = ibis.duckdb.from_connection(con)
     table = conn.table("module_profile", database="analytics")
     rows_df = (
-        table.filter((table.repo == cfg.repo) & (table.commit == commit))
+        table.filter((table.repo == snapshot.repo) & (table.commit == commit))
         .order_by(ibis.desc(table.max_risk_score))
         .select("path", "language", "module")
-        .limit(cfg.max_entities)
+        .limit(options.max_entities)
         .execute()
     )
     rows = rows_df.itertuples(index=False, name=None)
     return {
         make_entity_stable_id(
-            repo=cfg.repo,
+            repo=snapshot.repo,
             rel_path=str(path),
             language=str(language),
             kind="module",
@@ -307,16 +396,38 @@ def _select_top_modules(
 
 
 def _collect_function_rows_for_commit(
-    cfg: HistoryTimeseriesStepConfig,
+    snapshot: SnapshotRef,
+    options: HistoryTimeseriesOptions,
     con_ci: DuckDBConnection,
     *,
     commit_ctx: CommitContext,
     selection: set[str],
 ) -> Iterable[tuple[object, ...]]:
+    """Collect function timeseries rows for a single commit.
+
+    Parameters
+    ----------
+    snapshot
+        Snapshot reference.
+    options
+        Timeseries options (unused but kept for API consistency).
+    con_ci
+        DuckDB connection for the commit.
+    commit_ctx
+        Commit context with timestamps.
+    selection
+        Set of stable IDs to include.
+
+    Yields
+    ------
+    tuple[object, ...]
+        Row tuples for analytics.history_timeseries.
+    """
+    _ = options  # Unused, kept for signature consistency
     conn = ibis.duckdb.from_connection(con_ci)
     table = conn.table("function_profile", database="analytics")
     rows_df = (
-        table.filter((table.repo == cfg.repo) & (table.commit == commit_ctx.commit))
+        table.filter((table.repo == snapshot.repo) & (table.commit == commit_ctx.commit))
         .select(
             "function_goid_h128",
             "rel_path",
@@ -349,7 +460,7 @@ def _collect_function_rows_for_commit(
         risk_level,
     ) in rows_df.itertuples(index=False, name=None):
         stable_id = make_entity_stable_id(
-            repo=cfg.repo,
+            repo=snapshot.repo,
             rel_path=str(rel_path),
             language=str(language),
             kind="function",
@@ -359,7 +470,7 @@ def _collect_function_rows_for_commit(
             continue
         goid_val = int(goid)
         yield (
-            cfg.repo,
+            snapshot.repo,
             "function",
             stable_id,
             goid_val,
@@ -382,16 +493,38 @@ def _collect_function_rows_for_commit(
 
 
 def _collect_module_rows_for_commit(
-    cfg: HistoryTimeseriesStepConfig,
+    snapshot: SnapshotRef,
+    options: HistoryTimeseriesOptions,
     con_ci: DuckDBConnection,
     *,
     commit_ctx: CommitContext,
     selection: set[str],
 ) -> Iterable[tuple[object, ...]]:
+    """Collect module timeseries rows for a single commit.
+
+    Parameters
+    ----------
+    snapshot
+        Snapshot reference.
+    options
+        Timeseries options (unused but kept for API consistency).
+    con_ci
+        DuckDB connection for the commit.
+    commit_ctx
+        Commit context with timestamps.
+    selection
+        Set of stable IDs to include.
+
+    Yields
+    ------
+    tuple[object, ...]
+        Row tuples for analytics.history_timeseries.
+    """
+    _ = options  # Unused, kept for signature consistency
     conn = ibis.duckdb.from_connection(con_ci)
     table = conn.table("module_profile", database="analytics")
     rows_df = (
-        table.filter((table.repo == cfg.repo) & (table.commit == commit_ctx.commit))
+        table.filter((table.repo == snapshot.repo) & (table.commit == commit_ctx.commit))
         .select(
             "module",
             "path",
@@ -416,7 +549,7 @@ def _collect_module_rows_for_commit(
         _role_confidence,
     ) in rows_df.itertuples(index=False, name=None):
         stable_id = make_entity_stable_id(
-            repo=cfg.repo,
+            repo=snapshot.repo,
             rel_path=str(path),
             language=str(language),
             kind="module",
@@ -425,7 +558,7 @@ def _collect_module_rows_for_commit(
         if stable_id not in selection:
             continue
         yield (
-            cfg.repo,
+            snapshot.repo,
             "module",
             stable_id,
             None,
