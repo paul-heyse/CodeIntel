@@ -55,9 +55,9 @@ def build_dataset_schema(
     Examples
     --------
     >>> from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
-    >>> from codeintel.config.datasets.pandera_schemas import DATASET_SCHEMAS
+    >>> from codeintel.config.datasets.pandera_schemas import _get_dataset_schemas
     >>> contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.function_metrics"]
-    >>> pa_schema = DATASET_SCHEMAS["analytics.function_metrics"]
+    >>> pa_schema = _get_dataset_schemas()["analytics.function_metrics"]
     >>> ds = build_dataset_schema(contract, pa_schema)
     >>> ds.name
     'analytics.function_metrics'
@@ -92,8 +92,8 @@ def build_dataset_schema(
 def build_all_schemas() -> dict[str, DatasetSchema]:
     """Build DatasetSchema instances for all registered datasets.
 
-    This reads from DATASET_CONTRACTS_BY_TABLE_KEY and DATASET_SCHEMAS to
-    create a complete mapping of DatasetSchema objects.
+    This reads from DATASET_CONTRACTS_BY_TABLE_KEY and calls _get_dataset_schemas()
+    to create a complete mapping of DatasetSchema objects.
 
     Returns
     -------

@@ -12,11 +12,13 @@ from codeintel.analytics.ast_features.model import IoFlags
 from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS
 from codeintel.analytics.testing.profiles.types import (
     BehavioralContext,
+    BehavioralCoverageOptions,
     BehavioralLLMRequest,
     TestAstInfo,
     TestRecord,
 )
 from codeintel.analytics.utilities.ast import resolve_call_target
+from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
@@ -28,7 +30,6 @@ if TYPE_CHECKING:
     from codeintel.analytics.testing.profiles.types import (
         BehavioralLLMRunner,
     )
-    from codeintel.config import BehavioralCoverageStepConfig
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
@@ -47,9 +48,7 @@ class _LLMInputs:
 class BehaviorRowHooks:
     """Optional hooks to override behavioral row inputs for testing."""
 
-    load_tests: (
-        Callable[[DuckDBConnection, BehavioralCoverageStepConfig], list[TestRecord]] | None
-    ) = None
+    load_tests: Callable[[DuckDBConnection, SnapshotRef], list[TestRecord]] | None = None
     build_ast: (
         Callable[
             [Path, Iterable[TestRecord], AstFeaturePatterns],
@@ -58,16 +57,23 @@ class BehaviorRowHooks:
         | None
     ) = None
     load_profile_ctx: (
-        Callable[[DuckDBConnection, BehavioralCoverageStepConfig], Mapping[str, dict[str, object]]]
-        | None
+        Callable[[DuckDBConnection, SnapshotRef], Mapping[str, dict[str, object]]] | None
     ) = None
     row_builder: Callable[[TestRecord, BehavioralContext], tuple[object, ...]] | None = None
 
 
 def _default_load_test_records(
-    con: DuckDBConnection, cfg: BehavioralCoverageStepConfig
+    con: DuckDBConnection,
+    snapshot: SnapshotRef,
 ) -> list[TestRecord]:
     """Load test records from the database.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    snapshot
+        Snapshot reference.
 
     Returns
     -------
@@ -102,7 +108,7 @@ def _default_load_test_records(
          AND m.path = t.rel_path
         WHERE t.repo = ? AND t.commit = ?
         """,
-        [cfg.repo, cfg.commit],
+        [snapshot.repo, snapshot.commit],
     ).fetchall()
     return [
         TestRecord(
@@ -127,38 +133,54 @@ def _default_load_test_records(
 
 def build_behavior_rows(
     gateway: StorageGateway,
-    cfg: BehavioralCoverageStepConfig,
+    snapshot: SnapshotRef,
     *,
+    options: BehavioralCoverageOptions | None = None,
     llm_runner: BehavioralLLMRunner | None = None,
     hooks: BehaviorRowHooks | None = None,
 ) -> list[tuple[object, ...]]:
     """Build behavioral coverage rows for insertion.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    snapshot
+        Snapshot reference.
+    options
+        Optional behavioral coverage configuration.
+    llm_runner
+        Optional LLM runner for tag classification.
+    hooks
+        Optional test hooks for dependency injection.
 
     Returns
     -------
     list[tuple[object, ...]]
         Rows aligned with ``analytics.behavioral_coverage`` column order.
     """
+    opts = options or BehavioralCoverageOptions()
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.behavioral_coverage")
     con = gateway.con
     load_tests_fn = hooks.load_tests if hooks is not None else None
     if load_tests_fn is None:
         load_tests_fn = _default_load_test_records
-    tests = load_tests_fn(con, cfg)
+    tests = load_tests_fn(con, snapshot)
     if not tests:
         return []
 
     ast_builder = hooks.build_ast if hooks is not None else None
     if ast_builder is None:
         ast_builder = build_test_ast_index
-    ast_info = ast_builder(cfg.repo_root, tests, DEFAULT_PATTERNS)
+    ast_info = ast_builder(snapshot.repo_root, tests, DEFAULT_PATTERNS)
     profile_loader = hooks.load_profile_ctx if hooks is not None else None
     if profile_loader is None:
         profile_loader = load_behavioral_context
-    profile_ctx = profile_loader(con, cfg)
+    profile_ctx = profile_loader(con, snapshot)
     behavior_ctx = BehavioralContext(
-        cfg=cfg,
+        snapshot=snapshot,
+        options=opts,
         ast_info=ast_info,
         profile_ctx=profile_ctx,
         now=datetime.now(tz=UTC),
@@ -196,9 +218,16 @@ def infer_behavior_tags(
 
 def load_behavioral_context(
     con: DuckDBConnection,
-    cfg: BehavioralCoverageStepConfig,
+    snapshot: SnapshotRef,
 ) -> Mapping[str, dict[str, object]]:
     """Load behavioral profile context from analytics.test_profile.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    snapshot
+        Snapshot reference.
 
     Returns
     -------
@@ -231,7 +260,7 @@ def load_behavioral_context(
         FROM analytics.test_profile
         WHERE repo = ? AND commit = ?
         """,
-        [cfg.repo, cfg.commit],
+        [snapshot.repo, snapshot.commit],
     )
     rows = fetchall_fn()
     ctx: dict[str, dict[str, object]] = {}
@@ -300,7 +329,7 @@ def _build_behavior_row(test: TestRecord, ctx: BehavioralContext) -> tuple[objec
     tag_source = "heuristic"
     llm_model = None
     llm_run_id = None
-    if ctx.cfg.enable_llm and ctx.llm_runner is not None:
+    if ctx.options.enable_llm and ctx.llm_runner is not None:
         llm_inputs = _LLMInputs(
             markers=markers,
             functions_covered=functions_covered,
@@ -308,24 +337,26 @@ def _build_behavior_row(test: TestRecord, ctx: BehavioralContext) -> tuple[objec
             assert_count=assert_count if assert_count is not None else ast_details.assert_count,
             raise_count=raise_count if raise_count is not None else ast_details.raise_count,
         )
-        llm_result = ctx.llm_runner(_build_llm_request(cfg=ctx.cfg, test=test, profile=llm_inputs))
+        llm_result = ctx.llm_runner(
+            _build_llm_request(snapshot=ctx.snapshot, test=test, profile=llm_inputs)
+        )
         llm_tags = set(llm_result.tags)
         if llm_tags:
             tag_source = "mixed" if tags else "llm"
             tags = sorted(set(tags).union(llm_tags))
-            llm_model = llm_result.model or ctx.cfg.llm_model
+            llm_model = llm_result.model or ctx.options.llm_model
             llm_run_id = llm_result.run_id
     return (
-        ctx.cfg.repo,
-        ctx.cfg.commit,
+        ctx.snapshot.repo,
+        ctx.snapshot.commit,
         test.test_id,
         test.test_goid_h128,
         test.rel_path,
         test.qualname or test.test_id,
         tags,
         tag_source,
-        ctx.cfg.heuristic_version,
-        llm_model or ctx.cfg.llm_model,
+        ctx.options.heuristic_version,
+        llm_model or ctx.options.llm_model,
         llm_run_id,
         ctx.now,
     )
@@ -333,14 +364,14 @@ def _build_behavior_row(test: TestRecord, ctx: BehavioralContext) -> tuple[objec
 
 def _build_llm_request(
     *,
-    cfg: BehavioralCoverageStepConfig,
+    snapshot: SnapshotRef,
     test: TestRecord,
     profile: _LLMInputs,
 ) -> BehavioralLLMRequest:
-    source = _load_source(cfg.repo_root, test.rel_path)
+    source = _load_source(snapshot.repo_root, test.rel_path)
     return BehavioralLLMRequest(
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
         test_id=test.test_id,
         rel_path=test.rel_path,
         qualname=test.qualname or test.test_id,

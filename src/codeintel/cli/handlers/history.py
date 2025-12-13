@@ -17,13 +17,16 @@ from typing import TYPE_CHECKING
 
 from ibis.common.exceptions import IbisError
 
-from codeintel.analytics.history import compute_history_timeseries_gateways
+from codeintel.analytics.history import (
+    HistoryTimeseriesOptions,
+    compute_history_timeseries_gateways,
+)
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult
 from codeintel.cli.errors.results import fail_history_error
 from codeintel.cli.execution.bootstrap import bootstrap_cli
-from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import (
@@ -202,9 +205,9 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
         "build/db/history.duckdb"
     )
     entity_kind = _coerce_enum_param(ctx.params.raw.get("entity_kind"), default="function")
-    cfg = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo=repo, commit=commits[0], repo_root=repo_root),
-    ).history_timeseries(
+
+    snapshot = SnapshotRef(repo=repo, commit=commits[0], repo_root=repo_root)
+    options = HistoryTimeseriesOptions(
         commits=tuple(commits),
         entity_kind=entity_kind,
         max_entities=ctx.params.get_int("max_entities", 500),
@@ -224,8 +227,9 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
         try:
             compute_history_timeseries_gateways(
                 gateway,
-                cfg,
+                snapshot,
                 snapshot_resolver,
+                options=options,
                 runner=ToolRunner(cache_dir=repo_root / "build" / ".tool_cache"),
             )
         except DuckDBInvalidInputException as exc:

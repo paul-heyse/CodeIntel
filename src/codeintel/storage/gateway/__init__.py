@@ -57,6 +57,7 @@ from codeintel.storage.gateway.factory import (
     open_gateway,
     open_memory_gateway,
 )
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
     DuckDBCatalogException,
@@ -89,6 +90,7 @@ __all__ = [
     "DuckDBRelation",
     "GraphTables",
     "IbisGateway",
+    "MinimalStorageGateway",
     "SnapshotGatewayResolver",
     "StorageConfig",
     "StorageConnectionError",

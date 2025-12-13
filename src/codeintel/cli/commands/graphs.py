@@ -319,99 +319,9 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
         )
 
 
-# Legacy command aliases for backward compatibility
-@cli_command("graph.plugins.list", require_storage=False)
-@graphs_app.command(name="plugins-list")
-@dataclass(frozen=True)
-class GraphPluginsList(Command[GraphTargetsResult]):
-    """List graph targets (legacy alias for targets-list)."""
-
-    __operation_id__ = "graph.plugins.list"
-
-    names: Annotated[
-        list[str] | None,
-        Parameter(name="--names", help="Target names to filter."),
-    ] = None
-    include_disabled: Annotated[
-        bool,
-        Parameter(name="--include-disabled", help="Ignored (for backward compat)."),
-    ] = True
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
-
-    def execute(self, ctx: CommandContext) -> CliResult[GraphTargetsResult]:
-        """Execute listing (delegates to targets-list).
-
-        Returns
-        -------
-        CliResult[GraphTargetsResult]
-            List of graph targets.
-        """
-        _ = ctx
-        cmd = GraphTargetsList(names=self.names, flags=self.flags)
-        return cmd.execute(ctx)
-
-
-@cli_command("graph.plugins.plan", require_storage=False)
-@graphs_app.command(name="plugins-plan")
-@dataclass(frozen=True)
-class GraphPluginsPlan(Command[GraphPlanResult]):
-    """Plan graph targets (legacy alias for targets-plan)."""
-
-    __operation_id__ = "graph.plugins.plan"
-
-    names: Annotated[
-        list[str] | None,
-        Parameter(name="--names", help="Target names to plan."),
-    ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
-
-    def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult]:
-        """Execute planning (delegates to targets-plan).
-
-        Returns
-        -------
-        CliResult[GraphPlanResult]
-            Execution plan.
-        """
-        _ = ctx
-        cmd = GraphTargetsPlan(names=self.names, flags=self.flags)
-        return cmd.execute(ctx)
-
-
-@cli_command("graph.plugins", require_storage=False)
-@graphs_app.command(name="plugins")
-@dataclass(frozen=True)
-class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
-    """List or plan graph targets (legacy alias for targets)."""
-
-    __operation_id__ = "graph.plugins"
-
-    plan: Annotated[bool, Parameter(name="--plan", help="Show execution plan.")] = False
-    names: Annotated[
-        list[str] | None,
-        Parameter(name="--names", help="Target names to filter."),
-    ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
-
-    def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
-        """Execute listing or planning (delegates to targets).
-
-        Returns
-        -------
-        CliResult[GraphPlanResult | GraphTargetsResult]
-            Either the execution plan or the target list.
-        """
-        _ = ctx
-        cmd = GraphTargets(plan=self.plan, names=self.names, flags=self.flags)
-        return cmd.execute(ctx)
-
-
 __all__ = [
     "GraphPlanResult",
     "GraphPlanStage",
-    "GraphPlugins",
-    "GraphPluginsList",
-    "GraphPluginsPlan",
     "GraphTargetInfo",
     "GraphTargets",
     "GraphTargetsList",

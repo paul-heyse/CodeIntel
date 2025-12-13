@@ -10,10 +10,8 @@ import pytest
 
 from codeintel.analytics.compute.data_models import compute_data_model_usage
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.config import SnapshotInit
 from tests._helpers import create_test_context
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
-from tests._helpers.config_factory import data_model_usage_cfg
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -56,14 +54,7 @@ def data_model_ctx(tmp_path: Path) -> Iterator[TestContext]:
 
 def test_compute_data_model_usage_records_multiple_kinds(data_model_ctx: TestContext) -> None:
     """Classify model interactions across create/update/serialize/delete operations."""
-    cfg = data_model_usage_cfg(
-        SnapshotInit(
-            repo=data_model_ctx.repo,
-            commit=data_model_ctx.commit,
-            repo_root=data_model_ctx.repo_root,
-        ),
-        max_examples_per_usage=2,
-    )
+    snapshot = data_model_ctx.to_snapshot_ref()
 
     con = data_model_ctx.gateway.con
     con.execute(
@@ -76,7 +67,7 @@ def test_compute_data_model_usage_records_multiple_kinds(data_model_ctx: TestCon
             'pydantic', '[]', 'User doc', NULL, NOW()
         )
         """,
-        [cfg.repo, cfg.commit],
+        [snapshot.repo, snapshot.commit],
     )
     con.execute(
         """
@@ -115,7 +106,7 @@ def process_user(user: User) -> dict[str, str]:
 
     compute_data_model_usage(
         data_model_ctx.gateway,
-        cfg,
+        snapshot,
         module_map=module_map,
         ast_by_goid=ast_by_goid,
         missing_goids=set(),

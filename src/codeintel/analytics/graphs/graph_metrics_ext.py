@@ -35,7 +35,6 @@ from codeintel.analytics.utilities.datasets import (
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
-from codeintel.config.steps_graphs import GraphMetricsStepConfig
 
 if TYPE_CHECKING:
     from codeintel.analytics.compute.graphs import (
@@ -209,8 +208,7 @@ def compute_graph_metrics_functions_ext(
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
     )
     snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
-    cfg = GraphMetricsStepConfig(snapshot=snapshot)
-    active_filters = filters or build_graph_metric_filters(gateway, cfg)
+    active_filters = filters or build_graph_metric_filters(gateway, snapshot)
     resolved_runtime = resolve_graph_runtime(
         gateway,
         snapshot,

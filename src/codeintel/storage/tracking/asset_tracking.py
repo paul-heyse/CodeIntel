@@ -7,11 +7,12 @@ enabling "what exists?" visibility into the build state.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.helpers.json import decode_json_dict, encode_json_compact
+from codeintel.storage.helpers.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -210,37 +211,57 @@ class AssetTracking:
     def record_asset(self, record: AssetRecord) -> None:
         """Record or update an asset in the catalog.
 
-        Uses INSERT OR REPLACE to upsert the asset record.
+        Uses upsert to insert or update the asset record.
 
         Parameters
         ----------
         record
             Asset record to save.
         """
-        materialized_at = record.materialized_at or datetime.now(tz=UTC)
+        materialized_at = record.materialized_at or utc_now()
         metadata_json = encode_json_compact(record.metadata or {})
 
-        self._con.execute(
-            """
-            INSERT OR REPLACE INTO build.assets (
-                asset_key, asset_type, repo, commit, owner_target,
-                schema_version, row_count, file_size_bytes,
-                materialized_at, input_hash, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        self._backend.upsert(
+            "build.assets",
             [
-                record.asset_key,
-                record.asset_type,
-                record.repo,
-                record.commit,
-                record.owner_target,
-                record.schema_version,
-                record.row_count,
-                record.file_size_bytes,
-                materialized_at,
-                record.input_hash,
-                metadata_json,
+                (
+                    record.asset_key,
+                    record.asset_type,
+                    record.repo,
+                    record.commit,
+                    record.owner_target,
+                    record.schema_version,
+                    record.row_count,
+                    record.file_size_bytes,
+                    materialized_at,
+                    record.input_hash,
+                    metadata_json,
+                )
             ],
+            columns=(
+                "asset_key",
+                "asset_type",
+                "repo",
+                "commit",
+                "owner_target",
+                "schema_version",
+                "row_count",
+                "file_size_bytes",
+                "materialized_at",
+                "input_hash",
+                "metadata",
+            ),
+            conflict_columns=("asset_key", "repo", "commit"),
+            update_columns=(
+                "asset_type",
+                "owner_target",
+                "schema_version",
+                "row_count",
+                "file_size_bytes",
+                "materialized_at",
+                "input_hash",
+                "metadata",
+            ),
         )
 
     def record_assets_batch(
@@ -262,7 +283,7 @@ class AssetTracking:
         if not records:
             return 0
 
-        now = datetime.now(tz=UTC)
+        now = utc_now()
         rows = [
             (
                 r.asset_key,
@@ -320,7 +341,7 @@ class AssetTracking:
         if not records:
             return 0
 
-        now = datetime.now(tz=UTC)
+        now = utc_now()
         rows = [
             (
                 r.asset_kind,
@@ -396,7 +417,7 @@ class AssetTracking:
         if not records:
             return 0
 
-        now = datetime.now(tz=UTC)
+        now = utc_now()
         rows = [
             (
                 r.run_id,
@@ -443,7 +464,7 @@ class AssetTracking:
         if not edges:
             return 0
 
-        now = datetime.now(tz=UTC)
+        now = utc_now()
         rows = [
             (
                 e.downstream_kind,
@@ -487,27 +508,31 @@ class AssetTracking:
 
     def set_alias(self, record: AssetAliasRecord) -> None:
         """Set (upsert) an alias for an asset version."""
-        set_at = record.set_at or datetime.now(tz=UTC)
-        self._con.execute(
-            """
-            INSERT INTO build.asset_aliases (
-                alias, asset_kind, asset_key, version_hash, set_by_run_id, set_at, note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(alias, asset_kind, asset_key) DO UPDATE SET
-                version_hash = excluded.version_hash,
-                set_by_run_id = excluded.set_by_run_id,
-                set_at = excluded.set_at,
-                note = excluded.note
-            """,
+        set_at = record.set_at or utc_now()
+        self._backend.upsert(
+            "build.asset_aliases",
             [
-                record.alias,
-                record.asset_kind,
-                record.asset_key,
-                record.version_hash,
-                record.set_by_run_id,
-                set_at,
-                record.note,
+                (
+                    record.alias,
+                    record.asset_kind,
+                    record.asset_key,
+                    record.version_hash,
+                    record.set_by_run_id,
+                    set_at,
+                    record.note,
+                )
             ],
+            columns=(
+                "alias",
+                "asset_kind",
+                "asset_key",
+                "version_hash",
+                "set_by_run_id",
+                "set_at",
+                "note",
+            ),
+            conflict_columns=("alias", "asset_kind", "asset_key"),
+            update_columns=("version_hash", "set_by_run_id", "set_at", "note"),
         )
 
     def resolve_alias(self, *, alias: str, asset_kind: str, asset_key: str) -> str | None:
@@ -664,30 +689,40 @@ class AssetTracking:
 
     def save_cached_diff(self, record: AssetDiffRecord) -> None:
         """Upsert a cached diff summary."""
-        computed_at = record.computed_at or datetime.now(tz=UTC)
+        computed_at = record.computed_at or utc_now()
         summary_json = encode_json_compact(record.summary or {})
-        self._con.execute(
-            """
-            INSERT INTO build.asset_diffs (
-                asset_kind, asset_key, from_version_hash, to_version_hash,
-                diff_kind, summary, computed_at, computed_by_run_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(asset_kind, asset_key, from_version_hash, to_version_hash, diff_kind)
-            DO UPDATE SET
-                summary = excluded.summary,
-                computed_at = excluded.computed_at,
-                computed_by_run_id = excluded.computed_by_run_id
-            """,
+        self._backend.upsert(
+            "build.asset_diffs",
             [
-                record.asset_kind,
-                record.asset_key,
-                record.from_version_hash,
-                record.to_version_hash,
-                record.diff_kind,
-                summary_json,
-                computed_at,
-                record.computed_by_run_id,
+                (
+                    record.asset_kind,
+                    record.asset_key,
+                    record.from_version_hash,
+                    record.to_version_hash,
+                    record.diff_kind,
+                    summary_json,
+                    computed_at,
+                    record.computed_by_run_id,
+                )
             ],
+            columns=(
+                "asset_kind",
+                "asset_key",
+                "from_version_hash",
+                "to_version_hash",
+                "diff_kind",
+                "summary",
+                "computed_at",
+                "computed_by_run_id",
+            ),
+            conflict_columns=(
+                "asset_kind",
+                "asset_key",
+                "from_version_hash",
+                "to_version_hash",
+                "diff_kind",
+            ),
+            update_columns=("summary", "computed_at", "computed_by_run_id"),
         )
 
     def list_assets(
@@ -888,34 +923,43 @@ class AssetTracking:
         record
             Run environment record to save.
         """
-        captured_at = record.captured_at or datetime.now(tz=UTC)
+        captured_at = record.captured_at or utc_now()
         tool_versions_json = encode_json_compact(record.tool_versions or {})
 
-        self._con.execute(
-            """
-            INSERT INTO build.run_environments (
-                run_id, python_version, os_name, os_version,
-                tool_versions, config_hash, git_dirty, captured_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(run_id) DO UPDATE SET
-                python_version = excluded.python_version,
-                os_name = excluded.os_name,
-                os_version = excluded.os_version,
-                tool_versions = excluded.tool_versions,
-                config_hash = excluded.config_hash,
-                git_dirty = excluded.git_dirty,
-                captured_at = excluded.captured_at
-            """,
+        self._backend.upsert(
+            "build.run_environments",
             [
-                record.run_id,
-                record.python_version,
-                record.os_name,
-                record.os_version,
-                tool_versions_json,
-                record.config_hash,
-                record.git_dirty,
-                captured_at,
+                (
+                    record.run_id,
+                    record.python_version,
+                    record.os_name,
+                    record.os_version,
+                    tool_versions_json,
+                    record.config_hash,
+                    record.git_dirty,
+                    captured_at,
+                )
             ],
+            columns=(
+                "run_id",
+                "python_version",
+                "os_name",
+                "os_version",
+                "tool_versions",
+                "config_hash",
+                "git_dirty",
+                "captured_at",
+            ),
+            conflict_columns=("run_id",),
+            update_columns=(
+                "python_version",
+                "os_name",
+                "os_version",
+                "tool_versions",
+                "config_hash",
+                "git_dirty",
+                "captured_at",
+            ),
         )
 
     def get_run_environment(self, run_id: str) -> RunEnvironmentRecord | None:

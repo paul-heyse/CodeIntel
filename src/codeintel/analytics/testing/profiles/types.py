@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from datetime import datetime
 
-    from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
+    from codeintel.config.primitives import SnapshotRef
 
 
 class FunctionCoverageEntryProtocol(Protocol):
@@ -172,11 +172,53 @@ type BehavioralLLMRunner = Callable[[BehavioralLLMRequest], BehavioralLLMResult]
 
 
 @dataclass(frozen=True)
+class TestProfileOptions:
+    """Configuration options for test profile computation.
+
+    Parameters
+    ----------
+    slow_test_threshold_ms
+        Threshold in ms above which tests are considered slow.
+    io_spec
+        Optional I/O specification for AST analysis.
+    refresh_subsystem_cache
+        Whether to refresh subsystem cache.
+    benchmark_subsystem_cache
+        Whether to benchmark subsystem cache.
+    """
+
+    slow_test_threshold_ms: float = 2000.0
+    io_spec: dict[str, object] | None = None
+    refresh_subsystem_cache: bool = True
+    benchmark_subsystem_cache: bool = False
+
+
+@dataclass(frozen=True)
+class BehavioralCoverageOptions:
+    """Configuration options for behavioral coverage computation.
+
+    Parameters
+    ----------
+    heuristic_version
+        Version string for the heuristic tagging algorithm.
+    enable_llm
+        Whether to enable LLM-assisted tagging.
+    llm_model
+        Optional LLM model identifier.
+    """
+
+    heuristic_version: str = "v1"
+    enable_llm: bool = False
+    llm_model: str | None = None
+
+
+@dataclass(frozen=True)
 class TestProfileContext:
     """Shared inputs for building test_profile rows."""
 
     __test__ = False
-    cfg: TestProfileStepConfig
+    snapshot: SnapshotRef
+    options: TestProfileOptions
     now: datetime
     max_function_count: int
     max_weighted_degree: float
@@ -191,7 +233,8 @@ class TestProfileContext:
 class BehavioralContext:
     """Context for behavioral coverage tagging."""
 
-    cfg: BehavioralCoverageStepConfig
+    snapshot: SnapshotRef
+    options: BehavioralCoverageOptions
     ast_info: Mapping[str, TestAstInfo]
     profile_ctx: Mapping[str, dict[str, object]]
     now: datetime
@@ -200,6 +243,7 @@ class BehavioralContext:
 
 __all__ = [
     "BehavioralContext",
+    "BehavioralCoverageOptions",
     "BehavioralLLMRequest",
     "BehavioralLLMResult",
     "BehavioralLLMRunner",
@@ -210,5 +254,6 @@ __all__ = [
     "TestAstInfo",
     "TestGraphMetricsProtocol",
     "TestProfileContext",
+    "TestProfileOptions",
     "TestRecord",
 ]

@@ -8,11 +8,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.functions import compute_function_effects
-from codeintel.analytics.functions.function_effects import FunctionEffectsInputs
+from codeintel.analytics.functions.function_effects import (
+    FunctionEffectsInputs,
+    FunctionEffectsOptions,
+)
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import FunctionEffectsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -84,8 +86,14 @@ class FunctionEffectsPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = FunctionEffectsStepConfig(
-            snapshot=ctx.snapshot,
+        # Build options from context parameters
+        max_call_depth = ctx.parameters.get("max_call_depth", int, default=3)
+        require_all_callees_pure = ctx.parameters.get(
+            "require_all_callees_pure", bool, default=True
+        )
+        opts = FunctionEffectsOptions(
+            max_call_depth=max_call_depth,
+            require_all_callees_pure=require_all_callees_pure,
         )
 
         catalog_provider = ctx.resources.catalog
@@ -106,7 +114,9 @@ class FunctionEffectsPlugin(TargetPlugin):
                 ast_map=ast_map,
                 missing_goids=missing_goids,
             )
-            compute_function_effects(ctx.gateway, cfg, inputs=inputs)
+            compute_function_effects(
+                ctx.gateway, ctx.snapshot, options=opts, inputs=inputs
+            )
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Function effects computation failed: {e}")
 

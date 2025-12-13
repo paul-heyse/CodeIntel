@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.graphs.builders.cfg_dfg_options import CfgDfgOptions
-from codeintel.config import CFGBuilderStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.catalog import load_function_index
@@ -457,9 +456,9 @@ class CfgDfgPlugin(TargetPlugin):
             Execution result with row counts.
         """
         _ = self
-        config = CFGBuilderStepConfig(snapshot=ctx.snapshot)
         opts = self.resolve_options()
-        gateway, repo, commit = ctx.gateway, config.repo, config.commit
+        snapshot = ctx.snapshot
+        gateway, repo, commit = ctx.gateway, snapshot.repo, snapshot.commit
 
         try:
             function_index = load_function_index(gateway, repo=repo, commit=commit)
@@ -472,7 +471,7 @@ class CfgDfgPlugin(TargetPlugin):
                 )
 
             source_root = (
-                ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
+                snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
             )
             blocks, cfg_edges, dfg_edges = _process_all_files(paths, function_index, source_root)
 

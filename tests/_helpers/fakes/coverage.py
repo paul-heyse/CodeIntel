@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from coverage import Coverage
 
-    from codeintel.config import TestCoverageStepConfig
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
@@ -94,7 +93,7 @@ class FakeCoverage:
 class CoverageLoader(Protocol):
     """Protocol for injecting coverage loaders."""
 
-    def __call__(self, cfg: TestCoverageStepConfig | object) -> Coverage:
+    def __call__(self, snapshot: SnapshotRef | object) -> Coverage:
         """Return a Coverage-compatible object."""
         raise NotImplementedError
 

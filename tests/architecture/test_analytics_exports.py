@@ -13,7 +13,6 @@ if TYPE_CHECKING:
 EXPECTED_EXPORTS: Mapping[str, set[str]] = {
     "codeintel.analytics.functions": {
         "FunctionAnalyticsOptions",
-        "FunctionAnalyticsStepConfig",
         "compute_function_contracts",
         "compute_function_effects",
         "compute_function_history",

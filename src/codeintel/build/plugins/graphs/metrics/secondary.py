@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
-from codeintel.config import GraphMetricsStepConfig
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -45,14 +44,14 @@ class SecondaryMetricsPlugin(TargetPlugin):
             Execution result.
         """
         _ = self
-
-        cfg = GraphMetricsStepConfig(snapshot=ctx.snapshot)
+        snapshot = ctx.snapshot
+        repo, commit = snapshot.repo, snapshot.commit
 
         try:
             log.debug(
                 "secondary_metrics.execute repo=%s commit=%s",
-                cfg.repo,
-                cfg.commit,
+                repo,
+                commit,
             )
 
             row_counts: dict[str, int] = {

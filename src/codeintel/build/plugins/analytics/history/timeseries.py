@@ -9,10 +9,10 @@ import logging
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
+from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import HistoryTimeseriesStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -102,18 +102,15 @@ class HistoryTimeseriesPlugin(TargetPlugin):
             return TargetResult.succeeded(row_counts={"analytics.history_timeseries": 0})
         commits = tuple(str(c) for c in commits_raw)
 
-        cfg = HistoryTimeseriesStepConfig(
-            snapshot=ctx.snapshot,
-            commits=commits,
-        )
-
+        options = HistoryTimeseriesOptions(commits=commits)
         resolver = cast("SnapshotGatewayResolver", snapshot_resolver)
 
         try:
             compute_history_timeseries_gateways(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 resolver,
+                options=options,
                 runner=None,
             )
         except (RuntimeError, ValueError, OSError) as e:

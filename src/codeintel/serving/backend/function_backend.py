@@ -44,7 +44,7 @@ from codeintel.serving.mcp import errors
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from codeintel.config.steps_graphs import GraphRunScope
+    from codeintel.config.graph_helpers import GraphRunScope
     from codeintel.graphs.engine import GraphEngine
     from codeintel.serving.backend.core import (
         BackendContext,

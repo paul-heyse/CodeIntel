@@ -182,20 +182,6 @@ class OutputTarget:
         return (f"{schema_prefix}.{self.name}",)
 
     @property
-    def tables(self) -> tuple[str, ...]:
-        """Deprecated alias for table_keys maintained for compatibility.
-
-        Prefer the contract/table_keys APIs; this alias remains only to
-        ease migration of legacy tests and helpers.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Fully-qualified table names.
-        """
-        return self.table_keys
-
-    @property
     def estimated_duration_ms(self) -> int:
         """Return estimated duration from execution config.
 

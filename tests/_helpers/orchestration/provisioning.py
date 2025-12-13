@@ -16,8 +16,8 @@ from coverage import Coverage
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
+from codeintel.analytics.runtime import GraphMetricsOptions
 from codeintel.build.plugins.graphs.builders.callgraph import CallGraphPlugin
-from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.ingestion import (
     CoverageIngestStep,
@@ -816,13 +816,9 @@ def graph_metrics_ready_gateway(
             ],
         )
     if opts.run_metrics:
-        cfg = (
-            opts.graph_cfg
-            or ConfigBuilder.from_snapshot(
-                snapshot=SnapshotInit(repo=opts.repo, commit=opts.commit, repo_root=repo_root),
-            ).graph_metrics()
-        )
-        compute_graph_metrics(gateway, cfg)
+        snapshot = SnapshotRef(repo=opts.repo, commit=opts.commit, repo_root=repo_root)
+        metric_options = opts.metrics_options or GraphMetricsOptions()
+        compute_graph_metrics(gateway, snapshot, options=metric_options)
     return ctx
 
 

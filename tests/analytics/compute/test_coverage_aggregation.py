@@ -9,7 +9,6 @@ import pytest
 from codeintel.analytics.compute.coverage import compute_coverage_functions
 from codeintel.analytics.testing.coverage import edges as coverage_edges
 from codeintel.config.primitives import SnapshotRef
-from codeintel.config.steps_analytics import TestCoverageStepConfig
 from tests._helpers import coverage_ready_context
 from tests._helpers.assertions import (
     CoverageFunctionExpectation,
@@ -20,7 +19,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.assertions.logging_assertions import assert_logged
-from tests._helpers.config_factory import coverage_analytics_cfg
 from tests._helpers.coverage import (
     CoverageLineSeedData,
     CoverageRangeSeedData,
@@ -34,7 +32,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig
     from tests._helpers.context import TestContext
 
 EXPECTED_EXECUTABLE_5 = 5
@@ -92,23 +89,19 @@ def coverage_ctx(tmp_path: Path) -> Iterator[TestContext]:
         ctx.close()
 
 
-def _coverage_config(snapshot: SnapshotRef) -> CoverageAnalyticsStepConfig:
-    return coverage_analytics_cfg(snapshot)
-
-
 def test_load_coverage_data_missing_file(
     tmp_path: Path,
     coverage_ctx: TestContext,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Missing coverage files should emit a warning and return None."""
-    cfg = TestCoverageStepConfig(
-        snapshot=coverage_ctx.to_snapshot_ref(),
-        coverage_file=tmp_path / "nonexistent.coverage",
-    )
+    snapshot = coverage_ctx.to_snapshot_ref()
     caplog.set_level("WARNING")
 
-    result = coverage_edges.load_coverage_data(cfg)
+    result = coverage_edges.load_coverage_data(
+        snapshot,
+        coverage_file=tmp_path / "nonexistent.coverage",
+    )
 
     expect_true(result is None)
     assert_logged(
@@ -120,8 +113,8 @@ def test_load_coverage_data_missing_file(
 
 def test_empty_goids_produces_no_rows(coverage_ctx: TestContext) -> None:
     """Verify that no GOIDs results in no coverage function rows."""
-    cfg = _coverage_config(coverage_ctx.to_snapshot_ref())
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    snapshot = coverage_ctx.to_snapshot_ref()
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     count = coverage_ctx.con.execute(
         """
@@ -147,8 +140,7 @@ def test_single_function_fully_covered(coverage_ctx: TestContext) -> None:
     )
     seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("module.py", 1, 6))
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     assert_coverage_function_row(
         con,
@@ -188,8 +180,7 @@ def test_single_function_partially_covered(coverage_ctx: TestContext) -> None:
         con, snapshot, CoverageLineSeedData("partial.py", 4, is_executable=False, is_covered=False)
     )
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     assert_coverage_function_row(
         con,
@@ -216,8 +207,7 @@ def test_function_no_coverage_data(coverage_ctx: TestContext) -> None:
         GoidSeedData("urn:test:func3", "uncovered.py", "function", "uncovered_func", HASH_3, 1, 10),
     )
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     assert_coverage_function_row(
         con,
@@ -248,8 +238,7 @@ def test_function_with_executable_but_no_covered_lines(coverage_ctx: TestContext
         con, snapshot, CoverageRangeSeedData("no_tests.py", 5, 11, is_covered=False)
     )
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     assert_coverage_function_row(
         con,
@@ -279,8 +268,7 @@ def test_method_kind_included(coverage_ctx: TestContext) -> None:
     )
     seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("class_mod.py", 10, 16))
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     result = coverage_ctx.con.execute(
         """
@@ -309,8 +297,7 @@ def test_class_kind_excluded(coverage_ctx: TestContext) -> None:
     )
     seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("class_def.py", 1, 51))
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     result = coverage_ctx.con.execute(
         """
@@ -347,8 +334,7 @@ def test_multiple_functions_same_file(coverage_ctx: TestContext) -> None:
         con, snapshot, CoverageRangeSeedData("multi.py", 10, 16, is_covered=False)
     )
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     result_a = coverage_ctx.con.execute(
         """
@@ -401,8 +387,7 @@ def test_idempotent_rerun_deletes_old_rows(coverage_ctx: TestContext) -> None:
         CoverageLineSeedData("idempotent.py", 3, is_executable=True, is_covered=False),
     )
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     result1 = coverage_ctx.con.execute(
         """
@@ -423,7 +408,7 @@ def test_idempotent_rerun_deletes_old_rows(coverage_ctx: TestContext) -> None:
         [snapshot.repo, snapshot.commit],
     )
 
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     result2 = coverage_ctx.con.execute(
         """
@@ -468,8 +453,7 @@ def test_different_repos_isolated(coverage_ctx: TestContext) -> None:
     )
     seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("module.py", 1, 6))
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     result = con.execute(
         """
@@ -513,8 +497,7 @@ def test_function_with_null_end_line(coverage_ctx: TestContext) -> None:
         con, snapshot, CoverageLineSeedData("single.py", 5, is_executable=True, is_covered=True)
     )
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     result = coverage_ctx.con.execute(
         """
@@ -608,8 +591,7 @@ def test_realistic_module_with_mixed_coverage(coverage_ctx: TestContext) -> None
         con, snapshot, CoverageRangeSeedData(calc_path, 30, 36, is_covered=False)
     )
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     results = con.execute(
         """
@@ -688,8 +670,7 @@ def test_compute_coverage_functions_smoke(coverage_ctx: TestContext) -> None:
         CoverageLineSeedData("pkg/mod.py", 3, is_executable=False, is_covered=False),
     )
 
-    cfg = _coverage_config(snapshot)
-    compute_coverage_functions(coverage_ctx.gateway, cfg)
+    compute_coverage_functions(coverage_ctx.gateway, snapshot)
 
     rows_raw = con.execute(
         """

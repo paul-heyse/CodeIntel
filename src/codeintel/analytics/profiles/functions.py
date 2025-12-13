@@ -62,10 +62,10 @@ if TYPE_CHECKING:
     from codeintel.analytics.profiles.writer_guard import (
         SerializeRow,
     )
-    from codeintel.config import ProfilesAnalyticsStepConfig
     from codeintel.config.datasets import (
         FunctionProfileRowModel,
     )
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ class FunctionProfileViews:
 
 def compute_function_profile_inputs(
     gateway: StorageGateway,
-    cfg: ProfilesAnalyticsStepConfig,
+    snapshot: SnapshotRef,
     *,
     slow_test_threshold_ms: float = SLOW_TEST_THRESHOLD_MS,
 ) -> FunctionProfileInputs:
@@ -100,6 +100,15 @@ def compute_function_profile_inputs(
     The returned object is intentionally lightweight; heavy lifting happens in
     downstream helpers.
 
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    snapshot
+        Repository and commit identifiers.
+    slow_test_threshold_ms
+        Threshold for slow tests in milliseconds.
+
     Returns
     -------
     FunctionProfileInputs
@@ -108,8 +117,8 @@ def compute_function_profile_inputs(
     return FunctionProfileInputs(
         gateway=gateway,
         con=gateway.con,
-        repo=cfg.repo,
-        commit=cfg.commit,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
         created_at=datetime.now(tz=UTC),
         slow_test_threshold_ms=slow_test_threshold_ms,
     )
@@ -999,19 +1008,28 @@ def write_function_profile_rows(
 
 def build_function_profile_recipe(
     gateway: StorageGateway,
-    cfg: ProfilesAnalyticsStepConfig,
+    snapshot: SnapshotRef,
     *,
     module_table: str = DEFAULT_MODULE_TABLE,
 ) -> int:
     """
     Compute and persist analytics.function_profile rows.
 
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    snapshot
+        Repository and commit identifiers.
+    module_table
+        Name of the module table to use.
+
     Returns
     -------
     int
         Number of rows inserted.
     """
-    inputs = compute_function_profile_inputs(gateway, cfg)
+    inputs = compute_function_profile_inputs(gateway, snapshot)
     views = FunctionProfileViews(
         base_by_func=load_function_base_info(inputs, module_table=module_table),
         risk_by_func=join_function_risk(inputs),

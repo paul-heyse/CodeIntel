@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from codeintel.analytics.parsing.ast_cache import FunctionAst
-    from codeintel.config import FunctionContractsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
@@ -45,7 +45,9 @@ class ConditionContext:
 class _RowInputs:
     """Inputs required to build contract rows."""
 
-    cfg: FunctionContractsStepConfig
+    repo: str
+    commit: str
+    max_conditions_per_func: int
     goids: set[int]
     ast_by_goid: dict[int, FunctionAst]
     doc_map: dict[tuple[str, str], dict[str, object]]
@@ -55,10 +57,11 @@ class _RowInputs:
 
 def compute_function_contracts(
     gateway: StorageGateway,
-    cfg: FunctionContractsStepConfig,
+    snapshot: SnapshotRef,
     *,
     function_ast_map: dict[int, FunctionAst] | None = None,
     catalog: FunctionCatalogProvider | None = None,
+    max_conditions_per_func: int = 64,
 ) -> None:
     """
     Populate `analytics.function_contracts` for a repo/commit snapshot.
@@ -67,12 +70,14 @@ def compute_function_contracts(
     ----------
     gateway
         Storage gateway providing DuckDB access.
-    cfg
-        Contracts configuration (repo, commit, repo_root).
+    snapshot
+        Repository and commit identifiers.
     function_ast_map
         Mapping of GOID to parsed function AST (from AstProvider).
     catalog
         Function catalog provider (from CatalogProvider).
+    max_conditions_per_func
+        Maximum number of preconditions/postconditions/raises per function.
     """
     ast_by_goid = function_ast_map or {}
 
@@ -81,12 +86,14 @@ def compute_function_contracts(
     else:
         all_goids = set()
 
-    doc_map = _load_docstrings(gateway, repo=cfg.repo, commit=cfg.commit)
-    type_map = _load_function_types(gateway, repo=cfg.repo, commit=cfg.commit)
+    doc_map = _load_docstrings(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    type_map = _load_function_types(gateway, repo=snapshot.repo, commit=snapshot.commit)
 
     rows = _build_rows(
         _RowInputs(
-            cfg=cfg,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            max_conditions_per_func=max_conditions_per_func,
             goids=all_goids,
             ast_by_goid=ast_by_goid,
             doc_map=doc_map,
@@ -95,7 +102,7 @@ def compute_function_contracts(
         )
     )
 
-    _persist_contract_rows(gateway, cfg, rows)
+    _persist_contract_rows(gateway, snapshot, rows)
 
 
 def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
@@ -116,8 +123,8 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
         if info is None:
             rows.append(
                 {
-                    "repo": inputs.cfg.repo,
-                    "commit": inputs.cfg.commit,
+                    "repo": inputs.repo,
+                    "commit": inputs.commit,
                     "function_goid_h128": goid,
                     "preconditions_json": [],
                     "postconditions_json": [],
@@ -134,12 +141,12 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
             info,
             doc=doc,
             type_info=type_info,
-            max_conditions=inputs.cfg.max_conditions_per_func,
+            max_conditions=inputs.max_conditions_per_func,
         )
         rows.append(
             {
-                "repo": inputs.cfg.repo,
-                "commit": inputs.cfg.commit,
+                "repo": inputs.repo,
+                "commit": inputs.commit,
                 "function_goid_h128": goid,
                 "preconditions_json": contracts["preconditions"],
                 "postconditions_json": contracts["postconditions"],
@@ -154,7 +161,7 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
 
 
 def _persist_contract_rows(
-    gateway: StorageGateway, cfg: FunctionContractsStepConfig, rows: list[dict[str, object]]
+    gateway: StorageGateway, snapshot: SnapshotRef, rows: list[dict[str, object]]
 ) -> None:
     """Persist contract rows using SQLGlot-backed Ibis writes."""
     if not rows:
@@ -165,10 +172,12 @@ def _persist_contract_rows(
     columns = contract.schema.column_names() if contract.schema is not None else ()
 
     table = gateway.ibis.table(contract.table_key)
-    where = and_predicates(table.repo == cfg.repo, table.commit == cfg.commit)
+    where = and_predicates(table.repo == snapshot.repo, table.commit == snapshot.commit)
     gateway.ibis.delete(contract.table_key, where=where)
     gateway.ibis.insert(contract.table_key, tuple_rows, columns=columns)
-    log.info("function_contracts populated: %d rows for %s@%s", len(rows), cfg.repo, cfg.commit)
+    log.info(
+        "function_contracts populated: %d rows for %s@%s", len(rows), snapshot.repo, snapshot.commit
+    )
 
 
 def _load_docstrings(

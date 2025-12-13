@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.config.graph_helpers import GraphRunScope
 from codeintel.serving.mcp.models import GraphScopePayload
 from tests._helpers.gateway import build_duckdb_backend, build_scope_parsing_service
 

@@ -25,7 +25,7 @@ from codeintel.storage.gateway import open_memory_gateway
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from codeintel.config.steps_graphs import GraphRunScope
+    from codeintel.config.graph_helpers import GraphRunScope
     from codeintel.storage.gateway import StorageGateway
 
 

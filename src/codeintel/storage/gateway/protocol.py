@@ -34,6 +34,7 @@ __all__ = [
     "DuckDBInvalidInputException",
     "DuckDBProgrammingError",
     "DuckDBRelation",
+    "MinimalGateway",
     "SnapshotGatewayResolver",
     "StorageGateway",
 ]
@@ -48,6 +49,34 @@ DuckDBDatabaseError = duckdb.DatabaseError
 DuckDBInvalidInputException = duckdb.InvalidInputException
 DuckDBProgrammingError = duckdb.ProgrammingError
 DuckDBBinderException = duckdb.BinderException
+
+
+class MinimalGateway(Protocol):
+    """Minimal protocol for DuckDB access without full accessor support.
+
+    This protocol defines only the minimal interface needed by
+    DuckDBPolicyBackend and IbisGateway. Use StorageGateway for
+    full accessor support.
+
+    Both IbisGateway and DuckDBPolicyBackend depend only on this protocol,
+    accessing each other through the gateway reference. MinimalStorageGateway
+    is the composition root that creates both.
+    """
+
+    @property
+    def con(self) -> DuckDBConnection:
+        """Return an open DuckDB connection."""
+        ...
+
+    @property
+    def ibis(self) -> IbisGateway:
+        """Return an Ibis gateway bound to this connection."""
+        ...
+
+    @property
+    def policy(self) -> DuckDBPolicyBackend:
+        """Return the policy backend for DDL and mutation operations."""
+        ...
 
 
 class StorageGateway(Protocol):

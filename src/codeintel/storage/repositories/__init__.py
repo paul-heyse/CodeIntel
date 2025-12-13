@@ -1,13 +1,21 @@
-"""Repository layer for DuckDB persistence."""
+"""Repository layer for DuckDB persistence.
+
+This package provides repository classes for querying DuckDB tables with
+snapshot (repo/commit) scoping. Use RepositoryFactory for convenient
+creation of snapshot-scoped repositories.
+
+Example
+-------
+>>> from codeintel.storage.repositories import RepositoryFactory
+>>>
+>>> factory = RepositoryFactory(gateway, repo="org/repo", commit="abc123")
+>>> summary = factory.functions.get_function_summary_by_goid(goid)
+"""
 
 from codeintel.storage.repositories.base import (
     BaseRepository,
     PaginatedRows,
     RowDict,
-    fetch_all_dicts,
-    fetch_one_dict,
-    fetch_paginated,
-    row_exists,
 )
 from codeintel.storage.repositories.data_models import (
     DataModelFieldRow,
@@ -21,6 +29,7 @@ from codeintel.storage.repositories.data_models import (
 )
 from codeintel.storage.repositories.dataflow import DataflowRepository
 from codeintel.storage.repositories.datasets import DatasetReadRepository
+from codeintel.storage.repositories.factory import RepositoryFactory
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.graphs import GraphRepository
 from codeintel.storage.repositories.modules import ModuleRepository
@@ -39,15 +48,12 @@ __all__ = [
     "ModuleRepository",
     "NormalizedDataModel",
     "PaginatedRows",
+    "RepositoryFactory",
     "RowDict",
     "SubsystemRepository",
     "TestRepository",
-    "fetch_all_dicts",
     "fetch_fields",
     "fetch_models",
     "fetch_models_normalized",
-    "fetch_one_dict",
-    "fetch_paginated",
     "fetch_relationships",
-    "row_exists",
 ]

@@ -13,7 +13,6 @@ from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_f
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import DataModelUsageStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -90,10 +89,6 @@ class DataModelUsagePlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = DataModelUsageStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         catalog_provider = ctx.resources.catalog
         if catalog_provider is None:
             log.info("data_model_usage: No catalog available, skipping")
@@ -131,7 +126,7 @@ class DataModelUsagePlugin(TargetPlugin):
         try:
             compute_data_model_usage(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 module_map=module_map,
                 ast_by_goid=ast_by_goid,
                 missing_goids=missing_goids,

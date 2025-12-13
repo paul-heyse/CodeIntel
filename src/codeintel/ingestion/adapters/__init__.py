@@ -1,13 +1,83 @@
 """Adapter implementations for ingestion port protocols.
 
-This package provides concrete implementations of the port protocols,
-connecting the pure domain logic to real infrastructure:
+This package provides concrete implementations of the port protocols defined in
+``codeintel.ingestion.ports``, connecting the pure domain logic to real
+infrastructure (DuckDB, file system, external tools).
 
-- DuckDBStorageAdapter: DuckDB-specific storage operations
-- ToolRunnerAdapter: External tool execution via ToolService
-- BuildToolAdapter: Bridge from build protocols to ingestion ports
-- FilesystemDiscoveryAdapter: File system module discovery
-- HashChangeDetectionAdapter: Blake2b hash-based change detection
+Port/Adapter Pattern
+--------------------
+These adapters follow the hexagonal (ports and adapters) architecture pattern:
+
+- **Ports** (in ``ingestion/ports/``) define abstract interfaces for I/O
+  operations needed by ingestion logic.
+- **Adapters** (this package) implement those interfaces with concrete
+  infrastructure.
+
+This separation allows the ingestion domain logic to remain pure and testable
+while infrastructure concerns are isolated to these adapter implementations.
+
+Available Adapters
+------------------
+DuckDBStorageAdapter
+    Implements ``IngestStoragePort`` using DuckDB via ``StorageGateway``.
+    Routes writes/deletes through ``DuckDBPolicyBackend`` and reads through
+    the gateway/ibis connection.
+
+FilesystemDiscoveryAdapter
+    Implements ``ModuleDiscoveryPort`` using file system scanning via
+    ``SourceScanner``. Discovers Python modules by scanning directories
+    with configurable scan profiles.
+
+BuildToolAdapter
+    Bridge from build protocols to ingestion ports. Connects Hamilton build
+    context to ingestion storage and tool operations.
+
+HashChangeDetectionAdapter
+    Implements ``ChangeDetectionPort`` using Blake2b hash-based change
+    detection. Computes file digests to detect modified sources.
+
+ToolRunnerAdapter
+    Implements ``ToolPort`` using ``ToolService`` for external tool
+    execution (SCIP indexers, coverage tools, etc.).
+
+When to Use Adapters vs Direct Gateway Access
+---------------------------------------------
+**Use adapters when:**
+
+- You need the port interface for dependency injection or testing
+- You're writing code that should be infrastructure-agnostic
+- You want to leverage adapter-specific validation or transformation
+
+**Use ``ctx.gateway`` directly when:**
+
+- You need low-level database operations not covered by port interfaces
+- You're in a Hamilton plugin and want simple row writes via ``ctx.write_table()``
+- Performance is critical and you need direct ibis/SQL access
+
+Example Usage in Hamilton Plugins
+---------------------------------
+For simple row writes, prefer ``ctx.write_table()``::
+
+    def execute(self, ctx: TargetExecutionContext) -> TargetResult:
+        rows = compute_ingestion_data(...)
+        ctx.write_table("ingestion.modules", rows)
+        return TargetResult.success()
+
+For complex storage operations, use the adapter::
+
+    from codeintel.ingestion.adapters import DuckDBStorageAdapter
+
+
+    def execute(self, ctx: TargetExecutionContext) -> TargetResult:
+        adapter = DuckDBStorageAdapter(ctx.gateway)
+        result = adapter.run_batch("ingestion.modules", rows, scope="modules")
+        return TargetResult.success()
+
+See Also
+--------
+- ``codeintel.ingestion.ports`` : Port protocol definitions
+- ``codeintel.build.context.TargetExecutionContext`` : Hamilton build context API
+- ``codeintel.storage.gateway.StorageGateway`` : Direct database access
 """
 
 from __future__ import annotations

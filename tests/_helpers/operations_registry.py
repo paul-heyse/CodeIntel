@@ -35,7 +35,7 @@ class OperationRegistryBuilder:
         """
         index: dict[str, str] = {}
         for target in self.targets:
-            for table in target.tables:
+            for table in target.table_keys:
                 index[table] = target.name
         return index
 

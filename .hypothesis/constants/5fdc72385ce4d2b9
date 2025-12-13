@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/helpers/table_key.py
+# hypothesis_version: 6.148.7
+
+['.', 'split_table_key']

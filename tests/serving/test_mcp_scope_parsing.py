@@ -6,7 +6,7 @@ from datetime import datetime
 
 import pytest
 
-from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.config.graph_helpers import GraphRunScope
 from codeintel.serving.mcp.models import GraphScopePayload, parse_graph_scope
 
 

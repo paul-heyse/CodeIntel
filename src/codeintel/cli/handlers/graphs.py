@@ -258,31 +258,6 @@ register_operation(
     )
 )
 
-# Legacy aliases for backward compatibility
-register_operation(
-    OperationSpec(
-        operation_id="graphs.plugins.list",
-        name="List Graph Plugins",
-        description="List graph targets (legacy alias)",
-        handler=graph_targets_list_handler,
-        group="graphs",
-        require_runtime=False,
-        require_gateway=False,
-    )
-)
-
-register_operation(
-    OperationSpec(
-        operation_id="graphs.plugins.plan",
-        name="Graph Plugins Plan",
-        description="Plan graph targets (legacy alias)",
-        handler=graph_targets_plan_handler,
-        group="graphs",
-        require_runtime=False,
-        require_gateway=False,
-    )
-)
-
 __all__ = [
     "GraphPlanResult",
     "GraphPlanStage",

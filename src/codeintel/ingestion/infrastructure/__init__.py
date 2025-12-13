@@ -7,7 +7,6 @@ This package provides foundational infrastructure used across the ingestion syst
 - `workers`: Worker pool infrastructure for parallel processing
 - `cst_utils`: CST visitor helpers for LibCST-based parsing
 - `ast_utils`: AST parsing and span lookup utilities
-- `safe_sql`: Validated SQL identifiers preventing injection vulnerabilities
 - `db_queries`: Safe database query helpers
 
 NOTE: This package was renamed from 'utilities' to 'infrastructure' for alignment
@@ -55,13 +54,6 @@ from codeintel.ingestion.infrastructure.paths import (
     relpath_to_module,
     repo_relpath,
 )
-from codeintel.ingestion.infrastructure.safe_sql import (
-    InvalidIdentifierError,
-    SafeColumnRef,
-    SafeTableRef,
-    validate_column_name,
-    validate_table_key,
-)
 from codeintel.ingestion.infrastructure.scanning import (
     DEFAULT_IGNORE_DIRS,
     IGNORES,
@@ -95,12 +87,9 @@ __all__ = [
     "ColumnNotFoundError",
     "CstCaptureConfig",
     "CstCaptureVisitor",
-    "InvalidIdentifierError",
     "LineIndexedSource",
     "QueryError",
     "ResolvedScipConfig",
-    "SafeColumnRef",
-    "SafeTableRef",
     "ScanProfile",
     "ScipPathConfig",
     "ScipResolverInput",
@@ -131,7 +120,5 @@ __all__ = [
     "safe_not_null_fraction",
     "safe_table_exists",
     "timed_parse",
-    "validate_column_name",
-    "validate_table_key",
     "worker_pool",
 ]

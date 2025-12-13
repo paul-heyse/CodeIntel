@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from codeintel.analytics.history.git_history import FileCommitDelta
-    from codeintel.config import FunctionHistoryStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.engine.infrastructure import ToolRunner
     from codeintel.storage.gateway import StorageGateway
 
@@ -83,7 +83,7 @@ class FuncHistoryAgg:
 
 def compute_function_history(
     gateway: StorageGateway,
-    cfg: FunctionHistoryStepConfig,
+    snapshot: SnapshotRef,
     *,
     runner: ToolRunner | None = None,
 ) -> None:
@@ -94,34 +94,39 @@ def compute_function_history(
     ----------
     gateway
         StorageGateway bound to the CodeIntel DuckDB database.
-    cfg
-        Function history configuration.
+    snapshot
+        Repository and commit identifiers.
     runner
         Optional shared ToolRunner for git invocations.
     """
+    max_history_days = 365
+    min_lines_threshold = 5
+    default_branch = "main"
     table = gateway.ibis.table("analytics.function_history")
-    where = and_predicates(table.repo == cfg.repo, table.commit == cfg.commit)
+    where = and_predicates(table.repo == snapshot.repo, table.commit == snapshot.commit)
     gateway.ibis.delete("analytics.function_history", where=where)
 
-    spans_by_path = _load_function_spans(gateway, cfg.repo, cfg.commit)
+    spans_by_path = _load_function_spans(gateway, snapshot.repo, snapshot.commit)
     if not spans_by_path:
-        log.info("No function spans found for %s@%s; skipping history.", cfg.repo, cfg.commit)
+        log.info(
+            "No function spans found for %s@%s; skipping history.", snapshot.repo, snapshot.commit
+        )
         return
 
     now = datetime.now(tz=UTC)
-    window_start = _history_window_start(now, cfg.max_history_days)
+    window_start = _history_window_start(now, max_history_days)
     aggregates: dict[int, FuncHistoryAgg] = {}
 
     for rel_path, spans in spans_by_path.items():
         deltas = iter_file_history(
-            cfg.repo_root,
+            snapshot.repo_root,
             rel_path,
-            max_history_days=cfg.max_history_days,
-            default_branch=cfg.default_branch,
+            max_history_days=max_history_days,
+            default_branch=default_branch,
             runner=runner,
         )
         for delta in deltas:
-            _update_aggregates(aggregates, spans, delta, cfg.min_lines_threshold)
+            _update_aggregates(aggregates, spans, delta, min_lines_threshold)
 
     insert_rows = [
         _build_insert_row(
@@ -142,8 +147,8 @@ def compute_function_history(
     log.info(
         "function_history populated: %s rows for %s@%s",
         len(insert_rows),
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
     )
 
 

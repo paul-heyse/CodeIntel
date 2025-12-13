@@ -8,40 +8,16 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.config.datasets.validation import validate_df
 from codeintel.storage.ibis_types import and_predicates, ge, ibis_bool
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
-    import ibis.expr.types as it
-
     from codeintel.storage.repositories.base import RowDict
 
 
 @dataclass(frozen=True)
 class FunctionRepository(BaseRepository):
     """Read functions, risk, tests, and architecture details."""
-
-    @staticmethod
-    def _validated_records(table_key: str, expr: it.Table) -> list[RowDict]:
-        """
-        Execute an Ibis expression and return validated row dictionaries.
-
-        Parameters
-        ----------
-        table_key
-            Dataset key used for Pandera validation.
-        expr
-            Ibis table expression to execute.
-
-        Returns
-        -------
-        list[RowDict]
-            Validated records with ``None`` substituted for missing values.
-        """
-        df = pd.DataFrame(expr.execute())
-        validated = validate_df(table_key, df)
-        return validated.where(pd.notna(validated), None).to_dict(orient="records")
 
     def resolve_function_goid(
         self,

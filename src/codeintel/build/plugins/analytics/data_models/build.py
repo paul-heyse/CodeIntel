@@ -11,7 +11,6 @@ from codeintel.analytics.data_models import compute_data_models
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import DataModelsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -84,12 +83,8 @@ class DataModelsPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = DataModelsStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         try:
-            compute_data_models(ctx.gateway, cfg)
+            compute_data_models(ctx.gateway, ctx.snapshot)
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Data models computation failed: {e}")
 

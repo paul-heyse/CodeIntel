@@ -16,7 +16,6 @@ from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_f
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -89,10 +88,6 @@ class ExternalDepsPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = ExternalDependenciesStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         catalog = ctx.resources.catalog
         if catalog is None:
             return TargetResult.failed("CatalogProvider is required")
@@ -128,8 +123,8 @@ class ExternalDepsPlugin(TargetPlugin):
                 features_map=features_map,
                 missing_goids=missing_goids,
             )
-            build_external_dependency_calls(ctx.gateway, cfg, inputs=inputs)
-            build_external_dependencies(ctx.gateway, cfg)
+            build_external_dependency_calls(ctx.gateway, ctx.snapshot, inputs=inputs)
+            build_external_dependencies(ctx.gateway, ctx.snapshot)
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"External dependencies build failed: {e}")
 

@@ -58,8 +58,8 @@ if TYPE_CHECKING:
         TypednessFlags,
     )
     from codeintel.analytics.parsing.models import ParsedModule
-    from codeintel.config import FunctionAnalyticsStepConfig
     from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -214,8 +214,8 @@ def _function_rows_from_node(
     metrics_row: FunctionMetricsRow = {
         "function_goid_h128": meta.goid,
         "urn": meta.urn,
-        "repo": ctx.cfg.repo,
-        "commit": ctx.cfg.commit,
+        "repo": ctx.snapshot.repo,
+        "commit": ctx.snapshot.commit,
         "rel_path": meta.rel_path,
         "language": meta.language,
         "kind": meta.kind,
@@ -246,8 +246,8 @@ def _function_rows_from_node(
     types_row: FunctionTypesRow = {
         "function_goid_h128": meta.goid,
         "urn": meta.urn,
-        "repo": ctx.cfg.repo,
-        "commit": ctx.cfg.commit,
+        "repo": ctx.snapshot.repo,
+        "commit": ctx.snapshot.commit,
         "rel_path": meta.rel_path,
         "language": meta.language,
         "kind": meta.kind,
@@ -296,7 +296,7 @@ def analyze_function(
 def _get_parsed_module(rel_path: str, *, state: ProcessState) -> ParsedModule | None:
     if rel_path in state.cache:
         return state.cache[rel_path]
-    abs_path = (state.cfg.repo_root / rel_path).resolve()
+    abs_path = (state.snapshot.repo_root / rel_path).resolve()
     try:
         parsed = parse_python_file(abs_path)
     except (OSError, ValueError):
@@ -314,7 +314,7 @@ def _process_file_functions(
     metrics_rows: list[FunctionMetricsRow] = []
     types_rows: list[FunctionTypesRow] = []
 
-    abs_path = (state.cfg.repo_root / rel_path).resolve()
+    abs_path = (state.snapshot.repo_root / rel_path).resolve()
     parsed = _get_parsed_module(rel_path, state=state)
     if parsed is None:
         detail = f"File missing or unparsable: {abs_path}"
@@ -418,17 +418,15 @@ def build_function_analytics(
     )
 
 
-def _load_goids(
-    gateway: StorageGateway, cfg: FunctionAnalyticsStepConfig
-) -> dict[str, list[GoidRow]]:
+def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, list[GoidRow]]:
     """Load function GOIDs from core.goids using Ibis.
 
     Parameters
     ----------
     gateway
         Storage gateway for database access.
-    cfg
-        Step configuration with repo and commit.
+    snapshot
+        Repository and commit identifiers.
 
     Returns
     -------
@@ -436,8 +434,8 @@ def _load_goids(
         GOIDs grouped by relative file path.
     """
     tbl = gateway.ibis.table("core.goids")
-    repo_filter = cast("Any", tbl.repo == cfg.repo)
-    commit_filter = cast("Any", tbl.commit == cfg.commit)
+    repo_filter = cast("Any", tbl.repo == snapshot.repo)
+    commit_filter = cast("Any", tbl.commit == snapshot.commit)
     kind_filter = cast("Any", tbl.kind.isin(cast("Any", ["function", "method"])))
     expr = tbl.filter(repo_filter & commit_filter & kind_filter).select(
         "goid_h128",
@@ -454,7 +452,7 @@ def _load_goids(
     df = cast("pd.DataFrame", expr.execute())
 
     if df.empty:
-        log.info("No function GOIDs found for repo=%s commit=%s", cfg.repo, cfg.commit)
+        log.info("No function GOIDs found for repo=%s commit=%s", snapshot.repo, snapshot.commit)
         return {}
 
     goids_by_file: dict[str, list[GoidRow]] = {}
@@ -593,7 +591,7 @@ def _build_function_analytics_from_ast_data(
 
 def persist_function_analytics(
     gateway: StorageGateway,
-    cfg: FunctionAnalyticsStepConfig,
+    snapshot: SnapshotRef,
     result: FunctionAnalyticsResult,
 ) -> dict[str, int]:
     """
@@ -603,8 +601,8 @@ def persist_function_analytics(
     ----------
     gateway : StorageGateway
         Storage gateway exposing the DuckDB connection.
-    cfg : FunctionAnalyticsStepConfig
-        Repository/commit context.
+    snapshot : SnapshotRef
+        Repository and commit identifiers.
     result : FunctionAnalyticsResult
         Rows and validation to persist.
 
@@ -632,13 +630,17 @@ def persist_function_analytics(
     backend = DuckDBPolicyBackend(gateway)
     metrics_columns = metrics_contract.schema.column_names() if metrics_contract.schema else ()
     types_columns = types_contract.schema.column_names() if types_contract.schema else ()
-    backend.delete_for_snapshot(metrics_contract.table_key, repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot(
+        metrics_contract.table_key, repo=snapshot.repo, commit=snapshot.commit
+    )
     backend.bulk_insert(
         metrics_contract.table_key,
         [metrics_contract.to_tuple(row) for row in validated_metrics],
         columns=metrics_columns,
     )
-    backend.delete_for_snapshot(types_contract.table_key, repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot(
+        types_contract.table_key, repo=snapshot.repo, commit=snapshot.commit
+    )
     backend.bulk_insert(
         types_contract.table_key,
         [types_contract.to_tuple(row) for row in validated_types],
@@ -648,8 +650,8 @@ def persist_function_analytics(
 
     log.info(
         ("Function metrics/types build complete for repo=%s commit=%s: %d functions (missing=%d)"),
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
         result.metrics_count,
         result.validation_total,
     )
@@ -665,9 +667,10 @@ def persist_function_analytics(
 
 def compute_function_metrics_and_types(
     gateway: StorageGateway,
-    cfg: FunctionAnalyticsStepConfig,
+    snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
+    fail_on_missing_spans: bool = False,
 ) -> dict[str, int]:
     """
     Populate function metrics and type coverage tables from GOID spans.
@@ -686,10 +689,12 @@ def compute_function_metrics_and_types(
     gateway :
         StorageGateway providing the DuckDB connection with `core.goids`,
         `analytics.function_metrics`, and `analytics.function_types` tables available.
-    cfg : FunctionAnalyticsStepConfig
-        Repository metadata and file-system root used to locate source files.
+    snapshot : SnapshotRef
+        Repository and commit identifiers.
     options : FunctionAnalyticsOptions | None
         Optional hooks for reusing parsed AST context and overriding the validation reporter.
+    fail_on_missing_spans : bool
+        Whether to raise an error if any spans are missing.
 
     Notes
     -----
@@ -709,7 +714,7 @@ def compute_function_metrics_and_types(
     dict[str, int]
         Summary counts of emitted metrics/types and validation issues.
     """
-    goids_by_file = _load_goids(gateway, cfg)
+    goids_by_file = _load_goids(gateway, snapshot)
     if not goids_by_file:
         return {
             "metrics_rows": 0,
@@ -720,11 +725,13 @@ def compute_function_metrics_and_types(
         }
 
     now = datetime.now(UTC)
-    ctx = ProcessContext(cfg=cfg, now=now)
+    ctx = ProcessContext(snapshot=snapshot, now=now)
 
     opts = options or FunctionAnalyticsOptions()
-    reporter = opts.validation_reporter or FunctionValidationReporter(cfg.repo, cfg.commit)
-    span_index = _build_span_index(goids_by_file, cfg.repo_root)
+    reporter = opts.validation_reporter or FunctionValidationReporter(
+        snapshot.repo, snapshot.commit
+    )
+    span_index = _build_span_index(goids_by_file, snapshot.repo_root)
 
     if opts.has_ast_data():
         result = _build_function_analytics_from_ast_data(
@@ -737,7 +744,7 @@ def compute_function_metrics_and_types(
     else:
         parsed_cache: dict[str, ParsedModule | None] = {}
         state = ProcessState(
-            cfg=cfg,
+            snapshot=snapshot,
             cache=parsed_cache,
             span_index=span_index,
             reporter=reporter,
@@ -745,8 +752,8 @@ def compute_function_metrics_and_types(
         )
         result = build_function_analytics(goids_by_file=goids_by_file, state=state)
 
-    summary = persist_function_analytics(gateway, cfg, result)
-    if cfg.fail_on_missing_spans and result.validation_total:
+    summary = persist_function_analytics(gateway, snapshot, result)
+    if fail_on_missing_spans and result.validation_total:
         message = (
             f"Missing analytics for {result.validation_total} functions; "
             "see analytics.function_validation"

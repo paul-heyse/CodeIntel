@@ -9,6 +9,12 @@ This module provides the single point for all non-Ibis SQL operations:
 All DDL is generated through SQLGlot expressions, ensuring type-safe and
 consistent SQL generation without string interpolation.
 
+Architecture Note
+-----------------
+DuckDBPolicyBackend only depends on the MinimalGateway protocol, NOT on
+IbisGateway directly. It accesses the Ibis gateway via gateway.ibis, which
+avoids circular imports. MinimalStorageGateway is the composition root.
+
 Example
 -------
 >>> from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
@@ -17,6 +23,14 @@ Example
 >>> gateway = open_gateway(config)
 >>> backend = DuckDBPolicyBackend(gateway)
 >>> backend.ensure_all_schemas()
+
+Direct connection usage (via MinimalStorageGateway):
+
+>>> import duckdb
+>>> from codeintel.storage.gateway.minimal import MinimalStorageGateway
+>>> con = duckdb.connect(":memory:")
+>>> gateway = MinimalStorageGateway(con)
+>>> gateway.policy.ensure_all_schemas()
 """
 
 from __future__ import annotations
@@ -29,13 +43,18 @@ from typing import TYPE_CHECKING
 import sqlglot.expressions as exp
 from sqlglot import parse_one
 
+from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
+from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
+    from duckdb import DuckDBPyConnection
+
     from codeintel.config.datasets import DatasetContract, TableSchema
-    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.storage.gateway.protocol import MinimalGateway
+    from codeintel.storage.ibis_adapter import IbisGateway
 
 __all__ = [
     "DUCKDB_DIALECT",
@@ -45,38 +64,7 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 
-DUCKDB_DIALECT = "duckdb"
-
-
-SCHEMAS = ("build", "core", "graph", "analytics", "docs")
-
-
 _TABLE_CREATION_DENYLIST = frozenset({"docs.v_validation_summary"})
-
-
-def _split_table_key(table_key: str) -> tuple[str, str]:
-    """Split a schema-qualified table key into (schema, table).
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table name (schema.table).
-
-    Returns
-    -------
-    tuple[str, str]
-        Schema and table name.
-
-    Raises
-    ------
-    ValueError
-        If table_key is not schema-qualified.
-    """
-    if "." not in table_key:
-        message = f"Table key must be schema-qualified: {table_key}"
-        raise ValueError(message)
-    schema_name, table_name = table_key.split(".", maxsplit=1)
-    return schema_name, table_name
 
 
 def _infer_table_alias(where_ast: exp.Where) -> str | None:
@@ -523,13 +511,45 @@ class DuckDBPolicyBackend:
     this class. It uses SQLGlot to generate type-safe DDL without string
     interpolation.
 
+    Accepts a MinimalGateway that provides connection access. For raw DuckDB
+    connections, wrap them in MinimalStorageGateway first.
+
     Parameters
     ----------
     gateway
-        Storage gateway providing database access.
+        Gateway providing database access.
+
+    Examples
+    --------
+    Standard usage with StorageGateway:
+
+    >>> gateway = open_gateway(config)
+    >>> backend = DuckDBPolicyBackend(gateway)
+    >>> backend.ensure_all_schemas()
+
+    Direct connection usage (via MinimalStorageGateway):
+
+    >>> from codeintel.storage.gateway.minimal import MinimalStorageGateway
+    >>> gateway = MinimalStorageGateway(duckdb.connect(":memory:"))
+    >>> gateway.policy.create_schema_if_not_exists("core")
+
+    Note
+    ----
+    DuckDBPolicyBackend accesses IbisGateway via `gateway.ibis` to avoid
+    circular imports. The MinimalStorageGateway acts as composition root.
     """
 
-    gateway: StorageGateway
+    gateway: MinimalGateway
+
+    @property
+    def con(self) -> DuckDBPyConnection:
+        """Return the underlying DuckDB connection."""
+        return self.gateway.con
+
+    @property
+    def ibis(self) -> IbisGateway:
+        """Return the Ibis gateway via the gateway reference."""
+        return self.gateway.ibis
 
     def _run(self, expr: exp.Expression) -> None:
         """Execute a single SQLGlot expression.
@@ -541,7 +561,7 @@ class DuckDBPolicyBackend:
         """
         sql = expr.sql(dialect=DUCKDB_DIALECT)
         log.debug("Executing statement: %s", sql)
-        self.gateway.con.execute(sql)
+        self.con.execute(sql)
 
     def _run_many(self, exprs: Iterable[exp.Expression]) -> None:
         """Execute multiple SQLGlot expressions.
@@ -566,9 +586,9 @@ class DuckDBPolicyBackend:
         """
         log.debug("Executing SQL: %s", sql)
         if params:
-            self.gateway.con.execute(sql, params)
+            self.con.execute(sql, params)
         else:
-            self.gateway.con.execute(sql)
+            self.con.execute(sql)
 
     def insert_select(
         self,
@@ -588,7 +608,7 @@ class DuckDBPolicyBackend:
         select_sql
             SQL SELECT statement to insert from.
         """
-        table_schema, table_name = _split_table_key(table_key)
+        table_schema, table_name = split_table_key(table_key)
         insert_expr = _build_insert_select(
             table_schema,
             table_name,
@@ -612,7 +632,7 @@ class DuckDBPolicyBackend:
         where
             SQLGlot WHERE clause; when None, deletes all rows.
         """
-        table_schema, table_name = _split_table_key(table_key)
+        table_schema, table_name = split_table_key(table_key)
 
         alias: str | None = None
         if where is not None:
@@ -783,7 +803,7 @@ class DuckDBPolicyBackend:
         frozenset[str]
             Column names present in the table, or empty when missing.
         """
-        rows = self.gateway.con.execute(
+        rows = self.con.execute(
             (
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_schema = ? AND table_name = ?"
@@ -872,7 +892,7 @@ class DuckDBPolicyBackend:
             creation after logging. When False, exceptions are logged
             but execution continues.
         """
-        ibis_gateway = self.gateway.ibis
+        ibis_gateway = self.ibis
 
         for view_name, builder in VIEW_BUILDERS.items():
             try:
@@ -934,14 +954,14 @@ class DuckDBPolicyBackend:
             return
 
         qualified_name = f"{table_schema.schema}.{table_schema.name}"
-        info = self.gateway.con.execute(f"PRAGMA table_info({qualified_name})").fetchall()
+        info = self.con.execute(f"PRAGMA table_info({qualified_name})").fetchall()
         expected_columns = [col.name for col in table_schema.columns]
         if not info:
             if not create_if_missing:
                 message = f"Missing table {table_key}"
                 raise RuntimeError(message)
             create_stmt = _build_create_table(table_schema, if_not_exists=True)
-            self.gateway.con.execute(create_stmt.sql(dialect=DUCKDB_DIALECT))
+            self.con.execute(create_stmt.sql(dialect=DUCKDB_DIALECT))
             return
 
         actual_columns = [row[1] for row in info]
@@ -1006,7 +1026,7 @@ class DuckDBPolicyBackend:
         sql = insert_expr.sql(dialect=DUCKDB_DIALECT)
 
         log.debug("Bulk insert into %s: %d rows", table_key, len(rows))
-        self.gateway.con.executemany(sql, rows)
+        self.con.executemany(sql, rows)
         return len(rows)
 
     def bulk_insert_mappings(
@@ -1117,5 +1137,5 @@ class DuckDBPolicyBackend:
         sql = _build_upsert(schema, table, columns, conflict_columns, update_columns)
 
         log.debug("Upsert into %s: %d rows", table_key, len(rows))
-        self.gateway.con.executemany(sql, rows)
+        self.con.executemany(sql, rows)
         return len(rows)

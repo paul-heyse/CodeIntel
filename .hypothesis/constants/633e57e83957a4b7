@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/exceptions.py
+# hypothesis_version: 6.148.7
+
+['DUCKDB_ERRORS', 'DuckDBError', 'QueryError', 'SchemaError', 'StorageError']

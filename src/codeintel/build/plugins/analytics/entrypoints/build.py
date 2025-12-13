@@ -8,12 +8,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.analytics.entrypoints import build_entrypoints
+from codeintel.analytics.entrypoints import EntrypointBuildInputs, build_entrypoints
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import EntryPointsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -84,10 +83,6 @@ class EntrypointsPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = EntryPointsStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         catalog = ctx.resources.catalog
         if catalog is None:
             return TargetResult.failed("CatalogProvider is required")
@@ -116,10 +111,12 @@ class EntrypointsPlugin(TargetPlugin):
         try:
             build_entrypoints(
                 ctx.gateway,
-                cfg,
-                catalog_provider=catalog,
-                module_map=module_map,
-                features_map=features_map,
+                ctx.snapshot,
+                EntrypointBuildInputs(
+                    catalog_provider=catalog,
+                    module_map=module_map,
+                    features_map=features_map,
+                ),
             )
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Entrypoints build failed: {e}")

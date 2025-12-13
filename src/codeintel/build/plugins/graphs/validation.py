@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, ClassVar, SupportsInt, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
-from codeintel.config import GraphMetricsStepConfig
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import filter_by, ibis_bool
 
@@ -202,12 +201,10 @@ class GraphValidationPlugin(TargetPlugin):
             Execution result.
         """
         _ = self
-
-        cfg = GraphMetricsStepConfig(snapshot=ctx.snapshot)
-
+        snapshot = ctx.snapshot
         gateway = ctx.gateway
-        repo = cfg.repo
-        commit = cfg.commit
+        repo = snapshot.repo
+        commit = snapshot.commit
 
         try:
             all_errors: list[str] = []

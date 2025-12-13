@@ -13,7 +13,6 @@ from codeintel.analytics.dependencies.core import (
     build_external_dependency_calls,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.config.steps_graphs import ExternalDependenciesStepConfig
 from tests._helpers import CORE_PACK, create_test_context
 from tests._helpers.assertions import (
     assert_mapping_list,
@@ -103,7 +102,6 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
 
     goid = 5001
     func_ast = _build_function_ast(module_path, "fetch_data", goid, repo_root)
-    cfg = ExternalDependenciesStepConfig(snapshot=snapshot)
     inputs = ExternalDependencyInputs(
         catalog_provider=MockFunctionCatalog(
             functions=[
@@ -123,7 +121,7 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
     )
 
     try:
-        build_external_dependency_calls(gateway, cfg, inputs=inputs)
+        build_external_dependency_calls(gateway, snapshot, inputs=inputs)
 
         rows_by_library = {
             row[0]: row
@@ -167,7 +165,7 @@ def test_dependency_calls_and_aggregation(tmp_path: Path) -> None:
             ],
         )
 
-        build_external_dependencies(gateway, cfg)
+        build_external_dependencies(gateway, snapshot)
 
         rows_by_library = {
             row[0]: row
@@ -214,7 +212,6 @@ def test_dependency_calls_respect_feature_gates(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     snapshot = ctx.to_snapshot_ref()
-    cfg = ExternalDependenciesStepConfig(snapshot=snapshot)
     patterns_path = repo_root / "config" / "dependency_patterns.yml"
     patterns_path.parent.mkdir(parents=True, exist_ok=True)
     patterns_path.write_text(
@@ -264,7 +261,7 @@ def test_dependency_calls_respect_feature_gates(tmp_path: Path) -> None:
     )
 
     try:
-        build_external_dependency_calls(gateway, cfg, inputs=inputs)
+        build_external_dependency_calls(gateway, snapshot, inputs=inputs)
 
         rows = gateway.con.execute(
             """

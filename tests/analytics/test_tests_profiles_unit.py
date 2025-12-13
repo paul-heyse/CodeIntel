@@ -28,15 +28,18 @@ from codeintel.analytics.testing.coverage.inputs import (
     load_test_graph_metrics,
 )
 from codeintel.analytics.testing.profiles import rows
+from codeintel.analytics.testing.profiles.rows import TestProfileInputs
 from codeintel.analytics.testing.profiles.types import (
+    BehavioralCoverageOptions,
     BehavioralLLMResult,
     ImportanceInputs,
     IoFlags,
     TestAstInfo,
     TestProfileContext,
+    TestProfileOptions,
     TestRecord,
 )
-from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
+from codeintel.config.primitives import SnapshotRef
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
@@ -156,28 +159,15 @@ class _FakeIbisColumn:
         return hash(self.name)
 
 
-def _snapshot_cfg() -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]:
-    """Create test and behavioral coverage configs from a snapshot.
+def _default_options() -> tuple[TestProfileOptions, BehavioralCoverageOptions]:
+    """Create default test and behavioral coverage options.
 
     Returns
     -------
-    tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]
-        Tuple of test profile and behavioral coverage configs.
+    tuple[TestProfileOptions, BehavioralCoverageOptions]
+        Tuple of test profile and behavioral coverage options.
     """
-    snapshot = make_snapshot()
-    return TestProfileStepConfig(snapshot=snapshot), BehavioralCoverageStepConfig(snapshot=snapshot)
-
-
-def _configs(tmp_path: Path) -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]:
-    """Create configs with a specific repo root path.
-
-    Returns
-    -------
-    tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]
-        Tuple of test profile and behavioral coverage configs.
-    """
-    snapshot = make_snapshot(repo_root=tmp_path)
-    return TestProfileStepConfig(snapshot=snapshot), BehavioralCoverageStepConfig(snapshot=snapshot)
+    return TestProfileOptions(), BehavioralCoverageOptions()
 
 
 def test_importance_guardrails_and_monotonicity() -> None:

@@ -17,6 +17,7 @@ from codeintel.config.datasets import (
     TestCoverageEdgeRow,
     serialize_test_coverage_edge,
 )
+from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.catalog import (
     FunctionCatalogService,
 )
@@ -28,7 +29,6 @@ if TYPE_CHECKING:
 
     from coverage import CoverageData
 
-    from codeintel.config import TestCoverageStepConfig
     from codeintel.graphs.catalog import (
         FunctionCatalogProvider,
     )
@@ -37,12 +37,30 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class TestCoverageOptions:
+    """Configuration options for test coverage edge computation.
+
+    Parameters
+    ----------
+    coverage_file
+        Optional explicit path to coverage file; defaults to repo_root/.coverage.
+    coverage_loader
+        Optional callable to load coverage data; signature is
+        ``(snapshot: SnapshotRef, coverage_file: Path | None) -> Coverage | None``.
+    """
+
+    coverage_file: Path | None = None
+    coverage_loader: Callable[[SnapshotRef, Path | None], Coverage | None] | None = None
+
+
 @dataclass
 class EdgeContext:
     """Shared context for building test coverage edges."""
 
     status_by_test: dict[str, str]
-    cfg: TestCoverageStepConfig
+    repo: str
+    commit: str
     now: datetime
     test_meta_by_id: dict[str, tuple[int | None, str | None]]
 
@@ -58,8 +76,25 @@ class FunctionRow(TypedDict):
     end_line: int | None
 
 
-def _load_coverage_data(cfg: TestCoverageStepConfig) -> Coverage | None:
-    coverage_path = cfg.coverage_file or (cfg.repo_root / ".coverage")
+def _load_coverage_data(
+    snapshot: SnapshotRef,
+    coverage_file: Path | None = None,
+) -> Coverage | None:
+    """Load coverage data from file.
+
+    Parameters
+    ----------
+    snapshot
+        Snapshot reference for repository context.
+    coverage_file
+        Optional explicit coverage file path.
+
+    Returns
+    -------
+    Coverage | None
+        Coverage object when file exists, otherwise None.
+    """
+    coverage_path = coverage_file or (snapshot.repo_root / ".coverage")
     if not coverage_path.is_file():
         log.warning("Coverage file %s not found; skipping test coverage edges", coverage_path)
         return None
@@ -69,39 +104,62 @@ def _load_coverage_data(cfg: TestCoverageStepConfig) -> Coverage | None:
     return cov
 
 
-def load_coverage_data(cfg: TestCoverageStepConfig) -> Coverage | None:
+def load_coverage_data(
+    snapshot: SnapshotRef,
+    coverage_file: Path | None = None,
+) -> Coverage | None:
     """
     Public wrapper for loading coverage data with logging on missing files.
 
     Parameters
     ----------
-    cfg
-        Coverage step configuration containing file location.
+    snapshot
+        Snapshot reference for repository context.
+    coverage_file
+        Optional explicit coverage file path.
 
     Returns
     -------
     Coverage | None
         Coverage object when file exists, otherwise None.
     """
-    return _load_coverage_data(cfg)
+    return _load_coverage_data(snapshot, coverage_file)
 
 
 __all__ = [
     "EdgeContext",
     "FunctionRow",
+    "TestCoverageOptions",
     "backfill_test_goids_for_catalog",
     "build_edges_for_file_for_tests",
+    "compute_test_coverage_edges",
     "load_coverage_data",
 ]
 
 
 def _functions_by_path(
     gateway: StorageGateway,
-    cfg: TestCoverageStepConfig,
+    snapshot: SnapshotRef,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> dict[str, list[FunctionRow]]:
+    """Build mapping of file paths to function metadata.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    snapshot
+        Snapshot reference.
+    catalog_provider
+        Optional pre-loaded catalog provider.
+
+    Returns
+    -------
+    dict[str, list[FunctionRow]]
+        Functions keyed by relative file path.
+    """
     provider = catalog_provider or FunctionCatalogService.from_db(
-        gateway, repo=cfg.repo, commit=cfg.commit
+        gateway, repo=snapshot.repo, commit=snapshot.commit
     )
     catalog = provider.catalog()
     if not catalog.function_spans:
@@ -124,9 +182,16 @@ def _functions_by_path(
 
 def _backfill_test_goids(
     gateway: StorageGateway,
-    cfg: TestCoverageStepConfig,
+    snapshot: SnapshotRef,
 ) -> tuple[dict[str, int], dict[str, str]]:
     """Try to map test_catalog entries to GOIDs and update catalog rows.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    snapshot
+        Snapshot reference.
 
     Returns
     -------
@@ -140,7 +205,7 @@ def _backfill_test_goids(
         FROM analytics.test_catalog
         WHERE repo = ? AND commit = ?
         """,
-        [cfg.repo, cfg.commit],
+        [snapshot.repo, snapshot.commit],
     ).fetchall()
     if not tests_rows:
         return {}, {}
@@ -151,7 +216,7 @@ def _backfill_test_goids(
         FROM core.goids
         WHERE repo = ? AND commit = ?
         """,
-        [cfg.repo, cfg.commit],
+        [snapshot.repo, snapshot.commit],
     ).fetchall()
     if not goid_rows:
         return {}, {}
@@ -183,23 +248,31 @@ def _backfill_test_goids(
         backend.ensure_table("analytics.test_catalog")
         con.executemany(
             TEST_CATALOG_UPDATE_GOIDS,
-            [(g, u, tid, rel, cfg.repo, cfg.commit) for g, u, tid, rel in updates],
+            [(g, u, tid, rel, snapshot.repo, snapshot.commit) for g, u, tid, rel in updates],
         )
 
     return goid_by_id, urn_by_id
 
 
 def backfill_test_goids_for_catalog(
-    gateway: StorageGateway, cfg: TestCoverageStepConfig
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
 ) -> tuple[dict[str, int], dict[str, str]]:
     """Backfill GOIDs and URNs for tests in test_catalog.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    snapshot
+        Snapshot reference.
 
     Returns
     -------
     tuple[dict[str, int], dict[str, str]]
         Mappings from test_id to GOID h128 and URN.
     """
-    return _backfill_test_goids(gateway, cfg)
+    return _backfill_test_goids(gateway, snapshot)
 
 
 def build_edges_for_file_for_tests(
@@ -275,6 +348,26 @@ def _edges_for_file(
     rel_path: str,
     ctx: EdgeContext,
 ) -> list[TestCoverageEdgeRow]:
+    """Build coverage edges for functions in a file.
+
+    Parameters
+    ----------
+    file_funcs
+        List of functions in the file.
+    statements_set
+        Set of executable statement line numbers.
+    contexts_by_lineno
+        Mapping of line numbers to coverage contexts.
+    rel_path
+        Relative file path.
+    ctx
+        Edge context with repository and test metadata.
+
+    Returns
+    -------
+    list[TestCoverageEdgeRow]
+        Coverage edge rows for this file.
+    """
     edges: list[TestCoverageEdgeRow] = []
     for info in file_funcs:
         start_line = int(info["start_line"])
@@ -301,8 +394,8 @@ def _edges_for_file(
                     test_goid_h128=test_goid,
                     function_goid_h128=int(info["goid_h128"]),
                     urn=test_urn or info["urn"],
-                    repo=ctx.cfg.repo,
-                    commit=ctx.cfg.commit,
+                    repo=ctx.repo,
+                    commit=ctx.commit,
                     rel_path=rel_path,
                     qualname=info["qualname"],
                     covered_lines=covered_lines,
@@ -316,8 +409,23 @@ def _edges_for_file(
 
 
 def _test_status_and_meta(
-    gateway: StorageGateway, cfg: TestCoverageStepConfig
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
 ) -> tuple[dict[str, str], dict[str, tuple[int | None, str | None]]]:
+    """Load test status and metadata for the snapshot.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    snapshot
+        Snapshot reference.
+
+    Returns
+    -------
+    tuple[dict[str, str], dict[str, tuple[int | None, str | None]]]
+        Status by test ID and metadata (goid, urn) by test ID.
+    """
     status_by_test = {
         row[0]: row[1]
         for row in gateway.execute(
@@ -326,10 +434,10 @@ def _test_status_and_meta(
             FROM analytics.test_catalog
             WHERE repo = ? AND commit = ?
             """,
-            [cfg.repo, cfg.commit],
+            [snapshot.repo, snapshot.commit],
         ).fetchall()
     }
-    test_goid_by_id, test_urn_by_id = _backfill_test_goids(gateway, cfg)
+    test_goid_by_id, test_urn_by_id = _backfill_test_goids(gateway, snapshot)
     test_meta_by_id = {
         test_id: (test_goid_by_id.get(test_id), test_urn_by_id.get(test_id))
         for test_id in set(status_by_test.keys())
@@ -341,9 +449,9 @@ def _test_status_and_meta(
 
 def compute_test_coverage_edges(
     gateway: StorageGateway,
-    cfg: TestCoverageStepConfig,
+    snapshot: SnapshotRef,
     *,
-    coverage_loader: Callable[[TestCoverageStepConfig], Coverage | None] | None = None,
+    options: TestCoverageOptions | None = None,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
     """Populate analytics.test_coverage_edges by combining coverage contexts with GOIDs.
@@ -351,24 +459,39 @@ def compute_test_coverage_edges(
     This expects coverage.py to have been run with dynamic contexts enabled
     (e.g., dynamic_context = test_function) so contexts_by_lineno returns
     pytest nodeids.
-    """
-    log.info("Computing test_coverage_edges for repo=%s commit=%s", cfg.repo, cfg.commit)
 
-    loader = coverage_loader or cfg.coverage_loader or _load_coverage_data
-    cov = loader(cfg)
+    Parameters
+    ----------
+    gateway
+        Storage gateway for DuckDB.
+    snapshot
+        Snapshot reference with repo, commit, and repo_root.
+    options
+        Optional coverage configuration options.
+    catalog_provider
+        Optional pre-loaded catalog provider.
+    """
+    log.info("Computing test_coverage_edges for repo=%s commit=%s", snapshot.repo, snapshot.commit)
+
+    opts = options or TestCoverageOptions()
+    if opts.coverage_loader is not None:
+        cov = opts.coverage_loader(snapshot, opts.coverage_file)
+    else:
+        cov = _load_coverage_data(snapshot, opts.coverage_file)
     if cov is None:
         return
 
-    funcs_by_path = _functions_by_path(gateway, cfg, catalog_provider=catalog_provider)
+    funcs_by_path = _functions_by_path(gateway, snapshot, catalog_provider=catalog_provider)
     if not funcs_by_path:
         log.info("No functions found; skipping test coverage edges")
         return
 
-    status_by_test, test_meta_by_id = _test_status_and_meta(gateway, cfg)
+    status_by_test, test_meta_by_id = _test_status_and_meta(gateway, snapshot)
 
     edge_ctx = EdgeContext(
         status_by_test=status_by_test,
-        cfg=cfg,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
         now=datetime.now(UTC),
         test_meta_by_id=test_meta_by_id,
     )
@@ -378,7 +501,7 @@ def compute_test_coverage_edges(
     for measured in data.measured_files():
         abs_file = Path(measured).resolve()
         try:
-            rel_path = normalize_rel_path(abs_file.relative_to(cfg.repo_root))
+            rel_path = normalize_rel_path(abs_file.relative_to(snapshot.repo_root))
         except ValueError:
             continue
 
@@ -402,7 +525,9 @@ def compute_test_coverage_edges(
 
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.test_coverage_edges")
-    backend.delete_for_snapshot("analytics.test_coverage_edges", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot(
+        "analytics.test_coverage_edges", repo=snapshot.repo, commit=snapshot.commit
+    )
     if insert_rows:
         backend.bulk_insert(
             "analytics.test_coverage_edges",
@@ -412,6 +537,6 @@ def compute_test_coverage_edges(
     log.info(
         "test_coverage_edges populated: %d rows for %s@%s",
         len(insert_rows),
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
     )

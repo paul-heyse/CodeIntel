@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from codeintel.graphs.adapters import callgraph_persistence as call_persist
 from codeintel.graphs.compute import callgraph as call_resolution
+from codeintel.graphs.compute.callgraph import persistence as call_persist
 from tests._helpers.assertions import expect_equal, expect_true
 
 if TYPE_CHECKING:

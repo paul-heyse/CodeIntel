@@ -5,21 +5,34 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import networkx as nx
 
 if TYPE_CHECKING:
-    from codeintel.config import SubsystemsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
 MIN_SHARED_MODULES = 2
+DEFAULT_IMPORT_WEIGHT = 1.0
+DEFAULT_SYMBOL_WEIGHT = 0.5
+DEFAULT_CONFIG_WEIGHT = 0.3
+
+
+@dataclass(frozen=True)
+class AffinityWeights:
+    """Weight configuration for module affinity graph construction."""
+
+    import_weight: float = DEFAULT_IMPORT_WEIGHT
+    symbol_weight: float = DEFAULT_SYMBOL_WEIGHT
+    config_weight: float = DEFAULT_CONFIG_WEIGHT
 
 
 def load_modules(
-    gateway: StorageGateway, cfg: SubsystemsStepConfig
+    gateway: StorageGateway, snapshot: SnapshotRef
 ) -> tuple[set[str], dict[str, list[str]]]:
     """
     Load modules and tags for subsystem inference.
@@ -32,7 +45,7 @@ def load_modules(
     con = gateway.con
     rows = con.execute(
         "SELECT module, tags FROM core.modules WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
+        [snapshot.repo, snapshot.commit],
     ).fetchall()
     if not rows:
         rows = con.execute("SELECT module, tags FROM core.modules").fetchall()
@@ -75,7 +88,10 @@ def parse_tags(raw: object) -> list[str]:
 
 
 def build_weighted_adjacency(
-    gateway: StorageGateway, cfg: SubsystemsStepConfig, modules: set[str]
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    modules: set[str],
+    weights: AffinityWeights | None = None,
 ) -> dict[str, dict[str, float]]:
     """
     Return a weighted adjacency mapping for the module affinity graph.
@@ -85,12 +101,15 @@ def build_weighted_adjacency(
     dict[str, dict[str, float]]
         Weighted adjacency mapping.
     """
-    graph = build_weighted_graph(gateway, cfg, modules)
+    graph = build_weighted_graph(gateway, snapshot, modules, weights=weights)
     return graph_to_adjacency(graph)
 
 
 def build_weighted_graph(
-    gateway: StorageGateway, cfg: SubsystemsStepConfig, modules: set[str]
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    modules: set[str],
+    weights: AffinityWeights | None = None,
 ) -> nx.Graph:
     """
     Build an undirected weighted graph representing module affinity.
@@ -100,13 +119,14 @@ def build_weighted_graph(
     nx.Graph
         Weighted graph of module affinity.
     """
+    w = weights or AffinityWeights()
     con = gateway.con
     graph = nx.Graph()
     graph.add_nodes_from(modules)
 
     rows = con.execute(
         "SELECT src_module, dst_module FROM graph.import_graph_edges WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
+        [snapshot.repo, snapshot.commit],
     ).fetchall()
     for src, dst in rows:
         if src is None or dst is None:
@@ -114,7 +134,7 @@ def build_weighted_graph(
         src_mod = str(src)
         dst_mod = str(dst)
         if src_mod in modules and dst_mod in modules:
-            add_graph_weight(graph, src_mod, dst_mod, cfg.import_weight)
+            add_graph_weight(graph, src_mod, dst_mod, w.import_weight)
 
     rows = con.execute(
         """
@@ -129,7 +149,7 @@ def build_weighted_graph(
         src_mod = str(use_module)
         dst_mod = str(def_module)
         if src_mod in modules and dst_mod in modules:
-            add_graph_weight(graph, src_mod, dst_mod, cfg.symbol_weight)
+            add_graph_weight(graph, src_mod, dst_mod, w.symbol_weight)
 
     rows = con.execute(
         """
@@ -137,14 +157,14 @@ def build_weighted_graph(
         FROM analytics.config_values
         WHERE repo = ? AND commit = ?
         """,
-        [cfg.repo, cfg.commit],
+        [snapshot.repo, snapshot.commit],
     ).fetchall()
     for (mods_raw,) in rows:
         modules_list = parse_tags(mods_raw)
         filtered = [m for m in modules_list if m in modules]
         if len(filtered) < MIN_SHARED_MODULES:
             continue
-        weight = cfg.config_weight / max(len(filtered) - 1, 1)
+        weight = w.config_weight / max(len(filtered) - 1, 1)
         for idx, left in enumerate(filtered):
             for right in filtered[idx + 1 :]:
                 add_graph_weight(graph, left, right, weight)

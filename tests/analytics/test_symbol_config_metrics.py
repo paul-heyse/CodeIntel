@@ -12,7 +12,7 @@ from codeintel.analytics.graphs import (
     compute_subsystem_agreement,
     compute_symbol_graph_metrics_modules,
 )
-from codeintel.storage.views import create_all_views
+from codeintel.storage.views.creation import create_all_views
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,

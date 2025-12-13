@@ -13,18 +13,17 @@ from typing import TYPE_CHECKING, cast
 import ibis
 
 from codeintel.analytics.compute.ibis_utils import (
-    bool_and,
     literal_sequence,
     safe_ratio,
     zero_if_null,
 )
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import gt, ibis_bool
+from codeintel.storage.ibis_types import and_predicates, gt, ibis_bool
 
 if TYPE_CHECKING:
     import ibis.expr.types as it
 
-    from codeintel.config import CoverageAnalyticsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -32,7 +31,7 @@ log = logging.getLogger(__name__)
 
 def compute_coverage_functions(
     gateway: StorageGateway,
-    cfg: CoverageAnalyticsStepConfig,
+    snapshot: SnapshotRef,
 ) -> None:
     """
     Populate `analytics.coverage_functions` by aggregating line coverage per GOID.
@@ -48,7 +47,7 @@ def compute_coverage_functions(
     ----------
     gateway : StorageGateway
         Gateway providing access to the DuckDB connection.
-    cfg : CoverageAnalyticsStepConfig
+    snapshot : SnapshotRef
         Repository and commit identifiers that scope the aggregation.
 
     Notes
@@ -93,11 +92,10 @@ def compute_coverage_functions(
     ...     " ('demo', 'abc', 'foo.py', 2, TRUE, FALSE),"
     ...     " ('demo', 'abc', 'foo.py', 3, FALSE, FALSE)"
     ... )
-    >>> from codeintel.config import ConfigBuilder, SnapshotInit
-    >>> cfg = ConfigBuilder.from_snapshot(
-    ...     snapshot=SnapshotInit(repo="demo", commit="abc", repo_root=Path(".")),
-    ... ).coverage_analytics()
-    >>> compute_coverage_functions(gateway, cfg)
+    >>> from codeintel.config.primitives import SnapshotRef
+    >>> from pathlib import Path
+    >>> snapshot = SnapshotRef(repo="demo", commit="abc", repo_root=Path("."))
+    >>> compute_coverage_functions(gateway, snapshot)
     >>> con.execute(
     ...     "SELECT executable_lines, covered_lines, coverage_ratio, tested"
     ...     " FROM analytics.coverage_functions"
@@ -106,8 +104,8 @@ def compute_coverage_functions(
     """
     log.info(
         "Computing coverage_functions for repo=%s commit=%s",
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
     )
     try:
         goids = gateway.ibis.table("core.goids")
@@ -116,14 +114,14 @@ def compute_coverage_functions(
         log.warning("coverage_functions: failed to access tables: %s", exc)
         return
 
-    goids_filtered = _filter_goids(goids, cfg)
-    coverage_filtered = _filter_coverage_lines(coverage, cfg)
+    goids_filtered = _filter_goids(goids, snapshot)
+    coverage_filtered = _filter_coverage_lines(coverage, snapshot)
     joined = _join_goids_with_coverage(goids_filtered, coverage_filtered)
     aggregated = _aggregate_coverage(joined, goids_filtered)
     result_expr = _enrich_coverage_results(aggregated)
 
     try:
-        _write_coverage_results(gateway, cfg, result_expr)
+        _write_coverage_results(gateway, snapshot, result_expr)
     except DuckDBError as exc:
         log.warning("coverage_functions: failed to write results: %s", exc)
         return
@@ -133,24 +131,24 @@ def compute_coverage_functions(
     log.info(
         "coverage_functions populated: %d rows for %s@%s",
         row_count,
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
     )
 
 
-def _filter_goids(table: it.Table, cfg: CoverageAnalyticsStepConfig) -> it.Table:
-    predicate = bool_and(
-        ibis_bool(table.repo == cfg.repo),
-        ibis_bool(table.commit == cfg.commit),
+def _filter_goids(table: it.Table, snapshot: SnapshotRef) -> it.Table:
+    predicate = and_predicates(
+        ibis_bool(table.repo == snapshot.repo),
+        ibis_bool(table.commit == snapshot.commit),
         ibis_bool(table.kind.isin(literal_sequence(["function", "method"]))),
     )
     return table.filter(predicate)
 
 
-def _filter_coverage_lines(table: it.Table, cfg: CoverageAnalyticsStepConfig) -> it.Table:
-    predicate = bool_and(
-        ibis_bool(table.repo == cfg.repo),
-        ibis_bool(table.commit == cfg.commit),
+def _filter_coverage_lines(table: it.Table, snapshot: SnapshotRef) -> it.Table:
+    predicate = and_predicates(
+        ibis_bool(table.repo == snapshot.repo),
+        ibis_bool(table.commit == snapshot.commit),
     )
     return table.filter(predicate)
 
@@ -171,7 +169,7 @@ def _aggregate_coverage(joined: it.Table, goids: it.Table) -> it.Table:
     executable = ibis_bool(joined["is_executable"])
     covered = ibis_bool(joined["is_covered"])
     executable_int = cast("it.IntegerColumn", executable.cast("int64"))
-    covered_int = cast("it.IntegerColumn", bool_and(executable, covered).cast("int64"))
+    covered_int = cast("it.IntegerColumn", and_predicates(executable, covered).cast("int64"))
     grouped = joined.group_by(
         goids.goid_h128,
         goids.urn,
@@ -223,13 +221,13 @@ def _enrich_coverage_results(aggregated: it.Table) -> it.Table:
 
 def _write_coverage_results(
     gateway: StorageGateway,
-    cfg: CoverageAnalyticsStepConfig,
+    snapshot: SnapshotRef,
     result_expr: it.Table,
 ) -> None:
     table = gateway.ibis.table("analytics.coverage_functions")
-    where = bool_and(
-        ibis_bool(table.repo == cfg.repo),
-        ibis_bool(table.commit == cfg.commit),
+    where = and_predicates(
+        ibis_bool(table.repo == snapshot.repo),
+        ibis_bool(table.commit == snapshot.commit),
     )
     gateway.ibis.delete("analytics.coverage_functions", where=where)
     gateway.ibis.write("analytics.coverage_functions", result_expr)

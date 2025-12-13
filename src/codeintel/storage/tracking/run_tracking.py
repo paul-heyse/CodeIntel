@@ -11,13 +11,17 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 
-from codeintel.storage.helpers.json import decode_json_list, encode_json_compact
+from codeintel.storage.helpers.json import (
+    deserialize_str_tuple,
+    serialize_str_sequence,
+)
+from codeintel.storage.helpers.time import utc_now
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
 
     from duckdb import DuckDBPyConnection
 
@@ -44,52 +48,6 @@ StepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
 
 ModuleKind = Literal["ingestion", "graphs", "analytics"]
 """Classification of pipeline module."""
-
-
-def _now() -> datetime:
-    """Return current UTC timestamp.
-
-    Returns
-    -------
-    datetime
-        Current datetime with UTC timezone.
-    """
-    return datetime.now(tz=UTC)
-
-
-def _serialize_datasets(datasets: Sequence[str]) -> str:
-    """Serialize requested datasets to JSON.
-
-    Parameters
-    ----------
-    datasets
-        Sequence of dataset names.
-
-    Returns
-    -------
-    str
-        JSON-encoded list of dataset names.
-    """
-    return encode_json_compact(list(datasets))
-
-
-def _deserialize_datasets(raw: str | None) -> tuple[str, ...]:
-    """Deserialize datasets from JSON.
-
-    Parameters
-    ----------
-    raw
-        JSON-encoded list or None.
-
-    Returns
-    -------
-    tuple[str, ...]
-        Tuple of dataset names.
-    """
-    if not raw:
-        return ()
-    items = decode_json_list(raw)
-    return tuple(str(x) for x in items)
 
 
 @dataclass(frozen=True)
@@ -225,7 +183,7 @@ class StepCompletionParams:
             name=self.name,
             status=self.status,
             started_at=self.started_at,
-            completed_at=_now(),
+            completed_at=utc_now(),
             row_counts=self.row_counts,
             extra=self.extra,
         )
@@ -262,7 +220,7 @@ class PipelineRunTracking:
         status
             Initial status (default: "running").
         """
-        datasets_json = _serialize_datasets(ctx.requested_datasets)
+        datasets_json = serialize_str_sequence(ctx.requested_datasets)
         self.con.execute(
             """
             INSERT OR REPLACE INTO metadata.pipeline_runs (
@@ -289,7 +247,7 @@ class PipelineRunTracking:
                 ctx.trigger,
                 ctx.requested_operation,
                 datasets_json,
-                _now(),
+                utc_now(),
                 None,
                 status,
                 None,
@@ -325,7 +283,7 @@ class PipelineRunTracking:
                 completed_at = ?
             WHERE run_id = ?
             """,
-            [status, error_summary, _now(), run_id],
+            [status, error_summary, utc_now(), run_id],
         )
 
     def fetch_run(self, run_id: str) -> PipelineRunRecord | None:
@@ -390,7 +348,7 @@ class PipelineRunTracking:
             started_at=started_at,
             completed_at=completed_at,
             requested_operation=str(requested_operation) if requested_operation else None,
-            requested_datasets=_deserialize_datasets(requested_datasets_raw),
+            requested_datasets=deserialize_str_tuple(requested_datasets_raw),
             error_summary=str(error_summary) if error_summary else None,
             pipeline_name=str(pipeline_name) if pipeline_name else None,
         )
@@ -531,7 +489,7 @@ class PipelineRunTracking:
         datetime
             The started_at timestamp for use in complete_step.
         """
-        started_at = _now()
+        started_at = utc_now()
         record = PipelineStepRecord(
             run_id=run_id,
             module=module,
@@ -619,7 +577,7 @@ class PipelineRunTracking:
                     started_at=started_at,
                     completed_at=completed_at,
                     requested_operation=str(requested_operation) if requested_operation else None,
-                    requested_datasets=_deserialize_datasets(requested_datasets_raw),
+                    requested_datasets=deserialize_str_tuple(requested_datasets_raw),
                     error_summary=str(error_summary) if error_summary else None,
                     pipeline_name=str(pipeline_name) if pipeline_name else None,
                 )

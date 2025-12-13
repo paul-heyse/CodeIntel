@@ -38,8 +38,6 @@ MODULE_COLUMNS: tuple[str, ...] = (
     "role_sources_json",
     "created_at",
 )
-LEGACY_FUNCTION_TUPLE_LEN = 5
-LEGACY_MODULE_TUPLE_LEN = 5
 
 
 @dataclass(frozen=True)
@@ -287,28 +285,22 @@ def normalize_function_row(
         )
 
     values = tuple(raw)
-    if len(values) == LEGACY_FUNCTION_TUPLE_LEN:
-        _, _, function_goid_h128, role, role_confidence = values
-        framework = None
-        role_sources_json = "[]"
-        created = created_at
-    elif len(values) == len(FUNCTION_COLUMNS):
-        (
-            _,
-            _,
-            function_goid_h128,
-            role,
-            framework,
-            role_confidence,
-            role_sources_json,
-            created,
-        ) = values
-    else:
+    if len(values) != len(FUNCTION_COLUMNS):
         message = (
-            f"Expected {len(FUNCTION_COLUMNS)} values for function role row "
-            f"or legacy {LEGACY_FUNCTION_TUPLE_LEN}-tuple, got {len(values)}"
+            f"Expected {len(FUNCTION_COLUMNS)} values for function role row, got {len(values)}"
         )
         raise ValueError(message)
+
+    (
+        _,
+        _,
+        function_goid_h128,
+        role,
+        framework,
+        role_confidence,
+        role_sources_json,
+        created,
+    ) = values
 
     return FunctionSemanticRoleRow(
         repo=repo,
@@ -381,26 +373,19 @@ def normalize_module_row(
         )
 
     values = tuple(raw)
-    if len(values) == LEGACY_MODULE_TUPLE_LEN:
-        _, _, module, role, role_confidence = values
-        role_sources_json = "[]"
-        created = created_at
-    elif len(values) == len(MODULE_COLUMNS):
-        (
-            _,
-            _,
-            module,
-            role,
-            role_confidence,
-            role_sources_json,
-            created,
-        ) = values
-    else:
-        message = (
-            f"Expected {len(MODULE_COLUMNS)} values for module role row "
-            f"or legacy {LEGACY_MODULE_TUPLE_LEN}-tuple, got {len(values)}"
-        )
+    if len(values) != len(MODULE_COLUMNS):
+        message = f"Expected {len(MODULE_COLUMNS)} values for module role row, got {len(values)}"
         raise ValueError(message)
+
+    (
+        _,
+        _,
+        module,
+        role,
+        role_confidence,
+        role_sources_json,
+        created,
+    ) = values
 
     return ModuleSemanticRoleRow(
         repo=repo,
@@ -415,8 +400,6 @@ def normalize_module_row(
 
 __all__ = [
     "FUNCTION_COLUMNS",
-    "LEGACY_FUNCTION_TUPLE_LEN",
-    "LEGACY_MODULE_TUPLE_LEN",
     "MODULE_COLUMNS",
     "FunctionSemanticRoleRow",
     "ModuleSemanticRoleRow",

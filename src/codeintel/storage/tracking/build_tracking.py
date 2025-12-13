@@ -9,12 +9,18 @@ All DuckDB access is encapsulated here, following the storage layer pattern.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.helpers.json import decode_json_list, encode_json_compact
+from codeintel.storage.helpers.json import (
+    decode_json_list,
+    deserialize_str_tuple,
+    encode_json_compact,
+    serialize_str_sequence,
+)
+from codeintel.storage.helpers.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -78,61 +84,15 @@ def _parse_run_row(row: tuple[Any, ...]) -> BuildRunRecord:
         run_id=str(row[0]),
         repo=str(row[1]),
         commit=str(row[2]),
-        requested_targets=_deserialize_targets(cast("str | None", row[3])),
-        computed_targets=_deserialize_targets(cast("str | None", row[4])),
-        skipped_targets=_deserialize_targets(cast("str | None", row[5])),
+        requested_targets=deserialize_str_tuple(cast("str | None", row[3])),
+        computed_targets=deserialize_str_tuple(cast("str | None", row[4])),
+        skipped_targets=deserialize_str_tuple(cast("str | None", row[5])),
         started_at=cast("datetime", row[6]),
         completed_at=cast("datetime | None", row[7]),
         status=cast("BuildStatus", row[8]),
         error_summary=str(row[9]) if row[9] is not None else None,
         duration_ms=float(row[10]) if row[10] is not None else None,
     )
-
-
-def _now() -> datetime:
-    """Return current UTC timestamp.
-
-    Returns
-    -------
-    datetime
-        Current datetime with UTC timezone.
-    """
-    return datetime.now(tz=UTC)
-
-
-def _serialize_targets(targets: tuple[str, ...]) -> str:
-    """Serialize targets to JSON array.
-
-    Parameters
-    ----------
-    targets
-        Tuple of target names.
-
-    Returns
-    -------
-    str
-        JSON-encoded array of target names.
-    """
-    return encode_json_compact(list(targets))
-
-
-def _deserialize_targets(raw: str | None) -> tuple[str, ...]:
-    """Deserialize targets from JSON array.
-
-    Parameters
-    ----------
-    raw
-        JSON-encoded array or None.
-
-    Returns
-    -------
-    tuple[str, ...]
-        Tuple of target names.
-    """
-    if not raw:
-        return ()
-    items = decode_json_list(raw)
-    return tuple(str(x) for x in items)
 
 
 class BuildTracking:
@@ -172,32 +132,51 @@ class BuildTracking:
     def save_manifest(self, manifest: OutputManifest) -> None:
         """Save or update an output manifest.
 
-        Uses INSERT OR REPLACE to upsert the manifest record.
+        Uses upsert to insert or update the manifest record.
 
         Parameters
         ----------
         manifest
             The manifest to save.
         """
-        self._con.execute(
-            """
-            INSERT OR REPLACE INTO build.output_manifests (
-                target, repo, commit, plugin, computed_at, duration_ms,
-                input_hash, output_hash, row_count, options_hash
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        self._backend.upsert(
+            "build.output_manifests",
             [
-                manifest.target,
-                manifest.repo,
-                manifest.commit,
-                manifest.plugin,
-                manifest.computed_at,
-                manifest.duration_ms,
-                manifest.input_hash,
-                manifest.output_hash,
-                manifest.row_count,
-                manifest.options_hash,
+                (
+                    manifest.target,
+                    manifest.repo,
+                    manifest.commit,
+                    manifest.plugin,
+                    manifest.computed_at,
+                    manifest.duration_ms,
+                    manifest.input_hash,
+                    manifest.output_hash,
+                    manifest.row_count,
+                    manifest.options_hash,
+                )
             ],
+            columns=(
+                "target",
+                "repo",
+                "commit",
+                "plugin",
+                "computed_at",
+                "duration_ms",
+                "input_hash",
+                "output_hash",
+                "row_count",
+                "options_hash",
+            ),
+            conflict_columns=("target", "repo", "commit"),
+            update_columns=(
+                "plugin",
+                "computed_at",
+                "duration_ms",
+                "input_hash",
+                "output_hash",
+                "row_count",
+                "options_hash",
+            ),
         )
 
     def load_manifest(self, target: str, repo: str, commit: str) -> OutputManifest | None:
@@ -286,27 +265,36 @@ class BuildTracking:
         record
             The run record to save.
         """
-        self._con.execute(
-            """
-            INSERT INTO build.runs (
-                run_id, repo, commit, requested_targets, computed_targets,
-                skipped_targets, started_at, completed_at, status,
-                error_summary, duration_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        self._backend.bulk_insert(
+            "build.runs",
             [
-                record.run_id,
-                record.repo,
-                record.commit,
-                _serialize_targets(record.requested_targets),
-                _serialize_targets(record.computed_targets),
-                _serialize_targets(record.skipped_targets),
-                record.started_at,
-                record.completed_at,
-                record.status,
-                record.error_summary,
-                record.duration_ms,
+                (
+                    record.run_id,
+                    record.repo,
+                    record.commit,
+                    serialize_str_sequence(record.requested_targets),
+                    serialize_str_sequence(record.computed_targets),
+                    serialize_str_sequence(record.skipped_targets),
+                    record.started_at,
+                    record.completed_at,
+                    record.status,
+                    record.error_summary,
+                    record.duration_ms,
+                )
             ],
+            columns=(
+                "run_id",
+                "repo",
+                "commit",
+                "requested_targets",
+                "computed_targets",
+                "skipped_targets",
+                "started_at",
+                "completed_at",
+                "status",
+                "error_summary",
+                "duration_ms",
+            ),
         )
 
     def complete_run(
@@ -332,7 +320,7 @@ class BuildTracking:
         error_summary
             Error summary if failed.
         """
-        completed_at = _now()
+        completed_at = utc_now()
 
         result = self._con.execute(
             "SELECT started_at FROM build.runs WHERE run_id = ?",
@@ -358,8 +346,8 @@ class BuildTracking:
             [
                 completed_at,
                 status,
-                _serialize_targets(computed_targets),
-                _serialize_targets(skipped_targets),
+                serialize_str_sequence(computed_targets),
+                serialize_str_sequence(skipped_targets),
                 error_summary,
                 duration_ms,
                 run_id,
@@ -453,7 +441,7 @@ class BuildTracking:
         if not records:
             return 0
 
-        recorded_at = _now()
+        recorded_at = utc_now()
         rows: list[tuple[object, ...]] = []
 
         for rec in records:

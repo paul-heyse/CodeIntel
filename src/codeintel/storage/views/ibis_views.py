@@ -26,27 +26,6 @@ if TYPE_CHECKING:
 _ = Any
 
 
-def _table(con: DuckDBBackend, qualified_name: str) -> it.Table:
-    """Return table using database qualifier when provided.
-
-    Parameters
-    ----------
-    con
-        Ibis DuckDB backend connection.
-    qualified_name
-        Table name, optionally schema-qualified (e.g., "analytics.function_metrics").
-
-    Returns
-    -------
-    it.Table
-        Ibis table expression.
-    """
-    if "." in qualified_name:
-        database, table = qualified_name.split(".", 1)
-        return con.table(table, database=database)
-    return con.table(qualified_name)
-
-
 def _create_view(con: DuckDBBackend, qualified_name: str, expr: it.Table) -> None:
     """Create view using database qualifier when provided.
 
@@ -145,9 +124,8 @@ def build_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    fm: it.Table = _table(con, "analytics.function_metrics")
-    ft: it.Table = _table(con, "analytics.function_types").select(
+    fm: it.Table = ibis_gw.table("analytics.function_metrics")
+    ft: it.Table = ibis_gw.table("analytics.function_types").select(
         "function_goid_h128",
         "repo",
         "commit",
@@ -236,9 +214,8 @@ def build_docs_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    rf: it.Table = _table(con, "analytics.goid_risk_factors")
-    fm: it.Table = _table(con, "analytics.function_metrics")
+    rf: it.Table = ibis_gw.table("analytics.goid_risk_factors")
+    fm: it.Table = ibis_gw.table("analytics.function_metrics")
 
     joined = rf.left_join(
         fm,
@@ -318,8 +295,7 @@ def build_callgraph_degree(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    edges: it.Table = _table(con, "graph.call_graph_edges")
+    edges: it.Table = ibis_gw.table("graph.call_graph_edges")
 
     out_degree = edges.group_by(["repo", "commit", "caller_goid_h128"]).aggregate(
         call_out_degree=edges.callee_goid_h128.count()
@@ -366,9 +342,8 @@ def build_goid_crosswalk_join(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    goids: it.Table = _table(con, "core.goids")
-    crosswalk: it.Table = _table(con, "core.goid_crosswalk")
+    goids: it.Table = ibis_gw.table("core.goids")
+    crosswalk: it.Table = ibis_gw.table("core.goid_crosswalk")
 
     joined = goids.inner_join(
         crosswalk,
@@ -413,9 +388,8 @@ def build_goid_crosswalk_mismatches(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    goids: it.Table = _table(con, "core.goids")
-    crosswalk: it.Table = _table(con, "core.goid_crosswalk")
+    goids: it.Table = ibis_gw.table("core.goids")
+    crosswalk: it.Table = ibis_gw.table("core.goid_crosswalk")
 
     joined = goids.inner_join(
         crosswalk,
@@ -464,8 +438,7 @@ def build_function_hotspots(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    rf: it.Table = _table(con, "analytics.goid_risk_factors")
+    rf: it.Table = ibis_gw.table("analytics.goid_risk_factors")
     min_score = rf.hotspot_score.min()
     max_score = rf.hotspot_score.max()
     score_range = max_score.cast("float64") - min_score.cast("float64")
@@ -510,8 +483,7 @@ def build_import_graph_degree(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    edges: it.Table = _table(con, "graph.import_graph_edges")
+    edges: it.Table = ibis_gw.table("graph.import_graph_edges")
 
     out_degree = edges.group_by(["repo", "commit", "src_module"]).aggregate(
         import_out_degree=edges.dst_module.count()
@@ -551,10 +523,9 @@ def build_call_graph_enriched(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    edges: it.Table = _table(con, "graph.call_graph_edges")
-    goids: it.Table = _table(con, "core.goids")
-    risk: it.Table = _table(con, "analytics.goid_risk_factors")
+    edges: it.Table = ibis_gw.table("graph.call_graph_edges")
+    goids: it.Table = ibis_gw.table("core.goids")
+    risk: it.Table = ibis_gw.table("analytics.goid_risk_factors")
 
     caller_goids = goids.view()
     callee_goids = goids.view()
@@ -710,11 +681,10 @@ def build_docs_module_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    modules: it.Table = _table(con, "core.modules")
-    graph_metrics: it.Table = _table(con, "analytics.graph_metrics_modules")
-    subsystem_modules: it.Table = _table(con, "analytics.subsystem_modules")
-    subsystems: it.Table = _table(con, "analytics.subsystems")
+    modules: it.Table = ibis_gw.table("core.modules")
+    graph_metrics: it.Table = ibis_gw.table("analytics.graph_metrics_modules")
+    subsystem_modules: it.Table = ibis_gw.table("analytics.subsystem_modules")
+    subsystems: it.Table = ibis_gw.table("analytics.subsystems")
 
     joined = (
         modules.left_join(
@@ -983,16 +953,15 @@ def build_docs_function_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    fp: it.Table = _table(con, "analytics.function_profile").view()
-    gm: it.Table = _table(con, "analytics.graph_metrics_functions").view()
-    gmx: it.Table = _table(con, "analytics.graph_metrics_functions_ext").view()
-    tgf: it.Table = _table(con, "analytics.test_graph_metrics_functions").view()
-    cfg_fn: it.Table = _table(con, "analytics.cfg_function_metrics").view()
-    dfg_fn: it.Table = _table(con, "analytics.dfg_function_metrics").view()
-    mp: it.Table = _table(con, "analytics.module_profile").view()
-    sm: it.Table = _table(con, "analytics.subsystem_modules").view()
-    ss: it.Table = _table(con, "analytics.subsystems").view()
+    fp: it.Table = ibis_gw.table("analytics.function_profile").view()
+    gm: it.Table = ibis_gw.table("analytics.graph_metrics_functions").view()
+    gmx: it.Table = ibis_gw.table("analytics.graph_metrics_functions_ext").view()
+    tgf: it.Table = ibis_gw.table("analytics.test_graph_metrics_functions").view()
+    cfg_fn: it.Table = ibis_gw.table("analytics.cfg_function_metrics").view()
+    dfg_fn: it.Table = ibis_gw.table("analytics.dfg_function_metrics").view()
+    mp: it.Table = ibis_gw.table("analytics.module_profile").view()
+    sm: it.Table = ibis_gw.table("analytics.subsystem_modules").view()
+    ss: it.Table = ibis_gw.table("analytics.subsystems").view()
 
     joined = (
         fp.left_join(
@@ -1211,9 +1180,8 @@ def build_docs_function_history(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    fp: it.Table = _table(con, "analytics.function_profile")
-    fh: it.Table = _table(con, "analytics.function_history")
+    fp: it.Table = ibis_gw.table("analytics.function_profile")
+    fh: it.Table = ibis_gw.table("analytics.function_history")
 
     joined = fp.left_join(
         fh,
@@ -1260,8 +1228,7 @@ def build_docs_function_history_timeseries(ibis_gw: IbisViewGateway) -> it.Table
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    h: it.Table = _table(con, "analytics.history_timeseries")
+    h: it.Table = ibis_gw.table("analytics.history_timeseries")
 
     return h.filter(cast("Any", h.entity_kind == "function")).select(
         h.repo,
@@ -1296,11 +1263,10 @@ def build_docs_cfg_block_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    cb: it.Table = _table(con, "graph.cfg_blocks")
-    g: it.Table = _table(con, "core.goids")
-    fp: it.Table = _table(con, "analytics.function_profile")
-    bm: it.Table = _table(con, "analytics.cfg_block_metrics")
+    cb: it.Table = ibis_gw.table("graph.cfg_blocks")
+    g: it.Table = ibis_gw.table("core.goids")
+    fp: it.Table = ibis_gw.table("analytics.function_profile")
+    bm: it.Table = ibis_gw.table("analytics.cfg_block_metrics")
 
     joined = (
         cb.inner_join(g, [g.goid_h128 == cb.function_goid_h128])
@@ -1372,11 +1338,10 @@ def build_docs_dfg_block_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    cb: it.Table = _table(con, "graph.cfg_blocks")
-    g: it.Table = _table(con, "core.goids")
-    fp: it.Table = _table(con, "analytics.function_profile")
-    dbm: it.Table = _table(con, "analytics.dfg_block_metrics")
+    cb: it.Table = ibis_gw.table("graph.cfg_blocks")
+    g: it.Table = ibis_gw.table("core.goids")
+    fp: it.Table = ibis_gw.table("analytics.function_profile")
+    dbm: it.Table = ibis_gw.table("analytics.dfg_block_metrics")
 
     joined = (
         cb.inner_join(g, [g.goid_h128 == cb.function_goid_h128])
@@ -1443,8 +1408,7 @@ def build_docs_module_history_timeseries(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    h: it.Table = _table(con, "analytics.history_timeseries")
+    h: it.Table = ibis_gw.table("analytics.history_timeseries")
 
     return h.filter(cast("Any", h.entity_kind == "module")).select(
         h.repo,
@@ -1474,16 +1438,15 @@ def build_docs_module_architecture_full(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    gm: it.Table = _table(con, "analytics.graph_metrics_modules")
-    m: it.Table = _table(con, "core.modules")
-    mp: it.Table = _table(con, "analytics.module_profile")
-    gmx: it.Table = _table(con, "analytics.graph_metrics_modules_ext")
-    sym: it.Table = _table(con, "analytics.symbol_graph_metrics_modules")
-    cfgm: it.Table = _table(con, "analytics.config_graph_metrics_modules")
-    sm: it.Table = _table(con, "analytics.subsystem_modules")
-    sg: it.Table = _table(con, "analytics.subsystem_graph_metrics")
-    sa: it.Table = _table(con, "analytics.subsystem_agreement")
+    gm: it.Table = ibis_gw.table("analytics.graph_metrics_modules")
+    m: it.Table = ibis_gw.table("core.modules")
+    mp: it.Table = ibis_gw.table("analytics.module_profile")
+    gmx: it.Table = ibis_gw.table("analytics.graph_metrics_modules_ext")
+    sym: it.Table = ibis_gw.table("analytics.symbol_graph_metrics_modules")
+    cfgm: it.Table = ibis_gw.table("analytics.config_graph_metrics_modules")
+    sm: it.Table = ibis_gw.table("analytics.subsystem_modules")
+    sg: it.Table = ibis_gw.table("analytics.subsystem_graph_metrics")
+    sa: it.Table = ibis_gw.table("analytics.subsystem_agreement")
 
     joined = (
         gm.left_join(m, [m.module == gm.module])
@@ -1623,8 +1586,7 @@ def build_docs_entrypoints(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    return _table(con, "analytics.entrypoints")
+    return ibis_gw.table("analytics.entrypoints")
 
 
 @register_view("docs.v_external_dependencies")
@@ -1641,8 +1603,7 @@ def build_docs_external_dependencies(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    return _table(con, "analytics.external_dependencies")
+    return ibis_gw.table("analytics.external_dependencies")
 
 
 @register_view("docs.v_external_dependency_calls")
@@ -1659,8 +1620,7 @@ def build_docs_external_dependency_calls(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    return _table(con, "analytics.external_dependency_calls")
+    return ibis_gw.table("analytics.external_dependency_calls")
 
 
 @register_view("docs.v_data_models")
@@ -1840,8 +1800,7 @@ def build_docs_data_model_fields(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    return _table(con, "analytics.data_model_fields")
+    return ibis_gw.table("analytics.data_model_fields")
 
 
 @register_view("docs.v_data_model_relationships")
@@ -1858,8 +1817,7 @@ def build_docs_data_model_relationships(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    return _table(con, "analytics.data_model_relationships")
+    return ibis_gw.table("analytics.data_model_relationships")
 
 
 @register_view("docs.v_data_model_usage")
@@ -1876,10 +1834,9 @@ def build_docs_data_model_usage(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    u: it.Table = _table(con, "analytics.data_model_usage")
-    dm: it.Table = _table(con, "analytics.data_models")
-    fp: it.Table = _table(con, "analytics.function_profile")
+    u: it.Table = ibis_gw.table("analytics.data_model_usage")
+    dm: it.Table = ibis_gw.table("analytics.data_models")
+    fp: it.Table = ibis_gw.table("analytics.function_profile")
 
     joined = u.left_join(
         dm,
@@ -1929,9 +1886,8 @@ def build_docs_config_data_flow(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    c: it.Table = _table(con, "analytics.config_data_flow")
-    fp: it.Table = _table(con, "analytics.function_profile")
+    c: it.Table = ibis_gw.table("analytics.config_data_flow")
+    fp: it.Table = ibis_gw.table("analytics.function_profile")
 
     joined = c.left_join(
         fp,
@@ -1974,11 +1930,10 @@ def build_docs_module_with_subsystem(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    sm: it.Table = _table(con, "analytics.subsystem_modules")
-    subs: it.Table = _table(con, "analytics.subsystems")
-    m: it.Table = _table(con, "core.modules")
-    gm: it.Table = _table(con, "analytics.graph_metrics_modules")
+    sm: it.Table = ibis_gw.table("analytics.subsystem_modules")
+    subs: it.Table = ibis_gw.table("analytics.subsystems")
+    m: it.Table = ibis_gw.table("core.modules")
+    gm: it.Table = ibis_gw.table("analytics.graph_metrics_modules")
 
     joined = (
         sm.left_join(
@@ -2041,8 +1996,7 @@ def build_docs_subsystem_agreement(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    return _table(con, "analytics.subsystem_agreement")
+    return ibis_gw.table("analytics.subsystem_agreement")
 
 
 @register_view("docs.v_test_to_function")
@@ -2059,10 +2013,9 @@ def build_docs_test_to_function(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    e: it.Table = _table(con, "analytics.test_coverage_edges")
-    tc: it.Table = _table(con, "analytics.test_catalog")
-    rf: it.Table = _table(con, "analytics.goid_risk_factors")
+    e: it.Table = ibis_gw.table("analytics.test_coverage_edges")
+    tc: it.Table = ibis_gw.table("analytics.test_catalog")
+    rf: it.Table = ibis_gw.table("analytics.goid_risk_factors")
 
     joined = e.left_join(
         tc,
@@ -2124,9 +2077,8 @@ def build_docs_test_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    p: it.Table = _table(con, "analytics.test_profile")
-    b: it.Table = _table(con, "analytics.behavioral_coverage")
+    p: it.Table = ibis_gw.table("analytics.test_profile")
+    b: it.Table = ibis_gw.table("analytics.behavioral_coverage")
 
     joined = p.left_join(
         b,
@@ -2198,9 +2150,8 @@ def build_docs_behavioral_classification_input(ibis_gw: IbisViewGateway) -> it.T
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    p: it.Table = _table(con, "analytics.test_profile")
-    b: it.Table = _table(con, "analytics.behavioral_coverage")
+    p: it.Table = ibis_gw.table("analytics.test_profile")
+    b: it.Table = ibis_gw.table("analytics.behavioral_coverage")
 
     joined = p.left_join(
         b,
@@ -2245,8 +2196,7 @@ def build_docs_symbol_module_graph(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    return _table(con, "analytics.symbol_graph_metrics_modules")
+    return ibis_gw.table("analytics.symbol_graph_metrics_modules")
 
 
 @register_view("docs.v_validation_summary")
@@ -2263,9 +2213,8 @@ def build_docs_validation_summary(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    fv: it.Table = _table(con, "analytics.function_validation")
-    gv: it.Table = _table(con, "analytics.graph_validation")
+    fv: it.Table = ibis_gw.table("analytics.function_validation")
+    gv: it.Table = ibis_gw.table("analytics.graph_validation")
 
     func_part = fv.select(
         ibis.literal("function").name("domain"),
@@ -2302,12 +2251,11 @@ def build_docs_ide_hints(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    con = ibis_gw.con
-    m: it.Table = _table(con, "core.modules")
-    mp: it.Table = _table(con, "analytics.module_profile")
-    gm: it.Table = _table(con, "analytics.graph_metrics_modules")
-    sm: it.Table = _table(con, "analytics.subsystem_modules")
-    subs: it.Table = _table(con, "analytics.subsystems")
+    m: it.Table = ibis_gw.table("core.modules")
+    mp: it.Table = ibis_gw.table("analytics.module_profile")
+    gm: it.Table = ibis_gw.table("analytics.graph_metrics_modules")
+    sm: it.Table = ibis_gw.table("analytics.subsystem_modules")
+    subs: it.Table = ibis_gw.table("analytics.subsystems")
 
     joined = (
         m.left_join(

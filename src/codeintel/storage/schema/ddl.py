@@ -11,20 +11,18 @@ Legacy string-based DDL constants have been removed.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
-
-import ibis
+from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.storage.constants import SCHEMAS
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.ibis_adapter import IbisGateway
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable
 
-    from duckdb import DuckDBPyConnection, DuckDBPyRelation
+    from duckdb import DuckDBPyConnection
 
-SCHEMAS = ("build", "core", "graph", "analytics", "docs")
 log = logging.getLogger(__name__)
 
 __all__ = [
@@ -37,10 +35,7 @@ __all__ = [
 
 
 def _get_policy_backend(con: DuckDBPyConnection) -> DuckDBPolicyBackend:
-    """Create a minimal policy backend wrapper for a raw connection.
-
-    This is a compatibility shim to allow existing code using raw connections
-    to use the policy backend. New code should use the StorageGateway directly.
+    """Create a policy backend wrapper for a raw connection.
 
     Parameters
     ----------
@@ -52,48 +47,7 @@ def _get_policy_backend(con: DuckDBPyConnection) -> DuckDBPolicyBackend:
     DuckDBPolicyBackend
         Policy backend instance wrapping the connection.
     """
-
-    class _MinimalGateway:
-        analytics: Any
-        build: Any
-        config: Any
-        core: Any
-        datasets: Any
-        docs: Any
-        graph: Any
-        runs: Any
-        ibis: IbisGateway
-        assets: Any
-        policy: Any
-
-        def __init__(self, connection: DuckDBPyConnection) -> None:
-            self._con = connection
-            self.analytics = None
-            self.assets = None
-            self.build = None
-            self.config = None
-            self.core = None
-            self.datasets = None
-            self.docs = None
-            self.graph = None
-            self.policy = None
-            self.runs = None
-            self.ibis = IbisGateway(ibis.duckdb.from_connection(connection))
-
-        @property
-        def con(self) -> DuckDBPyConnection:
-            return self._con
-
-        def close(self) -> None:
-            self._con.close()
-
-        def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBPyConnection:
-            return self._con.execute(sql, params)
-
-        def table(self, name: str) -> DuckDBPyRelation:
-            return self._con.table(name)
-
-    return DuckDBPolicyBackend(gateway=_MinimalGateway(con))
+    return MinimalStorageGateway(con).policy
 
 
 def create_schemas(con: DuckDBPyConnection) -> None:

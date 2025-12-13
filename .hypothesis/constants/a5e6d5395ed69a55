@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/view_names.py
+# hypothesis_version: 6.148.7
+
+['ALIAS_DOCS_VIEWS', 'DERIVED_DOCS_VIEWS', 'DOCS_VIEWS', 'FUNCTION_VIEW_NAMES', 'GRAPH_VIEW_NAMES', 'IDE_VIEW_NAMES', 'MODULE_VIEW_NAMES', 'SUBSYSTEM_VIEW_NAMES', 'TEST_VIEW_NAMES', 'docs.v_file_profile']

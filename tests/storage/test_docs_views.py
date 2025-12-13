@@ -22,7 +22,7 @@ import pytest
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.repositories.datasets import DatasetReadRepository
-from codeintel.storage.views import DERIVED_DOCS_VIEWS
+from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
 from tests._helpers import docs_views_ready_gateway, seed_call_graph_scoping
 from tests._helpers.docs_views import list_indexes, seed_subsystem
 

@@ -27,13 +27,10 @@ Some config/dataset modules import storage view builders. To avoid introducing
 import cycles, this package intentionally keeps its public surface small and
 does not re-export most gateway/view helpers.
 
-DuckDBPolicyBackend is safe to import here because it only depends on
-config.datasets (not on gateway_cache or other storage submodules that
-create cycles).
+Import DuckDBPolicyBackend directly from its submodule to avoid circular
+import issues when storage.views depends on storage.gateway.
 """
 
 from __future__ import annotations
 
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-
-__all__: list[str] = ["DuckDBPolicyBackend"]
+__all__: list[str] = []

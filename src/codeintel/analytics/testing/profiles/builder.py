@@ -21,6 +21,7 @@ from codeintel.analytics.testing.coverage.inputs import (
     TestGraphMetrics,
 )
 from codeintel.analytics.testing.profiles.rows import (
+    TestProfileInputs,
     build_behavioral_coverage_rows,
     build_test_profile_context,
     build_test_profile_rows,
@@ -28,11 +29,14 @@ from codeintel.analytics.testing.profiles.rows import (
     write_test_profile_rows,
 )
 from codeintel.analytics.testing.profiles.types import (
+    BehavioralCoverageOptions,
     IoFlags,
     TestAstInfo,
+    TestProfileOptions,
     TestRecord,
 )
 from codeintel.analytics.utilities.ast import resolve_call_target
+from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.ingestion.infrastructure.paths import relpath_to_module
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
@@ -43,7 +47,6 @@ if TYPE_CHECKING:
     from codeintel.analytics.testing.profiles.types import (
         BehavioralLLMRunner,
     )
-    from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
@@ -107,45 +110,59 @@ class BehavioralProfile:
     markers: list[str]
 
 
-def build_test_profile(gateway: StorageGateway, cfg: TestProfileStepConfig) -> None:
+def build_test_profile(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    options: TestProfileOptions | None = None,
+) -> None:
     """Populate analytics.test_profile for a repo snapshot.
 
     Parameters
     ----------
     gateway
         Storage gateway bound to the target DuckDB database.
-    cfg
-        Configuration containing repo identity and parsing options.
+    snapshot
+        Snapshot reference with repo, commit, and repo_root.
+    options
+        Optional test profile configuration options.
     """
+    opts = options or TestProfileOptions()
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.test_profile")
     con = gateway.con
-    tests: list[TestRecord] = _load_test_records(con, cfg.repo, cfg.commit)
+    tests: list[TestRecord] = _load_test_records(con, snapshot.repo, snapshot.commit)
     if not tests:
-        log.info("No tests found for %s@%s; skipping test_profile", cfg.repo, cfg.commit)
+        log.info("No tests found for %s@%s; skipping test_profile", snapshot.repo, snapshot.commit)
         return
 
-    functions_covered = _load_functions_covered(con, cfg.repo, cfg.commit)
-    subsystems_covered = _load_subsystems_covered(con, cfg.repo, cfg.commit)
-    tg_metrics = _load_test_graph_metrics(con, cfg.repo, cfg.commit)
-    io_spec_raw = cfg.io_spec if isinstance(cfg.io_spec, dict) else None
+    functions_covered = _load_functions_covered(con, snapshot.repo, snapshot.commit)
+    subsystems_covered = _load_subsystems_covered(con, snapshot.repo, snapshot.commit)
+    tg_metrics = _load_test_graph_metrics(con, snapshot.repo, snapshot.commit)
+    io_spec_raw = opts.io_spec if isinstance(opts.io_spec, dict) else None
     patterns = _patterns_from_io_spec(io_spec_raw)
-    ast_info = _build_test_ast_index(cfg.repo_root, tests, patterns)
-    ctx = build_test_profile_context(
-        cfg=cfg,
+    ast_info = _build_test_ast_index(snapshot.repo_root, tests, patterns)
+    inputs = TestProfileInputs(
         functions_covered=functions_covered,
         subsystems_covered=subsystems_covered,
         tg_metrics=tg_metrics,
         ast_info=ast_info,
     )
+    ctx = build_test_profile_context(
+        snapshot=snapshot,
+        inputs=inputs,
+        options=opts,
+    )
     rows = build_test_profile_rows(tests, ctx)
-    inserted = write_test_profile_rows(gateway, cfg, rows)
-    log.info("test_profile populated: %d rows for %s@%s", inserted, cfg.repo, cfg.commit)
+    inserted = write_test_profile_rows(gateway, snapshot, rows)
+    log.info("test_profile populated: %d rows for %s@%s", inserted, snapshot.repo, snapshot.commit)
 
 
 def build_behavioral_coverage(
     gateway: StorageGateway,
-    cfg: BehavioralCoverageStepConfig,
+    snapshot: SnapshotRef,
+    *,
+    options: BehavioralCoverageOptions | None = None,
     llm_runner: BehavioralLLMRunner | None = None,
 ) -> None:
     """Populate analytics.behavioral_coverage using heuristic tags.
@@ -154,16 +171,24 @@ def build_behavioral_coverage(
     ----------
     gateway
         Storage gateway bound to the target DuckDB database.
-    cfg
-        Configuration containing repo identity for tagging.
+    snapshot
+        Snapshot reference with repo, commit, and repo_root.
+    options
+        Optional behavioral coverage configuration options.
     llm_runner
         Optional callable that returns LLM-derived behavior tags; when absent,
         only heuristic tagging runs.
     """
-    rows = build_behavior_rows(gateway, cfg, llm_runner=llm_runner)
+    opts = options or BehavioralCoverageOptions()
+    rows = build_behavior_rows(gateway, snapshot, options=opts, llm_runner=llm_runner)
     models = build_behavioral_coverage_rows(rows)
-    inserted = write_behavioral_coverage_rows(gateway, cfg, models)
-    log.info("behavioral_coverage populated: %s rows for %s@%s", inserted, cfg.repo, cfg.commit)
+    inserted = write_behavioral_coverage_rows(gateway, snapshot, models)
+    log.info(
+        "behavioral_coverage populated: %s rows for %s@%s",
+        inserted,
+        snapshot.repo,
+        snapshot.commit,
+    )
 
 
 def infer_behavior_tags(

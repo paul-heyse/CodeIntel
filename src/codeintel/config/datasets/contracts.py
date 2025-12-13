@@ -81,7 +81,7 @@ from codeintel.config.datasets.rows import (
     typedness_row_to_tuple,
 )
 from codeintel.config.datasets.schema_provider import composite_schemas, table_schemas
-from codeintel.storage.views import DERIVED_DOCS_VIEWS
+from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -12,7 +12,6 @@ from codeintel.analytics.compute.hotspots.metrics import build_hotspots
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import HotspotsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.storage.ibis_types import and_predicates
 
@@ -80,12 +79,7 @@ class HotspotsPlugin(TargetPlugin):
         """
         max_commits = ctx.parameters.get("max_commits", int, default=2000)
 
-        cfg = HotspotsStepConfig(
-            snapshot=ctx.snapshot,
-            max_commits=max_commits,
-        )
-
-        build_hotspots(ctx.gateway, cfg, runner=None)
+        build_hotspots(ctx.gateway, ctx.snapshot, max_commits=max_commits, runner=None)
 
         row_counts = self._compute_row_counts(ctx)
         return TargetResult.succeeded(row_counts=row_counts)

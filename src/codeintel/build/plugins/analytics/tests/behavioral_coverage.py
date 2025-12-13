@@ -11,7 +11,6 @@ from codeintel.analytics.testing.profiles.builder import build_behavioral_covera
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import BehavioralCoverageStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -79,10 +78,6 @@ class BehavioralCoveragePlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = BehavioralCoverageStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         llm_runner: BehavioralLLMRunner | None = None
         llm_runner_raw = ctx.parameters.get_optional("behavioral_llm_runner", object)
         if llm_runner_raw is not None and callable(llm_runner_raw):
@@ -91,7 +86,7 @@ class BehavioralCoveragePlugin(TargetPlugin):
         try:
             build_behavioral_coverage(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 llm_runner=llm_runner,
             )
         except (RuntimeError, ValueError, OSError) as e:

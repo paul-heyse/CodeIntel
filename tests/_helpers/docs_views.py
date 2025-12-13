@@ -8,7 +8,7 @@ import duckdb
 
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema import apply_all_schemas
-from codeintel.storage.views import create_all_views
+from codeintel.storage.views.creation import create_all_views
 
 if TYPE_CHECKING:
     from pathlib import Path

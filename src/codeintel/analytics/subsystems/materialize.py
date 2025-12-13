@@ -15,6 +15,7 @@ from codeintel.analytics.runtime import (
     resolve_graph_runtime,
 )
 from codeintel.analytics.subsystems.affinity import (
+    AffinityWeights,
     build_weighted_graph,
     clusters_from_labels,
     graph_to_adjacency,
@@ -33,7 +34,7 @@ from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 if TYPE_CHECKING:
     import networkx as nx
 
-    from codeintel.config import SubsystemsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.engine import GraphEngine
     from codeintel.storage.gateway import StorageGateway
 
@@ -62,6 +63,18 @@ SUBSYSTEMS_COLS = [
 log = logging.getLogger(__name__)
 
 HASH_PREFIX_LENGTH = 16
+DEFAULT_MIN_MODULES = 3
+
+
+@dataclass(frozen=True)
+class SubsystemOptions:
+    """Options for subsystem inference."""
+
+    min_modules: int = DEFAULT_MIN_MODULES
+    max_subsystems: int | None = None
+    weights: AffinityWeights | None = None
+
+
 ROLE_TAGS = {
     "api": "api",
     "endpoint": "api",
@@ -88,7 +101,7 @@ ROLE_TAGS = {
 class SubsystemBuildContext:
     """Reusable context for assembling subsystem rows."""
 
-    cfg: SubsystemsStepConfig
+    snapshot: SnapshotRef
     labels: dict[str, str]
     tags_by_module: dict[str, list[str]]
     import_graph: nx.DiGraph
@@ -98,10 +111,11 @@ class SubsystemBuildContext:
 
 def build_subsystems(
     gateway: StorageGateway,
-    cfg: SubsystemsStepConfig,
+    snapshot: SnapshotRef,
     *,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     engine: GraphEngine | None = None,
+    options: SubsystemOptions | None = None,
 ) -> None:
     """
     Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit.
@@ -110,29 +124,34 @@ def build_subsystems(
     ----------
     gateway :
         Storage gateway backing the analytics tables.
-    cfg :
-        Subsystem inference configuration.
+    snapshot :
+        Repository and commit identifiers.
     runtime :
         Shared graph runtime or options describing how to build one.
     engine :
         Deprecated direct graph engine override; prefer `runtime`.
+    options :
+        Subsystem inference options.
     """
+    opts = options or SubsystemOptions()
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.subsystems")
     backend.ensure_table("analytics.subsystem_modules")
-    backend.delete_for_snapshot("analytics.subsystems", repo=cfg.repo, commit=cfg.commit)
-    backend.delete_for_snapshot("analytics.subsystem_modules", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot("analytics.subsystems", repo=snapshot.repo, commit=snapshot.commit)
+    backend.delete_for_snapshot(
+        "analytics.subsystem_modules", repo=snapshot.repo, commit=snapshot.commit
+    )
 
-    modules, tags_by_module = load_modules(gateway, cfg)
+    modules, tags_by_module = load_modules(gateway, snapshot)
     if not modules:
         log.info("No modules available for subsystem inference; skipping.")
         return
 
-    affinity_graph = build_weighted_graph(gateway, cfg, modules)
+    affinity_graph = build_weighted_graph(gateway, snapshot, modules, weights=opts.weights)
     adjacency = graph_to_adjacency(affinity_graph)
     labels = label_propagation_nx(affinity_graph, seed_labels_from_tags(tags_by_module))
-    labels = reassign_small_clusters(labels, adjacency, cfg.min_modules)
-    labels = limit_clusters(labels, adjacency, cfg.max_subsystems)
+    labels = reassign_small_clusters(labels, adjacency, opts.min_modules)
+    labels = limit_clusters(labels, adjacency, opts.max_subsystems)
 
     runtime_opts: GraphRuntimeOptions
     if isinstance(runtime, GraphRuntime):
@@ -152,15 +171,15 @@ def build_subsystems(
 
     resolved_runtime = resolve_graph_runtime(
         gateway,
-        cfg.snapshot,
+        snapshot,
         runtime_opts,
     )
     ctx = SubsystemBuildContext(
-        cfg=cfg,
+        snapshot=snapshot,
         labels=labels,
         tags_by_module=tags_by_module,
         import_graph=resolved_runtime.ensure_import_graph(),
-        risk_stats=aggregate_risk(gateway, cfg, labels),
+        risk_stats=aggregate_risk(gateway, snapshot, labels),
         now=datetime.now(UTC),
     )
     subsystem_rows, membership_rows = _build_rows(clusters_from_labels(labels), ctx)
@@ -182,8 +201,8 @@ def build_subsystems(
             "subsystems populated: %d subsystems, %d memberships for %s@%s",
             len(subsystem_rows),
             len(membership_rows),
-            cfg.repo,
-            cfg.commit,
+            snapshot.repo,
+            snapshot.commit,
         )
 
 
@@ -197,7 +216,7 @@ def _build_rows(
 
     for label, members in clusters.items():
         member_list = sorted(members)
-        subsystem_id = _subsystem_id(ctx.cfg.repo, member_list)
+        subsystem_id = _subsystem_id(ctx.snapshot.repo, member_list)
         dominant_role = _dominant_role(member_list, ctx.tags_by_module)
         name = _derive_name(member_list, subsystem_id, dominant_role)
         description = _describe_subsystem(member_list, name, dominant_role)
@@ -207,8 +226,8 @@ def _build_rows(
 
         subsystem_rows.append(
             (
-                ctx.cfg.repo,
-                ctx.cfg.commit,
+                ctx.snapshot.repo,
+                ctx.snapshot.commit,
                 subsystem_id,
                 name,
                 description,
@@ -230,8 +249,8 @@ def _build_rows(
 
         membership_rows.extend(
             (
-                ctx.cfg.repo,
-                ctx.cfg.commit,
+                ctx.snapshot.repo,
+                ctx.snapshot.commit,
                 subsystem_id,
                 module,
                 _role_from_tags(ctx.tags_by_module.get(module)),

@@ -16,7 +16,6 @@ from codeintel.analytics.functions import (
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
-from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.core.plugins.types.protocol import PluginMetadata
 
@@ -186,11 +185,7 @@ class FunctionMetricsPlugin(TargetPlugin):
             }
         )
 
-        cfg = FunctionAnalyticsStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
-        result = compute_function_metrics_and_types(ctx.gateway, cfg, options=opts)
+        result = compute_function_metrics_and_types(ctx.gateway, ctx.snapshot, options=opts)
 
         return TargetResult.succeeded(
             row_counts={

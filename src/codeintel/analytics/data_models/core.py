@@ -26,7 +26,7 @@ from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
-    from codeintel.config import DataModelsStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
@@ -754,7 +754,7 @@ def _gather_models_for_path(
     abs_path: Path,
     metas: list[ClassMeta],
     docstrings: dict[tuple[str, str], tuple[str | None, str | None]],
-    cfg: DataModelsStepConfig,
+    snapshot: SnapshotRef,
 ) -> list[ModelRecord]:
     parsed = parse_python_module(abs_path)
     if parsed is None:
@@ -774,7 +774,9 @@ def _gather_models_for_path(
         model_kind = _class_kind(decorators, [base["qualname"] for base in base_classes])
         fields, rel_hints = _build_field_specs(cls_node, model_kind=model_kind)
         doc_pair = docstrings.get((rel_path, meta.qualname), (None, None))
-        model_id = _compute_model_id(cfg.repo, cfg.commit, meta.module, meta.qualname, model_kind)
+        model_id = _compute_model_id(
+            snapshot.repo, snapshot.commit, meta.module, meta.qualname, model_kind
+        )
         models.append(
             ModelRecord(
                 model_id=model_id,
@@ -880,14 +882,14 @@ def _attach_relationships(models: list[ModelRecord]) -> None:
 
 def _persist_models(
     gateway: StorageGateway,
-    cfg: DataModelsStepConfig,
+    snapshot: SnapshotRef,
     models: list[ModelRecord],
     now: datetime,
 ) -> None:
     rows: list[tuple[object, ...]] = [
         (
-            cfg.repo,
-            cfg.commit,
+            snapshot.repo,
+            snapshot.commit,
             model.model_id,
             model.goid,
             model.model_name,
@@ -907,8 +909,8 @@ def _persist_models(
         field_rows.extend(
             [
                 (
-                    cfg.repo,
-                    cfg.commit,
+                    snapshot.repo,
+                    snapshot.commit,
                     model.model_id,
                     field_spec.name,
                     field_spec.type,
@@ -927,8 +929,8 @@ def _persist_models(
         relationship_rows.extend(
             [
                 (
-                    cfg.repo,
-                    cfg.commit,
+                    snapshot.repo,
+                    snapshot.commit,
                     model.model_id,
                     rel.target_model_id,
                     rel.target_module,
@@ -968,7 +970,7 @@ def _persist_models(
 
 def compute_data_models(
     gateway: StorageGateway,
-    cfg: DataModelsStepConfig,
+    snapshot: SnapshotRef,
 ) -> None:
     """
     Populate analytics.data_models with extracted model definitions.
@@ -977,37 +979,39 @@ def compute_data_models(
     ----------
     gateway
         Storage gateway scoped to the target repository.
-    cfg
-        Data model extraction configuration.
+    snapshot
+        Repository and commit snapshot reference.
     """
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.data_models")
     backend.ensure_table("analytics.data_model_fields")
     backend.ensure_table("analytics.data_model_relationships")
     con = gateway.con
-    backend.delete_for_snapshot("analytics.data_models", repo=cfg.repo, commit=cfg.commit)
-    backend.delete_for_snapshot("analytics.data_model_fields", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot("analytics.data_models", repo=snapshot.repo, commit=snapshot.commit)
     backend.delete_for_snapshot(
-        "analytics.data_model_relationships", repo=cfg.repo, commit=cfg.commit
+        "analytics.data_model_fields", repo=snapshot.repo, commit=snapshot.commit
+    )
+    backend.delete_for_snapshot(
+        "analytics.data_model_relationships", repo=snapshot.repo, commit=snapshot.commit
     )
 
-    class_metas = _load_class_metadata(con, cfg.repo, cfg.commit)
+    class_metas = _load_class_metadata(con, snapshot.repo, snapshot.commit)
     if not class_metas:
         log.info(
             "No class metadata found for %s@%s; skipping data model extraction",
-            cfg.repo,
-            cfg.commit,
+            snapshot.repo,
+            snapshot.commit,
         )
         return
 
     metas_by_path: dict[str, list[ClassMeta]] = {}
     for meta in class_metas:
         metas_by_path.setdefault(meta.rel_path, []).append(meta)
-    docs = _doc_map(con, repo=cfg.repo, commit=cfg.commit)
+    docs = _doc_map(con, repo=snapshot.repo, commit=snapshot.commit)
 
     models: list[ModelRecord] = []
     for rel_path, metas in metas_by_path.items():
-        abs_path = (Path(cfg.repo_root) / rel_path).resolve()
+        abs_path = (Path(snapshot.repo_root) / rel_path).resolve()
         if not abs_path.is_file():
             log.debug("Skipping %s; file missing on disk", abs_path)
             continue
@@ -1017,10 +1021,12 @@ def compute_data_models(
                 abs_path,
                 metas,
                 docs,
-                cfg,
+                snapshot,
             )
         )
 
     _attach_relationships(models)
-    _persist_models(gateway, cfg, models, datetime.now(tz=UTC))
-    log.info("data_models populated: %d models for %s@%s", len(models), cfg.repo, cfg.commit)
+    _persist_models(gateway, snapshot, models, datetime.now(tz=UTC))
+    log.info(
+        "data_models populated: %d models for %s@%s", len(models), snapshot.repo, snapshot.commit
+    )

@@ -72,8 +72,7 @@ class DatasetSchemaRegistry:
 
     This registry is the authoritative source for dataset schemas. It
     integrates with existing infrastructure (DATASET_CONTRACTS and
-    DATASET_SCHEMAS) to provide backward compatibility while enabling
-    the new unified architecture.
+    Pandera schemas) to provide the unified schema architecture.
 
     Attributes
     ----------

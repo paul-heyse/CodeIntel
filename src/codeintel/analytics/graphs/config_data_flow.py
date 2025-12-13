@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from codeintel.analytics.parsing.ast_cache import FunctionAst
-    from codeintel.config import ConfigDataFlowStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 CONFIG_DATA_FLOW_COLS = [
@@ -305,7 +305,7 @@ def _call_chain_id(
 
 def compute_config_data_flow(
     gateway: StorageGateway,
-    cfg: ConfigDataFlowStepConfig,
+    snapshot: SnapshotRef,
     *,
     call_graph: nx.DiGraph,
     ast_by_goid: dict[int, FunctionAst],
@@ -318,8 +318,8 @@ def compute_config_data_flow(
     ----------
     gateway
         Storage gateway providing DuckDB access.
-    cfg
-        Config data flow analytics configuration.
+    snapshot
+        Repository and commit identifiers.
     call_graph
         Call graph for the repository snapshot.
     ast_by_goid
@@ -330,18 +330,20 @@ def compute_config_data_flow(
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.config_data_flow")
     con = gateway.con
-    backend.delete_for_snapshot("analytics.config_data_flow", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot(
+        "analytics.config_data_flow", repo=snapshot.repo, commit=snapshot.commit
+    )
 
-    refs_by_path = _config_references(con, cfg.repo, cfg.commit)
+    refs_by_path = _config_references(con, snapshot.repo, snapshot.commit)
     if not refs_by_path:
         log.info(
             "No config references found for %s@%s; skipping config flow analysis",
-            cfg.repo,
-            cfg.commit,
+            snapshot.repo,
+            snapshot.commit,
         )
         return
 
-    entrypoints = _entrypoints(con, cfg.repo, cfg.commit)
+    entrypoints = _entrypoints(con, snapshot.repo, snapshot.commit)
     missing = missing_goids or set()
     if missing:
         log.debug(
@@ -358,7 +360,7 @@ def compute_config_data_flow(
     now = datetime.now(tz=UTC)
     rows_to_insert = _build_config_flow_rows(
         artifacts=artifacts,
-        cfg=cfg,
+        snapshot=snapshot,
         now=now,
     )
 
@@ -371,17 +373,19 @@ def compute_config_data_flow(
     log.info(
         "config_data_flow populated: %d rows for %s@%s",
         len(rows_to_insert),
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
     )
 
 
 def _build_config_flow_rows(
     *,
     artifacts: ConfigFlowArtifacts,
-    cfg: ConfigDataFlowStepConfig,
+    snapshot: SnapshotRef,
     now: datetime,
 ) -> list[tuple[object, ...]]:
+    max_paths_per_usage = 5
+    max_path_length = 10
     rows_to_insert: list[tuple[object, ...]] = []
     for goid, func_ast in artifacts.ast_by_goid.items():
         rel_path = normalize_rel_path(func_ast.rel_path)
@@ -395,7 +399,7 @@ def _build_config_flow_rows(
                 config_path=config_path,
                 rel_path=rel_path,
                 lines=lines,
-                max_examples=cfg.max_paths_per_usage,
+                max_examples=max_paths_per_usage,
             )
             visitor.visit(func_ast.node)
             if not visitor.result.kinds:
@@ -404,18 +408,20 @@ def _build_config_flow_rows(
                 artifacts.call_graph,
                 artifacts.entrypoints,
                 goid,
-                max_paths=cfg.max_paths_per_usage,
-                max_length=cfg.max_path_length,
+                max_paths=max_paths_per_usage,
+                max_length=max_path_length,
             )
             for usage_kind in sorted(visitor.result.kinds):
                 collector = visitor.result.evidence.get(usage_kind)
                 evidence = collector.to_dicts() if collector is not None else []
                 for chain in chains:
-                    chain_id = _call_chain_id(cfg.repo, cfg.commit, config_key, usage_kind, chain)
+                    chain_id = _call_chain_id(
+                        snapshot.repo, snapshot.commit, config_key, usage_kind, chain
+                    )
                     rows_to_insert.append(
                         (
-                            cfg.repo,
-                            cfg.commit,
+                            snapshot.repo,
+                            snapshot.commit,
                             config_key,
                             config_path,
                             goid,

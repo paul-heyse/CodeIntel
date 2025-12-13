@@ -36,7 +36,7 @@ from codeintel.serving.backend.query_api import ProfileQueriesApi
 from codeintel.serving.mcp import errors
 
 if TYPE_CHECKING:
-    from codeintel.config.steps_graphs import GraphRunScope
+    from codeintel.config.graph_helpers import GraphRunScope
     from codeintel.serving.backend.core import BackendContext, DuckDBConnection, DuckDBRepositories
     from codeintel.storage.repositories import ModuleRepository, SubsystemRepository
 

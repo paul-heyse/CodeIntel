@@ -21,19 +21,17 @@ from codeintel.config import (
     ConfigBuilder,
     SnapshotInit,
 )
+from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import assert_single_edge
 from tests._helpers.configs import ProvisionOptions
 from tests._helpers.orchestration import compute_coverage_edges, provision_graph_ready_repo
 
 if TYPE_CHECKING:
-    from codeintel.config import (
-        TestCoverageStepConfig,
-    )
     from codeintel.storage.gateway import DuckDBConnection
     from tests._helpers.configs import CoverageEdgeEnv
 
 
-def _insert_goids(con: DuckDBConnection, cfg: TestCoverageStepConfig) -> None:
+def _insert_goids(con: DuckDBConnection, snapshot: SnapshotRef) -> None:
     now = datetime.now(UTC)
     con.execute(
         """
@@ -45,7 +43,7 @@ def _insert_goids(con: DuckDBConnection, cfg: TestCoverageStepConfig) -> None:
             (1, 'goid:demo/repo#python:function:test_mod.test_func', ?, ?, 'tests/test_mod.py', 'python', 'function', 'tests.test_mod.test_func', 1, 2, ?),
             (2, 'goid:demo/repo#python:function:other', ?, ?, 'tests/test_mod.py', 'python', 'function', 'tests.test_mod.other', 1, 2, ?)
         """,
-        [cfg.repo, cfg.commit, now, cfg.repo, cfg.commit, now],
+        [snapshot.repo, snapshot.commit, now, snapshot.repo, snapshot.commit, now],
     )
 
 
@@ -65,18 +63,18 @@ def test_backfill_test_goids_updates_catalog() -> None:
         snapshot=SnapshotInit(repo=ctx.repo, commit=ctx.commit, repo_root=repo_root),
         layout=BuildLayoutOptions(build_dir=ctx.build_dir),
     )
-    cfg = builder.analytics.test_coverage()
+    snapshot = builder.snapshot
 
-    _insert_goids(con, cfg)
+    _insert_goids(con, snapshot)
     con.execute(
         """
         INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
         VALUES ('tests/test_mod.py::test_func', 'tests/test_mod.py', 'tests.test_mod.test_func', ?, ?, 'passed', ?)
         """,
-        [cfg.repo, cfg.commit, datetime.now(UTC)],
+        [snapshot.repo, snapshot.commit, datetime.now(UTC)],
     )
 
-    goid_map, urn_map = backfill_test_goids_for_catalog(gateway, cfg)
+    goid_map, urn_map = backfill_test_goids_for_catalog(gateway, snapshot)
 
     expected_goid_map = {"tests/test_mod.py::test_func": 1}
     expected_urn_map = {
@@ -116,13 +114,10 @@ def test_edges_for_file_uses_test_meta() -> None:
     ]
     statements_set = {1, 2}
     contexts_by_lineno = {1: {"tests/test_mod.py::test_func"}, 2: {"tests/test_mod.py::test_func"}}
-    temp_root = Path(tempfile.mkdtemp())
-    cfg = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo="demo/repo", commit="deadbeef", repo_root=temp_root),
-    ).analytics.test_coverage()
     ctx = EdgeContext(
         status_by_test={"tests/test_mod.py::test_func": "passed"},
-        cfg=cfg,
+        repo="demo/repo",
+        commit="deadbeef",
         now=datetime(2024, 1, 1, tzinfo=UTC),
         test_meta_by_id={
             "tests/test_mod.py::test_func": (456, "goid:demo/repo#python:function:test")
@@ -165,7 +160,7 @@ def test_compute_test_coverage_edges_respects_injected_loader(
 ) -> None:
     """compute_test_coverage_edges should call injected loader when provided."""
 
-    def _coverage_loader(_cfg: TestCoverageStepConfig) -> Coverage:
+    def _coverage_loader(_snapshot: SnapshotRef, _path: Path | None) -> Coverage:
         cov = Coverage(data_file=str(coverage_artifact))
         cov.load()
         return cov

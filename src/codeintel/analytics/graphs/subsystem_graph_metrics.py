@@ -26,7 +26,6 @@ from codeintel.analytics.runtime.context import (
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
-from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.repositories.subsystems import SubsystemRepository
 
@@ -118,9 +117,7 @@ def compute_subsystem_graph_metrics(
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
     )
     snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
-    active_filters = filters or build_graph_metric_filters(
-        gateway, GraphMetricsStepConfig(snapshot=snapshot)
-    )
+    active_filters = filters or build_graph_metric_filters(gateway, snapshot)
     resolved_runtime = resolve_graph_runtime(
         gateway,
         snapshot,

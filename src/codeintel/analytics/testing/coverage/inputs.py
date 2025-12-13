@@ -17,7 +17,7 @@ if TYPE_CHECKING:
         SubsystemCoverageEntryProtocol,
         TestGraphMetricsProtocol,
     )
-    from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import DuckDBConnection
 
 PRIMARY_COVERAGE_THRESHOLD = 0.4
@@ -56,12 +56,21 @@ class TestGraphMetrics:
 
 def aggregate_test_coverage_by_function(
     con: DuckDBConnection,
-    cfg: TestProfileStepConfig,
+    snapshot: SnapshotRef,
     *,
     loader: Callable[[DuckDBConnection, str, str], Mapping[str, Mapping[str, object]]]
     | None = None,
 ) -> Mapping[str, FunctionCoverageEntryProtocol]:
     """Aggregate coverage signals per test→function edge using an injected loader.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    snapshot
+        Snapshot reference.
+    loader
+        Optional loader function.
 
     Returns
     -------
@@ -77,7 +86,7 @@ def aggregate_test_coverage_by_function(
     if load_fn is None:
         msg = "aggregate_test_coverage_by_function requires a loader for function coverage."
         raise RuntimeError(msg)
-    rows = load_fn(con, cfg.repo, cfg.commit)
+    rows = load_fn(con, snapshot.repo, snapshot.commit)
     result: dict[str, FunctionCoverageEntryProtocol] = {}
     for test_id, payload in rows.items():
         module_name = cast("str | None", payload.get("module"))
@@ -105,12 +114,21 @@ def aggregate_test_coverage_by_function(
 
 def aggregate_test_coverage_by_subsystem(
     con: DuckDBConnection,
-    cfg: BehavioralCoverageStepConfig,
+    snapshot: SnapshotRef,
     *,
     loader: Callable[[DuckDBConnection, str, str], Mapping[str, Mapping[str, object]]]
     | None = None,
 ) -> Mapping[str, SubsystemCoverageEntryProtocol]:
     """Aggregate subsystem coverage signals per test using an injected loader.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    snapshot
+        Snapshot reference.
+    loader
+        Optional loader function.
 
     Returns
     -------
@@ -126,7 +144,7 @@ def aggregate_test_coverage_by_subsystem(
     if load_fn is None:
         msg = "aggregate_test_coverage_by_subsystem requires a loader for subsystem coverage."
         raise RuntimeError(msg)
-    rows = load_fn(con, cfg.repo, cfg.commit)
+    rows = load_fn(con, snapshot.repo, snapshot.commit)
 
     result: dict[str, SubsystemCoverageEntryProtocol] = {}
     for test_id, payload in rows.items():
@@ -150,12 +168,21 @@ def aggregate_test_coverage_by_subsystem(
 
 def load_test_graph_metrics(
     con: DuckDBConnection,
-    cfg: TestProfileStepConfig,
+    snapshot: SnapshotRef,
     *,
     loader: Callable[[DuckDBConnection, str, str], Mapping[str, Mapping[str, object]]]
     | None = None,
 ) -> Mapping[str, TestGraphMetricsProtocol]:
     """Load test graph metrics used in importance calculations via an injected loader.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    snapshot
+        Snapshot reference.
+    loader
+        Optional loader function.
 
     Returns
     -------
@@ -171,7 +198,7 @@ def load_test_graph_metrics(
     if load_fn is None:
         msg = "load_test_graph_metrics requires a loader for graph metrics."
         raise RuntimeError(msg)
-    rows = load_fn(con, cfg.repo, cfg.commit)
+    rows = load_fn(con, snapshot.repo, snapshot.commit)
 
     metrics: dict[str, TestGraphMetricsProtocol] = {}
     for test_id, payload in rows.items():
@@ -188,11 +215,20 @@ def load_test_graph_metrics(
 
 def load_test_records(
     con: DuckDBConnection,
-    cfg: TestProfileStepConfig | BehavioralCoverageStepConfig,
+    snapshot: SnapshotRef,
     *,
     loader: Callable[[DuckDBConnection, str, str], Iterable[Mapping[str, Any]]] | None = None,
 ) -> list[TestRecord]:
     """Load test catalog records for the configured snapshot via an injected loader.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    snapshot
+        Snapshot reference.
+    loader
+        Optional loader function.
 
     Returns
     -------
@@ -208,7 +244,7 @@ def load_test_records(
     if load_fn is None:
         msg = "load_test_records requires a loader for test records."
         raise RuntimeError(msg)
-    rows = load_fn(con, cfg.repo, cfg.commit)
+    rows = load_fn(con, snapshot.repo, snapshot.commit)
 
     records: list[TestRecord] = []
     for payload in rows:

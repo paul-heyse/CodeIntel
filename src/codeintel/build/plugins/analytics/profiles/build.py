@@ -15,7 +15,6 @@ from codeintel.analytics.profiles import (
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import ProfilesAnalyticsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -92,28 +91,24 @@ class ProfilesPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = ProfilesAnalyticsStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         catalog_provider = ctx.resources.catalog
         module_map = None
 
         try:
             build_function_profile(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 catalog_provider=catalog_provider,
                 module_map=module_map,
             )
             build_file_profile(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 catalog_provider=catalog_provider,
             )
             build_module_profile(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 catalog_provider=catalog_provider,
             )
         except (RuntimeError, ValueError, OSError) as e:

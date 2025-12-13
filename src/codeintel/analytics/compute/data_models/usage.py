@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from codeintel.analytics.parsing.ast_cache import FunctionAst
-    from codeintel.config import DataModelUsageStepConfig
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.repositories import DataModelRow
 
@@ -466,7 +466,7 @@ def _context_for_module(
 
 def compute_data_model_usage(
     gateway: StorageGateway,
-    cfg: DataModelUsageStepConfig,
+    snapshot: SnapshotRef,
     *,
     module_map: dict[str, str],
     ast_by_goid: dict[int, FunctionAst],
@@ -479,26 +479,33 @@ def compute_data_model_usage(
     ----------
     gateway
         Storage gateway for the active DuckDB database.
-    cfg
-        Data model usage configuration.
+    snapshot
+        Repository and commit identifiers.
     module_map
         Mapping of file path to module name.
     ast_by_goid
         Mapping of function GOID to parsed AST data.
     missing_goids
-        Optional set of function GOIDs that could not be parsed.
+        Optional set of function GOIDs that lack AST spans.
     """
+    max_examples_per_usage = 3
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.data_model_usage")
-    backend.delete_for_snapshot("analytics.data_model_usage", repo=cfg.repo, commit=cfg.commit)
+    backend.delete_for_snapshot(
+        "analytics.data_model_usage", repo=snapshot.repo, commit=snapshot.commit
+    )
 
-    models = _load_models(gateway, cfg.repo, cfg.commit)
+    models = _load_models(gateway, snapshot.repo, snapshot.commit)
     if not models:
-        log.info("No data models found for %s@%s; skipping usage analysis", cfg.repo, cfg.commit)
+        log.info(
+            "No data models found for %s@%s; skipping usage analysis",
+            snapshot.repo,
+            snapshot.commit,
+        )
         return
     model_index = _build_model_index(models)
 
-    subsystem_map = _subsystem_by_module(gateway, cfg.repo, cfg.commit)
+    subsystem_map = _subsystem_by_module(gateway, snapshot.repo, snapshot.commit)
     missing = missing_goids or set()
     if missing:
         log.debug(
@@ -510,7 +517,8 @@ def compute_data_model_usage(
     param_rows = (
         function_types.filter(
             and_predicates(
-                function_types["repo"] == cfg.repo, function_types["commit"] == cfg.commit
+                function_types["repo"] == snapshot.repo,
+                function_types["commit"] == snapshot.commit,
             )
         )
         .select("function_goid_h128", "param_types")
@@ -528,7 +536,12 @@ def compute_data_model_usage(
         model_index=model_index,
         subsystem_map=subsystem_map,
     )
-    rows_to_insert = _build_usage_rows(artifacts=artifacts, cfg=cfg)
+    rows_to_insert = _build_usage_rows(
+        artifacts=artifacts,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        max_examples_per_usage=max_examples_per_usage,
+    )
 
     if rows_to_insert:
         gateway.ibis.write(
@@ -539,15 +552,17 @@ def compute_data_model_usage(
     log.info(
         "data_model_usage populated: %d rows for %s@%s",
         len(rows_to_insert),
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
     )
 
 
 def _build_usage_rows(
     *,
     artifacts: ModelUsageArtifacts,
-    cfg: DataModelUsageStepConfig,
+    repo: str,
+    commit: str,
+    max_examples_per_usage: int,
 ) -> list[tuple[object, ...]]:
     now = datetime.now(tz=UTC)
     rows_to_insert: list[tuple[object, ...]] = []
@@ -558,7 +573,7 @@ def _build_usage_rows(
             index=artifacts.model_index,
             rel_path=rel_path,
             lines=func_ast.lines,
-            max_examples=cfg.max_examples_per_usage,
+            max_examples=max_examples_per_usage,
         )
         visitor.seed_parameters(artifacts.param_types.get(goid, {}))
         visitor.visit(func_ast.node)
@@ -570,8 +585,8 @@ def _build_usage_rows(
             context = _context_for_module(module, artifacts.subsystem_map)
             rows_to_insert.append(
                 (
-                    cfg.repo,
-                    cfg.commit,
+                    repo,
+                    commit,
                     model_id,
                     goid,
                     json.dumps(sorted(kinds)),

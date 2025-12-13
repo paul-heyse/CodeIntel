@@ -13,7 +13,6 @@ from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_f
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import FunctionContractsStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -82,10 +81,6 @@ class FunctionContractsPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = FunctionContractsStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         catalog = ctx.resources.catalog
         if catalog is None:
             return TargetResult.failed("CatalogProvider is required")
@@ -107,7 +102,7 @@ class FunctionContractsPlugin(TargetPlugin):
         try:
             compute_function_contracts(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 function_ast_map=function_ast_map,
                 catalog=catalog,
             )

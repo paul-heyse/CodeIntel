@@ -11,7 +11,6 @@ from codeintel.analytics.testing.profiles.builder import build_test_profile
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_analytics import TestProfileStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -78,12 +77,8 @@ class TestProfilePlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = TestProfileStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         try:
-            build_test_profile(ctx.gateway, cfg)
+            build_test_profile(ctx.gateway, ctx.snapshot)
         except (RuntimeError, ValueError, OSError) as e:
             return TargetResult.failed(f"Test profile build failed: {e}")
 

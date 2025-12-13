@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.graphs.builders.goid_options import GoidBuilderOptions
-from codeintel.config import GoidBuilderStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import goid as goid_compute
@@ -500,11 +499,10 @@ class GoidBuilderPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = GoidBuilderStepConfig(snapshot=ctx.snapshot)
         opts = self.resolve_options()
 
-        repo = cfg.repo
-        commit = cfg.commit
+        repo = ctx.snapshot.repo
+        commit = ctx.snapshot.commit
 
         try:
             source_root = ctx.snapshot.repo_root

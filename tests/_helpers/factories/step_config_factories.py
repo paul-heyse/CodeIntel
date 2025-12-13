@@ -1,26 +1,22 @@
-"""Factory functions for step configurations in tests.
+"""Factory functions for creating test snapshots.
 
-This module provides factory functions for creating step configurations with
-standard test defaults, reducing boilerplate in plugin tests.
+This module provides factory functions for creating SnapshotRef instances
+with standard test defaults, reducing boilerplate in tests.
 
 Example
 -------
->>> from tests._helpers.factories import make_step_config
->>> from codeintel.config.steps_analytics import FunctionContractsStepConfig
->>> config = make_step_config(FunctionContractsStepConfig, tmp_path)
->>> config.snapshot.repo == "demo/repo"
+>>> from tests._helpers.factories import make_snapshot
+>>> snapshot = make_snapshot(tmp_path)
+>>> snapshot.repo == "demo/repo"
+True
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
 
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 
 def make_snapshot(
@@ -52,53 +48,6 @@ def make_snapshot(
     )
 
 
-def make_step_config[T](
-    config_type: type[T],
-    repo_root: Path | None = None,
-    *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
-) -> T:
-    """Create a step config with standard snapshot.
-
-    This factory creates step configuration objects with a properly initialized
-    SnapshotRef, using sensible test defaults for repo and commit identifiers.
-
-    The config is created with only the required snapshot parameter. If you need
-    to set additional config parameters, construct the config directly:
-
-        snapshot = make_snapshot(tmp_path)
-        config = MyStepConfig(snapshot=snapshot, my_param=value)
-
-    Parameters
-    ----------
-    config_type
-        The step config class to instantiate (must accept `snapshot` kwarg).
-    repo_root
-        Optional repo root path; defaults to Path.cwd() if not provided.
-    repo
-        Repository identifier; defaults to DEFAULT_REPO.
-    commit
-        Commit identifier; defaults to DEFAULT_COMMIT.
-
-    Returns
-    -------
-    T
-        Configured step config instance.
-
-    Example
-    -------
-    >>> from codeintel.config.steps_analytics import FunctionContractsStepConfig
-    >>> config = make_step_config(FunctionContractsStepConfig, tmp_path)
-    >>> config.snapshot.repo == "demo/repo"
-    """
-    snapshot = make_snapshot(repo_root, repo=repo, commit=commit)
-
-    ctor = cast("Callable[..., T]", config_type)
-    return ctor(snapshot=snapshot)
-
-
 __all__ = [
     "make_snapshot",
-    "make_step_config",
 ]

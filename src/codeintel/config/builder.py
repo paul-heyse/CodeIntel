@@ -1,57 +1,28 @@
-"""Unified configuration builder composed from step-specific modules."""
+"""Unified configuration builder for pipeline setup.
+
+This module provides configuration builders for constructing pipeline contexts.
+Step-specific configurations have been migrated to use SnapshotRef + options
+dataclasses directly in their respective modules.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar, Literal, Self, overload
+from typing import TYPE_CHECKING, Self
 
 from codeintel.config.primitives import (
     BuildLayoutOptions,
+    BuildPaths,
     GraphBackendConfig,
     ScanProfiles,
+    SnapshotRef,
     ToolBinaries,
-)
-from codeintel.config.steps_analytics import (
-    AnalyticsStepBuilder,
-    BehavioralCoverageStepConfig,
-    CoverageAnalyticsStepConfig,
-    DataModelsStepConfig,
-    DataModelUsageStepConfig,
-    EntryPointsStepConfig,
-    EntryPointToggles,
-    FunctionAnalyticsStepConfig,
-    FunctionContractsStepConfig,
-    FunctionEffectsStepConfig,
-    FunctionHistoryStepConfig,
-    HistoryTimeseriesStepConfig,
-    HotspotsStepConfig,
-    ProfilesAnalyticsStepConfig,
-    SemanticRolesStepConfig,
-    SubsystemsStepConfig,
-    TestCoverageStepConfig,
-    TestProfileStepConfig,
-)
-from codeintel.config.steps_graphs import (
-    CallGraphStepConfig,
-    CFGBuilderStepConfig,
-    ConfigDataFlowStepConfig,
-    ExternalDependenciesStepConfig,
-    GoidBuilderStepConfig,
-    GraphMetricsStepConfig,
-    GraphStepBuilder,
-    ImportGraphStepConfig,
-    SymbolUsesStepConfig,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from pathlib import Path
 
-    from codeintel.config.primitives import (
-        BuildPaths,
-        SnapshotInit,
-        SnapshotRef,
-    )
+    from codeintel.config.primitives import SnapshotInit
 
 
 @dataclass(frozen=True)
@@ -79,10 +50,11 @@ class BuilderDependencies:
 
 @dataclass
 class ConfigBuilder:
-    """Build specific step configs from a shared pipeline context.
+    """Build pipeline context from a shared snapshot and build paths.
 
-    Explicit facets (`graphs`, `analytics`) are preferred; legacy step helpers are
-    still available via attribute delegation for compatibility.
+    This builder provides factory methods for constructing pipeline contexts.
+    For analytics and graph computations, use SnapshotRef + options dataclasses
+    directly instead of step configurations.
     """
 
     snapshot: SnapshotRef
@@ -90,38 +62,6 @@ class ConfigBuilder:
     binaries: ToolBinaries = field(default_factory=ToolBinaries)
     profiles: ScanProfiles | None = None
     graph_backend: GraphBackendConfig = field(default_factory=GraphBackendConfig)
-    _GRAPH_DELEGATES: ClassVar[frozenset[str]] = frozenset(
-        {
-            "call_graph",
-            "cfg_builder",
-            "goid_builder",
-            "import_graph",
-            "symbol_uses",
-            "graph_metrics",
-            "config_data_flow",
-            "external_dependencies",
-        }
-    )
-    _ANALYTICS_DELEGATES: ClassVar[frozenset[str]] = frozenset(
-        {
-            "hotspots",
-            "function_history",
-            "history_timeseries",
-            "coverage_analytics",
-            "test_coverage",
-            "test_profile",
-            "behavioral_coverage",
-            "function_analytics",
-            "function_effects",
-            "function_contracts",
-            "semantic_roles",
-            "data_models",
-            "data_model_usage",
-            "profiles_analytics",
-            "subsystems",
-            "entrypoints",
-        }
-    )
 
     @classmethod
     def from_snapshot(
@@ -145,7 +85,7 @@ class ConfigBuilder:
         Returns
         -------
         Self
-            ConfigBuilder ready to produce step configs.
+            ConfigBuilder ready to produce pipeline contexts.
         """
         layout_options = layout or BuildLayoutOptions()
         dependencies = primitives or BuilderDependencies()
@@ -183,13 +123,25 @@ class ConfigBuilder:
         profiles: ScanProfiles | None = None,
         graph_backend: GraphBackendConfig | None = None,
     ) -> Self:
-        """
-        Create a builder from pre-constructed primitives.
+        """Create a builder from pre-constructed primitives.
+
+        Parameters
+        ----------
+        snapshot
+            Snapshot reference for the repository.
+        paths
+            Build paths configuration.
+        binaries
+            Optional tool binaries configuration.
+        profiles
+            Optional scan profiles.
+        graph_backend
+            Optional graph backend configuration.
 
         Returns
         -------
         Self
-            ConfigBuilder ready to produce step configs.
+            ConfigBuilder ready to produce pipeline contexts.
         """
         return cls(
             snapshot=snapshot,
@@ -198,164 +150,6 @@ class ConfigBuilder:
             profiles=cls._ensure_profiles(profiles),
             graph_backend=graph_backend or GraphBackendConfig(),
         )
-
-    @property
-    def graphs(self) -> GraphStepBuilder:
-        """Access graph-related config builders."""
-        return GraphStepBuilder(self)
-
-    @property
-    def analytics(self) -> AnalyticsStepBuilder:
-        """Access analytics-related config builders."""
-        return AnalyticsStepBuilder(self)
-
-    if TYPE_CHECKING:
-
-        @overload
-        def __getattr__(
-            self, name: Literal["call_graph"]
-        ) -> Callable[..., CallGraphStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["cfg_builder"]
-        ) -> Callable[..., CFGBuilderStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["goid_builder"]
-        ) -> Callable[..., GoidBuilderStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["import_graph"]
-        ) -> Callable[..., ImportGraphStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["symbol_uses"]
-        ) -> Callable[..., SymbolUsesStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["graph_metrics"]
-        ) -> Callable[..., GraphMetricsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["config_data_flow"]
-        ) -> Callable[..., ConfigDataFlowStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["external_dependencies"]
-        ) -> Callable[..., ExternalDependenciesStepConfig]: ...
-
-        @overload
-        def __getattr__(self, name: Literal["hotspots"]) -> Callable[..., HotspotsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["function_history"]
-        ) -> Callable[..., FunctionHistoryStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["history_timeseries"]
-        ) -> Callable[..., HistoryTimeseriesStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["coverage_analytics"]
-        ) -> Callable[..., CoverageAnalyticsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["test_coverage"]
-        ) -> Callable[..., TestCoverageStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["test_profile"]
-        ) -> Callable[..., TestProfileStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["behavioral_coverage"]
-        ) -> Callable[..., BehavioralCoverageStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["function_analytics"]
-        ) -> Callable[..., FunctionAnalyticsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["function_effects"]
-        ) -> Callable[..., FunctionEffectsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["function_contracts"]
-        ) -> Callable[..., FunctionContractsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["semantic_roles"]
-        ) -> Callable[..., SemanticRolesStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["data_models"]
-        ) -> Callable[..., DataModelsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["data_model_usage"]
-        ) -> Callable[..., DataModelUsageStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["profiles_analytics"]
-        ) -> Callable[..., ProfilesAnalyticsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["subsystems"]
-        ) -> Callable[..., SubsystemsStepConfig]: ...
-
-        @overload
-        def __getattr__(
-            self, name: Literal["entrypoints"]
-        ) -> Callable[..., EntryPointsStepConfig]: ...
-
-        @overload
-        def __getattr__(self, name: str) -> object: ...
-
-    def __getattr__(self, name: str) -> object:
-        """Delegate legacy step helpers to the underlying facet builders.
-
-        Parameters
-        ----------
-        name
-            Requested attribute name.
-
-        Returns
-        -------
-        object
-            Delegated step builder callable.
-
-        Raises
-        ------
-        AttributeError
-            If the attribute cannot be resolved from delegated builders.
-        """
-        if name in self._GRAPH_DELEGATES:
-            return getattr(self.graphs, name)
-        if name in self._ANALYTICS_DELEGATES:
-            return getattr(self.analytics, name)
-        message = f"{type(self).__name__!s} has no attribute {name!r}"
-        raise AttributeError(message)
 
     @staticmethod
     def _ensure_profiles(profiles: ScanProfiles | None) -> ScanProfiles | None:
@@ -387,18 +181,6 @@ class ConfigBuilder:
             message = "profiles must include both code and config scan profiles"
             raise ValueError(message)
         return profiles
-
-    def __dir__(self) -> list[str]:
-        """Expose delegated step names for discoverability.
-
-        Returns
-        -------
-        list[str]
-            Combined attributes from the base class and delegated helpers.
-        """
-        base = super().__dir__()
-        dynamic = (*self._GRAPH_DELEGATES, *self._ANALYTICS_DELEGATES)
-        return sorted(set(base).union(dynamic))
 
     def prepare_filesystem(self, *, create_missing_only: bool = True) -> tuple[Path, ...]:
         """Ensure build-related directories exist.
@@ -433,30 +215,6 @@ class ConfigBuilder:
 
 
 __all__ = [
-    "BehavioralCoverageStepConfig",
-    "CFGBuilderStepConfig",
-    "CallGraphStepConfig",
+    "BuilderDependencies",
     "ConfigBuilder",
-    "ConfigDataFlowStepConfig",
-    "CoverageAnalyticsStepConfig",
-    "DataModelUsageStepConfig",
-    "DataModelsStepConfig",
-    "EntryPointToggles",
-    "EntryPointsStepConfig",
-    "ExternalDependenciesStepConfig",
-    "FunctionAnalyticsStepConfig",
-    "FunctionContractsStepConfig",
-    "FunctionEffectsStepConfig",
-    "FunctionHistoryStepConfig",
-    "GoidBuilderStepConfig",
-    "GraphMetricsStepConfig",
-    "HistoryTimeseriesStepConfig",
-    "HotspotsStepConfig",
-    "ImportGraphStepConfig",
-    "ProfilesAnalyticsStepConfig",
-    "SemanticRolesStepConfig",
-    "SubsystemsStepConfig",
-    "SymbolUsesStepConfig",
-    "TestCoverageStepConfig",
-    "TestProfileStepConfig",
 ]

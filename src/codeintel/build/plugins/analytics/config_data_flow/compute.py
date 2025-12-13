@@ -15,7 +15,6 @@ from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_f
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import TargetPlugin
 from codeintel.build.plugins.analytics._metadata import to_plugin_metadata
-from codeintel.config.steps_graphs import ConfigDataFlowStepConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -101,10 +100,6 @@ class ConfigDataFlowPlugin(TargetPlugin):
         """
         _ = self
 
-        cfg = ConfigDataFlowStepConfig(
-            snapshot=ctx.snapshot,
-        )
-
         graph_runtime = ctx.resources.graph_runtime
 
         call_graph: nx.DiGraph = nx.DiGraph()
@@ -129,7 +124,7 @@ class ConfigDataFlowPlugin(TargetPlugin):
         try:
             compute_config_data_flow(
                 ctx.gateway,
-                cfg,
+                ctx.snapshot,
                 call_graph=call_graph,
                 ast_by_goid=ast_by_goid,
                 missing_goids=missing_goids,

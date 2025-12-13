@@ -11,7 +11,7 @@ import networkx as nx
 
 from codeintel.analytics.functions.function_effects import (
     FunctionEffectsInputs,
-    FunctionEffectsStepConfig,
+    FunctionEffectsOptions,
     compute_function_effects,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
@@ -124,8 +124,7 @@ def test_compute_function_effects_with_transitive_and_missing(
     )
     runtime = GraphRuntime(GraphRuntimeOptions(snapshot=snapshot), engine)
     runtime.ensure_call_graph()
-    cfg = FunctionEffectsStepConfig(
-        snapshot=snapshot,
+    options = FunctionEffectsOptions(
         max_call_depth=2,
         io_apis={"os": ["getenv"]},
         db_apis={},
@@ -223,7 +222,7 @@ def test_compute_function_effects_with_transitive_and_missing(
 
     caplog.set_level("INFO")
     try:
-        compute_function_effects(gateway, cfg, inputs=inputs)
+        compute_function_effects(gateway, snapshot, options=options, inputs=inputs)
         effects_by_goid = {
             int(row[0]): row
             for row in gateway.con.execute(

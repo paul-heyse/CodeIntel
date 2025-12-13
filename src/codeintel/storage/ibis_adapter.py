@@ -11,6 +11,12 @@ The key abstraction is `IbisGateway.write()` which accepts:
 - Sequences of tuples → INSERT...VALUES via SQLGlot
 
 All SQL is generated programmatically - no raw SQL strings in application code.
+
+Architecture Note
+-----------------
+IbisGateway only depends on the MinimalGateway protocol, NOT on DuckDBPolicyBackend
+directly. It accesses the policy backend via gateway.policy, which avoids circular
+imports. MinimalStorageGateway is the composition root that creates both.
 """
 
 from __future__ import annotations
@@ -25,19 +31,18 @@ import ibis.expr.types as it
 import pandas as pd
 from sqlglot import exp, parse_one
 
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.constants import DUCKDB_DIALECT
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from ibis.backends.duckdb import Backend as DuckDBBackend
 
-    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+    from codeintel.storage.gateway.protocol import MinimalGateway
 
 __all__ = ["IbisGateway", "OnConflict", "WriteResult"]
 
 log = logging.getLogger(__name__)
-
-
-DUCKDB_DIALECT = "duckdb"
 
 
 def _convert_numpy_types(value: object) -> object:
@@ -139,38 +144,34 @@ class _WriteContext:
     table_key: str
 
 
-def _split_table_key(table_key: str) -> tuple[str, str]:
-    """Split 'schema.table' into (schema, table) components.
-
-    Returns
-    -------
-    tuple[str, str]
-        Schema and table name.
-
-    Raises
-    ------
-    ValueError
-        If table_key is not schema-qualified.
-    """
-    if "." not in table_key:
-        msg = f"Table key must be schema-qualified: {table_key}"
-        raise ValueError(msg)
-    schema, table = table_key.split(".", 1)
-    return schema, table
-
-
 class IbisGateway:
-    """Expose an Ibis backend bound to a `StorageGateway`.
+    """Expose an Ibis backend for DuckDB access.
+
+    Accepts a MinimalGateway that provides connection and policy backend access.
 
     This class provides a unified data access API:
     - `table()` / `view()`: Start Ibis read expressions
     - `write()`: Write data using Ibis + SQLGlot (INSERT, UPSERT)
     - `con`: Access underlying Ibis connection for advanced operations
+
+    Note
+    ----
+    IbisGateway accesses the policy backend via `gateway.policy` to avoid
+    circular imports. The MinimalStorageGateway acts as composition root.
     """
 
-    def __init__(self, gateway: StorageGateway) -> None:
+    def __init__(self, gateway: MinimalGateway) -> None:
         self._gateway = gateway
-        self._con: DuckDBBackend | None = None
+        self._ibis_con: DuckDBBackend | None = None
+
+    @property
+    def _policy(self) -> DuckDBPolicyBackend:
+        """Return the policy backend via the gateway.
+
+        Accesses the policy backend through the gateway reference,
+        avoiding direct import dependencies.
+        """
+        return self._gateway.policy
 
     @property
     def con(self) -> DuckDBBackend:
@@ -187,12 +188,12 @@ class IbisGateway:
         RuntimeError
             If the DuckDB backend cannot be initialized.
         """
-        if self._con is None:
-            self._con = ibis.duckdb.from_connection(self._gateway.con)
-        if self._con is None:
+        if self._ibis_con is None:
+            self._ibis_con = ibis.duckdb.from_connection(self._gateway.con)
+        if self._ibis_con is None:
             msg = "Failed to initialize DuckDB backend connection"
             raise RuntimeError(msg)
-        return self._con
+        return self._ibis_con
 
     def table(self, table_name: str) -> it.Table:
         """
@@ -338,7 +339,7 @@ class IbisGateway:
         TypeError
             If data type is not supported.
         """
-        schema, table = _split_table_key(table_key)
+        schema, table = split_table_key(table_key)
         write_ctx = _WriteContext(schema=schema, table=table, table_key=table_key)
 
         if isinstance(data, it.Table):
@@ -445,7 +446,7 @@ class IbisGateway:
                 write_ctx, df=df, columns=resolved_columns, on_conflict=on_conflict
             )
 
-        backend = DuckDBPolicyBackend(self._gateway)
+        backend = self._policy
         backend.insert_select(write_ctx.table_key, columns=resolved_columns, select_sql=select_sql)
 
         return WriteResult(table_key=write_ctx.table_key, rows_affected=-1, method="insert_select")
@@ -467,7 +468,7 @@ class IbisGateway:
         """
         resolved_columns = list(df.columns) if columns is None else list(columns)
         normalized_rows = [_normalize_row(row) for row in df.itertuples(index=False, name=None)]
-        backend = DuckDBPolicyBackend(self._gateway)
+        backend = self._policy
 
         if on_conflict is None:
             count = backend.bulk_insert(
@@ -521,7 +522,7 @@ class IbisGateway:
 
         resolved_columns = list(columns)
         normalized_rows = [_normalize_row(row) for row in rows]
-        backend = DuckDBPolicyBackend(self._gateway)
+        backend = self._policy
 
         if on_conflict is None:
             count = backend.bulk_insert(
@@ -568,7 +569,7 @@ class IbisGateway:
         ValueError
             If the WHERE clause cannot be derived from the provided filter.
         """
-        backend = DuckDBPolicyBackend(self._gateway)
+        backend = self._policy
 
         if where is None:
             backend.delete(table_key)
