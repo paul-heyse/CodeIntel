@@ -22,20 +22,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins.graphs.builders.goid_options import GoidBuilderOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.graphs.compute import goid as goid_compute
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.execution.options import PluginOptionsResolver
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
     from codeintel.storage.gateway import StorageGateway
 
@@ -409,7 +404,7 @@ def _persist_crosswalk_rows(
     return len(rows)
 
 
-class GoidBuilderPlugin(TargetPlugin):
+class GoidBuilderPlugin(MetadataPlugin):
     """Build global object identifiers.
 
     This plugin performs full GOID construction:
@@ -423,46 +418,7 @@ class GoidBuilderPlugin(TargetPlugin):
     - core.goid_crosswalk: GOID crosswalk records
     """
 
-    plugin_name: ClassVar[str] = "goid_builder"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Build global object identifiers."
     _core_metadata: ClassVar[CorePluginMetadata] = GOID_BUILDER_METADATA
-
-    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
-        self._options_resolver = options_resolver
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return full core metadata."""
-        return self._core_metadata
-
-    def resolve_options(
-        self,
-        *,
-        dynamic_overrides: Mapping[str, Any] | None = None,
-    ) -> GoidBuilderOptions:
-        """Resolve typed options from configuration.
-
-        Returns
-        -------
-        GoidBuilderOptions
-            Resolved options instance.
-        """
-        if self._options_resolver is None:
-            if dynamic_overrides:
-                return GoidBuilderOptions(**dynamic_overrides)
-            return GoidBuilderOptions()
-
-        return self._options_resolver.get_options(
-            self._core_metadata,
-            GoidBuilderOptions,
-            dynamic_overrides=dynamic_overrides,
-        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute GOID construction.
@@ -479,7 +435,7 @@ class GoidBuilderPlugin(TargetPlugin):
         """
         _ = self
 
-        opts = self.resolve_options()
+        opts = self.resolve_options(GoidBuilderOptions)
 
         repo = ctx.snapshot.repo
         commit = ctx.snapshot.commit

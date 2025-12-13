@@ -6,11 +6,7 @@ subsystems so callers can rely on a single import surface.
 
 from __future__ import annotations
 
-import importlib
-from typing import TYPE_CHECKING, cast
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
+from codeintel.analytics.utilities.lazy_module import lazy_callable, make_lazy_getattr
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "build_subsystems": ("codeintel.analytics.subsystems", "build_subsystems"),
@@ -68,40 +64,20 @@ __all__ = (
     "compute_symbol_graph_metrics_modules",
 )
 
+# Create lazy callables for each export
+build_subsystems = lazy_callable(_LAZY_ATTRS, "build_subsystems")
+compute_cfg_metrics = lazy_callable(_LAZY_ATTRS, "compute_cfg_metrics")
+compute_config_data_flow = lazy_callable(_LAZY_ATTRS, "compute_config_data_flow")
+compute_config_graph_metrics = lazy_callable(_LAZY_ATTRS, "compute_config_graph_metrics")
+compute_dfg_metrics = lazy_callable(_LAZY_ATTRS, "compute_dfg_metrics")
+compute_graph_metrics = lazy_callable(_LAZY_ATTRS, "compute_graph_metrics")
+compute_graph_metrics_functions_ext = lazy_callable(_LAZY_ATTRS, "compute_graph_metrics_functions_ext")
+compute_graph_metrics_modules_ext = lazy_callable(_LAZY_ATTRS, "compute_graph_metrics_modules_ext")
+compute_graph_stats = lazy_callable(_LAZY_ATTRS, "compute_graph_stats")
+compute_subsystem_agreement = lazy_callable(_LAZY_ATTRS, "compute_subsystem_agreement")
+compute_subsystem_graph_metrics = lazy_callable(_LAZY_ATTRS, "compute_subsystem_graph_metrics")
+compute_symbol_graph_metrics_functions = lazy_callable(_LAZY_ATTRS, "compute_symbol_graph_metrics_functions")
+compute_symbol_graph_metrics_modules = lazy_callable(_LAZY_ATTRS, "compute_symbol_graph_metrics_modules")
 
-def _call_lazy(name: str, *args: object, **kwargs: object) -> object:
-    attr = __getattr__(name)
-    return attr(*args, **kwargs)
-
-
-def _wrap_lazy_attr(name: str) -> Callable[..., object]:
-    def _wrapper(*args: object, **kwargs: object) -> object:
-        return _call_lazy(name, *args, **kwargs)
-
-    return _wrapper
-
-
-build_subsystems = _wrap_lazy_attr("build_subsystems")
-compute_cfg_metrics = _wrap_lazy_attr("compute_cfg_metrics")
-compute_config_data_flow = _wrap_lazy_attr("compute_config_data_flow")
-compute_config_graph_metrics = _wrap_lazy_attr("compute_config_graph_metrics")
-compute_dfg_metrics = _wrap_lazy_attr("compute_dfg_metrics")
-compute_graph_metrics = _wrap_lazy_attr("compute_graph_metrics")
-compute_graph_metrics_functions_ext = _wrap_lazy_attr("compute_graph_metrics_functions_ext")
-compute_graph_metrics_modules_ext = _wrap_lazy_attr("compute_graph_metrics_modules_ext")
-compute_graph_stats = _wrap_lazy_attr("compute_graph_stats")
-compute_subsystem_agreement = _wrap_lazy_attr("compute_subsystem_agreement")
-compute_subsystem_graph_metrics = _wrap_lazy_attr("compute_subsystem_graph_metrics")
-compute_symbol_graph_metrics_functions = _wrap_lazy_attr("compute_symbol_graph_metrics_functions")
-compute_symbol_graph_metrics_modules = _wrap_lazy_attr("compute_symbol_graph_metrics_modules")
-
-
-def __getattr__(name: str) -> Callable[..., object]:
-    if name not in _LAZY_ATTRS:
-        message = f"module {__name__!r} has no attribute {name!r}"
-        raise AttributeError(message)
-    module_path, attr_name = _LAZY_ATTRS[name]
-    module = importlib.import_module(module_path)
-    attr = cast("Callable[..., object]", getattr(module, attr_name))
-    globals()[name] = attr
-    return attr
+# Fallback for any attribute access
+__getattr__ = make_lazy_getattr(_LAZY_ATTRS, __name__, cache_in_globals=globals())

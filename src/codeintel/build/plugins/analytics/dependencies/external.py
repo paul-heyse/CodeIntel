@@ -14,14 +14,12 @@ from codeintel.analytics.dependencies import (
 from codeintel.analytics.dependencies.core import ExternalDependencyInputs
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 EXTERNAL_DEPS_METADATA = CorePluginMetadata(
@@ -44,7 +42,7 @@ EXTERNAL_DEPS_METADATA = CorePluginMetadata(
 )
 
 
-class ExternalDepsPlugin(TargetPlugin):
+class ExternalDepsPlugin(MetadataPlugin):
     """Identify external dependency usage across functions.
 
     Analyzes and builds:
@@ -58,20 +56,7 @@ class ExternalDepsPlugin(TargetPlugin):
     - analytics.external_dependencies: Aggregated dependencies
     """
 
-    plugin_name: ClassVar[str] = "external_deps"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Identify external dependency usage across functions."
     _core_metadata: ClassVar[CorePluginMetadata] = EXTERNAL_DEPS_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

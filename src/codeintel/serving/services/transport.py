@@ -69,7 +69,6 @@ from codeintel.serving.services.observability import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from codeintel.serving import domain_models as dm
     from codeintel.serving.backend.query_api import DuckDBQueryApi
     from codeintel.serving.services.observability import (
         ServiceObservability,
@@ -395,10 +394,12 @@ class _HttpTransportMixin:
             if empty_data is not None:
                 clamped = clamp_limits(self.limits, limit, offset)
                 if clamped.has_error:
-                    # Add error messages to empty response
-                    if hasattr(empty_data, "meta"):
-                        empty_data.meta = ResponseMeta(messages=clamped.messages)  # type: ignore[union-attr]
-                    return empty_data
+                    # Convert domain messages to transport messages and create error response
+                    transport_messages = [Message.from_domain(msg) for msg in clamped.messages]
+                    error_response = empty_data.model_copy(  # type: ignore[attr-defined,union-attr]
+                        update={"meta": ResponseMeta(messages=transport_messages)}
+                    )
+                    return error_response  # type: ignore[return-value]
                 request_params[limit_param] = clamped.applied_limit
                 if offset is not None:
                     request_params["offset"] = clamped.applied_offset

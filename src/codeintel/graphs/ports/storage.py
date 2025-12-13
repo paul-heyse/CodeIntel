@@ -1,7 +1,20 @@
 """Storage port interface for database operations.
 
-This module defines the StoragePort protocol that abstracts all database
-interactions, allowing pure computation to be decoupled from DuckDB specifics.
+This module defines data classes for storage operations and a deprecated
+StoragePort protocol.
+
+Data Classes
+------------
+- QueryResult: Result of a database query operation
+- BatchResult: Result of a batch insert/update operation
+
+Deprecated
+----------
+- StoragePort: Use StorageResource directly instead
+
+.. deprecated:: 5.0.0
+    The StoragePort protocol is deprecated. Use StorageResource from
+    ``codeintel.graphs.resources.storage`` directly instead.
 """
 
 from __future__ import annotations
@@ -119,6 +132,11 @@ class BatchResult:
 @runtime_checkable
 class StoragePort(Protocol):
     """Protocol for database storage operations.
+
+    .. deprecated:: 5.0.0
+        Use StorageResource from ``codeintel.graphs.resources.storage`` directly.
+        The protocol is retained for backward compatibility but new code should
+        use the resource class directly.
 
     Implementations provide access to query execution, batch operations,
     and source file reading without exposing database-specific details.

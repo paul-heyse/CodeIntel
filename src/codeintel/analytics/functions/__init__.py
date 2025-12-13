@@ -11,9 +11,10 @@ compute_typedness_flags), import directly from:
 from __future__ import annotations
 
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.functions.config import FunctionAnalyticsOptions
+from codeintel.analytics.utilities.lazy_module import make_lazy_getattr
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -56,12 +57,8 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
 }
 
 
-def _load(name: str) -> Callable[..., Any]:
-    try:
-        module_path, attr_name = _LAZY_ATTRS[name]
-    except KeyError as exc:
-        msg = f"module {__name__!r} has no attribute {name!r}"
-        raise AttributeError(msg) from exc
+def _load(name: str) -> Callable[..., object]:
+    module_path, attr_name = _LAZY_ATTRS[name]
     return getattr(import_module(module_path), attr_name)
 
 
@@ -188,16 +185,16 @@ def compute_function_metrics_and_types(
     return func(gateway, snapshot, options=options, fail_on_missing_spans=fail_on_missing_spans)
 
 
-def __getattr__(name: str) -> object:
-    """Lazily import heavy function analytics entrypoints to avoid cycles.
-
-    Returns
-    -------
-    object
-        Imported attribute from the deferred module.
-    """
-    return _load(name)
+# Fallback for any attribute access
+__getattr__ = make_lazy_getattr(_LAZY_ATTRS, __name__)
 
 
 def __dir__() -> list[str]:
+    """List public attributes for IDE support.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of public attribute names.
+    """
     return sorted(__all__)

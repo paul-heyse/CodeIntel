@@ -1,212 +1,67 @@
 """Catalog resource provider.
 
-This module provides a resource provider for function catalog access,
-bridging the hexagonal architecture (ports/adapters/resources) with
-the production FunctionCatalog implementation in `graphs.catalog`.
+This module provides backward-compatible re-exports of the unified CatalogService.
 
-Integration Architecture
-------------------------
-- FunctionCatalog (graphs.catalog): Production implementation with all logic
-- CatalogResource (this module): Resource provider wrapper for DI/context
-- CatalogPort (ports/catalog.py): Protocol interface for abstraction
+.. deprecated:: 5.0.0
+    Use CatalogService from ``codeintel.graphs.catalog`` directly.
+    CatalogResource is retained as an alias for backward compatibility.
 
-The CatalogResource wraps FunctionCatalog and exposes it via the CatalogPort
-protocol, enabling:
-- Dependency injection in GraphPluginExecutionContext
-- Protocol-based testing with mock implementations
-- Clean separation of production logic from resource lifecycle
+Migration
+---------
+Old::
+
+    from codeintel.graphs.resources.catalog import CatalogResource
+    resource = CatalogResource(catalog)
+
+New::
+
+    from codeintel.graphs.catalog import CatalogService
+    service = CatalogService(catalog)
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+import warnings
+from typing import TYPE_CHECKING
 
-from codeintel.graphs.ports.catalog import FunctionSpanData
+from codeintel.graphs.catalog import CatalogService, FunctionSpan
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
     from codeintel.graphs.catalog import FunctionCatalog
-    from codeintel.graphs.ports.catalog import CatalogPort
 
 
-@dataclass
-class CatalogResource:
-    """Resource provider for function catalog access.
+def CatalogResource(catalog: FunctionCatalog) -> CatalogService:  # noqa: N802
+    """Create a CatalogService from a FunctionCatalog.
 
-    Implements both ResourceProvider and CatalogPort protocols,
-    providing unified access to function catalog operations.
+    .. deprecated:: 5.0.0
+        Use CatalogService from ``codeintel.graphs.catalog`` directly.
 
-    Attributes
+    Parameters
     ----------
     catalog
-        Underlying function catalog.
+        Function catalog to wrap.
+
+    Returns
+    -------
+    CatalogService
+        Unified catalog service.
     """
-
-    RESOURCE_NAME: ClassVar[str] = "catalog"
-
-    catalog: FunctionCatalog
-    _cached_spans: tuple[FunctionSpanData, ...] | None = None
-
-    @property
-    def resource_name(self) -> str:
-        """Resource identifier.
-
-        Returns
-        -------
-        str
-            Resource name.
-        """
-        return self.RESOURCE_NAME
-
-    def get(self) -> CatalogPort:
-        """Get the catalog as a CatalogPort.
-
-        Returns
-        -------
-        CatalogPort
-            Catalog port interface.
-        """
-        return self
-
-    def invalidate(self) -> None:
-        """Invalidate cached data."""
-        self._cached_spans = None
-
-    @property
-    def cached_spans(self) -> tuple[FunctionSpanData, ...] | None:
-        """Return cached spans if already materialized."""
-        return self._cached_spans
-
-    @property
-    def function_spans(self) -> Sequence[FunctionSpanData]:
-        """All function spans in the catalog.
-
-        Returns
-        -------
-        Sequence[FunctionSpanData]
-            All indexed function spans.
-        """
-        if self._cached_spans is None:
-            spans = self.catalog.function_spans
-            self._cached_spans = tuple(
-                FunctionSpanData(
-                    goid=span.goid,
-                    rel_path=span.rel_path,
-                    qualname=span.qualname,
-                    start_line=span.start_line,
-                    end_line=span.end_line,
-                    urn=self.catalog.urn_for_goid(span.goid),
-                )
-                for span in spans
-            )
-        return self._cached_spans
-
-    @property
-    def paths(self) -> Sequence[str]:
-        """All file paths with indexed functions.
-
-        Returns
-        -------
-        Sequence[str]
-            Unique file paths containing functions.
-        """
-        return tuple(self.catalog.function_index.paths())
-
-    @property
-    def module_by_path(self) -> Mapping[str, str]:
-        """Mapping of file paths to module names.
-
-        Returns
-        -------
-        Mapping[str, str]
-            File path to module name mapping.
-        """
-        return self.catalog.module_by_path
-
-    def spans_for_path(self, rel_path: str) -> Sequence[FunctionSpanData]:
-        """Get function spans for a specific file.
-
-        Parameters
-        ----------
-        rel_path
-            Relative file path.
-
-        Returns
-        -------
-        Sequence[FunctionSpanData]
-            Function spans in the file.
-        """
-        spans = self.catalog.function_index.spans_for_path(rel_path)
-        return tuple(
-            FunctionSpanData(
-                goid=span.goid,
-                rel_path=span.rel_path,
-                qualname=span.qualname,
-                start_line=span.start_line,
-                end_line=span.end_line,
-                urn=self.catalog.urn_for_goid(span.goid),
-            )
-            for span in spans
-        )
-
-    def local_name_map(self, rel_path: str) -> Mapping[str, int]:
-        """Get local name to GOID mapping for a file.
-
-        Parameters
-        ----------
-        rel_path
-            Relative file path.
-
-        Returns
-        -------
-        Mapping[str, int]
-            Local function name to GOID mapping.
-        """
-        return self.catalog.function_index.local_name_map(rel_path)
-
-    def lookup_goid(
-        self,
-        rel_path: str,
-        start_line: int,
-        end_line: int | None = None,
-        qualname: str | None = None,
-    ) -> int | None:
-        """Look up a GOID by file position and optional qualname.
-
-        Parameters
-        ----------
-        rel_path
-            Relative file path.
-        start_line
-            Starting line number.
-        end_line
-            Optional ending line number.
-        qualname
-            Optional qualified name for disambiguation.
-
-        Returns
-        -------
-        int | None
-            GOID if found, None otherwise.
-        """
-        return self.catalog.lookup_goid(rel_path, start_line, end_line, qualname)
-
-    def urn_for_goid(self, goid: int) -> str | None:
-        """Get URN for a GOID.
-
-        Parameters
-        ----------
-        goid
-            Global object identifier.
-
-        Returns
-        -------
-        str | None
-            URN if found, None otherwise.
-        """
-        return self.catalog.urn_for_goid(goid)
+    warnings.warn(
+        "CatalogResource is deprecated. Use CatalogService from "
+        "codeintel.graphs.catalog directly.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return CatalogService(catalog)
 
 
-__all__ = ["CatalogResource"]
+# Type alias for backward compatibility
+CatalogResourceType = CatalogService
+
+
+__all__ = [
+    "CatalogResource",
+    "CatalogResourceType",
+    "CatalogService",  # Re-export the canonical class
+    "FunctionSpan",  # Re-export for convenience
+]

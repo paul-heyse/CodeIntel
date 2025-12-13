@@ -467,8 +467,4 @@ def run_incremental_ingest[RowT](
 __all__ = [
     "ChangeTracker",
     "ChangeTrackerDatasetView",
-    "IncrementalIngestOps",
-    "IncrementalIngestPolicy",
-    "SupportsFullRebuild",
-    "run_incremental_ingest",
 ]

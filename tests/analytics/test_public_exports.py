@@ -2,57 +2,15 @@
 
 from __future__ import annotations
 
-import importlib
-
 from codeintel.analytics import functions as functions_mod
 from codeintel.analytics import graphs as analytics_graphs_mod
 from codeintel.analytics import history as history_mod
-from codeintel.analytics import ports as ports_pkg
-from codeintel.analytics.ports import catalog as catalog_mod
-from codeintel.analytics.ports import graphs as graphs_mod
-from codeintel.analytics.ports import storage as storage_mod
 from tests._helpers import assert_frozen
 from tests._helpers.assertions.expectation_assertions import (
-    expect_equal,
     expect_in,
     expect_true,
 )
 from tests._helpers.rows import list_public_exports
-
-
-def _assert_exports(module: object, expected: set[str]) -> None:
-    actual = set(list_public_exports(module))
-    expect_equal(actual, expected)
-    assert_frozen(tuple(actual), "__setitem__", expected)
-
-
-def test_ports_exports() -> None:
-    """Top-level ports package should export stable symbols."""
-    expected = {
-        "BatchResult",
-        "CatalogPort",
-        "FunctionSpanData",
-        "GraphRuntimePort",
-        "QueryResult",
-        "StoragePort",
-    }
-    _assert_exports(ports_pkg, expected)
-
-
-def test_ports_submodules_exports() -> None:
-    """Submodule __all__ lists should match expected exports."""
-    _assert_exports(catalog_mod, {"CatalogPort", "FunctionSpanData"})
-    _assert_exports(graphs_mod, {"GraphRuntimePort"})
-    _assert_exports(storage_mod, {"BatchResult", "QueryResult", "StoragePort"})
-
-
-def test_ports_reexports_alignment() -> None:
-    """Storage port types should match graphs storage definitions."""
-    storage = importlib.import_module("codeintel.analytics.ports.storage")
-    graphs_storage = importlib.import_module("codeintel.graphs.ports.storage")
-    expect_true(storage.BatchResult is graphs_storage.BatchResult)
-    expect_true(storage.QueryResult is graphs_storage.QueryResult)
-    expect_true(storage.StoragePort is graphs_storage.StoragePort)
 
 
 def test_functions_module_exports() -> None:

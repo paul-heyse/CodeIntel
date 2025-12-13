@@ -2,23 +2,41 @@
 
 This package contains pure functions that operate on in-memory data
 structures without performing any I/O. All database access, file reading,
-and persistence is handled by the ports/adapters layer.
+and persistence is handled by the resources layer.
+
+Subpackages
+-----------
+callgraph/
+    Call edge collection, resolution, and deduplication utilities.
+    - collection: Edge collection from AST/CST
+    - resolution: Callee resolution logic
+    - persistence: Deduplication utilities
+    - types: CallEdge, ResolutionResult, contexts
+metrics/
+    Graph metric computations (centrality, community, structural, etc.)
+    - centrality: PageRank, betweenness, closeness
+    - community: Community detection algorithms
+    - components: SCC, connected components
+    - structural: Clustering, triangles
+    - coupling: Module/function coupling metrics
 
 Modules
 -------
-- goid: GOID hash computation
-- callgraph: Call edge collection and resolution
-- cfg: Control-flow graph construction
-- dfg: Data-flow graph construction
-- imports: Import analysis
-- symbols: Symbol use analysis
-- metrics/: Graph metric computations
+cfg
+    Control-flow graph construction
+dfg
+    Data-flow graph construction
+goid
+    GOID hash computation and URN building
+imports
+    Import relationship analysis
+symbols
+    Symbol use analysis
 
 Example
 -------
 ```python
 from codeintel.graphs.compute import goid, callgraph
-
 
 descriptor = goid.GoidDescriptor(
     repo="myrepo",
@@ -32,7 +50,6 @@ descriptor = goid.GoidDescriptor(
 )
 goid_hash = goid.compute_goid(descriptor)
 urn = goid.build_urn(descriptor)
-
 
 edges = callgraph.collect_edges(parsed_module, function_spans, context)
 ```

@@ -12,13 +12,11 @@ from codeintel.analytics.graphs.subsystem_graph_metrics import (
     compute_subsystem_graph_metrics,
 )
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +35,7 @@ SUBSYSTEM_GRAPH_METRICS_METADATA = CorePluginMetadata(
 )
 
 
-class SubsystemGraphMetricsPlugin(TargetPlugin):
+class SubsystemGraphMetricsPlugin(MetadataPlugin):
     """Compute graph metrics for subsystems.
 
     Analyzes the condensed import graph at the subsystem level:
@@ -50,20 +48,7 @@ class SubsystemGraphMetricsPlugin(TargetPlugin):
     - analytics.subsystem_graph_metrics: Per-subsystem graph metrics
     """
 
-    plugin_name: ClassVar[str] = "subsystem_graph_metrics"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Compute graph metrics for subsystems."
     _core_metadata: ClassVar[CorePluginMetadata] = SUBSYSTEM_GRAPH_METRICS_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

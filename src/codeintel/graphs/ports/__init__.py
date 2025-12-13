@@ -1,35 +1,51 @@
 """Hexagonal architecture port interfaces for the graphs package.
 
-This package defines Protocol-based interfaces that abstract all I/O operations,
-enabling pure computation to be separated from infrastructure concerns.
+This package defines data transfer objects (DTOs) and deprecated Protocol-based
+interfaces. New code should use the resource classes directly.
 
-Port Categories
+Data Types (Active)
+-------------------
+- BatchResult, QueryResult: Storage operation results
+- GraphData: Lightweight graph data transfer object
+- ParsedFunction, ParsedModule: Parsed source code representations
+- FunctionSpan: Unified function span (via re-export from catalog)
+
+Deprecated Protocols
+--------------------
+- StoragePort: Use StorageResource from resources.storage
+- CatalogPort: Use CatalogService from graphs.catalog
+- EnginePort: Use GraphResource from resources.graphs
+
+.. deprecated:: 5.0.0
+    The Protocol classes (StoragePort, CatalogPort, EnginePort) are deprecated.
+    Use the corresponding resource classes directly for dependency injection.
+
+Migration Guide
 ---------------
-- StoragePort: Database query and batch operations
-- ParsingPort: CST/AST parsing abstractions
-- CatalogPort: Function catalog access
-- EnginePort: Graph engine access
+Old::
 
-Example
--------
-```python
-from codeintel.graphs.ports import StoragePort, ParsingPort
+    from codeintel.graphs.ports import StoragePort, CatalogPort
 
+    def process(storage: StoragePort, catalog: CatalogPort) -> None:
+        ...
 
-def process_files(storage: StoragePort, parser: ParsingPort) -> list[Edge]:
-    source = storage.read_source("module.py")
-    module = parser.parse_module(source)
-```
+New::
+
+    from codeintel.graphs.resources import StorageResource
+    from codeintel.graphs.catalog import CatalogService
+
+    def process(storage: StorageResource, catalog: CatalogService) -> None:
+        ...
 """
 
 from __future__ import annotations
 
+from codeintel.graphs.catalog import FunctionSpan
 from codeintel.graphs.ports.catalog import CatalogPort, FunctionSpanData
 from codeintel.graphs.ports.engine import EnginePort, GraphData
 from codeintel.graphs.ports.parsing import (
     ParsedFunction,
     ParsedModule,
-    ParsingPort,
 )
 from codeintel.graphs.ports.storage import BatchResult, QueryResult, StoragePort
 
@@ -37,11 +53,11 @@ __all__ = [
     "BatchResult",
     "CatalogPort",
     "EnginePort",
+    "FunctionSpan",
     "FunctionSpanData",
     "GraphData",
     "ParsedFunction",
     "ParsedModule",
-    "ParsingPort",
     "QueryResult",
     "StoragePort",
 ]

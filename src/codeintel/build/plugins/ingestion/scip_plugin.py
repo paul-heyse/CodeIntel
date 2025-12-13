@@ -3,25 +3,20 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar, SupportsInt, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.errors import ToolNotAvailableError
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
+from codeintel.build.plugins._helpers import compute_row_counts
 from codeintel.build.plugins.ingestion.helpers import get_module_paths, paths_to_modules
 from codeintel.build.plugins.ingestion.scip_options import ScipIngestOptions
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.adapters import BuildToolAdapter, DuckDBStorageAdapter
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestStep
-from codeintel.storage.ibis_types import filter_by, ibis_bool
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.execution.options import PluginOptionsResolver
 
 log = logging.getLogger(__name__)
 
@@ -52,29 +47,6 @@ SCIP_INGEST_METADATA = CorePluginMetadata(
 )
 
 
-def _compute_row_counts(ctx: TargetExecutionContext) -> dict[str, int]:
-    """Compute row counts for output tables.
-
-    Returns
-    -------
-    dict[str, int]
-        Row counts per table.
-    """
-    row_counts: dict[str, int] = {}
-    for table_key in ctx.contract.table_keys:
-        try:
-            table = ctx.gateway.ibis.table(table_key)
-            count_expr = filter_by(
-                table,
-                ibis_bool(table.repo == ctx.repo),
-                ibis_bool(table.commit == ctx.commit),
-            ).count()
-            row_counts[table_key] = int(cast("SupportsInt", count_expr.execute()))
-        except (RuntimeError, OSError):
-            row_counts[table_key] = 0
-    return row_counts
-
-
 def _filter_paths(paths: list[str], scope_paths: list[str] | None) -> list[str]:
     """Filter module paths by scope.
 
@@ -89,7 +61,7 @@ def _filter_paths(paths: list[str], scope_paths: list[str] | None) -> list[str]:
     return [path for path in paths if path.startswith(prefixes)]
 
 
-class ScipIngestPlugin(TargetPlugin):
+class ScipIngestPlugin(MetadataPlugin):
     """Run scip-python and persist symbols and GOID crosswalk.
 
     This plugin executes the SCIP-Python indexer to generate semantic
@@ -103,58 +75,7 @@ class ScipIngestPlugin(TargetPlugin):
     - core.goid_crosswalk: GOID crosswalk
     """
 
-    plugin_name: ClassVar[str] = "scip_ingest"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Run scip-python and persist symbols and GOID crosswalk."
     _core_metadata: ClassVar[CorePluginMetadata] = SCIP_INGEST_METADATA
-
-    def __init__(self, *, options_resolver: PluginOptionsResolver | None = None) -> None:
-        self._options_resolver = options_resolver
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata.
-
-        Returns
-        -------
-        PluginMetadata
-            Protocol-compatible metadata.
-        """
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return full core metadata.
-
-        Returns
-        -------
-        CorePluginMetadata
-            Canonical metadata definition.
-        """
-        return self._core_metadata
-
-    def resolve_options(
-        self,
-        *,
-        dynamic_overrides: Mapping[str, Any] | None = None,
-    ) -> ScipIngestOptions:
-        """Resolve typed options from configuration.
-
-        Returns
-        -------
-        ScipIngestOptions
-            Resolved options instance.
-        """
-        if self._options_resolver is None:
-            if dynamic_overrides:
-                return ScipIngestOptions(**dynamic_overrides)
-            return ScipIngestOptions()
-
-        return self._options_resolver.get_options(
-            self._core_metadata,
-            ScipIngestOptions,
-            dynamic_overrides=dynamic_overrides,
-        )
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute SCIP indexing.
@@ -180,6 +101,7 @@ class ScipIngestPlugin(TargetPlugin):
             raise ToolNotAvailableError(target=self.plugin_name, tool="scip-python")
 
         opts = self.resolve_options(
+            ScipIngestOptions,
             dynamic_overrides={"scip_output_dir": ctx.scip_dir},
         )
 
@@ -205,7 +127,7 @@ class ScipIngestPlugin(TargetPlugin):
             errors = "; ".join(result.errors) if result.errors else "Unknown error"
             return TargetResult.failed(f"SCIP ingest failed: {errors}")
 
-        row_counts = _compute_row_counts(ctx)
+        row_counts = compute_row_counts(ctx)
         return TargetResult.succeeded(
             row_counts=row_counts,
             artifacts_written=["index.scip", "index.json"],

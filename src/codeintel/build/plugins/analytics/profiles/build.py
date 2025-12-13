@@ -13,13 +13,11 @@ from codeintel.analytics.profiles import (
     build_module_profile,
 )
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 PROFILES_METADATA = CorePluginMetadata(
@@ -44,7 +42,7 @@ PROFILES_METADATA = CorePluginMetadata(
 )
 
 
-class ProfilesPlugin(TargetPlugin):
+class ProfilesPlugin(MetadataPlugin):
     """Build aggregated profiles for functions, files, and modules.
 
     Creates comprehensive profiles for:
@@ -59,22 +57,7 @@ class ProfilesPlugin(TargetPlugin):
     - analytics.module_profile: Module profiles
     """
 
-    plugin_name: ClassVar[str] = "profiles"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Build aggregated profiles for functions, files, and modules."
-    )
     _core_metadata: ClassVar[CorePluginMetadata] = PROFILES_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

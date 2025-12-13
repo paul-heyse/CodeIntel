@@ -183,11 +183,6 @@ class ModelLookup:
     by_name_lower: dict[str, list[ModelRecord]]
 
 
-_safe_unparse = safe_unparse
-_literal_value = literal_value
-_call_name = call_name
-
-
 def _annotation_to_str(node: ast.AST | None) -> str | None:
     if node is None:
         return None
@@ -237,7 +232,7 @@ def _constraints_from_call(value: ast.AST | None) -> dict[str, object]:
         if kw.arg is None:
             continue
         if kw.arg in constraints:
-            constraints[kw.arg] = _literal_value(kw.value)
+            constraints[kw.arg] = literal_value(kw.value)
     return constraints
 
 
@@ -246,7 +241,7 @@ def _is_required_marker(value: ast.AST | None) -> bool:
         return value.value is Ellipsis
     if not isinstance(value, ast.Call):
         return False
-    func_name = _call_name(value.func) or ""
+    func_name = call_name(value.func) or ""
     if not func_name.endswith(("Field", "field")):
         return False
     if not value.args:
@@ -257,7 +252,7 @@ def _is_required_marker(value: ast.AST | None) -> bool:
 
 def _field_source(value: ast.AST | None) -> str:
     if isinstance(value, ast.Call):
-        func_name = _call_name(value.func) or ""
+        func_name = call_name(value.func) or ""
         if func_name.endswith("Field"):
             return "pydantic_field"
         if func_name.endswith("field"):
@@ -275,13 +270,13 @@ def _constraints_from_keywords(keywords: list[ast.keyword]) -> dict[str, object]
         if kw.arg is None:
             continue
         if kw.arg in constraints:
-            constraints[kw.arg] = _literal_value(kw.value)
+            constraints[kw.arg] = literal_value(kw.value)
         if kw.arg == "max_length":
-            constraints["max_length"] = _literal_value(kw.value)
+            constraints["max_length"] = literal_value(kw.value)
         if kw.arg == "nullable":
-            constraints["nullable"] = _literal_value(kw.value)
+            constraints["nullable"] = literal_value(kw.value)
         if kw.arg == "unique":
-            constraints["unique"] = _literal_value(kw.value)
+            constraints["unique"] = literal_value(kw.value)
     return constraints
 
 
@@ -289,17 +284,17 @@ def _total_flag(node: ast.ClassDef) -> bool:
     total_flag = True
     for keyword in node.keywords:
         if keyword.arg == "total":
-            total_value = _literal_value(keyword.value)
+            total_value = literal_value(keyword.value)
             if isinstance(total_value, bool):
                 total_flag = total_value
     for base in node.bases:
         if (
             isinstance(base, ast.Subscript)
-            and _safe_unparse(base.value) == "TypedDict"
+            and safe_unparse(base.value) == "TypedDict"
             and isinstance(base.slice, ast.keyword)
             and base.slice.arg == "total"
         ):
-            total_value = _literal_value(base.slice.value)
+            total_value = literal_value(base.slice.value)
             if isinstance(total_value, bool):
                 total_flag = total_value
     return total_flag
@@ -474,31 +469,31 @@ def _multiplicity_from_type(type_text: str | None) -> str:
 def _foreign_key_target(args: list[ast.AST], keywords: list[ast.keyword]) -> str | None:
     for arg in args:
         if isinstance(arg, ast.Call):
-            call_name = _call_name(arg.func) or ""
-            if "foreignkey" in call_name.lower() and arg.args:
-                return str(_literal_value(arg.args[0]))
+            func_name = call_name(arg.func) or ""
+            if "foreignkey" in func_name.lower() and arg.args:
+                return str(literal_value(arg.args[0]))
         if isinstance(arg, (ast.Constant, ast.Name, ast.Attribute)):
-            call_name = _call_name(arg)
-            if call_name is not None and "foreignkey" in call_name.lower():
-                return call_name
+            name = call_name(arg)
+            if name is not None and "foreignkey" in name.lower():
+                return name
     for kw in keywords:
         if kw.arg and "foreignkey" in kw.arg.lower():
-            return str(_literal_value(kw.value))
+            return str(literal_value(kw.value))
     return None
 
 
 def _relationship_hints_from_call(field_name: str, value: ast.Call) -> list[RelationshipHint]:
-    func_name = (_call_name(value.func) or "").lower()
+    func_name = (call_name(value.func) or "").lower()
     hints: list[RelationshipHint] = []
     target_value: str | None = None
     multiplicity = "many"
     lineno = getattr(value, "lineno", None)
     if "relationship" in func_name:
         if value.args:
-            target_value = str(_literal_value(value.args[0]))
+            target_value = str(literal_value(value.args[0]))
         uselist_kw = next((kw for kw in value.keywords if kw.arg == "uselist"), None)
         if uselist_kw is not None:
-            use_list_val = _literal_value(uselist_kw.value)
+            use_list_val = literal_value(uselist_kw.value)
             if isinstance(use_list_val, bool) and not use_list_val:
                 multiplicity = "one"
         hints.append(
@@ -525,7 +520,7 @@ def _relationship_hints_from_call(field_name: str, value: ast.Call) -> list[Rela
         )
     if "foreignkey" in func_name:
         if value.args:
-            target_value = str(_literal_value(value.args[0]))
+            target_value = str(literal_value(value.args[0]))
         hints.append(
             RelationshipHint(
                 field_name=field_name,
@@ -538,7 +533,7 @@ def _relationship_hints_from_call(field_name: str, value: ast.Call) -> list[Rela
         )
     if any(name in func_name for name in ("onetoonefield", "manytomanyfield")):
         if value.args:
-            target_value = str(_literal_value(value.args[0]))
+            target_value = str(literal_value(value.args[0]))
         multiplicity = "one" if "onetoonefield" in func_name else "many"
         hints.append(
             RelationshipHint(
@@ -571,7 +566,7 @@ def _field_spec_from_assign(
     if stmt.value is not None:
         required = not _is_required_marker(stmt.value)
         has_default = not required
-        default_expr = _safe_unparse(stmt.value)
+        default_expr = safe_unparse(stmt.value)
     if model_kind == "typeddict":
         required = required and total_flag
         has_default = not required
@@ -593,7 +588,7 @@ def _field_spec_from_call(
     *,
     model_kind: str,
 ) -> tuple[FieldSpec | None, list[RelationshipHint]]:
-    func_name = (_call_name(value.func) or "").lower()
+    func_name = (call_name(value.func) or "").lower()
     constraints = _constraints_from_keywords(value.keywords)
     required = True
     has_default = False
@@ -603,7 +598,7 @@ def _field_spec_from_call(
     if "column" in func_name or "field" in func_name or "relationship" in func_name:
         if value.args:
             arg0 = value.args[0]
-            if isinstance(arg0, ast.Call) and "foreignkey" in (_call_name(arg0.func) or "").lower():
+            if isinstance(arg0, ast.Call) and "foreignkey" in (call_name(arg0.func) or "").lower():
                 field_type = "ForeignKey"
             else:
                 field_type = _annotation_to_str(arg0)
@@ -611,13 +606,13 @@ def _field_spec_from_call(
         has_default = any(kw.arg in {"default", "server_default"} for kw in value.keywords)
         default_kw = next((kw for kw in value.keywords if kw.arg == "default"), None)
         if default_kw is not None:
-            default_expr = _safe_unparse(default_kw.value)
+            default_expr = safe_unparse(default_kw.value)
         if model_kind == "django_model":
             null_kw = next((kw for kw in value.keywords if kw.arg == "null"), None)
             blank_kw = next((kw for kw in value.keywords if kw.arg == "blank"), None)
             if null_kw is not None:
-                required = not bool(_literal_value(null_kw.value))
-            if blank_kw is not None and bool(_literal_value(blank_kw.value)):
+                required = not bool(literal_value(null_kw.value))
+            if blank_kw is not None and bool(literal_value(blank_kw.value)):
                 required = False
             if default_kw is not None:
                 has_default = True
@@ -719,7 +714,7 @@ def _doc_map(
 def _class_decorators(node: ast.ClassDef) -> list[str]:
     decorators: list[str] = []
     for dec in node.decorator_list:
-        text = _safe_unparse(dec)
+        text = safe_unparse(dec)
         if text is not None:
             decorators.append(text)
     return decorators
@@ -728,7 +723,7 @@ def _class_decorators(node: ast.ClassDef) -> list[str]:
 def _base_classes(node: ast.ClassDef) -> list[dict[str, str]]:
     bases: list[dict[str, str]] = []
     for base in node.bases:
-        text = _safe_unparse(base)
+        text = safe_unparse(base)
         if text is None:
             continue
         name = text.split(".")[-1]

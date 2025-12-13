@@ -12,12 +12,10 @@ from codeintel.serving.mcp.models import (
     GraphNeighborhoodResponse,
     HighRiskFunctionsResponse,
     ImportBoundaryResponse,
-    ResponseMeta,
     TestsForFunctionResponse,
     parse_graph_scope,
 )
 from codeintel.serving.services.conversion import to_domain_result
-from codeintel.serving.services.http_helpers import clamp_limits
 from codeintel.serving.services.transport import _HttpTransportMixin
 
 if TYPE_CHECKING:

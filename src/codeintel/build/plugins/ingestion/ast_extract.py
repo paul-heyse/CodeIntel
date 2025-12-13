@@ -11,11 +11,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.plugins.types.protocol import PluginMetadata
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -83,7 +81,7 @@ def _paths_to_modules(paths: list[str], repo_root: Path) -> list[ModuleRecord]:
     ]
 
 
-class AstExtractPlugin(TargetPlugin):
+class AstExtractPlugin(MetadataPlugin):
     """Parse Python AST and persist rows + metrics.
 
     This plugin parses Python source files using the stdlib AST module,
@@ -95,11 +93,6 @@ class AstExtractPlugin(TargetPlugin):
     - core.ast_metrics: File-level AST metrics
     """
 
-    plugin_name: ClassVar[str] = "ast_extract"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Parse Python AST and persist rows + metrics into core.ast_* tables."
-    )
     _core_metadata: ClassVar[CorePluginMetadata] = AST_EXTRACT_METADATA
 
     default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
@@ -118,20 +111,10 @@ class AstExtractPlugin(TargetPlugin):
         step_factory: StepFactory | None = None,
         options_resolver: PluginOptionsResolver | None = None,
     ) -> None:
+        super().__init__(options_resolver=options_resolver)
         self._storage_factory = storage_adapter_factory or type(self).default_storage_factory
         self._discovery_factory = discovery_adapter_factory or type(self).default_discovery_factory
         self._step_factory = step_factory or type(self).default_step_factory
-        self._options_resolver = options_resolver
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata definition."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute AST extraction.

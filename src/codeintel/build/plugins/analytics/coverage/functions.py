@@ -9,13 +9,11 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.compute.coverage.functions import compute_coverage_functions
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 FUNCTION_COVERAGE_METADATA = CorePluginMetadata(
@@ -32,7 +30,7 @@ FUNCTION_COVERAGE_METADATA = CorePluginMetadata(
 )
 
 
-class CoverageFunctionsPlugin(TargetPlugin):
+class CoverageFunctionsPlugin(MetadataPlugin):
     """Aggregate line coverage to function-level metrics.
 
     Analyzes code coverage data to compute:
@@ -45,20 +43,7 @@ class CoverageFunctionsPlugin(TargetPlugin):
     - analytics.coverage_functions: Function-level coverage metrics
     """
 
-    plugin_name: ClassVar[str] = "coverage_functions"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Aggregate line coverage to function-level metrics."
     _core_metadata: ClassVar[CorePluginMetadata] = FUNCTION_COVERAGE_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the coverage functions computation.

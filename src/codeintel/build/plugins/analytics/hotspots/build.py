@@ -10,14 +10,12 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.compute.hotspots.metrics import build_hotspots
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
+from codeintel.build.plugins._helpers import compute_row_counts
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 
 HOTSPOTS_METADATA = CorePluginMetadata(
@@ -34,7 +32,7 @@ HOTSPOTS_METADATA = CorePluginMetadata(
 )
 
 
-class HotspotsPlugin(TargetPlugin):
+class HotspotsPlugin(MetadataPlugin):
     """Compute file-level hotspots from AST metrics and churn.
 
     Identifies high-risk code areas based on:
@@ -47,22 +45,7 @@ class HotspotsPlugin(TargetPlugin):
     - analytics.hotspots: File-level hotspot scores
     """
 
-    plugin_name: ClassVar[str] = "hotspots"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Compute file-level hotspots from AST metrics and Git churn."
-    )
     _core_metadata: ClassVar[CorePluginMetadata] = HOTSPOTS_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the hotspots computation.
@@ -77,40 +60,13 @@ class HotspotsPlugin(TargetPlugin):
         TargetResult
             Success result with row counts.
         """
+        _ = self  # Protocol method requires instance
         max_commits = ctx.parameters.get("max_commits", int, default=2000)
 
         build_hotspots(ctx.gateway, ctx.snapshot, max_commits=max_commits, runner=None)
 
-        row_counts = self._compute_row_counts(ctx)
+        row_counts = compute_row_counts(ctx)
         return TargetResult.succeeded(row_counts=row_counts)
-
-    @staticmethod
-    def _compute_row_counts(ctx: TargetExecutionContext) -> dict[str, int]:
-        """Compute row counts for output tables.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        dict[str, int]
-            Row counts per table.
-        """
-        row_counts: dict[str, int] = {}
-        for table_key in ctx.contract.table_keys:
-            try:
-                table = ctx.gateway.ibis.table(table_key)
-                filtered = table.filter(
-                    and_predicates(table.repo == ctx.repo, table.commit == ctx.commit)
-                )
-                result_df = filtered.aggregate(row_count=table.repo.count()).execute()
-                row_count = int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
-                row_counts[table_key] = row_count
-            except (RuntimeError, OSError):
-                row_counts[table_key] = 0
-        return row_counts
 
 
 __all__ = ["HOTSPOTS_METADATA", "HotspotsPlugin"]

@@ -11,13 +11,11 @@ from typing import TYPE_CHECKING, ClassVar
 from codeintel.analytics.compute.data_models.usage import compute_data_model_usage
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugins._metadata import to_plugin_metadata
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +42,7 @@ DATA_MODEL_USAGE_METADATA = CorePluginMetadata(
 )
 
 
-class DataModelUsagePlugin(TargetPlugin):
+class DataModelUsagePlugin(MetadataPlugin):
     """Classify per-function data model read/write usage patterns.
 
     Analyzes per-function:
@@ -57,22 +55,7 @@ class DataModelUsagePlugin(TargetPlugin):
     - analytics.data_model_usage: Data model usage patterns
     """
 
-    plugin_name: ClassVar[str] = "data_model_usage"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = (
-        "Classify per-function data model read/write usage patterns."
-    )
     _core_metadata: ClassVar[CorePluginMetadata] = DATA_MODEL_USAGE_METADATA
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return protocol-compatible metadata."""
-        return to_plugin_metadata(self._core_metadata)
-
-    @property
-    def core_metadata(self) -> CorePluginMetadata:
-        """Return canonical metadata."""
-        return self._core_metadata
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute the plugin.

@@ -1,7 +1,19 @@
 """Engine port interface for graph engine access.
 
-This module defines the EnginePort protocol that abstracts graph engine
-operations, providing access to cached graphs without exposing implementation.
+This module defines data classes for graph engine operations and a deprecated
+EnginePort protocol.
+
+Data Classes
+------------
+- GraphData: Lightweight graph data transfer object
+
+Deprecated
+----------
+- EnginePort: Use GraphResource from ``codeintel.graphs.resources.graphs`` directly
+
+.. deprecated:: 5.0.0
+    The EnginePort protocol is deprecated. Use GraphResource from
+    ``codeintel.graphs.resources.graphs`` directly instead.
 """
 
 from __future__ import annotations
@@ -102,6 +114,11 @@ class GraphData:
 @runtime_checkable
 class EnginePort(Protocol):
     """Protocol for graph engine operations.
+
+    .. deprecated:: 5.0.0
+        Use GraphResource from ``codeintel.graphs.resources.graphs`` directly.
+        The protocol is retained for backward compatibility but new code should
+        use the resource class directly.
 
     Implementations provide access to cached or freshly loaded graphs
     without exposing the underlying graph library.

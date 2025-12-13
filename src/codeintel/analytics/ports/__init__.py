@@ -1,36 +1,50 @@
 """Hexagonal architecture port interfaces for the analytics package.
 
-This package defines Protocol-based interfaces that abstract I/O operations,
-enabling pure computation to be separated from infrastructure concerns.
+This package re-exports types from ``codeintel.graphs.ports`` for convenience.
+New code should prefer importing from graphs directly.
 
 Port Categories
 ---------------
-- StoragePort: Re-export from graphs.ports for database operations
-- CatalogPort: Re-export from graphs.ports for function catalog access
-- GraphRuntimePort: Protocol for graph runtime access
+- StoragePort: Database query and batch operations (deprecated)
+- CatalogPort: Function catalog access (deprecated)
+
+Data Types
+----------
+- FunctionSpan: Unified function span representation
+- BatchResult, QueryResult: Storage operation results
+
+.. deprecated:: 5.0.0
+    Import directly from ``codeintel.graphs.ports`` or use the resource classes
+    from ``codeintel.graphs.resources`` instead.
 
 Example
 -------
 ```python
-from codeintel.analytics.ports import StoragePort, CatalogPort, GraphRuntimePort
+from codeintel.graphs.catalog import CatalogService
+from codeintel.graphs.resources import StorageResource
 
-
-def analyze(storage: StoragePort, catalog: CatalogPort) -> dict[str, int]:
+def analyze(storage: StorageResource, catalog: CatalogService) -> dict[str, int]:
     spans = catalog.function_spans
 ```
 """
 
 from __future__ import annotations
 
-from codeintel.analytics.ports.catalog import CatalogPort, FunctionSpanData
-from codeintel.analytics.ports.graphs import GraphRuntimePort
-from codeintel.analytics.ports.storage import BatchResult, QueryResult, StoragePort
+from codeintel.graphs.catalog import CatalogService, FunctionSpan
+from codeintel.graphs.ports import (
+    BatchResult,
+    CatalogPort,
+    FunctionSpanData,
+    QueryResult,
+    StoragePort,
+)
 
 __all__ = [
     "BatchResult",
-    "CatalogPort",
-    "FunctionSpanData",
-    "GraphRuntimePort",
+    "CatalogPort",  # Deprecated
+    "CatalogService",  # Canonical
+    "FunctionSpan",
+    "FunctionSpanData",  # Deprecated alias
     "QueryResult",
-    "StoragePort",
+    "StoragePort",  # Deprecated
 ]

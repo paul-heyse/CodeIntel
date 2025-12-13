@@ -1,18 +1,17 @@
-"""Parsing port interface for CST/AST operations.
+"""Parsing data types for CST/AST operations.
 
-This module defines the ParsingPort protocol that abstracts source code
-parsing, allowing pure computation to work with parsed representations
+This module defines data classes for representing parsed source code,
+allowing pure computation to work with parsed representations
 without coupling to specific parsing libraries.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import ast
-    from collections.abc import Sequence
 
     import libcst as cst
 
@@ -155,94 +154,9 @@ class ParseResult:
         return cls(module=None, error=error, success=False)
 
 
-@runtime_checkable
-class ParsingPort(Protocol):
-    """Protocol for source code parsing operations.
-
-    Implementations parse source code into structured representations
-    that can be consumed by pure computation functions.
-    """
-
-    def parse_module(self, source: str) -> ParseResult:
-        """Parse a module from source code.
-
-        Parameters
-        ----------
-        source
-            Source code string.
-
-        Returns
-        -------
-        ParseResult
-            Parsed module or error.
-        """
-        ...
-
-    def parse_function(
-        self,
-        source: str,
-        start_line: int,
-        end_line: int,
-    ) -> ParsedFunction | None:
-        """Parse a single function from source within a line range.
-
-        Parameters
-        ----------
-        source
-            Source code string.
-        start_line
-            Starting line number.
-        end_line
-            Ending line number.
-
-        Returns
-        -------
-        ParsedFunction | None
-            Parsed function if found, None otherwise.
-        """
-        ...
-
-    def extract_imports(self, source: str) -> Sequence[tuple[str, tuple[str, ...]]]:
-        """Extract import statements from source.
-
-        Parameters
-        ----------
-        source
-            Source code string.
-
-        Returns
-        -------
-        Sequence[tuple[str, tuple[str, ...]]]
-            Sequence of (module, imported_names) tuples.
-        """
-        ...
-
-    def extract_call_sites(
-        self,
-        module: ParsedModule,
-        function_span: tuple[int, int],
-    ) -> Sequence[tuple[str, int]]:
-        """Extract call sites within a function.
-
-        Parameters
-        ----------
-        module
-            Parsed module containing the function.
-        function_span
-            (start_line, end_line) of the function.
-
-        Returns
-        -------
-        Sequence[tuple[str, int]]
-            Sequence of (callee_name, line_number) tuples.
-        """
-        ...
-
-
 __all__ = [
     "ParseError",
     "ParseResult",
     "ParsedFunction",
     "ParsedModule",
-    "ParsingPort",
 ]
