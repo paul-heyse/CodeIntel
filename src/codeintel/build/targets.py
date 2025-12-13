@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.contracts import EMPTY_CONTRACT, OutputContract
+from codeintel.build.errors import CycleDetectedError
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.resources import (
     DEFAULT_EXECUTION,
@@ -388,7 +389,7 @@ class TargetGraph:
 
         Raises
         ------
-        ValueError
+        CycleDetectedError
             If a cycle is detected in the dependencies.
         """
         all_names: set[str] = set()
@@ -419,8 +420,7 @@ class TargetGraph:
         if len(result) != len(all_names):
             computed = set(result)
             remaining = all_names - computed
-            msg = f"Cycle detected in dependencies involving: {sorted(remaining)}"
-            raise ValueError(msg)
+            raise CycleDetectedError(sorted(remaining))
 
         return tuple(result)
 

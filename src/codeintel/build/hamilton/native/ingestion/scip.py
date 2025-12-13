@@ -163,7 +163,9 @@ def t__scip(
                     "scip_dir": str(env.paths.scip_dir),
                     "repo_root": str(env.snapshot.repo_root),
                 },
-            ) if target else (),
+            )
+            if target
+            else (),
         )
 
     executor = NativeTargetExecutor.for_target(env, graph, "scip")

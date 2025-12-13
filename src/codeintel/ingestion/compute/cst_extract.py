@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import libcst as cst
 from libcst import metadata
 
-from codeintel.ingestion.compute.base import StepResult
+from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
 from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureConfig,
     CstCaptureVisitor,
@@ -22,8 +22,7 @@ from codeintel.ingestion.infrastructure.cst_utils import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
+    from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
 
@@ -133,7 +132,7 @@ def _extract_module_cst(
         return ModuleCstResult(rel_path=module.rel_path, rows=[], error=str(exc))
 
 
-class CstExtractStep:
+class CstExtractStep(BaseExtractStep):
     """CST extraction step with port injection.
 
     This step extracts LibCST concrete syntax trees from modules,
@@ -146,23 +145,6 @@ class CstExtractStep:
     discovery
         Discovery port for reading module source.
     """
-
-    def __init__(
-        self,
-        storage: IngestStoragePort,
-        discovery: ModuleDiscoveryPort,
-    ) -> None:
-        """Initialize the step.
-
-        Parameters
-        ----------
-        storage
-            Storage port for persisting data.
-        discovery
-            Discovery port for reading module source.
-        """
-        self._storage = storage
-        self._discovery = discovery
 
     def execute(
         self,
@@ -190,14 +172,7 @@ class CstExtractStep:
         all_rows: list[list[object]] = []
         errors: list[str] = []
 
-        for module in modules:
-            if not module.rel_path.endswith(".py"):
-                continue
-
-            source = self._discovery.read_module_source(module)
-            if source is None:
-                continue
-
+        for module, source in self._iter_python_sources(modules):
             result = _extract_module_cst(module, source)
             if result.error is not None:
                 errors.append(f"Failed to parse {module.rel_path}: {result.error}")
@@ -218,14 +193,8 @@ class CstExtractStep:
                     ]
                 )
 
-        table_counts: dict[str, int] = {}
-        total_rows = 0
-
-        if all_rows:
-            scope = f"{repo}@{commit}"
-            result = self._storage.write_batch("core.cst_nodes", all_rows, scope=scope)
-            table_counts["core.cst_nodes"] = result.rows_written
-            total_rows = result.rows_written
+        table_counts = self._write_and_count("core.cst_nodes", all_rows, repo=repo, commit=commit)
+        total_rows = table_counts.get("core.cst_nodes", 0)
 
         log.info(
             "CST extraction: repo=%s commit=%s rows=%d",

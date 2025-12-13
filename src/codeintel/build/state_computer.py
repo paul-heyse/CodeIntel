@@ -347,9 +347,7 @@ class StateComputer:
             else:
                 # Check if dep is stale
                 dep_target = self._graph.get(dep_name)
-                current_hash = self._session.get_input_hash(
-                    dep_target, dep_manifest.options_hash
-                )
+                current_hash = self._session.get_input_hash(dep_target, dep_manifest.options_hash)
                 if dep_manifest.input_hash != current_hash:
                     blocking_deps.append(dep_name)
                     if first_reason is None:

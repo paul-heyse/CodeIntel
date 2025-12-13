@@ -61,11 +61,7 @@ def register_all_targets(registry: UnifiedRegistry) -> None:
     register_export_targets(registry)
 
     # Validate all targets have implementations
-    orphans = [
-        name
-        for name in registry
-        if not registry.has_implementation(name)
-    ]
+    orphans = [name for name in registry if not registry.has_implementation(name)]
     if orphans:
         msg = f"Targets registered without implementations: {', '.join(sorted(orphans))}"
         raise ValueError(msg)

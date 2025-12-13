@@ -25,7 +25,6 @@ from codeintel.ingestion.engine.results import (
     CoverageReport,
     DiagnosticReport,
     ScipIndexResult,
-    TestReport,
 )
 
 if TYPE_CHECKING:
@@ -476,23 +475,3 @@ class ToolService:
             return parsed
 
         return ScipIndexResult.empty()
-
-    @staticmethod
-    def get_test_report(result: ToolPluginResult) -> TestReport:
-        """
-        Extract parsed TestReport from a pytest plugin result.
-
-        Parameters
-        ----------
-        result
-            ToolPluginResult from pytest plugin execution.
-
-        Returns
-        -------
-        TestReport
-            Parsed test report or empty report.
-        """
-        parsed = result.parsed
-        if isinstance(parsed, TestReport):
-            return parsed
-        return TestReport.empty()

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugins/ingestion/docstrings_plugin.py
+# hypothesis_version: 6.148.7
+
+['.', '.py', '/', '3.0.0', 'DOCSTRINGS_METADATA', 'builder', 'core.docstrings', 'core.modules', 'docstrings', 'ingest.docstrings', 'path']

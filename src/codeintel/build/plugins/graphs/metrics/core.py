@@ -21,8 +21,9 @@ from codeintel.analytics.runtime import (
     build_graph_runtime,
 )
 from codeintel.build.context import TargetResult
-from codeintel.build.plugin import TargetPlugin
+from codeintel.build.plugin import MetadataPlugin
 from codeintel.config.primitives import GraphBackendConfig
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
@@ -31,7 +32,33 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class CoreMetricsPlugin(TargetPlugin):
+CORE_METRICS_METADATA = CorePluginMetadata(
+    name="analytics.graph_metrics",
+    version="3.0.0",
+    description="Compute core graph metrics (PageRank, centrality, etc.).",
+    domain=PluginDomain.ANALYTICS,
+    kind="metric",
+    stage="graph",
+    provides=(
+        "analytics.graph_metrics_functions",
+        "analytics.graph_metrics_modules",
+        "analytics.graph_metrics_functions_ext",
+        "analytics.graph_metrics_modules_ext",
+        "analytics.graph_stats",
+    ),
+    requires=("graph.call_graph_edges",),
+    produces_tables=(
+        "analytics.graph_metrics_functions",
+        "analytics.graph_metrics_modules",
+        "analytics.graph_metrics_functions_ext",
+        "analytics.graph_metrics_modules_ext",
+        "analytics.graph_stats",
+    ),
+    consumes_tables=("graph.call_graph_edges", "graph.call_graph_nodes"),
+)
+
+
+class CoreMetricsPlugin(MetadataPlugin):
     """Compute core graph metrics (PageRank, centrality, etc.).
 
     Outputs
@@ -42,9 +69,7 @@ class CoreMetricsPlugin(TargetPlugin):
     - analytics.graph_metrics_modules_ext: Extended module metrics
     """
 
-    plugin_name: ClassVar[str] = "graph_metrics"
-    plugin_version: ClassVar[str] = "3.0.0"
-    plugin_description: ClassVar[str] = "Compute core graph metrics (PageRank, centrality, etc.)."
+    _core_metadata: ClassVar[CorePluginMetadata] = CORE_METRICS_METADATA
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute core metrics computation.
@@ -124,4 +149,4 @@ class CoreMetricsPlugin(TargetPlugin):
             return TargetResult.failed(f"Core metrics computation failed: {e}")
 
 
-__all__ = ["CoreMetricsPlugin"]
+__all__ = ["CORE_METRICS_METADATA", "CoreMetricsPlugin"]

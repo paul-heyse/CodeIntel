@@ -134,23 +134,17 @@ def create_run_record(  # noqa: PLR0913
     Examples
     --------
     >>> # Success record
-    >>> record = create_run_record(
-    ...     target, "succeeded", run.input_hash, env=env, run=run
-    ... )
+    >>> record = create_run_record(target, "succeeded", run.input_hash, env=env, run=run)
     >>> record.status
     'succeeded'
 
     >>> # Skipped record
-    >>> record = create_run_record(
-    ...     target, "skipped", run.input_hash, env=env, run=run
-    ... )
+    >>> record = create_run_record(target, "skipped", run.input_hash, env=env, run=run)
     >>> record.status
     'skipped'
 
     >>> # Failed record
-    >>> record = create_run_record(
-    ...     target, "failed", input_hash, error=error
-    ... )
+    >>> record = create_run_record(target, "failed", input_hash, error=error)
     >>> record.status
     'failed'
     """

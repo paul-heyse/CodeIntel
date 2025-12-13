@@ -261,8 +261,7 @@ class DatabaseState:
             Legacy database state.
         """
         legacy_targets = {
-            name: TargetState.from_unified(state)
-            for name, state in unified.targets.items()
+            name: TargetState.from_unified(state) for name, state in unified.targets.items()
         }
         return cls(
             repo=unified.repo,

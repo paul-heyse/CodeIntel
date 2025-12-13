@@ -42,7 +42,7 @@ print(f"Wrote {result.rows_written} rows")
 from __future__ import annotations
 
 from codeintel.ingestion.compute.ast_extract import AstExtractStep
-from codeintel.ingestion.compute.base import StepResult
+from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
 from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.compute.cst_extract import CstExtractStep
@@ -54,6 +54,7 @@ from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
 
 __all__ = [
     "AstExtractStep",
+    "BaseExtractStep",
     "ConfigIngestStep",
     "CoverageIngestStep",
     "CstExtractStep",

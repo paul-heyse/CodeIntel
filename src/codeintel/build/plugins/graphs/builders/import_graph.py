@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
+from codeintel.build.plugins._helpers import get_source_root
 from codeintel.build.plugins.graphs.builders.import_graph_options import ImportGraphOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import imports as imports_compute
@@ -28,6 +29,8 @@ from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.data_models import ImportEdgeRow, ImportModuleRow
     from codeintel.storage.gateway import StorageGateway
@@ -53,42 +56,6 @@ IMPORT_GRAPH_METADATA = CorePluginMetadata(
     options_model=ImportGraphOptions,
     extra={"graph_kinds": ("import_graph",)},
 )
-
-
-def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | None:
-    """Retrieve source root from core.snapshots.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    Path | None
-        Absolute path to source root, or None if not found.
-    """
-    try:
-        snapshots = gateway.ibis.table("core.snapshots")
-        expr = (
-            snapshots.filter(
-                cast("Any", snapshots.repo == repo) & cast("Any", snapshots.commit == commit)
-            )
-            .select(snapshots.source_root)
-            .limit(1)
-        )
-        df = expr.execute()
-        if not getattr(df, "empty", True):
-            value = df.iloc[0][0]
-            if value:
-                return Path(str(value))
-    except DuckDBError as exc:
-        log.debug("import_graph: Could not get source root: %s", exc)
-    return None
 
 
 def _load_modules(
@@ -280,9 +247,7 @@ class ImportGraphPlugin(MetadataPlugin):
         gateway, repo, commit = ctx.gateway, ctx.snapshot.repo, ctx.snapshot.commit
 
         try:
-            source_root = (
-                ctx.snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
-            )
+            source_root = ctx.snapshot.repo_root or get_source_root(gateway, repo, commit)
             module_by_path = _filter_paths_by_scope(
                 _load_modules(gateway, repo, commit),
                 opts.scope_paths,

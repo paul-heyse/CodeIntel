@@ -13,6 +13,7 @@ from codeintel.analytics.compute.graphs import (
     log_projection_skipped,
     projection_metrics,
 )
+from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES
 from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
@@ -38,7 +39,6 @@ if TYPE_CHECKING:
     )
     from codeintel.storage.gateway import StorageGateway
 
-MAX_BETWEENNESS_NODES = 1000
 NODE_ID_INDEX = 2
 
 
@@ -60,23 +60,12 @@ class ProjectionTargets:
     edge_table_key: str
 
 
-def _clear_config_tables(gateway: StorageGateway, repo: str, commit: str) -> None:
-    con = gateway.con
-    con.execute(
-        "DELETE FROM analytics.config_graph_metrics_keys WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.config_graph_metrics_modules WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.config_projection_key_edges WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.config_projection_module_edges WHERE repo = ? AND commit = ?",
-        [repo, commit],
+def _clear_config_tables(backend: DuckDBPolicyBackend, repo: str, commit: str) -> None:
+    backend.delete_for_snapshot("analytics.config_graph_metrics_keys", repo=repo, commit=commit)
+    backend.delete_for_snapshot("analytics.config_graph_metrics_modules", repo=repo, commit=commit)
+    backend.delete_for_snapshot("analytics.config_projection_key_edges", repo=repo, commit=commit)
+    backend.delete_for_snapshot(
+        "analytics.config_projection_module_edges", repo=repo, commit=commit
     )
 
 
@@ -200,7 +189,7 @@ def compute_config_graph_metrics(
     graph = resolved_runtime.ensure_config_module_bipartite()
     if graph.number_of_nodes() == 0:
         log_empty_graph("config_module_bipartite", graph)
-        _clear_config_tables(gateway, repo, commit)
+        _clear_config_tables(backend, repo, commit)
         return
     ctx = resolve_graph_context(
         GraphContextSpec(
@@ -222,7 +211,7 @@ def compute_config_graph_metrics(
             nodes=0,
             graph_nodes=graph.number_of_nodes(),
         )
-        _clear_config_tables(gateway, repo, commit)
+        _clear_config_tables(backend, repo, commit)
         return
 
     projection_ctx = ProjectionContext(
@@ -255,49 +244,13 @@ def compute_config_graph_metrics(
         targets=module_targets,
     )
 
-    _clear_config_tables(gateway, repo, commit)
+    _clear_config_tables(backend, repo, commit)
 
     if key_rows:
-        gateway.ibis.write(
-            "analytics.config_graph_metrics_keys",
-            key_rows,
-            columns=[
-                "repo",
-                "commit",
-                "config_key",
-                "degree",
-                "weighted_degree",
-                "betweenness",
-                "closeness",
-                "community_id",
-                "created_at",
-            ],
-        )
+        backend.bulk_insert("analytics.config_graph_metrics_keys", key_rows)
     if module_rows:
-        gateway.ibis.write(
-            "analytics.config_graph_metrics_modules",
-            module_rows,
-            columns=[
-                "repo",
-                "commit",
-                "module",
-                "degree",
-                "weighted_degree",
-                "betweenness",
-                "closeness",
-                "community_id",
-                "created_at",
-            ],
-        )
+        backend.bulk_insert("analytics.config_graph_metrics_modules", module_rows)
     if key_edges:
-        gateway.ibis.write(
-            "analytics.config_projection_key_edges",
-            key_edges,
-            columns=["repo", "commit", "src_key", "dst_key", "weight", "created_at"],
-        )
+        backend.bulk_insert("analytics.config_projection_key_edges", key_edges)
     if module_edges:
-        gateway.ibis.write(
-            "analytics.config_projection_module_edges",
-            module_edges,
-            columns=["repo", "commit", "src_module", "dst_module", "weight", "created_at"],
-        )
+        backend.bulk_insert("analytics.config_projection_module_edges", module_edges)

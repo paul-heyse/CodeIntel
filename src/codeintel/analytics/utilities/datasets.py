@@ -355,6 +355,15 @@ __all__ = [
 ]
 
 
+def _to_python_type(value: object) -> object:
+    """Convert numpy types to Python native types for DuckDB compatibility."""
+    if value is None:
+        return None
+    if hasattr(value, "item"):
+        return value.item()  # type: ignore[union-attr]
+    return value
+
+
 def validate_tuple_rows(
     table_key: str,
     rows: Sequence[Mapping[str, object] | Sequence[object]],
@@ -409,4 +418,7 @@ def validate_tuple_rows(
     validated = validate_df(table_key, df)
     normalized = validated.where(pd.notna(validated), None)
     ordered = normalized.loc[:, columns_index]
-    return [tuple(row) for row in ordered.itertuples(index=False, name=None)]
+    return [
+        tuple(_to_python_type(val) for val in row)
+        for row in ordered.itertuples(index=False, name=None)
+    ]

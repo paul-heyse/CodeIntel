@@ -297,9 +297,7 @@ class BuildState:
         tuple[str, ...]
             Sorted target names with matching status.
         """
-        return tuple(
-            sorted(name for name, state in self.targets.items() if state.status == status)
-        )
+        return tuple(sorted(name for name, state in self.targets.items() if state.status == status))
 
     def is_current(self, name: str) -> bool:
         """Check if a target is up-to-date.
@@ -343,9 +341,7 @@ class BuildState:
         tuple[str, ...]
             Sorted names of targets that need computation and aren't blocked.
         """
-        return tuple(
-            sorted(name for name, state in self.targets.items() if state.can_run)
-        )
+        return tuple(sorted(name for name, state in self.targets.items() if state.can_run))
 
     def current_targets(self) -> tuple[str, ...]:
         """Return up-to-date targets.

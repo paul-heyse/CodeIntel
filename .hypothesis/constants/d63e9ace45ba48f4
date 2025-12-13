@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/constants.py
+# hypothesis_version: 6.148.7
+
+[0.1, 200, 500, 'EIGEN_MAX_ITER', 'RICH_CLUB_PERCENTILE']

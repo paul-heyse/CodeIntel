@@ -7,7 +7,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
@@ -15,13 +15,13 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolNotFoundError,
 )
 from codeintel.ingestion.engine.plugins import (
-    ToolPlugin,
+    DiagnosticToolPlugin,
     ToolPluginMetadata,
     ToolPluginResult,
     ToolStatus,
 )
 from codeintel.ingestion.engine.results import DiagnosticReport
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path, repo_relpath
+from codeintel.ingestion.infrastructure.paths import safe_relpath
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -30,29 +30,6 @@ if TYPE_CHECKING:
     )
 
 log = logging.getLogger(__name__)
-
-
-def _safe_relpath(repo_root: Path, file_path: Path) -> str | None:
-    """
-    Safely compute repository-relative path.
-
-    Parameters
-    ----------
-    repo_root
-        Repository root path.
-    file_path
-        Absolute or relative file path.
-
-    Returns
-    -------
-    str | None
-        Normalized relative path or None on failure.
-    """
-    try:
-        candidate = file_path if file_path.is_absolute() else repo_root / file_path
-        return normalize_rel_path(repo_relpath(repo_root, candidate))
-    except ValueError:
-        return None
 
 
 def _parse_ruff_output(
@@ -93,7 +70,7 @@ def _parse_ruff_output(
         file_name = diag.get("filename")
         if not file_name:
             continue
-        rel_path = _safe_relpath(repo_root, Path(str(file_name)))
+        rel_path = safe_relpath(repo_root, Path(str(file_name)))
         if rel_path is None:
             continue
         counts[rel_path] = counts.get(rel_path, 0) + 1
@@ -102,9 +79,10 @@ def _parse_ruff_output(
 
 
 @dataclass
-class RuffPlugin(ToolPlugin):
+class RuffPlugin(DiagnosticToolPlugin):
     """Plugin responsible for running ruff and parsing diagnostics."""
 
+    tool_name: ClassVar[ToolName] = ToolName.RUFF
     runner: ToolRunner
     tools_config: ToolsConfig
     metadata: ToolPluginMetadata = field(
@@ -135,16 +113,9 @@ class RuffPlugin(ToolPlugin):
                 cwd=repo_root,
                 timeout_s=self.tools_config.default_timeout_s,
             )
-        except ToolNotFoundError as exc:
+        except ToolNotFoundError:
             log.warning("ruff binary not found; treating all files as 0 errors")
-            return ToolPluginResult(
-                tool=ToolName.RUFF,
-                status=ToolStatus.NOT_FOUND,
-                artifacts={},
-                run=None,
-                error=exc,
-                parsed=DiagnosticReport.empty("ruff"),
-            )
+            return self._not_found_result()
 
         if result.returncode not in {0, 1}:
             err = ToolExecutionError(result)

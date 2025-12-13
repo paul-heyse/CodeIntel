@@ -24,19 +24,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
-CONFIG_DATA_FLOW_COLS = [
-    "repo",
-    "commit",
-    "config_key",
-    "config_path",
-    "function_goid_h128",
-    "usage_kind",
-    "evidence_json",
-    "call_chain_id",
-    "call_chain_json",
-    "created_at",
-]
-
 log = logging.getLogger(__name__)
 
 LOGGER_METHODS = {
@@ -365,11 +352,7 @@ def compute_config_data_flow(
     )
 
     if rows_to_insert:
-        gateway.ibis.write(
-            "analytics.config_data_flow",
-            rows_to_insert,
-            columns=CONFIG_DATA_FLOW_COLS,
-        )
+        backend.bulk_insert("analytics.config_data_flow", rows_to_insert)
     log.info(
         "config_data_flow populated: %d rows for %s@%s",
         len(rows_to_insert),

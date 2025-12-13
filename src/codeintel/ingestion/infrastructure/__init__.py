@@ -64,8 +64,6 @@ from codeintel.ingestion.infrastructure.scanning import (
     profile_from_env,
 )
 from codeintel.ingestion.infrastructure.workers import (
-    AST_WORKER_CONFIG,
-    CST_WORKER_CONFIG,
     DEFAULT_MAX_WORKERS,
     DEFAULT_MIN_WORKERS,
     WorkerConfig,
@@ -76,8 +74,6 @@ from codeintel.ingestion.infrastructure.workers import (
 )
 
 __all__ = [
-    "AST_WORKER_CONFIG",
-    "CST_WORKER_CONFIG",
     "DEFAULT_IGNORE_DIRS",
     "DEFAULT_MAX_WORKERS",
     "DEFAULT_MIN_WORKERS",

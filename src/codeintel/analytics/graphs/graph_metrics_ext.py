@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
@@ -22,23 +21,20 @@ from codeintel.analytics.graphs.constants import (
     CENTRALITY_SAMPLE_LIMIT,
     EIGEN_MAX_ITER,
 )
-from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
+from codeintel.analytics.graphs.orchestrator import (
+    ExtendedMetricsConfig,
+    ExtendedMetricsRequest,
+    GraphViews,
+    compute_extended_metrics,
+)
 from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
-    resolve_graph_runtime,
 )
 from codeintel.analytics.runtime.context import (
     GraphContextSpec,
     resolve_graph_context,
 )
-from codeintel.analytics.utilities.datasets import (
-    get_analytics_dataset_contract,
-    insert_analytics_rows,
-    validate_contract_rows,
-)
-from codeintel.analytics.utilities.persistence import DeleteScope
-from codeintel.config.primitives import SnapshotRef
 
 if TYPE_CHECKING:
     from codeintel.analytics.compute.graphs import (
@@ -51,17 +47,7 @@ if TYPE_CHECKING:
         GraphContext,
     )
     from codeintel.config.datasets import GraphMetricsFunctionsExtRow
-    from codeintel.graphs.engine import GraphEngine
     from codeintel.storage.gateway import StorageGateway
-
-
-@dataclass(frozen=True)
-class GraphViews:
-    """Graph variants used for function-level metrics."""
-
-    graph: nx.DiGraph
-    simple_graph: nx.DiGraph
-    undirected: nx.Graph
 
 
 @dataclass(frozen=True)
@@ -76,6 +62,18 @@ class FunctionGraphSlices:
 
 
 def _bridge_endpoint_counts(graph: nx.Graph) -> dict[int, int]:
+    """Count bridge endpoints for each node.
+
+    Parameters
+    ----------
+    graph
+        Undirected graph to analyze for bridges.
+
+    Returns
+    -------
+    dict[int, int]
+        Mapping of node to count of incident bridges.
+    """
     counts: dict[int, int] = dict.fromkeys(graph.nodes, 0)
     for left, right in nx.bridges(graph):
         counts[left] += 1
@@ -83,7 +81,25 @@ def _bridge_endpoint_counts(graph: nx.Graph) -> dict[int, int]:
     return counts
 
 
-def _resolve_function_context(runtime: GraphRuntimeOptions, repo: str, commit: str) -> GraphContext:
+def _resolve_function_context(
+    runtime: GraphRuntimeOptions, repo: str, commit: str
+) -> GraphContext:
+    """Build graph context with function-specific constants.
+
+    Parameters
+    ----------
+    runtime
+        Runtime options including GPU and community detection settings.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+
+    Returns
+    -------
+    GraphContext
+        Resolved graph context for function metrics computation.
+    """
     return resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -99,17 +115,21 @@ def _resolve_function_context(runtime: GraphRuntimeOptions, repo: str, commit: s
     )
 
 
-def _build_function_views(
-    engine: GraphEngine,
-) -> GraphViews:
-    graph: nx.DiGraph = engine.call_graph()
-    simple_graph: nx.DiGraph = cast("nx.DiGraph", graph.copy())
-    simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
-    undirected = simple_graph.to_undirected()
-    return GraphViews(graph=graph, simple_graph=simple_graph, undirected=undirected)
-
-
 def _function_metric_slices(views: GraphViews, ctx: GraphContext) -> FunctionGraphSlices:
+    """Compute metric slices for function-level extended metrics.
+
+    Parameters
+    ----------
+    views
+        Graph views containing directed, simplified, and undirected graphs.
+    ctx
+        Graph context with computation parameters.
+
+    Returns
+    -------
+    FunctionGraphSlices
+        Precomputed statistics for row building.
+    """
     centralities = centrality_directed(views.simple_graph, ctx, include_eigen=True)
     structure = structural_metrics(
         views.undirected,
@@ -139,6 +159,26 @@ def _function_metric_rows(
     views: GraphViews,
     slices: FunctionGraphSlices,
 ) -> list[GraphMetricsFunctionsExtRow]:
+    """Build rows for function-level extended metrics.
+
+    Parameters
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    ctx
+        Graph context with computation parameters.
+    views
+        Graph views for ancestor/descendant computation.
+    slices
+        Precomputed metric slices.
+
+    Returns
+    -------
+    list[GraphMetricsFunctionsExtRow]
+        Rows ready for insertion.
+    """
     node_count = views.graph.number_of_nodes()
     ancestor_count = {
         node: len(nx.ancestors(views.graph, node)) if node_count else 0
@@ -181,6 +221,19 @@ def _function_metric_rows(
     return build_function_metric_ext_rows(inputs)
 
 
+# Configuration for function-level extended metrics
+_FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[
+    FunctionGraphSlices, GraphMetricsFunctionsExtRow
+] = ExtendedMetricsConfig(
+    table_key="analytics.graph_metrics_functions_ext",
+    get_source_graph=lambda rt: rt.ensure_call_graph(),
+    filter_graph=lambda f, g: f.filter_call_graph(g),
+    build_context=_resolve_function_context,
+    build_slices=_function_metric_slices,
+    build_rows=_function_metric_rows,
+)
+
+
 def compute_graph_metrics_functions_ext(
     gateway: StorageGateway,
     *,
@@ -189,48 +242,25 @@ def compute_graph_metrics_functions_ext(
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
 ) -> None:
-    """
-    Populate analytics.graph_metrics_functions_ext with additional centralities.
+    """Populate analytics.graph_metrics_functions_ext with additional centralities.
 
     Parameters
     ----------
-    gateway :
+    gateway
         StorageGateway providing the DuckDB connection used for reads and writes.
-    repo : str
+    repo
         Repository identifier anchoring the metrics.
-    commit : str
+    commit
         Commit hash anchoring the metrics snapshot.
-    runtime : GraphRuntime | GraphRuntimeOptions | None
+    runtime
         Optional runtime options including cached graphs and backend selection.
-    filters :
+    filters
         Optional allowlists for restricting graph nodes.
     """
-    runtime_opts = (
-        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    request = ExtendedMetricsRequest(
+        repo=repo,
+        commit=commit,
+        runtime=runtime,
+        filters=filters,
     )
-    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
-    active_filters = filters or build_graph_metric_filters(gateway, snapshot)
-    resolved_runtime = resolve_graph_runtime(
-        gateway,
-        snapshot,
-        runtime_opts,
-    )
-    ctx = _resolve_function_context(runtime_opts, repo, commit)
-    filtered_graph: nx.DiGraph = active_filters.filter_call_graph(
-        resolved_runtime.ensure_call_graph()
-    )
-    simple_graph: nx.DiGraph = cast("nx.DiGraph", filtered_graph.copy())
-    simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
-    undirected = simple_graph.to_undirected()
-    views = GraphViews(graph=filtered_graph, simple_graph=simple_graph, undirected=undirected)
-    slices = _function_metric_slices(views, ctx)
-    rows = _function_metric_rows(repo, commit, ctx, views, slices)
-    contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions_ext")
-    validated_rows = validate_contract_rows(contract.table_key, rows)
-    insert_analytics_rows(
-        gateway,
-        contract,
-        validated_rows,
-        delete_scope=DeleteScope(repo=repo, commit=commit),
-        scope=f"{repo}@{commit}",
-    )
+    compute_extended_metrics(gateway, _FUNCTION_EXT_CONFIG, request)

@@ -84,8 +84,6 @@ from codeintel.ingestion.infrastructure.scanning import (
     profile_from_env,
 )
 from codeintel.ingestion.infrastructure.workers import (
-    AST_WORKER_CONFIG,
-    CST_WORKER_CONFIG,
     WorkerConfig,
     create_executor,
     executor_factory,
@@ -115,8 +113,6 @@ from codeintel.ingestion.tracker import (
 )
 
 __all__ = [
-    "AST_WORKER_CONFIG",
-    "CST_WORKER_CONFIG",
     # Plugin classes moved to codeintel.build.plugins.ingestion to break circular imports.
     # Import directly: from codeintel.build.plugins.ingestion import AstExtractPlugin
     "AstExtractStep",

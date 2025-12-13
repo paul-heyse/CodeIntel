@@ -282,7 +282,6 @@ def build_ingestion_adapters(
         type_checker=ctx.resources.type_checker,
         coverage_collector=ctx.resources.coverage_collector,
         scip_indexer=ctx.resources.scip_indexer,
-        test_reporter=ctx.resources.test_reporter,
     )
     return storage, discovery, change_detection, tools
 

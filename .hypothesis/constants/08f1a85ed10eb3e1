@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/outputs.py
+# hypothesis_version: 6.148.7
+
+['description', 'expected_artifacts', 'expected_datasets', 'file']

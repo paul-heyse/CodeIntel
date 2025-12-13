@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from codeintel.build.errors import TargetNotFoundError
 from codeintel.build.hamilton.native.runner import (
     NativeRunInfo,
     create_run_record,
@@ -98,7 +99,7 @@ class NativeTargetExecutor:
 
         Raises
         ------
-        ValueError
+        TargetNotFoundError
             If target is not found in the graph.
 
         Examples
@@ -109,8 +110,7 @@ class NativeTargetExecutor:
         """
         target = graph.get(target_name)
         if target is None:
-            msg = f"Target '{target_name}' not found in graph"
-            raise ValueError(msg)
+            raise TargetNotFoundError(target_name, list(graph))
 
         input_hash = compute_input_hash(
             target=target,

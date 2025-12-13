@@ -13,13 +13,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.compute.base import StepResult
+from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
+    from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
 
@@ -337,7 +336,7 @@ def _extract_module_ast(
     )
 
 
-class AstExtractStep:
+class AstExtractStep(BaseExtractStep):
     """AST extraction step with port injection.
 
     This step extracts Python AST nodes and metrics from modules,
@@ -350,23 +349,6 @@ class AstExtractStep:
     discovery
         Discovery port for reading module source.
     """
-
-    def __init__(
-        self,
-        storage: IngestStoragePort,
-        discovery: ModuleDiscoveryPort,
-    ) -> None:
-        """Initialize the step.
-
-        Parameters
-        ----------
-        storage
-            Storage port for persisting data.
-        discovery
-            Discovery port for reading module source.
-        """
-        self._storage = storage
-        self._discovery = discovery
 
     def execute(
         self,
@@ -395,14 +377,7 @@ class AstExtractStep:
         metric_rows: list[list[object]] = []
         errors: list[str] = []
 
-        for module in modules:
-            if not module.rel_path.endswith(".py"):
-                continue
-
-            source = self._discovery.read_module_source(module)
-            if source is None:
-                continue
-
+        for module, source in self._iter_python_sources(modules):
             result = _extract_module_ast(module, source)
             if result is None:
                 errors.append(f"Failed to extract AST from {module.rel_path}")
@@ -412,14 +387,8 @@ class AstExtractStep:
             if result.metric_row is not None:
                 metric_rows.append(result.metric_row)
 
-        table_counts: dict[str, int] = {}
-        total_rows = 0
-
-        if ast_rows:
-            scope = f"{repo}@{commit}"
-            result = self._storage.write_batch("core.ast_nodes", ast_rows, scope=scope)
-            table_counts["core.ast_nodes"] = result.rows_written
-            total_rows += result.rows_written
+        table_counts = self._write_and_count("core.ast_nodes", ast_rows, repo=repo, commit=commit)
+        total_rows = table_counts.get("core.ast_nodes", 0)
 
         if metric_rows:
             result = self._storage.write_batch("core.ast_metrics", metric_rows)

@@ -18,6 +18,7 @@ from codeintel.analytics.compute.row_builders import (
     build_symbol_function_rows,
     build_symbol_module_rows,
 )
+from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES, MAX_COMMUNITY_NODES
 from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
@@ -33,9 +34,6 @@ from codeintel.storage.repositories.modules import ModuleRepository
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
-
-MAX_BETWEENNESS_NODES = 1000
-MAX_COMMUNITY_NODES = 5000
 
 
 def compute_symbol_graph_metrics_modules(
@@ -77,7 +75,6 @@ def compute_symbol_graph_metrics_modules(
         graph = graph.subgraph([module for module in graph.nodes if module in known_modules]).copy()
     if graph.number_of_nodes() == 0:
         log_empty_graph("symbol_module_graph", graph)
-        backend = DuckDBPolicyBackend(gateway)
         backend.delete_for_snapshot(
             "analytics.symbol_graph_metrics_modules", repo=repo, commit=commit
         )
@@ -120,29 +117,9 @@ def compute_symbol_graph_metrics_modules(
         rows,
         schema=contract.schema,
     )
-    backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot("analytics.symbol_graph_metrics_modules", repo=repo, commit=commit)
     if validated_rows:
-        gateway.ibis.write(
-            "analytics.symbol_graph_metrics_modules",
-            validated_rows,
-            columns=[
-                "repo",
-                "commit",
-                "module",
-                "symbol_betweenness",
-                "symbol_closeness",
-                "symbol_eigenvector",
-                "symbol_harmonic",
-                "symbol_k_core",
-                "symbol_constraint",
-                "symbol_effective_size",
-                "symbol_community_id",
-                "symbol_component_id",
-                "symbol_component_size",
-                "created_at",
-            ],
-        )
+        backend.bulk_insert("analytics.symbol_graph_metrics_modules", validated_rows)
 
 
 def compute_symbol_graph_metrics_functions(
@@ -184,7 +161,6 @@ def compute_symbol_graph_metrics_functions(
         graph = graph.subgraph([goid for goid in graph.nodes if int(goid) in known_goids]).copy()
     if graph.number_of_nodes() == 0:
         log_empty_graph("symbol_function_graph", graph)
-        backend = DuckDBPolicyBackend(gateway)
         backend.delete_for_snapshot(
             "analytics.symbol_graph_metrics_functions", repo=repo, commit=commit
         )
@@ -227,28 +203,8 @@ def compute_symbol_graph_metrics_functions(
         rows,
         schema=contract.schema,
     )
-    backend = DuckDBPolicyBackend(gateway)
     backend.delete_for_snapshot(
         "analytics.symbol_graph_metrics_functions", repo=repo, commit=commit
     )
     if validated_rows:
-        gateway.ibis.write(
-            "analytics.symbol_graph_metrics_functions",
-            validated_rows,
-            columns=[
-                "repo",
-                "commit",
-                "function_goid_h128",
-                "symbol_betweenness",
-                "symbol_closeness",
-                "symbol_eigenvector",
-                "symbol_harmonic",
-                "symbol_k_core",
-                "symbol_constraint",
-                "symbol_effective_size",
-                "symbol_community_id",
-                "symbol_component_id",
-                "symbol_component_size",
-                "created_at",
-            ],
-        )
+        backend.bulk_insert("analytics.symbol_graph_metrics_functions", validated_rows)

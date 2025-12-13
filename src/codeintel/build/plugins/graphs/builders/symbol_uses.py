@@ -15,7 +15,7 @@ The symbol uses plugin performs the following steps:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin

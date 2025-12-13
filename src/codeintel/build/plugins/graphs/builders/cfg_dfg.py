@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
+from codeintel.build.plugins._helpers import get_source_root
 from codeintel.build.plugins.graphs.builders.cfg_dfg_options import CfgDfgOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.catalog import load_function_index

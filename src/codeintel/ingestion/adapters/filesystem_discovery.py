@@ -185,22 +185,6 @@ class FilesystemDiscoveryAdapter:
             return None
 
     @staticmethod
-    def file_exists(path: Path) -> bool:
-        """Check if a file exists.
-
-        Parameters
-        ----------
-        path
-            Path to check.
-
-        Returns
-        -------
-        bool
-            True if file exists.
-        """
-        return path.is_file()
-
-    @staticmethod
     def read_text(path: Path, encoding: str = "utf-8") -> str | None:
         """Read text content from a file.
 

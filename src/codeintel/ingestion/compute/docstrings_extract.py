@@ -15,13 +15,12 @@ from typing import TYPE_CHECKING, TypedDict
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.config.datasets import DocstringRow, docstring_row_to_tuple
-from codeintel.ingestion.compute.base import StepResult
+from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
+    from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
 
@@ -246,7 +245,7 @@ def _extract_module_docstrings(
     return visitor.rows
 
 
-class DocstringsExtractStep:
+class DocstringsExtractStep(BaseExtractStep):
     """Docstring extraction step with port injection.
 
     This step extracts structured docstrings from modules,
@@ -259,23 +258,6 @@ class DocstringsExtractStep:
     discovery
         Discovery port for reading module source.
     """
-
-    def __init__(
-        self,
-        storage: IngestStoragePort,
-        discovery: ModuleDiscoveryPort,
-    ) -> None:
-        """Initialize the step.
-
-        Parameters
-        ----------
-        storage
-            Storage port for persisting data.
-        discovery
-            Discovery port for reading module source.
-        """
-        self._storage = storage
-        self._discovery = discovery
 
     def execute(
         self,
@@ -310,15 +292,8 @@ class DocstringsExtractStep:
         errors: list[str] = []
         processed_paths: list[str] = []
 
-        for module in modules:
-            if not module.rel_path.endswith(".py"):
-                continue
-
+        for module, source in self._iter_python_sources(modules):
             processed_paths.append(module.rel_path)
-            source = self._discovery.read_module_source(module)
-            if source is None:
-                continue
-
             docstrings = _extract_module_docstrings(module, source, ctx)
             all_rows.extend(list(docstring_row_to_tuple(ds)) for ds in docstrings)
 
@@ -331,14 +306,10 @@ class DocstringsExtractStep:
                 commit=commit,
             )
 
-        table_counts: dict[str, int] = {}
-        total_rows = 0
-
-        if all_rows:
-            scope = f"{repo}@{commit}"
-            result = self._storage.write_batch("core.docstrings", all_rows, scope=scope)
-            table_counts["core.docstrings"] = result.rows_written
-            total_rows = result.rows_written
+        table_counts = self._write_and_count(
+            "core.docstrings", all_rows, repo=repo, commit=commit
+        )
+        total_rows = table_counts.get("core.docstrings", 0)
 
         log.info(
             "Docstring extraction: repo=%s commit=%s rows=%d",

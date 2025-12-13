@@ -29,7 +29,6 @@ codeintel.ingestion.ports.tools : Port interface types (output)
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -44,8 +43,6 @@ from codeintel.ingestion.ports.tools import (
     ScipOccurrence,
     ScipResult,
     ScipSymbol,
-    TestCase,
-    TestResult,
     ToolStatus,
 )
 
@@ -385,47 +382,6 @@ class ToolRunnerAdapter:
                 duration_s=duration,
             )
 
-    async def run_pytest(
-        self,
-        repo_root: Path,
-        *,
-        json_report_path: Path,
-    ) -> TestResult:
-        """Run pytest and generate JSON report.
-
-        Parameters
-        ----------
-        repo_root
-            Repository root directory.
-        json_report_path
-            Path for JSON report output.
-
-        Returns
-        -------
-        TestResult
-            Test execution results.
-        """
-        start = time.perf_counter()
-        try:
-            await self._service.run_pytest_report(repo_root, json_report_path=json_report_path)
-            duration = time.perf_counter() - start
-
-            if _check_file_exists(json_report_path):
-                return _parse_pytest_report(json_report_path, duration)
-
-            return TestResult(
-                status=ToolStatus.OK,
-                duration_s=duration,
-            )
-        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
-            duration = time.perf_counter() - start
-            log.warning("pytest execution failed: %s", exc)
-            return TestResult(
-                status=ToolStatus.FAILED,
-                error=str(exc),
-                duration_s=duration,
-            )
-
 
 __all__ = ["ToolRunnerAdapter"]
 
@@ -487,40 +443,4 @@ def _convert_scip_occurrence(occ: object) -> ScipOccurrence:
         range_end_line=end_line,
         range_end_col=end_col,
         symbol_roles=getattr(occ, "symbol_roles", 0) or 0,
-    )
-
-
-def _parse_pytest_report(json_report_path: Path, duration: float) -> TestResult:
-    """Parse pytest JSON report.
-
-    Parameters
-    ----------
-    json_report_path
-        Path to JSON report.
-    duration
-        Total execution duration.
-
-    Returns
-    -------
-    TestResult
-        Parsed test results.
-    """
-    data = json.loads(json_report_path.read_text(encoding="utf-8"))
-    tests = [
-        TestCase(
-            nodeid=test.get("nodeid", ""),
-            outcome=test.get("outcome", "unknown"),
-            duration_s=test.get("duration", 0.0),
-            longrepr=test.get("longrepr"),
-        )
-        for test in data.get("tests", [])
-    ]
-    summary = data.get("summary", {})
-    return TestResult(
-        status=ToolStatus.OK,
-        tests=tests,
-        passed=summary.get("passed", 0),
-        failed=summary.get("failed", 0),
-        skipped=summary.get("skipped", 0),
-        duration_s=duration,
     )

@@ -272,7 +272,9 @@ def t__typing(
                     "build_dir": str(env.paths.build_dir),
                     "repo_root": str(env.snapshot.repo_root),
                 },
-            ) if target else (),
+            )
+            if target
+            else (),
         )
 
     executor = NativeTargetExecutor.for_target(env, graph, "typing")

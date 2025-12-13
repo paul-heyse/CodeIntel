@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugins/ingestion/config_plugin.py
+# hypothesis_version: 6.148.7
+
+['3.0.0', '; ', 'ConfigIngestPlugin', 'builder', 'config', 'core.config_values', 'ingest.config']
