@@ -18,13 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.build.executor import BuildExecutor, ExecutorEnv
+from codeintel.build.config import load_build_config
+from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
 from codeintel.build.operations import get_targets_for_operation
-from codeintel.build.plan import PlanGenerator
+from codeintel.build.providers import create_default_providers
 from codeintel.build.readiness import DatabaseReadinessView
 from codeintel.build.registry import get_target_graph
-from codeintel.build.resolver import BuildResolver
-from codeintel.build.state import StateValidator
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.models import CliPathsInput, ToolsConfig
 from codeintel.config.primitives import SnapshotRef
@@ -34,7 +33,7 @@ from codeintel.storage.validation import table_has_rows_for_snapshot
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from codeintel.build.executor import BuildResult
+    from codeintel.build.hamilton import HamiltonBuildResult
     from codeintel.config.datasets import DatasetContract
     from codeintel.config.primitives import BuildPaths
     from codeintel.config.serving_models import ServingConfig
@@ -661,7 +660,7 @@ def run_operation_prereqs(
     snapshot: SnapshotRef,
     paths: BuildPaths,
     tools: ToolsConfig,
-) -> BuildResult | None:
+) -> HamiltonBuildResult | None:
     """Execute prerequisites for an operation using the build system.
 
     Public API for CLI and other callers that already have the required
@@ -682,7 +681,7 @@ def run_operation_prereqs(
 
     Returns
     -------
-    BuildResult | None
+    HamiltonBuildResult | None
         The build result if executed, None if all targets are current.
     """
     op_targets = get_targets_for_operation(op_id)
@@ -692,34 +691,25 @@ def run_operation_prereqs(
 
     goal_targets = list(op_targets.required_targets)
 
-    graph = get_target_graph()
-    validator = StateValidator(graph, gateway, snapshot)
-    state = validator.validate()
-
-    resolver = BuildResolver(graph, state)
-    resolution = resolver.resolve(goals=goal_targets)
-
-    if not resolution.to_compute:
-        LOG.debug("run_operation_prereqs: all targets current for op=%s", op_id)
-        return None
-
-    planner = PlanGenerator(graph)
-    plan = planner.generate(resolution)
-
     LOG.info(
         "run_operation_prereqs executing op=%s targets=%s",
         op_id,
-        resolution.to_compute,
+        goal_targets,
     )
 
-    env = ExecutorEnv(
+    providers = create_default_providers(tools)
+    config = load_build_config(snapshot.repo_root)
+
+    env = BuildEnv(
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
-        tools=tools,
+        providers=providers,
+        config=config,
+        profile="default",
     )
-    executor = BuildExecutor(graph=graph, env=env)
-    return executor.execute(plan)
+    executor = HamiltonBuildExecutor(profile="default", mode="generated")
+    return executor.run(env=env, targets=goal_targets)
 
 
 def _run_prereqs_build(
@@ -727,7 +717,7 @@ def _run_prereqs_build(
     op_id: str,
     config: ServingConfig,
     gateway: StorageGateway,
-) -> BuildResult | None:
+) -> HamiltonBuildResult | None:
     """Execute prerequisites for an operation using the build system.
 
     Internal helper for serving layer that uses ServingConfig.
@@ -743,7 +733,7 @@ def _run_prereqs_build(
 
     Returns
     -------
-    BuildResult | None
+    HamiltonBuildResult | None
         The build result if executed, None if all targets are current.
     """
     paths = build_paths_for_serving(config)
@@ -768,7 +758,7 @@ def ensure_prereqs_for_http(
     op_id: str,
     config: ServingConfig,
     backend: QueryBackend,
-) -> BuildResult | None:
+) -> HamiltonBuildResult | None:
     """Ensure prerequisites are run for an HTTP operation if needed.
 
     This function is called before serving an HTTP request. If auto-pipeline
@@ -786,7 +776,7 @@ def ensure_prereqs_for_http(
 
     Returns
     -------
-    BuildResult | None
+    HamiltonBuildResult | None
         The build result if a run was executed, None if skipped.
     """
     should_run, gateway, skip_reason = should_run_auto_pipeline(config, backend)
@@ -806,7 +796,7 @@ def ensure_prereqs_for_mcp(
     op_id: str,
     config: ServingConfig,
     backend: QueryBackend,
-) -> BuildResult | None:
+) -> HamiltonBuildResult | None:
     """Ensure prerequisites are run for an MCP tool invocation if needed.
 
     This function is called before executing an MCP tool. If auto-pipeline
@@ -824,7 +814,7 @@ def ensure_prereqs_for_mcp(
 
     Returns
     -------
-    BuildResult | None
+    HamiltonBuildResult | None
         The build result if a run was executed, None if skipped.
     """
     should_run, gateway, skip_reason = should_run_auto_pipeline(config, backend)

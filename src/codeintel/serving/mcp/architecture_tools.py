@@ -5,14 +5,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
-from codeintel.graphs.core.registry import (
-    DependencyPolicy,
-    PlanningOptions,
-    SelectionPolicy,
-    plan_graph_plugins,
-)
+from codeintel.build.registry import get_target_graph
 from codeintel.serving import domain_models as dm
 from codeintel.serving.auto_pipeline import ensure_prereqs_for_mcp, is_auto_pipeline_enabled
 from codeintel.serving.context import (
@@ -39,7 +34,7 @@ from codeintel.serving.operations import get_operation
 from codeintel.serving.services.errors import generate_correlation_id
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable
 
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.backend import QueryBackend
@@ -56,8 +51,8 @@ if TYPE_CHECKING:
 
 ModelResolver = Callable[[str], ResponseFactory | None]
 PlanBuilder = Callable[
-    [tuple[str, ...] | None, tuple[str, ...] | None, tuple[str, ...] | None, PlanningOptions],
-    object,
+    [tuple[str, ...] | None],
+    dm.GraphPlan,
 ]
 PrereqRunner = Callable[[str, "ServingConfig", "QueryBackend"], object]
 
@@ -80,43 +75,6 @@ class _RegistrationContext:
     backend: QueryBackendOrService
     config: ServingConfig | None
     prereq_runner: PrereqRunner
-
-
-def _parse_planning_overrides(planning: Mapping[str, object] | None) -> PlanningOptions:
-    allowed_keys = {
-        "allow_missing_dependencies",
-        "dependency_policy",
-        "selection_policy",
-        "requested_required",
-    }
-    payload = planning or {}
-    unknown = set(payload) - allowed_keys
-    if unknown:
-        message = f"Unsupported planning override keys: {sorted(unknown)}"
-        raise ValueError(message)
-
-    allow_missing = bool(payload.get("allow_missing_dependencies", True))
-    dep_raw = payload.get("dependency_policy", "skip")
-    dep_policy = dep_raw if isinstance(dep_raw, DependencyPolicy) else DependencyPolicy(dep_raw)
-    sel_raw = payload.get("selection_policy", "lenient")
-    selection_policy = sel_raw if isinstance(sel_raw, SelectionPolicy) else SelectionPolicy(sel_raw)
-
-    requested_raw = payload.get("requested_required")
-    requested_required = None
-    if requested_raw is not None:
-        if not isinstance(requested_raw, bool):
-            message = "requested_required must be a boolean when provided"
-            raise ValueError(message)
-        requested_required = requested_raw
-        if requested_required is False:
-            LOG.debug("mcp planning: requested_required explicitly false (lenient requests)")
-
-    return PlanningOptions(
-        allow_missing_dependencies=allow_missing,
-        dependency_policy=dep_policy,
-        selection_policy=selection_policy,
-        requested_required=requested_required,
-    )
 
 
 def _require_spec(op_id: str) -> Operation:
@@ -201,15 +159,62 @@ def _default_model_resolver(name: str) -> ResponseFactory | None:
 
 def _default_plan_builder(
     names: tuple[str, ...] | None,
-    enabled: tuple[str, ...] | None,
-    disabled: tuple[str, ...] | None,
-    plan_options: PlanningOptions,
-) -> object:
-    return plan_graph_plugins(
-        plugin_names=names,
-        enabled=enabled,
-        disabled=disabled,
-        plan_options=plan_options,
+) -> dm.GraphPlan:
+    """Build a graph plan from build targets.
+
+    Parameters
+    ----------
+    names
+        Optional target names to filter. If None, all graph targets are included.
+
+    Returns
+    -------
+    dm.GraphPlan
+        Execution plan with ordering and dependency graph.
+    """
+    graph = get_target_graph()
+    graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
+
+    if names:
+        names_set = set(names)
+        graph_targets = [t for t in graph_targets if t.name in names_set]
+
+    target_names = [t.name for t in graph_targets]
+    ordered = graph.topological_order(target_names) if target_names else ()
+
+    dep_graph: dict[str, tuple[str, ...]] = {}
+    plugin_metadata: dict[str, dict[str, object]] = {}
+    for target in graph_targets:
+        dep_graph[target.name] = target.dependencies
+        plugin_metadata[target.name] = {
+            "stage": target.module,
+            "severity": "soft_fail",
+            "requires_isolation": False,
+            "isolation_kind": "none",
+            "scope_aware": False,
+            "supported_scopes": (),
+            "description": target.description or f"Graph target: {target.name}",
+            "enabled_by_default": True,
+            "depends_on": target.dependencies,
+            "provides": target.table_keys,
+            "requires": (),
+            "resource_hints": None,
+            "options_model": None,
+            "options_default": None,
+            "version_hash": None,
+            "contract_checkers": 0,
+            "config_schema_ref": None,
+            "row_count_tables": target.table_keys,
+            "cache_populates": (),
+            "cache_consumes": (),
+        }
+
+    return dm.GraphPlan(
+        plan_id="build-targets-plan",
+        ordered_plugins=tuple(ordered),
+        skipped_plugins=[],
+        dep_graph=dep_graph,
+        plugin_metadata=plugin_metadata,
     )
 
 
@@ -256,64 +261,6 @@ def _run_prereqs_if_needed(
     ctx.prereq_runner(op_id, ctx.config, cast("QueryBackend", ctx.backend))
 
 
-def _graph_plan_from_plugin_plan(plan: object) -> dm.GraphPlan:
-    plan_any = cast("Any", plan)
-    metadata_entries = []
-    for plugin in plan_any.plugins:
-        meta = plugin.metadata
-        resource_hints = getattr(meta, "resource_hints", None)
-        metadata_entries.append(
-            (
-                meta.name,
-                {
-                    "stage": meta.stage,
-                    "severity": meta.severity,
-                    "requires_isolation": getattr(meta, "isolation_kind", "none") != "none",
-                    "isolation_kind": getattr(meta, "isolation_kind", "none"),
-                    "scope_aware": getattr(meta, "supports_incremental", False),
-                    "supported_scopes": (),
-                    "description": meta.description,
-                    "enabled_by_default": getattr(meta, "enabled_by_default", False),
-                    "depends_on": getattr(meta, "depends_on", ()),
-                    "provides": getattr(meta, "provides", ()),
-                    "requires": getattr(meta, "requires", ()),
-                    "resource_hints": (
-                        {
-                            "max_runtime_ms": resource_hints.max_runtime_ms,
-                            "max_memory_mb": resource_hints.max_memory_mb,
-                        }
-                        if resource_hints is not None
-                        else None
-                    ),
-                    "options_model": (
-                        getattr(meta.options_model, "__name__", None)
-                        if getattr(meta, "options_model", None)
-                        else None
-                    ),
-                    "options_default": getattr(meta, "options_default", None),
-                    "version_hash": getattr(meta, "version_hash", None),
-                    "contract_checkers": 0,
-                    "config_schema_ref": getattr(meta, "config_schema_ref", None),
-                    "row_count_tables": getattr(meta, "row_count_tables", ()),
-                    "cache_populates": getattr(meta, "cache_populates", ()),
-                    "cache_consumes": getattr(meta, "cache_consumes", ()),
-                },
-            )
-        )
-    dep_graph = {name: tuple(deps) for name, deps in plan_any.dep_graph.items()}
-    skipped = cast(
-        "list[dict[str, object]]",
-        [{"name": entry.name, "reason": entry.reason} for entry in plan_any.skipped_plugins],
-    )
-    return dm.GraphPlan(
-        plan_id=str(plan_any.plan_id),
-        ordered_plugins=plan_any.ordered_names,
-        skipped_plugins=skipped,
-        dep_graph=dep_graph,
-        plugin_metadata=dict(metadata_entries),
-    )
-
-
 def _register_graph_plugin_plan_tool(
     mcp: McpToolRegistrar,
     ctx: _RegistrationContext,
@@ -327,44 +274,22 @@ def _register_graph_plugin_plan_tool(
     @_wrap
     def graph_plugin_plan(
         names: list[str] | None = None,
-        enable: list[str] | None = None,
-        disable: list[str] | None = None,
-        *,
-        planning: dict[str, object] | None = None,
     ) -> dict[str, object] | dict[str, ProblemDetail]:
-        """
-        Compute graph metric plugin execution plan with ordering and dep graph.
+        """Compute graph target execution plan with ordering and dependency graph.
 
         Parameters
         ----------
         names
-            Explicit plugin names to plan (used when enable is not provided).
-        enable
-            Ordered list of plugins to enable (overrides defaults when provided).
-        disable
-            Plugins to drop from the selected set.
-        planning
-            Optional overrides:
-                - allow_missing_dependencies (bool, default True)
-                - dependency_policy ("strict" | "skip", default "skip")
-                - selection_policy ("lenient" | "strict", default "lenient")
-                - requested_required (bool, optional) to require requested plugins
+            Explicit target names to plan. If not provided, all graph targets are included.
 
         Returns
         -------
         dict[str, object] | dict[str, ProblemDetail]
-            Plan payload with ordering, skips, and dependency graph or an error detail.
+            Plan payload with ordering and dependency graph, or an error detail.
         """
 
         def _build_response() -> dict[str, object]:
-            plan_opts = _parse_planning_overrides(planning)
-            plan_obj = planner(
-                tuple(names) if names else None,
-                tuple(enable) if enable else None,
-                tuple(disable) if disable else None,
-                plan_opts,
-            )
-            graph_plan = _graph_plan_from_plugin_plan(plan_obj)
+            graph_plan = planner(tuple(names) if names else None)
             if model_cls is None:
                 return _serialize_payload(graph_plan, GraphPlanResponse)
             return _serialize_payload(graph_plan, model_cls)

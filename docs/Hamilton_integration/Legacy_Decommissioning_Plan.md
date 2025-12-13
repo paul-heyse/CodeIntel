@@ -6,6 +6,40 @@ This document validates the proposed legacy system removal and identifies additi
 
 ---
 
+## Implementation Status
+
+**Completed: 2024-12-13**
+
+### Phase A: CLI Cleanup ✅
+- [x] Removed `--engine` flag from CLI build command
+- [x] Removed `--hamilton-mode phase0` from CLI (only "generated" and "auto" remain)
+- [x] Updated CLI handlers to always use Hamilton
+
+### Phase B: Core Legacy Removal ✅
+- [x] Migrated `serving/auto_pipeline.py` to use `HamiltonBuildExecutor`
+- [x] Deleted `build/executor.py` (1,193 lines removed)
+- [x] Deleted `build/plan.py` (503 lines removed)  
+- [x] Deleted `build/resolver.py` (736 lines removed)
+
+### Phase C: Hamilton Scaffolding Cleanup ✅
+- [x] Deleted `build/hamilton/nodes/targets_phase0.py` (652 lines removed)
+- [x] Updated `driver_factory.py` to remove phase0 support
+- [x] Moved `_run_target` execution logic to `node_factory.py`
+- [x] Updated `HamiltonNodeMode` type to only allow "generated" | "auto"
+
+### Phase D: Graphs Plugin Consolidation ✅
+- [x] Migrate `cli/commands/graphs.py` and `cli/handlers/graphs.py`
+- [x] Migrate `serving/mcp/architecture_tools.py`
+- [x] Rewrite `graphs/plugins/__init__.py` registration
+- [x] Delete `graphs/core/`
+- [x] Delete `graphs/runtime/`
+- [x] Delete legacy test files (16 files removed)
+- [x] Update test helpers to remove legacy graph plugin infrastructure
+
+---
+
+---
+
 ## 1. Validation of Proposed Changes
 
 ### 1.1 Remove Legacy Build Engine (VALIDATED)

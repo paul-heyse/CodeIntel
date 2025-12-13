@@ -5,14 +5,12 @@ This package provides standardized test infrastructure including:
 Canonical Environment Types
 ---------------------------
 - ``TestContext``: Unified test environment for hexagonal architecture
-- ``GraphTestEnv``: Unified graph test environment
 - ``ExecutionContextBuilder``: Fluent builder for plugin/target execution contexts
 
 Context Creation (require tmp_path for isolation)
 -------------------------------------------------
 - ``create_test_env(tmp_path, ...)``: Create a TestContext with gateway and snapshot
 - ``create_test_context(tmp_path, ...)``: Lower-level TestContext creation
-- ``GraphTestEnv.create(tmp_path, ...)``: Create graph test environments
 
 Execution Context Building
 --------------------------
@@ -39,8 +37,6 @@ Gateway Configuration
 
 Additional Utilities
 --------------------
-- ``GraphPluginBuilder``: Fluent builder for graph test plugins
-- ``plugin_registrar``: Context manager for scoped plugin registration
 - ``build_repo_tree``: Write test files to a temp directory
 - Seed packs for composable test data (CORE_PACK, GRAPH_PACK, etc.)
 - Standard NetworkX graph fixtures
@@ -104,12 +100,6 @@ from tests._helpers.fakes.contexts import (
     RecordingGateway,
     build_plugin_execution_context,
     build_target_execution_context,
-)
-from tests._helpers.fakes.graph_contexts import GraphTestEnv
-from tests._helpers.fakes.graph_plugins import (
-    GraphPluginBuilder,
-    make_functional_plugin,
-    plugin_registrar,
 )
 from tests._helpers.fakes.httpx_clients import RecordingAsyncClient
 from tests._helpers.fakes.ingestion_context import build_repo_tree
@@ -192,8 +182,6 @@ __all__ = [
     "GatewayFactory",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
-    "GraphPluginBuilder",
-    "GraphTestEnv",
     "ManifestParams",
     "ModelLike",
     "ProvisionedGateway",
@@ -242,12 +230,10 @@ __all__ = [
     "make_build_config",
     "make_build_paths",
     "make_command_context",
-    "make_functional_plugin",
     "make_snapshot",
     "minimal_context",
     "module_row",
     "params",
-    "plugin_registrar",
     "provision_docs_export_ready",
     "provision_gateway_with_repo",
     "provision_graph_ready_repo",

@@ -5,8 +5,6 @@ target plugins.
 
 Modules
 -------
-targets_phase0
-    Explicit nodes for the risk_factors execution chain.
 dataset_nodes
     Dataset extraction nodes for lineage tracking.
 node_factory
@@ -28,15 +26,9 @@ from codeintel.build.hamilton.nodes.node_factory import (
     clear_generated_module_cache,
     get_generated_module,
 )
-from codeintel.build.hamilton.nodes.targets_phase0 import (
-    PHASE0_NODES,
-    TARGET_TO_NODE,
-)
 
 __all__ = [
     "DATASET_NODES",
-    "PHASE0_NODES",
-    "TARGET_TO_NODE",
     "build_target_module",
     "clear_generated_module_cache",
     "d__analytics__function_metrics",

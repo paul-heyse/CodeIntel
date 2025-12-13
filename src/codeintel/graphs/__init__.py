@@ -1,21 +1,10 @@
 """Graph builders, plugins, and infrastructure for code graph construction and analysis.
 
-This package provides the unified graph plugin architecture for building
-and analyzing code graphs without dependency on the analytics subsystem.
+This package provides graph construction and analysis capabilities integrated
+with the Hamilton build system.
 
 Package Structure
 -----------------
-Core Infrastructure (graphs/core/):
-- GraphPluginProtocol: Unified interface for all graph plugins
-- GraphPluginExecutionContext: Execution context providing storage and engine access
-- GraphPluginRegistry: Central registry with dependency resolution
-- make_builder_plugin, make_metric_plugin: Factory functions for creating plugins
-
-Runtime (graphs/runtime/):
-- GraphPluginExecutor: Executes plugins with retry and timeout handling
-- plan_graph_plugin_run: Creates an execution plan from plugin names
-- GraphRunReport: Report of plugin execution outcomes
-
 Plugins (graphs/plugins/):
 - builders: Graph construction plugins (goid, callgraph, cfg_dfg, import_graph)
 - metrics: Graph metric computation plugins
@@ -38,18 +27,12 @@ adapters/callgraph_persistence.py (persistence).
 Example
 -------
 ```python
-from codeintel.graphs.core import get_graph_registry, plan_graph_plugins
-
-
-plan = plan_graph_plugins(["goid_builder", "callgraph_builder"])
-
-
-from codeintel.core.resources import ResourceRegistry
-from codeintel.graphs.resources import StorageResource
+from codeintel.build.registry import get_target_graph
 from codeintel.graphs.compute.metrics import centrality
 
-resources = ResourceRegistry()
-resources.register_provider(StorageResource(gateway, repo_root))
+
+graph = get_target_graph()
+graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
 
 
 pagerank = centrality.compute_pagerank(call_graph)
@@ -67,39 +50,25 @@ The graphs package uses hexagonal architecture:
 All builder modules have been consolidated into their corresponding plugins
 under plugins/builders/. Pure computation logic is in compute/, persistence
 logic is in adapters/.
+
+Plugin registration is handled by the build registry in codeintel.build.plugin_registry.
 """
 
 from __future__ import annotations
 
 from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs import adapters, compute, ports, resources
-from codeintel.graphs.core import (
-    GraphPluginExecutionContext,
-    GraphPluginMetadata,
-    GraphPluginProtocol,
-    PluginResult,
-    get_graph_registry,
-    plan_graph_plugins,
-    register_graph_plugin,
-)
 from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
 from codeintel.graphs.resources import ResourceProvider
 
 __all__ = [
     "GraphEngine",
     "GraphKind",
-    "GraphPluginExecutionContext",
-    "GraphPluginMetadata",
-    "GraphPluginProtocol",
     "NxGraphEngine",
-    "PluginResult",
     "ResourceProvider",
     "ResourceRegistry",
     "adapters",
     "compute",
-    "get_graph_registry",
-    "plan_graph_plugins",
     "ports",
-    "register_graph_plugin",
     "resources",
 ]

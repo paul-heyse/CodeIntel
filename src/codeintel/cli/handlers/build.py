@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codeintel.build.assets.impact import compute_impact
 from codeintel.build.config import load_build_config
-from codeintel.build.executor import BuildExecutor, ExecutorEnv
 from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.observability import (
@@ -24,10 +23,8 @@ from codeintel.build.hamilton.observability import (
     get_dag_info,
 )
 from codeintel.build.hamilton.planner import compute_plan
-from codeintel.build.plan import PlanGenerator
 from codeintel.build.providers import create_default_providers
 from codeintel.build.registry import get_target_graph
-from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
@@ -56,11 +53,9 @@ from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 
 if TYPE_CHECKING:
-    from codeintel.build.executor import BuildResult
     from codeintel.build.hamilton import HamiltonBuildResult
     from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
     from codeintel.build.manifest import BuildRunRecord
-    from codeintel.build.plan import BuildPlan
     from codeintel.build.targets import TargetGraph, TargetModule
     from codeintel.cli.context import CommandContext
     from codeintel.cli.resolution.types import ResolvedRuntime
@@ -109,12 +104,11 @@ class TargetScope(Enum):
 
 @dataclass(frozen=True)
 class BuildExecutionArgs:
-    """Build execution options for both Hamilton and legacy engines."""
+    """Build execution options for Hamilton engine."""
 
     goals: list[str]
     force: list[str] | None
     run_mode: RunMode
-    engine: str
     hamilton_mode: HamiltonNodeMode
     validate_outputs: bool
     strict_contracts: bool
@@ -287,63 +281,6 @@ def _build_status_result(state: DatabaseState) -> BuildStatusResult:
         stale_count=stale_count,
         fresh_count=len(computed),
     )
-
-
-def _execute_build(
-    runtime: ResolvedRuntime,
-    gateway: StorageGateway,
-    goals: list[str],
-    force_targets: list[str] | None,
-    run_mode: RunMode,
-) -> tuple[BuildResult | None, BuildPlan]:
-    """Execute build with the full build pipeline.
-
-    Parameters
-    ----------
-    runtime
-        Resolved runtime context.
-    gateway
-        Open storage gateway.
-    goals
-        Target names to build.
-    force_targets
-        Targets to force recompute.
-    run_mode
-        Whether to execute or return a dry-run plan.
-
-    Returns
-    -------
-    tuple[BuildResult | None, BuildPlan]
-        (result, plan) tuple. result is None for dry-run.
-    """
-    graph = get_target_graph()
-
-    LOG.info("build.cli.validate_state goals=%s", goals)
-    validator = StateValidator(graph, gateway, runtime.snapshot)
-    state = validator.validate()
-
-    LOG.info("build.cli.resolve force=%s", force_targets)
-    resolver = BuildResolver(graph, state)
-    resolution = resolver.resolve(goals, force_recompute=tuple(force_targets or ()))
-
-    LOG.info("build.cli.generate_plan to_compute=%d", len(resolution.to_compute))
-    generator = PlanGenerator(graph)
-    plan = generator.generate(resolution)
-
-    if run_mode is RunMode.DRY_RUN:
-        LOG.info("build.cli.dry_run stages=%d", len(plan.stages))
-        return None, plan
-
-    LOG.info("build.cli.execute stages=%d", len(plan.stages))
-    env = ExecutorEnv(
-        gateway=gateway,
-        snapshot=runtime.snapshot,
-        paths=runtime.paths,
-        tools=runtime.tools,
-    )
-    executor = BuildExecutor(graph=graph, env=env)
-    result = executor.execute(plan)
-    return result, plan
 
 
 def _execute_build_hamilton(
@@ -563,7 +500,6 @@ class _BuildRunParams:
     all_targets: bool
     dry_run: bool
     force: list[str] | None
-    engine: str
     hamilton_mode: str
     validate_outputs: bool
     strict_contracts: bool
@@ -606,7 +542,6 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         all_targets=ctx.params.get_bool("all_targets"),
         dry_run=ctx.params.get_bool("dry_run"),
         force=force,
-        engine=ctx.params.get_str("engine") or "hamilton",
         hamilton_mode=ctx.params.get_str("hamilton_mode") or "generated",
         validate_outputs=ctx.params.get_bool("validate_outputs"),
         strict_contracts=ctx.params.get_bool("strict_contracts"),
@@ -638,13 +573,7 @@ def _validate_build_run_params(
     if sum(provided) != 1:
         return fail_invalid_target_selection("Provide exactly one of targets, --module, or --all.")
 
-    valid_engines = ("legacy", "hamilton")
-    if params.engine not in valid_engines:
-        return fail_invalid_target_selection(
-            f"Invalid engine '{params.engine}'. Valid: {', '.join(valid_engines)}"
-        )
-
-    valid_modes = ("phase0", "generated", "auto")
+    valid_modes = ("generated", "auto")
     if params.hamilton_mode not in valid_modes:
         return fail_invalid_target_selection(
             f"Invalid hamilton_mode '{params.hamilton_mode}'. Valid: {', '.join(valid_modes)}"
@@ -693,11 +622,10 @@ def build_run_handler(
         return fail_invalid_targets(str(e))
 
     LOG.info(
-        "build.run repo=%s commit=%s targets=%s engine=%s hamilton_mode=%s",
+        "build.run repo=%s commit=%s targets=%s hamilton_mode=%s",
         runtime.snapshot.repo,
         runtime.snapshot.commit,
         goals,
-        params.engine,
         params.hamilton_mode,
     )
 
@@ -705,7 +633,6 @@ def build_run_handler(
         goals=goals,
         force=params.force,
         run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
-        engine=params.engine,
         hamilton_mode=cast("HamiltonNodeMode", params.hamilton_mode),
         validate_outputs=params.validate_outputs,
         strict_contracts=params.strict_contracts,
@@ -725,7 +652,7 @@ def _execute_and_format_result(
     runtime
         Resolved runtime.
     execution
-        BuildExecutionArgs capturing engine, mode, validation, and goal selection.
+        BuildExecutionArgs capturing mode, validation, and goal selection.
 
     Returns
     -------
@@ -734,18 +661,9 @@ def _execute_and_format_result(
     """
     try:
         with runtime_gateway(runtime, read_only=False) as gateway:
-            if execution.engine == "hamilton":
-                result = _execute_build_hamilton(runtime, gateway, execution)
-            else:
-                result, _plan = _execute_build(
-                    runtime,
-                    gateway,
-                    execution.goals,
-                    execution.force,
-                    execution.run_mode,
-                )
+            result = _execute_build_hamilton(runtime, gateway, execution)
     except Exception as exc:
-        LOG.exception("build.run.error engine=%s", execution.engine)
+        LOG.exception("build.run.error hamilton_mode=%s", execution.hamilton_mode)
         return fail_execution_failed("build", str(exc))
 
     if execution.run_mode is RunMode.DRY_RUN or result is None:

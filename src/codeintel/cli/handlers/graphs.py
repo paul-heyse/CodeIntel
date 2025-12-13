@@ -1,120 +1,45 @@
 """Graph handlers.
 
-Handlers for graph plugin listing and execution planning.
+Handlers for graph target listing and execution planning.
+These handlers use the build registry instead of the legacy graph plugin registry.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING
 
+from codeintel.build.registry import get_target_graph
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors.results import fail_invalid_policy
 from codeintel.cli.execution.registry import OperationSpec, register_operation
-from codeintel.graphs.core.registry import (
-    DependencyPolicy,
-    PlanningOptions,
-    SelectionPolicy,
-    list_graph_plugins,
-    plan_graph_plugins,
-)
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)
 
 
-def _dedupe_preserve_order(names: Sequence[str]) -> list[str]:
-    """Return names de-duplicated while preserving order.
-
-    Parameters
-    ----------
-    names
-        Plugin names.
-
-    Returns
-    -------
-    list[str]
-        Names without duplicates, preserving first-seen order.
-    """
-    out: list[str] = []
-    seen: set[str] = set()
-    for name in names:
-        if name in seen:
-            continue
-        seen.add(name)
-        out.append(name)
-    return out
-
-
-def _resolve_requested_plan_plugins(
-    *,
-    names: Sequence[str] | None,
-    enable: Sequence[str] | None,
-) -> list[str] | None:
-    """Resolve which plugins the plan should start from.
-
-    The CLI plan defaults to planning the currently registered plugins that are
-    enabled-by-default. When ``names`` are provided, those plugins are planned
-    (and ``enable`` is treated as additive). When ``enable`` is provided with no
-    ``names``, it overrides the default selection.
-
-    Returns
-    -------
-    list[str] | None
-        Ordered plugin names to include in the plan, or None for defaults.
-    """
-    if names:
-        return _dedupe_preserve_order([*names, *(enable or ())])
-    if enable:
-        return list(enable)
-
-    enabled_by_default_names = [
-        plugin.metadata.name
-        for plugin in list_graph_plugins()
-        if plugin.metadata.enabled_by_default
-    ]
-    return enabled_by_default_names or None
-
-
-class PlanMode(Enum):
-    """Graph plugin listing mode."""
-
-    LIST = "list"
-    PLAN = "plan"
-
-
 @dataclass(frozen=True)
-class GraphPluginInfo:
-    """Information about a single graph plugin.
+class GraphTargetInfo:
+    """Information about a single graph build target.
 
     Parameters
     ----------
     name
-        Plugin name.
+        Target name.
     description
-        Plugin description.
-    stage
-        Plugin execution stage.
-    enabled_by_default
-        Whether enabled by default.
-    depends_on
-        Dependencies.
-    provides
-        What the plugin provides.
+        Target description.
+    dependencies
+        Target dependencies.
+    tables
+        Tables this target produces.
     """
 
     name: str
     description: str
-    stage: str
-    enabled_by_default: bool
-    depends_on: list[str]
-    provides: list[str]
+    dependencies: list[str]
+    tables: list[str]
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -127,26 +52,24 @@ class GraphPluginInfo:
         return {
             "name": self.name,
             "description": self.description,
-            "stage": self.stage,
-            "enabled_by_default": self.enabled_by_default,
-            "depends_on": self.depends_on,
-            "provides": self.provides,
+            "dependencies": self.dependencies,
+            "tables": self.tables,
         }
 
 
 @dataclass(frozen=True)
-class GraphPluginsResult:
-    """Result from listing graph plugins.
+class GraphTargetsResult:
+    """Result from listing graph build targets.
 
     Parameters
     ----------
-    plugins
-        List of plugin information.
+    targets
+        List of target information.
     count
-        Total count of plugins.
+        Total count of targets.
     """
 
-    plugins: list[GraphPluginInfo]
+    targets: list[GraphTargetInfo]
     count: int
 
     def to_dict(self) -> dict[str, object]:
@@ -158,7 +81,7 @@ class GraphPluginsResult:
             Dictionary representation.
         """
         return {
-            "plugins": [p.to_dict() for p in self.plugins],
+            "targets": [t.to_dict() for t in self.targets],
             "count": self.count,
         }
 
@@ -171,12 +94,12 @@ class GraphPlanStage:
     ----------
     stage
         Stage number.
-    plugins
-        Plugins to execute in this stage.
+    targets
+        Targets to execute in this stage.
     """
 
     stage: int
-    plugins: list[str]
+    targets: list[str]
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -188,27 +111,24 @@ class GraphPlanStage:
         """
         return {
             "stage": self.stage,
-            "plugins": self.plugins,
+            "targets": self.targets,
         }
 
 
 @dataclass(frozen=True)
 class GraphPlanResult:
-    """Result from planning graph execution.
+    """Result from planning graph target execution.
 
     Parameters
     ----------
     stages
         List of execution stages.
-    total_plugins
-        Total number of plugins.
-    disabled
-        Plugins that were disabled.
+    total_targets
+        Total number of targets.
     """
 
     stages: list[GraphPlanStage]
-    total_plugins: int
-    disabled: list[str]
+    total_targets: int
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -220,147 +140,131 @@ class GraphPlanResult:
         """
         return {
             "stages": [s.to_dict() for s in self.stages],
-            "total_plugins": self.total_plugins,
-            "disabled": self.disabled,
+            "total_targets": self.total_targets,
         }
 
 
-def graph_plugins_list_handler(
+def graph_targets_list_handler(
     ctx: CommandContext,
-) -> CliResult[GraphPluginsResult]:
-    """List registered graph plugins.
+) -> CliResult[GraphTargetsResult]:
+    """List graph build targets.
 
     Parameters
     ----------
     ctx
         Command context with params:
-        - names: Optional plugin names to filter.
-        - enable: Optional plugins to enable.
-        - disable: Optional plugins to disable.
-        - include_disabled: Whether to include disabled plugins.
+        - names: Optional target names to filter.
 
     Returns
     -------
-    CliResult[GraphPluginsResult]
-        List of plugins.
+    CliResult[GraphTargetsResult]
+        List of targets.
     """
     names_tuple = ctx.params.get_tuple("names")
-    names: tuple[str, ...] | None = names_tuple if names_tuple else None
-    include_disabled = ctx.params.get_bool("include_disabled")
+    names_set: set[str] | None = set(names_tuple) if names_tuple else None
 
-    LOG.info("Listing graph plugins (names=%s)", names)
+    LOG.info("Listing graph targets (names=%s)", names_set)
 
-    plugins = list_graph_plugins()
+    graph = get_target_graph()
+    targets = [t for t in graph.all_targets if t.module == "graphs"]
 
-    if names:
-        plugins = [p for p in plugins if p.metadata.name in names]
+    if names_set:
+        targets = [t for t in targets if t.name in names_set]
 
-    if not include_disabled:
-        plugins = [p for p in plugins if p.metadata.enabled_by_default]
-
-    plugin_infos = [
-        GraphPluginInfo(
-            name=p.metadata.name,
-            description=p.metadata.description,
-            stage=p.metadata.stage,
-            enabled_by_default=p.metadata.enabled_by_default,
-            depends_on=list(p.metadata.depends_on),
-            provides=list(p.metadata.provides),
+    target_infos = [
+        GraphTargetInfo(
+            name=t.name,
+            description=t.description or f"Graph target: {t.name}",
+            dependencies=list(t.dependencies),
+            tables=list(t.table_keys),
         )
-        for p in plugins
+        for t in targets
     ]
 
     return CliResult.ok(
-        GraphPluginsResult(
-            plugins=plugin_infos,
-            count=len(plugin_infos),
+        GraphTargetsResult(
+            targets=target_infos,
+            count=len(target_infos),
         )
     )
 
 
-def graph_plugins_plan_handler(
+def graph_targets_plan_handler(
     ctx: CommandContext,
 ) -> CliResult[GraphPlanResult]:
-    """Display an execution plan for graph plugins.
+    """Display an execution plan for graph targets in dependency order.
 
     Parameters
     ----------
     ctx
         Command context with params:
-        - names: Optional plugin names to include.
-        - enable: Optional plugins to enable.
-        - disable: Optional plugins to disable.
-        - selection_policy: Selection policy (explicit_only, include_defaults).
-        - dependency_policy: Dependency policy (include_all, skip_satisfied).
+        - names: Optional target names to include.
 
     Returns
     -------
     CliResult[GraphPlanResult]
-        Execution plan.
+        Execution plan in topological order.
     """
     names_tuple = ctx.params.get_tuple("names")
-    names: tuple[str, ...] | None = names_tuple if names_tuple else None
-    enable_tuple = ctx.params.get_tuple("enable")
-    enable: tuple[str, ...] | None = enable_tuple if enable_tuple else None
-    disable = ctx.params.get_tuple("disable") or ()
-    selection_policy_str = ctx.params.get_str("selection_policy", "lenient")
-    dependency_policy_str = ctx.params.get_str("dependency_policy", "skip")
+    names_set: set[str] | None = set(names_tuple) if names_tuple else None
 
-    try:
-        selection_policy = SelectionPolicy(selection_policy_str)
-    except ValueError:
-        return fail_invalid_policy("selection", selection_policy_str or "")
+    LOG.info("Planning graph targets (names=%s)", names_set)
 
-    try:
-        dependency_policy = DependencyPolicy(dependency_policy_str)
-    except ValueError:
-        return fail_invalid_policy("dependency", dependency_policy_str or "")
+    graph = get_target_graph()
+    targets = [t for t in graph.all_targets if t.module == "graphs"]
 
-    LOG.info(
-        "Planning graph plugins (names=%s, enable=%s, disable=%s)",
-        names,
-        enable,
-        disable,
-    )
+    if names_set:
+        targets = [t for t in targets if t.name in names_set]
 
-    options = PlanningOptions(
-        dependency_policy=dependency_policy,
-        selection_policy=selection_policy,
-    )
+    target_names = [t.name for t in targets]
+    ordered = graph.topological_order(target_names) if target_names else ()
 
-    requested_plugins = _resolve_requested_plan_plugins(names=names, enable=enable)
-
-    plan = plan_graph_plugins(
-        plugin_names=requested_plugins,
-        disabled=list(disable) if disable else None,
-        plan_options=options,
-    )
-
-    plugin_names_list = [p.metadata.name for p in plan.plugins]
     stages = [
         GraphPlanStage(
             stage=1,
-            plugins=plugin_names_list,
+            targets=list(ordered),
         )
     ]
-
-    skipped_names = [skip.name for skip in plan.skipped_plugins]
 
     return CliResult.ok(
         GraphPlanResult(
             stages=stages,
-            total_plugins=len(plan.plugins),
-            disabled=skipped_names,
+            total_targets=len(ordered),
         )
     )
 
 
 register_operation(
     OperationSpec(
+        operation_id="graphs.targets.list",
+        name="List Graph Targets",
+        description="List graph build targets",
+        handler=graph_targets_list_handler,
+        group="graphs",
+        require_runtime=False,
+        require_gateway=False,
+    )
+)
+
+register_operation(
+    OperationSpec(
+        operation_id="graphs.targets.plan",
+        name="Graph Targets Plan",
+        description="Display an execution plan for graph targets",
+        handler=graph_targets_plan_handler,
+        group="graphs",
+        require_runtime=False,
+        require_gateway=False,
+    )
+)
+
+# Legacy aliases for backward compatibility
+register_operation(
+    OperationSpec(
         operation_id="graphs.plugins.list",
         name="List Graph Plugins",
-        description="List registered graph plugins",
-        handler=graph_plugins_list_handler,
+        description="List graph targets (legacy alias)",
+        handler=graph_targets_list_handler,
         group="graphs",
         require_runtime=False,
         require_gateway=False,
@@ -371,8 +275,8 @@ register_operation(
     OperationSpec(
         operation_id="graphs.plugins.plan",
         name="Graph Plugins Plan",
-        description="Display an execution plan for graph plugins",
-        handler=graph_plugins_plan_handler,
+        description="Plan graph targets (legacy alias)",
+        handler=graph_targets_plan_handler,
         group="graphs",
         require_runtime=False,
         require_gateway=False,
@@ -382,9 +286,8 @@ register_operation(
 __all__ = [
     "GraphPlanResult",
     "GraphPlanStage",
-    "GraphPluginInfo",
-    "GraphPluginsResult",
-    "PlanMode",
-    "graph_plugins_list_handler",
-    "graph_plugins_plan_handler",
+    "GraphTargetInfo",
+    "GraphTargetsResult",
+    "graph_targets_list_handler",
+    "graph_targets_plan_handler",
 ]
