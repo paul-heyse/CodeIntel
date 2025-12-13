@@ -15,8 +15,8 @@ from codeintel.build.assets.fingerprinting import (
     compute_fast_version_hash,
     compute_table_schema_hash,
 )
-from codeintel.storage.ibis_types import and_predicates
 from codeintel.storage.exceptions import StorageError
+from codeintel.storage.ibis_types import and_predicates
 from codeintel.storage.tracking.asset_tracking import (
     AssetLineageEdgeRecord,
     AssetVersionRecord,

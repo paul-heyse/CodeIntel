@@ -189,7 +189,7 @@ def _exception_to_problem(exc: BaseException) -> ProblemDetail:
         title=title,
         status=status,
         detail=detail,
-        extensions=extensions,
+        extensions=extensions or {},
     )
 
 

@@ -72,7 +72,7 @@ def _set_signature[T](fn: Callable[..., T], signature: inspect.Signature) -> Cal
     Callable[..., T]
         The input function with signature metadata applied.
     """
-    fn.__signature__ = signature
+    cast("Any", fn).__signature__ = signature
     return fn
 
 

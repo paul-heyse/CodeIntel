@@ -221,9 +221,17 @@ class IbisGateway:
         -------
         DuckDBBackend
             Ibis backend bound to the DuckDB connection.
+
+        Raises
+        ------
+        RuntimeError
+            If the DuckDB backend cannot be initialized.
         """
         if self._con is None:
             self._con = ibis.duckdb.from_connection(self._gateway.con)
+        if self._con is None:
+            msg = "Failed to initialize DuckDB backend connection"
+            raise RuntimeError(msg)
         return self._con
 
     def table(self, table_name: str) -> it.Table:

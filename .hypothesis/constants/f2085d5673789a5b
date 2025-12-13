@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/repositories/functions.py
+# hypothesis_version: 6.148.7
+
+['core.goids', 'function_goid_h128', 'goid_h128', 'records']

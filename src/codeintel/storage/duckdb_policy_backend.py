@@ -21,19 +21,19 @@ Example
 
 from __future__ import annotations
 
+import importlib
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
 
-from codeintel.config.datasets.contracts import get_dataset_contracts_by_table_key
 from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from codeintel.config.datasets import TableSchema
+    from codeintel.config.datasets import DatasetContract, TableSchema
     from codeintel.storage.gateway.protocol import StorageGateway
 
 __all__ = [
@@ -129,6 +129,19 @@ def _build_primary_key_constraint(columns: tuple[str, ...]) -> exp.PrimaryKey:
         SQLGlot primary key expression.
     """
     return exp.PrimaryKey(expressions=[exp.to_identifier(col) for col in columns])
+
+
+def _dataset_contracts_by_table_key() -> dict[str, DatasetContract]:
+    """Return dataset contracts keyed by table key without creating import cycles.
+
+    Returns
+    -------
+    dict[str, DatasetContract]
+        Mapping of table key to dataset contract.
+    """
+    contracts_module = importlib.import_module("codeintel.config.datasets.contracts")
+    getter = contracts_module.get_dataset_contracts_by_table_key
+    return getter()
 
 
 def _build_create_table(table: TableSchema, *, if_not_exists: bool = False) -> exp.Create:
@@ -685,7 +698,7 @@ class DuckDBPolicyBackend:
         for schema_name in SCHEMAS:
             self.create_schema_if_not_exists(schema_name)
 
-        contracts = get_dataset_contracts_by_table_key()
+        contracts = _dataset_contracts_by_table_key()
         for table_key, contract in contracts.items():
             if contract.schema is None:
                 continue
@@ -771,7 +784,7 @@ class DuckDBPolicyBackend:
         RuntimeError
             If the table is missing and creation is disabled.
         """
-        contract = get_dataset_contracts_by_table_key().get(table_key)
+        contract = _dataset_contracts_by_table_key().get(table_key)
         if contract is None:
             message = f"Unknown dataset contract for {table_key}"
             raise KeyError(message)
@@ -842,7 +855,7 @@ class DuckDBPolicyBackend:
         schema, table = table_key.split(".", 1)
 
         if columns is None:
-            contracts = get_dataset_contracts_by_table_key()
+            contracts = _dataset_contracts_by_table_key()
             contract = contracts.get(table_key)
             if contract is None or contract.schema is None:
                 message = f"No TableSchema found for {table_key}; columns must be provided"
@@ -895,7 +908,7 @@ class DuckDBPolicyBackend:
 
         resolved_columns: Sequence[str] | None = columns
         if resolved_columns is None:
-            contracts = get_dataset_contracts_by_table_key()
+            contracts = _dataset_contracts_by_table_key()
             contract = contracts.get(table_key)
             if contract is None or contract.schema is None:
                 message = f"No TableSchema found for {table_key}; columns must be provided"

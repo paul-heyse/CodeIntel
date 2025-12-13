@@ -103,7 +103,7 @@ def validate_rows(
     if schema is None:
         return [dict(row) for row in rows]  # type: ignore[arg-type]
 
-    column_names = tuple(schema.columns.keys())
+    column_names = pd.Index(list(schema.columns.keys()))
     first = rows[0]
     if isinstance(first, Mapping):
         df = pd.DataFrame(rows, columns=column_names)

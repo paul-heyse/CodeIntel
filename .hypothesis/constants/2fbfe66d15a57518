@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/datasets/validation.py
+# hypothesis_version: 6.148.7
+
+[200, 'ValidationMode', 'dataset_json_schema', 'dataset_json_schemas', 'get_pandera_schema', 'records', 'skip', 'strict', 'validate_df', 'validate_rows', 'warn']

@@ -9,7 +9,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+import pandas as pd
 
 from codeintel.export import default_validation_schemas
 from codeintel.export.export_exprs import build_export_expr, compile_export_sql
@@ -150,7 +152,13 @@ def _row_count(gateway: StorageGateway, table_name: str) -> int | None:
         return None
     if row is None:
         return None
-    return int(row[0])
+    if isinstance(row, pd.DataFrame):
+        if row.empty:
+            return None
+        return int(row.iloc[0, 0])
+    if isinstance(row, (list, tuple)):
+        return int(row[0]) if row else None
+    return int(cast("int", row))
 
 
 def _export_relation(

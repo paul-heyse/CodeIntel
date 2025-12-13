@@ -1326,14 +1326,15 @@ def _traverse_lineage(
         )
 
     node_list = [nodes[k] for k in sorted(nodes)]
-    edge_list = [
-        {
-            "from": {"asset_kind": a[0], "asset_key": a[1], "version_hash": a[2]},
-            "to": {"asset_kind": b[0], "asset_key": b[1], "version_hash": b[2]},
-            "edge_kind": edge_kind,
-        }
-        for a, b, edge_kind in sorted(edges)
-    ]
+    edge_list: list[dict[str, object]] = []
+    for a, b, edge_kind in sorted(edges):
+        edge_list.append(
+            {
+                "from": {"asset_kind": a[0], "asset_key": a[1], "version_hash": a[2]},
+                "to": {"asset_kind": b[0], "asset_key": b[1], "version_hash": b[2]},
+                "edge_kind": edge_kind,
+            }
+        )
     return node_list, edge_list
 
 
@@ -1588,7 +1589,7 @@ def _get_or_compute_schema_rowcount_diff(
         diff_kind=SCHEMA_ROWCOUNT_DIFF_KIND,
     )
     if cached_record is not None and cached_record.summary is not None:
-        return cast("dict[str, Any]", cached_record.summary), True
+        return cached_record.summary, True
 
     from_row = _load_asset_version_row(gateway, version_ctx, from_hash)
     to_row = _load_asset_version_row(gateway, version_ctx, to_hash)

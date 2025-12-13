@@ -7,7 +7,7 @@ computing per-function coverage metrics by joining GOIDs with coverage line data
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import duckdb
 import ibis
@@ -84,14 +84,22 @@ def t__coverage_functions__compute(
 
     # Filter GOIDs to the current snapshot
     goids_filtered = q__graph__goids.filter(
-        and_predicates(q__graph__goids.repo == env.snapshot.repo, q__graph__goids.commit == env.snapshot.commit)
+        cast(
+            "Any",
+            and_predicates(
+                q__graph__goids.repo == env.snapshot.repo, q__graph__goids.commit == env.snapshot.commit
+            ),
+        )
     )
 
     # Filter coverage lines to the current snapshot
     coverage_filtered = q__analytics__coverage_lines.filter(
-        and_predicates(
-            q__analytics__coverage_lines.repo == env.snapshot.repo,
-            q__analytics__coverage_lines.commit == env.snapshot.commit,
+        cast(
+            "Any",
+            and_predicates(
+                q__analytics__coverage_lines.repo == env.snapshot.repo,
+                q__analytics__coverage_lines.commit == env.snapshot.commit,
+            ),
         )
     )
 
@@ -104,7 +112,7 @@ def t__coverage_functions__compute(
 
     # Join GOIDs with aggregated coverage
     result = goids_filtered.left_join(
-        coverage_agg, goids_filtered.goid_h128 == coverage_agg.function_goid_h128
+        coverage_agg, predicates=[goids_filtered.goid_h128 == coverage_agg.function_goid_h128]
     )
 
     # Compute coverage ratio (handle null/zero cases)

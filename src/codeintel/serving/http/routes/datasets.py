@@ -131,7 +131,7 @@ def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
     """
     router = APIRouter()
     specs, paths = _load_dataset_specs()
-    deps = _build_dataset_deps(options)
+    deps_by_operation = _build_dataset_deps(options)
 
     spec_list = specs["datasets.list"]
     spec_specs = specs["datasets.specs"]
@@ -143,7 +143,7 @@ def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
         response_model=list[DatasetDescriptor],
         summary=spec_list.summary,
         tags=[spec_list.category],
-        dependencies=list(deps.get("datasets.list", [])),
+        dependencies=list(deps_by_operation.get("datasets.list", [])),
     )
     def list_datasets(
         *,
@@ -189,7 +189,7 @@ def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
         response_model=list[DatasetSpecDescriptor],
         summary=spec_specs.summary,
         tags=[spec_specs.category],
-        dependencies=list(deps.get("datasets.specs", [])),
+        dependencies=list(deps_by_operation.get("datasets.specs", [])),
     )
     def list_dataset_specs(
         *,
@@ -220,7 +220,7 @@ def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
         response_model=DatasetRowsResponse,
         summary=spec_rows.summary,
         tags=[spec_rows.category],
-        dependencies=list(deps.get("datasets.rows", [])),
+        dependencies=list(deps_by_operation.get("datasets.rows", [])),
     )
     def read_dataset_rows(
         *,
@@ -255,7 +255,7 @@ def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
         response_model=DatasetSchemaResponse,
         summary=spec_schema.summary,
         tags=[spec_schema.category],
-        dependencies=list(deps.get("datasets.schema", [])),
+        dependencies=list(deps_by_operation.get("datasets.schema", [])),
     )
     def dataset_schema(
         *,

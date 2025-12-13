@@ -277,6 +277,11 @@ class ExecutionContextBuilder:
         -------
         Self
             Configured builder.
+
+        Raises
+        ------
+        ValueError
+            If a snapshot cannot be determined from inputs.
         """
         opts = options or BuilderOptions()
         overrides = env_overrides or EnvOverrides()
@@ -307,6 +312,9 @@ class ExecutionContextBuilder:
         else:
             snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=base_path)
             build_paths = BuildPaths.from_repo_root(base_path)
+        if snapshot is None:
+            error_message = "SnapshotRef is required for TestContextBuilder"
+            raise ValueError(error_message)
         return cls(
             gateway=gateway,
             snapshot=snapshot,

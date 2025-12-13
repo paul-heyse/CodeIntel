@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.build.manifest import OutputManifest
 from codeintel.build.hamilton.dataset_ref import DatasetRef
 from codeintel.build.hamilton.manifest_hook import (
     SkipCheckRequest,
@@ -18,6 +17,7 @@ from codeintel.build.hamilton.manifest_hook import (
     should_skip,
 )
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
+from codeintel.build.manifest import OutputManifest
 
 if TYPE_CHECKING:
     from codeintel.build.env import BuildEnv

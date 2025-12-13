@@ -10,11 +10,14 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
+import ibis
+
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import (
     DuckDBConnection,
 )
+from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -140,12 +143,10 @@ def compute_history_timeseries(
 
     backend = DuckDBPolicyBackend(history_gateway)
     backend.ensure_table("analytics.history_timeseries")
-    history_con = history_gateway.con
 
-    history_con.execute(
-        "DELETE FROM analytics.history_timeseries WHERE repo = ?",
-        [cfg.repo],
-    )
+    history_table = history_gateway.ibis.table("analytics.history_timeseries")
+    delete_predicate = and_predicates(history_table["repo"] == cfg.repo)
+    history_gateway.ibis.delete("analytics.history_timeseries", where=delete_predicate)
 
     selection = _select_entities(cfg, db_resolver)
     if not selection.functions and not selection.modules:
@@ -256,19 +257,16 @@ def _select_top_functions(
     cfg: HistoryTimeseriesStepConfig,
     commit: str,
 ) -> set[str]:
-    rows = con.execute(
-        """
-        SELECT
-            rel_path,
-            language,
-            qualname
-        FROM analytics.function_profile
-        WHERE repo = ? AND commit = ?
-        ORDER BY risk_score DESC NULLS LAST
-        LIMIT ?
-        """,
-        [cfg.repo, commit, cfg.max_entities],
-    ).fetchall()
+    conn = ibis.duckdb.from_connection(con)
+    table = conn.table("function_profile", database="analytics")
+    rows_df = (
+        table.filter((table.repo == cfg.repo) & (table.commit == commit))
+        .order_by(ibis.desc(table.risk_score))
+        .select("rel_path", "language", "qualname")
+        .limit(cfg.max_entities)
+        .execute()
+    )
+    rows = rows_df.itertuples(index=False, name=None)
     return {
         make_entity_stable_id(
             repo=cfg.repo,
@@ -286,19 +284,16 @@ def _select_top_modules(
     cfg: HistoryTimeseriesStepConfig,
     commit: str,
 ) -> set[str]:
-    rows = con.execute(
-        """
-        SELECT
-            path,
-            language,
-            module
-        FROM analytics.module_profile
-        WHERE repo = ? AND commit = ?
-        ORDER BY max_risk_score DESC NULLS LAST
-        LIMIT ?
-        """,
-        [cfg.repo, commit, cfg.max_entities],
-    ).fetchall()
+    conn = ibis.duckdb.from_connection(con)
+    table = conn.table("module_profile", database="analytics")
+    rows_df = (
+        table.filter((table.repo == cfg.repo) & (table.commit == commit))
+        .order_by(ibis.desc(table.max_risk_score))
+        .select("path", "language", "module")
+        .limit(cfg.max_entities)
+        .execute()
+    )
+    rows = rows_df.itertuples(index=False, name=None)
     return {
         make_entity_stable_id(
             repo=cfg.repo,
@@ -318,26 +313,26 @@ def _collect_function_rows_for_commit(
     commit_ctx: CommitContext,
     selection: set[str],
 ) -> Iterable[tuple[object, ...]]:
-    rows = con_ci.execute(
-        """
-        SELECT
-            function_goid_h128,
-            rel_path,
-            module,
-            language,
-            qualname,
-            loc,
-            cyclomatic_complexity,
-            coverage_ratio,
-            static_error_count,
-            typedness_bucket,
-            risk_score,
-            risk_level
-        FROM analytics.function_profile
-        WHERE repo = ? AND commit = ?
-        """,
-        [cfg.repo, commit_ctx.commit],
-    ).fetchall()
+    conn = ibis.duckdb.from_connection(con_ci)
+    table = conn.table("function_profile", database="analytics")
+    rows_df = (
+        table.filter((table.repo == cfg.repo) & (table.commit == commit_ctx.commit))
+        .select(
+            "function_goid_h128",
+            "rel_path",
+            "module",
+            "language",
+            "qualname",
+            "loc",
+            "cyclomatic_complexity",
+            "coverage_ratio",
+            "static_error_count",
+            "typedness_bucket",
+            "risk_score",
+            "risk_level",
+        )
+        .execute()
+    )
 
     for (
         goid,
@@ -352,7 +347,7 @@ def _collect_function_rows_for_commit(
         typedness_bucket,
         risk_score,
         risk_level,
-    ) in rows:
+    ) in rows_df.itertuples(index=False, name=None):
         stable_id = make_entity_stable_id(
             repo=cfg.repo,
             rel_path=str(rel_path),
@@ -393,22 +388,22 @@ def _collect_module_rows_for_commit(
     commit_ctx: CommitContext,
     selection: set[str],
 ) -> Iterable[tuple[object, ...]]:
-    rows = con_ci.execute(
-        """
-        SELECT
-            module,
-            path,
-            language,
-            module_coverage_ratio,
-            max_risk_score,
-            avg_risk_score,
-            role,
-            role_confidence
-        FROM analytics.module_profile
-        WHERE repo = ? AND commit = ?
-        """,
-        [cfg.repo, commit_ctx.commit],
-    ).fetchall()
+    conn = ibis.duckdb.from_connection(con_ci)
+    table = conn.table("module_profile", database="analytics")
+    rows_df = (
+        table.filter((table.repo == cfg.repo) & (table.commit == commit_ctx.commit))
+        .select(
+            "module",
+            "path",
+            "language",
+            "module_coverage_ratio",
+            "max_risk_score",
+            "avg_risk_score",
+            "role",
+            "role_confidence",
+        )
+        .execute()
+    )
 
     for (
         module,
@@ -419,7 +414,7 @@ def _collect_module_rows_for_commit(
         _avg_risk_score,
         _role,
         _role_confidence,
-    ) in rows:
+    ) in rows_df.itertuples(index=False, name=None):
         stable_id = make_entity_stable_id(
             repo=cfg.repo,
             rel_path=str(path),

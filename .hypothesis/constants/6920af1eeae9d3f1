@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/export/export_parquet.py
+# hypothesis_version: 6.148.7
+
+[9223372036854775807, 'Exporting %s -> %s', 'a', 'can_export_parquet', 'count(*)', 'dataset_registry', 'duration_s', 'files', 'ibis_export', 'int', 'lenient', 'macro', 'output', 'rows', 'schema', 'schema mismatches', 'schema_version', 'stage', 'strict', 'table', 'utf-8', 'write_parquet']

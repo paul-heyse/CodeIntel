@@ -179,7 +179,8 @@ def _collect_export_params(ctx: CommandContext) -> DocsExportParams:
     )
     allowed_validation_modes = {"required", "skip"}
     if validation_mode and validation_mode not in allowed_validation_modes:
-        raise ValidationError('Invalid value for "--validation-mode"')
+        message = 'Invalid value for "--validation-mode"'
+        raise ValidationError(message)
     macro_requirement = (
         _normalize_flag(ctx.params.raw.get("macro_requirement")) or "require_normalized"
     )

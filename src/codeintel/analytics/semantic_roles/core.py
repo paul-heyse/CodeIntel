@@ -10,11 +10,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import ibis
+
 from codeintel.analytics.compute.graphs import normalize_decimal_id
 from codeintel.analytics.utilities.ast import safe_unparse
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -22,7 +25,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config import SemanticRolesStepConfig
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -196,13 +199,12 @@ def compute_semantic_roles(
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.semantic_roles_functions")
     backend.ensure_table("analytics.semantic_roles_modules")
-    con = gateway.con
 
-    module_meta = _load_module_meta(con, repo=cfg.repo, commit=cfg.commit)
-    function_rows = _load_function_rows(con, repo=cfg.repo, commit=cfg.commit)
-    effects = _load_effects(con, repo=cfg.repo, commit=cfg.commit)
-    contracts = _load_contracts(con, repo=cfg.repo, commit=cfg.commit)
-    graph_metrics = _load_graph_metrics(con, repo=cfg.repo, commit=cfg.commit)
+    module_meta = _load_module_meta(gateway, repo=cfg.repo, commit=cfg.commit)
+    function_rows = _load_function_rows(gateway, repo=cfg.repo, commit=cfg.commit)
+    effects = _load_effects(gateway, repo=cfg.repo, commit=cfg.commit)
+    contracts = _load_contracts(gateway, repo=cfg.repo, commit=cfg.commit)
+    graph_metrics = _load_graph_metrics(gateway, repo=cfg.repo, commit=cfg.commit)
 
     artifacts = RoleArtifacts(
         module_by_path=module_by_path,
@@ -309,18 +311,20 @@ def _build_function_role_rows(
 
 
 def _load_function_rows(
-    con: DuckDBConnection, *, repo: str, commit: str
+    gateway: StorageGateway, *, repo: str, commit: str
 ) -> list[tuple[int, str, str, int | None]]:
-    rows: Iterable[tuple[object, str, str, int | None]] = con.execute(
-        """
-        SELECT function_goid_h128, rel_path, qualname, loc
-        FROM analytics.function_metrics
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+    table = gateway.ibis.table("analytics.function_metrics")
+    expr = table.filter(
+        and_predicates(table["repo"] == repo, table["commit"] == commit)
+    ).select(
+        "function_goid_h128",
+        "rel_path",
+        "qualname",
+        "loc",
+    )
+    rows = expr.execute()
     result: list[tuple[int, str, str, int | None]] = []
-    for goid_raw, rel_path, qualname, loc in rows:
+    for goid_raw, rel_path, qualname, loc in rows.itertuples(index=False):
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -328,23 +332,23 @@ def _load_function_rows(
     return result
 
 
-def _load_effects(con: DuckDBConnection, *, repo: str, commit: str) -> dict[int, dict[str, object]]:
-    rows: Iterable[tuple[object, bool, bool, bool, bool, bool, bool, bool]] = con.execute(
-        """
-        SELECT
-            function_goid_h128,
-            touches_db,
-            uses_io,
-            uses_time,
-            uses_randomness,
-            modifies_globals,
-            modifies_closure,
-            spawns_threads_or_tasks
-        FROM analytics.function_effects
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+def _load_effects(
+    gateway: StorageGateway, *, repo: str, commit: str
+) -> dict[int, dict[str, object]]:
+    table = gateway.ibis.table("analytics.function_effects")
+    expr = table.filter(
+        and_predicates(table["repo"] == repo, table["commit"] == commit)
+    ).select(
+        "function_goid_h128",
+        "touches_db",
+        "uses_io",
+        "uses_time",
+        "uses_randomness",
+        "modifies_globals",
+        "modifies_closure",
+        "spawns_threads_or_tasks",
+    )
+    rows = expr.execute()
     mapping: dict[int, dict[str, object]] = {}
     for (
         goid_raw,
@@ -355,7 +359,7 @@ def _load_effects(con: DuckDBConnection, *, repo: str, commit: str) -> dict[int,
         modifies_globals,
         modifies_closure,
         spawns_threads_or_tasks,
-    ) in rows:
+    ) in rows.itertuples(index=False):
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -372,18 +376,22 @@ def _load_effects(con: DuckDBConnection, *, repo: str, commit: str) -> dict[int,
 
 
 def _load_contracts(
-    con: DuckDBConnection, *, repo: str, commit: str
+    gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    rows: Iterable[tuple[object, object, object, object]] = con.execute(
-        """
-        SELECT function_goid_h128, preconditions_json, raises_json, param_nullability_json
-        FROM analytics.function_contracts
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+    table = gateway.ibis.table("analytics.function_contracts")
+    expr = table.filter(
+        and_predicates(table["repo"] == repo, table["commit"] == commit)
+    ).select(
+        "function_goid_h128",
+        "preconditions_json",
+        "raises_json",
+        "param_nullability_json",
+    )
+    rows = expr.execute()
     mapping: dict[int, dict[str, object]] = {}
-    for goid_raw, preconditions, raises_json, param_nullability in rows:
+    for goid_raw, preconditions, raises_json, param_nullability in rows.itertuples(
+        index=False
+    ):
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -396,18 +404,19 @@ def _load_contracts(
 
 
 def _load_graph_metrics(
-    con: DuckDBConnection, *, repo: str, commit: str
+    gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, int]]:
-    rows: Iterable[tuple[object, int | None, int | None]] = con.execute(
-        """
-        SELECT function_goid_h128, call_fan_in, call_fan_out
-        FROM analytics.graph_metrics_functions
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+    table = gateway.ibis.table("analytics.graph_metrics_functions")
+    expr = table.filter(
+        and_predicates(table["repo"] == repo, table["commit"] == commit)
+    ).select(
+        "function_goid_h128",
+        "call_fan_in",
+        "call_fan_out",
+    )
+    rows = expr.execute()
     mapping: dict[int, dict[str, int]] = {}
-    for goid_raw, call_fan_in, call_fan_out in rows:
+    for goid_raw, call_fan_in, call_fan_out in rows.itertuples(index=False):
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -418,18 +427,19 @@ def _load_graph_metrics(
     return mapping
 
 
-def _load_module_meta(con: DuckDBConnection, *, repo: str, commit: str) -> dict[str, ModuleRecord]:
-    rows: Iterable[tuple[str, str, list[object] | str | None]] = con.execute(
-        """
-        SELECT module, path, tags
-        FROM core.modules
-        WHERE COALESCE(repo, ?) = ?
-          AND COALESCE(commit, ?) = ?
-        """,
-        [repo, repo, commit, commit],
-    ).fetchall()
+def _load_module_meta(
+    gateway: StorageGateway, *, repo: str, commit: str
+) -> dict[str, ModuleRecord]:
+    table = gateway.ibis.table("core.modules")
+    expr = table.filter(
+        and_predicates(
+            table["repo"].coalesce(ibis.literal(repo)) == repo,
+            table["commit"].coalesce(ibis.literal(commit)) == commit,
+        )
+    ).select("module", "path", "tags")
+    rows = expr.execute()
     meta: dict[str, ModuleRecord] = {}
-    for module, path, tags in rows:
+    for module, path, tags in rows.itertuples(index=False):
         normalized_path = normalize_rel_path(path) if path is not None else ""
         normalized_tags = _normalize_tags(tags)
         meta[str(module)] = ModuleRecord(path=normalized_path, tags=normalized_tags)

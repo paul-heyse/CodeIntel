@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from codeintel.build.hamilton.native import materializer
-from codeintel.build.hamilton.native.materializer import materialize_table
+from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
 from codeintel.config.primitives import SnapshotRef
 
 if TYPE_CHECKING:
@@ -143,11 +143,9 @@ def test_materialize_table_uses_policy_and_insert_select() -> None:
     expected_row_count = 5
 
     ref = materialize_table(
-        gateway=cast("StorageGateway", gateway),
-        table_key="analytics.example",
-        expr=cast("ir.Table", table),
-        snapshot=snapshot,
-        validate=False,
+        MaterializationContext(gateway=cast("StorageGateway", gateway), snapshot=snapshot, validate=False),
+        "analytics.example",
+        cast("ir.Table", table),
     )
 
     expect(
@@ -202,11 +200,9 @@ def test_materialize_table_validates_when_schema_available(monkeypatch: pytest.M
     monkeypatch.setattr(materializer, "get_pandera_schema", lambda _: schema)
 
     ref = materialize_table(
-        gateway=cast("StorageGateway", gateway),
-        table_key="analytics.example",
-        expr=cast("ir.Table", table),
-        snapshot=snapshot,
-        validate=True,
+        MaterializationContext(gateway=cast("StorageGateway", gateway), snapshot=snapshot, validate=True),
+        "analytics.example",
+        cast("ir.Table", table),
     )
 
     expect(condition=bool(schema.calls), message="Schema.validate should be invoked")
