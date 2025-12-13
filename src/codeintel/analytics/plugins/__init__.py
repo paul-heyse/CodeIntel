@@ -1,11 +1,19 @@
-"""Migrated analytics plugins using the new protocol.
+"""Analytics plugins using the TargetPlugin protocol.
 
-This package contains all analytics plugins migrated to the new
-unified plugin protocol.
+This package contains all analytics plugins that implement the
+TargetPlugin protocol from codeintel.build.plugin. Plugins are
+registered in the build registry (codeintel.build.plugin_registry).
+
+Example
+-------
+>>> from codeintel.build.plugin_registry import get_plugin_for_target
+>>> plugin = get_plugin_for_target("function_metrics")
+>>> result = await plugin.execute(ctx)
 """
 
 from __future__ import annotations
 
+from codeintel.analytics.plugins.cfg_dfg import CfgDfgMetricsPlugin
 from codeintel.analytics.plugins.config_data_flow import ConfigDataFlowPlugin
 from codeintel.analytics.plugins.coverage import (
     CoverageFunctionsPlugin,
@@ -27,60 +35,23 @@ from codeintel.analytics.plugins.functions import (
 from codeintel.analytics.plugins.history import HistoryTimeseriesPlugin
 from codeintel.analytics.plugins.hotspots import HotspotsPlugin
 from codeintel.analytics.plugins.profiles import ProfilesPlugin
-from codeintel.analytics.plugins.registration import (
-    ALL_PLUGINS,
-    BEHAVIORAL_COVERAGE_PLUGIN,
-    CONFIG_DATA_FLOW_PLUGIN,
-    COVERAGE_FUNCTIONS_PLUGIN,
-    COVERAGE_TEST_EDGES_PLUGIN,
-    DATA_MODEL_USAGE_PLUGIN,
-    DATA_MODELS_PLUGIN,
-    ENTRYPOINTS_PLUGIN,
-    EXTERNAL_DEPS_PLUGIN,
-    FUNCTION_AST_FEATURES_PLUGIN,
-    FUNCTION_CONTRACTS_PLUGIN,
-    FUNCTION_EFFECTS_PLUGIN,
-    FUNCTION_HISTORY_PLUGIN,
-    FUNCTION_METRICS_PLUGIN,
-    HISTORY_TIMESERIES_PLUGIN,
-    HOTSPOTS_PLUGIN,
-    PROFILES_PLUGIN,
-    RISK_FACTORS_PLUGIN,
-    SEMANTIC_ROLES_PLUGIN,
-    SUBSYSTEMS_PLUGIN,
-    TEST_PROFILE_PLUGIN,
-)
 from codeintel.analytics.plugins.risk import RiskFactorsPlugin
 from codeintel.analytics.plugins.semantic_roles import SemanticRolesPlugin
+from codeintel.analytics.plugins.subsystem_metrics import (
+    SubsystemAgreementPlugin,
+    SubsystemGraphMetricsPlugin,
+)
 from codeintel.analytics.plugins.subsystems import SubsystemsPlugin
+from codeintel.analytics.plugins.symbol_graph_metrics import SymbolGraphMetricsPlugin
 from codeintel.analytics.plugins.tests import (
     BehavioralCoveragePlugin,
+    TestGraphMetricsPlugin,
     TestProfilePlugin,
 )
 
 __all__ = [
-    "ALL_PLUGINS",
-    "BEHAVIORAL_COVERAGE_PLUGIN",
-    "CONFIG_DATA_FLOW_PLUGIN",
-    "COVERAGE_FUNCTIONS_PLUGIN",
-    "COVERAGE_TEST_EDGES_PLUGIN",
-    "DATA_MODELS_PLUGIN",
-    "DATA_MODEL_USAGE_PLUGIN",
-    "ENTRYPOINTS_PLUGIN",
-    "EXTERNAL_DEPS_PLUGIN",
-    "FUNCTION_AST_FEATURES_PLUGIN",
-    "FUNCTION_CONTRACTS_PLUGIN",
-    "FUNCTION_EFFECTS_PLUGIN",
-    "FUNCTION_HISTORY_PLUGIN",
-    "FUNCTION_METRICS_PLUGIN",
-    "HISTORY_TIMESERIES_PLUGIN",
-    "HOTSPOTS_PLUGIN",
-    "PROFILES_PLUGIN",
-    "RISK_FACTORS_PLUGIN",
-    "SEMANTIC_ROLES_PLUGIN",
-    "SUBSYSTEMS_PLUGIN",
-    "TEST_PROFILE_PLUGIN",
     "BehavioralCoveragePlugin",
+    "CfgDfgMetricsPlugin",
     "ConfigDataFlowPlugin",
     "CoverageFunctionsPlugin",
     "CoverageTestEdgesPlugin",
@@ -98,6 +69,10 @@ __all__ = [
     "ProfilesPlugin",
     "RiskFactorsPlugin",
     "SemanticRolesPlugin",
+    "SubsystemAgreementPlugin",
+    "SubsystemGraphMetricsPlugin",
     "SubsystemsPlugin",
+    "SymbolGraphMetricsPlugin",
+    "TestGraphMetricsPlugin",
     "TestProfilePlugin",
 ]

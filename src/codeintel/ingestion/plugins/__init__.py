@@ -32,7 +32,6 @@ from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
 from codeintel.ingestion.plugins.coverage_plugin import CoverageIngestPlugin
 from codeintel.ingestion.plugins.cst_extract import CstExtractPlugin
 from codeintel.ingestion.plugins.docstrings_plugin import DocstringsIngestPlugin
-from codeintel.ingestion.plugins.modules_plugin import ModuleIngestPlugin
 from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
 from codeintel.ingestion.plugins.scip_plugin import ScipIngestPlugin
 from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
@@ -61,7 +60,6 @@ __all__ = [
     "ForeignKeyConstraint",
     "IngestContractSpec",
     "IngestContractValidator",
-    "ModuleIngestPlugin",
     "RepoScanPlugin",
     "ScipIngestPlugin",
     "TestsIngestPlugin",

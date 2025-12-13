@@ -4,7 +4,7 @@
     Step configurations are being migrated to the build system.
     Use ``codeintel.build.context.TargetExecutionContext`` instead.
     Parameters now come from ``codeintel.build.config.BuildConfig``.
-    See ``codeintel.build.plugins.TargetPlugin`` for the new pattern.
+    See ``codeintel.build.plugin.TargetPlugin`` for the new pattern.
 
 Note
 ----

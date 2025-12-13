@@ -17,8 +17,8 @@ from codeintel.core.plugins.types.protocol import (
     PluginMetadata,
 )
 from codeintel.core.resources.registry import ResourceRegistry
+from tests._helpers.env import build_test_gateway
 from tests._helpers.fakes.configs import create_test_snapshot
-from tests._helpers.fakes.graph_contexts import create_graph_gateway
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -126,7 +126,7 @@ def core_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway with schema and macros applied; automatically closed.
     """
-    gateway = create_graph_gateway()
+    gateway = build_test_gateway()
     yield gateway
     gateway.close()
 
