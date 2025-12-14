@@ -94,7 +94,9 @@ def test_resolve_worker_count_env_var_takes_precedence_over_default() -> None:
     """Environment variable should override default calculation."""
     env_value = 6
 
-    result = resolve_worker_count(env_var="TEST_WORKERS_ENV", env={"TEST_WORKERS_ENV": str(env_value)})
+    result = resolve_worker_count(
+        env_var="TEST_WORKERS_ENV", env={"TEST_WORKERS_ENV": str(env_value)}
+    )
 
     expect_equal(result, env_value)
 

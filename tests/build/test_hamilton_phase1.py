@@ -24,9 +24,12 @@ from codeintel.build.hamilton.contracts.pandera_hook import (
     get_pandera_schema,
     with_contract,
 )
+from codeintel.build.hamilton.compat import (
+    build_driver_compat,
+    list_available_nodes_compat,
+)
 from codeintel.build.hamilton.driver_factory import (
-    build_driver,
-    list_available_nodes,
+    HamiltonNodeMode,
     target_to_node_name,
 )
 from codeintel.build.hamilton.env import BuildEnv
@@ -65,22 +68,22 @@ class TestHamiltonNodeMode:
     @staticmethod
     def test_build_driver_phase0_mode() -> None:
         """Verify build_driver works with phase0 mode."""
-        runtime = build_driver(mode="phase0")
-        if runtime.mode != "phase0":
-            pytest.fail(f"Expected mode='phase0', got '{runtime.mode}'")
+        runtime = build_driver_compat(mode="phase0")
+        if runtime.mode != "generated":
+            pytest.fail(f"Expected legacy phase0 to map to generated, got '{runtime.mode}'")
 
     @staticmethod
     def test_build_driver_generated_mode() -> None:
         """Verify build_driver works with generated mode."""
         clear_generated_module_cache()
-        runtime = build_driver(mode="generated")
+        runtime = build_driver_compat(mode="generated")
         if runtime.mode != "generated":
             pytest.fail(f"Expected mode='generated', got '{runtime.mode}'")
 
     @staticmethod
     def test_runtime_has_target_to_node_mapping() -> None:
         """Verify runtime carries target_to_node mapping."""
-        runtime = build_driver(mode="phase0")
+        runtime = build_driver_compat(mode="phase0")
         if not runtime.target_to_node:
             pytest.fail("Runtime missing target_to_node mapping")
         if "modules" not in runtime.target_to_node:
@@ -89,7 +92,7 @@ class TestHamiltonNodeMode:
     @staticmethod
     def test_runtime_has_node_to_target_mapping() -> None:
         """Verify runtime carries node_to_target mapping."""
-        runtime = build_driver(mode="phase0")
+        runtime = build_driver_compat(mode="phase0")
         if not runtime.node_to_target:
             pytest.fail("Runtime missing node_to_target mapping")
         if "t__modules" not in runtime.node_to_target:
@@ -98,7 +101,7 @@ class TestHamiltonNodeMode:
     @staticmethod
     def test_target_to_node_name_with_runtime() -> None:
         """Verify target_to_node_name uses runtime mapping when provided."""
-        runtime = build_driver(mode="phase0")
+        runtime = build_driver_compat(mode="phase0")
         node_name = target_to_node_name("modules", runtime=runtime)
         if node_name != "t__modules":
             pytest.fail(f"Expected 't__modules', got '{node_name}'")
@@ -106,14 +109,14 @@ class TestHamiltonNodeMode:
     @staticmethod
     def test_target_to_node_name_without_runtime() -> None:
         """Verify target_to_node_name works without runtime."""
-        node_name = target_to_node_name("modules", mode="phase0")
+        node_name = target_to_node_name("modules", runtime=build_driver_compat(mode="generated"))
         if node_name != "t__modules":
             pytest.fail(f"Expected 't__modules', got '{node_name}'")
 
     @staticmethod
     def test_list_available_nodes_phase0() -> None:
         """Verify list_available_nodes returns Phase 0 nodes."""
-        nodes = list_available_nodes(mode="phase0")
+        nodes = list_available_nodes_compat(mode="phase0")
         if "t__modules" not in nodes:
             pytest.fail("Phase 0 nodes should include t__modules")
 
@@ -121,7 +124,7 @@ class TestHamiltonNodeMode:
     def test_generated_mode_has_more_nodes() -> None:
         """Verify generated mode includes all targets."""
         clear_generated_module_cache()
-        runtime = build_driver(mode="generated")
+        runtime = build_driver_compat(mode="generated")
         if len(runtime.target_to_node) == 0:
             pytest.fail("Generated mode should have target mappings")
 

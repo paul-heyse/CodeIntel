@@ -179,9 +179,7 @@ class FunctionCatalog:
         self._functions: list[FunctionSpan] = list(functions)
         self._index = FunctionSpanIndex(self._functions)
         self._urn_by_goid = {fn.goid: fn.urn for fn in self._functions if fn.urn is not None}
-        self._module_by_path = {
-            normalize_path(path): mod for path, mod in module_by_path.items()
-        }
+        self._module_by_path = {normalize_path(path): mod for path, mod in module_by_path.items()}
         self._funcs_by_path: dict[str, list[FunctionSpan]] = {}
         for fn in self._functions:
             self._funcs_by_path.setdefault(fn.rel_path, []).append(fn)
