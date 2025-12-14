@@ -18,8 +18,10 @@ Example
 ```python
 from codeintel.core.ports.storage import QueryResult, BatchResult, StoragePort
 
+
 def handle_result(result: QueryResult) -> int:
     return result.row_count
+
 
 def write_data(port: StoragePort, rows: list[tuple]) -> BatchResult:
     return port.write_batch("my_table", rows)

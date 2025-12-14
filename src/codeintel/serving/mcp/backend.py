@@ -307,8 +307,8 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
 
     service: QueryService
     gateway: StorageGateway
-    repo: str | None = None
-    commit: str | None = None
+    repo: str = ""
+    commit: str = ""
     limits: BackendLimits = field(default_factory=BackendLimits)
     observability: ServiceObservability | None = None
     query: DuckDBQueryApi | DuckDBQueryService | None = field(init=False, default=None)

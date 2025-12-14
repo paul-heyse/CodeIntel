@@ -25,6 +25,7 @@ Example
 ```python
 from codeintel.core.ports import QueryResult, BatchResult, StoragePort
 
+
 def handle_result(result: QueryResult) -> int:
     return result.row_count
 ```

@@ -581,7 +581,7 @@ class BackendSubsystemQueryable(Protocol):
         """List inferred subsystems with optional filters."""
         ...
 
-    def get_module_subsystems(self, *, module: str) -> SubsystemModulesResponse:
+    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
         """Return subsystem memberships for a module."""
         ...
 

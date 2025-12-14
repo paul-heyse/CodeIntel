@@ -11,6 +11,11 @@ This package provides foundational infrastructure used across the ingestion syst
 
 NOTE: This package was renamed from 'utilities' to 'infrastructure' for alignment
 with the graphs package structure (compute/ vs infrastructure concerns).
+
+.. deprecated:: 1.0
+    The ``paths`` and ``workers`` modules are being consolidated into
+    ``codeintel.core.paths`` and ``codeintel.core.concurrency`` respectively.
+    Import from those core modules instead for new code.
 """
 
 from __future__ import annotations

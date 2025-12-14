@@ -262,9 +262,7 @@ class ValidationRunner[TContext, TFinding: Mapping[str, object]]:
         for check in self.checks:
             if check_filter is not None and not check_filter(check):
                 report.checks_skipped += 1
-                report.check_results.append(
-                    CheckResult(check_name=check.name, skipped=True)
-                )
+                report.check_results.append(CheckResult(check_name=check.name, skipped=True))
                 continue
 
             check_start = time.perf_counter()

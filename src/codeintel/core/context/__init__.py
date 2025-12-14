@@ -16,10 +16,16 @@ ConfigContextProtocol
     Protocol for contexts with configuration access.
 ResourceContextProtocol
     Protocol for contexts with resource registry access.
+BaseContext
+    Base class for execution contexts.
+ContextBuilder
+    Generic builder for execution contexts.
 """
 
 from __future__ import annotations
 
+from codeintel.core.context.base import BaseContext
+from codeintel.core.context.builder import ContextBuilder
 from codeintel.core.context.protocol import (
     ConfigContextProtocol,
     ExecutionContextProtocol,
@@ -29,7 +35,9 @@ from codeintel.core.context.protocol import (
 )
 
 __all__ = [
+    "BaseContext",
     "ConfigContextProtocol",
+    "ContextBuilder",
     "ExecutionContextProtocol",
     "ResourceContextProtocol",
     "SnapshotContextProtocol",
