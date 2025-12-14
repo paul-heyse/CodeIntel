@@ -50,14 +50,6 @@ if TYPE_CHECKING:
     )
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
-else:
-    from collections.abc import Mapping
-
-    from codeintel.analytics.testing.profiles.types import (
-        FunctionCoverageEntryProtocol,
-        SubsystemCoverageEntryProtocol,
-        TestGraphMetricsProtocol,
-    )
 
 
 @dataclass(frozen=True)

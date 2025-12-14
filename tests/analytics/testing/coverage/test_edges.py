@@ -73,13 +73,8 @@ class TestBuildEdgesForFile:
     """Tests for build_edges_for_file_for_tests function."""
 
     @staticmethod
-    def _create_edge_context(repo_root: Path) -> EdgeContext:
+    def _create_edge_context() -> EdgeContext:
         """Create a minimal EdgeContext for testing.
-
-        Parameters
-        ----------
-        repo_root
-            Root path for the test repository.
 
         Returns
         -------
@@ -94,9 +89,9 @@ class TestBuildEdgesForFile:
             test_meta_by_id={"test_func": (999, "urn:test_func")},
         )
 
-    def test_returns_empty_for_empty_functions(self, tmp_path: Path) -> None:
+    def test_returns_empty_for_empty_functions(self) -> None:
         """Verify returns empty list when no functions."""
-        ctx = self._create_edge_context(tmp_path)
+        ctx = self._create_edge_context()
         result = build_edges_for_file_for_tests(
             file_funcs=[],
             statements_set={10, 11, 12},
@@ -106,9 +101,9 @@ class TestBuildEdgesForFile:
         )
         expect_equal(result, [])
 
-    def test_returns_empty_for_empty_statements(self, tmp_path: Path) -> None:
+    def test_returns_empty_for_empty_statements(self) -> None:
         """Verify returns empty when no executable statements in function range."""
-        ctx = self._create_edge_context(tmp_path)
+        ctx = self._create_edge_context()
         func_row: FunctionRow = {
             "goid_h128": TEST_GOID,
             "urn": TEST_URN,
@@ -126,9 +121,9 @@ class TestBuildEdgesForFile:
         )
         expect_equal(result, [])
 
-    def test_builds_edge_for_covered_function(self, tmp_path: Path) -> None:
+    def test_builds_edge_for_covered_function(self) -> None:
         """Verify builds edge when function is covered by test."""
-        ctx = self._create_edge_context(tmp_path)
+        ctx = self._create_edge_context()
         func_row: FunctionRow = {
             "goid_h128": TEST_GOID,
             "urn": TEST_URN,
@@ -157,9 +152,9 @@ class TestBuildEdgesForFile:
         expect_equal(edge["commit"], DEFAULT_COMMIT)
         expect_equal(edge["coverage_ratio"], EXPECTED_COVERAGE_RATIO_FULL)
 
-    def test_handles_partial_coverage(self, tmp_path: Path) -> None:
+    def test_handles_partial_coverage(self) -> None:
         """Verify computes correct coverage ratio for partial coverage."""
-        ctx = self._create_edge_context(tmp_path)
+        ctx = self._create_edge_context()
         func_row: FunctionRow = {
             "goid_h128": TEST_GOID,
             "urn": TEST_URN,
@@ -187,9 +182,9 @@ class TestBuildEdgesForFile:
         expected_ratio = 5 / 11
         expect_true(abs(edge["coverage_ratio"] - expected_ratio) < FLOAT_COMPARISON_TOLERANCE)
 
-    def test_handles_none_end_line(self, tmp_path: Path) -> None:
+    def test_handles_none_end_line(self) -> None:
         """Verify handles function with None end_line (single line function)."""
-        ctx = self._create_edge_context(tmp_path)
+        ctx = self._create_edge_context()
         func_row: FunctionRow = {
             "goid_h128": TEST_GOID,
             "urn": TEST_URN,
@@ -213,7 +208,7 @@ class TestBuildEdgesForFile:
         expect_equal(result[0]["coverage_ratio"], EXPECTED_COVERAGE_RATIO_FULL)
 
     @staticmethod
-    def test_uses_unknown_status_for_unmapped_test(tmp_path: Path) -> None:
+    def test_uses_unknown_status_for_unmapped_test() -> None:
         """Verify uses 'unknown' status for tests not in status_by_test."""
         ctx = EdgeContext(
             status_by_test={},  # No status mapping

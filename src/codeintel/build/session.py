@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING
 from codeintel.build.hashing import compute_input_hash
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.manifest import OutputManifest
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
@@ -145,6 +147,22 @@ class BuildSession:
         )
         self._manifest_cache = {m.target: m for m in manifests}
         self._manifests_preloaded = True
+
+    def seed_manifest_cache(self, manifests: Mapping[str, OutputManifest]) -> None:
+        """Seed the manifest cache with externally provided entries.
+
+        This method merges the provided mapping into the existing cache without
+        marking the cache as fully preloaded. This avoids incorrectly treating
+        missing entries as absent from storage when the provided mapping is
+        partial.
+
+        Parameters
+        ----------
+        manifests
+            Mapping of target name to manifest to cache.
+        """
+        for name, manifest in manifests.items():
+            self._manifest_cache.setdefault(name, manifest)
 
     def invalidate_hash(self, target_name: str) -> None:
         """Invalidate cached hash for a target.

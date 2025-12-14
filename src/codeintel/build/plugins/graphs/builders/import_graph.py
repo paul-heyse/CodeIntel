@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import ast
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
@@ -29,6 +28,8 @@ from codeintel.graphs.compute import imports as imports_compute
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.build.context import TargetExecutionContext
     from codeintel.storage.gateway import StorageGateway
 

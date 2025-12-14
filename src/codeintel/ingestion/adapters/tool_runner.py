@@ -33,7 +33,6 @@ import logging
 import time
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.ports.tools import (
     CoverageFileData,
     CoverageResult,
@@ -49,6 +48,8 @@ from codeintel.ingestion.ports.tools import (
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
     from pathlib import Path
+
+    from codeintel.ingestion.engine.service import ToolService
 
 log = logging.getLogger(__name__)
 

@@ -203,7 +203,7 @@ class TargetState:
         bool
             True if target is missing or stale.
         """
-        return self.status in ("missing", "stale")
+        return self.status in {"missing", "stale"}
 
     @property
     def can_run(self) -> bool:

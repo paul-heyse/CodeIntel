@@ -1,7 +1,7 @@
 """Plugin catalog generation using the build registry.
 
 This module provides functions for generating documentation catalogs
-from the unified build registry (codeintel.build.plugin_registry).
+from the unified build registry (codeintel.build.unified_registry).
 """
 
 from __future__ import annotations
@@ -49,12 +49,12 @@ def build_plugin_catalog() -> dict[str, Any]:
     """
     try:
         # Lazy import to avoid circular dependency at module load time
-        from codeintel.build.plugin_registry import get_all_plugins  # noqa: PLC0415
+        from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
     except ImportError:
         log.warning("Build plugin registry not available")
         return {"plugins": {}, "count": 0}
 
-    registry = get_all_plugins()
+    registry = get_unified_registry().get_all_plugins()
     plugins: dict[str, dict[str, Any]] = {}
 
     for target_name, plugin_class in registry.items():

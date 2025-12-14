@@ -18,7 +18,6 @@ from codeintel.analytics.functions.function_contracts import (
     compute_function_contracts,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -38,7 +37,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 

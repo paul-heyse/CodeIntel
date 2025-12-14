@@ -13,9 +13,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import networkx as nx
 
-    from codeintel.analytics.runtime import GraphRuntime
-    from codeintel.graphs.catalog import FunctionCatalog
+    from codeintel.core.catalog import FunctionCatalog
     from codeintel.graphs.engine import GraphEngine
+    from codeintel.graphs.runtime import GraphRuntime
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

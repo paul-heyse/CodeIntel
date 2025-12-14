@@ -31,6 +31,8 @@ from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.storage.tracking.asset_tracking import AssetRecord
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import ibis.expr.types as ir
 
     from codeintel.build.context_base import BuildContext
@@ -54,6 +56,14 @@ class MaterializationContextProtocol(Protocol):
     @property
     def snapshot(self) -> SnapshotRef:
         """Return the snapshot reference."""
+        ...
+
+
+class SchemaValidatorProtocol(Protocol):
+    """Protocol for Pandera-like schema validators."""
+
+    def validate(self, frame: pd.DataFrame, *, lazy: bool = False) -> pd.DataFrame:
+        """Validate and return the input frame."""
         ...
 
 
@@ -147,6 +157,8 @@ def materialize_table(
     ctx: BuildContext | MaterializationContext,
     table_key: str,
     expr: ir.Table,
+    *,
+    schema_resolver: Callable[[str], SchemaValidatorProtocol | None] | None = None,
 ) -> DatasetRef:
     """Materialize an Ibis expression to a DuckDB table for this snapshot.
 
@@ -165,6 +177,9 @@ def materialize_table(
         Fully-qualified table name (e.g., "analytics.function_metrics").
     expr
         Ibis table expression to materialize.
+    schema_resolver
+        Optional callable that resolves a schema validator for ``table_key``.
+        Defaults to :func:`codeintel.build.hamilton.contracts.pandera_hook.get_pandera_schema`.
 
     Returns
     -------
@@ -205,7 +220,8 @@ def materialize_table(
         commit=snapshot.commit,
     )
 
-    schema = get_pandera_schema(table_key) if validate else None
+    active_schema_resolver = schema_resolver or get_pandera_schema
+    schema = active_schema_resolver(table_key) if validate else None
 
     if schema is not None:
         df = pd.DataFrame(expr.execute())

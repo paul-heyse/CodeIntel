@@ -77,6 +77,22 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
+@dataclass(frozen=True)
+class HttpQuerySpec[DomainT, ResponseT]:
+    """Specification for an HTTP-backed query with optional limit clamping."""
+
+    name: str
+    path: str
+    params: dict[str, object]
+    response_type: type[ResponseT]
+    domain_type: type[DomainT]
+    empty_data: ResponseT | None = None
+    limit: int | None = None
+    offset: int | None = None
+    dataset: str | None = None
+    limit_param: str = "limit"
+
+
 class TransportAdapter(Protocol):
     """Protocol for transport-specific query execution.
 
@@ -336,20 +352,7 @@ class _HttpTransportMixin:
             )
         return result
 
-    def _http_query[DomainT, ResponseT](
-        self,
-        name: str,
-        path: str,
-        params: dict[str, object],
-        response_type: type[ResponseT],
-        domain_type: type[DomainT],
-        *,
-        empty_data: ResponseT | None = None,
-        limit: int | None = None,
-        offset: int | None = None,
-        dataset: str | None = None,
-        limit_param: str = "limit",
-    ) -> DomainT:
+    def _http_query[DomainT, ResponseT](self, spec: HttpQuerySpec[DomainT, ResponseT]) -> DomainT:
         """
         Execute an HTTP query with optional limit clamping and response normalization.
 
@@ -362,26 +365,8 @@ class _HttpTransportMixin:
 
         Parameters
         ----------
-        name
-            Operation name for logging.
-        path
-            HTTP endpoint path.
-        params
-            Request parameters (limit will be replaced if clamping is used).
-        response_type
-            Pydantic response model type with ``from_domain()`` and ``to_domain()``.
-        domain_type
-            Domain model type (used for isinstance checks).
-        empty_data
-            Response to return if limit clamping fails. If provided, enables clamping.
-        limit
-            Limit value to clamp (only used if empty_data is provided).
-        offset
-            Offset value to clamp (only used if empty_data is provided).
-        dataset
-            Dataset name for observability.
-        limit_param
-            Parameter name for the clamped limit (default: "limit").
+        spec
+            Query specification including endpoint, parameters, and conversion types.
 
         Returns
         -------
@@ -390,32 +375,34 @@ class _HttpTransportMixin:
         """
 
         def _run() -> ResponseT:
-            request_params = dict(params)
-            if empty_data is not None:
-                clamped = clamp_limits(self.limits, limit, offset)
+            request_params = dict(spec.params)
+            if spec.empty_data is not None:
+                clamped = clamp_limits(self.limits, spec.limit, spec.offset)
                 if clamped.has_error:
                     # Convert domain messages to transport messages and create error response
                     transport_messages = [Message.from_domain(msg) for msg in clamped.messages]
-                    error_response = empty_data.model_copy(  # type: ignore[attr-defined,union-attr]
+                    return spec.empty_data.model_copy(  # type: ignore[attr-defined,union-attr]
                         update={"meta": ResponseMeta(messages=transport_messages)}
-                    )
-                    return error_response  # type: ignore[return-value]
-                request_params[limit_param] = clamped.applied_limit
-                if offset is not None:
+                    )  # type: ignore[return-value]
+                request_params[spec.limit_param] = clamped.applied_limit
+                if spec.offset is not None:
                     request_params["offset"] = clamped.applied_offset
 
-            payload = self.request_json(path, request_params)
-            if isinstance(payload, domain_type):
-                return response_type.from_domain(payload)  # type: ignore[return-value,attr-defined]
-            if isinstance(payload, response_type):
+            payload = self.request_json(spec.path, request_params)
+            if isinstance(payload, spec.domain_type):
+                return spec.response_type.from_domain(  # type: ignore[return-value,attr-defined]
+                    payload
+                )
+            if isinstance(payload, spec.response_type):
                 return payload  # type: ignore[return-value]
-            return response_type.model_validate(payload)  # type: ignore[return-value,attr-defined]
+            return spec.response_type.model_validate(payload)  # type: ignore[return-value,attr-defined]
 
-        pydantic_resp: ResponseT = self._http_call(name, _run, dataset=dataset)
+        pydantic_resp: ResponseT = self._http_call(spec.name, _run, dataset=spec.dataset)
         return pydantic_resp.to_domain()  # type: ignore[return-value,attr-defined]
 
 
 __all__ = [
+    "HttpQuerySpec",
     "HttpTransport",
     "LocalTransport",
     "TransportAdapter",

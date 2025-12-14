@@ -22,17 +22,9 @@ from codeintel.analytics.graphs.constants import (
 from codeintel.analytics.graphs.orchestrator import (
     ExtendedMetricsConfig,
     ExtendedMetricsRequest,
-    GraphViews,
     compute_extended_metrics,
 )
-from codeintel.analytics.runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-)
-from codeintel.analytics.runtime.context import (
-    GraphContextSpec,
-    resolve_graph_context,
-)
+from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -43,10 +35,12 @@ if TYPE_CHECKING:
         StructuralMetrics,
     )
     from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters
-    from codeintel.analytics.runtime.context import (
-        GraphContext,
+    from codeintel.analytics.graphs.orchestrator import (
+        GraphViews,
     )
     from codeintel.config.datasets import GraphMetricsModulesExtRow
+    from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
+    from codeintel.graphs.runtime.context import GraphContext
     from codeintel.storage.gateway import StorageGateway
 
 

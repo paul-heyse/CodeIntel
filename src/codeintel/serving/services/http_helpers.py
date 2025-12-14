@@ -116,7 +116,7 @@ def clamp_limits(
             has_error = True
 
     return ClampedLimits(
-        applied_limit=clamp.applied,
+        applied_limit=clamp.limit_or_default(limits.default_limit),
         applied_offset=applied_offset,
         messages=messages,
         has_error=has_error,

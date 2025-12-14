@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
-from codeintel.core.cache.protocol import CacheStats, CacheStatsCollector
+from codeintel.core.cache.protocol import CacheStatsCollector
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.core.cache.protocol import CacheStats
 
 K = TypeVar("K")
 V = TypeVar("V")

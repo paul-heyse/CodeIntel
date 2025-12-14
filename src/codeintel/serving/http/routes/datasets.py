@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from codeintel.serving.operations import Operation
 
 LOG = logging.getLogger("codeintel.serving.http.routes.datasets")
+_FASTAPI_REQUEST = Request
 
 
 def _compute_etag(payload: object) -> str:

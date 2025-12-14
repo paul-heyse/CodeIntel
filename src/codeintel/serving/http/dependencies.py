@@ -15,6 +15,8 @@ from codeintel.serving.services.query_service import QueryService
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+_FASTAPI_REQUEST = Request
+
 
 def get_app_config(request: Request) -> ServingConfig:
     """

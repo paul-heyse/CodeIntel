@@ -52,7 +52,6 @@ from typing import Protocol, TypeVar, runtime_checkable
 
 D = TypeVar("D")  # Domain model type
 D_co = TypeVar("D_co", covariant=True)  # Covariant domain model type for Protocol
-R = TypeVar("R")  # Response model type
 R_co = TypeVar("R_co", covariant=True)  # Covariant response model type for Protocol
 
 
@@ -168,7 +167,7 @@ def to_domain_result(
     return response_type.model_validate(raw).to_domain()
 
 
-def to_response_result(
+def to_response_result[R](
     raw: object,
     response_type: type[R],
 ) -> R:

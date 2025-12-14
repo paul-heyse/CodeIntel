@@ -141,14 +141,14 @@ class DuckDBStorageAdapter(IngestStoragePort):
         _ = scope
         self._validate_table_exists(table_key)
         if not rows:
-            return BatchResult(table_key=table_key, rows_written=0, duration_s=0.0)
+            return BatchResult.from_write(table_key=table_key, rows_written=0, duration_s=0.0)
         columns = load_columns_by_table().get(table_key, [])
         inserted = self._backend.bulk_insert(
             table_key,
             [tuple(row) for row in rows],
             columns=columns,
         )
-        return BatchResult(table_key=table_key, rows_written=inserted, duration_s=0.0)
+        return BatchResult.from_write(table_key=table_key, rows_written=inserted, duration_s=0.0)
 
     def delete_by_params(
         self,
@@ -225,7 +225,7 @@ class DuckDBStorageAdapter(IngestStoragePort):
         result = self._gateway.execute(sql, param_list)
         rows = result.fetchall()
         columns = tuple(desc[0] for desc in result.description) if result.description else ()
-        return QueryResult(rows=list(rows), columns=columns, row_count=len(rows))
+        return QueryResult.from_rows([tuple(row) for row in rows], columns=columns)
 
     def fetch_dataframe(
         self,

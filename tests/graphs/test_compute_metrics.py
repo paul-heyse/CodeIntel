@@ -11,7 +11,7 @@ from typing import Final
 import networkx as nx
 import pytest
 
-from codeintel.graphs.compute.metrics.centrality import (
+from codeintel.core.compute.centrality import (
     CentralityMetrics,
     centrality_to_rows,
     compute_all_centralities,

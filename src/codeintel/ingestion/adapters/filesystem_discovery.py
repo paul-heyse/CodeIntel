@@ -28,6 +28,29 @@ PROGRESS_LOG_INTERVAL = 5.0
 PROGRESS_LOG_EVERY = 50
 
 
+def _module_name_for_ingestion(rel_path: str) -> str:
+    """Convert a relative file path to a module name used by ingestion.
+
+    Returns
+    -------
+    str
+        Module name to use for ingestion persistence.
+
+    Notes
+    -----
+    Ingestion persists ``__init__.py`` as ``pkg.__init__`` (not ``pkg``), matching
+    historical expectations in the build/ingestion pipeline.
+    """
+    normalized = rel_path.replace("\\", "/")
+    module_name = path_to_module(normalized)
+
+    if normalized.endswith("/__init__.py"):
+        return f"{module_name}.__init__"
+    if normalized == "__init__.py":
+        return "__init__"
+    return module_name
+
+
 class FilesystemDiscoveryAdapter:
     """Filesystem discovery adapter implementing ModuleDiscoveryPort.
 
@@ -77,7 +100,7 @@ class FilesystemDiscoveryAdapter:
 
         for idx, path in enumerate(paths, start=1):
             rel_path = repo_relpath(repo_root, path)
-            module_name = path_to_module(rel_path)
+            module_name = _module_name_for_ingestion(rel_path)
             modules.append(
                 ModuleRecord(
                     rel_path=rel_path,

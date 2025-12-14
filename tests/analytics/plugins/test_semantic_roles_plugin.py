@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.plugins.analytics.semantic_roles.compute import SemanticRolesPlugin
-from codeintel.graphs.catalog import CatalogService, FunctionCatalog
+from codeintel.core.catalog import CatalogService, FunctionCatalog
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.builders import insert_rows
 from tests._helpers.catalogs import ensure_catalog_with_goids

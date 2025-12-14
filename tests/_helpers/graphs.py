@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import networkx as nx
 
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.graphs.catalog import FunctionCatalog
+from codeintel.core.catalog import FunctionCatalog
 from tests._helpers.builders import (
     ConfigValueRow,
     ModuleRow,

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, SupportsInt, cast
 
 import ibis
 
@@ -193,8 +193,8 @@ class HashChangeDetectionAdapter:
         for row in rows:
             normalized = normalize_path(str(row["rel_path"]))
             state[normalized] = FileDigest(
-                size_bytes=int(row["size_bytes"]),
-                mtime_ns=int(row["mtime_ns"]),
+                size_bytes=int(cast("SupportsInt", row["size_bytes"])),
+                mtime_ns=int(cast("SupportsInt", row["mtime_ns"])),
                 content_hash=str(row["content_hash"]),
             )
 

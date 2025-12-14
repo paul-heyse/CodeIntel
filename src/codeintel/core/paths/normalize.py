@@ -15,6 +15,7 @@ Examples
 
 from __future__ import annotations
 
+import posixpath
 from pathlib import Path
 
 
@@ -41,19 +42,13 @@ def normalize_path(path: str | Path) -> str:
     >>> normalize_path("./src/../src/file.py")
     'src/file.py'
     """
-    path_obj = Path(path)
-
-    try:
-        normalized = path_obj.resolve()
-    except (OSError, ValueError):
-        normalized = path_obj
-
-    result = str(normalized).replace("\\", "/")
-
-    if result.startswith("./"):
-        result = result[2:]
-
-    return result
+    raw = str(path).replace("\\", "/")
+    normalized = posixpath.normpath(raw)
+    if normalized == ".":
+        return ""
+    if normalized.startswith("./"):
+        return normalized[2:]
+    return normalized
 
 
 def ensure_repo_root(repo_root: Path | str) -> Path:

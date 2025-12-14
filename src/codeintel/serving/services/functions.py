@@ -16,7 +16,7 @@ from codeintel.serving.mcp.models import (
     parse_graph_scope,
 )
 from codeintel.serving.services.conversion import to_domain_result
-from codeintel.serving.services.transport import _HttpTransportMixin
+from codeintel.serving.services.transport import HttpQuerySpec, _HttpTransportMixin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -187,17 +187,19 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         scope: GraphScopePayload | None = None,
     ) -> dm.HighRiskFunctionsResult:
         return self._http_query(
-            "list_high_risk_functions",
-            "/functions/high-risk",
-            {
-                "min_risk": min_risk,
-                "tested_only": tested_only,
-                "scope": _serialize_scope(scope),
-            },
-            HighRiskFunctionsResponse,
-            dm.HighRiskFunctionsResult,
-            empty_data=HighRiskFunctionsResponse(functions=[], truncated=False),
-            limit=limit,
+            HttpQuerySpec(
+                name="list_high_risk_functions",
+                path="/functions/high-risk",
+                params={
+                    "min_risk": min_risk,
+                    "tested_only": tested_only,
+                    "scope": _serialize_scope(scope),
+                },
+                response_type=HighRiskFunctionsResponse,
+                domain_type=dm.HighRiskFunctionsResult,
+                empty_data=HighRiskFunctionsResponse(functions=[], truncated=False),
+                limit=limit,
+            )
         )
 
     def get_function_summary(
@@ -238,17 +240,19 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         scope: GraphScopePayload | None = None,
     ) -> dm.CallGraphNeighbors:
         return self._http_query(
-            "get_callgraph_neighbors",
-            "/function/callgraph",
-            {
-                "goid_h128": goid_h128,
-                "direction": direction,
-                "scope": _serialize_scope(scope),
-            },
-            CallGraphNeighborsResponse,
-            dm.CallGraphNeighbors,
-            empty_data=CallGraphNeighborsResponse(outgoing=[], incoming=[]),
-            limit=limit,
+            HttpQuerySpec(
+                name="get_callgraph_neighbors",
+                path="/function/callgraph",
+                params={
+                    "goid_h128": goid_h128,
+                    "direction": direction,
+                    "scope": _serialize_scope(scope),
+                },
+                response_type=CallGraphNeighborsResponse,
+                domain_type=dm.CallGraphNeighbors,
+                empty_data=CallGraphNeighborsResponse(outgoing=[], incoming=[]),
+                limit=limit,
+            )
         )
 
     def get_callgraph_neighborhood(
@@ -259,15 +263,17 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         max_nodes: int | None = None,
     ) -> dm.GraphNeighborhood:
         return self._http_query(
-            "get_callgraph_neighborhood",
-            "/graph/call/neighborhood",
-            {"goid_h128": goid_h128, "radius": radius},
-            GraphNeighborhoodResponse,
-            dm.GraphNeighborhood,
-            empty_data=GraphNeighborhoodResponse(nodes=[], edges=[]),
-            limit=max_nodes,
-            limit_param="max_nodes",
-            dataset="call_graph_nodes",
+            HttpQuerySpec(
+                name="get_callgraph_neighborhood",
+                path="/graph/call/neighborhood",
+                params={"goid_h128": goid_h128, "radius": radius},
+                response_type=GraphNeighborhoodResponse,
+                domain_type=dm.GraphNeighborhood,
+                empty_data=GraphNeighborhoodResponse(nodes=[], edges=[]),
+                limit=max_nodes,
+                limit_param="max_nodes",
+                dataset="call_graph_nodes",
+            )
         )
 
     def get_import_boundary(
@@ -277,15 +283,17 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         max_edges: int | None = None,
     ) -> dm.ImportBoundary:
         return self._http_query(
-            "get_import_boundary",
-            "/graph/import/boundary",
-            {"subsystem_id": subsystem_id},
-            ImportBoundaryResponse,
-            dm.ImportBoundary,
-            empty_data=ImportBoundaryResponse(nodes=[], edges=[]),
-            limit=max_edges,
-            limit_param="max_edges",
-            dataset="import_graph_edges",
+            HttpQuerySpec(
+                name="get_import_boundary",
+                path="/graph/import/boundary",
+                params={"subsystem_id": subsystem_id},
+                response_type=ImportBoundaryResponse,
+                domain_type=dm.ImportBoundary,
+                empty_data=ImportBoundaryResponse(nodes=[], edges=[]),
+                limit=max_edges,
+                limit_param="max_edges",
+                dataset="import_graph_edges",
+            )
         )
 
     def get_tests_for_function(
@@ -297,17 +305,19 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         scope: GraphScopePayload | None = None,
     ) -> dm.TestsForFunctionResult:
         return self._http_query(
-            "get_tests_for_function",
-            "/function/tests",
-            {
-                "goid_h128": goid_h128,
-                "urn": urn,
-                "scope": _serialize_scope(scope),
-            },
-            TestsForFunctionResponse,
-            dm.TestsForFunctionResult,
-            empty_data=TestsForFunctionResponse(tests=[]),
-            limit=limit,
+            HttpQuerySpec(
+                name="get_tests_for_function",
+                path="/function/tests",
+                params={
+                    "goid_h128": goid_h128,
+                    "urn": urn,
+                    "scope": _serialize_scope(scope),
+                },
+                response_type=TestsForFunctionResponse,
+                domain_type=dm.TestsForFunctionResult,
+                empty_data=TestsForFunctionResponse(tests=[]),
+                limit=limit,
+            )
         )
 
     def get_file_summary(

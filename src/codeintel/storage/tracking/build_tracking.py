@@ -9,7 +9,6 @@ All DuckDB access is encapsulated here, following the storage layer pattern.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
@@ -24,6 +23,7 @@ from codeintel.storage.helpers.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.hamilton.telemetry_hook import NodeExecutionRecord

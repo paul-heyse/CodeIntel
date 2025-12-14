@@ -21,7 +21,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TypeVar, cast, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, Protocol, TypeVar, cast, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -303,19 +303,17 @@ class MetadataPlugin(TargetPlugin, ABC):
         if opts_cls is None:
             msg = f"No options type for plugin {self.plugin_name}"
             raise ValueError(msg)
+        resolved_cls = cast("type[TOptions]", opts_cls)
 
         if self._options_resolver is None:
             if dynamic_overrides:
-                return opts_cls(**dynamic_overrides)  # type: ignore[return-value]
-            return opts_cls()  # type: ignore[return-value]
+                return resolved_cls(**dynamic_overrides)
+            return resolved_cls()
 
-        return cast(
-            "TOptions",
-            self._options_resolver.get_options(
-                self._core_metadata,
-                opts_cls,
-                dynamic_overrides=dynamic_overrides,
-            ),
+        return self._options_resolver.get_options(
+            self._core_metadata,
+            resolved_cls,
+            dynamic_overrides=dynamic_overrides,
         )
 
 

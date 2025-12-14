@@ -16,7 +16,7 @@ import pandas as pd
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 CATALOG_MODULE_TABLE = "temp.catalog_modules"

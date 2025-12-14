@@ -29,7 +29,7 @@ from codeintel.build.errors import RegistryValidationError
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from codeintel.build.plugin import TargetPlugin
+    from codeintel.build.plugin import TargetPlugin, TargetPluginProtocol
     from codeintel.build.targets import OutputTarget
 
 __all__ = [
@@ -185,6 +185,47 @@ class UnifiedRegistry:
         """
         reg = self._registrations.get(name)
         return reg.plugin_class if reg else None
+
+    def get_all_plugins(self) -> dict[str, type[TargetPlugin]]:
+        """Return all plugin implementations keyed by target name.
+
+        Returns
+        -------
+        dict[str, type[TargetPlugin]]
+            Mapping of target name to plugin class.
+        """
+        plugins: dict[str, type[TargetPlugin]] = {}
+        for name, reg in self._registrations.items():
+            if reg.plugin_class is not None:
+                plugins[name] = reg.plugin_class
+        return plugins
+
+    def instantiate_plugin(self, target_name: str) -> TargetPluginProtocol:
+        """Instantiate a plugin for a target.
+
+        Parameters
+        ----------
+        target_name
+            Target name to instantiate a plugin for.
+
+        Returns
+        -------
+        TargetPluginProtocol
+            Instantiated plugin.
+
+        Raises
+        ------
+        KeyError
+            If the target is missing or has no registered plugin implementation.
+        """
+        if target_name not in self._registrations:
+            msg = f"Target '{target_name}' not found in registry"
+            raise KeyError(msg)
+        plugin_class = self.get_plugin(target_name)
+        if plugin_class is None:
+            msg = f"Target '{target_name}' has no registered plugin implementation"
+            raise KeyError(msg)
+        return plugin_class()
 
     def get_native_module(self, name: str) -> str | None:
         """Get the native module path for a target.

@@ -20,12 +20,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.analytics.compute.graphs import BipartiteDegrees
-from codeintel.analytics.runtime import GraphRuntimeOptions
-from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.analytics.testing.graph_metrics import (
     TestMetricsContext,
     compute_test_graph_metrics,
 )
+from codeintel.graphs.runtime import GraphRuntimeOptions
+from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from tests._helpers import COVERAGE_PACK, METRICS_PACK, assert_frozen
 from tests._helpers.assertions import (
     expect_equal,

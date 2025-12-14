@@ -1,8 +1,8 @@
 """Unified target registrations.
 
 This module provides a central location for registering targets with their
-implementations. This replaces the scattered registrations across registry.py
-and plugin_registry.py.
+implementations. This replaces the scattered registrations across the legacy
+registry and plugin registry layers.
 
 The goal is atomic registration: each target is registered with its
 implementation in a single call, preventing mismatches.

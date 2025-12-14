@@ -70,6 +70,11 @@ Example
 
 from __future__ import annotations
 
+from codeintel.build.hamilton.compat import (
+    LEGACY_PHASE0,
+    build_driver_compat,
+    list_available_nodes_compat,
+)
 from codeintel.build.hamilton.contracts import (
     get_pandera_schema,
     validate_dataframe,
@@ -82,11 +87,6 @@ from codeintel.build.hamilton.driver_factory import (
     build_driver,
     list_available_nodes,
     target_to_node_name,
-)
-from codeintel.build.hamilton.compat import (
-    LEGACY_PHASE0,
-    build_driver_compat,
-    list_available_nodes_compat,
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
@@ -110,6 +110,7 @@ from codeintel.build.hamilton.planner import (
 )
 
 __all__ = [
+    "LEGACY_PHASE0",
     "BuildEnv",
     "CanonicalPluginMeta",
     "DatasetRef",
@@ -119,7 +120,6 @@ __all__ = [
     "HamiltonNodeMode",
     "HamiltonRuntime",
     "IbisIOConfig",
-    "LEGACY_PHASE0",
     "PlanEntry",
     "StalenessExplanation",
     "TargetRunRecord",

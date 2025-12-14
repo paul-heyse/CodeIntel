@@ -107,8 +107,7 @@ def test_storage_help_renders_nested(cli_ctx: CLIContext) -> None:
     expect_equal(result.exit_code, 0)
     output = result.stdout.lower()
     expect_in("usage", output)
-    expect_in("macros", output)
-    expect_in("require", output)
+    expect_in("db-path", output)
     expect_in("root", output)
     expect_not_in("simplenamespace", output)
 

@@ -9,14 +9,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from codeintel.core.parsing.source_span import SourceSpan
-
 if TYPE_CHECKING:
     import ast
     from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from codeintel.core.parsing.ast_index import AstSpanIndex
+    from codeintel.core.parsing.source_span import SourceSpan
 
 
 @dataclass(frozen=True)

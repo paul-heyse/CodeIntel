@@ -11,10 +11,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from codeintel.core.services.base import ServiceError
-from codeintel.core.services.protocol import ServiceProtocol
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from codeintel.core.services.protocol import ServiceProtocol
 
 log = logging.getLogger(__name__)
 
@@ -253,8 +254,7 @@ class ServiceRegistry:
 
         return self._resolve_entry(entry)
 
-    @staticmethod
-    def _resolve_entry(entry: ServiceEntry) -> ServiceProtocol:
+    def _resolve_entry(self, entry: ServiceEntry) -> ServiceProtocol:
         """Resolve a service entry to an instance.
 
         Parameters
@@ -281,7 +281,16 @@ class ServiceRegistry:
         instance = entry.factory()
 
         if entry.singleton:
-            entry.instance = instance
+            cached_entry = ServiceEntry(
+                service_type=entry.service_type,
+                instance=instance,
+                factory=entry.factory,
+                singleton=True,
+            )
+            self._entries_by_type[entry.service_type] = cached_entry
+            names = [name for name, mapped in self._entries_by_name.items() if mapped is entry]
+            for name in names:
+                self._entries_by_name[name] = cached_entry
 
         return instance
 

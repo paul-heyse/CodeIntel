@@ -70,6 +70,7 @@ from codeintel.graphs.validation.runner import (
     log_db_snapshot,
     resolve_validation_runtime,
     run_graph_validations_with_runner,
+    warn_graph_structure,
 )
 
 __all__ = [
@@ -117,4 +118,5 @@ __all__ = [
     "resolve_validation_options",
     "resolve_validation_runtime",
     "run_graph_validations_with_runner",
+    "warn_graph_structure",
 ]

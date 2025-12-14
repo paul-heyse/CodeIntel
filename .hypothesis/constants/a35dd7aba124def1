@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/history/history_timeseries.py
+# hypothesis_version: 6.148.7
+
+[500, '--format=%cI', '-s', '.tool_cache', 'analytics', 'avg_risk_score', 'both', 'bucket_label', 'build', 'commit', 'commit_ts', 'coverage_ratio', 'created_at_row', 'entity_kind', 'entity_stable_id', 'function', 'function_goid_h128', 'function_profile', 'git', 'language', 'loc', 'max_risk_score', 'module', 'module_profile', 'path', 'qualname', 'rel_path', 'repo', 'risk_level', 'risk_score', 'role', 'role_confidence', 'show', 'static_error_count', 'typedness_bucket', 'utf-8']

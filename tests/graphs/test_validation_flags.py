@@ -12,7 +12,7 @@ from tests._helpers.fakes.graph_runtime import runtime_with_graphs
 from tests._helpers.fakes.networkx_graphs import empty_digraph, empty_graph
 
 if TYPE_CHECKING:
-    from codeintel.analytics.runtime import GraphRuntimeOptions
+    from codeintel.graphs.runtime import GraphRuntimeOptions
     from tests._helpers.fakes.graph_contexts import GraphTestEnv
 
 

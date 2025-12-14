@@ -37,6 +37,7 @@ class ToolName(StrEnum):
     COVERAGE = "coverage"
     RUFF = "ruff"
     PYTEST = "pytest"
+    GIT = "git"
     SCIP_PYTHON = "scip-python"
     SCIP = "scip"
 

@@ -38,7 +38,6 @@ if TYPE_CHECKING:
 
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.backend import QueryBackend
-    from codeintel.serving.mcp.models import ProblemDetail
     from codeintel.serving.mcp.serialization import (
         SupportsFromDomain,
         SupportsModelDump,
@@ -274,7 +273,7 @@ def _register_graph_plugin_plan_tool(
     @_wrap
     def graph_plugin_plan(
         names: list[str] | None = None,
-    ) -> dict[str, object] | dict[str, ProblemDetail]:
+    ) -> dict[str, object]:
         """Compute graph target execution plan with ordering and dependency graph.
 
         Parameters
@@ -284,8 +283,8 @@ def _register_graph_plugin_plan_tool(
 
         Returns
         -------
-        dict[str, object] | dict[str, ProblemDetail]
-            Plan payload with ordering and dependency graph, or an error detail.
+        dict[str, object]
+            Plan payload with ordering and dependency graph.
         """
 
         def _build_response() -> dict[str, object]:
@@ -312,7 +311,7 @@ def _register_function_architecture_tool(
 
     @mcp.tool(name=spec.tool_name, description=spec.summary)
     @_wrap
-    def get_function_architecture(goid_h128: int) -> dict[str, object] | dict[str, ProblemDetail]:
+    def get_function_architecture(goid_h128: int) -> dict[str, object]:
         def _call() -> dict[str, object]:
             _run_prereqs_if_needed(spec.id, ctx)
             result = backend_method(goid_h128=goid_h128)
@@ -336,7 +335,7 @@ def _register_module_architecture_tool(
 
     @mcp.tool(name=spec.tool_name, description=spec.summary)
     @_wrap
-    def get_module_architecture(module: str) -> dict[str, object] | dict[str, ProblemDetail]:
+    def get_module_architecture(module: str) -> dict[str, object]:
         def _call() -> dict[str, object]:
             _run_prereqs_if_needed(spec.id, ctx)
             result = backend_method(module=module)
@@ -362,7 +361,7 @@ def _register_list_subsystems_tool(
     @_wrap
     def list_subsystems(
         limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> dict[str, object] | dict[str, ProblemDetail]:
+    ) -> dict[str, object]:
         def _call() -> dict[str, object]:
             _run_prereqs_if_needed(spec.id, ctx)
             result = backend_method(limit=limit, role=role, q=q)
@@ -386,7 +385,7 @@ def _register_module_subsystems_tool(
 
     @mcp.tool(name=spec.tool_name, description=spec.summary)
     @_wrap
-    def get_module_subsystems(module: str) -> dict[str, object] | dict[str, ProblemDetail]:
+    def get_module_subsystems(module: str) -> dict[str, object]:
         def _call() -> dict[str, object]:
             _run_prereqs_if_needed(spec.id, ctx)
             result = backend_method(module=module)
@@ -410,7 +409,7 @@ def _register_file_hints_tool(
 
     @mcp.tool(name=spec.tool_name, description=spec.summary)
     @_wrap
-    def get_file_hints(rel_path: str) -> dict[str, object] | dict[str, ProblemDetail]:
+    def get_file_hints(rel_path: str) -> dict[str, object]:
         def _call() -> dict[str, object]:
             _run_prereqs_if_needed(spec.id, ctx)
             result = backend_method(rel_path=rel_path)
@@ -436,7 +435,7 @@ def _register_subsystem_modules_tool(
     @_wrap
     def get_subsystem_modules(
         subsystem_id: str, module_limit: int | None = None
-    ) -> dict[str, object] | dict[str, ProblemDetail]:
+    ) -> dict[str, object]:
         def _call() -> dict[str, object]:
             _run_prereqs_if_needed(spec.id, ctx)
             result = backend_method(
@@ -465,7 +464,7 @@ def _register_search_subsystems_tool(
     @_wrap
     def search_subsystems(
         limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> dict[str, object] | dict[str, ProblemDetail]:
+    ) -> dict[str, object]:
         def _call() -> dict[str, object]:
             _run_prereqs_if_needed(spec.id, ctx)
             result = backend_method(limit=limit, role=role, q=q)
@@ -491,7 +490,7 @@ def _register_summarize_subsystem_tool(
     @_wrap
     def summarize_subsystem(
         subsystem_id: str, module_limit: int | None = None
-    ) -> dict[str, object] | dict[str, ProblemDetail]:
+    ) -> dict[str, object]:
         def _call() -> dict[str, object]:
             _run_prereqs_if_needed(spec.id, ctx)
             result = backend_method(

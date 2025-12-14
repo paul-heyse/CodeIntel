@@ -9,13 +9,15 @@ from __future__ import annotations
 import logging
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.core.providers.protocol import (
     ProviderError,
     ProviderNotLoadedError,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 
@@ -234,7 +236,7 @@ class LazyProvider[T](BaseProvider[T]):
         return self._factory()
 
 
-class CachedProvider[T](BaseProvider[T]):
+class CachedProvider[T](BaseProvider[T], ABC):
     """Provider with TTL-based caching.
 
     Extends BaseProvider with time-based cache expiration.

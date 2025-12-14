@@ -21,8 +21,8 @@ from codeintel.analytics.graphs.symbol_graph_metrics import (
     compute_symbol_graph_metrics_functions,
     compute_symbol_graph_metrics_modules,
 )
-from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers.fakes.graph_runtime import (
     CountingGraphEngineAdapter,
     build_graph_engine_double,

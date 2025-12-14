@@ -9,13 +9,11 @@ function wrappers are provided for backward compatibility.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import networkx as nx
 
 from codeintel.graphs.validation.base import GraphCheckBase
-from codeintel.graphs.validation.context import GraphValidationContext
 from codeintel.graphs.validation.findings import (
     CALL_SCC_MIN,
     CONFIG_KEY_MIN_THRESHOLD,
@@ -26,7 +24,10 @@ from codeintel.graphs.validation.findings import (
 )
 
 if TYPE_CHECKING:
+    import logging
+
     from codeintel.core.validation import ValidationSeverity
+    from codeintel.graphs.validation.context import GraphValidationContext
 
 
 # =============================================================================

@@ -8,18 +8,21 @@ from __future__ import annotations
 
 import sys
 from collections import defaultdict
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
+from codeintel.config.datasets.operation_contracts_dataset import TRANSPORT_KINDS
 from codeintel.serving.contracts.operation_contract_reflection import (
     ComponentSpec,
     build_operation_contract_dataframe,
     validate_operation_contracts,
 )
-from codeintel.serving.contracts.operation_contracts_dataset import TRANSPORT_KINDS
 from codeintel.serving.mcp.backend import DuckDBBackend, HttpBackend
 from codeintel.serving.operations import iter_operations
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
 from codeintel.serving.types import QueryBackendProtocol, QueryServiceProtocol
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 def _component_specs() -> list[ComponentSpec]:
@@ -96,7 +99,8 @@ def run() -> int:
 
     grouped_methods: dict[str, set[str]] = defaultdict(set)
     for _, row in validated.iterrows():
-        grouped_methods[row["component"]].add(str(row["method"]))
+        component = str(row["component"])
+        grouped_methods[component].add(str(row["method"]))
 
     expected = _expected_methods()
     missing = _validate_missing(grouped_methods, expected)

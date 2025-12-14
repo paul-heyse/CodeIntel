@@ -8,16 +8,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import duckdb
 import pandas as pd
 
 from codeintel.build.assets.fingerprinting import (
     ArtifactVersionInput,
-    FingerprintPolicy,
     TableVersionInput,
     compute_table_schema_hash,
 )
 from codeintel.storage.exceptions import StorageError
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import and_predicates
 from codeintel.storage.tracking.asset_tracking import (
     AssetLineageEdgeRecord,
@@ -28,6 +27,9 @@ from codeintel.storage.tracking.asset_tracking import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from codeintel.build.assets.fingerprinting import (
+        FingerprintPolicy,
+    )
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
     from codeintel.build.hamilton.io.dataset_ref import DatasetRef
@@ -72,16 +74,20 @@ def _try_table_row_count_for_snapshot(
             and_predicates(table.repo == env.snapshot.repo, table.commit == env.snapshot.commit)
         )
         raw = filtered.count().execute()
+        value: object
         if isinstance(raw, pd.DataFrame):
             if raw.empty:
                 return None
-            return int(raw.iloc[0, 0])
-        if isinstance(raw, pd.Series):
+            value = raw.iloc[0, 0]
+        elif isinstance(raw, pd.Series):
             if raw.empty:
                 return None
-            return int(raw.iloc[0])
-        return int(raw)
-    except (AttributeError, ValueError, TypeError, duckdb.Error):
+            value = raw.iloc[0]
+        else:
+            value = raw
+
+        return int(str(value))
+    except (AttributeError, ValueError, TypeError, DuckDBError):
         return None
 
 

@@ -7,7 +7,7 @@ This package contains all build plugins organized by domain:
 - analytics: Analytics computation plugins (metrics, coverage, etc.)
 
 All plugins implement the TargetPlugin protocol from codeintel.build.plugin.
-Plugins are registered with the build registry in codeintel.build.plugin_registry.
+Plugins are registered with the build registry in codeintel.build.unified_registry.
 """
 
 from __future__ import annotations

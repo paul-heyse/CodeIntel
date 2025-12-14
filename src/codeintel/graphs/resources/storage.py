@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.graphs.ports.storage import BatchResult, QueryResult
+from codeintel.core.ports.storage import BatchResult, QueryResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

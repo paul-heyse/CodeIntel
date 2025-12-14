@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from codeintel.storage.helpers.json import (
@@ -22,6 +21,7 @@ from codeintel.storage.helpers.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from datetime import datetime
 
     from duckdb import DuckDBPyConnection
 

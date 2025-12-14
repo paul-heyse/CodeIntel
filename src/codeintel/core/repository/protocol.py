@@ -14,11 +14,10 @@ if TYPE_CHECKING:
     from codeintel.core.repository.pagination import PagedResult, Pagination
 
 T = TypeVar("T")
-T_co = TypeVar("T_co", covariant=True)
 
 
 @runtime_checkable
-class RepositoryProtocol(Protocol[T_co]):
+class RepositoryProtocol(Protocol[T]):
     """Protocol for repository implementations.
 
     Repositories provide a consistent interface for accessing domain
@@ -27,8 +26,8 @@ class RepositoryProtocol(Protocol[T_co]):
 
     Type Parameters
     ---------------
-    T_co
-        The type of entity this repository manages (covariant).
+    T
+        The type of entity this repository manages.
 
     Examples
     --------
@@ -53,7 +52,7 @@ class RepositoryProtocol(Protocol[T_co]):
     ...         return self._db.query(User).filter_by(id=id).exists()
     """
 
-    def get(self, entity_id: int | str) -> T_co | None:
+    def get(self, entity_id: int | str) -> T | None:
         """Get a single entity by ID.
 
         Parameters
@@ -63,7 +62,7 @@ class RepositoryProtocol(Protocol[T_co]):
 
         Returns
         -------
-        T_co | None
+        T | None
             The entity if found, None otherwise.
         """
         ...
@@ -73,7 +72,7 @@ class RepositoryProtocol(Protocol[T_co]):
         *,
         filters: Mapping[str, object] | None = None,
         pagination: Pagination | None = None,
-    ) -> PagedResult[T_co]:
+    ) -> PagedResult[T]:
         """List entities with optional filtering and pagination.
 
         Parameters
@@ -85,7 +84,7 @@ class RepositoryProtocol(Protocol[T_co]):
 
         Returns
         -------
-        PagedResult[T_co]
+        PagedResult[T]
             Paginated result with entities and metadata.
         """
         ...

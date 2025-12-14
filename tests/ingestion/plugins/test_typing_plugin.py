@@ -29,10 +29,7 @@ from tests._helpers.ingestion_samples import TYPED_SOURCE
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.build.plugins.ingestion.typing_plugin import (
-        StepFactory,
-        StorageFactory,
-    )
+    from codeintel.build.plugin import StepFactory, StorageFactory
 
 
 def _make_plugin(

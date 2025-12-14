@@ -20,15 +20,11 @@ from codeintel.analytics.compute.graphs import (
 )
 from codeintel.analytics.compute.row_builders import SymbolMetricInputs
 from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES, MAX_COMMUNITY_NODES
-from codeintel.analytics.runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
-)
-from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:

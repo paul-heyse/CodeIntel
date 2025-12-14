@@ -60,11 +60,6 @@ from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.build.operations import OperationTargets, get_targets_for_operation
 from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
 from codeintel.build.plugin import TargetPlugin, TargetPluginProtocol
-from codeintel.build.plugin_registry import (
-    get_all_plugins,
-    get_plugin_for_target,
-    register_plugin,
-)
 from codeintel.build.registry import build_target_graph, get_target_graph
 from codeintel.build.resources import (
     DEFAULT_EXECUTION,
@@ -74,6 +69,7 @@ from codeintel.build.resources import (
 )
 from codeintel.build.run_config import BuildRunConfig
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
+from codeintel.build.unified_registry import UnifiedRegistry, get_unified_registry
 
 __all__ = [
     "DEFAULT_EXECUTION",
@@ -98,12 +94,11 @@ __all__ = [
     "TargetPluginProtocol",
     "TargetResources",
     "TargetResult",
+    "UnifiedRegistry",
     "build_target_graph",
     "compute_input_hash",
     "compute_options_hash",
-    "get_all_plugins",
-    "get_plugin_for_target",
     "get_target_graph",
     "get_targets_for_operation",
-    "register_plugin",
+    "get_unified_registry",
 ]

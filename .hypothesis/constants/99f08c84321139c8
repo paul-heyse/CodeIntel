@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugins/ingestion/helpers.py
+# hypothesis_version: 6.148.7
+
+[1024, '.', '.generated', '.generated.py', '.py', '/', '_generated.py', '_pb2.py', '_pb2.pyi', 'build_scan_profile', 'core.modules', 'filter_modules', 'generated', 'get_module_paths', 'path', 'paths_to_modules', 'tests']

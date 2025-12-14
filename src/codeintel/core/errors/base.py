@@ -14,11 +14,14 @@ from codeintel.core.errors.problem_details import ProblemDetail
 from codeintel.core.errors.taxonomy import (
     INTERNAL_ERROR,
     ErrorCategory,
-    ErrorCode,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from codeintel.core.errors.taxonomy import (
+        ErrorCode,
+    )
 
 
 @dataclass

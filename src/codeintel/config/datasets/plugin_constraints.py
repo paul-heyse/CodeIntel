@@ -43,13 +43,13 @@ def _get_all_plugins_metadata() -> dict[str, CorePluginMetadata]:
     """
     try:
         # Lazy import to avoid circular dependency at module load time
-        from codeintel.build.plugin_registry import get_all_plugins  # noqa: PLC0415
+        from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
     except ImportError:
         log.debug("Build plugin registry not available")
         return {}
 
     result: dict[str, CorePluginMetadata] = {}
-    for target_name, plugin_class in get_all_plugins().items():
+    for target_name, plugin_class in get_unified_registry().get_all_plugins().items():
         try:
             plugin = plugin_class()
         except (TypeError, ValueError, AttributeError):

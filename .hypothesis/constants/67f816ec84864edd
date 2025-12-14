@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/registrations.py
+# hypothesis_version: 6.148.7
+
+['register_all_targets']

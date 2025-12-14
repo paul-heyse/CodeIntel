@@ -7,7 +7,6 @@ enabling "what exists?" visibility into the build state.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
@@ -16,6 +15,7 @@ from codeintel.storage.helpers.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from codeintel.storage.gateway.protocol import StorageGateway
 

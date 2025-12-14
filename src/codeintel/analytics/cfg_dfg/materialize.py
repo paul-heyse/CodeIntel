@@ -24,7 +24,7 @@ from codeintel.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
 )
-from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:

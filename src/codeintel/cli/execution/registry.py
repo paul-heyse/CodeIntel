@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -417,6 +418,22 @@ class OperationRegistryHolder(SingletonHolder[OperationRegistry]):
     """Singleton holder for the CLI OperationRegistry."""
 
 
+@dataclass
+class _BootstrapState:
+    in_progress: bool = False
+
+
+_BOOTSTRAP_STATE = _BootstrapState()
+
+
+def _commands_module_is_initializing() -> bool:
+    module = sys.modules.get("codeintel.cli.commands")
+    if module is None:
+        return False
+    spec = getattr(module, "__spec__", None)
+    return bool(getattr(spec, "_initializing", False))
+
+
 def get_registry() -> OperationRegistry:
     """Get the global operation registry.
 
@@ -428,8 +445,29 @@ def get_registry() -> OperationRegistry:
         Global registry instance.
     """
     registry = OperationRegistryHolder.get(OperationRegistry)
-    if not registry.list_operations():
+    if registry.list_operations():
+        return registry
+
+    if _BOOTSTRAP_STATE.in_progress:
+        return registry
+
+    _BOOTSTRAP_STATE.in_progress = True
+    try:
         importlib.import_module("codeintel.cli.commands")
+        if registry.list_operations():
+            return registry
+        if _commands_module_is_initializing():
+            return registry
+
+        for module_name in list(sys.modules):
+            is_commands = module_name == "codeintel.cli.commands"
+            is_submodule = module_name.startswith("codeintel.cli.commands.")
+            if is_commands or is_submodule:
+                sys.modules.pop(module_name, None)
+
+        importlib.import_module("codeintel.cli.commands")
+    finally:
+        _BOOTSTRAP_STATE.in_progress = False
 
     return registry
 

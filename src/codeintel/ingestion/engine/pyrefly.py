@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from anyio import to_thread
 
-from codeintel.core.paths import repo_relpath
+from codeintel.core.paths import normalize_path, repo_relpath
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
@@ -67,10 +67,16 @@ def _parse_pyrefly_output(
         file_name = diag.get("path")
         if not file_name:
             continue
-        try:
-            rel_path = repo_relpath(repo_root, Path(str(file_name)))
-        except ValueError:
-            continue
+        file_path = Path(str(file_name))
+        if file_path.is_absolute():
+            try:
+                rel_path = repo_relpath(repo_root, file_path)
+            except ValueError:
+                continue
+        else:
+            rel_path = normalize_path(file_path)
+            if not rel_path:
+                continue
         counts[rel_path] = counts.get(rel_path, 0) + 1
 
     return DiagnosticReport.from_error_counts("pyrefly", counts)

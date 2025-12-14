@@ -17,7 +17,7 @@ from codeintel.analytics.functions.function_effects import (
 )
 from codeintel.analytics.functions.function_history import compute_function_history
 from codeintel.analytics.functions.metrics import compute_function_metrics_and_types
-from codeintel.graphs.catalog import CatalogService
+from codeintel.core.catalog import CatalogService
 from tests._helpers.assertions import expect_true
 from tests.analytics.integration.sample_repo import (
     build_runtime,

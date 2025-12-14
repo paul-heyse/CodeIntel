@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugins/ingestion/__init__.py
+# hypothesis_version: 6.148.7
+
+['AstExtractPlugin', 'ConfigIngestPlugin', 'CoverageIngestPlugin', 'CstExtractPlugin', 'RepoScanPlugin', 'ScipIngestPlugin', 'TestsIngestPlugin', 'TypingIngestPlugin']

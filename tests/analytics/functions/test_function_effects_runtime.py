@@ -15,7 +15,7 @@ from codeintel.analytics.functions.function_effects import (
     compute_function_effects,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers import CORE_PACK, create_test_context
 from tests._helpers.assertions import assert_logged, expect_equal, expect_false, expect_true
 from tests._helpers.builders import CallGraphEdgeRow, insert_rows

@@ -14,18 +14,11 @@ from codeintel.analytics.compute.row_builders import (
     build_subsystem_graph_rows,
 )
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
-from codeintel.analytics.runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
-)
-from codeintel.analytics.runtime.context import (
-    GraphContextSpec,
-    resolve_graph_context,
-)
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.repositories.subsystems import SubsystemRepository
 
@@ -33,9 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters
-    from codeintel.analytics.runtime.context import (
-        GraphContext,
-    )
+    from codeintel.graphs.runtime.context import GraphContext
     from codeintel.storage.gateway import StorageGateway
 
 

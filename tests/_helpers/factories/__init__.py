@@ -11,7 +11,6 @@ from __future__ import annotations
 from tests._helpers.factories.config_factories import (
     GraphRuntimeOptionsKwargs,
     make_graph_runtime_options,
-    make_snapshot,
 )
 from tests._helpers.factories.graph_factories import (
     GOLDEN_EXPECTED_COMMUNITIES,
@@ -65,7 +64,6 @@ __all__ = [
     "build_star_graph",
     "build_two_communities_graph",
     "make_graph_runtime_options",
-    "make_snapshot",
     "make_snapshot",
     "sample_behavioral_coverage_rows",
     "sample_file_profile_rows",

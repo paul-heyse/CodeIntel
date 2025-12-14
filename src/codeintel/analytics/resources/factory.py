@@ -13,16 +13,16 @@ from typing import TYPE_CHECKING
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
-from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
-from codeintel.analytics.resources.registry import ResourceRegistry
-from codeintel.analytics.runtime import GraphRuntimeOptions
+from codeintel.core.resources import ResourceRegistry
+from codeintel.graphs.resources.graph_provider import GraphProvider
+from codeintel.graphs.runtime import GraphRuntimeOptions
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.graphs import GraphRuntimeLike
-    from codeintel.analytics.runtime import GraphRuntime
     from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
-    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.core.catalog import FunctionCatalogProvider
+    from codeintel.graphs.resources.graph_provider import GraphRuntimeLike
+    from codeintel.graphs.runtime import GraphRuntime
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

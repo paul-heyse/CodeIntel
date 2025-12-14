@@ -73,7 +73,7 @@ if TYPE_CHECKING:
         EntryPointCandidate,
     )
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 

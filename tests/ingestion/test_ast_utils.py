@@ -13,12 +13,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.config.datasets import get_table_columns
+from codeintel.core.parsing import AstSpanIndex
 from codeintel.ingestion.compute.ast_extract import AstVisitor
-from codeintel.ingestion.infrastructure.ast_utils import (
-    AstSpanIndex,
-    parse_python_module,
-    timed_parse,
-)
+from codeintel.ingestion.infrastructure.ast_utils import parse_python_module, timed_parse
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,

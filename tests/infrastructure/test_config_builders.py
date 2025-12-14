@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.runtime import GraphRuntimeOptions
+from codeintel.graphs.runtime import GraphRuntimeOptions
 from tests._helpers.factories.config_factories import make_graph_runtime_options, make_snapshot
 
 

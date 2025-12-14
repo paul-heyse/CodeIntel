@@ -20,22 +20,23 @@ from __future__ import annotations
 
 import ast
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins._helpers import filter_paths, get_source_root, persist_rows
 from codeintel.build.plugins.graphs.builders.cfg_dfg_options import CfgDfgOptions
+from codeintel.core.catalog import load_function_index
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.graphs.catalog import load_function_index
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.core.catalog import FunctionSpanIndex
     from codeintel.core.data_models import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
-    from codeintel.graphs.catalog import FunctionSpanIndex
 
 log = logging.getLogger(__name__)
 

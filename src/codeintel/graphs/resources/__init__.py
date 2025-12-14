@@ -8,7 +8,8 @@ Key Components
 --------------
 - ResourceProvider: Base protocol for all resource providers (from core)
 - ResourceRegistry: DI container for registering and resolving resources (from core)
-- CatalogService: Unified function catalog access (from graphs.catalog)
+- CatalogService: Unified function catalog access (from core.catalog)
+- GraphProvider: Lazy GraphBundle provider (graphs.runtime-backed)
 - GraphResource: Graph engine access
 - StorageResource: Storage operations
 
@@ -16,7 +17,7 @@ Example
 -------
 ```python
 from codeintel.core.resources import ResourceRegistry
-from codeintel.graphs.catalog import CatalogService
+from codeintel.core.catalog import CatalogService
 
 resources = ResourceRegistry()
 service = CatalogService.from_db(gateway, repo=repo, commit=commit)
@@ -29,13 +30,15 @@ spans = catalog.function_spans
 
 from __future__ import annotations
 
+from codeintel.core.catalog import CatalogService
 from codeintel.core.resources import ResourceProvider, ResourceProviderBase, ResourceRegistry
-from codeintel.graphs.catalog import CatalogService
+from codeintel.graphs.resources.graph_provider import GraphProvider
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
 
 __all__ = [
     "CatalogService",
+    "GraphProvider",
     "GraphResource",
     "ResourceProvider",
     "ResourceProviderBase",

@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.errors import GatewayNotAvailableError
-from codeintel.build.plugin import DiscoveryFactory, FactoryPlugin, StorageFactory
+from codeintel.build.plugin import FactoryPlugin
 from codeintel.build.plugins.ingestion.helpers import get_module_paths, paths_to_modules
 from codeintel.build.protocols import TypeChecker
 from codeintel.build.result import TargetResult
@@ -26,6 +26,7 @@ from codeintel.ingestion.ports.storage import IngestStoragePort
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.build.plugin import DiscoveryFactory, StorageFactory
     from codeintel.core.plugins.execution.options import PluginOptionsResolver
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort
 

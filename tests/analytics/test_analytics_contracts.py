@@ -23,7 +23,7 @@ from codeintel.config.datasets import (
     ProfileRowModel,
     get_dataset_contracts_by_table_key,
 )
-from codeintel.graphs.catalog import FunctionCatalog
+from codeintel.core.catalog import FunctionCatalog
 from tests._helpers import CORE_PACK, create_test_context
 from tests._helpers.analytics_domain import make_graph_metric_function_row
 from tests._helpers.catalogs import ensure_catalog_with_goids

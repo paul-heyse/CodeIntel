@@ -9,6 +9,11 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from ibis.common.exceptions import IbisError, TableNotFound
+
+from codeintel.storage.gateway.protocol import DuckDBCatalogException
+from codeintel.storage.ibis_types import filter_by, ibis_bool
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
@@ -65,12 +70,6 @@ def compute_row_counts(
     >>> print(counts["analytics.function_metrics"])
     42
     """
-    # Lazy imports to avoid circular dependencies
-    from ibis.common.exceptions import IbisError  # noqa: PLC0415
-
-    from codeintel.storage.gateway.protocol import DuckDBCatalogException  # noqa: PLC0415
-    from codeintel.storage.ibis_types import filter_by, ibis_bool  # noqa: PLC0415
-
     keys = list(table_keys) if table_keys is not None else list(ctx.contract.table_keys)
     row_counts: dict[str, int] = {}
 
@@ -83,7 +82,8 @@ def compute_row_counts(
                 ibis_bool(table.commit == ctx.commit),
             ).count()
             row_counts[table_key] = int(cast("int", count_expr.execute()))
-        except (RuntimeError, OSError, DuckDBCatalogException, IbisError):
+        except (RuntimeError, OSError, DuckDBCatalogException, IbisError, TableNotFound):
+            log.warning("Row count fallback for %s", table_key)
             row_counts[table_key] = 0
 
     return row_counts

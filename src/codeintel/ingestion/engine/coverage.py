@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from anyio import to_thread
 
-from codeintel.core.paths import repo_relpath
+from codeintel.core.paths import normalize_path, repo_relpath
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
@@ -69,10 +69,16 @@ def _parse_coverage_json(
         executed = {int(line) for line in data.get("executed_lines", []) if isinstance(line, int)}
         missing = {int(line) for line in data.get("missing_lines", []) if isinstance(line, int)}
 
-        try:
-            rel_path = repo_relpath(repo_root, Path(str(file_name)))
-        except ValueError:
-            continue
+        file_path = Path(str(file_name))
+        if file_path.is_absolute():
+            try:
+                rel_path = repo_relpath(repo_root, file_path)
+            except ValueError:
+                continue
+        else:
+            rel_path = normalize_path(file_path)
+            if not rel_path:
+                continue
 
         reports.append((rel_path, executed, missing))
 

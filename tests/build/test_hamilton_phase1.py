@@ -19,17 +19,16 @@ import json
 
 import pytest
 
+from codeintel.build.hamilton.compat import (
+    build_driver_compat,
+    list_available_nodes_compat,
+)
 from codeintel.build.hamilton.contracts.pandera_hook import (
     contract_status_for_table,
     get_pandera_schema,
     with_contract,
 )
-from codeintel.build.hamilton.compat import (
-    build_driver_compat,
-    list_available_nodes_compat,
-)
 from codeintel.build.hamilton.driver_factory import (
-    HamiltonNodeMode,
     target_to_node_name,
 )
 from codeintel.build.hamilton.env import BuildEnv
@@ -377,7 +376,7 @@ class TestObservability:
     @staticmethod
     def test_list_execution_targets() -> None:
         """Verify list_execution_targets returns target names."""
-        runtime = build_driver(mode="phase0")
+        runtime = build_driver_compat(mode="phase0")
         targets = list_execution_targets(runtime, ["modules"])
         if "modules" not in targets:
             pytest.fail("modules should be in execution targets")
@@ -385,7 +384,7 @@ class TestObservability:
     @staticmethod
     def test_list_execution_order() -> None:
         """Verify list_execution_order returns node names."""
-        runtime = build_driver(mode="phase0")
+        runtime = build_driver_compat(mode="phase0")
         order = list_execution_order(runtime, ["modules"])
         if "t__modules" not in order:
             pytest.fail("t__modules should be in execution order")
@@ -393,7 +392,7 @@ class TestObservability:
     @staticmethod
     def test_get_dag_info_structure() -> None:
         """Verify get_dag_info returns expected structure."""
-        runtime = build_driver(mode="phase0")
+        runtime = build_driver_compat(mode="phase0")
         info = get_dag_info(runtime, ["modules"])
         if "nodes" not in info:
             pytest.fail("DAG info missing 'nodes' field")
@@ -405,7 +404,7 @@ class TestObservability:
     @staticmethod
     def test_export_dag_json_valid() -> None:
         """Verify export_dag_json returns valid JSON."""
-        runtime = build_driver(mode="phase0")
+        runtime = build_driver_compat(mode="phase0")
         json_str = export_dag_json(runtime, ["modules"])
         try:
             data = json.loads(json_str)
@@ -471,7 +470,7 @@ class TestDriverWithGeneratedNodes:
     def test_build_driver_with_generated_mode() -> None:
         """Verify build_driver supports mode='generated'."""
         clear_generated_module_cache()
-        runtime = build_driver(mode="generated")
+        runtime = build_driver_compat(mode="generated")
         if runtime.dr is None:
             pytest.fail("Driver runtime missing dr")
         if runtime.mode != "generated":

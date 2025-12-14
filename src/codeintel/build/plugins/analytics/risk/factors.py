@@ -14,7 +14,7 @@ from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDoma
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -61,9 +61,10 @@ def _seed_catalog_modules(
         )
         """
     )
-    con.executemany(
-        "INSERT INTO temp.catalog_modules VALUES (?, ?, ?, ?, ?, ?)",
+    gateway.policy.bulk_insert(
+        "temp.catalog_modules",
         [(path, module, repo, commit, "[]", "[]") for path, module in module_by_path.items()],
+        columns=("path", "module", "repo", "commit", "tags", "owners"),
     )
     return True
 
