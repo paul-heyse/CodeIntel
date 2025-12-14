@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.profiles.writer_guard import (
-    WriterContext,
-    write_rows_with_registry_guard,
+    PolicyWriterConfig,
+    write_rows_via_policy_backend,
 )
 from codeintel.analytics.testing.behavioral.importance import (
     compute_flakiness_score,
@@ -34,14 +34,11 @@ from codeintel.config.datasets import (
     behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-    from codeintel.analytics.profiles.writer_guard import (
-        SerializeRow,
-    )
+    from codeintel.analytics.profiles.writer_guard import SerializeRow
     from codeintel.analytics.testing.profiles.types import (
         FunctionCoverageEntryProtocol,
         SubsystemCoverageEntryProtocol,
@@ -232,7 +229,7 @@ def write_test_profile_rows(
     snapshot: SnapshotRef,
     rows: Iterable[ProfileRowModel],
 ) -> int:
-    """Insert rows into analytics.test_profile with registry alignment checks.
+    """Insert rows into analytics.test_profile via policy backend.
 
     Parameters
     ----------
@@ -249,18 +246,16 @@ def write_test_profile_rows(
         Number of inserted rows.
     """
     rows_list = list(rows)
-    return write_rows_with_registry_guard(
-        gateway,
-        rows=rows_list,
-        context=WriterContext(
-            table_key="analytics.test_profile",
-            columns=TEST_PROFILE_COLUMNS,
-            serialize_row=cast("SerializeRow", serialize_test_profile_row),
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            ensure_schema_fn=lambda gw, table_key: DuckDBPolicyBackend(gw).ensure_table(table_key),
-        ),
+    if not rows_list:
+        return 0
+    config = PolicyWriterConfig(
+        table_key="analytics.test_profile",
+        columns=TEST_PROFILE_COLUMNS,
+        serialize_row=cast("SerializeRow", serialize_test_profile_row),
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
+    return write_rows_via_policy_backend(gateway, rows=rows_list, config=config)
 
 
 def build_behavioral_coverage_rows(
@@ -314,7 +309,7 @@ def write_behavioral_coverage_rows(
     snapshot: SnapshotRef,
     rows: Iterable[BehavioralCoverageRowModel],
 ) -> int:
-    """Insert rows into analytics.behavioral_coverage with registry alignment checks.
+    """Insert rows into analytics.behavioral_coverage via policy backend.
 
     Parameters
     ----------
@@ -331,18 +326,16 @@ def write_behavioral_coverage_rows(
         Number of inserted rows.
     """
     rows_list = list(rows)
-    return write_rows_with_registry_guard(
-        gateway,
-        rows=rows_list,
-        context=WriterContext(
-            table_key="analytics.behavioral_coverage",
-            columns=BEHAVIORAL_COVERAGE_COLUMNS,
-            serialize_row=cast("SerializeRow", behavioral_coverage_row_to_tuple),
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            ensure_schema_fn=lambda gw, table_key: DuckDBPolicyBackend(gw).ensure_table(table_key),
-        ),
+    if not rows_list:
+        return 0
+    config = PolicyWriterConfig(
+        table_key="analytics.behavioral_coverage",
+        columns=BEHAVIORAL_COVERAGE_COLUMNS,
+        serialize_row=cast("SerializeRow", behavioral_coverage_row_to_tuple),
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
+    return write_rows_via_policy_backend(gateway, rows=rows_list, config=config)
 
 
 def _normalize_markers(markers: list[str] | None) -> list[str]:

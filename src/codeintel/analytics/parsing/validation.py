@@ -1,7 +1,17 @@
-"""Validation reporters shared across analytics domains."""
+"""Validation reporters shared across analytics domains.
+
+.. deprecated::
+    The `flush()` methods in reporter classes contain direct database writes.
+    For new code, use the `to_rows()` method with Hamilton materializers.
+
+    Pure compute helpers are available in `codeintel.analytics.parsing.compute`:
+    - `materialize_function_validation` for function validation rows
+    - `materialize_graph_validation` for graph validation rows
+"""
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypeVar, cast
@@ -96,8 +106,31 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         }
         self.rows.append(row)
 
+    def to_rows(self) -> tuple[tuple[object, ...], ...]:
+        """Return accumulated rows as tuples without writing.
+
+        Use this method with Hamilton materializers for persistence instead
+        of the deprecated `flush()` method.
+
+        Returns
+        -------
+        tuple[tuple[object, ...], ...]
+            Accumulated validation rows ready for materialization.
+        """
+        return tuple(function_validation_row_to_tuple(r) for r in self.rows)
+
     def flush(self, gateway: StorageGateway) -> None:
-        """Persist recorded function validation rows."""
+        """Persist recorded function validation rows.
+
+        .. deprecated::
+            Use `to_rows()` with Hamilton materializers instead.
+        """
+        warnings.warn(
+            "FunctionValidationReporter.flush is deprecated. Use to_rows() "
+            "with Hamilton materializers for persistence.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if not self.rows:
             return
         tuples = [function_validation_row_to_tuple(r) for r in self.rows]
@@ -142,8 +175,31 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         }
         self.rows.append(row)
 
+    def to_rows(self) -> tuple[tuple[object, ...], ...]:
+        """Return accumulated rows as tuples without writing.
+
+        Use this method with Hamilton materializers for persistence instead
+        of the deprecated `flush()` method.
+
+        Returns
+        -------
+        tuple[tuple[object, ...], ...]
+            Accumulated validation rows ready for materialization.
+        """
+        return tuple(graph_validation_row_to_tuple(r) for r in self.rows)
+
     def flush(self, gateway: StorageGateway) -> None:
-        """Persist recorded graph validation rows."""
+        """Persist recorded graph validation rows.
+
+        .. deprecated::
+            Use `to_rows()` with Hamilton materializers instead.
+        """
+        warnings.warn(
+            "GraphValidationReporter.flush is deprecated. Use to_rows() "
+            "with Hamilton materializers for persistence.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if not self.rows:
             return
         tuples = [graph_validation_row_to_tuple(r) for r in self.rows]

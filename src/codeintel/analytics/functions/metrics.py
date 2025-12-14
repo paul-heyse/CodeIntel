@@ -38,7 +38,10 @@ from codeintel.analytics.functions.config import (
 )
 from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
-from codeintel.analytics.parsing.validation import FunctionValidationReporter
+from codeintel.analytics.parsing.validation import (
+    FUNCTION_VALIDATION_COLS,
+    FunctionValidationReporter,
+)
 from codeintel.analytics.utilities.dataframe import to_records
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
@@ -635,7 +638,16 @@ def persist_function_analytics(
         [types_contract.to_tuple(row) for row in validated_types],
         columns=types_columns,
     )
-    result.reporter.flush(gateway)
+    validation_rows = result.reporter.to_rows()
+    if validation_rows:
+        backend.delete_for_snapshot(
+            "analytics.function_validation", repo=snapshot.repo, commit=snapshot.commit
+        )
+        backend.bulk_insert(
+            "analytics.function_validation",
+            list(validation_rows),
+            columns=list(FUNCTION_VALIDATION_COLS),
+        )
 
     log.info(
         ("Function metrics/types build complete for repo=%s commit=%s: %d functions (missing=%d)"),
