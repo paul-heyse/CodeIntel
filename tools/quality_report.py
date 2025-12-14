@@ -249,6 +249,16 @@ def main() -> int:
         ),
         CommandSpec(name="ruff_check", args=["uv", "run", "ruff", "check", "--fix"]),
         CommandSpec(
+            name="operation_contracts",
+            args=[
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "codeintel.serving.contracts.check_operation_contracts",
+            ],
+        ),
+        CommandSpec(
             name="pyright",
             args=["uv", "run", "pyright", "--warnings", "--pythonversion=3.13"],
         ),

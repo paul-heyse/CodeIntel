@@ -8,6 +8,7 @@ without mocking.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Self, cast
 
 from pydantic import BaseModel
@@ -544,21 +545,10 @@ def test_subsystem_repository_protocol_structural() -> None:
 
 def test_query_backend_protocol_structural() -> None:
     """Verify a class can satisfy QueryBackendProtocol structurally."""
-
-    class SimpleBackend:
-        """Simple backend implementation."""
-
-        @property
-        def repo(self) -> str:
-            """Return repository identifier."""
-            return "test/repo"
-
-        @property
-        def commit(self) -> str:
-            """Return commit hash."""
-            return "abc123"
-
-    backend = SimpleBackend()
+    backend = cast(
+        "QueryBackendProtocol",
+        SimpleNamespace(repo="test/repo", commit="abc123", service=None),
+    )
 
     def accepts_backend(b: QueryBackendProtocol) -> str:
         return f"{b.repo}@{b.commit}"
@@ -570,21 +560,10 @@ def test_query_backend_protocol_structural() -> None:
 
 def test_query_service_protocol_structural() -> None:
     """Verify a class can satisfy QueryServiceProtocol structurally."""
-
-    class SimpleService:
-        """Simple service implementation."""
-
-        @property
-        def repo(self) -> str:
-            """Return repository identifier."""
-            return "demo/repo"
-
-        @property
-        def commit(self) -> str:
-            """Return commit hash."""
-            return "deadbeef"
-
-    service = SimpleService()
+    service = cast(
+        "QueryServiceProtocol",
+        SimpleNamespace(repo="demo/repo", commit="deadbeef"),
+    )
 
     def accepts_service(s: QueryServiceProtocol) -> str:
         return f"{s.repo}@{s.commit}"
@@ -699,19 +678,6 @@ def test_json_payload_type_alias_list() -> None:
 def test_service_factory_type_alias() -> None:
     """Verify ServiceFactory type alias works correctly."""
 
-    class SimpleService:
-        """Simple service for factory test."""
-
-        @property
-        def repo(self) -> str:
-            """Return repository."""
-            return "test"
-
-        @property
-        def commit(self) -> str:
-            """Return commit."""
-            return "abc"
-
     def _create_service(repo: str, commit: str) -> QueryServiceProtocol:
         """
         Create a service instance.
@@ -729,7 +695,10 @@ def test_service_factory_type_alias() -> None:
             New service instance.
         """
         _ = repo, commit
-        return SimpleService()
+        return cast(
+            "QueryServiceProtocol",
+            SimpleNamespace(repo=repo, commit=commit),
+        )
 
     factory: ServiceFactory = _create_service
     service = factory("test", "abc")
@@ -739,19 +708,6 @@ def test_service_factory_type_alias() -> None:
 
 def test_backend_factory_type_alias() -> None:
     """Verify BackendFactory type alias works correctly."""
-
-    class SimpleBackend:
-        """Simple backend for factory test."""
-
-        @property
-        def repo(self) -> str:
-            """Return repository."""
-            return "test"
-
-        @property
-        def commit(self) -> str:
-            """Return commit."""
-            return "abc"
 
     def _create_backend(repo: str, commit: str) -> QueryBackendProtocol:
         """
@@ -770,7 +726,10 @@ def test_backend_factory_type_alias() -> None:
             New backend instance.
         """
         _ = repo, commit
-        return SimpleBackend()
+        return cast(
+            "QueryBackendProtocol",
+            SimpleNamespace(repo=repo, commit=commit, service=None),
+        )
 
     factory: BackendFactory = _create_backend
     backend = factory("test", "abc")

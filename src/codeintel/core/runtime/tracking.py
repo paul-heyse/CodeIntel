@@ -2,6 +2,12 @@
 
 This module provides types for tracking step execution, timing,
 and result aggregation.
+
+Note
+----
+For the unified result protocol and base types, see `codeintel.core.results`.
+The `StepResult` type in this module is specifically designed for step-based
+execution tracking and maintains its own status enum for backward compatibility.
 """
 
 from __future__ import annotations

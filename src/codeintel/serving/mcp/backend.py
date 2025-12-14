@@ -33,7 +33,9 @@ from codeintel.serving.mcp.models import (
     ModuleArchitectureResponse,
     ModuleProfileResponse,
     ModuleSubsystemResponse,
+    SubsystemCoverageResponse,
     SubsystemModulesResponse,
+    SubsystemProfileResponse,
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
@@ -650,6 +652,36 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
             module_limit=module_limit,
         )
 
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        """
+        List subsystem profiles from the remote API.
+
+        Returns
+        -------
+        SubsystemProfileResponse
+            Subsystem profile rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_profiles",
+            SubsystemProfileResponse,
+            limit=limit,
+        )
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        """
+        List subsystem coverage rollups from the remote API.
+
+        Returns
+        -------
+        SubsystemCoverageResponse
+            Subsystem coverage rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_coverage",
+            SubsystemCoverageResponse,
+            limit=limit,
+        )
+
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> SubsystemSearchResponse:
@@ -687,6 +719,96 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
             SubsystemModulesResponse,
             subsystem_id=subsystem_id,
             module_limit=module_limit,
+        )
+
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        """
+        List subsystem profiles from the remote API.
+
+        Returns
+        -------
+        SubsystemProfileResponse
+            Subsystem profile rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_profiles",
+            SubsystemProfileResponse,
+            limit=limit,
+        )
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        """
+        List subsystem coverage rollups from the remote API.
+
+        Returns
+        -------
+        SubsystemCoverageResponse
+            Subsystem coverage rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_coverage",
+            SubsystemCoverageResponse,
+            limit=limit,
+        )
+
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        """
+        List subsystem profiles from the remote API.
+
+        Returns
+        -------
+        SubsystemProfileResponse
+            Subsystem profile rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_profiles",
+            SubsystemProfileResponse,
+            limit=limit,
+        )
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        """
+        List subsystem coverage rollups from the remote API.
+
+        Returns
+        -------
+        SubsystemCoverageResponse
+            Subsystem coverage rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_coverage",
+            SubsystemCoverageResponse,
+            limit=limit,
+        )
+
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        """
+        List subsystem profiles from the remote API.
+
+        Returns
+        -------
+        SubsystemProfileResponse
+            Subsystem profile rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_profiles",
+            SubsystemProfileResponse,
+            limit=limit,
+        )
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        """
+        List subsystem coverage rollups from the remote API.
+
+        Returns
+        -------
+        SubsystemCoverageResponse
+            Subsystem coverage rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_coverage",
+            SubsystemCoverageResponse,
+            limit=limit,
         )
 
 
@@ -1171,4 +1293,34 @@ class HttpBackend(BackendDispatchMixin, DatasetBackendMixin):
             SubsystemModulesResponse,
             subsystem_id=subsystem_id,
             module_limit=module_limit,
+        )
+
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        """
+        List subsystem profiles from the remote API.
+
+        Returns
+        -------
+        SubsystemProfileResponse
+            Subsystem profile rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_profiles",
+            SubsystemProfileResponse,
+            limit=limit,
+        )
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        """
+        List subsystem coverage rollups from the remote API.
+
+        Returns
+        -------
+        SubsystemCoverageResponse
+            Subsystem coverage rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_coverage",
+            SubsystemCoverageResponse,
+            limit=limit,
         )

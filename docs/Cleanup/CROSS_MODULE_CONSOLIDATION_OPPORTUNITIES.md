@@ -4,7 +4,7 @@
 
 ## Completed Consolidations (Reference)
 
-The following consolidations have already been implemented:
+### Phase 1-7 Consolidations (Original)
 
 | Area | Core Module | Re-exports From |
 |------|-------------|-----------------|
@@ -16,253 +16,438 @@ The following consolidations have already been implemented:
 | Context Protocols | `core/context/protocol.py` | New unified protocols |
 | Safe Queries | `storage/queries/safe.py` | `ingestion/infrastructure/db_queries.py` |
 
----
+### Phase A-E Consolidations (December 2024) ✅
 
-## High Priority Consolidation Opportunities
-
-### 1. Error Taxonomy Unification
-
-**Current State:**
-- `core/execution/errors.py` - Plugin execution errors
-- `cli/errors/taxonomy.py` - CLI error codes with RFC 9457 Problem Details
-- `storage/queries/safe.py` - Query-specific errors (QueryError, TableNotFoundError)
-- `serving/services/errors.py` - Service layer errors
-- `serving/mcp/errors.py` - MCP-specific errors
-- `build/errors.py` - Build system errors
-
-**Problem:** Error hierarchies are fragmented across modules, making it difficult to handle errors consistently and provide unified error reporting.
-
-**Proposed Consolidation:**
-```
-core/errors/
-├── __init__.py           # Unified exports
-├── base.py               # Base error classes and protocols
-├── taxonomy.py           # Error code enums (from CLI)
-├── problem_details.py    # RFC 9457 Problem Details factory
-├── execution.py          # Plugin/execution errors
-├── storage.py            # Storage/query errors
-└── service.py            # Service layer errors
-```
-
-**Benefits:**
-- Consistent error handling across all modules
-- Single source of truth for error codes
-- Unified Problem Details generation
-- Better error correlation in observability
-
-**Migration Path:**
-1. Create `core/errors/base.py` with base classes
-2. Move taxonomy enums to `core/errors/taxonomy.py`
-3. Update existing error modules to inherit from core
-4. Add re-exports for backward compatibility
+| Phase | Area | Core Module | Status |
+|-------|------|-------------|--------|
+| A | Error Taxonomy | `core/errors/` | ✅ Complete |
+| A | Problem Details | `core/errors/problem_details.py` | ✅ Complete |
+| A | Error Base Classes | `core/errors/base.py` | ✅ Complete |
+| A | Execution Errors | `core/errors/execution.py` | ✅ Complete |
+| A | Storage Errors | `core/errors/storage.py` | ✅ Complete |
+| B | Options Protocol | `core/options/protocol.py` | ✅ Complete |
+| B | Base Options | `core/options/base.py` | ✅ Complete |
+| C | Function Span | `core/catalog/function_span.py` | ✅ Complete |
+| C | Span Index | `core/catalog/span_index.py` | ✅ Complete |
+| C | Catalog Protocol | `core/catalog/protocol.py` | ✅ Complete |
+| D | Source Span | `core/parsing/source_span.py` | ✅ Complete |
+| D | AST Index | `core/parsing/ast_index.py` | ✅ Complete |
+| D | Parsed Models | `core/parsing/models.py` | ✅ Complete |
+| E | Runtime Protocol | `core/runtime/protocol.py` | ✅ Complete |
+| E | Execution Tracking | `core/runtime/tracking.py` | ✅ Complete |
 
 ---
 
-### 2. Options/Config Pattern Unification
+## High Priority Consolidation Opportunities (Phase F-H)
+
+### F1. Result Type Unification
 
 **Current State:**
-Multiple `*Options` dataclasses across modules:
-- `core/validation/options.py` - `BaseValidationOptions`
-- `core/plugins/execution/options.py` - `PluginExecutionOptions`
-- `analytics/runtime/context.py` - `GraphMetricsOptions`, `GraphContext`
-- `graphs/validation/findings.py` - `GraphValidationOptions`
-- `graphs/engine/factory.py` - `GraphEngineOptions`
-- `build/plugins/*/` - Many plugin-specific options classes
+Multiple result types with similar patterns but different implementations:
+- `core/runtime/tracking.py` - `StepResult`, `StepStatus`
+- `core/plugins/types/result.py` - `BasePluginResult`, `PluginResult`, `PluginExecutionRecord`
+- `ingestion/engine/results.py` - `DiagnosticReport`, `CoverageReport`, `TestReport`
+- `ingestion/engine/infrastructure/runner.py` - `ToolRunResult`
+- `cli/core/result_types.py` - `ListResult`, `ActionResult`, `StatusResult`
+- `build/result.py` - Build-specific results
+- `core/ports/results.py` - `BaseQueryResult`, `BaseBatchResult`
 
-**Problem:** Options classes follow different patterns, making it hard to compose and validate configurations consistently.
+**Problem:** Similar result patterns (success/failure, row counts, duration, artifacts) are implemented differently across modules, making it hard to aggregate and report on execution outcomes consistently.
 
 **Proposed Consolidation:**
 ```
-core/options/
+core/results/
 ├── __init__.py           # Unified exports
-├── protocol.py           # OptionsProtocol with validation
-├── base.py               # BaseOptions with common fields
-├── composition.py        # Options composition utilities
-└── validation.py         # Options validation helpers
+├── protocol.py           # ResultProtocol with success/error/duration
+├── base.py               # BaseResult with common factory methods
+├── execution.py          # ExecutionResult for steps/plugins
+├── query.py              # QueryResult for database operations
+├── batch.py              # BatchResult for bulk operations
+└── aggregation.py        # ResultAggregator for combining results
 ```
 
 **Key Protocol:**
 ```python
 @runtime_checkable
-class OptionsProtocol(Protocol):
-    """Protocol for all options/config classes."""
+class ResultProtocol(Protocol):
+    """Unified protocol for all result types."""
     
-    def validate(self) -> ValidationResult:
-        """Validate options and return any issues."""
+    @property
+    def success(self) -> bool:
+        """Whether the operation succeeded."""
         ...
     
-    def with_defaults(self, defaults: Self) -> Self:
-        """Merge with default values."""
+    @property
+    def error(self) -> str | None:
+        """Error message if failed."""
         ...
+    
+    @property
+    def duration_s(self) -> float:
+        """Operation duration in seconds."""
+        ...
+    
+    @classmethod
+    def ok(cls, **kwargs: object) -> Self:
+        """Create a success result."""
+        ...
+    
+    @classmethod
+    def fail(cls, error: str, **kwargs: object) -> Self:
+        """Create a failure result."""
+        ...
+```
+
+**Benefits:**
+- Consistent result handling across all modules
+- Unified aggregation for pipeline/batch operations
+- Simpler result composition and chaining
+- Better observability integration
+
+---
+
+### F2. Serialization Protocol Standardization
+
+**Current State:**
+Many classes implement `to_dict`/`from_dict` with inconsistent patterns:
+- `core/errors/problem_details.py` - `ProblemDetail.to_dict()`, `to_json()`
+- `core/options/base.py` - `BaseOptions.to_dict()`, `from_dict()`
+- `analytics/runtime/graph.py` - `GraphRuntimeOptions.to_dict()`
+- `cli/core/results.py` - `@result_type` decorator for auto-serialization
+- `config/datasets/schema.py` - Schema serialization
+- 74+ files with `to_dict`/`from_dict` patterns
+
+**Problem:** Serialization is implemented ad-hoc, leading to:
+- Inconsistent None handling
+- Different datetime/path/enum serialization approaches
+- No standard validation on deserialization
+- Duplicate serialization logic
+
+**Proposed Consolidation:**
+```
+core/serialization/
+├── __init__.py           # Unified exports
+├── protocol.py           # SerializableProtocol
+├── base.py               # BaseSeriazable mixin
+├── converters.py         # Type converters (datetime, Path, Enum)
+├── validation.py         # Deserialization validation
+└── decorators.py         # @serializable decorator
+```
+
+**Key Protocol:**
+```python
+@runtime_checkable
+class SerializableProtocol(Protocol):
+    """Protocol for serializable types."""
     
     def to_dict(self) -> dict[str, object]:
         """Serialize to dictionary."""
         ...
+    
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object]) -> Self:
+        """Deserialize from dictionary."""
+        ...
+    
+    def to_json(self, *, indent: int | None = None) -> str:
+        """Serialize to JSON string."""
+        ...
 ```
 
 **Benefits:**
-- Consistent validation across all options
-- Composable configuration patterns
-- Easier testing and mocking
+- Consistent serialization across all types
+- Type-safe deserialization with validation
+- Reusable converters for complex types
+- Better JSON schema generation
 
 ---
 
-### 3. Catalog/Provider Pattern Consolidation
+### F3. Data Loading Pattern Consolidation
 
 **Current State:**
-- `graphs/catalog.py` - `FunctionCatalog`, `CatalogService`, `FunctionCatalogProvider`
-- `analytics/resources/catalog.py` - `CatalogProvider` (wraps graphs catalog)
-- `analytics/resources/graphs.py` - `GraphProvider`, `GraphResources`
-- `graphs/resources/graphs.py` - `GraphResource` (different implementation)
+Multiple patterns for loading data from storage:
+- `graphs/catalog.py` - `load_function_catalog()`, `load_function_spans()`
+- `storage/helpers/module_index.py` - `load_module_map()`
+- `analytics/resources/*.py` - Various `_load()` methods
+- `graphs/engine/nx_engine.py` - `load_from_db()`
+- `analytics/parsing/ast_cache.py` - AST caching with load patterns
 
-**Problem:** Two different catalog/provider implementations exist with similar but not identical interfaces.
+**Problem:** Data loading patterns are scattered with different:
+- Error handling approaches
+- Caching strategies
+- Snapshot scoping (repo/commit filtering)
+- Null/empty result handling
 
 **Proposed Consolidation:**
 ```
-core/catalog/
+core/data/
 ├── __init__.py           # Unified exports
-├── protocol.py           # CatalogProtocol, CatalogProviderProtocol
-├── function_span.py      # FunctionSpan dataclass (shared)
-├── span_index.py         # SpanIndex for lookups
-└── service.py            # Base CatalogService
+├── protocol.py           # DataLoaderProtocol
+├── loader.py             # BaseDataLoader with caching
+├── snapshot.py           # SnapshotScopedLoader mixin
+└── cache.py              # LoaderCache for shared caching
 ```
 
-**Benefits:**
-- Single FunctionSpan definition
-- Unified catalog protocol
-- Consistent provider pattern
+**Key Pattern:**
+```python
+class DataLoaderProtocol[T](Protocol):
+    """Protocol for data loaders with snapshot scoping."""
+    
+    def load(
+        self,
+        gateway: StorageGateway,
+        *,
+        repo: str,
+        commit: str,
+    ) -> T:
+        """Load data for a snapshot."""
+        ...
+    
+    def invalidate(self, *, repo: str | None = None, commit: str | None = None) -> None:
+        """Invalidate cached data."""
+        ...
+```
 
 ---
 
-### 4. AST/Parsing Utilities Consolidation
+### G1. Service Pattern Standardization
 
 **Current State:**
-- `ingestion/infrastructure/ast_utils.py` - `AstSpanIndex`, `parse_python_module`
-- `ingestion/infrastructure/cst_utils.py` - CST parsing utilities
-- `analytics/parsing/models.py` - `SourceSpan`, `ParsedFunction`, `ParsedModule`
-- `analytics/parsing/function_parsing.py` - Function extraction
-- `analytics/parsing/span_resolver.py` - Span resolution
+Multiple "service" classes with similar patterns:
+- `graphs/catalog.py` - `CatalogService`
+- `cli/services/runtime.py` - `RuntimeService`
+- `cli/services/storage.py` - `StorageService`
+- `cli/services/params.py` - `ParamService`
+- `cli/config/service.py` - `ConfigService`
+- `serving/services/*.py` - Various serving services
 
-**Problem:** Parsing utilities are split between ingestion (lower-level) and analytics (higher-level) with unclear boundaries.
+**Problem:** Services share patterns but don't follow a consistent interface:
+- Inconsistent initialization
+- Different caching approaches
+- No standard lifecycle management (start/stop)
+- Varied dependency injection patterns
 
 **Proposed Consolidation:**
 ```
-core/parsing/
+core/services/
 ├── __init__.py           # Unified exports
-├── spans.py              # SourceSpan, SpanIndex (unified)
-├── ast_utils.py          # AST parsing utilities
-├── models.py             # ParsedFunction, ParsedModule
-└── protocols.py          # ParserProtocol, SpanResolverProtocol
-```
-
-**Migration Notes:**
-- `AstSpanIndex` from ingestion becomes canonical
-- `SourceSpan` from analytics becomes canonical
-- Both modules re-export from core
-
----
-
-### 5. Runtime/Executor Pattern Unification
-
-**Current State:**
-- `analytics/runtime/graph.py` - `GraphRuntime`
-- `ingestion/engine/infrastructure/runner.py` - `ToolRunner`
-- `build/hamilton/executor.py` - Hamilton executor
-- `build/hamilton/native/executor.py` - Native executor
-- `cli/execution/registry.py` - CLI execution registry
-
-**Problem:** Multiple execution/runtime patterns with different interfaces for similar concepts (execute, track, report).
-
-**Proposed Consolidation:**
-```
-core/runtime/
-├── __init__.py           # Unified exports
-├── protocol.py           # RuntimeProtocol, ExecutorProtocol
-├── tracking.py           # Execution tracking utilities
-├── timing.py             # Duration/timing helpers
-└── reporting.py          # Execution report types
+├── protocol.py           # ServiceProtocol with lifecycle
+├── base.py               # BaseService with common patterns
+├── lifecycle.py          # ServiceLifecycle management
+└── registry.py           # ServiceRegistry for DI
 ```
 
 **Key Protocol:**
 ```python
 @runtime_checkable
-class ExecutorProtocol[TInput, TOutput](Protocol):
-    """Protocol for all executors."""
+class ServiceProtocol(Protocol):
+    """Protocol for all service types."""
     
-    async def execute(self, input: TInput) -> TOutput:
-        """Execute the operation."""
+    SERVICE_NAME: ClassVar[str]
+    
+    def initialize(self) -> None:
+        """Initialize the service."""
         ...
     
-    def track(self, name: str) -> ExecutionTracker:
-        """Get a tracker for timing/metrics."""
+    def shutdown(self) -> None:
+        """Shutdown the service gracefully."""
+        ...
+    
+    @property
+    def is_ready(self) -> bool:
+        """Whether the service is ready to handle requests."""
         ...
 ```
 
 ---
 
-## Medium Priority Consolidation Opportunities
+### G2. Repository Pattern Enhancement
 
-### 6. Adapter Pattern Standardization
+**Current State:**
+Repository implementations in `storage/repositories/`:
+- `base.py` - `BaseRepository` with common query patterns
+- `functions.py` - `FunctionRepository`
+- `modules.py` - `ModuleRepository`
+- `tests.py` - `TestRepository`
+- `graphs.py` - `GraphRepository`
+- `subsystems.py` - `SubsystemRepository`
+- `datasets.py` - `DatasetRepository`
+
+**Problem:** Repositories have evolved independently with:
+- Different pagination approaches
+- Inconsistent filtering patterns
+- No standard aggregate methods
+- Varying transaction handling
+
+**Proposed Enhancement:**
+```
+core/repository/
+├── __init__.py           # Unified exports
+├── protocol.py           # RepositoryProtocol with CRUD
+├── base.py               # BaseRepository with common patterns
+├── pagination.py         # Unified pagination types
+├── filtering.py          # Filter builder utilities
+└── aggregates.py         # Standard aggregate methods
+```
+
+**Key Protocol:**
+```python
+@runtime_checkable
+class RepositoryProtocol[T](Protocol):
+    """Protocol for repository implementations."""
+    
+    def get(self, id: int | str) -> T | None:
+        """Get a single entity by ID."""
+        ...
+    
+    def list(
+        self,
+        *,
+        filters: Mapping[str, object] | None = None,
+        pagination: Pagination | None = None,
+    ) -> PagedResult[T]:
+        """List entities with filtering and pagination."""
+        ...
+    
+    def count(self, *, filters: Mapping[str, object] | None = None) -> int:
+        """Count entities matching filters."""
+        ...
+```
+
+---
+
+### G3. Caching Infrastructure Consolidation
+
+**Current State:**
+Multiple caching approaches:
+- `@lru_cache` decorators scattered across modules (69+ files)
+- `core/resources/protocol.py` - Resource caching in providers
+- `graphs/engine/cache.py` - Graph-specific caching
+- `analytics/parsing/ast_cache.py` - AST caching
+- `analytics/functions/config.py` - Config caching
+- `storage/gateway_cache.py` - Gateway caching
+
+**Problem:** Caching is implemented inconsistently:
+- No unified invalidation strategy
+- Different TTL/expiration approaches
+- Cache keys computed differently
+- No cache metrics/observability
+
+**Proposed Consolidation:**
+```
+core/cache/
+├── __init__.py           # Unified exports
+├── protocol.py           # CacheProtocol
+├── memory.py             # In-memory cache with LRU
+├── keying.py             # Cache key generation utilities
+├── invalidation.py       # Invalidation strategies
+└── metrics.py            # Cache hit/miss metrics
+```
+
+**Key Protocol:**
+```python
+@runtime_checkable
+class CacheProtocol[K, V](Protocol):
+    """Protocol for cache implementations."""
+    
+    def get(self, key: K) -> V | None:
+        """Get cached value."""
+        ...
+    
+    def set(self, key: K, value: V, *, ttl_s: float | None = None) -> None:
+        """Set cached value with optional TTL."""
+        ...
+    
+    def invalidate(self, key: K) -> bool:
+        """Invalidate a specific key."""
+        ...
+    
+    def clear(self) -> int:
+        """Clear all cached values, return count cleared."""
+        ...
+```
+
+---
+
+## Medium Priority Consolidation Opportunities (Phase H)
+
+### H1. Adapter Pattern Standardization
 
 **Current State:**
 - `ingestion/adapters/duckdb_storage.py` - Storage adapter
 - `ingestion/adapters/tool_runner.py` - Tool execution adapter
 - `ingestion/adapters/build_tool_adapter.py` - Build system adapter
 - `build/hamilton/io/ibis_adapter.py` - Ibis I/O adapter
+- `storage/ibis_adapter.py` - Ibis gateway adapter
 
-**Proposed:** Create `core/adapters/` with base adapter protocols.
+**Proposed:** Create `core/adapters/` with base adapter protocols for hexagonal architecture.
 
 ---
 
-### 7. Factory Pattern Consolidation
+### H2. Factory Pattern Consolidation
 
 **Current State:**
 - `analytics/resources/factory.py` - Resource factory
 - `storage/repositories/factory.py` - Repository factory
 - `graphs/engine/factory.py` - Graph engine factory
 - `build/hamilton/driver_factory.py` - Hamilton driver factory
+- `config/builder.py` - Config builder
 
 **Proposed:** Create `core/factory/` with factory protocols and utilities.
 
 ---
 
-### 8. Metrics/Observability Consolidation
+### H3. Metrics/Observability Consolidation
 
 **Current State:**
 - `cli/observability/_observability.py` - CLI observability
 - `cli/observability/_telemetry.py` - CLI telemetry
-- `build/hamilton/observability.py` - Build observability
-- `serving/services/observability.py` - Serving observability
+- Various metrics scattered across modules
 
 **Proposed:** Create unified observability infrastructure in `core/observability/`.
 
 ---
 
-### 9. Context Builder Pattern
+### H4. Context Builder Pattern
 
 **Current State:**
 - `core/plugins/execution/context.py` - `PluginExecutionContextBuilder`
 - `build/context.py` - `BuildContext` construction
 - `cli/context.py` - CLI context
 - `serving/context.py` - Serving context
+- `analytics/runtime/context.py` - Analytics context
 
 **Proposed:** Create `core/context/builder.py` with generic builder pattern.
 
 ---
 
-## Lower Priority Opportunities
-
-### 10. Path Utilities Consolidation
+### H5. Row Model Standardization
 
 **Current State:**
-- `ingestion/infrastructure/paths.py` - `normalize_rel_path`
+Row type definitions scattered across:
+- `config/datasets/rows/core.py` - Core row types
+- `config/datasets/generated_rows/*.py` - Generated row types
+- Various `*Row` TypedDicts across modules
+
+**Problem:** Row definitions are inconsistent and duplicated.
+
+**Proposed:** Create `core/models/rows.py` with base row protocols and standardized field naming.
+
+---
+
+## Lower Priority Opportunities (Phase I)
+
+### I1. Path Utilities Consolidation
+
+**Current State:**
+- `ingestion/infrastructure/paths.py` - `normalize_rel_path`, `relpath_to_module`
 - Various modules with path handling
 
 **Proposed:** Create `core/paths/` with unified path utilities.
 
 ---
 
-### 11. Hashing/Fingerprinting Consolidation
+### I2. Hashing/Fingerprinting Consolidation
 
 **Current State:**
 - `build/hashing.py` - Build hashing
@@ -273,7 +458,7 @@ class ExecutorProtocol[TInput, TOutput](Protocol):
 
 ---
 
-### 12. Worker/Threading Patterns
+### I3. Worker/Threading Patterns
 
 **Current State:**
 - `ingestion/infrastructure/workers.py` - Worker utilities
@@ -283,59 +468,92 @@ class ExecutorProtocol[TInput, TOutput](Protocol):
 
 ---
 
+### I4. Validation Rule Engine
+
+**Current State:**
+- `core/validation/runner.py` - Validation runner
+- `graphs/validation/findings.py` - Graph validation
+- `storage/validation/*.py` - Storage validation
+- `config/datasets/validation.py` - Dataset validation
+
+**Proposed:** Create `core/validation/rules.py` with a composable rule engine for unified validation across all domains.
+
+---
+
+### I5. Event/Hook System
+
+**Current State:**
+- Various callback patterns across modules
+- No unified event system for extensibility
+
+**Proposed:** Create `core/events/` with a lightweight event system for cross-module communication without tight coupling.
+
+---
+
 ## Implementation Roadmap
 
-### Phase A: Error Taxonomy (High Impact, Medium Effort)
-1. Create `core/errors/` structure
-2. Move base error classes
-3. Migrate taxonomy enums
-4. Update all error imports
+### Phase F: Result & Serialization (High Impact, Medium Effort)
+1. ✅ Phase A-E completed
+2. Create `core/results/` structure with ResultProtocol
+3. Create `core/serialization/` with SerializableProtocol
+4. Create `core/data/` with DataLoaderProtocol
+5. Update existing result types to implement protocols
 
-### Phase B: Options Protocol (High Impact, Low Effort)
-1. Create `core/options/protocol.py`
-2. Define `OptionsProtocol`
-3. Update existing options to implement protocol
-4. Add validation utilities
+### Phase G: Services & Infrastructure (Medium Impact, Medium Effort)
+1. Create `core/services/` with ServiceProtocol
+2. Enhance repository pattern in `core/repository/`
+3. Create `core/cache/` with unified caching
 
-### Phase C: Catalog Consolidation (Medium Impact, Medium Effort)
-1. Move `FunctionSpan` to core
-2. Create unified `CatalogProtocol`
-3. Update graphs and analytics to use core types
+### Phase H: Adapters & Factories (Medium Impact, Low Effort)
+1. Create `core/adapters/` with adapter protocols
+2. Create `core/factory/` with factory utilities
+3. Consolidate observability infrastructure
+4. Standardize context builders
 
-### Phase D: Parsing Utilities (Medium Impact, High Effort)
-1. Create `core/parsing/` structure
-2. Move AST utilities
-3. Consolidate span types
-4. Update all consumers
-
-### Phase E: Runtime/Executor (Medium Impact, High Effort)
-1. Create `core/runtime/` structure
-2. Define executor protocols
-3. Implement tracking utilities
-4. Migrate existing runtimes
+### Phase I: Utilities & Extensions (Lower Impact, Low Effort)
+1. Consolidate path utilities
+2. Unify hashing infrastructure
+3. Standardize worker patterns
+4. Create validation rule engine
+5. Add event/hook system for extensibility
 
 ---
 
 ## Metrics for Success
 
-| Metric | Target |
-|--------|--------|
-| Duplicate code reduction | 30% reduction in similar patterns |
-| Import depth | Max 3 levels for common types |
-| Type coverage | 100% for all consolidated modules |
-| Test coverage | 90%+ for core modules |
-| Documentation | All protocols documented with examples |
+| Metric | Target | Status |
+|--------|--------|--------|
+| Duplicate code reduction | 30% reduction in similar patterns | 🔄 In Progress |
+| Import depth | Max 3 levels for common types | ✅ Achieved |
+| Type coverage | 100% for all consolidated modules | ✅ Achieved |
+| Test coverage | 90%+ for core modules | 🔄 In Progress |
+| Documentation | All protocols documented with examples | ✅ Achieved |
+| Backward compatibility | All existing imports continue to work | ✅ Achieved |
+
+---
+
+## Architecture Principles
+
+The consolidation follows these principles:
+
+1. **Protocol-First Design**: Define protocols before implementations
+2. **Backward Compatibility**: Always re-export from original locations
+3. **Incremental Migration**: Allow gradual adoption of new patterns
+4. **Composition over Inheritance**: Prefer protocol composition
+5. **Single Source of Truth**: One canonical location for each concept
+6. **Explicit Deprecation**: Use deprecation warnings with migration guides
 
 ---
 
 ## Notes
 
-- All consolidations should maintain backward compatibility via re-exports
-- Each phase should include comprehensive tests
-- Migration should be incremental with clear deprecation warnings
-- Consider using `typing.deprecated` decorator for phased deprecation
+- All consolidations maintain backward compatibility via re-exports
+- Each phase includes comprehensive tests
+- Migration is incremental with clear deprecation warnings
+- Consider using `typing.deprecated` decorator (Python 3.13+) for phased deprecation
+- New code should import from `core/` modules directly
 
 ---
 
 *Last Updated: December 2024*
-*Author: Code Consolidation Analysis*
+*Author: Cross-Module Consolidation Analysis*

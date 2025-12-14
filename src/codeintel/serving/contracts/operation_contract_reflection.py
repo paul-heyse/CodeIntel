@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Sequence, get_type_hints
+from typing import get_type_hints
 
 import pandas as pd
 
