@@ -199,11 +199,7 @@ class DatasetBackendMixin:
         -------
         DatasetRowsResponse
             Dataset slice payload with metadata.
-
-        Raises
-        ------
-        errors.McpError
-            When the service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` if the service reports a problem.
         """
         return self._dispatch_dataset(
             "read_dataset_rows",
@@ -232,11 +228,7 @@ class DatasetBackendMixin:
         -------
         DatasetSchemaResponse
             Composite schema response including sample rows.
-
-        Raises
-        ------
-        errors.McpError
-            When the service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` if the service reports a problem.
         """
         return self._dispatch_dataset(
             "dataset_schema",
@@ -346,11 +338,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         FunctionSummaryResponse
             Summary payload with found flag and metadata.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         _require_identifier(urn=urn, goid_h128=goid_h128, rel_path=rel_path)
         return self._dispatch(
@@ -378,11 +366,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         HighRiskFunctionsResponse
             High-risk functions plus truncation metadata.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "list_high_risk_functions",
@@ -408,11 +392,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         CallGraphNeighborsResponse
             Incoming and outgoing edges with metadata.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         direction = _validate_direction(direction)
         return self._dispatch(
@@ -438,11 +418,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         GraphNeighborhoodResponse
             Nodes and edges in the neighborhood plus metadata.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_callgraph_neighborhood",
@@ -465,11 +441,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         ImportBoundaryResponse
             Boundary edges and truncation metadata.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_import_boundary",
@@ -493,11 +465,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         TestsForFunctionResponse
             Tests exercising the function plus messages.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         _require_identifier(urn=urn, goid_h128=goid_h128)
         return self._dispatch(
@@ -522,11 +490,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         FileSummaryResponse
             File-level summary and nested function entries.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_file_summary",
@@ -543,11 +507,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         FunctionProfileResponse
             Profile payload and found flag.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_function_profile",
@@ -563,11 +523,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         FileProfileResponse
             Profile payload and found flag.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_file_profile",
@@ -583,11 +539,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         ModuleProfileResponse
             Profile payload and found flag.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_module_profile",
@@ -603,11 +555,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         FunctionArchitectureResponse
             Architecture payload and found flag.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_function_architecture",
@@ -623,11 +571,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         ModuleArchitectureResponse
             Architecture payload and found flag.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_module_architecture",
@@ -645,11 +589,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         SubsystemSummaryResponse
             Subsystem rows and metadata.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "list_subsystems",
@@ -667,11 +607,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         ModuleSubsystemResponse
             Membership rows and metadata.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_module_subsystems",
@@ -687,11 +623,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         FileHintsResponse
             Hints including subsystem context and module metrics.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_file_hints",
@@ -709,11 +641,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         SubsystemModulesResponse
             Subsystem detail payload.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "get_subsystem_modules",
@@ -732,11 +660,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         SubsystemSearchResponse
             Subsystem rows and metadata.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "search_subsystems",
@@ -756,11 +680,7 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
         -------
         SubsystemModulesResponse
             Subsystem detail payload.
-
-        Raises
-        ------
-        errors.McpError
-            When the underlying service reports a problem detail.
+        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
         """
         return self._dispatch(
             "summarize_subsystem",

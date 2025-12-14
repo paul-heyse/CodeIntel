@@ -2,6 +2,9 @@
 
 This module provides `GraphProvider` which wraps `GraphRuntime` to provide
 lazy loading of call, import, symbol, and bipartite graphs.
+
+The ``GraphResources`` type is an alias for ``GraphBundle`` from
+``codeintel.core.resources.graphs``, providing backward compatibility.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from codeintel.analytics.runtime import (
     GraphRuntimeOptions,
     build_graph_runtime,
 )
+from codeintel.core.resources.graphs import GraphBundle
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
@@ -103,35 +107,13 @@ class GraphRuntimeLike(Protocol):
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class GraphResources:
-    """Container for loaded graph resources.
+# Backward-compatible alias for the unified GraphBundle type
+GraphResources = GraphBundle
+"""Alias for GraphBundle from codeintel.core.resources.graphs.
 
-    Attributes
-    ----------
-    call_graph
-        Function call graph (directed).
-    import_graph
-        Module import graph (directed).
-    symbol_module_graph
-        Symbol to module bipartite graph.
-    symbol_function_graph
-        Symbol to function bipartite graph.
-    config_module_bipartite
-        Config key to module bipartite graph.
-    test_function_bipartite
-        Test to function bipartite graph.
-    cfg_graph
-        Control flow graph (directed), if available.
-    """
-
-    call_graph: nx.DiGraph | None = None
-    import_graph: nx.DiGraph | None = None
-    symbol_module_graph: nx.Graph | None = None
-    symbol_function_graph: nx.Graph | None = None
-    config_module_bipartite: nx.Graph | None = None
-    test_function_bipartite: nx.Graph | None = None
-    cfg_graph: nx.DiGraph | None = None
+This type alias provides backward compatibility with existing code
+that uses GraphResources while enabling unified graph resource handling.
+"""
 
 
 class GraphProvider(LazyResource[GraphResources]):
@@ -523,6 +505,7 @@ class SingleGraphProvider(LazyResource[nx.DiGraph]):
 
 
 __all__ = [
+    "GraphBundle",
     "GraphProvider",
     "GraphResources",
     "SingleGraphProvider",

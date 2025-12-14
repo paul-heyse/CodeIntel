@@ -19,10 +19,24 @@ ResourceNotFoundError
     Raised when a required resource is not registered.
 ResourceNotLoadedError
     Raised when a lazy resource fails to load.
+
+Graph Resources
+---------------
+GraphBundle
+    Unified container for all graph types.
+GraphProviderProtocol
+    Protocol for graph resource providers.
+ExtendedGraphProviderProtocol
+    Extended protocol with all graph accessors.
 """
 
 from __future__ import annotations
 
+from codeintel.core.resources.graphs import (
+    ExtendedGraphProviderProtocol,
+    GraphBundle,
+    GraphProviderProtocol,
+)
 from codeintel.core.resources.protocol import (
     LazyResource,
     ResourceError,
@@ -36,6 +50,9 @@ from codeintel.core.resources.registry import (
 )
 
 __all__ = [
+    "ExtendedGraphProviderProtocol",
+    "GraphBundle",
+    "GraphProviderProtocol",
     "LazyResource",
     "ResourceError",
     "ResourceNotFoundError",

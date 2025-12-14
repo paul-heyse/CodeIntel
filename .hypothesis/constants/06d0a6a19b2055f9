@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/backend.py
+# hypothesis_version: 6.148.7
+
+[0.1, 0.7, 30.0, 400, 500, '/health', '__dict__', 'both', 'dataset_schema', 'dict[str, object]', 'get_file_hints', 'get_file_profile', 'get_file_summary', 'get_function_profile', 'get_function_summary', 'get_import_boundary', 'get_module_profile', 'in', 'incoming', 'list_subsystems', 'model_dump', 'out', 'outgoing', 'read_dataset_rows', 'search_subsystems', 'summarize_subsystem']

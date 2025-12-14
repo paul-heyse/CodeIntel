@@ -156,7 +156,13 @@ class _FunctionQueryDelegates:
 
 
 def _serialize_scope(scope: GraphScopePayload | None) -> dict[str, object] | None:
-    """Serialize a GraphScopePayload for HTTP requests."""
+    """Serialize a GraphScopePayload for HTTP requests.
+
+    Returns
+    -------
+    dict[str, object] | None
+        Serialized scope suitable for query parameters, or ``None``.
+    """
     return scope.model_dump() if scope is not None else None
 
 

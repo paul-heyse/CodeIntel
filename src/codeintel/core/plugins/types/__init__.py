@@ -4,7 +4,8 @@ This package contains core type definitions for the plugin system:
 
 Protocol Types
 --------------
-- PluginProtocol: Core plugin interface
+- PluginProtocol: Core synchronous plugin interface
+- AsyncPluginProtocol: Async plugin interface for tool plugins
 - PluginMetadata: Static metadata about a plugin
 - PluginDependency: Dependency specification
 - ValidationResult: Contract validation result
@@ -28,6 +29,10 @@ Type Literals
 
 from __future__ import annotations
 
+from codeintel.core.plugins.types.async_protocol import (
+    AsyncPluginProtocol,
+    AsyncPluginWithCleanup,
+)
 from codeintel.core.plugins.types.metadata import (
     CorePluginMetadata,
     PluginDomain,
@@ -59,6 +64,8 @@ from codeintel.core.plugins.types.result import (
 )
 
 __all__ = [
+    "AsyncPluginProtocol",
+    "AsyncPluginWithCleanup",
     "BaseExecutionReport",
     "BasePluginExecutionRecord",
     "CapabilityKind",

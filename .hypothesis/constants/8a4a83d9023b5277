@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/resources/graphs.py
+# hypothesis_version: 6.148.7
+
+['GraphBundle', 'T_co', 'call_graph', 'cfg_graph', 'import_graph', 'symbol_module_graph']

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from codeintel.core.plugins.types.result import PluginResult
 
 
-PluginKind = Literal["builder", "metric", "validation", "analytics"]
+PluginKind = Literal["builder", "metric", "validation", "analytics", "tool"]
 
 
 PluginStage = Literal[
@@ -223,7 +223,7 @@ class PluginMetadata:
     description
         Human-readable description.
     kind
-        Plugin classification (builder, metric, validation, analytics).
+        Plugin classification (builder, metric, validation, analytics, tool).
     stage
         Processing stage grouping.
     version
@@ -274,6 +274,12 @@ class PluginMetadata:
         Contract checker identifiers used by the plugin.
     tags
         Free-form tags for categorization.
+    tool_binary
+        Binary name for tool plugins (kind="tool").
+    produces_artifacts
+        Artifact names produced by tool plugins.
+    consumes_configs
+        Config fields consumed by tool plugins.
     """
 
     name: str
@@ -304,6 +310,10 @@ class PluginMetadata:
     cache_consumes: tuple[str, ...] = ()
     contract_checkers: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
+    # Tool plugin fields (optional, used when kind="tool")
+    tool_binary: str | None = None
+    produces_artifacts: tuple[str, ...] = ()
+    consumes_configs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Normalize derived flags."""

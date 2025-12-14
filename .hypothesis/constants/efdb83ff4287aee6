@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/engine/results.py
+# hypothesis_version: 6.148.7
+
+[0.0, 1.0, 'CoverageFileSummary', 'CoverageReport', 'DiagnosticReport', 'FileDiagnosticCount', 'ParsedToolResult', 'ReportProtocol', 'ScipDocument', 'ScipIndexResult', 'ScipOccurrence', 'TestCaseResult', 'TestReport', 'call', 'duration', 'error', 'failed', 'keywords', 'nodeid', 'occurrences', 'outcome', 'parse_scip_range', 'parse_test_duration', 'parse_test_markers', 'passed', 'range', 'relative_path', 'skipped', 'status', 'symbol', 'symbol_roles', 'unknown']

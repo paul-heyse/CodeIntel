@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/utilities/type_coercion.py
+# hypothesis_version: 6.148.7
+
+['0', '1', 'false', 'int_or_default', 'no', 'optional_bool', 'optional_float', 'optional_int', 'optional_str', 'true', 'yes']

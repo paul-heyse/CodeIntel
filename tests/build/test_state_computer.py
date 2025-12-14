@@ -22,13 +22,27 @@ from codeintel.build.state import StateValidator
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
+from tests._helpers.assertions import (
+    expect_equal,
+    expect_false,
+    expect_in,
+    expect_is_none,
+    expect_is_not_none,
+    expect_true,
+)
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
 def make_snapshot(tmp_path: Path, repo: str = "test/repo", commit: str = "abc123") -> SnapshotRef:
-    """Create a test snapshot reference."""
+    """Create a test snapshot reference.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot reference pointing at the temporary repo root.
+    """
     return SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path)
 
 
@@ -38,7 +52,13 @@ def make_manifest(
     commit: str = "abc123",
     input_hash: str = "hash123",
 ) -> OutputManifest:
-    """Create a test manifest."""
+    """Create a test manifest.
+
+    Returns
+    -------
+    OutputManifest
+        Manifest populated with defaults for the provided target.
+    """
     return OutputManifest(
         target=target,
         repo=repo,
@@ -76,9 +96,9 @@ class TestStateComputer:
 
         state = computer.compute_all()
 
-        assert "test_target" in state.targets
-        assert state.targets["test_target"].status == "missing"
-        assert state.targets["test_target"].manifest is None
+        expect_in("test_target", state.targets)
+        expect_equal(state.targets["test_target"].status, "missing")
+        expect_is_none(state.targets["test_target"].manifest)
 
     @staticmethod
     def test_current_status_when_hash_matches(
@@ -109,9 +129,9 @@ class TestStateComputer:
 
         state = computer.compute_all()
 
-        assert state.targets["test_target"].status == "current"
-        assert state.targets["test_target"].manifest is not None
-        assert state.targets["test_target"].current_hash == actual_hash
+        expect_equal(state.targets["test_target"].status, "current")
+        expect_is_not_none(state.targets["test_target"].manifest)
+        expect_equal(state.targets["test_target"].current_hash, actual_hash)
 
     @staticmethod
     def test_stale_status_when_hash_differs(
@@ -140,8 +160,8 @@ class TestStateComputer:
 
         state = computer.compute_all()
 
-        assert state.targets["test_target"].status == "stale"
-        assert state.targets["test_target"].blocking_reason == "input_hash_mismatch"
+        expect_equal(state.targets["test_target"].status, "stale")
+        expect_equal(state.targets["test_target"].blocking_reason, "input_hash_mismatch")
 
     @staticmethod
     def test_blocked_when_dependency_missing(
@@ -177,10 +197,10 @@ class TestStateComputer:
         computer = StateComputer(graph=graph, session=session)
         state = computer.compute_all()
 
-        assert state.targets["dependency"].status == "missing"
-        assert state.targets["main"].status == "blocked"
-        assert state.targets["main"].blocking_reason == "dependency_missing"
-        assert "dependency" in state.targets["main"].blocking_deps
+        expect_equal(state.targets["dependency"].status, "missing")
+        expect_equal(state.targets["main"].status, "blocked")
+        expect_equal(state.targets["main"].blocking_reason, "dependency_missing")
+        expect_in("dependency", state.targets["main"].blocking_deps)
 
     @staticmethod
     def test_blocked_when_dependency_stale(
@@ -220,9 +240,9 @@ class TestStateComputer:
         computer = StateComputer(graph=graph, session=session)
         state = computer.compute_all()
 
-        assert state.targets["dependency"].status == "stale"
-        assert state.targets["main"].status == "blocked"
-        assert state.targets["main"].blocking_reason == "dependency_stale"
+        expect_equal(state.targets["dependency"].status, "stale")
+        expect_equal(state.targets["main"].status, "blocked")
+        expect_equal(state.targets["main"].blocking_reason, "dependency_stale")
 
     @staticmethod
     def test_build_state_query_methods(
@@ -252,10 +272,10 @@ class TestStateComputer:
         computer = StateComputer(graph=graph, session=session)
         state = computer.compute_all()
 
-        assert state.by_status("current") == ("t1",)
-        assert state.by_status("missing") == ("t2", "t3")
-        assert state.is_current("t1")
-        assert not state.is_current("t2")
+        expect_equal(state.by_status("current"), ("t1",))
+        expect_equal(state.by_status("missing"), ("t2", "t3"))
+        expect_true(state.is_current("t1"))
+        expect_false(state.is_current("t2"))
 
     @staticmethod
     def test_compute_single_target(
@@ -279,8 +299,8 @@ class TestStateComputer:
 
         state = computer.compute_single("single")
 
-        assert state.name == "single"
-        assert state.status == "missing"
+        expect_equal(state.name, "single")
+        expect_equal(state.status, "missing")
 
     @staticmethod
     def test_session_caching_efficiency(
@@ -307,8 +327,8 @@ class TestStateComputer:
         state2 = computer.compute_all()
 
         # Session should have cached the hash
-        assert session.cached_hash_count >= 1
-        assert state1.targets["cached"].status == state2.targets["cached"].status
+        expect_true(session.cached_hash_count >= 1, message="Expected cached hash count")
+        expect_equal(state1.targets["cached"].status, state2.targets["cached"].status)
 
 
 class TestStateValidatorEquivalence:
@@ -342,7 +362,7 @@ class TestStateValidatorEquivalence:
         new_state = computer.compute_all()
 
         # Results should be equivalent
-        assert legacy_state.missing_targets() == new_state.missing_targets()
+        expect_equal(legacy_state.missing_targets(), new_state.missing_targets())
 
     @staticmethod
     def test_validator_and_computer_agree_on_current(
@@ -378,7 +398,7 @@ class TestStateValidatorEquivalence:
         new_state = computer.compute_all()
 
         # "computed" in legacy = "current" in new
-        assert legacy_state.computed_targets() == new_state.current_targets()
+        expect_equal(legacy_state.computed_targets(), new_state.current_targets())
 
     @staticmethod
     def test_validator_and_computer_agree_on_blocked(
@@ -410,4 +430,4 @@ class TestStateValidatorEquivalence:
         computer = StateComputer(graph=graph, session=session2)
         new_state = computer.compute_all()
 
-        assert legacy_state.blocked_targets() == new_state.blocked_targets()
+        expect_equal(legacy_state.blocked_targets(), new_state.blocked_targets())
