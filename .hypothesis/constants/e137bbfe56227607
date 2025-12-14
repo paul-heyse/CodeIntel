@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugins/_helpers.py
+# hypothesis_version: 6.148.7
+
+['/test_', 'Any', '_test.py', 'compute_row_count', 'compute_row_counts', 'core.snapshots', 'empty', 'filter_paths', 'get_source_root', 'int', 'is_test_path', 'test_', 'tests/']

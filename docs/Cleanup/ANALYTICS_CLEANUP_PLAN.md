@@ -1,15 +1,15 @@
 # Analytics Package Cleanup Plan
 
 > **Generated:** 2025-12-13  
-> **Updated:** 2025-12-13 (All phases completed, new opportunities identified)  
+> **Updated:** 2025-12-13 (Phases 9-10 completed; 7 new consolidation opportunities identified)  
 > **Package:** `codeintel.analytics`  
-> **Status:** Core Phases Complete ✅ | Future Opportunities Identified
+> **Status:** Phase 1-10 Complete ✅ | Phase 11-18 Available for Implementation
 
 ## Executive Summary
 
-The `analytics` package cleanup is fully complete through all core phases:
+The `analytics` package cleanup is complete through phases 1-10. Following the recent consolidation work, a deep analysis revealed 7 additional consolidation opportunities (phases 11-18).
 
-**Completed:**
+**Completed (Phases 1-10):**
 - ~~1 deprecated stub package removed (`adapters/`)~~ ✅
 - ~~3 unused backward-compatibility aliases removed~~ ✅
 - ~~1 unused protocol removed (`GraphRuntimePort`)~~ ✅
@@ -19,17 +19,27 @@ The `analytics` package cleanup is fully complete through all core phases:
 - ~~Lazy loading utility created and applied~~ ✅
 - ~~Generic orchestrator for extended metrics~~ ✅
 - ~~History module lazy loading adoption~~ ✅
+- ~~Extended constants consolidated (5 additional constants)~~ ✅
+- ~~Persistence patterns standardized via `bulk_insert()`~~ ✅
 
-**Summary of Cleanup Impact:**
+**Completed Cleanup Impact:**
 - 3 new reusable modules created
-- ~100 lines of duplicate code eliminated
+- ~200 lines of duplicate code eliminated
+- Persistence standardized across 5 files
 - Cleaner separation of concerns
 - All public APIs preserved
 
-**Newly Identified Opportunities (Future Phases):**
-- Additional constants scattered across modules
-- Inconsistent persistence patterns (2 different approaches)
-- Symbol graph metrics duplication (similar to orchestrator pattern)
+**Remaining Opportunities (Newly Identified):**
+- 🔴 Duplicate helper functions (`_to_records`, `_degree_dict`, etc.) - ~136 lines savings
+- 🟡 Type conversion helper consolidation - ~15 lines savings
+- 🟡 Profile writer pattern consolidation - ~40 lines savings
+- 🟡 CFG/DFG shared helpers module - ~68 lines savings
+- 🟠 Remaining persistence migration (`subsystems/materialize.py`)
+- 🟢 Row builder input dataclass unification - ~22 lines savings
+- 🟢 CFG/DFG context consolidation - ~20 lines savings
+- 🟢 Symbol metrics orchestrator (Phase 11) - ~50 lines savings
+
+**Total Potential Savings:** ~350+ lines of duplicate/boilerplate code
 
 ---
 
@@ -314,74 +324,52 @@ No consolidation needed.
 
 ## 6. Future Consolidation Opportunities
 
-The following opportunities were identified during the Phase 7-8 implementation and are candidates for future cleanup work.
+The following opportunities were identified during Phase 7-8 implementation. Sections 6.1 and 6.2 are now complete.
 
-### 6.1 Additional Constants Duplication
+### 6.1 Additional Constants Duplication ✅
 
-**Status:** 🟡 Medium Priority
+**Status:** ✅ Completed (Phase 9)
 
-**Issue:** Several constants are duplicated across multiple modules:
+**Completed 2025-12-13**
 
-| Constant | Value | Locations |
-|----------|-------|-----------|
-| `MAX_BETWEENNESS_NODES` | 1000 | `symbol_graph_metrics.py:37`, `config_graph_metrics.py:41` |
-| `MAX_COMMUNITY_NODES` | 5000 | `symbol_graph_metrics.py:38` |
-| `MAX_CFG_CENTRALITY_SAMPLE` | 100 | `cfg_dfg/materialize.py:161` |
-| `MAX_DFG_CENTRALITY_SAMPLE` | 100 | `cfg_dfg/materialize.py:163`, `cfg_dfg/dfg_core.py:21` |
-| `MAX_CFG_EIGEN_SAMPLE` | 200 | `cfg_dfg/materialize.py:162` |
+All duplicate constants have been consolidated into `analytics/graphs/constants.py`:
 
-**Recommendation:** Extend `analytics/graphs/constants.py` (or create `analytics/compute/constants.py`) to include these constants:
-
-```python
-# Graph metrics sampling limits
-MAX_BETWEENNESS_NODES: int = 1000
-MAX_COMMUNITY_NODES: int = 5000
-
-# CFG/DFG sampling limits
-MAX_CFG_CENTRALITY_SAMPLE: int = 100
-MAX_CFG_EIGEN_SAMPLE: int = 200
-MAX_DFG_CENTRALITY_SAMPLE: int = 100
-```
-
-**Impact:** 5 files to update
-**Risk:** None
+| Constant | Value | Files Updated |
+|----------|-------|---------------|
+| `MAX_BETWEENNESS_NODES` | 1000 | `symbol_graph_metrics.py`, `config_graph_metrics.py` |
+| `MAX_COMMUNITY_NODES` | 5000 | `symbol_graph_metrics.py` |
+| `MAX_CFG_CENTRALITY_SAMPLE` | 100 | `cfg_dfg/materialize.py` |
+| `MAX_DFG_CENTRALITY_SAMPLE` | 100 | `cfg_dfg/materialize.py`, `cfg_dfg/dfg_core.py` |
+| `MAX_CFG_EIGEN_SAMPLE` | 200 | `cfg_dfg/materialize.py`, `cfg_dfg/dfg_core.py` |
 
 ---
 
-### 6.2 Inconsistent Persistence Patterns
+### 6.2 Inconsistent Persistence Patterns ✅
 
-**Status:** 🟡 Medium Priority
+**Status:** ✅ Completed (Phase 10)
 
-**Issue:** Two different persistence patterns are used across graph metrics modules:
+**Completed 2025-12-13**
 
-**Pattern A - Unified Dataset Contract (Preferred):**
+All files now use `DuckDBPolicyBackend.bulk_insert()` instead of manual `gateway.ibis.write()` with column lists:
+
+**Standardized Pattern:**
 ```python
-# Used in: orchestrator.py, graph_metrics.py
-contract = get_analytics_dataset_contract(gateway, table_key)
-validated_rows = validate_contract_rows(contract.table_key, rows)
-insert_analytics_rows(gateway, contract, validated_rows, delete_scope=..., scope=...)
-```
-
-**Pattern B - Direct Ibis Write:**
-```python
-# Used in: symbol_graph_metrics.py, subsystem_graph_metrics.py, 
-#          config_graph_metrics.py, config_data_flow.py, subsystem_agreement.py
-contract = DATASET_CONTRACTS_BY_TABLE_KEY[table_key]
+backend = DuckDBPolicyBackend(gateway)
+backend.ensure_table(table_key)
+# ... build rows ...
 validated_rows = validate_tuple_rows(table_key, rows, schema=contract.schema)
 backend.delete_for_snapshot(table_key, repo=repo, commit=commit)
-gateway.ibis.write(table_key, validated_rows, columns=[...])
+backend.bulk_insert(table_key, validated_rows)  # Schema-derived columns
 ```
 
-**Files using Pattern A:** 3 files (preferred, cleaner)
-**Files using Pattern B:** 6 files (legacy, more verbose)
+**Files Updated:**
+- `subsystem_agreement.py`
+- `subsystem_graph_metrics.py`
+- `symbol_graph_metrics.py`
+- `config_data_flow.py`
+- `config_graph_metrics.py`
 
-**Recommendation:** Migrate Pattern B files to use Pattern A for consistency:
-- Reduces boilerplate (no manual column lists)
-- Centralizes delete + insert logic
-- Consistent error handling
-
-**Impact:** 6 files to update
-**Risk:** Low - same underlying behavior
+**Additional fix:** Added numpy type conversion in `validate_tuple_rows()` to ensure DuckDB compatibility.
 
 ---
 
@@ -435,6 +423,335 @@ Both follow identical patterns:
 
 ---
 
+### 6.5 Duplicate Helper Functions Across Modules 🔴
+
+**Status:** 🟡 Medium Priority (Newly Identified)
+
+**Issue:** Several helper functions are duplicated across multiple modules, violating DRY principles.
+
+#### 6.5.1 `_to_records` (DataFrame → list[dict])
+
+**Duplicated 3 times with identical implementation:**
+
+| File | Lines |
+|------|-------|
+| `analytics/compute/row_builders/graph_metrics.py:27-35` | 9 |
+| `analytics/functions/metrics.py:68-76` | 9 |
+| `analytics/compute/functions/goids.py:115-123` | 9 |
+
+**Implementation:**
+```python
+def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
+```
+
+**Recommendation:** Consolidate into `analytics/utilities/dataframe.py` or add to existing `profiles/utils.py`.
+
+**Impact:** 3 files
+**Savings:** ~18 lines
+
+---
+
+#### 6.5.2 `_degree_dict` (NetworkX degree → dict)
+
+**Duplicated 2 times with identical implementation:**
+
+| File | Location |
+|------|----------|
+| `analytics/cfg_dfg/cfg_core.py:86-104` | 19 lines |
+| `analytics/cfg_dfg/dfg_core.py:79-97` | 19 lines |
+
+**Implementation:**
+```python
+def _degree_dict(
+    graph: nx.DiGraph,
+    *,
+    direction: str,
+    weight: str | None = None,
+) -> dict[int, int]:
+    raw_pairs = (
+        graph.in_degree(weight=weight) if direction == "in" else graph.out_degree(weight=weight)
+    )
+    pairs = cast("Iterable[tuple[int, int | float]]", raw_pairs)
+    return {int(node): int(deg) for node, deg in pairs}
+```
+
+**Recommendation:** Move to `analytics/compute/graphs/types.py` or create `analytics/cfg_dfg/helpers.py`.
+
+**Impact:** 2 files
+**Savings:** ~19 lines
+
+---
+
+#### 6.5.3 `parse_block_idx` / `_parse_block_idx`
+
+**Duplicated 2 times with identical logic (different naming):**
+
+| File | Function Name |
+|------|---------------|
+| `analytics/cfg_dfg/cfg_core.py:152-169` | `parse_block_idx` |
+| `analytics/cfg_dfg/dfg_core.py:133-150` | `_parse_block_idx` |
+
+**Implementation:**
+```python
+def parse_block_idx(block_id: str | int | None) -> int | None:
+    if block_id is None:
+        return None
+    block_text = str(block_id)
+    if "block" not in block_text:
+        return None
+    try:
+        return int(block_text.rsplit("block", 1)[-1])
+    except ValueError:
+        return None
+```
+
+**Recommendation:** Move to `analytics/cfg_dfg/__init__.py` or `helpers.py`.
+
+**Impact:** 2 files
+**Savings:** ~17 lines
+
+---
+
+#### 6.5.4 `function_metadata` / `dfg_function_metadata`
+
+**Duplicated 2 times with 100% identical implementations:**
+
+| File | Function Name | Lines |
+|------|---------------|-------|
+| `analytics/cfg_dfg/cfg_core.py:420-451` | `function_metadata` | 32 |
+| `analytics/cfg_dfg/dfg_core.py:335-366` | `dfg_function_metadata` | 32 |
+
+Both execute the exact same SQL query and return the same mapping.
+
+**Recommendation:** Consolidate into a single `load_function_metadata` function in `analytics/cfg_dfg/__init__.py`.
+
+**Impact:** 2 files + 1 caller update (`materialize.py`)
+**Savings:** ~32 lines
+
+---
+
+### 6.6 Type Conversion Helper Consolidation 🟡
+
+**Status:** 🟡 Medium Priority (Newly Identified)
+
+**Issue:** Similar type conversion helpers exist in different locations with slightly different signatures.
+
+| Helper | Location | Signature |
+|--------|----------|-----------|
+| `_int_or_none` | `compute/row_builders/graph_metrics_ext.py:21-34` | `(float \| str \| Decimal \| None) -> int \| None` |
+| `optional_int` | `profiles/utils.py:89-109` | `(object \| None) -> int \| None` |
+| `int_or_default` | `profiles/utils.py:112-122` | `(object \| None, default: int) -> int` |
+| `optional_str` | `profiles/utils.py:77-86` | `(object \| None) -> str \| None` |
+| `optional_float` | `profiles/utils.py:125-145` | `(object \| None) -> float \| None` |
+| `optional_bool` | `profiles/utils.py:148-169` | `(object \| None) -> bool \| None` |
+
+**Recommendation:** Consolidate all type conversion helpers into a single location:
+- Move to `analytics/utilities/type_coercion.py`
+- Unify `_int_or_none` and `optional_int` (use the more flexible `optional_int`)
+- Re-export from `analytics/utilities/__init__.py`
+
+**Impact:** 2+ files
+**Savings:** ~15 lines + improved consistency
+
+---
+
+### 6.7 Row Builder Input Dataclass Unification 🟢
+
+**Status:** 🟢 Lower Priority (Newly Identified)
+
+**Issue:** Several input dataclasses share nearly identical structures:
+
+#### 6.7.1 Symbol Metric Inputs
+
+| Dataclass | Location |
+|-----------|----------|
+| `SymbolModuleMetricInputs` | `compute/row_builders/symbol_metrics.py:18-28` |
+| `SymbolFunctionMetricInputs` | `compute/row_builders/symbol_metrics.py:31-41` |
+
+**Identical fields:**
+- `repo`, `commit`, `centrality`, `structure`, `comp_id`, `comp_size`, `created_at`
+
+**Only difference:** The node type (string module vs int goid).
+
+**Recommendation:** Create a generic `SymbolMetricInputs[TNode]` using PEP 695 generics, similar to the orchestrator pattern.
+
+**Impact:** 1 file
+**Savings:** ~10 lines
+
+---
+
+#### 6.7.2 Extended Metric Inputs
+
+| Dataclass | Location |
+|-----------|----------|
+| `FunctionMetricExtInputs` | `compute/row_builders/graph_metrics_ext.py:37-50` |
+| `ModuleMetricExtInputs` | `compute/row_builders/graph_metrics_ext.py:53-64` |
+
+**Shared fields:**
+- `repo`, `commit`, `ctx`, `centralities`, `structure`, `components`
+
+**Different fields:**
+- Function: `articulations`, `bridge_incident`, `ancestor_count`, `descendant_count`
+- Module: `rich_club`, `nodes`
+
+**Recommendation:** Consider a base dataclass with shared fields + inheritance for specialization, or a Protocol-based approach.
+
+**Impact:** 1 file
+**Savings:** ~12 lines
+
+---
+
+### 6.8 CFG/DFG Context Consolidation 🟢
+
+**Status:** 🟢 Lower Priority (Newly Identified)
+
+**Issue:** CFG and DFG context dataclasses share many common fields:
+
+| Context Class | Location | Lines |
+|---------------|----------|-------|
+| `CfgFnContext` | `cfg_dfg/cfg_core.py:35-50` | 16 |
+| `DfgFnContext` | `cfg_dfg/dfg_core.py:38-64` | 27 |
+| `CfgInputs` | `cfg_dfg/cfg_core.py:53-61` | 9 |
+| `DfgInputs` | `cfg_dfg/dfg_core.py:66-76` | 11 |
+
+**Common fields across all:**
+- `repo`, `commit`, `now` (or `graph_ctx`)
+
+**Common fields in FnContext:**
+- `fn_goid`, `rel_path`, `module`, `qualname`, `graph`, `sccs`
+
+**Recommendation:** Create a shared base `FnContext` in `cfg_dfg/types.py`:
+```python
+@dataclass(frozen=True)
+class BaseFnContext:
+    repo: str
+    commit: str
+    fn_goid: int
+    rel_path: str
+    module: str | None
+    qualname: str | None
+    graph: nx.DiGraph
+    sccs: list[set[int]]
+    now: datetime
+```
+
+**Impact:** 2 files + 1 new file
+**Savings:** ~20 lines
+
+---
+
+### 6.9 Profile Writer Pattern Consolidation 🟡
+
+**Status:** 🟡 Medium Priority (Newly Identified)
+
+**Issue:** All profile writer functions follow the exact same pattern:
+
+```python
+def write_*_profile_rows(gateway, rows) -> int:
+    rows_list = list(rows)
+    if not rows_list:
+        return 0
+    repo = rows_list[0]["repo"]
+    commit = rows_list[0]["commit"]
+    context = WriterContext(
+        table_key="analytics.*_profile",
+        columns=*_PROFILE_COLUMNS,
+        serialize_row=cast("SerializeRow", *_profile_row_to_tuple),
+        repo=repo,
+        commit=commit,
+        ensure_schema_fn=lambda _gateway, _table: None,
+    )
+    return write_rows_with_registry_guard(gateway, rows=rows_list, context=context, ...)
+```
+
+**Instances:**
+| Function | File |
+|----------|------|
+| `write_function_profile_rows` | `profiles/functions.py:975-1006` |
+| `write_file_profile_rows` | `profiles/files.py:336-364` |
+| `write_module_profile_rows` | `profiles/modules.py:372-402` |
+
+**Recommendation:** Create a generic writer factory in `profiles/writer_guard.py`:
+```python
+def create_profile_writer(
+    table_key: str,
+    columns: Sequence[str],
+    serialize_row: SerializeRow,
+) -> Callable[[StorageGateway, Iterable[Mapping[str, object]]], int]:
+    ...
+```
+
+**Impact:** 3 files + 1 utility function
+**Savings:** ~40 lines
+
+---
+
+### 6.10 Remaining Persistence Migration 🟠
+
+**Status:** 🟠 Overlooked in Phase 10 (Newly Identified)
+
+**Issue:** `subsystems/materialize.py` still uses `gateway.ibis.write()` with manual column lists at lines 188-199:
+
+```python
+if membership_rows:
+    gateway.ibis.write(
+        "analytics.subsystem_modules",
+        membership_rows,
+        columns=SUBSYSTEM_MODULES_COLS,
+    )
+
+if subsystem_rows:
+    gateway.ibis.write(
+        "analytics.subsystems",
+        subsystem_rows,
+        columns=SUBSYSTEMS_COLS,
+    )
+```
+
+**Recommendation:** Migrate to `DuckDBPolicyBackend.bulk_insert()` to match the standardized pattern.
+
+**Impact:** 1 file
+**Savings:** Column list maintenance + consistency
+
+---
+
+### 6.11 CFG/DFG Shared Helpers Module 🟡
+
+**Status:** 🟡 Medium Priority (Newly Identified)
+
+**Issue:** The `cfg_dfg/` package has several functions that are duplicated or closely related between `cfg_core.py` and `dfg_core.py`:
+
+| Function | cfg_core.py | dfg_core.py | Action |
+|----------|-------------|-------------|--------|
+| `_degree_dict` | ✅ | ✅ | Consolidate |
+| `parse_block_idx` | ✅ (public) | ✅ (private) | Consolidate + unify name |
+| `function_metadata` | ✅ | ✅ (as `dfg_function_metadata`) | Consolidate |
+| `loop_nodes` | ✅ | - | Keep in cfg |
+| `loop_stats` | ✅ | - | Keep in cfg |
+| `branching_stats` | ✅ | - | Keep in cfg |
+
+**Recommendation:** Create `analytics/cfg_dfg/helpers.py`:
+```python
+"""Shared helpers for CFG and DFG analytics."""
+
+def degree_dict(graph: nx.DiGraph, *, direction: str, weight: str | None = None) -> dict[int, int]:
+    ...
+
+def parse_block_idx(block_id: str | int | None) -> int | None:
+    ...
+
+def load_function_metadata(
+    gateway: StorageGateway, repo: str, commit: str
+) -> dict[int, tuple[str, str | None, str | None]]:
+    ...
+```
+
+**Impact:** 2 files + 1 new file + 1 caller update
+**Savings:** ~68 lines of duplicate code
+
+---
+
 ## 7. Implementation Checklist
 
 ### Completed Phases ✅
@@ -485,24 +802,97 @@ Both follow identical patterns:
 
 ---
 
-### Future Phases (Optional)
+### Completed Phases
 
-#### Phase 9: Extended Constants Consolidation
-- [ ] Add `MAX_BETWEENNESS_NODES`, `MAX_COMMUNITY_NODES` to constants
-- [ ] Add `MAX_CFG_CENTRALITY_SAMPLE`, `MAX_DFG_CENTRALITY_SAMPLE`, `MAX_CFG_EIGEN_SAMPLE`
-- [ ] Update `symbol_graph_metrics.py` to import from constants
-- [ ] Update `config_graph_metrics.py` to import from constants
-- [ ] Update `cfg_dfg/materialize.py` to import from constants
-- [ ] Update `cfg_dfg/dfg_core.py` to import from constants
+#### Phase 9: Extended Constants Consolidation ✅
 
-#### Phase 10: Persistence Pattern Standardization
-- [ ] Migrate `symbol_graph_metrics.py` to use `insert_analytics_rows()`
-- [ ] Migrate `subsystem_graph_metrics.py` to use `insert_analytics_rows()`
-- [ ] Migrate `config_graph_metrics.py` to use `insert_analytics_rows()`
-- [ ] Migrate `config_data_flow.py` to use `insert_analytics_rows()`
-- [ ] Migrate `subsystem_agreement.py` to use `insert_analytics_rows()`
+**Completed 2025-12-13**
 
-#### Phase 11: Symbol Metrics Orchestrator
+- [x] Add `MAX_BETWEENNESS_NODES`, `MAX_COMMUNITY_NODES` to constants
+- [x] Add `MAX_CFG_CENTRALITY_SAMPLE`, `MAX_DFG_CENTRALITY_SAMPLE`, `MAX_CFG_EIGEN_SAMPLE`
+- [x] Update `symbol_graph_metrics.py` to import from constants
+- [x] Update `config_graph_metrics.py` to import from constants
+- [x] Update `cfg_dfg/materialize.py` to import from constants
+- [x] Update `cfg_dfg/dfg_core.py` to import from constants
+
+#### Phase 10: Persistence Pattern Standardization ✅
+
+**Completed 2025-12-13**
+
+Migrated 5 files from Pattern B (manual `gateway.ibis.write` with column lists) to use `DuckDBPolicyBackend.bulk_insert()`:
+
+- [x] Migrate `subsystem_agreement.py` to use `bulk_insert()`
+- [x] Migrate `subsystem_graph_metrics.py` to use `bulk_insert()`
+- [x] Migrate `symbol_graph_metrics.py` to use `bulk_insert()`
+- [x] Migrate `config_data_flow.py` to use `bulk_insert()`
+- [x] Migrate `config_graph_metrics.py` to use `bulk_insert()`
+
+**Key improvements:**
+- Removed ~100 lines of manual column list definitions
+- Standardized on `DuckDBPolicyBackend` for all persistence
+- Schema-derived column order (no manual maintenance)
+- Added numpy type conversion in `validate_tuple_rows()` for DuckDB compatibility
+
+---
+
+### Future Phases (Prioritized)
+
+#### Phase 11: CFG/DFG Shared Helpers Module 🟡
+**Priority: Medium | Savings: ~68 lines**
+- [ ] Create `analytics/cfg_dfg/helpers.py`
+- [ ] Move `_degree_dict` from both modules → `degree_dict` in helpers
+- [ ] Move `parse_block_idx`/`_parse_block_idx` → unified `parse_block_idx` in helpers
+- [ ] Consolidate `function_metadata`/`dfg_function_metadata` → `load_function_metadata`
+- [ ] Update imports in `cfg_core.py`, `dfg_core.py`, `materialize.py`
+- [ ] Run tests to verify no regressions
+
+#### Phase 12: Duplicate Helper Function Consolidation 🔴
+**Priority: Medium | Savings: ~18 lines**
+- [ ] Create `analytics/utilities/dataframe.py` (or extend `profiles/utils.py`)
+- [ ] Add `to_records(df: pd.DataFrame) -> list[dict[str, Any]]`
+- [ ] Update `compute/row_builders/graph_metrics.py` to import from utilities
+- [ ] Update `functions/metrics.py` to import from utilities
+- [ ] Update `compute/functions/goids.py` to import from utilities
+- [ ] Run tests to verify no regressions
+
+#### Phase 13: Type Conversion Helper Unification 🟡
+**Priority: Medium | Savings: ~15 lines**
+- [ ] Create `analytics/utilities/type_coercion.py`
+- [ ] Move `optional_str`, `optional_int`, `optional_float`, `optional_bool`, `int_or_default`
+- [ ] Deprecate and redirect `_int_or_none` → `optional_int`
+- [ ] Update `compute/row_builders/graph_metrics_ext.py`
+- [ ] Re-export from `analytics/utilities/__init__.py`
+- [ ] Update imports in `profiles/functions.py`, `profiles/files.py`, `profiles/modules.py`
+
+#### Phase 14: Profile Writer Factory 🟡
+**Priority: Medium | Savings: ~40 lines**
+- [ ] Add `create_profile_writer()` factory to `profiles/writer_guard.py`
+- [ ] Refactor `write_function_profile_rows` to use factory
+- [ ] Refactor `write_file_profile_rows` to use factory
+- [ ] Refactor `write_module_profile_rows` to use factory
+- [ ] Run tests to verify no regressions
+
+#### Phase 15: Remaining Persistence Migration 🟠
+**Priority: High | Impact: 1 file**
+- [ ] Migrate `subsystems/materialize.py` to use `DuckDBPolicyBackend.bulk_insert()`
+- [ ] Remove `SUBSYSTEM_MODULES_COLS` and `SUBSYSTEMS_COLS` manual column lists
+- [ ] Add dataset contracts to `utilities/datasets.py` if missing
+- [ ] Run tests to verify no regressions
+
+#### Phase 16: Row Builder Input Dataclass Unification 🟢
+**Priority: Lower | Savings: ~22 lines**
+- [ ] Create generic `SymbolMetricInputs[TNode]` using PEP 695
+- [ ] Refactor `SymbolModuleMetricInputs` and `SymbolFunctionMetricInputs`
+- [ ] Consider similar pattern for `FunctionMetricExtInputs`/`ModuleMetricExtInputs`
+
+#### Phase 17: CFG/DFG Context Consolidation 🟢
+**Priority: Lower | Savings: ~20 lines**
+- [ ] Create `analytics/cfg_dfg/types.py` with `BaseFnContext`
+- [ ] Refactor `CfgFnContext` to inherit from `BaseFnContext`
+- [ ] Refactor `DfgFnContext` to inherit from `BaseFnContext`
+
+#### Phase 18: Symbol Metrics Orchestrator 🟢
+**Priority: Lower | Savings: ~50 lines**
 - [ ] Design undirected metrics orchestrator abstraction
 - [ ] Create `analytics/graphs/symbol_orchestrator.py`
 - [ ] Refactor `compute_symbol_graph_metrics_modules` to use orchestrator
@@ -514,7 +904,7 @@ Both follow identical patterns:
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `src/codeintel/analytics/graphs/constants.py` | Shared graph metrics constants | 24 |
+| `src/codeintel/analytics/graphs/constants.py` | Shared graph metrics constants | 46 |
 | `src/codeintel/analytics/utilities/lazy_module.py` | Reusable lazy loading utilities | 118 |
 | `src/codeintel/analytics/graphs/orchestrator.py` | Generic extended metrics orchestrator | ~220 |
 
@@ -552,11 +942,31 @@ uv run vulture src/codeintel/analytics --min-confidence 90
 | Re-export packages | - | 1 (ports/) ✅ |
 | Orphaned modules | - | 0 (plugin_catalog is used) |
 | Empty test dirs | - | 1 (tests/analytics/ports/) ✅ |
-| Duplicate constants | - | 1 set consolidated ✅, 1 set remaining |
+| Duplicate constants | - | 2 sets consolidated ✅ |
 | Lazy loading patterns | - | 3 → unified ✅ |
 | Orchestration patterns | - | 2 → unified ✅ |
-| Persistence patterns | - | 2 different patterns (standardization pending) |
+| Persistence patterns | - | Standardized via `bulk_insert()` ✅ (1 remaining) |
 | **New utilities created** | - | 3 (constants.py, lazy_module.py, orchestrator.py) |
+| **Duplicate helpers** | - | 7 identified → pending consolidation |
+| **Type conversion** | - | 6 helpers → pending unification |
+| **Profile writers** | - | 3 identical patterns → pending factory |
+| **CFG/DFG helpers** | - | 4 duplicates → pending shared module |
+
+---
+
+## Summary of Identified Consolidation Opportunities
+
+| Phase | Priority | Description | Savings |
+|-------|----------|-------------|---------|
+| 11 | 🟡 Medium | CFG/DFG shared helpers module | ~68 lines |
+| 12 | 🔴 Medium | `_to_records` function consolidation | ~18 lines |
+| 13 | 🟡 Medium | Type conversion helper unification | ~15 lines |
+| 14 | 🟡 Medium | Profile writer factory pattern | ~40 lines |
+| 15 | 🟠 High | Remaining persistence migration | Consistency |
+| 16 | 🟢 Lower | Row builder dataclass unification | ~22 lines |
+| 17 | 🟢 Lower | CFG/DFG context consolidation | ~20 lines |
+| 18 | 🟢 Lower | Symbol metrics orchestrator | ~50 lines |
+| **Total** | | | **~350+ lines** |
 
 ---
 

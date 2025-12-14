@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.graphs.catalog import (
-    FunctionCatalogService,
+    CatalogService,
 )
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 
@@ -68,7 +68,7 @@ def load_function_asts(
         Mapping of GOID to resolved AST details and a set of GOIDs that could
         not be resolved due to parse failures or missing spans.
     """
-    provider = request.catalog_provider or FunctionCatalogService.from_db(
+    provider = request.catalog_provider or CatalogService.from_db(
         gateway, repo=request.repo, commit=request.commit
     )
     catalog = provider.catalog()

@@ -19,7 +19,7 @@ from codeintel.config.datasets import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.catalog import (
-    FunctionCatalogService,
+    CatalogService,
 )
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
@@ -158,7 +158,7 @@ def _functions_by_path(
     dict[str, list[FunctionRow]]
         Functions keyed by relative file path.
     """
-    provider = catalog_provider or FunctionCatalogService.from_db(
+    provider = catalog_provider or CatalogService.from_db(
         gateway, repo=snapshot.repo, commit=snapshot.commit
     )
     catalog = provider.catalog()

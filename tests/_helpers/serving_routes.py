@@ -155,6 +155,7 @@ def service_app_factory_with_routes(
         ),
         backend_factory=backend_factory,
         auto_pipeline=opts.auto_pipeline,
+        include_routes=False,
     )
 
     for builder in route_builders:

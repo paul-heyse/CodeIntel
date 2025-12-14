@@ -700,23 +700,6 @@ class ScipIndexResult:
         """
         return ScipIndexResult(documents=())
 
-    def definitions_by_location(self) -> dict[tuple[str, int], str]:
-        """
-        Return a mapping of (rel_path, start_line) to symbol for definitions.
-
-        Returns
-        -------
-        dict[tuple[str, int], str]
-            Mapping for symbol lookup by file and line.
-        """
-        result: dict[tuple[str, int], str] = {}
-        for doc in self.documents:
-            for occ in doc.occurrences:
-                if occ.is_definition:
-                    start_line = occ.range_[0] + 1
-                    result[doc.relative_path, start_line] = occ.symbol
-        return result
-
 
 ParsedToolResult = DiagnosticReport | CoverageReport | TestReport | ScipIndexResult
 

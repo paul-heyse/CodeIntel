@@ -12,15 +12,13 @@ import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
     from concurrent.futures import Executor
 
 log = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 DEFAULT_MAX_WORKERS = 16
 DEFAULT_MIN_WORKERS = 2

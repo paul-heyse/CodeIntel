@@ -25,10 +25,7 @@ from codeintel.ingestion.infrastructure.paths import safe_relpath
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
-    from codeintel.ingestion.engine.infrastructure import (
-        ToolRunner,
-        ToolRunResult,
-    )
+    from codeintel.ingestion.engine.infrastructure import ToolRunner
 
 log = logging.getLogger(__name__)
 
@@ -157,50 +154,3 @@ class PyrightPlugin(DiagnosticToolPlugin):
             error=None,
             parsed=parsed,
         )
-
-    @staticmethod
-    def parse_diagnostics(result: ToolRunResult) -> dict[str, int]:
-        """
-        Parse pyright JSON from stdout into path -> error_count mapping.
-
-        Deprecated: Use the parsed field on ToolPluginResult instead.
-
-        Parameters
-        ----------
-        result
-            ToolRunResult containing pyright stdout JSON.
-
-        Returns
-        -------
-        dict[str, int]
-            Mapping from file path to error count.
-
-        Raises
-        ------
-        ToolExecutionError
-            Raised when stdout is not valid JSON.
-        """
-        if not result.stdout.strip():
-            return {}
-
-        try:
-            payload = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise ToolExecutionError(result) from exc
-
-        summary = payload.get("summary", {})
-        if not isinstance(summary, dict):
-            log.warning("Unexpected pyright JSON structure; missing 'summary'")
-            return {}
-
-        files_field = summary.get("files", {})
-        if not isinstance(files_field, dict):
-            return {}
-
-        errors: dict[str, int] = {}
-        for path, info in files_field.items():
-            if not isinstance(info, dict):
-                continue
-            count = int(info.get("errorCount", 0))
-            errors[str(path)] = count
-        return errors

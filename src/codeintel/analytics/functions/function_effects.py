@@ -25,7 +25,7 @@ from codeintel.analytics.runtime import (
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
 from codeintel.graphs.catalog import (
-    FunctionCatalogService,
+    CatalogService,
 )
 from codeintel.storage.ibis_types import and_predicates
 
@@ -232,7 +232,7 @@ def compute_function_effects(
     """
     opts = options or FunctionEffectsOptions()
     input_opts = inputs or FunctionEffectsInputs()
-    catalog = input_opts.catalog_provider or FunctionCatalogService.from_db(
+    catalog = input_opts.catalog_provider or CatalogService.from_db(
         gateway, repo=snapshot.repo, commit=snapshot.commit
     )
     active_runtime = resolve_graph_runtime(

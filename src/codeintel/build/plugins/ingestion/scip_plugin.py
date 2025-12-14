@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.errors import ToolNotAvailableError
 from codeintel.build.plugin import MetadataPlugin
-from codeintel.build.plugins._helpers import compute_row_counts
+from codeintel.build.plugins._helpers import compute_row_counts, filter_paths
 from codeintel.build.plugins.ingestion.helpers import get_module_paths, paths_to_modules
 from codeintel.build.plugins.ingestion.scip_options import ScipIngestOptions
 from codeintel.build.result import TargetResult
@@ -45,20 +45,6 @@ SCIP_INGEST_METADATA = CorePluginMetadata(
         "requires_tools": ["scip-python"],
     },
 )
-
-
-def _filter_paths(paths: list[str], scope_paths: list[str] | None) -> list[str]:
-    """Filter module paths by scope.
-
-    Returns
-    -------
-    list[str]
-        Filtered paths respecting scope prefixes.
-    """
-    if not scope_paths:
-        return paths
-    prefixes = tuple(scope_paths)
-    return [path for path in paths if path.startswith(prefixes)]
 
 
 class ScipIngestPlugin(MetadataPlugin):
@@ -105,7 +91,7 @@ class ScipIngestPlugin(MetadataPlugin):
             dynamic_overrides={"scip_output_dir": ctx.scip_dir},
         )
 
-        paths = _filter_paths(get_module_paths(ctx), opts.scope_paths)
+        paths = filter_paths(get_module_paths(ctx), scope_paths=opts.scope_paths)
         modules = paths_to_modules(paths, ctx.repo_root)
 
         storage = DuckDBStorageAdapter(ctx.gateway)

@@ -21,17 +21,16 @@ from __future__ import annotations
 import ast
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
-from codeintel.build.plugins._helpers import get_source_root
+from codeintel.build.plugins._helpers import filter_paths, get_source_root
 from codeintel.build.plugins.graphs.builders.cfg_dfg_options import CfgDfgOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.catalog import load_function_index
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
-from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
@@ -58,79 +57,6 @@ CFG_DFG_METADATA = CorePluginMetadata(
     options_model=CfgDfgOptions,
     extra={"graph_kinds": ("cfg", "dfg")},
 )
-
-
-def _is_test_path(path: str) -> bool:
-    """Return True when the path looks like a test file.
-
-    Returns
-    -------
-    bool
-        True when the path is considered a test path.
-    """
-    lowered = path.lower()
-    return (
-        "tests/" in lowered
-        or lowered.endswith("_test.py")
-        or "/test_" in lowered
-        or lowered.startswith("test_")
-    )
-
-
-def _filter_paths(paths: list[str], options: CfgDfgOptions) -> list[str]:
-    """Filter function paths by scope and test inclusion.
-
-    Returns
-    -------
-    list[str]
-        Filtered list of relative paths.
-    """
-    filtered = list(paths)
-
-    if options.scope_paths:
-        prefixes = tuple(options.scope_paths)
-        filtered = [path for path in filtered if path.startswith(prefixes)]
-
-    if not options.include_test_files:
-        filtered = [path for path in filtered if not _is_test_path(path)]
-
-    return filtered
-
-
-def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | None:
-    """Retrieve source root from core.snapshots.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    Path | None
-        Absolute path to source root, or None if not found.
-    """
-    try:
-        snapshots = gateway.ibis.table("core.snapshots")
-        expr = (
-            snapshots.filter(
-                cast("Any", snapshots.repo == repo) & cast("Any", snapshots.commit == commit)
-            )
-            .select(snapshots.source_root)
-            .limit(1)
-        )
-        df = expr.execute()
-        if not getattr(df, "empty", True):
-            value = df.iloc[0][0]
-            if value:
-                return Path(str(value))
-    except DuckDBError as exc:
-        log.debug("cfg_dfg: Could not get source root: %s", exc)
-    return None
 
 
 def _parse_file_functions(
@@ -399,7 +325,11 @@ class CfgDfgPlugin(MetadataPlugin):
 
         try:
             function_index = load_function_index(gateway, repo=repo, commit=commit)
-            paths = _filter_paths(function_index.paths(), opts)
+            paths = filter_paths(
+                function_index.paths(),
+                scope_paths=opts.scope_paths,
+                include_tests=opts.include_test_files,
+            )
 
             if not paths:
                 log.info("cfg_dfg: No functions found, skipping")
@@ -407,9 +337,7 @@ class CfgDfgPlugin(MetadataPlugin):
                     row_counts={"graph.cfg_blocks": 0, "graph.cfg_edges": 0, "graph.dfg_edges": 0}
                 )
 
-            source_root = (
-                snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
-            )
+            source_root = snapshot.repo_root or get_source_root(gateway, repo, commit)
             blocks, cfg_edges, dfg_edges = _process_all_files(paths, function_index, source_root)
 
             log.info(

@@ -356,7 +356,18 @@ __all__ = [
 
 
 def _to_python_type(value: object) -> object:
-    """Convert numpy types to Python native types for DuckDB compatibility."""
+    """Convert numpy types to Python native types for DuckDB compatibility.
+
+    Parameters
+    ----------
+    value
+        Value to convert, possibly a numpy scalar.
+
+    Returns
+    -------
+    object
+        Python native type equivalent.
+    """
     if value is None:
         return None
     if hasattr(value, "item"):

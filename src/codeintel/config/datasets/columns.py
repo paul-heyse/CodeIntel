@@ -85,7 +85,7 @@ FILE_STATE_DELETE: Final[str] = "DELETE FROM core.file_state WHERE repo = ? AND 
 TAGS_INDEX_DELETE: Final[str] = "DELETE FROM graph.tags_index WHERE repo = ? AND commit = ?"
 TEST_CATALOG_UPDATE_GOIDS: Final[str] = (
     "UPDATE analytics.test_catalog "
-    "SET function_goid_h128 = ?, urn = ? "
+    "SET test_goid_h128 = ?, urn = ? "
     "WHERE test_id = ? AND rel_path = ? AND repo = ? AND commit = ?"
 )
 

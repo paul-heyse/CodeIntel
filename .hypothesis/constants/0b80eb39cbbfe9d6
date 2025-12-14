@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/adapters/build_tool_adapter.py
+# hypothesis_version: 6.148.7
+
+['BuildToolAdapter', 'SCIP indexing failed', 'pyright']

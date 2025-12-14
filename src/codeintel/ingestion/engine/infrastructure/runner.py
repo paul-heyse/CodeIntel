@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import json
 import logging
 import shutil
 import time
@@ -28,7 +27,6 @@ class ToolName(StrEnum):
     PYRIGHT = "pyright"
     PYREFLY = "pyrefly"
     COVERAGE = "coverage"
-    GIT = "git"
     RUFF = "ruff"
     PYTEST = "pytest"
     SCIP_PYTHON = "scip-python"
@@ -253,17 +251,3 @@ class ToolRunner:
                     timeout_s=timeout_s,
                 )
             )
-
-    @staticmethod
-    def load_json(path: Path) -> dict[str, object] | None:
-        """
-        Load JSON from a path if it exists and is non-empty.
-
-        Returns
-        -------
-        dict[str, object] | None
-            Parsed JSON payload as a mapping, or None when missing/empty.
-        """
-        if not path.is_file() or path.stat().st_size == 0:
-            return None
-        return json.loads(path.read_text(encoding="utf8"))

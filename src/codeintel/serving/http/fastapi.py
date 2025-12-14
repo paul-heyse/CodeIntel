@@ -345,6 +345,7 @@ def create_app(
     backend_factory: Callable[..., BackendResource] = build_backend_resource,
     gateway: StorageGateway | None = None,
     auto_pipeline: bool | None = None,
+    include_routes: bool = True,
 ) -> FastAPI:
     """Build the FastAPI application with configured lifecycle and routes.
 
@@ -359,6 +360,9 @@ def create_app(
     auto_pipeline
         When True, attach auto-pipeline dependencies to routes so that
         prerequisites are automatically run before operations execute.
+    include_routes
+        When True (default), register all API routes automatically. Set to False
+        when building test apps that add routes selectively via include_router.
 
     Returns
     -------
@@ -403,7 +407,8 @@ def create_app(
     _install_request_context_middleware(app)
     install_exception_handlers(app)
     install_logging_middleware(app)
-    register_routes(app, options)
+    if include_routes:
+        register_routes(app, options)
     return app
 
 

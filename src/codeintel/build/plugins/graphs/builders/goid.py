@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
+from codeintel.build.plugins._helpers import filter_paths, get_source_root
 from codeintel.build.plugins.graphs.builders.goid_options import GoidBuilderOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import goid as goid_compute
@@ -65,82 +66,6 @@ class GoidExtractionContext:
     options: GoidBuilderOptions
     module_name: str
     normalized_path: str
-
-
-def _is_test_path(path: str) -> bool:
-    """Return True when the path looks like a test module.
-
-    Returns
-    -------
-    bool
-        True when the path is considered a test file.
-    """
-    lowered = path.lower()
-    return (
-        "tests/" in lowered
-        or lowered.endswith("_test.py")
-        or "/test_" in lowered
-        or lowered.startswith("test_")
-    )
-
-
-def _filter_tracked_files(
-    paths: list[str],
-    options: GoidBuilderOptions,
-) -> list[str]:
-    """Apply scope and test filtering to tracked files.
-
-    Returns
-    -------
-    list[str]
-        Filtered list of relative file paths.
-    """
-    filtered = list(paths)
-
-    if options.scope_paths:
-        prefixes = tuple(options.scope_paths)
-        filtered = [path for path in filtered if path.startswith(prefixes)]
-
-    if not options.include_tests:
-        filtered = [path for path in filtered if not _is_test_path(path)]
-
-    return filtered
-
-
-def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | None:
-    """Retrieve source root from core.snapshots.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    Path | None
-        Absolute path to source root, or None if not found.
-    """
-    try:
-        snapshots = gateway.ibis.table("core.snapshots")
-        expr = (
-            snapshots.filter(
-                cast("Any", snapshots.repo == repo) & cast("Any", snapshots.commit == commit)
-            )
-            .select(snapshots.source_root)
-            .limit(1)
-        )
-        df = expr.execute()
-        if not getattr(df, "empty", True):
-            value = df.iloc[0][0]
-            if value:
-                return Path(str(value))
-    except DuckDBError as exc:
-        log.debug("goid_builder: Could not get source root: %s", exc)
-    return None
 
 
 def _get_tracked_files(gateway: StorageGateway, repo: str, commit: str) -> list[str]:
@@ -441,15 +366,12 @@ class GoidBuilderPlugin(MetadataPlugin):
         commit = ctx.snapshot.commit
 
         try:
-            source_root = ctx.snapshot.repo_root
-            if not source_root:
-                source_root = _get_source_root(ctx.gateway, repo, commit)
-            if not source_root:
-                source_root = Path.cwd()
-                log.warning("goid_builder: No source root found, using current directory")
+            source_root = ctx.snapshot.repo_root or get_source_root(ctx.gateway, repo, commit)
 
-            tracked_files = _filter_tracked_files(
-                _get_tracked_files(ctx.gateway, repo, commit), opts
+            tracked_files = filter_paths(
+                _get_tracked_files(ctx.gateway, repo, commit),
+                scope_paths=opts.scope_paths,
+                include_tests=opts.include_tests,
             )
 
             if not tracked_files:

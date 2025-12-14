@@ -1,13 +1,13 @@
 # Graphs Package Cleanup Plan
 
 > **Generated:** 2025-12-13  
-> **Updated:** 2025-12-13 (Phases 1-6 completed)  
+> **Updated:** 2025-12-13 (Phases 1-7a completed, test fixtures fixed)  
 > **Package:** `codeintel.graphs`  
-> **Status:** Phases 1-6 Complete, Phase 7+ Ready for Review
+> **Status:** Phases 1-7a Complete, Phase 7b-9 Pending
 
 ## Executive Summary
 
-The `graphs` package has undergone extensive cleanup with Phases 1-6 now complete:
+The `graphs` package has undergone extensive cleanup with Phases 1-7a now complete:
 
 **Completed:**
 - ~~2 empty directories deleted~~ ✅
@@ -18,11 +18,15 @@ The `graphs` package has undergone extensive cleanup with Phases 1-6 now complet
 - ~~2 service classes merged into CatalogService~~ ✅
 - ~~3 port protocols marked deprecated~~ ✅
 - ~~compute/__init__.py docstring updated~~ ✅
+- ~~Fixed pyright error in resolution.py (FunctionSpanData → FunctionSpan)~~ ✅
+- ~~Migrated 5 analytics files to use CatalogService~~ ✅
+- ~~Fixed missing `graph_executor_env` fixture and `GraphTestEnv` type~~ ✅
 
-**Remaining Opportunities (Phase 7+):**
-- Complete consumer migration to CatalogService
-- Remove deprecation shims after migration period
-- Loading function consolidation
+**Remaining Opportunities (Phase 7b+):**
+- Migrate build plugins from load_function_index to load_function_catalog
+- Migrate test files to use CatalogService
+- Remove deprecation shims after migration period (v6.0.0)
+- Consolidate duplicate normalize_decimal functions
 - Cross-package port unification (analytics/ingestion)
 - Test helper modernization
 
@@ -96,6 +100,28 @@ The `graphs` package has undergone extensive cleanup with Phases 1-6 now complet
 - Updated `compute/__init__.py` docstring to reflect current structure
 - Added subpackage documentation for `callgraph/` and `metrics/`
 
+### Phase 7a-ext: Test Fixture Recovery ✅
+
+**Completed 2025-12-13**
+
+During Phase 2 of the Legacy Decommissioning Plan (Hamilton integration), the `tests/_helpers/fakes/graph_contexts.py` file was deleted but tests still referenced the `graph_executor_env` fixture. This fix:
+
+- Created `tests/_helpers/fakes/graph_contexts.py` with `GraphTestEnv` dataclass
+- Added `graph_executor_env` fixture to `tests/graphs/conftest.py`
+- Fixed 26 graph tests that were failing due to missing fixture
+
+### Phase 7a-ext2: Legacy API Migration & Bug Fixes ✅
+
+**Completed 2025-12-13**
+
+Fixed `test_span_consistency_integration.py` which was using deprecated `ConfigBuilder.analytics.test_coverage()` API:
+
+- Updated test to use `TestCoverageOptions` directly with `compute_test_coverage_edges()`
+- Added `TestCoverageOptions` to `codeintel.analytics.testing.__init__.py` exports
+- Fixed schema mismatch bug in `TEST_CATALOG_UPDATE_GOIDS` SQL statement:
+  - Changed `function_goid_h128` → `test_goid_h128` to match `test_catalog` schema
+- All 719 graph tests now pass
+
 ---
 
 ## 2. Current Architecture
@@ -150,19 +176,20 @@ graphs/
 
 ## 3. Consumer Migration Status
 
-### Files Still Using Deprecated Types
+### Completed Migrations ✅
 
-Discovered during implementation - these files import deprecated types and should migrate:
+The following files have been migrated from `FunctionCatalogService` to `CatalogService`:
 
-#### High Priority (Core Functionality)
+| File | Status |
+|------|--------|
+| `analytics/resources/catalog.py` | ✅ Migrated |
+| `analytics/testing/coverage/edges.py` | ✅ Migrated |
+| `analytics/profiles/__init__.py` | ✅ Migrated |
+| `analytics/functions/function_effects.py` | ✅ Migrated |
+| `analytics/parsing/ast_cache.py` | ✅ Migrated |
+| `graphs/compute/callgraph/resolution.py` | ✅ Fixed (FunctionSpanData → FunctionSpan) |
 
-| File | Deprecated Import | Migration |
-|------|-------------------|-----------|
-| `analytics/resources/catalog.py` | `FunctionCatalogService` | Use `CatalogService` |
-| `analytics/testing/coverage/edges.py` | `FunctionCatalogService` | Use `CatalogService` |
-| `analytics/profiles/__init__.py` | `FunctionCatalogService` | Use `CatalogService` |
-| `analytics/functions/function_effects.py` | `FunctionCatalogService`, `FunctionMeta` | Use `CatalogService`, `FunctionSpan` |
-| `analytics/parsing/ast_cache.py` | `FunctionCatalogService` | Use `CatalogService` |
+### Remaining Migrations
 
 #### Medium Priority (Build Plugins)
 
@@ -170,6 +197,8 @@ Discovered during implementation - these files import deprecated types and shoul
 |------|-------------------|-----------|
 | `build/plugins/graphs/builders/callgraph.py` | `load_function_index` | Use `load_function_catalog` |
 | `build/plugins/graphs/builders/cfg_dfg.py` | `load_function_index` | Use `load_function_catalog` |
+
+**Note:** The build plugins use `load_function_index` which returns `FunctionSpanIndex`. This is acceptable as-is since the index is needed for span lookups. Consider consolidating after `load_function_catalog` can efficiently serve both use cases.
 
 #### Lower Priority (Tests)
 
@@ -185,35 +214,66 @@ Discovered during implementation - these files import deprecated types and shoul
 
 ## 4. Cross-Package Consolidation
 
-### Observation: Redundant Port Re-Exports
+### 4.1 Redundant Port Re-Exports
 
 During implementation, I discovered that multiple packages maintain their own port modules that simply re-export from `graphs.ports`:
 
 ```
-analytics/ports/__init__.py  → re-exports from graphs.ports
-ingestion/ports/storage.py   → duplicates StoragePort pattern
+analytics/ports/__init__.py  → re-exports from graphs.ports (CORRECT pattern)
+ingestion/ports/storage.py   → has DIFFERENT BatchResult/QueryResult definitions
 ```
 
-### Recommendation
+**Note:** The `analytics.ports` pattern is correct and should be preserved. The `ingestion.ports` definitions are different and serve a different purpose (ingestion-specific batch operations).
 
-Consider a single shared ports package:
+### 4.2 Duplicate normalize_decimal Functions
+
+**New Finding (2025-12-13):** Two nearly identical functions exist for converting DuckDB DECIMAL values:
+
+| Location | Function | Purpose |
+|----------|----------|---------|
+| `graphs/engine/views.py` | `normalize_decimal()` | Graph loading from DuckDB |
+| `analytics/compute/graphs/conversions.py` | `normalize_decimal_id()` | Analytics graph computations |
+
+**Code comparison:**
+```python
+# Both functions are semantically identical:
+# - Accept object value
+# - Handle None, int, Decimal, bytes, str
+# - Return int | None
+```
+
+**Recommendation:** Consolidate into a shared utility module:
 
 ```python
-# codeintel/common/ports/__init__.py (or codeintel/core/ports)
+# Option A: codeintel/storage/helpers/decimal.py (storage layer)
+# Option B: codeintel/core/utils/decimal.py (core utilities)
+
+def normalize_decimal(value: object) -> int | None:
+    """Normalize DuckDB DECIMAL(38,0) values to Python ints."""
+    ...
+```
+
+Then have both `graphs/engine/views.py` and `analytics/compute/graphs/conversions.py` import from there.
+
+**Effort:** Low (30 minutes)
+**Benefit:** Single source of truth, reduced maintenance
+
+### 4.3 Port Unification Recommendation
+
+Consider a single shared ports package for common data types only:
+
+```python
+# codeintel/core/ports/__init__.py (or similar)
 from codeintel.graphs.ports import (
-    BatchResult,
-    CatalogPort,
     FunctionSpan,
     GraphData,
-    QueryResult,
-    StoragePort,
+    ParsedFunction,
+    ParsedModule,
 )
 ```
 
-Then have `analytics.ports` and `ingestion.ports` simply re-export from there.
-
 **Benefits:**
-- Single source of truth for port definitions
+- Single source of truth for shared data classes
 - Clearer import paths
 - Reduced maintenance burden
 
@@ -340,18 +400,44 @@ def seed_goids_from_catalog(ctx: CatalogCtxLike, catalog: CatalogService) -> Non
 - [x] Update `ports/__init__.py` with deprecation notes
 
 #### Phase 6: Polish ✅
+
+**Completed 2025-12-13**
+
 - [x] Update `compute/__init__.py` docstring
+
+#### Phase 7a: Core Consumer Migration ✅
+
+**Completed 2025-12-13**
+
+- [x] Fix pyright error in `graphs/compute/callgraph/resolution.py` (FunctionSpanData → FunctionSpan)
+- [x] Migrate `analytics/resources/catalog.py` to use `CatalogService`
+- [x] Migrate `analytics/testing/coverage/edges.py`
+- [x] Migrate `analytics/profiles/__init__.py`
+- [x] Migrate `analytics/functions/function_effects.py`
+- [x] Migrate `analytics/parsing/ast_cache.py`
+- [x] Run pyright and ruff (all checks pass)
+- [x] Fix missing `graph_executor_env` fixture (create `tests/_helpers/fakes/graph_contexts.py`)
+- [x] Add `GraphTestEnv` dataclass for graph integration tests
+- [x] Update `tests/graphs/conftest.py` with new fixture
+- [x] Update `test_span_consistency_integration.py` to use new API
+- [x] Export `TestCoverageOptions` from `analytics.testing`
+- [x] Fix `TEST_CATALOG_UPDATE_GOIDS` schema mismatch bug
 
 ### Remaining Phases
 
-#### Phase 7: Consumer Migration (Recommended Next)
-- [ ] Migrate `analytics/resources/catalog.py` to use `CatalogService`
-- [ ] Migrate `analytics/testing/coverage/edges.py`
-- [ ] Migrate `analytics/profiles/__init__.py`
-- [ ] Migrate `analytics/functions/function_effects.py`
-- [ ] Migrate `analytics/parsing/ast_cache.py`
-- [ ] Migrate `build/plugins/graphs/builders/*.py`
-- [ ] Migrate test files (6+ files)
+#### Phase 7b: Build Plugin Migration (Optional)
+- [ ] Assess whether `load_function_index` should migrate to `load_function_catalog`
+- [ ] If yes, migrate `build/plugins/graphs/builders/callgraph.py`
+- [ ] If yes, migrate `build/plugins/graphs/builders/cfg_dfg.py`
+
+**Note:** Build plugins use `load_function_index` for span lookups. This is acceptable since `FunctionSpanIndex` is the appropriate type for those use cases.
+
+#### Phase 7c: Test Migration
+- [ ] Migrate `tests/analytics/plugins/test_*.py` (6 files)
+- [ ] Migrate `tests/analytics/resources/test_provider_factory.py`
+- [ ] Migrate `tests/graphs/conftest.py`
+- [ ] Migrate `tests/_helpers/rows.py`
+- [ ] Migrate `tests/_helpers/fakes/function_catalogs.py`
 - [ ] Run full test suite
 
 #### Phase 8: Deprecation Removal (After v6.0.0)
@@ -363,9 +449,9 @@ def seed_goids_from_catalog(ctx: CatalogCtxLike, catalog: CatalogService) -> Non
 - [ ] Update all `__all__` exports
 
 #### Phase 9: Cross-Package Consolidation (Optional)
-- [ ] Assess `analytics/ports` → `graphs/ports` unification
+- [ ] Consolidate duplicate `normalize_decimal` functions (see section 4.2)
+- [ ] Assess shared `core/ports` package for common data types
 - [ ] Assess `ingestion/ports` patterns
-- [ ] Consider shared `core/ports` package
 
 ---
 
@@ -387,9 +473,20 @@ uv run pytest -q
 # Verify no dead code introduced
 uv run vulture src/codeintel/graphs --min-confidence 90
 
-# Check for remaining deprecated usage
+# Check for remaining deprecated usage in src/
 grep -r "FunctionCatalogService\|FunctionMeta\|FunctionSpanData" src/ --include="*.py" | grep -v "# Deprecated"
 ```
+
+### Verification Status (2025-12-13)
+
+After Phase 7a completion:
+- ✅ `uv run pyright --warnings --pythonversion=3.13 src/codeintel/graphs src/codeintel/analytics` - 0 errors
+- ✅ `uv run ruff check --fix src/codeintel/graphs src/codeintel/analytics` - All checks passed
+
+Remaining deprecated usage in `src/`:
+- `analytics/ports/__init__.py` - Re-export layer (intentional)
+- `analytics/functions/metrics.py` - Has its own `FunctionMeta` class (different purpose)
+- `graphs/catalog.py`, `graphs/ports/catalog.py` - Deprecation wrappers (intentional)
 
 ---
 
