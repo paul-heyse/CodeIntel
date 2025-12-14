@@ -8,6 +8,12 @@ Architecture
 - BasePluginResult: Common fields shared across all domains
 - PluginResult: Full-featured result for graphs/analytics
 - IngestPluginResult (in ingestion): Extends base with ingestion-specific fields
+
+Note
+----
+For the unified result protocol, see `codeintel.core.results`. The plugin result
+types in this module are designed specifically for plugin execution and include
+additional fields for caching and plugin-specific metadata.
 """
 
 from __future__ import annotations

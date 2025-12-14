@@ -33,14 +33,14 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.core.execution.context import RunContext, RunKind, TriggerKind
-from codeintel.core.execution.errors import (
+from codeintel.core.errors.execution import (
     PLUGIN_CATCHABLE_ERRORS,
     PluginFatalError,
     PluginSkippedError,
     PluginSkipRequestError,
     PluginTimeoutError,
 )
+from codeintel.core.execution.context import RunContext, RunKind, TriggerKind
 from codeintel.core.execution.ids import (
     RUN_PREFIX_ANALYTICS,
     RUN_PREFIX_GRAPHS,

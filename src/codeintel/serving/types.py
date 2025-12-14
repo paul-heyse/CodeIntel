@@ -48,8 +48,28 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from codeintel.serving import domain_models as dm
     from codeintel.serving.mcp.models import (
-        DatasetSpecDescriptor,
+        CallGraphNeighborsResponse,
+        DatasetDescriptor,
+        DatasetRowsResponse,
+        DatasetSchemaResponse,
+        FileHintsResponse,
+        FileProfileResponse,
+        FileSummaryResponse,
+        FunctionArchitectureResponse,
+        FunctionProfileResponse,
+        FunctionSummaryResponse,
+        GraphNeighborhoodResponse,
         GraphScopePayload,
+        HighRiskFunctionsResponse,
+        ImportBoundaryResponse,
+        ModuleArchitectureResponse,
+        ModuleProfileResponse,
+        SubsystemCoverageResponse,
+        SubsystemModulesResponse,
+        SubsystemProfileResponse,
+        SubsystemSearchResponse,
+        SubsystemSummaryResponse,
+        TestsForFunctionResponse,
     )
     from codeintel.serving.services.query_service import QueryService
 
@@ -439,6 +459,201 @@ class DatasetQueryable(Protocol):
 
 
 # =============================================================================
+# Backend Queryable Protocols (transport/response models)
+# =============================================================================
+
+
+class BackendFunctionQueryable(Protocol):
+    """Backend protocol for function queries returning transport responses."""
+
+    def get_function_summary(
+        self,
+        *,
+        urn: str | None = None,
+        goid_h128: int | None = None,
+        rel_path: str | None = None,
+        qualname: str | None = None,
+        scope: object | None = None,
+    ) -> FunctionSummaryResponse:
+        """Return a function summary for the given identifiers."""
+        ...
+
+    def list_high_risk_functions(
+        self,
+        *,
+        min_risk: float = 0.7,
+        limit: int | None = None,
+        tested_only: bool = False,
+        scope: object | None = None,
+    ) -> HighRiskFunctionsResponse:
+        """List high-risk functions with optional tested-only filtering."""
+        ...
+
+    def get_callgraph_neighbors(
+        self,
+        *,
+        goid_h128: int,
+        direction: str = "both",
+        limit: int | None = None,
+        scope: object | None = None,
+    ) -> CallGraphNeighborsResponse:
+        """Return incoming and outgoing call graph neighbors."""
+        ...
+
+    def get_tests_for_function(
+        self,
+        *,
+        goid_h128: int | None = None,
+        urn: str | None = None,
+        limit: int | None = None,
+        scope: object | None = None,
+    ) -> TestsForFunctionResponse:
+        """Return tests that exercise a function."""
+        ...
+
+    def get_callgraph_neighborhood(
+        self,
+        *,
+        goid_h128: int,
+        radius: int = 1,
+        max_nodes: int | None = None,
+    ) -> GraphNeighborhoodResponse:
+        """Return a bounded ego neighborhood in the call graph."""
+        ...
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        """Return import edges crossing a subsystem boundary."""
+        ...
+
+    def get_file_summary(
+        self,
+        *,
+        rel_path: str,
+        scope: object | None = None,
+    ) -> FileSummaryResponse:
+        """Return a file summary with nested function rows."""
+        ...
+
+
+class BackendProfileQueryable(Protocol):
+    """Backend protocol for profile and architecture queries."""
+
+    def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
+        """Return a denormalized function profile."""
+        ...
+
+    def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
+        """Return a denormalized file profile."""
+        ...
+
+    def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
+        """Return a profile for a module."""
+        ...
+
+    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
+        """Return architecture metrics for a function."""
+        ...
+
+    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
+        """Return architecture metrics for a module."""
+        ...
+
+    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
+        """Return IDE hints for a file."""
+        ...
+
+
+class BackendSubsystemQueryable(Protocol):
+    """Backend protocol for subsystem queries returning transport responses."""
+
+    def list_subsystems(
+        self,
+        *,
+        limit: int | None = None,
+        role: str | None = None,
+        q: str | None = None,
+    ) -> SubsystemSummaryResponse:
+        """List inferred subsystems with optional filters."""
+        ...
+
+    def get_module_subsystems(self, *, module: str) -> SubsystemModulesResponse:
+        """Return subsystem memberships for a module."""
+        ...
+
+    def get_subsystem_modules(
+        self,
+        *,
+        subsystem_id: str,
+        module_limit: int | None = None,
+    ) -> SubsystemModulesResponse:
+        """Return subsystem detail and member modules."""
+        ...
+
+    def search_subsystems(
+        self,
+        *,
+        limit: int | None = None,
+        role: str | None = None,
+        q: str | None = None,
+    ) -> SubsystemSearchResponse:
+        """Search subsystems by role or label."""
+        ...
+
+    def summarize_subsystem(
+        self,
+        *,
+        subsystem_id: str,
+        module_limit: int | None = None,
+    ) -> SubsystemModulesResponse:
+        """Summarize a subsystem with optional module truncation."""
+        ...
+
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        """List subsystem profiles from docs views."""
+        ...
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        """List subsystem coverage rollups from docs views."""
+        ...
+
+
+class BackendDatasetQueryable(Protocol):
+    """Backend protocol for dataset operations returning transport responses."""
+
+    def list_datasets(self) -> list[DatasetDescriptor]:
+        """List available datasets."""
+        ...
+
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        """Return canonical dataset contract entries."""
+        ...
+
+    def read_dataset_rows(
+        self,
+        *,
+        dataset_name: str,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> DatasetRowsResponse:
+        """Read rows from a dataset."""
+        ...
+
+    def dataset_schema(
+        self,
+        *,
+        dataset_name: str,
+        sample_limit: int = 5,
+    ) -> DatasetSchemaResponse:
+        """Return schema and samples for a dataset."""
+        ...
+
+
+# =============================================================================
 # Composite Protocols
 # =============================================================================
 
@@ -459,10 +674,10 @@ class QueryServiceProtocol(
 
 
 class QueryBackendProtocol(
-    FunctionQueryable,
-    ProfileQueryable,
-    SubsystemQueryable,
-    DatasetQueryable,
+    BackendFunctionQueryable,
+    BackendProfileQueryable,
+    BackendSubsystemQueryable,
+    BackendDatasetQueryable,
     RepoCommitProtocol,
     Protocol,
 ):
