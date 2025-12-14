@@ -1,4 +1,16 @@
-"""Shared error taxonomy and Problem Details helpers."""
+"""Shared error taxonomy and Problem Details helpers for serving layer.
+
+This module provides serving-specific error types with built-in request
+correlation support. For core error taxonomy, see ``codeintel.core.errors``.
+
+The serving-specific ProblemDetail includes:
+- Automatic correlation ID from RequestContext
+- ``code`` field for machine-readable error codes
+- ``extras`` field for diagnostic payload
+
+For new code, prefer using ``codeintel.core.errors`` base types and inherit
+from them when possible.
+"""
 
 from __future__ import annotations
 
@@ -7,10 +19,18 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+# Re-export core error types for convenience
+from codeintel.core.errors import (
+    CodeIntelError,
+    ErrorCategory,
+    ErrorCode,
+)
 from codeintel.serving.context import get_current_request_context
 
 if TYPE_CHECKING:
     import logging
+
+    from codeintel.core.errors import ProblemDetail as CoreProblemDetail
 
 
 def generate_correlation_id() -> str:
@@ -33,12 +53,15 @@ def generate_correlation_id() -> str:
 
 @dataclass(frozen=True)
 class ProblemDetail:
-    """
-    Canonical domain-level Problem Details representation.
+    """Serving-specific Problem Details representation.
 
     Mirrors RFC 9457/RFC 7807 plus:
     - code: short machine code ("dataset-not-found")
-    - extras: arbitrary diagnostic payload.
+    - extras: arbitrary diagnostic payload
+    - automatic correlation ID from RequestContext
+
+    For core error handling without serving-specific features, use
+    ``codeintel.core.errors.ProblemDetail``.
     """
 
     type: str = "about:blank"
@@ -50,8 +73,7 @@ class ProblemDetail:
     extras: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        """
-        Serialize to a JSON-friendly dict.
+        """Serialize to a JSON-friendly dict.
 
         Returns
         -------
@@ -72,6 +94,29 @@ class ProblemDetail:
             payload["extras"] = self.extras
         return payload
 
+    @classmethod
+    def from_core(cls, core_detail: CoreProblemDetail) -> ProblemDetail:
+        """Create from a core ProblemDetail.
+
+        Parameters
+        ----------
+        core_detail
+            Core problem detail to convert.
+
+        Returns
+        -------
+        ProblemDetail
+            Serving-specific problem detail with correlation ID.
+        """
+        return cls(
+            type=core_detail.type,
+            title=core_detail.title,
+            detail=core_detail.detail,
+            status=core_detail.status,
+            instance=core_detail.instance or generate_correlation_id(),
+            extras=core_detail.extensions,
+        )
+
 
 @dataclass(frozen=True)
 class ProblemDetails:
@@ -87,8 +132,7 @@ class ProblemDetails:
 
     @classmethod
     def from_exception(cls, exc: Exception, template: ProblemDetails) -> ProblemDetails:
-        """
-        Create details from an exception using a template.
+        """Create details from an exception using a template.
 
         Parameters
         ----------
@@ -113,8 +157,7 @@ class ProblemDetails:
         )
 
     def to_problem_detail(self) -> ProblemDetail:
-        """
-        Convert to ProblemDetail with defaults applied.
+        """Convert to ProblemDetail with defaults applied.
 
         Returns
         -------
@@ -135,8 +178,7 @@ class ProblemDetails:
 
 
 def problem(details: ProblemDetails) -> ProblemDetail:
-    """
-    Create a ProblemDetail from ProblemDetails.
+    """Create a ProblemDetail from ProblemDetails.
 
     Parameters
     ----------
@@ -185,8 +227,7 @@ class DatasetNotFoundError(ProblemError):
 
     @classmethod
     def for_name(cls, dataset_name: str) -> DatasetNotFoundError:
-        """
-        Build a dataset-not-found problem for a logical dataset name.
+        """Build a dataset-not-found problem for a logical dataset name.
 
         Returns
         -------
@@ -222,8 +263,12 @@ class BackendTimeoutError(ProblemError):
 
 __all__ = [
     "BackendTimeoutError",
+    # Core re-exports for convenience
+    "CodeIntelError",
     "DatasetNotFoundError",
     "DatasetSchemaDriftError",
+    "ErrorCategory",
+    "ErrorCode",
     "ExportError",
     "GraphFeatureDisabledError",
     "GraphScopeError",

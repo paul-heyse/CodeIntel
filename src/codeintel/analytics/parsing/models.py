@@ -1,58 +1,19 @@
-"""Shared parsing dataclasses for analytics subsystems."""
+"""Shared parsing dataclasses for analytics subsystems.
+
+Note
+----
+As of v5.0.0, SourceSpan, ParsedFunction, and ParsedModule are defined
+in codeintel.core.parsing and re-exported here for backward compatibility.
+New code should import from codeintel.core.parsing directly.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+# Re-export from core for backward compatibility
+from codeintel.core.parsing import ParsedFunction, ParsedModule, SourceSpan
 
-if TYPE_CHECKING:
-    import ast
-    from collections.abc import Mapping, Sequence
-    from pathlib import Path
-
-    from codeintel.ingestion.infrastructure.ast_utils import AstSpanIndex
-
-
-@dataclass(frozen=True)
-class SourceSpan:
-    """Source span in (path, [start_line, end_line], [start_col, end_col])."""
-
-    path: Path
-    start_line: int
-    start_col: int
-    end_line: int
-    end_col: int
-
-
-@dataclass(frozen=True)
-class ParsedFunction:
-    """
-    Language-agnostic parsed function representation consumed by analytics.
-
-    Attributes mirror the generic shape expected by span resolution and
-    validation, while keeping the AST payload flexible for language-specific
-    nodes.
-    """
-
-    path: Path
-    qualname: str
-    function_goid_h128: int | None
-    span: SourceSpan
-    ast: Any
-    docstring: str | None
-    param_annotations: Mapping[str, Any]
-    return_annotation: Any | None
-    param_any_flags: Mapping[str, bool]
-    return_is_any: bool
-
-
-@dataclass(frozen=True)
-class ParsedModule:
-    """Parsed module contents and extracted functions."""
-
-    path: Path
-    source: str
-    lines: Sequence[str]
-    module_ast: ast.AST
-    span_index: AstSpanIndex
-    functions: Sequence[ParsedFunction]
+__all__ = [
+    "ParsedFunction",
+    "ParsedModule",
+    "SourceSpan",
+]
