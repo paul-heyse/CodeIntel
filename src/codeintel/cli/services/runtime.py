@@ -11,7 +11,7 @@ Provide caching to avoid repeated resolution within a command execution.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import codeintel.cli.resolution.runtime as resolution_runtime
 from codeintel.cli.services.params import ParamService
@@ -49,6 +49,26 @@ class RuntimeService:
     >>> runtime.db_path
     PosixPath('build/db/codeintel.duckdb')
     """
+
+    SERVICE_NAME: ClassVar[str] = "runtime"
+
+    def initialize(self) -> None:
+        """Initialize the service (no-op, resolution is lazy)."""
+
+    def shutdown(self) -> None:
+        """Shut down the service by invalidating cached runtime."""
+        self.invalidate()
+
+    @property
+    def is_ready(self) -> bool:
+        """Check if service is ready.
+
+        Returns
+        -------
+        bool
+            Always True (resolution is lazy).
+        """
+        return True
 
     def __init__(
         self,

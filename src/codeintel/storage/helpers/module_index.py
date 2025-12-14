@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Final
 
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.core.paths import normalize_path
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -53,7 +53,7 @@ def load_module_map(
         query += " AND language = ?"
         params.append(language)
     rows = con.execute(query, params).fetchall()
-    module_map = {normalize_rel_path(str(path)): str(module) for path, module in rows}
+    module_map = {normalize_path(str(path)): str(module) for path, module in rows}
     if not module_map:
         (logger or LOG).warning("No modules found in core.modules for %s@%s", repo, commit)
     return module_map

@@ -12,6 +12,7 @@ Example
 >>> summary = factory.functions.get_function_summary_by_goid(goid)
 """
 
+from codeintel.core.repository import PagedResult
 from codeintel.storage.repositories.base import (
     BaseRepository,
     PaginatedRows,
@@ -47,6 +48,7 @@ __all__ = [
     "GraphRepository",
     "ModuleRepository",
     "NormalizedDataModel",
+    "PagedResult",
     "PaginatedRows",
     "RepositoryFactory",
     "RowDict",

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/errors.py
+# hypothesis_version: 6.148.7
+
+[400, 'BackendTimeoutError', 'CodeIntelError', 'DatasetNotFoundError', 'ErrorCategory', 'ErrorCode', 'ExportError', 'GraphScopeError', 'Invalid argument', 'PipelineError', 'ProblemDetail', 'ProblemDetails', 'ProblemError', 'SchemaDriftError', 'ValidationError', 'about:blank', 'code', 'dataset', 'dataset-not-found', 'detail', 'extras', 'instance', 'log_problem', 'problem', 'status', 'title', 'type']

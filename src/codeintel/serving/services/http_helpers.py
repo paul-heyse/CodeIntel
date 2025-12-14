@@ -26,7 +26,9 @@ Use::
         def _run() -> HighRiskFunctionsResponse:
             clamped = clamp_limits(self.limits, limit)
             if clamped.has_error:
-                return HighRiskFunctionsResponse(functions=[], meta=ResponseMeta(messages=clamped.messages))
+                return HighRiskFunctionsResponse(
+                    functions=[], meta=ResponseMeta(messages=clamped.messages)
+                )
             # ... HTTP call with clamped.applied_limit
 """
 

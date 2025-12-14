@@ -37,8 +37,8 @@ from codeintel.analytics.testing.profiles.types import (
 )
 from codeintel.analytics.utilities.ast import resolve_call_target
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.paths import path_to_module
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
-from codeintel.ingestion.infrastructure.paths import relpath_to_module
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
@@ -340,7 +340,7 @@ def _load_test_records(
         start_line,
         end_line,
     ) in rows:
-        module_name = str(module) if module is not None else relpath_to_module(str(rel_path))
+        module_name = str(module) if module is not None else path_to_module(str(rel_path))
         records.append(
             TestRecord(
                 test_id=str(test_id),
@@ -480,7 +480,7 @@ def _load_functions_covered(
         qualname,
         rel_path,
     ) in rows:
-        module_name = module if module is not None else relpath_to_module(str(rel_path))
+        module_name = module if module is not None else path_to_module(str(rel_path))
         test_key = str(test_id)
         entry = result.get(test_key)
         if entry is None:

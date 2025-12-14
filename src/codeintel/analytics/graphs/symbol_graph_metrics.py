@@ -54,6 +54,7 @@ _MODULE_CONFIG: UndirectedMetricsConfig[str] = UndirectedMetricsConfig(
     build_rows=build_symbol_module_rows,
 )
 
+
 def _filter_function_node(node: object, known: set[int]) -> bool:
     """Check if a function node should be included in the graph.
 

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/errors/problem_details.py
+# hypothesis_version: 6.148.7
+
+[500, 'ProblemDetail', 'ProblemDetailBuilder', 'about:blank', 'code', 'detail', 'generate_instance_id', 'instance', 'status', 'title', 'type']

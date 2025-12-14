@@ -17,11 +17,18 @@ from codeintel.serving.contracts.operation_contracts_dataset import (
 from codeintel.serving.mcp.backend import DuckDBBackend, HttpBackend
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
 from codeintel.serving.types import QueryBackendProtocol, QueryServiceProtocol
+from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_is_instance
 
 
 @pytest.fixture
 def operation_components() -> list[ComponentSpec]:
-    """Components to reflect for contract validation."""
+    """Components to reflect for contract validation.
+
+    Returns
+    -------
+    list[ComponentSpec]
+        Component specifications for contract reflection.
+    """
     return [
         ComponentSpec(
             component=QueryServiceProtocol,
@@ -53,8 +60,8 @@ def operation_components() -> list[ComponentSpec]:
 def test_operation_contract_schema_registered() -> None:
     """Dataset schema should be registered in the global registry."""
     schema = SCHEMA_REGISTRY.require(OPERATION_CONTRACT_TABLE_KEY)
-    assert schema.name == OPERATION_CONTRACT_TABLE_KEY
-    assert "component" in schema.column_names()
+    expect_equal(schema.name, OPERATION_CONTRACT_TABLE_KEY)
+    expect_in("component", schema.column_names())
 
 
 def test_operation_contract_reflection_validates(
@@ -62,8 +69,8 @@ def test_operation_contract_reflection_validates(
 ) -> None:
     """Reflected contracts validate against the DatasetSchema."""
     df = build_operation_contract_dataframe(operation_components)
-    assert not df.empty
+    expect_false(df.empty)
 
     validated = validate_operation_contracts(df)
-    assert isinstance(validated, pd.DataFrame)
-    assert not validated.empty
+    expect_is_instance(validated, pd.DataFrame)
+    expect_false(validated.empty)

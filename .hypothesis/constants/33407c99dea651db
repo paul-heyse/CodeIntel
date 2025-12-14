@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/core/serialization.py
+# hypothesis_version: 6.148.7
+
+['JsonValue', 'SerializableBase', 'SerializableProtocol', 'serialize_result', 'serialize_value']

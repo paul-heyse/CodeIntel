@@ -26,16 +26,16 @@ Old::
 
     from codeintel.graphs.ports import StoragePort, CatalogPort
 
-    def process(storage: StoragePort, catalog: CatalogPort) -> None:
-        ...
+
+    def process(storage: StoragePort, catalog: CatalogPort) -> None: ...
 
 New::
 
     from codeintel.graphs.resources import StorageResource
     from codeintel.graphs.catalog import CatalogService
 
-    def process(storage: StorageResource, catalog: CatalogService) -> None:
-        ...
+
+    def process(storage: StorageResource, catalog: CatalogService) -> None: ...
 """
 
 from __future__ import annotations

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/options/protocol.py
+# hypothesis_version: 6.148.7
+
+['OptionsProtocol', 'ValidationResult']

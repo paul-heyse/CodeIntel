@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/contracts/operation_contracts_dataset.py
+# hypothesis_version: 6.148.7
+
+['TRANSPORT_KINDS', 'analytics', 'arg_types', 'args', 'backend', 'component', 'contracts', 'method', 'protocol_backend', 'protocol_service', 'return_type', 'scope_type', 'service', 'serving', 'tooling', 'transport']

@@ -16,7 +16,7 @@ import yaml
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse, snippet_from_lines
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.core.paths import normalize_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 EXTERNAL_DEPENDENCY_CALLS_COLS = [
@@ -617,7 +617,7 @@ def _build_alias_maps(repo_root: Path, module_map: dict[str, str]) -> dict[str, 
             tree = ast.parse(source, filename=str(abs_path))
         except SyntaxError:
             continue
-        alias_maps[normalize_rel_path(rel_path)] = _build_alias_map(tree)
+        alias_maps[normalize_path(rel_path)] = _build_alias_map(tree)
     return alias_maps
 
 

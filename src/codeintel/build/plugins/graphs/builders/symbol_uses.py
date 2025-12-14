@@ -21,9 +21,9 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins._helpers import filter_mapping, is_test_path
 from codeintel.build.plugins.graphs.builders.symbol_uses_options import SymbolUsesOptions
+from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import symbols as symbols_compute
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
@@ -114,7 +114,7 @@ def build_scip_candidates(
             occurrences.append(
                 symbols_compute.SymbolOccurrence(
                     symbol=str(symbol),
-                    rel_path=normalize_rel_path(str(rel_path)),
+                    rel_path=normalize_path(str(rel_path)),
                     line=0,
                     roles=symbols_compute.parse_symbol_roles(roles),
                 )
@@ -171,7 +171,7 @@ def _load_symbol_occurrences(
         return [
             symbols_compute.SymbolOccurrence(
                 symbol=str(symbol),
-                rel_path=normalize_rel_path(str(rel_path)),
+                rel_path=normalize_path(str(rel_path)),
                 line=int(start_line) if start_line is not None else 0,
                 roles=symbols_compute.parse_symbol_roles(roles),
             )
@@ -211,7 +211,7 @@ def _load_module_map(
         )
         rows = expr.execute()
         return {
-            normalize_rel_path(str(rel_path)): str(module_name)
+            normalize_path(str(rel_path)): str(module_name)
             for rel_path, module_name in rows.itertuples(index=False, name=None)
         }
     except DuckDBError:
@@ -254,7 +254,7 @@ def _load_path_to_goid_map(
         )
         rows = expr.execute()
         return {
-            normalize_rel_path(str(rel_path)): int(goid)
+            normalize_path(str(rel_path)): int(goid)
             for rel_path, goid in rows.itertuples(index=False, name=None)
             if goid is not None
         }

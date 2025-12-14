@@ -11,11 +11,13 @@ Migration
 Old::
 
     from codeintel.graphs.resources.catalog import CatalogResource
+
     resource = CatalogResource(catalog)
 
 New::
 
     from codeintel.graphs.catalog import CatalogService
+
     service = CatalogService(catalog)
 """
 
@@ -47,8 +49,7 @@ def CatalogResource(catalog: FunctionCatalog) -> CatalogService:  # noqa: N802
         Unified catalog service.
     """
     warnings.warn(
-        "CatalogResource is deprecated. Use CatalogService from "
-        "codeintel.graphs.catalog directly.",
+        "CatalogResource is deprecated. Use CatalogService from codeintel.graphs.catalog directly.",
         DeprecationWarning,
         stacklevel=2,
     )

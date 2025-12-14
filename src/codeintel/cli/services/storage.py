@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
@@ -45,6 +45,26 @@ class StorageService:
     >>> gateway = service.gateway
     >>> service.close()
     """
+
+    SERVICE_NAME: ClassVar[str] = "storage"
+
+    def initialize(self) -> None:
+        """Initialize the service (gateway is opened lazily on first access)."""
+
+    def shutdown(self) -> None:
+        """Shut down the service by closing the gateway."""
+        self.close()
+
+    @property
+    def is_ready(self) -> bool:
+        """Check if service is ready.
+
+        Returns
+        -------
+        bool
+            True if gateway is open or service hasn't been closed.
+        """
+        return not self._closed
 
     def __init__(
         self,

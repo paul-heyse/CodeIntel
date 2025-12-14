@@ -45,14 +45,14 @@ from codeintel.analytics.resources.factory import ProviderFactory, ProviderFacto
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
-from codeintel.analytics.resources.protocol import (
-    ResourceError,
-    ResourceNotLoadedError,
-    ResourceProvider,
-)
 from codeintel.analytics.resources.registry import (
     ResourceNotFoundError,
     ResourceRegistry,
+)
+from codeintel.core.resources import (
+    ResourceError,
+    ResourceNotLoadedError,
+    ResourceProvider,
 )
 
 __all__ = [

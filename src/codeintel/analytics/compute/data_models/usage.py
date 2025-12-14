@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.core.paths import normalize_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates
 from codeintel.storage.repositories import fetch_models
@@ -567,7 +567,7 @@ def _build_usage_rows(
     now = datetime.now(tz=UTC)
     rows_to_insert: list[tuple[object, ...]] = []
     for goid, func_ast in artifacts.ast_by_goid.items():
-        rel_path = normalize_rel_path(func_ast.rel_path)
+        rel_path = normalize_path(func_ast.rel_path)
         module = artifacts.module_map.get(rel_path)
         visitor = ModelUsageVisitor(
             index=artifacts.model_index,

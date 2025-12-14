@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codeintel.core.cache import CacheStats, CacheStatsCollector
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -26,6 +28,18 @@ class GraphCache:
     def __init__(self) -> None:
         """Initialize an empty graph cache."""
         self._cache: dict[GraphKind, nx.Graph] = {}
+        self._stats = CacheStatsCollector()
+
+    @property
+    def stats(self) -> CacheStats:
+        """Return cache statistics.
+
+        Returns
+        -------
+        CacheStats
+            Current cache statistics including hits, misses, and size.
+        """
+        return self._stats.to_stats(size=len(self._cache))
 
     def seed(self, kind: GraphKind, graph: nx.Graph | None) -> None:
         """
@@ -60,13 +74,25 @@ class GraphCache:
         """
         graph = self._cache.get(kind)
         if graph is None:
+            self._stats.record_miss()
             graph = loader()
             self._cache[kind] = graph
+        else:
+            self._stats.record_hit()
         return graph
 
-    def clear(self) -> None:
-        """Clear all cached graphs."""
+    def clear(self) -> int:
+        """Clear all cached graphs.
+
+        Returns
+        -------
+        int
+            Number of graphs cleared.
+        """
+        count = len(self._cache)
         self._cache.clear()
+        self._stats.reset()
+        return count
 
     def invalidate(self, kind: GraphKind) -> None:
         """

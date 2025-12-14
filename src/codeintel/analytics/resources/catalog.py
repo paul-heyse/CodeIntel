@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.analytics.resources.protocol import LazyResource, ResourceNotLoadedError
+from codeintel.core.resources import LazyResource, ResourceNotLoadedError
 from codeintel.graphs.catalog import CatalogService
 
 if TYPE_CHECKING:

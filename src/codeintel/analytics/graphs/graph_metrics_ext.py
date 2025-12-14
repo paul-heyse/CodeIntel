@@ -81,9 +81,7 @@ def _bridge_endpoint_counts(graph: nx.Graph) -> dict[int, int]:
     return counts
 
 
-def _resolve_function_context(
-    runtime: GraphRuntimeOptions, repo: str, commit: str
-) -> GraphContext:
+def _resolve_function_context(runtime: GraphRuntimeOptions, repo: str, commit: str) -> GraphContext:
     """Build graph context with function-specific constants.
 
     Parameters
@@ -222,15 +220,15 @@ def _function_metric_rows(
 
 
 # Configuration for function-level extended metrics
-_FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[
-    FunctionGraphSlices, GraphMetricsFunctionsExtRow
-] = ExtendedMetricsConfig(
-    table_key="analytics.graph_metrics_functions_ext",
-    get_source_graph=lambda rt: rt.ensure_call_graph(),
-    filter_graph=lambda f, g: f.filter_call_graph(g),
-    build_context=_resolve_function_context,
-    build_slices=_function_metric_slices,
-    build_rows=_function_metric_rows,
+_FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[FunctionGraphSlices, GraphMetricsFunctionsExtRow] = (
+    ExtendedMetricsConfig(
+        table_key="analytics.graph_metrics_functions_ext",
+        get_source_graph=lambda rt: rt.ensure_call_graph(),
+        filter_graph=lambda f, g: f.filter_call_graph(g),
+        build_context=_resolve_function_context,
+        build_slices=_function_metric_slices,
+        build_rows=_function_metric_rows,
+    )
 )
 
 

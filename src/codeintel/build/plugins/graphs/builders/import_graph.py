@@ -23,9 +23,9 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins._helpers import filter_mapping, get_source_root, persist_rows
 from codeintel.build.plugins.graphs.builders.import_graph_options import ImportGraphOptions
+from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import imports as imports_compute
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
@@ -83,7 +83,7 @@ def _load_modules(
         ).select(modules.path, modules.module)
         df = expr.execute()
         return {
-            normalize_rel_path(str(path)): str(module)
+            normalize_path(str(path)): str(module)
             for path, module in df.itertuples(index=False, name=None)
         }
     except DuckDBError:

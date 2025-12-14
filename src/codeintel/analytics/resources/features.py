@@ -14,7 +14,7 @@ from codeintel.analytics.parsing.ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )
-from codeintel.analytics.resources.protocol import LazyResource, ResourceNotLoadedError
+from codeintel.core.resources import LazyResource, ResourceNotLoadedError
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures

@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 # Re-export core catalog types for backward compatibility
 from codeintel.core.catalog import FunctionSpan
 from codeintel.core.catalog import SpanIndex as _CoreSpanIndex
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.core.paths import normalize_path
 from codeintel.storage.helpers.module_index import load_module_map
 from codeintel.storage.ibis_types import filter_by, ibis_bool
 
@@ -68,7 +68,7 @@ class FunctionSpanIndex(_CoreSpanIndex):
         spans
             Function spans to index.
         """
-        super().__init__(spans, path_normalizer=normalize_rel_path)
+        super().__init__(spans, path_normalizer=normalize_path)
 
 
 def _load_function_rows(
@@ -137,7 +137,7 @@ def load_function_spans(gateway: StorageGateway, *, repo: str, commit: str) -> l
         spans.append(
             FunctionSpan(
                 goid=int(row["goid_h128"]),
-                rel_path=normalize_rel_path(row["rel_path"]),
+                rel_path=normalize_path(row["rel_path"]),
                 qualname=str(row["qualname"]),
                 start_line=int(start_line),
                 end_line=int(end_line) if end_line is not None else int(start_line),
@@ -242,11 +242,9 @@ class FunctionCatalog:
         """
         self._functions: list[FunctionSpan] = list(functions)
         self._index = FunctionSpanIndex(self._functions)
-        self._urn_by_goid = {
-            fn.goid: fn.urn for fn in self._functions if fn.urn is not None
-        }
+        self._urn_by_goid = {fn.goid: fn.urn for fn in self._functions if fn.urn is not None}
         self._module_by_path = {
-            normalize_rel_path(path): mod for path, mod in module_by_path.items()
+            normalize_path(path): mod for path, mod in module_by_path.items()
         }
         self._funcs_by_path: dict[str, list[FunctionSpan]] = {}
         for fn in self._functions:
@@ -353,7 +351,7 @@ def load_function_catalog(
         functions.append(
             FunctionSpan(
                 goid=int(row["goid_h128"]),
-                rel_path=normalize_rel_path(row["rel_path"]),
+                rel_path=normalize_path(row["rel_path"]),
                 qualname=str(row["qualname"]),
                 start_line=int(start_line),
                 end_line=int(end_line) if end_line is not None else int(start_line),

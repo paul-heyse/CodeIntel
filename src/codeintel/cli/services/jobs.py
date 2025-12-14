@@ -6,7 +6,7 @@ through the CommandContext.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from codeintel.cli.jobs import JobManager, get_job_manager
 
@@ -32,6 +32,25 @@ class JobService:
     >>> jobs = service.list_jobs(limit=10)
     >>> job = service.get_status("abc123")
     """
+
+    SERVICE_NAME: ClassVar[str] = "jobs"
+
+    def initialize(self) -> None:
+        """Initialize the service (no-op, manager is accessed lazily)."""
+
+    def shutdown(self) -> None:
+        """Shut down the service (no-op, manager handles its own lifecycle)."""
+
+    @property
+    def is_ready(self) -> bool:
+        """Check if service is ready.
+
+        Returns
+        -------
+        bool
+            Always True (delegates to manager).
+        """
+        return True
 
     def __init__(self, manager: JobManagerProtocol | None = None) -> None:
         """Initialize job service."""
