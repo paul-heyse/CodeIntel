@@ -289,7 +289,8 @@ class BuildResolver:
                 action = "compute"
                 reason = ResolutionReason(
                     kind="dependency",
-                    details="Dependencies will run first: " + ", ".join(sorted(dependency_computes)),
+                    details="Dependencies will run first: "
+                    + ", ".join(sorted(dependency_computes)),
                 )
             else:
                 action = "blocked"

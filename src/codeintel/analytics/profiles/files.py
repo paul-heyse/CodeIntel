@@ -13,7 +13,10 @@ from codeintel.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
     DEFAULT_MODULE_TABLE,
 )
-from codeintel.analytics.profiles.writer_guard import create_profile_writer
+from codeintel.analytics.profiles.writer_guard import (
+    PolicyWriterConfig,
+    write_rows_via_policy_backend,
+)
 from codeintel.analytics.utilities.type_coercion import (
     optional_float,
     optional_int,
@@ -329,24 +332,13 @@ def _row_to_file_profile_model(
     )
 
 
-# Factory-created writer for file profiles
-write_file_profile_rows: Callable[[StorageGateway, Iterable[FileProfileRowModel]], int] = (
-    create_profile_writer(
-        "analytics.file_profile",
-        FILE_PROFILE_COLUMNS,
-        cast("Callable[[Mapping[str, object]], tuple[object, ...]]", file_profile_row_to_tuple),
-    )
-)
-
-
 def build_file_profile(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     module_table: str = DEFAULT_MODULE_TABLE,
 ) -> int:
-    """
-    Compute and persist analytics.file_profile rows.
+    """Compute and persist analytics.file_profile rows.
 
     Parameters
     ----------
@@ -363,5 +355,18 @@ def build_file_profile(
         Number of rows inserted.
     """
     inputs = compute_file_profile_inputs(gateway, snapshot)
-    rows = build_file_profile_rows(inputs, module_table=module_table)
-    return write_file_profile_rows(gateway, rows)
+    rows = list(build_file_profile_rows(inputs, module_table=module_table))
+    if not rows:
+        return 0
+
+    config = PolicyWriterConfig(
+        table_key="analytics.file_profile",
+        columns=FILE_PROFILE_COLUMNS,
+        serialize_row=cast(
+            "Callable[[Mapping[str, object]], tuple[object, ...]]",
+            file_profile_row_to_tuple,
+        ),
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    return write_rows_via_policy_backend(gateway, rows=rows, config=config)

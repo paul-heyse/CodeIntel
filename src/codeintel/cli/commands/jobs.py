@@ -102,7 +102,7 @@ class ListJobs(Command[ListResult[JobInfo]]):
         Parameter(help="Filter by status"),
     ] = None
     limit: Annotated[int, Parameter(help="Maximum jobs to show")] = 20
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[ListResult[JobInfo]]:
         """Execute job listing.
@@ -151,7 +151,7 @@ class GetJobStatus(Command[JobInfo]):
     __operation_id__ = "jobs.status"
 
     job_id: Annotated[str, Parameter(help="Job ID")]
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[JobInfo]:
         """Execute job status query.
@@ -199,7 +199,7 @@ class GetJobOutput(Command[JobOutputResult]):
     __operation_id__ = "jobs.output"
 
     job_id: Annotated[str, Parameter(help="Job ID")]
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[JobOutputResult]:
         """Execute job output retrieval.
@@ -248,7 +248,7 @@ class CancelJob(Command[ActionResult]):
     __operation_id__ = "jobs.cancel"
 
     job_id: Annotated[str, Parameter(help="Job ID")]
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[ActionResult]:
         """Execute job cancellation.
@@ -293,7 +293,7 @@ class CleanupJobs(Command[ActionResult]):
     __operation_id__ = "jobs.cleanup"
 
     max_age_days: Annotated[int, Parameter(help="Maximum age in days")] = 7
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[ActionResult]:
         """Execute job cleanup.

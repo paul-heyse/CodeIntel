@@ -10,22 +10,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = REPO_ROOT / "src" / "codeintel"
 
-ALLOWLIST_IBIS_WRITE_FILES = {
-    # NOTE: Files below have deprecated functions with direct writes for backward
-    # compatibility. They will be removed when deprecated functions are deleted.
-    # New code should use the Hamilton native modules in build/hamilton/native/analytics/
-    "src/codeintel/analytics/cfg_dfg/materialize.py",  # -> cfg_dfg.py native
-    "src/codeintel/analytics/compute/coverage/functions.py",  # -> coverage_functions.py native
-    "src/codeintel/analytics/compute/data_models/usage.py",  # -> use build_data_model_usage_rows
-    "src/codeintel/analytics/data_models/core.py",  # -> data_models.py native
-    "src/codeintel/analytics/dependencies/core.py",  # -> dependencies.py native
-    "src/codeintel/analytics/entrypoints/core.py",  # -> entrypoints.py native
-    "src/codeintel/analytics/functions/function_history.py",  # -> function_history.py native
-    "src/codeintel/analytics/history/history_timeseries.py",  # -> history_timeseries.py native
-    "src/codeintel/analytics/parsing/validation.py",  # -> use to_rows() + materialize_*
-    "src/codeintel/analytics/profiles/writer_guard.py",  # -> use materialize_rows or write_rows_via_policy_backend
-    "src/codeintel/analytics/testing/graph_metrics.py",  # -> test_graph_metrics.py native
-}
+# All deprecated functions with direct DB writes have been removed in Phase 3-4.
+# Hamilton native modules in build/hamilton/native/analytics/ are now the canonical path.
+ALLOWLIST_IBIS_WRITE_FILES: set[str] = set()
 
 
 def _iter_py_files() -> list[Path]:

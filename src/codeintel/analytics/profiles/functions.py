@@ -27,7 +27,10 @@ from codeintel.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
     DEFAULT_MODULE_TABLE,
 )
-from codeintel.analytics.profiles.writer_guard import create_profile_writer
+from codeintel.analytics.profiles.writer_guard import (
+    PolicyWriterConfig,
+    write_rows_via_policy_backend,
+)
 from codeintel.analytics.utilities.type_coercion import (
     int_or_default,
     optional_float,
@@ -969,24 +972,13 @@ def build_function_profile_rows(
         yield row
 
 
-# Factory-created writer for function profiles
-write_function_profile_rows: Callable[[StorageGateway, Iterable[FunctionProfileRowModel]], int] = (
-    create_profile_writer(
-        "analytics.function_profile",
-        FUNCTION_PROFILE_COLUMNS,
-        cast("Callable[[Mapping[str, object]], tuple[object, ...]]", function_profile_row_to_tuple),
-    )
-)
-
-
 def build_function_profile_recipe(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     module_table: str = DEFAULT_MODULE_TABLE,
 ) -> int:
-    """
-    Compute and persist analytics.function_profile rows.
+    """Compute and persist analytics.function_profile rows.
 
     Parameters
     ----------
@@ -1014,5 +1006,18 @@ def build_function_profile_recipe(
         docs_by_func=join_function_docs(inputs),
         history_by_func=join_function_history(inputs),
     )
-    rows = build_function_profile_rows(inputs, views=views)
-    return write_function_profile_rows(gateway, rows)
+    rows = list(build_function_profile_rows(inputs, views=views))
+    if not rows:
+        return 0
+
+    config = PolicyWriterConfig(
+        table_key="analytics.function_profile",
+        columns=FUNCTION_PROFILE_COLUMNS,
+        serialize_row=cast(
+            "Callable[[Mapping[str, object]], tuple[object, ...]]",
+            function_profile_row_to_tuple,
+        ),
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    return write_rows_via_policy_backend(gateway, rows=rows, config=config)

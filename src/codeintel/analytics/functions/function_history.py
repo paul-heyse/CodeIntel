@@ -1,16 +1,14 @@
 """Aggregate per-function git history and churn metrics.
 
-.. deprecated::
-    The ``compute_function_history`` function contains direct database writes.
-    For new code, use ``build_function_history_rows`` with Hamilton materializers.
+For new code, use ``build_function_history_rows`` with Hamilton materializers.
 
-    Native Hamilton module: ``codeintel.build.hamilton.native.analytics.function_history``
+The Hamilton native module is at:
+``codeintel.build.hamilton.native.analytics.function_history``
 """
 
 from __future__ import annotations
 
 import logging
-import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
@@ -160,65 +158,6 @@ def build_function_history_rows(
         snapshot.commit,
     )
     return tuple(insert_rows)
-
-
-def compute_function_history(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    runner: ToolRunner | None = None,
-    min_lines_threshold: int = 2,
-) -> None:
-    """Populate `analytics.function_history` for the given repo/commit snapshot.
-
-    Parameters
-    ----------
-    gateway
-        StorageGateway bound to the CodeIntel DuckDB database.
-    snapshot
-        Repository and commit identifiers.
-    runner
-        Optional shared ToolRunner for git invocations.
-    min_lines_threshold
-        Minimum number of overlapping line edits required to count a commit towards churn.
-
-    .. deprecated::
-        Use ``build_function_history_rows`` with Hamilton materializers instead.
-    """
-    warnings.warn(
-        "compute_function_history is deprecated. Use build_function_history_rows "
-        "with Hamilton materializers, or the native module "
-        "codeintel.build.hamilton.native.analytics.function_history.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
-    # Delete existing rows for this snapshot
-    table = gateway.ibis.table("analytics.function_history")
-    where = and_predicates(table.repo == snapshot.repo, table.commit == snapshot.commit)
-    gateway.ibis.delete("analytics.function_history", where=where)
-
-    # Build rows using pure function
-    insert_rows = build_function_history_rows(
-        gateway,
-        snapshot,
-        runner=runner,
-        min_lines_threshold=min_lines_threshold,
-    )
-
-    # Write rows (deprecated path)
-    if insert_rows:
-        gateway.ibis.write(
-            "analytics.function_history",
-            list(insert_rows),
-            columns=FUNCTION_HISTORY_COLS,
-        )
-    log.info(
-        "function_history populated: %s rows for %s@%s",
-        len(insert_rows),
-        snapshot.repo,
-        snapshot.commit,
-    )
 
 
 def _history_window_start(now: datetime, max_history_days: int | None) -> datetime | None:

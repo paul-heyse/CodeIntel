@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/materializer.py
+# hypothesis_version: 6.148.7
+
+['materialize_rows', 'materialize_table', 'materialize_tables', 'table', 'validate', 'validate_schemas']

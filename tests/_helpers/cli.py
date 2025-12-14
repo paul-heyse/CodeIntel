@@ -14,7 +14,12 @@ from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from cyclopts.exceptions import CoercionError, UnknownCommandError, UnknownOptionError
+from cyclopts.exceptions import (
+    CoercionError,
+    UnknownCommandError,
+    UnknownOptionError,
+    ValidationError,
+)
 
 from codeintel.cli import app
 from codeintel.cli.errors import handle_cli_error
@@ -143,6 +148,7 @@ def run_cli(
                 CoercionError,
                 UnknownCommandError,
                 UnknownOptionError,
+                ValidationError,
                 ResolutionError,
                 StorageConnectionError,
                 StorageError,

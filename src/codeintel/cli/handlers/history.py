@@ -17,8 +17,11 @@ from typing import TYPE_CHECKING
 
 from ibis.common.exceptions import IbisError
 
-from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
+from codeintel.analytics.history.history_timeseries import (
+    HISTORY_TIMESERIES_COLS,
+    HistoryTimeseriesOptions,
+    build_history_timeseries_rows,
+)
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult
@@ -28,6 +31,7 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import (
+    DuckDBConnection,
     DuckDBError,
     DuckDBInvalidInputException,
     StorageConfig,
@@ -164,6 +168,82 @@ def _write_synthetic_history_rows(
     )
 
 
+def _build_db_resolver(
+    gateway: StorageGateway,
+    snapshot_resolver: Callable[[str], StorageGateway],
+    snapshot_gateways: dict[str, StorageGateway],
+) -> Callable[[str], DuckDBConnection]:
+    """Build a db_resolver from a snapshot_resolver.
+
+    Parameters
+    ----------
+    gateway
+        Primary output gateway.
+    snapshot_resolver
+        Callable returning a StorageGateway for a given commit.
+    snapshot_gateways
+        Cache dict for storing opened gateways (modified in place).
+
+    Returns
+    -------
+    Callable[[str], DuckDBConnection]
+        Database connection resolver for each commit.
+    """
+
+    def _db_resolver(commit: str) -> DuckDBConnection:
+        cached_gateway = snapshot_gateways.get(commit)
+        if cached_gateway is not None:
+            return gateway.con if cached_gateway is gateway else cached_gateway.con
+
+        snapshot_gateway = snapshot_resolver(commit)
+        if snapshot_gateway.config.db_path.resolve() == gateway.config.db_path.resolve():
+            if snapshot_gateway is not gateway:
+                snapshot_gateway.close()
+            snapshot_gateways[commit] = gateway
+            return gateway.con
+
+        snapshot_gateways[commit] = snapshot_gateway
+        return snapshot_gateway.con
+
+    return _db_resolver
+
+
+def _persist_history_timeseries_rows(
+    gateway: StorageGateway,
+    rows: tuple[tuple[object, ...], ...],
+    repo: str,
+    commits: list[str],
+) -> None:
+    """Persist history timeseries rows via policy backend.
+
+    Parameters
+    ----------
+    gateway
+        Output gateway for writing results.
+    rows
+        Row tuples to insert.
+    repo
+        Repository slug.
+    commits
+        List of commits to delete before inserting.
+    """
+    if not rows:
+        return
+
+    backend = DuckDBPolicyBackend(gateway)
+    for commit in commits:
+        backend.delete_for_snapshot(
+            "analytics.history_timeseries",
+            repo=repo,
+            commit=commit,
+        )
+    backend.bulk_insert(
+        "analytics.history_timeseries",
+        list(rows),
+        columns=HISTORY_TIMESERIES_COLS,
+    )
+
+
 def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseriesResult]:
     """Aggregate analytics.history_timeseries across multiple commits.
 
@@ -222,14 +302,18 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
             primary_gateway=gateway,
         )
 
+        snapshot_gateways: dict[str, StorageGateway] = {}
+        db_resolver = _build_db_resolver(gateway, snapshot_resolver, snapshot_gateways)
+
         try:
-            compute_history_timeseries_gateways(
+            rows = build_history_timeseries_rows(
                 gateway,
                 snapshot,
-                snapshot_resolver,
+                db_resolver,
                 options=options,
                 runner=ToolRunner(cache_dir=repo_root / "build" / ".tool_cache"),
             )
+            _persist_history_timeseries_rows(gateway, rows, repo, commits)
         except DuckDBInvalidInputException as exc:
             LOG.warning("No history rows to aggregate: %s", exc)
             _write_synthetic_history_rows(
@@ -246,6 +330,10 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
         except DuckDBError as exc:
             LOG.exception("Failed to compute history_timeseries")
             return fail_history_error("Query Error", f"Failed to compute history_timeseries: {exc}")
+        finally:
+            for gw in snapshot_gateways.values():
+                if gw is not gateway:
+                    gw.close()
 
     LOG.info(
         "history_timeseries written to %s for %d commits",

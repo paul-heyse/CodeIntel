@@ -12,7 +12,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ParamSpec, TextIO
 
-from cyclopts.exceptions import CoercionError, UnknownCommandError, UnknownOptionError
+from cyclopts.exceptions import (
+    CoercionError,
+    UnknownCommandError,
+    UnknownOptionError,
+)
+from cyclopts.exceptions import (
+    ValidationError as CycloptsValidationError,
+)
 
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
@@ -173,7 +180,7 @@ def _exception_to_problem(exc: BaseException) -> ProblemDetail:
         title = "Unknown Command"
         status = CLI_EXIT_USAGE
         detail = _format_unknown_command(exc)
-    elif isinstance(exc, (CoercionError, ResolutionError)):
+    elif isinstance(exc, (CoercionError, ResolutionError, CycloptsValidationError)):
         error_type = ErrorType.VALIDATION
         title = "Validation Error"
         status = CLI_EXIT_VALIDATION

@@ -6,7 +6,7 @@ Note: Docs commands require runtime/gateway access via handler pattern.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -24,7 +24,7 @@ docs_app = App(
 _CYCLOPTS_PATH_TYPE = Path
 
 
-class NxBackend(Enum):
+class NxBackend(StrEnum):
     """NetworkX backend selection."""
 
     AUTO = "auto"
@@ -163,7 +163,7 @@ class DocsExportCommand:
         ),
     ] = "run"
 
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["docs_app"]

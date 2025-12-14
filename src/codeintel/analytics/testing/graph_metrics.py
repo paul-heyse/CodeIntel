@@ -1,31 +1,24 @@
 """Graph metrics over the test <-> function bipartite graph.
 
-.. deprecated::
-    This module contains legacy functions with direct database writes.
-    Use the Hamilton native module `codeintel.build.hamilton.native.analytics.test_graph_metrics`
-    for new code, which separates compute from persistence.
+Column definitions and internal helper functions for test graph metrics.
 
-    The pure compute functions are available in `codeintel.analytics.testing.compute`:
-    - `compute_test_graph_metrics_pure` returns `TestGraphMetricsResult`
+The pure compute functions are available in ``codeintel.analytics.testing.compute``:
+- ``compute_test_graph_metrics_pure`` returns ``TestGraphMetricsResult``
+
+The Hamilton native module is at:
+``codeintel.build.hamilton.native.analytics.test_graph_metrics``
 """
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.compute.graphs import (
-    bipartite_degrees,
     projection_metrics,
 )
-from codeintel.config.primitives import SnapshotRef
-from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
-from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -34,7 +27,6 @@ if TYPE_CHECKING:
         BipartiteDegrees,
     )
     from codeintel.graphs.runtime.context import GraphContext
-    from codeintel.storage.gateway import StorageGateway
 
 TEST_GRAPH_METRICS_TESTS_COLS = [
     "test_id",
@@ -156,97 +148,3 @@ def _build_function_rows(
             )
         )
     return rows
-
-
-def compute_test_graph_metrics(
-    gateway: StorageGateway,
-    *,
-    repo: str,
-    commit: str,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
-) -> None:
-    """Populate test and function-side metrics derived from test coverage graphs.
-
-    .. deprecated::
-        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.test_graph_metrics`
-        instead. For pure compute, use `compute_test_graph_metrics_pure` from
-        `codeintel.analytics.testing.compute`.
-    """
-    warnings.warn(
-        "compute_test_graph_metrics is deprecated. Use the Hamilton native module "
-        "'codeintel.build.hamilton.native.analytics.test_graph_metrics' or "
-        "'compute_test_graph_metrics_pure' for pure compute.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    resolved_options = (
-        runtime.options if isinstance(runtime, GraphRuntime) else runtime
-    ) or GraphRuntimeOptions()
-    backend = DuckDBPolicyBackend(gateway)
-    backend.ensure_table("analytics.test_graph_metrics_tests")
-    backend.ensure_table("analytics.test_graph_metrics_functions")
-    con = gateway.con
-
-    snapshot = resolved_options.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
-    resolved_runtime = resolve_graph_runtime(gateway, snapshot, resolved_options)
-
-    graph = resolved_runtime.ensure_test_function_bipartite()
-    graph_ctx = resolve_graph_context(
-        GraphContextSpec(
-            repo=repo,
-            commit=commit,
-            use_gpu=resolved_runtime.backend.use_gpu,
-            now=datetime.now(UTC),
-            pagerank_weight="weight",
-            betweenness_weight="weight",
-        )
-    )
-    now = graph_ctx.resolved_now()
-
-    tests = {node for node, data in graph.nodes(data=True) if data.get("bipartite") == 0}
-    funcs = set(graph) - tests
-    degrees = bipartite_degrees(
-        graph,
-        tests,
-        funcs,
-        weight=graph_ctx.pagerank_weight,
-    )
-    risk_by_goid = {
-        int(goid): float(score)
-        for goid, score in con.execute(
-            """
-            SELECT function_goid_h128, risk_score
-            FROM analytics.goid_risk_factors
-            WHERE repo = ? AND commit = ?
-            """,
-            [repo, commit],
-        ).fetchall()
-    }
-    ctx = TestMetricsContext(
-        repo=repo,
-        commit=commit,
-        now=now,
-        degrees=degrees,
-        risk_by_goid=risk_by_goid,
-        graph_ctx=graph_ctx,
-    )
-
-    test_rows = _build_test_rows(graph, tests, ctx)
-    func_rows = _build_function_rows(graph, funcs, ctx)
-
-    backend = DuckDBPolicyBackend(gateway)
-    backend.delete_for_snapshot("analytics.test_graph_metrics_tests", repo=repo, commit=commit)
-    backend.delete_for_snapshot("analytics.test_graph_metrics_functions", repo=repo, commit=commit)
-
-    if test_rows:
-        gateway.ibis.write(
-            "analytics.test_graph_metrics_tests",
-            test_rows,
-            columns=TEST_GRAPH_METRICS_TESTS_COLS,
-        )
-    if func_rows:
-        gateway.ibis.write(
-            "analytics.test_graph_metrics_functions",
-            func_rows,
-            columns=TEST_GRAPH_METRICS_FUNCTIONS_COLS,
-        )

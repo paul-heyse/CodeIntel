@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated
 
 from cyclopts import App, Parameter
@@ -33,14 +33,14 @@ graphs_app = App(
 )
 
 
-class SelectionPolicy(Enum):
+class SelectionPolicy(StrEnum):
     """Policy for selecting which graph plugins to run."""
 
     LENIENT = "lenient"
     STRICT = "strict"
 
 
-class DependencyPolicy(Enum):
+class DependencyPolicy(StrEnum):
     """Policy for handling missing graph plugin dependencies."""
 
     LENIENT = "lenient"
@@ -189,7 +189,7 @@ class GraphTargetsList(Command[GraphTargetsResult]):
             help="Explicit target names to filter (repeatable).",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphTargetsResult]:
         """Execute graph targets listing.
@@ -248,7 +248,7 @@ class GraphTargetsPlan(Command[GraphPlanResult]):
             help="Explicit target names to plan (repeatable). Defaults to all graph targets.",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult]:
         """Execute graph targets planning.
@@ -331,7 +331,7 @@ class GraphPluginsList(Command[GraphPluginsResult | GraphPlanResult]):
             help="Explicit target names to filter (repeatable).",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPluginsResult | GraphPlanResult]:
         """List graph plugins or show the execution plan.
@@ -405,7 +405,7 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
             help="Explicit target names to filter or plan (repeatable).",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
         """List targets or show plan.

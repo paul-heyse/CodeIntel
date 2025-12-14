@@ -45,7 +45,7 @@ class IdeHintsCommand:
             help="File path relative to repo root (e.g., pkg/module.py).",
         ),
     ] = ""
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["IdeHintsCommand", "ide_app"]

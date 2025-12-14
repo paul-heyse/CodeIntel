@@ -56,7 +56,7 @@ class SubsystemListCommand:
             help="Limit the number of subsystems returned.",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("subsystem.show", handler=subsystem_show_handler, config=_SUBSYSTEM_CONFIG)
@@ -72,7 +72,7 @@ class SubsystemShowCommand:
             help="Subsystem identifier.",
         ),
     ] = ""
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("subsystem.profiles", handler=subsystem_profiles_handler, config=_SUBSYSTEM_CONFIG)
@@ -88,7 +88,7 @@ class SubsystemProfilesCommand:
             help="Limit the number of profiles returned.",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("subsystem.coverage", handler=subsystem_coverage_handler, config=_SUBSYSTEM_CONFIG)
@@ -104,7 +104,7 @@ class SubsystemCoverageCommand:
             help="Limit the number of coverage rows returned.",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command(
@@ -124,7 +124,7 @@ class SubsystemMembershipCommand:
             help="Module name (e.g., pkg.mod).",
         ),
     ] = ""
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["subsystem_app"]

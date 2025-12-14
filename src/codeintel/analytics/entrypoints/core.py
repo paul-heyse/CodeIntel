@@ -1,12 +1,12 @@
 """Build analytics.entrypoints and analytics.entrypoint_tests tables.
 
-.. deprecated::
-    This module contains legacy functions with direct database writes.
-    Use the Hamilton native module `codeintel.build.hamilton.native.analytics.entrypoints`
-    for new code, which separates compute from persistence.
+Column definitions and internal helper functions for entrypoint detection.
 
-    The pure compute functions are available in `codeintel.analytics.entrypoints.compute`:
-    - `compute_entrypoints_pure` returns `EntrypointsResult`
+The pure compute functions are available in ``codeintel.analytics.entrypoints.compute``:
+- ``compute_entrypoints_pure`` returns ``EntrypointsResult``
+
+The Hamilton native module is at:
+``codeintel.build.hamilton.native.analytics.entrypoints``
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import warnings
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -28,7 +27,6 @@ from codeintel.analytics.compute.entrypoints.detection import (
 from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 ENTRYPOINTS_COLS = [
     "repo",
@@ -85,7 +83,7 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.gateway import DuckDBConnection
 
 log = logging.getLogger(__name__)
 
@@ -159,87 +157,6 @@ class EntrypointBuildInputs:
     features_map: Mapping[int, FunctionAstFeatures]
     settings: DetectorSettings | None = None
     scan_profile: ScanProfile | None = None
-
-
-def build_entrypoints(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    inputs: EntrypointBuildInputs,
-) -> None:
-    """
-    Populate analytics.entrypoints and analytics.entrypoint_tests.
-
-    .. deprecated::
-        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.entrypoints`
-        instead. For pure compute, use `compute_entrypoints_pure` from
-        `codeintel.analytics.entrypoints.compute`.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway with active DuckDB connection.
-    snapshot
-        Repository and commit identifiers.
-    inputs
-        Bundled inputs containing catalog, module map, features, and settings.
-    """
-    warnings.warn(
-        "build_entrypoints is deprecated. Use the Hamilton native module "
-        "'codeintel.build.hamilton.native.analytics.entrypoints' or "
-        "'compute_entrypoints_pure' for pure compute.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    backend = DuckDBPolicyBackend(gateway)
-    backend.ensure_table("analytics.entrypoints")
-    backend.ensure_table("analytics.entrypoint_tests")
-    con = gateway.con
-    backend.delete_for_snapshot("analytics.entrypoints", repo=snapshot.repo, commit=snapshot.commit)
-    backend.delete_for_snapshot(
-        "analytics.entrypoint_tests", repo=snapshot.repo, commit=snapshot.commit
-    )
-
-    entrypoint_context = _build_entrypoint_context(
-        con,
-        snapshot,
-        inputs.catalog_provider,
-        module_map_override=inputs.module_map,
-        features=inputs.features_map,
-    )
-    if entrypoint_context is None:
-        log.warning(
-            "No modules available to scan for entrypoints in %s@%s", snapshot.repo, snapshot.commit
-        )
-        return
-
-    effective_settings = inputs.settings or DetectorSettings()
-    entrypoint_rows, test_rows = _collect_entrypoint_rows(
-        context=entrypoint_context,
-        repo_root=snapshot.repo_root,
-        settings=effective_settings,
-        scan_profile=inputs.scan_profile,
-    )
-
-    if entrypoint_rows:
-        gateway.ibis.write(
-            "analytics.entrypoints",
-            entrypoint_rows,
-            columns=ENTRYPOINTS_COLS,
-        )
-    if test_rows:
-        gateway.ibis.write(
-            "analytics.entrypoint_tests",
-            test_rows,
-            columns=ENTRYPOINT_TESTS_COLS,
-        )
-
-    log.info(
-        "entrypoints populated: %d entrypoints, %d entrypoint_test edges for %s@%s",
-        len(entrypoint_rows),
-        len(test_rows),
-        snapshot.repo,
-        snapshot.commit,
-    )
 
 
 def _collect_entrypoint_rows(

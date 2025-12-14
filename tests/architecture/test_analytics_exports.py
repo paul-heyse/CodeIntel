@@ -12,10 +12,11 @@ if TYPE_CHECKING:
 
 EXPECTED_EXPORTS: Mapping[str, set[str]] = {
     "codeintel.analytics.functions": {
+        "FUNCTION_HISTORY_COLS",
         "FunctionAnalyticsOptions",
+        "build_function_history_rows",
         "compute_function_contracts",
         "compute_function_effects",
-        "compute_function_history",
         "compute_function_metrics_and_types",
     },
     "codeintel.analytics.graphs": {
@@ -35,9 +36,8 @@ EXPECTED_EXPORTS: Mapping[str, set[str]] = {
     },
     "codeintel.analytics.history": {
         "FileCommitDelta",
-        "compute_function_history",
-        "compute_history_timeseries",
-        "compute_history_timeseries_gateways",
+        "HISTORY_TIMESERIES_COLS",
+        "build_history_timeseries_rows",
         "iter_file_history",
     },
     "codeintel.analytics.parsing": {
@@ -50,8 +50,12 @@ EXPECTED_EXPORTS: Mapping[str, set[str]] = {
         "SourceSpan",
         "SpanResolutionError",
         "SpanResolutionResult",
+        "ValidationResult",
         "build_span_index",
         "get_parser",
+        "get_validation_rows",
+        "materialize_function_validation",
+        "materialize_graph_validation",
         "parse_python_module",
         "register_parser",
         "resolve_span",

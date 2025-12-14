@@ -8,16 +8,10 @@ This package consolidates test analytics functionality into a coherent structure
 - ``graph_metrics``: Graph metrics over test-function bipartite graphs
 
 For Hamilton native execution, use the pure compute function:
-- `compute_test_graph_metrics_pure` returns `TestGraphMetricsResult` without writing
+- ``compute_test_graph_metrics_pure`` returns ``TestGraphMetricsResult`` without writing
 
-Example
--------
->>> from codeintel.analytics.testing import (
-...     build_behavioral_coverage,
-...     build_test_profile,
-...     compute_test_coverage_edges,
-...     compute_test_graph_metrics,
-... )
+The Hamilton native module is at:
+``codeintel.build.hamilton.native.analytics.test_graph_metrics``
 """
 
 from __future__ import annotations
@@ -30,7 +24,6 @@ from codeintel.analytics.testing.coverage.edges import (
     TestCoverageOptions,
     compute_test_coverage_edges,
 )
-from codeintel.analytics.testing.graph_metrics import compute_test_graph_metrics
 from codeintel.analytics.testing.profiles.builder import (
     build_behavioral_coverage,
     build_test_profile,
@@ -42,6 +35,5 @@ __all__ = [
     "build_behavioral_coverage",
     "build_test_profile",
     "compute_test_coverage_edges",
-    "compute_test_graph_metrics",
     "compute_test_graph_metrics_pure",
 ]

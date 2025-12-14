@@ -68,7 +68,6 @@ from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graph_runtime_harness import (
     build_graph_runtime_harness,
 )
-from tests.analytics.integration.sample_repo import write_sample_repo
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -86,7 +85,6 @@ if TYPE_CHECKING:
     from tests._helpers.graph_runtime_harness import (
         GraphRuntimeHarness,
     )
-    from tests.analytics.integration.sample_repo import SampleRepo
 
 
 @pytest.fixture
@@ -104,23 +102,6 @@ def analytics_gateway() -> Iterator[StorageGateway]:
     gateway = build_test_gateway()
     yield gateway
     gateway.close()
-
-
-@pytest.fixture
-def sample_repo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SampleRepo]:
-    """Seed and reuse the analytics sample repository.
-
-    Yields
-    ------
-    SampleRepo
-        Seeded repository with gateway cleaned up after use.
-    """
-    repo_path = tmp_path_factory.mktemp("sample_repo")
-    repo = write_sample_repo(repo_path)
-    try:
-        yield repo
-    finally:
-        repo.gateway.close()
 
 
 @pytest.fixture

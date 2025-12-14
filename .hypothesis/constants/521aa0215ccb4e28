@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugins/analytics/__init__.py
+# hypothesis_version: 6.148.7
+
+['ConfigDataFlowPlugin', 'HotspotsPlugin', 'ProfilesPlugin', 'RiskFactorsPlugin', 'SemanticRolesPlugin', 'SubsystemsPlugin', 'TestProfilePlugin']

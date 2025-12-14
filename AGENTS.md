@@ -693,7 +693,6 @@ If any answer is “no,” revise the test to move it closer to production reali
 Read these first when editing configs or debugging local vs CI drift:
 
 - **Formatting & lint:** `pyproject.toml` → `[tool.ruff]`, `[tool.ruff.lint]`
-- **Dead code scanning:** `pyproject.toml` → `[tool.vulture]`, `.github/workflows/ci-vulture.yml`, `vulture_whitelist.py`
 - **Types:** `pyrefly.toml` (single source), `pyrightconfig.jsonc` (strict pyright)
 - **Tests:** `pytest.ini` (markers, doctest/xdoctest config)
 - **CI:** `.github/workflows/ci.yaml` (job order: precommit → lint → types → tests → docs; OS matrix; caches; artifacts)
@@ -960,9 +959,6 @@ uv run pyrefly check
 # Tests (incl. doctests/xdoctest via pytest.ini)
 uv run pytest -q
 
-
-# Dead code
-uv run vulture src tools stubs --min-confidence 90
 
 # All pre-commit hooks
 uvx pre-commit run --all-files
