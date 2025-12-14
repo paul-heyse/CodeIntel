@@ -138,9 +138,7 @@ def register_graph_targets(registry: UnifiedRegistry) -> None:
     # Import targets (deferred to avoid circular imports)
     # Import plugin classes (deferred to avoid circular imports)
     from codeintel.build.plugins.analytics import (  # noqa: PLC0415
-        CfgDfgMetricsPlugin,
         SymbolGraphMetricsPlugin,
-        TestGraphMetricsPlugin,
     )
     from codeintel.build.plugins.graphs import (  # noqa: PLC0415
         CallGraphPlugin,
@@ -172,12 +170,20 @@ def register_graph_targets(registry: UnifiedRegistry) -> None:
     registry.register(IMPORT_GRAPH_TARGET, plugin=ImportGraphPlugin)
     registry.register(CFG_TARGET, plugin=CfgDfgPlugin)
     registry.register(DFG_TARGET, plugin=CfgDfgPlugin)
-    registry.register(CFG_DFG_METRICS_TARGET, plugin=CfgDfgMetricsPlugin)
+    # Native target (migrated from plugin to Hamilton pipeline)
+    registry.register(
+        CFG_DFG_METRICS_TARGET,
+        native_module="codeintel.build.hamilton.native.analytics.cfg_dfg",
+    )
     registry.register(SYMBOL_USES_TARGET, plugin=SymbolUsesPlugin)
     registry.register(GRAPH_VALIDATION_TARGET, plugin=GraphValidationPlugin)
     registry.register(GRAPH_METRICS_TARGET, plugin=CoreMetricsPlugin)
     registry.register(SYMBOL_GRAPH_METRICS_TARGET, plugin=SymbolGraphMetricsPlugin)
-    registry.register(TEST_GRAPH_METRICS_TARGET, plugin=TestGraphMetricsPlugin)
+    # Native target (migrated from plugin to Hamilton pipeline)
+    registry.register(
+        TEST_GRAPH_METRICS_TARGET,
+        native_module="codeintel.build.hamilton.native.analytics.test_graph_metrics",
+    )
 
     # Native targets (migrated to Hamilton pipelines)
     registry.register(
@@ -203,10 +209,7 @@ def register_analytics_targets(registry: UnifiedRegistry) -> None:
         ConfigDataFlowPlugin,
         CoverageFunctionsPlugin,
         CoverageTestEdgesPlugin,
-        DataModelsPlugin,
         DataModelUsagePlugin,
-        EntrypointsPlugin,
-        ExternalDepsPlugin,
         FunctionAstFeaturesPlugin,
         FunctionContractsPlugin,
         FunctionEffectsPlugin,
@@ -254,7 +257,11 @@ def register_analytics_targets(registry: UnifiedRegistry) -> None:
     registry.register(FUNCTION_HISTORY_TARGET, plugin=FunctionHistoryPlugin)
     registry.register(HISTORY_TIMESERIES_TARGET, plugin=HistoryTimeseriesPlugin)
     registry.register(COVERAGE_TEST_EDGES_TARGET, plugin=CoverageTestEdgesPlugin)
-    registry.register(DATA_MODELS_TARGET, plugin=DataModelsPlugin)
+    # Native target (migrated from plugin to Hamilton pipeline)
+    registry.register(
+        DATA_MODELS_TARGET,
+        native_module="codeintel.build.hamilton.native.analytics.data_models",
+    )
     registry.register(DATA_MODEL_USAGE_TARGET, plugin=DataModelUsagePlugin)
     registry.register(CONFIG_DATA_FLOW_TARGET, plugin=ConfigDataFlowPlugin)
     registry.register(SEMANTIC_ROLES_TARGET, plugin=SemanticRolesPlugin)
@@ -262,8 +269,15 @@ def register_analytics_targets(registry: UnifiedRegistry) -> None:
     registry.register(SUBSYSTEM_AGREEMENT_TARGET, plugin=SubsystemAgreementPlugin)
     registry.register(TEST_PROFILE_TARGET, plugin=TestProfilePlugin)
     registry.register(BEHAVIORAL_COVERAGE_TARGET, plugin=BehavioralCoveragePlugin)
-    registry.register(ENTRYPOINTS_TARGET, plugin=EntrypointsPlugin)
-    registry.register(EXTERNAL_DEPS_TARGET, plugin=ExternalDepsPlugin)
+    # Native targets (migrated from plugin to Hamilton pipeline)
+    registry.register(
+        ENTRYPOINTS_TARGET,
+        native_module="codeintel.build.hamilton.native.analytics.entrypoints",
+    )
+    registry.register(
+        EXTERNAL_DEPS_TARGET,
+        native_module="codeintel.build.hamilton.native.analytics.dependencies",
+    )
     registry.register(PROFILES_TARGET, plugin=ProfilesPlugin)
     registry.register(FUNCTION_AST_FEATURES_TARGET, plugin=FunctionAstFeaturesPlugin)
 

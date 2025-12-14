@@ -1,7 +1,18 @@
-"""Materialize CFG/DFG analytics tables."""
+"""Materialize CFG/DFG analytics tables.
+
+.. deprecated::
+    This module contains legacy functions with direct database writes.
+    Use the Hamilton native module `codeintel.build.hamilton.native.analytics.cfg_dfg`
+    for new code, which separates compute from persistence.
+
+    The pure compute functions are available in `codeintel.analytics.cfg_dfg.compute`:
+    - `compute_cfg_metrics_pure` returns `CfgMetricsResult`
+    - `compute_dfg_metrics_pure` returns `DfgMetricsResult`
+"""
 
 from __future__ import annotations
 
+import warnings
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -167,7 +178,20 @@ def compute_cfg_metrics(
     repo: str,
     commit: str,
 ) -> None:
-    """Populate cfg_function_metrics and cfg_block_metrics tables."""
+    """Populate cfg_function_metrics and cfg_block_metrics tables.
+
+    .. deprecated::
+        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.cfg_dfg`
+        instead. For pure compute, use `compute_cfg_metrics_pure` from
+        `codeintel.analytics.cfg_dfg.compute`.
+    """
+    warnings.warn(
+        "compute_cfg_metrics is deprecated. Use the Hamilton native module "
+        "'codeintel.build.hamilton.native.analytics.cfg_dfg' or "
+        "'compute_cfg_metrics_pure' for pure compute.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.cfg_function_metrics")
     backend.ensure_table("analytics.cfg_block_metrics")
@@ -241,7 +265,20 @@ def compute_dfg_metrics(
     repo: str,
     commit: str,
 ) -> None:
-    """Populate dfg_function_metrics and dfg_block_metrics tables."""
+    """Populate dfg_function_metrics and dfg_block_metrics tables.
+
+    .. deprecated::
+        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.cfg_dfg`
+        instead. For pure compute, use `compute_dfg_metrics_pure` from
+        `codeintel.analytics.cfg_dfg.compute`.
+    """
+    warnings.warn(
+        "compute_dfg_metrics is deprecated. Use the Hamilton native module "
+        "'codeintel.build.hamilton.native.analytics.cfg_dfg' or "
+        "'compute_dfg_metrics_pure' for pure compute.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.dfg_function_metrics")
     backend.ensure_table("analytics.dfg_block_metrics")

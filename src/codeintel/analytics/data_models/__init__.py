@@ -1,9 +1,19 @@
-"""Data model analytics plugins package."""
+"""Data model analytics plugins package.
 
+For Hamilton native execution, use the pure compute functions:
+- `compute_data_models_pure` returns `DataModelsResult` without writing
+"""
+
+from codeintel.analytics.data_models.compute import (
+    DataModelsResult,
+    compute_data_models_pure,
+)
 from codeintel.analytics.data_models.core import ClassMeta, ModelRecord, compute_data_models
 
 __all__ = [
     "ClassMeta",
+    "DataModelsResult",
     "ModelRecord",
     "compute_data_models",
+    "compute_data_models_pure",
 ]

@@ -11,17 +11,20 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = REPO_ROOT / "src" / "codeintel"
 
 ALLOWLIST_IBIS_WRITE_FILES = {
-    "src/codeintel/analytics/cfg_dfg/materialize.py",
+    # NOTE: Files below have deprecated functions with direct writes for backward
+    # compatibility. They will be removed when deprecated functions are deleted.
+    # New code should use the Hamilton native modules in build/hamilton/native/analytics/
+    "src/codeintel/analytics/cfg_dfg/materialize.py",  # -> cfg_dfg.py native
     "src/codeintel/analytics/compute/coverage/functions.py",
     "src/codeintel/analytics/compute/data_models/usage.py",
-    "src/codeintel/analytics/data_models/core.py",
-    "src/codeintel/analytics/dependencies/core.py",
-    "src/codeintel/analytics/entrypoints/core.py",
+    "src/codeintel/analytics/data_models/core.py",  # -> data_models.py native
+    "src/codeintel/analytics/dependencies/core.py",  # -> dependencies.py native
+    "src/codeintel/analytics/entrypoints/core.py",  # -> entrypoints.py native
     "src/codeintel/analytics/functions/function_history.py",
     "src/codeintel/analytics/history/history_timeseries.py",
     "src/codeintel/analytics/parsing/validation.py",
     "src/codeintel/analytics/profiles/writer_guard.py",
-    "src/codeintel/analytics/testing/graph_metrics.py",
+    "src/codeintel/analytics/testing/graph_metrics.py",  # -> test_graph_metrics.py native
 }
 
 
