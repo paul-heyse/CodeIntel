@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "created": "2024-12-13",
-  "updated": "2024-12-13",
+  "updated": "2024-12-14",
   "description": "Tracks migration progress of legacy modules to core/ infrastructure",
   "modules": [
     {
@@ -18,31 +18,31 @@
       "id": 2,
       "source": "codeintel.analytics.resources.protocol",
       "target": "codeintel.core.resources",
-      "status": "complete",
+      "status": "deleted",
       "pattern_type": "provider",
       "consumers": 7,
       "migrated": 7,
-      "notes": "Phase 4: All 7 consumers migrated to core.resources. Shim remains for external consumers."
+      "notes": "Phase 12: Shim deleted after all consumers migrated to core.resources"
     },
     {
       "id": 3,
       "source": "codeintel.ingestion.infrastructure.workers",
       "target": "codeintel.core.concurrency",
-      "status": "deferred",
+      "status": "deleted",
       "pattern_type": "concurrency",
       "consumers": 2,
-      "notes": "WorkerConfig API incompatible (different constructor). Shim provides backward compat."
+      "migrated": 2,
+      "notes": "Phase 12: Shim deleted. Tests updated to use core.concurrency API"
     },
     {
       "id": 4,
       "source": "codeintel.ingestion.infrastructure.paths",
       "target": "codeintel.core.paths",
-      "status": "partial",
+      "status": "deleted",
       "pattern_type": "paths",
       "consumers": 25,
-      "migrated": 20,
-      "remaining": 4,
-      "notes": "Phase 3: 20/24 consumers migrated. 4 engine files need safe_relpath shim (API incompatible)."
+      "migrated": 25,
+      "notes": "Phase 12: Shim deleted. 4 engine files updated to use core.paths.repo_relpath with try/except pattern"
     },
     {
       "id": 5,

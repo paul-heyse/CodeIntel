@@ -1,10 +1,7 @@
 """Shared AST utilities for capture and span lookup.
 
-Note
-----
-As of v5.0.0, AstSpanIndex is defined in codeintel.core.parsing and
-re-exported here for backward compatibility. New code should import
-from codeintel.core.parsing directly.
+This module provides utilities for parsing Python modules and working with ASTs.
+For span indexing, import ``AstSpanIndex`` directly from ``codeintel.core.parsing``.
 """
 
 from __future__ import annotations
@@ -12,9 +9,6 @@ from __future__ import annotations
 import ast
 import time
 from typing import TYPE_CHECKING
-
-# Re-export from core for backward compatibility
-from codeintel.core.parsing import AstSpanIndex as AstSpanIndex  # noqa: PLC0414
 
 if TYPE_CHECKING:
     from pathlib import Path

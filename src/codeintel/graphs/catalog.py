@@ -9,7 +9,7 @@ Key Components
 - FunctionSpanIndex: Lookup structure for resolving GOIDs from file spans
 - FunctionCatalog: Centralized access to spans, URNs, and module mappings
 - FunctionCatalogProvider: Protocol for catalog access (DI)
-- CatalogService: Unified service for graphs and analytics (replaces FunctionCatalogService)
+- CatalogService: Unified service for graphs and analytics
 
 Hexagonal Architecture Integration
 ----------------------------------
@@ -29,7 +29,6 @@ codeintel.core.catalog directly.
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 
@@ -156,69 +155,6 @@ def load_function_index(gateway: StorageGateway, *, repo: str, commit: str) -> F
         Index seeded from `core.goids` for the repo/commit snapshot.
     """
     return FunctionSpanIndex(load_function_spans(gateway, repo=repo, commit=commit))
-
-
-def _create_function_meta(**kwargs: object) -> FunctionSpan:
-    """Create a FunctionSpan from legacy FunctionMeta arguments.
-
-    .. deprecated:: 5.0.0
-        Use FunctionSpan directly with urn parameter.
-
-    Parameters
-    ----------
-    **kwargs
-        Arguments matching FunctionMeta fields (goid, urn, rel_path, qualname,
-        start_line, end_line).
-
-    Returns
-    -------
-    FunctionSpan
-        Unified function span.
-    """
-    warnings.warn(
-        "FunctionMeta is deprecated. Use FunctionSpan with urn parameter instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return FunctionSpan(
-        goid=int(kwargs["goid"]),  # type: ignore[arg-type]
-        rel_path=str(kwargs["rel_path"]),
-        qualname=str(kwargs["qualname"]),
-        start_line=int(kwargs["start_line"]),  # type: ignore[arg-type]
-        end_line=int(kwargs["end_line"]),  # type: ignore[arg-type]
-        urn=str(kwargs["urn"]),
-    )
-
-
-class _FunctionMetaCompat:
-    """Compatibility class providing FunctionMeta-like construction.
-
-    .. deprecated:: 5.0.0
-        Use FunctionSpan directly with urn parameter.
-    """
-
-    def __new__(  # noqa: PLR0913, PLR0917 - matches legacy dataclass signature
-        cls,
-        goid: int,
-        urn: str,
-        rel_path: str,
-        qualname: str,
-        start_line: int,
-        end_line: int,
-    ) -> FunctionSpan:
-        """Create a FunctionSpan from legacy FunctionMeta arguments."""
-        return _create_function_meta(
-            goid=goid,
-            urn=urn,
-            rel_path=rel_path,
-            qualname=qualname,
-            start_line=start_line,
-            end_line=end_line,
-        )
-
-
-# Deprecated alias - use FunctionSpan directly
-FunctionMeta = _FunctionMetaCompat
 
 
 class FunctionCatalog:
@@ -646,40 +582,10 @@ class CatalogService(FunctionCatalogProvider):
         return self._catalog.function_spans
 
 
-def FunctionCatalogService(catalog: FunctionCatalog) -> CatalogService:  # noqa: N802
-    """Create a CatalogService from a FunctionCatalog.
-
-    .. deprecated:: 5.0.0
-        Use CatalogService directly.
-
-    Parameters
-    ----------
-    catalog
-        Function catalog to wrap.
-
-    Returns
-    -------
-    CatalogService
-        Unified catalog service.
-    """
-    warnings.warn(
-        "FunctionCatalogService is deprecated. Use CatalogService directly.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return CatalogService(catalog)
-
-
-# Keep a type alias for backward compatibility in type annotations
-FunctionCatalogServiceType = CatalogService
-
-
 __all__ = [
     "CatalogService",
     "FunctionCatalog",
     "FunctionCatalogProvider",
-    "FunctionCatalogService",  # Deprecated alias for CatalogService
-    "FunctionMeta",  # Deprecated alias for FunctionSpan
     "FunctionSpan",
     "FunctionSpanIndex",
     "load_function_catalog",

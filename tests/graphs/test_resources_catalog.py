@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Final
 import pytest
 
 from codeintel.graphs.catalog import CatalogService, FunctionCatalog, FunctionSpan
-from codeintel.graphs.ports.catalog import CatalogPort
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
@@ -72,9 +71,12 @@ def test_catalog_service_get_returns_self(catalog_resource: CatalogService) -> N
     expect_true(result is catalog_resource)
 
 
-def test_catalog_service_implements_catalog_port(catalog_resource: CatalogService) -> None:
-    """CatalogService implements CatalogPort protocol."""
-    expect_is_instance(catalog_resource, CatalogPort)
+def test_catalog_service_has_expected_methods(catalog_resource: CatalogService) -> None:
+    """CatalogService has expected catalog interface methods."""
+    expect_true(hasattr(catalog_resource, "function_spans"))
+    expect_true(hasattr(catalog_resource, "spans_for_path"))
+    expect_true(hasattr(catalog_resource, "lookup_goid"))
+    expect_true(hasattr(catalog_resource, "urn_for_goid"))
 
 
 def test_catalog_service_registers_with_registry(

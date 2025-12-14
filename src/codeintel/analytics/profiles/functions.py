@@ -26,12 +26,14 @@ from codeintel.analytics.profiles.types import (
 from codeintel.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
     DEFAULT_MODULE_TABLE,
+)
+from codeintel.analytics.profiles.writer_guard import create_profile_writer
+from codeintel.analytics.utilities.type_coercion import (
     int_or_default,
     optional_float,
     optional_int,
     optional_str,
 )
-from codeintel.analytics.profiles.writer_guard import create_profile_writer
 from codeintel.config.datasets import (
     FUNCTION_PROFILE_COLUMNS,
     function_profile_row_to_tuple,

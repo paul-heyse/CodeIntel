@@ -10,18 +10,15 @@ from codeintel.analytics.cfg_dfg.cfg_core import (
     cfg_rows_for_fn,
     load_cfg_blocks,
 )
-from codeintel.analytics.cfg_dfg.cfg_core import (
-    function_metadata as cfg_function_metadata,
-)
 from codeintel.analytics.cfg_dfg.dfg_core import (
     DfgInputs,
     build_dfg_context,
     dfg_block_rows,
     dfg_ext_row,
     dfg_fn_row,
-    dfg_function_metadata,
     load_dfg_edges,
 )
+from codeintel.analytics.cfg_dfg.helpers import load_function_metadata
 from codeintel.analytics.graphs.constants import (
     MAX_CFG_CENTRALITY_SAMPLE,
     MAX_CFG_EIGEN_SAMPLE,
@@ -177,7 +174,7 @@ def compute_cfg_metrics(
     backend.ensure_table("analytics.cfg_function_metrics_ext")
 
     blocks_by_fn, edges_by_fn = load_cfg_blocks(gateway, repo, commit)
-    metadata = cfg_function_metadata(gateway, repo, commit)
+    metadata = load_function_metadata(gateway, repo, commit)
     metrics_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -251,7 +248,7 @@ def compute_dfg_metrics(
     backend.ensure_table("analytics.dfg_function_metrics_ext")
 
     edges_by_fn = load_dfg_edges(gateway, repo, commit)
-    metadata = dfg_function_metadata(gateway, repo, commit)
+    metadata = load_function_metadata(gateway, repo, commit)
     metrics_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,

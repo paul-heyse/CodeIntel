@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.cfg_dfg.helpers import degree_dict, load_function_metadata, parse_block_idx
+from codeintel.analytics.cfg_dfg.helpers import degree_dict, parse_block_idx
 from codeintel.analytics.compute.graphs import (
     bounded_simple_path_count,
     build_dfg_graph,
@@ -289,7 +289,3 @@ def dfg_ext_row(ctx: DfgFnContext) -> tuple[object, ...]:
         ctx.now,
         1,
     )
-
-
-# Re-export for backward compatibility - prefer load_function_metadata from helpers
-dfg_function_metadata = load_function_metadata

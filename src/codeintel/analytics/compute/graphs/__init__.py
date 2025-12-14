@@ -47,7 +47,6 @@ from codeintel.analytics.compute.graphs.components import (
 from codeintel.analytics.compute.graphs.conversions import (
     log_empty_graph,
     log_projection_skipped,
-    normalize_decimal_id,
     normalize_node_id,
     safe_float,
     to_decimal_id,
@@ -110,7 +109,6 @@ __all__ = [
     "log_empty_graph",
     "log_projection_skipped",
     "neighbor_stats",
-    "normalize_decimal_id",
     "normalize_node_id",
     "projection_metrics",
     "safe_float",

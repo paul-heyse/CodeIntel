@@ -59,8 +59,8 @@ graphs     ─┘
 | Phase 9: Observability | ✅ Complete | 2024-12-13 | CLI/analytics observability + Hamilton docs |
 | Phase 10: Validation | ✅ Complete | 2024-12-13 | Graphs validation refactored to CheckProtocol |
 | Phase 11: Events/Hooks | ⏭️ Skipped | 2024-12-13 | No event patterns in analytics/ingestion/graphs |
-| Phase 12: Delete Dead Code | 📋 Pending | - | Remove deprecated shims |
-| Phase 13: Update Tests | 📋 Pending | - | Parallel with 4-11 |
+| Phase 12: Delete Dead Code | ✅ Complete | 2024-12-14 | 3 shims deleted, 4 engine files migrated |
+| Phase 13: Update Tests | ✅ Complete | 2024-12-14 | Test updates integrated into Phases 4-12 |
 | Phase 14: Documentation | 📋 Pending | - | |
 
 ---
@@ -1334,7 +1334,48 @@ events.emit("analysis.complete", {"function_count": 100})
 
 ## Phase 12: Delete Dead Code and Legacy Modules (2-3 days)
 
-> **Scope**: Remove deprecated shims in analytics/ingestion/graphs. Build modules remain for future rationalization.
+> **Completed**: 2024-12-14 | 3 shims deleted, 4 engine files migrated, tests updated
+
+### 12.0 Phase 12 Completion Summary
+
+All deprecated shims that were replaced by `codeintel.core` infrastructure have been deleted.
+
+**Files Deleted**:
+1. `analytics/resources/protocol.py` - Replaced by `core/resources`
+2. `ingestion/infrastructure/paths.py` - Replaced by `core/paths`
+3. `ingestion/infrastructure/workers.py` - Replaced by `core/concurrency`
+
+**Engine Files Updated** (safe_relpath → repo_relpath):
+- `ingestion/engine/coverage.py`
+- `ingestion/engine/pyrefly.py`
+- `ingestion/engine/pyright.py`
+- `ingestion/engine/ruff.py`
+
+**Pattern Change**:
+```python
+# Before (safe_relpath returns None on failure)
+from codeintel.ingestion.infrastructure.paths import safe_relpath
+rel_path = safe_relpath(repo_root, Path(file_name))
+if rel_path is None:
+    continue
+
+# After (repo_relpath raises ValueError on failure)
+from codeintel.core.paths import repo_relpath
+try:
+    rel_path = repo_relpath(repo_root, Path(file_name))
+except ValueError:
+    continue
+```
+
+**Test Files Updated**:
+- `tests/analytics/resources/test_resource_registry.py` - Import from `core.resources`
+- `tests/ingestion/test_workers.py` - Updated to use `core.concurrency` API
+
+**__init__.py Files Updated**:
+- `ingestion/infrastructure/__init__.py` - Imports from core modules
+- `ingestion/__init__.py` - Imports from core modules
+
+---
 
 ### 12.1 Identify Dead Code
 

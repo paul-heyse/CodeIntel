@@ -1,10 +1,24 @@
-"""DuckDB ingestion storage adapter shim (policy backend + ibis).
+"""DuckDB storage adapter implementing IngestStoragePort.
 
-This compatibility layer keeps the IngestStoragePort surface while routing
-all writes/deletes through DuckDBPolicyBackend and reads through the
-gateway/ibis connection. Raw SQL helpers are retained only for legacy
-query execution in tests; new code should prefer ibis or the policy backend
-directly.
+This module provides the production implementation of ``IngestStoragePort``
+for the ingestion layer. The adapter routes operations through the established
+storage infrastructure:
+
+- Writes/deletes: ``DuckDBPolicyBackend`` for type-safe bulk operations
+- Reads: ``StorageGateway`` for query execution and DataFrame retrieval
+- Schema management: ``DuckDBPolicyBackend.ensure_schemas_preserve()``
+
+Why This Adapter Exists
+-----------------------
+The ``IngestStoragePort`` protocol enables test isolation - ingestion compute
+steps can be unit tested using ``FakeIngestStorage`` without a database. This
+adapter is the production implementation that connects to real storage.
+
+See Also
+--------
+codeintel.ingestion.ports.storage.IngestStoragePort : Protocol definition
+tests._helpers.fakes.storage.FakeIngestStorage : Test implementation
+codeintel.storage.duckdb_policy_backend.DuckDBPolicyBackend : Underlying backend
 """
 
 from __future__ import annotations
@@ -42,7 +56,26 @@ def build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
 
 
 class DuckDBStorageAdapter(IngestStoragePort):
-    """Compatibility shim implementing IngestStoragePort via policy backend."""
+    """Production storage adapter implementing IngestStoragePort.
+
+    This adapter wraps ``StorageGateway`` and ``DuckDBPolicyBackend`` to provide
+    the ``IngestStoragePort`` interface for ingestion compute steps.
+
+    The abstraction exists primarily for **testability**: ingestion compute steps
+    depend on ``IngestStoragePort`` rather than concrete storage, allowing tests
+    to inject ``FakeIngestStorage`` for unit testing without a database.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing database connection and Ibis interface.
+
+    Examples
+    --------
+    >>> storage = DuckDBStorageAdapter(ctx.gateway)
+    >>> result = storage.write_batch("core.modules", rows)
+    >>> print(f"Wrote {result.rows_written} rows")
+    """
 
     ADAPTER_NAME: ClassVar[str] = "duckdb_storage"
 

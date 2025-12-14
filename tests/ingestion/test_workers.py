@@ -9,9 +9,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
-from codeintel.ingestion.infrastructure.workers import (
-    AST_WORKER_CONFIG,
-    CST_WORKER_CONFIG,
+from codeintel.core.concurrency import (
     DEFAULT_MAX_WORKERS,
     DEFAULT_MIN_WORKERS,
     WorkerConfig,
@@ -39,7 +37,7 @@ def test_worker_config_create_with_defaults() -> None:
     expect_equal(config.env_var, "TEST_WORKERS")
     expect_equal(config.default_max, DEFAULT_MAX_WORKERS)
     expect_equal(config.default_min, DEFAULT_MIN_WORKERS)
-    expect_equal(config.executor_kind, "process")
+    expect_equal(config.executor_type, "thread")
 
 
 def test_worker_config_create_with_custom_values() -> None:
@@ -50,13 +48,13 @@ def test_worker_config_create_with_custom_values() -> None:
         env_var="CUSTOM_WORKERS",
         default_max=custom_max,
         default_min=custom_min,
-        executor_kind="thread",
+        executor_type="process",
     )
 
     expect_equal(config.env_var, "CUSTOM_WORKERS")
     expect_equal(config.default_max, custom_max)
     expect_equal(config.default_min, custom_min)
-    expect_equal(config.executor_kind, "thread")
+    expect_equal(config.executor_type, "process")
 
 
 def test_worker_config_frozen_dataclass() -> None:
@@ -69,20 +67,14 @@ def test_worker_config_frozen_dataclass() -> None:
 def test_resolve_worker_count_explicit_count_takes_precedence() -> None:
     """Explicit count should override environment and defaults."""
     explicit = 4
-    result = resolve_worker_count(
-        "NONEXISTENT_VAR",
-        explicit_count=explicit,
-    )
+    result = resolve_worker_count(explicit)
 
     expect_equal(result, explicit)
 
 
 def test_resolve_worker_count_explicit_zero_is_ignored() -> None:
     """Explicit count of zero should be ignored."""
-    result = resolve_worker_count(
-        "NONEXISTENT_VAR",
-        explicit_count=0,
-    )
+    result = resolve_worker_count(0)
 
     cpu_count = os.cpu_count() or 1
     expected = min(DEFAULT_MAX_WORKERS, max(DEFAULT_MIN_WORKERS, cpu_count // 2))
@@ -91,10 +83,7 @@ def test_resolve_worker_count_explicit_zero_is_ignored() -> None:
 
 def test_resolve_worker_count_negative_explicit_is_ignored() -> None:
     """Negative explicit count should be ignored."""
-    result = resolve_worker_count(
-        "NONEXISTENT_VAR",
-        explicit_count=-1,
-    )
+    result = resolve_worker_count(-1)
 
     cpu_count = os.cpu_count() or 1
     expected = min(DEFAULT_MAX_WORKERS, max(DEFAULT_MIN_WORKERS, cpu_count // 2))
@@ -105,7 +94,7 @@ def test_resolve_worker_count_env_var_takes_precedence_over_default() -> None:
     """Environment variable should override default calculation."""
     env_value = 6
 
-    result = resolve_worker_count("TEST_WORKERS_ENV", env={"TEST_WORKERS_ENV": str(env_value)})
+    result = resolve_worker_count(env_var="TEST_WORKERS_ENV", env={"TEST_WORKERS_ENV": str(env_value)})
 
     expect_equal(result, env_value)
 
@@ -113,7 +102,7 @@ def test_resolve_worker_count_env_var_takes_precedence_over_default() -> None:
 def test_resolve_worker_count_invalid_env_var_is_ignored() -> None:
     """Invalid environment variable should be ignored."""
     result = resolve_worker_count(
-        "TEST_WORKERS_INVALID", env={"TEST_WORKERS_INVALID": "not_a_number"}
+        env_var="TEST_WORKERS_INVALID", env={"TEST_WORKERS_INVALID": "not_a_number"}
     )
 
     cpu_count = os.cpu_count() or 1
@@ -123,7 +112,7 @@ def test_resolve_worker_count_invalid_env_var_is_ignored() -> None:
 
 def test_resolve_worker_count_zero_env_var_is_ignored() -> None:
     """Environment variable with zero should be ignored."""
-    result = resolve_worker_count("TEST_WORKERS_ZERO", env={"TEST_WORKERS_ZERO": "0"})
+    result = resolve_worker_count(env_var="TEST_WORKERS_ZERO", env={"TEST_WORKERS_ZERO": "0"})
 
     cpu_count = os.cpu_count() or 1
     expected = min(DEFAULT_MAX_WORKERS, max(DEFAULT_MIN_WORKERS, cpu_count // 2))
@@ -132,7 +121,7 @@ def test_resolve_worker_count_zero_env_var_is_ignored() -> None:
 
 def test_resolve_worker_count_default_calculation() -> None:
     """Default calculation should be based on CPU count."""
-    result = resolve_worker_count("NONEXISTENT_VAR")
+    result = resolve_worker_count(env_var="NONEXISTENT_VAR")
 
     cpu_count = os.cpu_count() or 1
     expected = min(DEFAULT_MAX_WORKERS, max(DEFAULT_MIN_WORKERS, cpu_count // 2))
@@ -143,7 +132,7 @@ def test_resolve_worker_count_custom_max_workers() -> None:
     """Custom max workers should be respected."""
     custom_max = 4
     result = resolve_worker_count(
-        "NONEXISTENT_VAR",
+        env_var="NONEXISTENT_VAR",
         default_max=custom_max,
     )
 
@@ -156,7 +145,7 @@ def test_resolve_worker_count_custom_min_workers() -> None:
     """Custom min workers should be respected."""
     custom_min = 4
     result = resolve_worker_count(
-        "NONEXISTENT_VAR",
+        env_var="NONEXISTENT_VAR",
         default_min=custom_min,
     )
 
@@ -168,7 +157,8 @@ def test_resolve_worker_count_custom_min_workers() -> None:
 def test_create_executor_process_executor() -> None:
     """create_executor should return ProcessPoolExecutor for 'process'."""
     workers = 2
-    executor = create_executor("process", workers)
+    config = WorkerConfig(max_workers=workers, executor_type="process")
+    executor = create_executor(config)
 
     try:
         expect_is_instance(executor, ProcessPoolExecutor)
@@ -179,7 +169,8 @@ def test_create_executor_process_executor() -> None:
 def test_create_executor_thread_executor() -> None:
     """create_executor should return ThreadPoolExecutor for 'thread'."""
     workers = 2
-    executor = create_executor("thread", workers)
+    config = WorkerConfig(max_workers=workers, executor_type="thread")
+    executor = create_executor(config)
 
     try:
         expect_is_instance(executor, ThreadPoolExecutor)
@@ -187,10 +178,10 @@ def test_create_executor_thread_executor() -> None:
         executor.shutdown(wait=False)
 
 
-def test_create_executor_unknown_kind_defaults_to_thread() -> None:
-    """Unknown executor kind should default to ThreadPoolExecutor."""
-    workers = 2
-    executor = create_executor("unknown", workers)
+def test_create_executor_default_is_thread() -> None:
+    """Default executor type should be thread."""
+    config = WorkerConfig(max_workers=2)
+    executor = create_executor(config)
 
     try:
         expect_is_instance(executor, ThreadPoolExecutor)
@@ -257,20 +248,6 @@ def test_executor_factory_creates_new_instance_each_call() -> None:
     finally:
         executor1.shutdown(wait=False)
         executor2.shutdown(wait=False)
-
-
-def test_ast_worker_config() -> None:
-    """AST_WORKER_CONFIG should be properly configured."""
-    expect_equal(AST_WORKER_CONFIG.env_var, "CODEINTEL_AST_WORKERS")
-    expect_equal(AST_WORKER_CONFIG.default_max, DEFAULT_MAX_WORKERS)
-    expect_equal(AST_WORKER_CONFIG.executor_kind, "process")
-
-
-def test_cst_worker_config() -> None:
-    """CST_WORKER_CONFIG should be properly configured."""
-    expect_equal(CST_WORKER_CONFIG.env_var, "CODEINTEL_CST_WORKERS")
-    expect_equal(CST_WORKER_CONFIG.default_max, DEFAULT_MAX_WORKERS)
-    expect_equal(CST_WORKER_CONFIG.executor_kind, "process")
 
 
 def test_default_max_workers() -> None:

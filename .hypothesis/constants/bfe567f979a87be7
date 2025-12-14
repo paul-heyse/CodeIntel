@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/graphs/conversions.py
+# hypothesis_version: 6.148.7
+
+['log_empty_graph', 'normalize_node_id', 'safe_float', 'to_decimal_id']

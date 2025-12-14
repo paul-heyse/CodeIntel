@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from anyio import to_thread
 
+from codeintel.core.paths import repo_relpath
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
@@ -23,7 +24,6 @@ from codeintel.ingestion.engine.plugins import (
     ToolStatus,
 )
 from codeintel.ingestion.engine.results import CoverageReport
-from codeintel.ingestion.infrastructure.paths import safe_relpath
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -69,8 +69,9 @@ def _parse_coverage_json(
         executed = {int(line) for line in data.get("executed_lines", []) if isinstance(line, int)}
         missing = {int(line) for line in data.get("missing_lines", []) if isinstance(line, int)}
 
-        rel_path = safe_relpath(repo_root, Path(str(file_name)))
-        if rel_path is None:
+        try:
+            rel_path = repo_relpath(repo_root, Path(str(file_name)))
+        except ValueError:
             continue
 
         reports.append((rel_path, executed, missing))

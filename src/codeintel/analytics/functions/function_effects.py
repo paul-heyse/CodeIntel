@@ -14,7 +14,6 @@ import ibis
 from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
-from codeintel.analytics.compute.graphs import normalize_decimal_id
 from codeintel.analytics.parsing.ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
@@ -24,6 +23,7 @@ from codeintel.analytics.runtime import (
 )
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.graphs.catalog import (
     CatalogService,
 )

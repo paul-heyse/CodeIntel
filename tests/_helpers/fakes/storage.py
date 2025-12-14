@@ -20,11 +20,18 @@ if TYPE_CHECKING:
 
 @dataclass
 class FakeIngestStorage:
-    """Protocol-compliant in-memory storage implementing IngestStoragePort.
+    """In-memory test implementation of IngestStoragePort.
 
-    This fake implements the full IngestStoragePort protocol with in-memory
-    data structures, enabling tests to verify storage behavior without a
-    real database while maintaining protocol compliance.
+    This fake implements the full ``IngestStoragePort`` protocol with in-memory
+    data structures, enabling unit tests to verify ingestion compute logic
+    without spinning up a real database.
+
+    Why This Exists
+    ---------------
+    The ``IngestStoragePort`` protocol exists specifically to enable this kind
+    of test isolation. Ingestion compute steps (``AstExtractStep``, ``ScipIngestStep``,
+    etc.) depend on the protocol rather than ``DuckDBStorageAdapter`` directly,
+    allowing tests to inject this fake for fast, isolated unit testing.
 
     Attributes
     ----------
@@ -34,6 +41,11 @@ class FakeIngestStorage:
         Set of table keys for which schema has been ensured.
     operations : CallRecorder[StorageOpCall]
         Log of operations for verification (operation_type, table_key, details).
+
+    See Also
+    --------
+    codeintel.ingestion.ports.storage.IngestStoragePort : Protocol definition
+    codeintel.ingestion.adapters.DuckDBStorageAdapter : Production implementation
     """
 
     data: dict[str, list[Sequence[object]]] = field(default_factory=dict)

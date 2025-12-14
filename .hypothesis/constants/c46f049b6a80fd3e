@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/validation/checks/database.py
+# hypothesis_version: 6.148.7
+
+[', ', 'ALL_DATABASE_CHECKS', 'Any', 'AsyncFunctionDef', 'FunctionDef', 'OrphanModulesCheck', 'callsite_line', 'check_name', 'commit', 'context', 'core.ast_nodes', 'core.goids', 'core.modules', 'detail', 'empty', 'end_line', 'function', 'function_count', 'goid_count', 'method', 'module', 'module has no GOIDs', 'module_goids', 'orphan_module', 'orphan_modules', 'path', 'rel_path', 'repo', 'severity', 'start_line', 'warn_orphan_modules', 'warning']

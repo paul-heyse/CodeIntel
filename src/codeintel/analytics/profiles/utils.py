@@ -1,4 +1,10 @@
-"""Shared helpers for analytics profile recipes."""
+"""Shared helpers for analytics profile recipes.
+
+Note
+----
+For type coercion helpers (``int_or_default``, ``optional_int``, etc.),
+import directly from ``codeintel.analytics.utilities.type_coercion``.
+"""
 
 from __future__ import annotations
 
@@ -6,15 +12,6 @@ import logging
 from typing import TYPE_CHECKING
 
 import pandas as pd
-
-# Re-export type coercion helpers for backward compatibility
-from codeintel.analytics.utilities.type_coercion import (
-    int_or_default,
-    optional_bool,
-    optional_float,
-    optional_int,
-    optional_str,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -29,11 +26,6 @@ log = logging.getLogger(__name__)
 __all__ = [
     "CATALOG_MODULE_TABLE",
     "DEFAULT_MODULE_TABLE",
-    "int_or_default",
-    "optional_bool",
-    "optional_float",
-    "optional_int",
-    "optional_str",
     "seed_catalog_modules",
 ]
 

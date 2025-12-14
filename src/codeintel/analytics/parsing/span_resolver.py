@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from pathlib import Path
 
-    from codeintel.analytics.parsing.models import ParsedFunction, SourceSpan
+    from codeintel.core.parsing import ParsedFunction, SourceSpan
 
 
 @dataclass(frozen=True)

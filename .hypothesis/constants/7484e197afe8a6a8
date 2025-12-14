@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/cache/protocol.py
+# hypothesis_version: 6.148.7
+
+[0.0, 1.0, 'CacheProtocol', 'CacheStats', 'CacheStatsCollector', 'ScopedCacheProtocol']

@@ -14,11 +14,13 @@ from codeintel.analytics.profiles.types import ModuleProfileInputs
 from codeintel.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
     DEFAULT_MODULE_TABLE,
+)
+from codeintel.analytics.profiles.writer_guard import create_profile_writer
+from codeintel.analytics.utilities.type_coercion import (
     optional_float,
     optional_int,
     optional_str,
 )
-from codeintel.analytics.profiles.writer_guard import create_profile_writer
 from codeintel.config.datasets import (
     MODULE_PROFILE_COLUMNS,
     ModuleProfileRowModel,

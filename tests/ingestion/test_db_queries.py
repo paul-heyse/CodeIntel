@@ -1,7 +1,7 @@
 """Tests for safe database query helpers.
 
-This module tests the query helpers that provide typed access to
-database operations with proper error handling.
+This module tests the query helpers from ``codeintel.storage.queries.safe``
+that provide typed access to database operations with proper error handling.
 
 Covers all safe_* functions for 80%+ coverage:
 - safe_count, safe_count_with_scope, safe_table_exists
@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.plugins.ingestion.repo_scan import RepoScanPlugin
-from codeintel.ingestion.infrastructure.db_queries import (
+from codeintel.storage.queries.safe import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
     ForeignKeyRef,
