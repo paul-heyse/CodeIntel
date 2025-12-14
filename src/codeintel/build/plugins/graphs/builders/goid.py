@@ -25,9 +25,9 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins._helpers import filter_paths, get_source_root, persist_rows
 from codeintel.build.plugins.graphs.builders.goid_options import GoidBuilderOptions
+from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import goid as goid_compute
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
@@ -330,7 +330,7 @@ class GoidBuilderPlugin(MetadataPlugin):
                         now=now,
                         options=opts,
                         module_name=_path_to_module_name(rel_path),
-                        normalized_path=normalize_rel_path(rel_path),
+                        normalized_path=normalize_path(rel_path),
                     ),
                 )
                 all_goid_rows.extend(rows[0])

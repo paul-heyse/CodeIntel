@@ -18,10 +18,10 @@ from codeintel.config.datasets import (
     serialize_test_coverage_edge,
 )
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.paths import normalize_path
 from codeintel.graphs.catalog import (
     CatalogService,
 )
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
@@ -501,7 +501,7 @@ def compute_test_coverage_edges(
     for measured in data.measured_files():
         abs_file = Path(measured).resolve()
         try:
-            rel_path = normalize_rel_path(abs_file.relative_to(snapshot.repo_root))
+            rel_path = normalize_path(abs_file.relative_to(snapshot.repo_root))
         except ValueError:
             continue
 

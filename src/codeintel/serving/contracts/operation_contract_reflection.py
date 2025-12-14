@@ -27,14 +27,26 @@ class ComponentSpec:
     label: str | None = None
 
     def component_name(self) -> str:
-        """Return the display label for the component."""
+        """Return the display label for the component.
+
+        Returns
+        -------
+        str
+            Explicit label when provided, otherwise the component name.
+        """
         if self.label is not None:
             return self.label
         return getattr(self.component, "__name__", repr(self.component))
 
 
 def _annotation_to_str(annotation: object) -> str:
-    """Render a type annotation to a stable string."""
+    """Render a type annotation to a stable string.
+
+    Returns
+    -------
+    str
+        String form of the annotation or ``\"Any\"`` when missing.
+    """
     if annotation is inspect.Signature.empty:
         return "Any"
     if isinstance(annotation, type):
@@ -49,7 +61,13 @@ def _extract_signature_rows(
     label: str,
     method_names: Sequence[str],
 ) -> list[dict[str, object]]:
-    """Reflect component methods into contract rows."""
+    """Reflect component methods into contract rows.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Reflected operation records for the provided component.
+    """
     rows: list[dict[str, object]] = []
     for method_name in method_names:
         attr = getattr(component, method_name, None)
@@ -94,7 +112,18 @@ def _extract_signature_rows(
 def build_operation_contract_dataframe(
     components: Iterable[ComponentSpec],
 ) -> pd.DataFrame:
-    """Return a DataFrame of reflected operation contracts."""
+    """Return a DataFrame of reflected operation contracts.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Reflected operation contract rows for all components.
+
+    Raises
+    ------
+    ValueError
+        If a component uses an unsupported transport kind.
+    """
     method_names = sorted({spec.backend_method for spec in iter_operations()})
     records: list[dict[str, object]] = []
 
@@ -115,12 +144,29 @@ def build_operation_contract_dataframe(
 
 
 def get_operation_contract_schema() -> DatasetSchema:
-    """Return the registered DatasetSchema for operation contracts."""
+    """Return the registered DatasetSchema for operation contracts.
+
+    Returns
+    -------
+    DatasetSchema
+        Registered schema for operation contract rows.
+    """
     return SCHEMA_REGISTRY.require(OPERATION_CONTRACT_TABLE_KEY)
 
 
 def validate_operation_contracts(df: pd.DataFrame) -> pd.DataFrame:
-    """Validate a reflected contract DataFrame using the registered schema."""
+    """Validate a reflected contract DataFrame using the registered schema.
+
+    Parameters
+    ----------
+    df
+        Reflected contract DataFrame to validate.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame validated against the operation contract schema.
+    """
     schema = get_operation_contract_schema()
     return schema.validate(df)
 

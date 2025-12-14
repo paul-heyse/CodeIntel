@@ -306,9 +306,7 @@ class DocstringsExtractStep(BaseExtractStep):
                 commit=commit,
             )
 
-        table_counts = self._write_and_count(
-            "core.docstrings", all_rows, repo=repo, commit=commit
-        )
+        table_counts = self._write_and_count("core.docstrings", all_rows, repo=repo, commit=commit)
         total_rows = table_counts.get("core.docstrings", 0)
 
         log.info(

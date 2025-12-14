@@ -13,9 +13,9 @@ Examples
 
 from __future__ import annotations
 
+from codeintel.core.cache import SnapshotKey, SnapshotScopedCache
 from codeintel.core.data.loader import BaseDataLoader
 from codeintel.core.data.protocol import DataLoaderProtocol
-from codeintel.core.data.snapshot import SnapshotKey, SnapshotScopedCache
 
 __all__ = [
     "BaseDataLoader",

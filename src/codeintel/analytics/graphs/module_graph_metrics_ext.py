@@ -81,9 +81,7 @@ def _rich_club_cutoff(degree_map: dict[object, int]) -> int:
     return sorted_degrees[idx] if idx < len(sorted_degrees) else sorted_degrees[-1]
 
 
-def _resolve_module_context(
-    runtime: GraphRuntimeOptions, repo: str, commit: str
-) -> GraphContext:
+def _resolve_module_context(runtime: GraphRuntimeOptions, repo: str, commit: str) -> GraphContext:
     """Build graph context with module-specific constants.
 
     Parameters
@@ -212,15 +210,15 @@ def _module_metric_rows(
 
 
 # Configuration for module-level extended metrics
-_MODULE_EXT_CONFIG: ExtendedMetricsConfig[
-    ModuleGraphSlices, GraphMetricsModulesExtRow
-] = ExtendedMetricsConfig(
-    table_key="analytics.graph_metrics_modules_ext",
-    get_source_graph=lambda rt: rt.ensure_import_graph(),
-    filter_graph=lambda f, g: f.filter_import_graph(g),
-    build_context=_resolve_module_context,
-    build_slices=_module_metric_slices,
-    build_rows=_module_metric_rows,
+_MODULE_EXT_CONFIG: ExtendedMetricsConfig[ModuleGraphSlices, GraphMetricsModulesExtRow] = (
+    ExtendedMetricsConfig(
+        table_key="analytics.graph_metrics_modules_ext",
+        get_source_graph=lambda rt: rt.ensure_import_graph(),
+        filter_graph=lambda f, g: f.filter_import_graph(g),
+        build_context=_resolve_module_context,
+        build_slices=_module_metric_slices,
+        build_rows=_module_metric_rows,
+    )
 )
 
 

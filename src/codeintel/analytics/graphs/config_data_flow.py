@@ -14,7 +14,7 @@ import networkx as nx
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.core.paths import normalize_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
@@ -224,7 +224,7 @@ def _coerce_paths(raw: str | list[str] | tuple[str, ...] | None) -> list[str]:
         parsed = raw
     if not isinstance(parsed, (list, tuple)):
         return []
-    return [normalize_rel_path(path) for path in parsed]
+    return [normalize_path(path) for path in parsed]
 
 
 def _config_references(
@@ -371,7 +371,7 @@ def _build_config_flow_rows(
     max_path_length = 10
     rows_to_insert: list[tuple[object, ...]] = []
     for goid, func_ast in artifacts.ast_by_goid.items():
-        rel_path = normalize_rel_path(func_ast.rel_path)
+        rel_path = normalize_path(func_ast.rel_path)
         config_refs = artifacts.refs_by_path.get(rel_path, [])
         if not config_refs:
             continue

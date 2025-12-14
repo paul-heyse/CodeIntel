@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, cast
 import ibis
 
 from codeintel.config.datasets import load_columns_by_table
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.core.paths import normalize_path
 from codeintel.ingestion.ports.change_detection import (
     ChangeSet,
     FileDigest,
@@ -85,7 +85,7 @@ class HashChangeDetectionAdapter:
         current_paths = set()
 
         for module in current_modules:
-            normalized_path = normalize_rel_path(module.rel_path)
+            normalized_path = normalize_path(module.rel_path)
             current_paths.add(normalized_path)
 
             if normalized_path not in current_state:
@@ -191,7 +191,7 @@ class HashChangeDetectionAdapter:
 
         state: dict[str, FileDigest] = {}
         for row in rows:
-            normalized = normalize_rel_path(str(row["rel_path"]))
+            normalized = normalize_path(str(row["rel_path"]))
             state[normalized] = FileDigest(
                 size_bytes=int(row["size_bytes"]),
                 mtime_ns=int(row["mtime_ns"]),
@@ -301,7 +301,7 @@ class HashChangeDetectionAdapter:
         for module in modules:
             digest = self.compute_file_digest(module.file_path)
             if digest is not None:
-                normalized = normalize_rel_path(module.rel_path)
+                normalized = normalize_path(module.rel_path)
                 state[normalized] = digest
         return state
 

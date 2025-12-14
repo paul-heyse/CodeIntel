@@ -252,7 +252,9 @@ class TestStateComputer:
         """BuildState query methods return correct results."""
         t1 = OutputTarget(name="t1", module="ingestion", dependencies=(), contract=EMPTY_CONTRACT)
         t2 = OutputTarget(name="t2", module="ingestion", dependencies=(), contract=EMPTY_CONTRACT)
-        t3 = OutputTarget(name="t3", module="ingestion", dependencies=("t1",), contract=EMPTY_CONTRACT)
+        t3 = OutputTarget(
+            name="t3", module="ingestion", dependencies=("t1",), contract=EMPTY_CONTRACT
+        )
 
         graph = TargetGraph()
         graph.register(t1)
@@ -407,7 +409,9 @@ class TestStateValidatorEquivalence:
     ) -> None:
         """StateValidator and StateComputer agree on blocked targets."""
         dep = OutputTarget(name="dep", module="ingestion", dependencies=(), contract=EMPTY_CONTRACT)
-        main = OutputTarget(name="main", module="ingestion", dependencies=("dep",), contract=EMPTY_CONTRACT)
+        main = OutputTarget(
+            name="main", module="ingestion", dependencies=("dep",), contract=EMPTY_CONTRACT
+        )
 
         graph = TargetGraph()
         graph.register(dep)

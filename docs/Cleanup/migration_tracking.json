@@ -8,46 +8,50 @@
       "id": 1,
       "source": "codeintel.core.data.snapshot",
       "target": "codeintel.core.cache",
-      "status": "pending",
+      "status": "complete",
       "pattern_type": "cache",
       "consumers": 2,
-      "notes": "Re-export shim for SnapshotKey, SnapshotScopedCache"
+      "migrated": 2,
+      "notes": "Phase 5: All 2 consumers migrated. Shim deleted."
     },
     {
       "id": 2,
       "source": "codeintel.analytics.resources.protocol",
       "target": "codeintel.core.resources",
-      "status": "pending",
+      "status": "complete",
       "pattern_type": "provider",
       "consumers": 7,
-      "notes": "Re-export shim for LazyResource, ResourceProvider, ResourceRegistry"
+      "migrated": 7,
+      "notes": "Phase 4: All 7 consumers migrated to core.resources. Shim remains for external consumers."
     },
     {
       "id": 3,
       "source": "codeintel.ingestion.infrastructure.workers",
       "target": "codeintel.core.concurrency",
-      "status": "pending",
+      "status": "deferred",
       "pattern_type": "concurrency",
       "consumers": 2,
-      "notes": "WorkerConfig, create_executor, resolve_worker_count, worker_pool, executor_factory"
+      "notes": "WorkerConfig API incompatible (different constructor). Shim provides backward compat."
     },
     {
       "id": 4,
       "source": "codeintel.ingestion.infrastructure.paths",
       "target": "codeintel.core.paths",
-      "status": "pending",
+      "status": "partial",
       "pattern_type": "paths",
       "consumers": 25,
-      "notes": "normalize_rel_path, relpath_to_module, safe_relpath, ensure_repo_root, repo_relpath"
+      "migrated": 20,
+      "remaining": 4,
+      "notes": "Phase 3: 20/24 consumers migrated. 4 engine files need safe_relpath shim (API incompatible)."
     },
     {
       "id": 5,
       "source": "codeintel.graphs.engine.cache",
       "target": null,
-      "status": "keep",
+      "status": "enhanced",
       "pattern_type": "cache",
       "consumers": 2,
-      "notes": "Domain-specific GraphCache, not migrating to core"
+      "notes": "Phase 5: Added CacheStatsCollector and stats property for observability. Domain-specific API retained."
     }
   ],
   "services": [
@@ -55,36 +59,41 @@
       "id": 101,
       "source": "codeintel.cli.services.runtime",
       "target": "codeintel.core.services",
-      "status": "pending",
-      "class": "RuntimeService"
+      "status": "enhanced",
+      "class": "RuntimeService",
+      "notes": "Phase 6: Added ServiceProtocol compatibility (SERVICE_NAME, initialize, shutdown, is_ready)"
     },
     {
       "id": 102,
       "source": "codeintel.cli.services.storage",
       "target": "codeintel.core.services",
-      "status": "pending",
-      "class": "StorageService"
+      "status": "enhanced",
+      "class": "StorageService",
+      "notes": "Phase 6: Added ServiceProtocol compatibility (SERVICE_NAME, initialize, shutdown, is_ready)"
     },
     {
       "id": 103,
       "source": "codeintel.cli.services.params",
       "target": "codeintel.core.services",
-      "status": "pending",
-      "class": "ParamService"
+      "status": "enhanced",
+      "class": "ParamService",
+      "notes": "Phase 6: Added ServiceProtocol compatibility (SERVICE_NAME, initialize, shutdown, is_ready)"
     },
     {
       "id": 104,
       "source": "codeintel.cli.services.jobs",
       "target": "codeintel.core.services",
-      "status": "pending",
-      "class": "JobService"
+      "status": "enhanced",
+      "class": "JobService",
+      "notes": "Phase 6: Added ServiceProtocol compatibility (SERVICE_NAME, initialize, shutdown, is_ready)"
     },
     {
       "id": 105,
       "source": "codeintel.cli.services.serving",
       "target": "codeintel.core.services",
-      "status": "pending",
-      "class": "ServingService"
+      "status": "enhanced",
+      "class": "ServingService",
+      "notes": "Phase 6: Added ServiceProtocol compatibility (SERVICE_NAME, initialize, shutdown, is_ready)"
     },
     {
       "id": 106,
@@ -120,8 +129,9 @@
       "id": 201,
       "source": "codeintel.storage.repositories.base",
       "target": "codeintel.core.repository",
-      "status": "pending",
-      "class": "BaseRepository"
+      "status": "enhanced",
+      "class": "BaseRepository",
+      "notes": "Phase 7: PaginatedRows replaced with PagedResult, _ibis_paginated returns PagedResult"
     },
     {
       "id": 202,

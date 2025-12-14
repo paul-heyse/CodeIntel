@@ -39,6 +39,7 @@ from codeintel.config.datasets import (
     call_graph_edge_to_tuple,
     call_graph_node_to_tuple,
 )
+from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.catalog import (
     load_function_index,
@@ -50,7 +51,6 @@ from codeintel.graphs.compute.callgraph import (
     collect_edges_cst,
 )
 from codeintel.graphs.compute.callgraph.persistence import dedupe_edge_rows
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import and_predicates
 
@@ -226,7 +226,7 @@ def _build_def_goids_by_path(
         )
         rows = expr.execute()
         return {
-            normalize_rel_path(str(rel_path)): int(goid)
+            normalize_path(str(rel_path)): int(goid)
             for rel_path, goid in rows.itertuples(index=False, name=None)
         }
     except DuckDBError:

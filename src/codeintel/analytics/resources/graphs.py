@@ -15,12 +15,12 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 import networkx as nx
 
-from codeintel.analytics.resources.protocol import LazyResource
 from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     build_graph_runtime,
 )
+from codeintel.core.resources import LazyResource
 from codeintel.core.resources.graphs import GraphBundle
 
 if TYPE_CHECKING:

@@ -11,7 +11,7 @@ Provide a single, unified implementation for invoking serving operations.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.serving.auto_pipeline import run_operation_prereqs
 from codeintel.serving.bootstrap import build_service_stack
@@ -59,6 +59,25 @@ class ServingService:
     >>> service = ServingService(runtime_svc, storage_svc)
     >>> result = service.invoke("function.summary", {"goid_h128": "abc123"})
     """
+
+    SERVICE_NAME: ClassVar[str] = "serving"
+
+    def initialize(self) -> None:
+        """Initialize the service (no-op, invocation is stateless)."""
+
+    def shutdown(self) -> None:
+        """Shut down the service (no-op, delegates to runtime/storage)."""
+
+    @property
+    def is_ready(self) -> bool:
+        """Check if service is ready.
+
+        Returns
+        -------
+        bool
+            Always True (stateless service).
+        """
+        return True
 
     def __init__(
         self,

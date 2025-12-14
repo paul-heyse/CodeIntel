@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.analytics.testing.profiles.types import TestRecord
-from codeintel.ingestion.infrastructure.paths import relpath_to_module
+from codeintel.core.paths import path_to_module
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -92,7 +92,7 @@ def aggregate_test_coverage_by_function(
         module_name = cast("str | None", payload.get("module"))
         rel_path = payload.get("rel_path")
         if module_name is None and rel_path is not None:
-            module_name = relpath_to_module(str(rel_path))
+            module_name = path_to_module(str(rel_path))
         raw_functions = payload.get("functions")
         functions = (
             list(cast("Iterable[dict[str, object]]", raw_functions))
@@ -251,7 +251,7 @@ def load_test_records(
         module_name = cast("str | None", payload.get("module"))
         rel_path = payload.get("rel_path")
         if module_name is None and rel_path is not None:
-            module_name = relpath_to_module(str(rel_path))
+            module_name = path_to_module(str(rel_path))
         records.append(
             TestRecord(
                 test_id=str(payload.get("test_id")),

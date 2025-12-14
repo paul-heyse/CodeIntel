@@ -16,8 +16,8 @@ from codeintel.analytics.compute.entrypoints.detection import (
     detect_entrypoints,
 )
 from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
+from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 ENTRYPOINTS_COLS = [
@@ -266,7 +266,7 @@ def _build_entrypoint_context(
     if not module_ctx:
         catalog_modules = module_map_override or catalog.catalog().module_by_path
         module_ctx = {
-            normalize_rel_path(path): ModuleContext(module=module, tags=[], owners=[])
+            normalize_path(path): ModuleContext(module=module, tags=[], owners=[])
             for path, module in catalog_modules.items()
         }
     if not module_ctx:
@@ -300,7 +300,7 @@ def _materialize_candidate(
         log.debug("Unable to resolve GOID for entrypoint %s (%s)", cand.qualname, cand.rel_path)
         return None
     urn = ctx.catalog.urn_for_goid(goid) or ""
-    rel_path = normalize_rel_path(cand.rel_path)
+    rel_path = normalize_path(cand.rel_path)
     module_info = ctx.module_ctx.get(rel_path)
     if module_info is None:
         log.debug("Module context missing for %s; skipping entrypoint", rel_path)
@@ -413,7 +413,7 @@ def _load_module_context(con: DuckDBConnection, repo: str, commit: str) -> dict[
     ).fetchall()
     context: dict[str, ModuleContext] = {}
     for rel_path, module, tags, owners in rows:
-        normalized = normalize_rel_path(str(rel_path))
+        normalized = normalize_path(str(rel_path))
         context[normalized] = ModuleContext(
             module=str(module),
             tags=tags,

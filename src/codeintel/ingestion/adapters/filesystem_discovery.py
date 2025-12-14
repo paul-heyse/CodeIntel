@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.infrastructure.paths import relpath_to_module, repo_relpath
+from codeintel.core.paths import path_to_module, repo_relpath
 from codeintel.ingestion.infrastructure.scanning import SourceScanner
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
@@ -77,7 +77,7 @@ class FilesystemDiscoveryAdapter:
 
         for idx, path in enumerate(paths, start=1):
             rel_path = repo_relpath(repo_root, path)
-            module_name = relpath_to_module(rel_path)
+            module_name = path_to_module(rel_path)
             modules.append(
                 ModuleRecord(
                     rel_path=rel_path,

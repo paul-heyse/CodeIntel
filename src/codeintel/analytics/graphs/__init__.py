@@ -71,13 +71,19 @@ compute_config_data_flow = lazy_callable(_LAZY_ATTRS, "compute_config_data_flow"
 compute_config_graph_metrics = lazy_callable(_LAZY_ATTRS, "compute_config_graph_metrics")
 compute_dfg_metrics = lazy_callable(_LAZY_ATTRS, "compute_dfg_metrics")
 compute_graph_metrics = lazy_callable(_LAZY_ATTRS, "compute_graph_metrics")
-compute_graph_metrics_functions_ext = lazy_callable(_LAZY_ATTRS, "compute_graph_metrics_functions_ext")
+compute_graph_metrics_functions_ext = lazy_callable(
+    _LAZY_ATTRS, "compute_graph_metrics_functions_ext"
+)
 compute_graph_metrics_modules_ext = lazy_callable(_LAZY_ATTRS, "compute_graph_metrics_modules_ext")
 compute_graph_stats = lazy_callable(_LAZY_ATTRS, "compute_graph_stats")
 compute_subsystem_agreement = lazy_callable(_LAZY_ATTRS, "compute_subsystem_agreement")
 compute_subsystem_graph_metrics = lazy_callable(_LAZY_ATTRS, "compute_subsystem_graph_metrics")
-compute_symbol_graph_metrics_functions = lazy_callable(_LAZY_ATTRS, "compute_symbol_graph_metrics_functions")
-compute_symbol_graph_metrics_modules = lazy_callable(_LAZY_ATTRS, "compute_symbol_graph_metrics_modules")
+compute_symbol_graph_metrics_functions = lazy_callable(
+    _LAZY_ATTRS, "compute_symbol_graph_metrics_functions"
+)
+compute_symbol_graph_metrics_modules = lazy_callable(
+    _LAZY_ATTRS, "compute_symbol_graph_metrics_modules"
+)
 
 # Fallback for any attribute access
 __getattr__ = make_lazy_getattr(_LAZY_ATTRS, __name__, cache_in_globals=globals())

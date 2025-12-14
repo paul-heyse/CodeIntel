@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/ports/__init__.py
+# hypothesis_version: 6.148.7
+
+['BaseBatchResult', 'BaseQueryResult', 'BatchResult', 'MutableQueryResult', 'QueryResult', 'StoragePort']

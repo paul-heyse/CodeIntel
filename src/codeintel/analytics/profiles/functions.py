@@ -968,12 +968,12 @@ def build_function_profile_rows(
 
 
 # Factory-created writer for function profiles
-write_function_profile_rows: Callable[
-    [StorageGateway, Iterable[FunctionProfileRowModel]], int
-] = create_profile_writer(
-    "analytics.function_profile",
-    FUNCTION_PROFILE_COLUMNS,
-    cast("Callable[[Mapping[str, object]], tuple[object, ...]]", function_profile_row_to_tuple),
+write_function_profile_rows: Callable[[StorageGateway, Iterable[FunctionProfileRowModel]], int] = (
+    create_profile_writer(
+        "analytics.function_profile",
+        FUNCTION_PROFILE_COLUMNS,
+        cast("Callable[[Mapping[str, object]], tuple[object, ...]]", function_profile_row_to_tuple),
+    )
 )
 
 

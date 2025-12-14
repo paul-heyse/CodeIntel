@@ -23,6 +23,7 @@ Example
 from codeintel.graphs.catalog import CatalogService
 from codeintel.graphs.resources import StorageResource
 
+
 def analyze(storage: StorageResource, catalog: CatalogService) -> dict[str, int]:
     spans = catalog.function_spans
 ```

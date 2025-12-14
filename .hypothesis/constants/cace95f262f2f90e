@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/parsing/ast_index.py
+# hypothesis_version: 6.148.7
+
+['AstSpanIndex', 'end_lineno', 'lineno']

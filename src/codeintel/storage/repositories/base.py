@@ -24,12 +24,14 @@ Existence check:
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
 from codeintel.config.datasets.validation import validate_df
+from codeintel.core.repository import PagedResult
 
 if TYPE_CHECKING:
     from ibis.expr import types as it
@@ -41,36 +43,60 @@ log = logging.getLogger(__name__)
 RowDict = dict[str, Any]
 
 
-@dataclass(frozen=True)
-class PaginatedRows:
-    """
-    Result of a paginated repository fetch with truncation metadata.
+class PaginatedRows(PagedResult[RowDict]):
+    """Deprecated alias for PagedResult[RowDict].
 
-    This type mirrors the serving layer's PaginatedFetch but is designed
-    for use within the repository layer. It provides consistent truncation
-    detection for all list operations.
+    .. deprecated:: 1.0
+        Use :class:`~codeintel.core.repository.PagedResult` instead.
 
-    Parameters
-    ----------
-    rows
-        The fetched rows (may be truncated if limit was applied).
-    limit
-        The limit used for the query.
-    truncated
-        Whether more rows exist beyond the limit.
-    total_available
-        Total row count if known (requires separate COUNT query).
+    This class exists for backward compatibility. New code should use
+    PagedResult directly from codeintel.core.repository.
     """
 
-    rows: list[RowDict]
-    limit: int
-    truncated: bool
-    total_available: int | None = None
+    def __init__(
+        self,
+        rows: list[RowDict],
+        limit: int,
+        *,
+        truncated: bool,
+        total_available: int | None = None,
+    ) -> None:
+        """Initialize with legacy field names.
+
+        Parameters
+        ----------
+        rows
+            The fetched rows (maps to items).
+        limit
+            The limit used for the query.
+        truncated
+            Whether more rows exist beyond the limit.
+        total_available
+            Total row count if known (maps to total).
+        """
+        warnings.warn(
+            "PaginatedRows is deprecated. Use PagedResult from "
+            "codeintel.core.repository instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(
+            items=rows,
+            total=total_available,
+            limit=limit,
+            offset=0,
+            truncated=truncated,
+        )
 
     @property
-    def count(self) -> int:
-        """Return the number of rows in this page."""
-        return len(self.rows)
+    def rows(self) -> list[RowDict]:
+        """Return rows (alias for items, for backward compatibility)."""
+        return self.items
+
+    @property
+    def total_available(self) -> int | None:
+        """Return total available (alias for total, for backward compatibility)."""
+        return self.total
 
 
 @dataclass(frozen=True)
@@ -221,12 +247,12 @@ class BaseRepository:
         *,
         limit: int,
         table_key: str | None = None,
-    ) -> PaginatedRows:
+    ) -> PagedResult[RowDict]:
         """
         Execute an Ibis expression with pagination and truncation detection.
 
         Fetch limit+1 rows to detect if more data exists beyond the page,
-        returning a PaginatedRows result with truncation metadata.
+        returning a PagedResult with truncation metadata.
 
         Parameters
         ----------
@@ -239,7 +265,7 @@ class BaseRepository:
 
         Returns
         -------
-        PaginatedRows
+        PagedResult[RowDict]
             Paginated result with truncation metadata.
         """
         _ = self
@@ -251,11 +277,17 @@ class BaseRepository:
         if table_key:
             df = validate_df(table_key, df)
 
-        all_rows = df.to_dict(orient="records")
+        all_rows: list[RowDict] = df.to_dict(orient="records")
         truncated = len(all_rows) > limit
-        rows = all_rows[:limit]
+        items = all_rows[:limit]
 
-        return PaginatedRows(rows=rows, limit=limit, truncated=truncated)
+        return PagedResult(
+            items=items,
+            total=None,
+            limit=limit,
+            offset=0,
+            truncated=truncated,
+        )
 
     @staticmethod
     def _validated_records(

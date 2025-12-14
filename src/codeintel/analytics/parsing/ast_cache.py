@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.functions.parsing import parse_python_file
+from codeintel.core.paths import normalize_path
 from codeintel.graphs.catalog import (
     CatalogService,
 )
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -91,7 +91,7 @@ def load_function_asts(
         allowed_goids = {meta.goid for _, meta in sorted_metas[: request.max_functions]}
 
     for rel_path, metas in functions_by_path.items():
-        normalized_path = normalize_rel_path(rel_path)
+        normalized_path = normalize_path(rel_path)
         abs_path = (request.repo_root / normalized_path).resolve()
         metas_for_path = [
             meta for meta in metas if allowed_goids is None or meta.goid in allowed_goids

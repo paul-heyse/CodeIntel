@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import TypeVar
+from typing import ClassVar, TypeVar
 
 from codeintel.cli.core.parsing import is_truthy_string, parse_bool, parse_cli_value
 from codeintel.cli.rendering.types import OutputFormat
@@ -60,9 +60,28 @@ class ParamService:
     True
     """
 
+    SERVICE_NAME: ClassVar[str] = "params"
+
     def __init__(self, raw_params: dict[str, object] | None = None) -> None:
         """Initialize with raw parameters."""
         self._params: dict[str, object] = raw_params or {}
+
+    def initialize(self) -> None:
+        """Initialize the service (no-op for stateless service)."""
+
+    def shutdown(self) -> None:
+        """Shut down the service (no-op for stateless service)."""
+
+    @property
+    def is_ready(self) -> bool:
+        """Check if service is ready.
+
+        Returns
+        -------
+        bool
+            Always True for stateless service.
+        """
+        return True
 
     @property
     def raw(self) -> dict[str, object]:

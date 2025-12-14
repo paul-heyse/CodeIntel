@@ -14,7 +14,7 @@ import ibis
 
 from codeintel.analytics.compute.graphs import normalize_decimal_id
 from codeintel.analytics.utilities.ast import safe_unparse
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
+from codeintel.core.paths import normalize_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates
 
@@ -268,7 +268,7 @@ def _build_function_role_rows(
     roles_by_module: dict[str, list[tuple[str, float]]] = defaultdict(list)
 
     for goid, rel_path, qualname, loc in function_rows:
-        normalized_path = normalize_rel_path(rel_path)
+        normalized_path = normalize_path(rel_path)
         module = artifacts.module_by_path.get(normalized_path)
         module_record = artifacts.module_meta.get(module or "")
         module_tags: list[str] = module_record.tags if module_record else []
@@ -430,7 +430,7 @@ def _load_module_meta(
     rows = expr.execute()
     meta: dict[str, ModuleRecord] = {}
     for module, path, tags in rows.itertuples(index=False):
-        normalized_path = normalize_rel_path(path) if path is not None else ""
+        normalized_path = normalize_path(path) if path is not None else ""
         normalized_tags = _normalize_tags(tags)
         meta[str(module)] = ModuleRecord(path=normalized_path, tags=normalized_tags)
     return meta

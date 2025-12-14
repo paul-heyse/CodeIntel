@@ -18,9 +18,7 @@ class TestRegistryConsistency:
     def test_all_plugin_targets_have_output_targets() -> None:
         """Every plugin target must have a corresponding OutputTarget."""
         target_names = {t.name for t in ALL_TARGETS}
-        plugin_targets = {
-            target for _, _, targets in _PLUGIN_DEFINITIONS for target in targets
-        }
+        plugin_targets = {target for _, _, targets in _PLUGIN_DEFINITIONS for target in targets}
 
         missing = plugin_targets - target_names
         expect_true(
@@ -31,9 +29,7 @@ class TestRegistryConsistency:
     @staticmethod
     def test_plugin_backed_targets_have_plugins() -> None:
         """Targets with non-empty plugin field must have plugin registration."""
-        plugin_targets = {
-            target for _, _, targets in _PLUGIN_DEFINITIONS for target in targets
-        }
+        plugin_targets = {target for _, _, targets in _PLUGIN_DEFINITIONS for target in targets}
 
         for target in ALL_TARGETS:
             if target.plugin and target.plugin != "":

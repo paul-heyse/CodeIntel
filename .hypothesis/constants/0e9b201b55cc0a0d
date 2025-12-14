@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/contracts/operation_contract_reflection.py
+# hypothesis_version: 6.148.7
+
+['Any', 'ComponentSpec', '__name__', 'arg_types', 'args', 'cls', 'component', 'method', 'return', 'return_type', 'scope', 'scope_type', 'self', 'transport']

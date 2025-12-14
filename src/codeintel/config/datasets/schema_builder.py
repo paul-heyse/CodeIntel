@@ -135,6 +135,11 @@ def _build_additional_schemas() -> dict[str, DatasetSchema]:
 
     These schemas are used for internal validation datasets that leverage
     the unified DatasetSchema abstraction but do not have physical tables.
+
+    Returns
+    -------
+    dict[str, DatasetSchema]
+        Mapping of additional schema name to DatasetSchema instance.
     """
     from codeintel.serving.contracts.operation_contracts_dataset import (  # noqa: PLC0415
         build_operation_contract_schema,

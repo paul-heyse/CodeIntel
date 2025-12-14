@@ -23,7 +23,13 @@ from codeintel.serving.types import QueryBackendProtocol, QueryServiceProtocol
 
 
 def _component_specs() -> list[ComponentSpec]:
-    """Return the reflected component specifications."""
+    """Return the reflected component specifications.
+
+    Returns
+    -------
+    list[ComponentSpec]
+        Components to reflect for contract validation.
+    """
     return [
         ComponentSpec(component=QueryServiceProtocol, transport="protocol_service"),
         ComponentSpec(component=QueryBackendProtocol, transport="protocol_backend"),
@@ -35,7 +41,13 @@ def _component_specs() -> list[ComponentSpec]:
 
 
 def _expected_methods() -> set[str]:
-    """Return the set of backend method names from the operation catalog."""
+    """Return the set of backend method names from the operation catalog.
+
+    Returns
+    -------
+    set[str]
+        Backend method names that should be implemented.
+    """
     ignore = {"graph_plugin_plan", "health"}
     return {spec.backend_method for spec in iter_operations() if spec.backend_method not in ignore}
 
@@ -44,7 +56,13 @@ def _find_missing_methods(
     df_components: Iterable[tuple[str, set[str]]],
     expected: set[str],
 ) -> dict[str, set[str]]:
-    """Return mapping from component label to missing method names."""
+    """Return mapping from component label to missing method names.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Missing methods keyed by component label.
+    """
     missing: dict[str, set[str]] = {}
     for component, methods in df_components:
         missing_methods = expected - methods
@@ -54,12 +72,24 @@ def _find_missing_methods(
 
 
 def _validate_missing(df_grouped: dict[str, set[str]], expected: set[str]) -> dict[str, set[str]]:
-    """Check missing methods for each component and return the diff."""
+    """Check missing methods for each component and return the diff.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Missing methods keyed by component label.
+    """
     return _find_missing_methods(df_grouped.items(), expected)
 
 
 def run() -> int:
-    """Execute the contract validation and missing-method check."""
+    """Execute the contract validation and missing-method check.
+
+    Returns
+    -------
+    int
+        Exit code: ``0`` on success, ``1`` when validation fails.
+    """
     components = _component_specs()
     df = build_operation_contract_dataframe(components)
     validated = validate_operation_contracts(df)
@@ -78,9 +108,7 @@ def run() -> int:
         return 1
 
     # Ensure transports are expected
-    invalid_transports = validated[
-        ~validated["transport"].isin(TRANSPORT_KINDS)
-    ].transport.unique()
+    invalid_transports = validated[~validated["transport"].isin(TRANSPORT_KINDS)].transport.unique()
     if len(invalid_transports) > 0:
         sys.stderr.write(
             f"Unexpected transport kinds found: {', '.join(sorted(map(str, invalid_transports)))}\n"

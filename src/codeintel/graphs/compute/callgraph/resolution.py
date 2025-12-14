@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, cast
 import libcst as cst
 from libcst import helpers
 
+from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute.callgraph.types import ResolutionResult
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -119,7 +119,7 @@ def resolve_via_scip(
         Resolution outcome using SCIP data or unresolved when none match.
     """
     for def_path in candidate_def_paths:
-        goid = def_goids_by_path.get(normalize_rel_path(def_path))
+        goid = def_goids_by_path.get(normalize_path(def_path))
         if goid is not None:
             return ResolutionResult(callee_goid=goid, resolved_via="scip_def_path", confidence=0.55)
     return ResolutionResult(callee_goid=None, resolved_via="unresolved", confidence=0.0)

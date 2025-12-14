@@ -19,8 +19,8 @@ from codeintel.analytics.utilities.ast import (
     safe_unparse,
     snippet_from_lines,
 )
+from codeintel.core.paths import normalize_path, path_to_module
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
@@ -678,11 +678,11 @@ def _load_class_metadata(con: DuckDBConnection, repo: str, commit: str) -> list[
         metas.append(
             ClassMeta(
                 goid=int(goid_h128) if goid_h128 is not None else None,
-                rel_path=normalize_rel_path(rel_path),
+                rel_path=normalize_path(rel_path),
                 qualname=str(qualname),
                 start_line=int(start_line),
                 end_line=int(end_line) if end_line is not None else int(start_line),
-                module=str(module) if module is not None else relpath_to_module(rel_path),
+                module=str(module) if module is not None else path_to_module(rel_path),
             )
         )
     return metas
@@ -704,7 +704,7 @@ def _doc_map(
     ).fetchall()
     mapping: dict[tuple[str, str], tuple[str | None, str | None]] = {}
     for rel_path, qualname, short_desc, long_desc in rows:
-        mapping[normalize_rel_path(rel_path), str(qualname)] = (
+        mapping[normalize_path(rel_path), str(qualname)] = (
             short_desc,
             long_desc,
         )
@@ -757,7 +757,7 @@ def _gather_models_for_path(
         return []
     lines, tree = parsed
     meta_by_line = {meta.start_line: meta for meta in metas}
-    module_name = metas[0].module if metas else relpath_to_module(rel_path)
+    module_name = metas[0].module if metas else path_to_module(rel_path)
     import_ctx = _build_import_context(module_name, tree)
     models: list[ModelRecord] = []
     for cls_node in _all_class_defs(tree):

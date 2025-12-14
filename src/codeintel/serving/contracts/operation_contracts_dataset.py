@@ -19,15 +19,26 @@ TRANSPORT_KINDS: Final = (
 
 
 def _is_tuple_of_str(series: pd.Series) -> bool:
-    """Return True when all values are tuples of strings."""
+    """Return True when all values are tuples of strings.
+
+    Returns
+    -------
+    bool
+        ``True`` when every value is a tuple containing only strings.
+    """
     return series.apply(
-        lambda value: isinstance(value, tuple)
-        and all(isinstance(item, str) for item in value)
+        lambda value: isinstance(value, tuple) and all(isinstance(item, str) for item in value)
     ).all()
 
 
 def build_operation_contract_schema() -> DatasetSchema:
-    """Create the DatasetSchema describing operation contract rows."""
+    """Create the DatasetSchema describing operation contract rows.
+
+    Returns
+    -------
+    DatasetSchema
+        Schema describing the operation contract table.
+    """
     schema = DataFrameSchema(
         {
             "component": Column(

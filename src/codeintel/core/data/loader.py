@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from codeintel.core.data.snapshot import SnapshotKey, SnapshotScopedCache
+from codeintel.core.cache import SnapshotKey, SnapshotScopedCache
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
