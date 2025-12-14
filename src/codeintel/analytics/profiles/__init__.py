@@ -13,7 +13,7 @@ from codeintel.analytics.profiles.functions import (
 from codeintel.analytics.profiles.modules import build_module_profile as _build_module_profile
 from codeintel.analytics.profiles.utils import seed_catalog_modules
 from codeintel.graphs.catalog import (
-    FunctionCatalogService,
+    CatalogService,
 )
 
 if TYPE_CHECKING:
@@ -46,7 +46,7 @@ def build_function_profile(
     module_map
         Optional module map override.
     """
-    effective_catalog = catalog_provider or FunctionCatalogService.from_db(
+    effective_catalog = catalog_provider or CatalogService.from_db(
         gateway,
         repo=snapshot.repo,
         commit=snapshot.commit,

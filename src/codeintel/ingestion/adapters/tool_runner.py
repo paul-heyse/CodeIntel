@@ -50,9 +50,6 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from codeintel.config.models import ToolsConfig
-    from codeintel.ingestion.engine.infrastructure import ToolRunner
-
 log = logging.getLogger(__name__)
 
 
@@ -102,25 +99,6 @@ class ToolRunnerAdapter:
             ToolService instance for executing tools.
         """
         self._service = tool_service
-
-    @classmethod
-    def from_runner(cls, runner: ToolRunner, tools_config: ToolsConfig) -> ToolRunnerAdapter:
-        """Create adapter from a ToolRunner.
-
-        Parameters
-        ----------
-        runner
-            ToolRunner for executing external tools.
-        tools_config
-            Tools configuration.
-
-        Returns
-        -------
-        ToolRunnerAdapter
-            Configured adapter instance.
-        """
-        service = ToolService(runner, tools_config)
-        return cls(service)
 
     async def run_pyright(self, repo_root: Path) -> DiagnosticResult:
         """Run pyright type checker.

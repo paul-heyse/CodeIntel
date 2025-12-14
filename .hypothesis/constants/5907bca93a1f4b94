@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/plugin.py
+# hypothesis_version: 6.148.7
+
+['1.0.0', 'DiscoveryFactory', 'FactoryPlugin', 'IngestStoragePort', 'MetadataPlugin', 'ModuleDiscoveryPort', 'StepFactory', 'StorageFactory', 'StorageGateway', 'TOptions', 'TStep', 'TargetPlugin', 'TargetPluginProtocol', '_core_metadata', 'plugin_description', 'plugin_name', 'plugin_version']

@@ -10,7 +10,7 @@ import logging
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.resources.protocol import LazyResource, ResourceNotLoadedError
-from codeintel.graphs.catalog import FunctionCatalogService
+from codeintel.graphs.catalog import CatalogService
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -77,7 +77,7 @@ class CatalogProvider(LazyResource["FunctionCatalogProvider"]):
 
         Example
         -------
-        >>> existing_catalog = FunctionCatalogService.from_db(gateway, repo, commit)
+        >>> existing_catalog = CatalogService.from_db(gateway, repo=repo, commit=commit)
         >>> provider = CatalogProvider.from_catalog(existing_catalog)
         >>> registry.register(CatalogProvider, provider)
         """
@@ -112,7 +112,7 @@ def _load_function_catalog(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> FunctionCatalogProvider:
-    return FunctionCatalogService.from_db(
+    return CatalogService.from_db(
         gateway,
         repo=snapshot.repo,
         commit=snapshot.commit,

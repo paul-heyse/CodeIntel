@@ -32,7 +32,7 @@ import libcst as cst
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
-from codeintel.build.plugins._helpers import get_source_root
+from codeintel.build.plugins._helpers import filter_paths, get_source_root
 from codeintel.build.plugins.graphs.builders.callgraph_options import CallGraphOptions
 from codeintel.config.datasets import (
     CallGraphNodeRow,
@@ -496,20 +496,6 @@ def _collect_all_edges(
     return all_edges
 
 
-def _filter_paths_by_scope(paths: list[str], scope_paths: list[str] | None) -> list[str]:
-    """Filter paths by configured scope prefixes.
-
-    Returns
-    -------
-    list[str]
-        Filtered list of relative paths.
-    """
-    if not scope_paths:
-        return paths
-    prefixes = tuple(scope_paths)
-    return [path for path in paths if path.startswith(prefixes)]
-
-
 class CallGraphPlugin(MetadataPlugin):
     """Build call graph nodes and edges.
 
@@ -549,7 +535,7 @@ class CallGraphPlugin(MetadataPlugin):
             _log_repo_state(gateway, repo, commit)
 
             function_index = load_function_index(gateway, repo=repo, commit=commit)
-            paths = _filter_paths_by_scope(function_index.paths(), opts.scope_paths)
+            paths = filter_paths(function_index.paths(), scope_paths=opts.scope_paths)
 
             if not paths:
                 log.info("callgraph: No functions found, skipping")

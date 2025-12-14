@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.build.plugins._helpers import is_test_path
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.ibis_types import ibis_bool
@@ -85,23 +86,6 @@ def build_scan_profile(repo_root: Path, options: ModuleIngestOptions) -> ScanPro
     )
 
 
-def _is_test_path(rel_path: str) -> bool:
-    """Return True when the path matches common test file patterns.
-
-    Returns
-    -------
-    bool
-        True when path looks like a test file.
-    """
-    lowered = rel_path.lower()
-    return (
-        lowered.startswith("test_")
-        or "/test_" in lowered
-        or lowered.endswith("_test.py")
-        or "tests/" in lowered
-    )
-
-
 def _is_generated_path(rel_path: str) -> bool:
     """Return True when the path looks like a generated artifact.
 
@@ -152,7 +136,7 @@ def filter_modules(
         rel_path = module.rel_path
         if options.scope_paths and not _is_in_scope(rel_path, options.scope_paths):
             continue
-        if not options.include_tests and _is_test_path(rel_path):
+        if not options.include_tests and is_test_path(rel_path):
             continue
         if not options.include_generated and _is_generated_path(rel_path):
             continue

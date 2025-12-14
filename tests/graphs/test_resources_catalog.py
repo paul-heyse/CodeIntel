@@ -1,12 +1,12 @@
-"""Tests for catalog resource provider.
+"""Tests for CatalogService resource provider.
 
-This module tests the CatalogResource provider from
-`codeintel.graphs.resources.catalog`, including:
+This module tests the CatalogService from
+`codeintel.graphs.catalog`, including:
 
 - Resource protocol compliance
 - Catalog delegation
 - Caching behavior
-- FunctionSpanData conversion
+- FunctionSpan data
 """
 
 from __future__ import annotations
@@ -15,9 +15,8 @@ from typing import TYPE_CHECKING, Final
 
 import pytest
 
-from codeintel.graphs.catalog import FunctionCatalog
-from codeintel.graphs.ports.catalog import CatalogPort, FunctionSpanData
-from codeintel.graphs.resources.catalog import CatalogResource
+from codeintel.graphs.catalog import CatalogService, FunctionCatalog, FunctionSpan
+from codeintel.graphs.ports.catalog import CatalogPort
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
@@ -46,75 +45,75 @@ def empty_catalog() -> FunctionCatalog:
 
 
 @pytest.fixture
-def empty_catalog_resource(empty_catalog: FunctionCatalog) -> CatalogResource:
-    """Create a CatalogResource wrapping an empty catalog.
+def empty_catalog_resource(empty_catalog: FunctionCatalog) -> CatalogService:
+    """Create a CatalogService wrapping an empty catalog.
 
     Returns
     -------
-    CatalogResource
-        Resource wrapping empty catalog.
+    CatalogService
+        Service wrapping empty catalog.
     """
-    return CatalogResource(catalog=empty_catalog)
+    return CatalogService(empty_catalog)
 
 
-def test_catalog_resource_name_constant() -> None:
-    """CatalogResource.RESOURCE_NAME is 'catalog'."""
-    expect_equal(CatalogResource.RESOURCE_NAME, RESOURCE_NAME)
+def test_catalog_service_name_constant() -> None:
+    """CatalogService.RESOURCE_NAME is 'catalog'."""
+    expect_equal(CatalogService.RESOURCE_NAME, RESOURCE_NAME)
 
 
-def test_catalog_resource_name_property(catalog_resource: CatalogResource) -> None:
-    """CatalogResource.resource_name returns RESOURCE_NAME."""
+def test_catalog_service_name_property(catalog_resource: CatalogService) -> None:
+    """CatalogService.resource_name returns RESOURCE_NAME."""
     expect_equal(catalog_resource.resource_name, RESOURCE_NAME)
 
 
-def test_catalog_resource_get_returns_self(catalog_resource: CatalogResource) -> None:
-    """CatalogResource.get() returns self as CatalogPort."""
+def test_catalog_service_get_returns_self(catalog_resource: CatalogService) -> None:
+    """CatalogService.get() returns self as CatalogPort."""
     result = catalog_resource.get()
     expect_true(result is catalog_resource)
 
 
-def test_catalog_resource_implements_catalog_port(catalog_resource: CatalogResource) -> None:
-    """CatalogResource implements CatalogPort protocol."""
+def test_catalog_service_implements_catalog_port(catalog_resource: CatalogService) -> None:
+    """CatalogService implements CatalogPort protocol."""
     expect_is_instance(catalog_resource, CatalogPort)
 
 
-def test_catalog_resource_registers_with_registry(
-    storage_registry: ResourceRegistry, catalog_resource: CatalogResource
+def test_catalog_service_registers_with_registry(
+    storage_registry: ResourceRegistry, catalog_resource: CatalogService
 ) -> None:
-    """CatalogResource can be registered and retrieved from registry."""
+    """CatalogService can be registered and retrieved from registry."""
     storage_registry.register_provider(catalog_resource)
 
-    retrieved = storage_registry.get_by_name(CatalogResource.RESOURCE_NAME)
+    retrieved = storage_registry.get_by_name(CatalogService.RESOURCE_NAME)
     expect_true(retrieved is catalog_resource)
 
 
-def test_catalog_resource_require_returns_registered(
-    storage_registry: ResourceRegistry, catalog_resource: CatalogResource
+def test_catalog_service_require_returns_registered(
+    storage_registry: ResourceRegistry, catalog_resource: CatalogService
 ) -> None:
-    """Require returns the registered CatalogResource."""
+    """Require returns the registered CatalogService."""
     storage_registry.register_provider(catalog_resource)
 
-    required = storage_registry.require_by_name(CatalogResource.RESOURCE_NAME)
+    required = storage_registry.require_by_name(CatalogService.RESOURCE_NAME)
     expect_true(required is catalog_resource)
 
 
 def test_function_spans_returns_all_spans(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """Function_spans returns all function spans."""
     spans = catalog_resource.function_spans
     expect_length(spans, len(catalog_sample_data.functions))
 
 
-def test_function_spans_returns_span_data(catalog_resource: CatalogResource) -> None:
-    """function_spans returns FunctionSpanData objects."""
+def test_function_spans_returns_span_objects(catalog_resource: CatalogService) -> None:
+    """function_spans returns FunctionSpan objects."""
     spans = catalog_resource.function_spans
     for span in spans:
-        expect_is_instance(span, FunctionSpanData)
+        expect_is_instance(span, FunctionSpan)
 
 
 def test_function_spans_contains_expected_goids(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """function_spans contains expected GOIDs."""
     spans = catalog_resource.function_spans
@@ -123,7 +122,7 @@ def test_function_spans_contains_expected_goids(
 
 
 def test_function_spans_contains_urns(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """function_spans includes URNs."""
     spans = catalog_resource.function_spans
@@ -132,28 +131,28 @@ def test_function_spans_contains_urns(
     expect_equal(urns, expected_urns)
 
 
-def test_function_spans_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
+def test_function_spans_empty_catalog(empty_catalog_resource: CatalogService) -> None:
     """function_spans returns empty for empty catalog."""
     spans = empty_catalog_resource.function_spans
     expect_length(spans, 0)
 
 
-def test_function_spans_caches_result(catalog_resource: CatalogResource) -> None:
+def test_function_spans_caches_result(catalog_resource: CatalogService) -> None:
     """function_spans caches the result."""
     spans1 = catalog_resource.function_spans
     spans2 = catalog_resource.function_spans
     expect_true(spans1 is spans2)
 
 
-def test_invalidate_clears_cache(catalog_resource: CatalogResource) -> None:
+def test_invalidate_clears_cache(catalog_resource: CatalogService) -> None:
     """invalidate() clears the cached spans."""
     _ = catalog_resource.function_spans
     catalog_resource.invalidate()
-    expect_true(catalog_resource.cached_spans is None)
+    expect_true(catalog_resource._cached_spans is None)
 
 
 def test_function_spans_repopulates_after_invalidate(
-    catalog_resource: CatalogResource,
+    catalog_resource: CatalogService,
 ) -> None:
     """function_spans repopulates cache after invalidate."""
     spans1 = catalog_resource.function_spans
@@ -165,7 +164,7 @@ def test_function_spans_repopulates_after_invalidate(
 
 
 def test_paths_returns_all_paths(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """Paths returns all unique file paths."""
     paths = catalog_resource.paths
@@ -173,28 +172,28 @@ def test_paths_returns_all_paths(
     expect_equal(set(paths), expected_paths)
 
 
-def test_paths_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
+def test_paths_empty_catalog(empty_catalog_resource: CatalogService) -> None:
     """Paths returns empty for empty catalog."""
     paths = empty_catalog_resource.paths
     expect_length(paths, 0)
 
 
 def test_module_by_path_returns_mapping(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """module_by_path returns module mapping."""
     mapping = catalog_resource.module_by_path
     expect_equal(mapping, catalog_sample_data.module_by_path)
 
 
-def test_module_by_path_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
+def test_module_by_path_empty_catalog(empty_catalog_resource: CatalogService) -> None:
     """module_by_path returns empty for empty catalog."""
     mapping = empty_catalog_resource.module_by_path
     expect_length(mapping, 0)
 
 
 def test_spans_for_path_returns_file_spans(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """Spans_for_path returns spans for specific file."""
     target_path = "pkg/module_a.py"
@@ -205,15 +204,15 @@ def test_spans_for_path_returns_file_spans(
     expect_length(spans, expected_count)
 
 
-def test_spans_for_path_returns_span_data(catalog_resource: CatalogResource) -> None:
-    """spans_for_path returns FunctionSpanData objects."""
+def test_spans_for_path_returns_span_objects(catalog_resource: CatalogService) -> None:
+    """spans_for_path returns FunctionSpan objects."""
     spans = catalog_resource.spans_for_path("pkg/module_a.py")
     for span in spans:
-        expect_is_instance(span, FunctionSpanData)
+        expect_is_instance(span, FunctionSpan)
 
 
 def test_spans_for_path_single_span_file(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """spans_for_path returns single span for single-function file."""
     target_path = "pkg/module_b.py"
@@ -225,14 +224,14 @@ def test_spans_for_path_single_span_file(
     expect_equal({span.goid for span in spans}, set(expected_goids))
 
 
-def test_spans_for_path_nonexistent_file(catalog_resource: CatalogResource) -> None:
+def test_spans_for_path_nonexistent_file(catalog_resource: CatalogService) -> None:
     """spans_for_path returns empty for nonexistent file."""
     spans = catalog_resource.spans_for_path("nonexistent/file.py")
     expect_length(spans, 0)
 
 
 def test_spans_for_path_includes_urns(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """spans_for_path includes URNs in span data."""
     target_path = "pkg/module_a.py"
@@ -245,7 +244,7 @@ def test_spans_for_path_includes_urns(
 
 
 def test_local_name_map_returns_mapping(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """local_name_map returns local name to GOID mapping."""
     target_path = "pkg/module_a.py"
@@ -256,14 +255,14 @@ def test_local_name_map_returns_mapping(
     expect_true(expected_names.issubset(name_map.keys()))
 
 
-def test_local_name_map_nonexistent_file(catalog_resource: CatalogResource) -> None:
+def test_local_name_map_nonexistent_file(catalog_resource: CatalogService) -> None:
     """local_name_map returns empty for nonexistent file."""
     name_map = catalog_resource.local_name_map("nonexistent/file.py")
     expect_length(name_map, 0)
 
 
 def test_lookup_goid_finds_function(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """lookup_goid finds function by path and line."""
     target = catalog_sample_data.functions[0]
@@ -274,7 +273,7 @@ def test_lookup_goid_finds_function(
 
 
 def test_lookup_goid_finds_method(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """lookup_goid finds method by path and line."""
     target = catalog_sample_data.functions[1]
@@ -284,26 +283,26 @@ def test_lookup_goid_finds_method(
     expect_equal(goid, target.goid)
 
 
-def test_lookup_goid_not_found(catalog_resource: CatalogResource) -> None:
+def test_lookup_goid_not_found(catalog_resource: CatalogService) -> None:
     """lookup_goid returns None when not found."""
     goid = catalog_resource.lookup_goid("pkg/module_a.py", 999, 1000, "nonexistent")
     expect_true(goid is None)
 
 
-def test_lookup_goid_wrong_file(catalog_resource: CatalogResource) -> None:
+def test_lookup_goid_wrong_file(catalog_resource: CatalogService) -> None:
     """lookup_goid returns None for wrong file."""
     goid = catalog_resource.lookup_goid("wrong/file.py", 10, 15, "func1")
     expect_true(goid is None)
 
 
-def test_lookup_goid_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
+def test_lookup_goid_empty_catalog(empty_catalog_resource: CatalogService) -> None:
     """lookup_goid returns None for empty catalog."""
     goid = empty_catalog_resource.lookup_goid("pkg/module_a.py", 10, 20, "func")
     expect_true(goid is None)
 
 
 def test_urn_for_goid_returns_urn(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """urn_for_goid returns URN for known GOID."""
     target = catalog_sample_data.functions[0]
@@ -312,29 +311,29 @@ def test_urn_for_goid_returns_urn(
 
 
 def test_urn_for_goid_all_goids(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """urn_for_goid returns correct URN for all GOIDs."""
     for meta in catalog_sample_data.functions:
         expect_equal(catalog_resource.urn_for_goid(meta.goid), meta.urn)
 
 
-def test_urn_for_goid_unknown_returns_none(catalog_resource: CatalogResource) -> None:
+def test_urn_for_goid_unknown_returns_none(catalog_resource: CatalogService) -> None:
     """urn_for_goid returns None for unknown GOID."""
     urn = catalog_resource.urn_for_goid(9999)
     expect_true(urn is None)
 
 
-def test_urn_for_goid_empty_catalog(empty_catalog_resource: CatalogResource) -> None:
+def test_urn_for_goid_empty_catalog(empty_catalog_resource: CatalogService) -> None:
     """urn_for_goid returns None for empty catalog."""
     urn = empty_catalog_resource.urn_for_goid(1)
     expect_true(urn is None)
 
 
-def test_span_data_has_all_properties(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+def test_span_has_all_properties(
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
-    """FunctionSpanData has all expected properties."""
+    """FunctionSpan has all expected properties."""
     spans = catalog_resource.function_spans
     target_meta = catalog_sample_data.functions[0]
     span = next(s for s in spans if s.goid == target_meta.goid)
@@ -348,7 +347,7 @@ def test_span_data_has_all_properties(
 
 
 def test_urn_lookup_parametrized(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """URN lookup returns expected values."""
     for meta in catalog_sample_data.functions:
@@ -357,7 +356,7 @@ def test_urn_lookup_parametrized(
 
 
 def test_spans_for_path_count(
-    catalog_resource: CatalogResource, catalog_sample_data: CatalogSampleData
+    catalog_resource: CatalogService, catalog_sample_data: CatalogSampleData
 ) -> None:
     """Spans for path returns expected count."""
     path_counts: dict[str, int] = {}

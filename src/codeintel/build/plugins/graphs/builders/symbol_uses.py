@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
+from codeintel.build.plugins._helpers import is_test_path
 from codeintel.build.plugins.graphs.builders.symbol_uses_options import SymbolUsesOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import symbols as symbols_compute
@@ -50,23 +51,6 @@ SYMBOL_USES_METADATA = CorePluginMetadata(
 )
 
 
-def _is_test_path(path: str) -> bool:
-    """Return True when the path looks like a test file.
-
-    Returns
-    -------
-    bool
-        True when the path is considered a test path.
-    """
-    lowered = path.lower()
-    return (
-        "tests/" in lowered
-        or lowered.endswith("_test.py")
-        or "/test_" in lowered
-        or lowered.startswith("test_")
-    )
-
-
 def _matches_scope(path: str, scope_paths: list[str] | None) -> bool:
     """Check whether a path matches configured scope prefixes.
 
@@ -96,7 +80,7 @@ def _filter_occurrences(
     for occurrence in occurrences:
         if not _matches_scope(occurrence.rel_path, options.scope_paths):
             continue
-        if not options.include_tests and _is_test_path(occurrence.rel_path):
+        if not options.include_tests and is_test_path(occurrence.rel_path):
             continue
         filtered.append(occurrence)
     return filtered
@@ -117,7 +101,7 @@ def _filter_module_map(
         path: module
         for path, module in module_map.items()
         if _matches_scope(path, options.scope_paths)
-        and (options.include_tests or not _is_test_path(path))
+        and (options.include_tests or not is_test_path(path))
     }
 
 
@@ -136,7 +120,7 @@ def _filter_path_to_goid_map(
         path: goid
         for path, goid in path_to_goid.items()
         if _matches_scope(path, options.scope_paths)
-        and (options.include_tests or not _is_test_path(path))
+        and (options.include_tests or not is_test_path(path))
     }
 
 

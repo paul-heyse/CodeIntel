@@ -18,7 +18,9 @@ if TYPE_CHECKING:
 __all__ = [
     "compute_row_count",
     "compute_row_counts",
+    "filter_paths",
     "get_source_root",
+    "is_test_path",
 ]
 
 log = logging.getLogger(__name__)
@@ -153,3 +155,91 @@ def get_source_root(
     except DuckDBError as exc:
         log.debug("get_source_root: Could not get source root: %s", exc)
     return fallback or Path.cwd()
+
+
+def is_test_path(path: str) -> bool:
+    """Check whether a path appears to be a test file.
+
+    Uses common Python test file naming conventions to detect test files:
+    - Files in a ``tests/`` directory
+    - Files ending in ``_test.py``
+    - Files containing ``/test_`` in the path
+    - Files starting with ``test_``
+
+    Parameters
+    ----------
+    path
+        Relative file path to check.
+
+    Returns
+    -------
+    bool
+        True if the path matches test file patterns.
+
+    Examples
+    --------
+    >>> is_test_path("tests/test_module.py")
+    True
+    >>> is_test_path("src/module.py")
+    False
+    >>> is_test_path("test_utils.py")
+    True
+    """
+    lowered = path.lower()
+    return (
+        "tests/" in lowered
+        or lowered.endswith("_test.py")
+        or "/test_" in lowered
+        or lowered.startswith("test_")
+    )
+
+
+def filter_paths(
+    paths: Iterable[str],
+    *,
+    scope_paths: list[str] | None = None,
+    include_tests: bool = True,
+) -> list[str]:
+    """Filter paths by scope and test inclusion.
+
+    Provides a unified path filtering mechanism for plugins that need to
+    restrict processing to specific directories and optionally exclude test files.
+
+    Parameters
+    ----------
+    paths
+        Paths to filter.
+    scope_paths
+        Optional list of path prefixes to include. If None or empty,
+        all paths are included.
+    include_tests
+        Whether to include test files. Uses ``is_test_path()`` for detection.
+        Defaults to True.
+
+    Returns
+    -------
+    list[str]
+        Filtered list of paths.
+
+    Examples
+    --------
+    Filter to a specific directory:
+
+    >>> filter_paths(["src/a.py", "lib/b.py"], scope_paths=["src/"])
+    ['src/a.py']
+
+    Exclude test files:
+
+    >>> filter_paths(["src/main.py", "tests/test_main.py"], include_tests=False)
+    ['src/main.py']
+    """
+    result = list(paths)
+
+    if scope_paths:
+        prefixes = tuple(scope_paths)
+        result = [path for path in result if path.startswith(prefixes)]
+
+    if not include_tests:
+        result = [path for path in result if not is_test_path(path)]
+
+    return result

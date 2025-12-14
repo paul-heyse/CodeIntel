@@ -17,7 +17,7 @@ from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from codeintel.graphs.ports.catalog import FunctionSpanData
+    from codeintel.graphs.catalog import FunctionSpan
 
 
 def resolve_callee(
@@ -159,7 +159,7 @@ def build_evidence(
     return evidence
 
 
-def build_callee_map(spans: Sequence[FunctionSpanData]) -> dict[str, int]:
+def build_callee_map(spans: Sequence[FunctionSpan]) -> dict[str, int]:
     """Build a global name to GOID mapping from function spans.
 
     Parameters

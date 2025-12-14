@@ -1,30 +1,27 @@
-"""Domain service for change tracking and incremental ingestion.
+"""Domain service for change tracking.
 
-This module provides unified change tracking for incremental ingestion,
+This module provides unified change tracking for ingestion,
 analogous to graphs/catalog.py for function catalog services.
 
 Key Components
 --------------
 - ChangeTracker: Single source of truth for change detection
 - ChangeTrackerDatasetView: Per-dataset view of changes
-- IncrementalIngestOps: Protocol for dataset-specific operations
-- run_incremental_ingest: Main entry point for incremental ingestion
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from concurrent.futures import Executor
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, ClassVar, NamedTuple, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, NamedTuple
 
 from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Sequence
 
     from codeintel.ingestion.ports.change_detection import (
         ChangeDetectionPort,
@@ -36,12 +33,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 ModuleFilter = Callable[[ModuleRecord], bool]
-RowT = TypeVar("RowT")
-ExecutorFactory = Callable[[], Executor]
-IncrementalIngestObserver = Callable[
-    [str, "ChangeTrackerDatasetView"],
-    None,
-]
 
 
 @dataclass(frozen=True)
@@ -242,226 +233,6 @@ class ChangeTracker:
             deleted_modules_count=deleted_count,
             use_full_rebuild=use_full,
         )
-
-
-@runtime_checkable
-class IncrementalIngestOps(Protocol[RowT]):
-    """Operations required to incrementally ingest a dataset.
-
-    Attributes
-    ----------
-    dataset_name
-        Name of the dataset for logging.
-    """
-
-    dataset_name: ClassVar[str]
-
-    @staticmethod
-    def module_filter(module: ModuleRecord) -> bool:
-        """Return True when a module should be considered for this dataset.
-
-        Parameters
-        ----------
-        module
-            Module to evaluate.
-
-        Returns
-        -------
-        bool
-            True if module is relevant.
-        """
-        ...
-
-    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
-        """Remove rows corresponding to the provided relative paths.
-
-        Parameters
-        ----------
-        gateway
-            Storage gateway for database access.
-        rel_paths
-            Paths to delete.
-        """
-        ...
-
-    @staticmethod
-    def process_module(module: ModuleRecord) -> Iterable[RowT]:
-        """Generate rows for a single module.
-
-        Parameters
-        ----------
-        module
-            Module to process.
-
-        Returns
-        -------
-        Iterable[RowT]
-            Generated rows.
-        """
-        ...
-
-    def insert_rows(self, gateway: StorageGateway, rows: Sequence[RowT]) -> None:
-        """Persist generated rows to the target dataset.
-
-        Parameters
-        ----------
-        gateway
-            Storage gateway for database access.
-        rows
-            Rows to insert.
-        """
-        ...
-
-
-@runtime_checkable
-class SupportsFullRebuild(Protocol):
-    """Optional hook for datasets that need a specialized full rebuild path."""
-
-    def run_full_rebuild(self, tracker: ChangeTracker) -> bool:
-        """Execute a full rebuild of the dataset.
-
-        Parameters
-        ----------
-        tracker
-            Change tracker with context.
-
-        Returns
-        -------
-        bool
-            True when the full rebuild was handled and no further work is needed.
-        """
-        ...
-
-
-def _notify_observer[RowT](
-    observer: IncrementalIngestObserver | None,
-    ops: IncrementalIngestOps[RowT],
-    view: ChangeTrackerDatasetView,
-) -> None:
-    """Invoke observer callback when provided, swallowing exceptions."""
-    if observer is None:
-        return
-    try:
-        observer(ops.dataset_name, view)
-    except (
-        OSError,
-        RuntimeError,
-        ValueError,
-        TypeError,
-    ):
-        log.exception("Incremental ingest observer failed for dataset %s", ops.dataset_name)
-
-
-def _handle_full_rebuild[RowT](
-    view: ChangeTrackerDatasetView,
-    tracker: ChangeTracker,
-    ops: IncrementalIngestOps[RowT],
-) -> bool:
-    """Handle optional full rebuild hook and indicate whether processing should stop.
-
-    Returns
-    -------
-    bool
-        True when a full rebuild was handled and no further work is needed.
-    """
-    if view.use_full_rebuild and isinstance(ops, SupportsFullRebuild):
-        handled = ops.run_full_rebuild(tracker)
-        if handled:
-            return True
-    return False
-
-
-def _log_view_mode(view: ChangeTrackerDatasetView, dataset_name: str) -> None:
-    """Log whether a dataset is processed incrementally or via full rebuild."""
-    if view.use_full_rebuild:
-        log.info(
-            "Dataset %s: full rebuild (changed=%d deleted=%d total=%d)",
-            dataset_name,
-            view.changed_modules_count,
-            view.deleted_modules_count,
-            view.total_modules_considered,
-        )
-        return
-    log.info(
-        "Dataset %s: incremental ingest (reparse=%d delete=%d total=%d)",
-        dataset_name,
-        len(view.to_reparse),
-        len(view.deleted_paths),
-        view.total_modules_considered,
-    )
-
-
-def _process_rows[RowT](
-    view: ChangeTrackerDatasetView,
-    ops: IncrementalIngestOps[RowT],
-    executor_factory: ExecutorFactory | None,
-) -> list[RowT]:
-    """Generate rows for modules marked for reparse.
-
-    Returns
-    -------
-    list[RowT]
-        Processed rows ready for insertion.
-    """
-    rows: list[RowT] = []
-    if executor_factory is None:
-        for module in view.to_reparse:
-            rows.extend(ops.process_module(module))
-        return rows
-    with executor_factory() as executor:
-        for result in executor.map(ops.process_module, view.to_reparse):
-            rows.extend(result)
-    return rows
-
-
-def run_incremental_ingest[RowT](
-    tracker: ChangeTracker,
-    ops: IncrementalIngestOps[RowT],
-    *,
-    executor_factory: ExecutorFactory | None = None,
-    observer: IncrementalIngestObserver | None = None,
-) -> None:
-    """Execute incremental ingestion using a precomputed change tracker.
-
-    Parameters
-    ----------
-    tracker
-        ChangeTracker containing the precomputed ChangeSet and modules.
-    ops
-        Dataset-specific operations for delete/process/insert.
-    executor_factory
-        Optional factory yielding an Executor for parallel processing.
-    observer
-        Optional callback invoked with (dataset_name, view) before any rows are
-        deleted or inserted. This is ideal for recording metrics.
-    """
-    view = tracker.view_for_dataset(dataset_name=ops.dataset_name, module_filter=ops.module_filter)
-
-    _notify_observer(observer, ops, view)
-
-    if _handle_full_rebuild(view, tracker, ops):
-        return
-
-    if not view.to_reparse and not view.deleted_paths:
-        log.info(
-            "No changes for dataset %s (total=%d)",
-            ops.dataset_name,
-            view.total_modules_considered,
-        )
-        return
-
-    _log_view_mode(view, ops.dataset_name)
-
-    if view.deleted_paths:
-        ops.delete_rows(tracker.gateway, view.deleted_paths)
-
-    rows = _process_rows(view, ops, executor_factory)
-
-    if not rows:
-        log.info("Dataset %s: no rows to insert after processing", ops.dataset_name)
-        return
-
-    ops.insert_rows(tracker.gateway, rows)
 
 
 __all__ = [

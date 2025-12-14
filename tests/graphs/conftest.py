@@ -23,12 +23,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.core.resources import ResourceRegistry
-from codeintel.graphs.catalog import FunctionCatalog, FunctionMeta
-from codeintel.graphs.resources.catalog import CatalogResource
+from codeintel.graphs.catalog import CatalogService, FunctionCatalog, FunctionSpan
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.configs import create_test_snapshot
+from tests._helpers.fakes.graph_contexts import GraphTestEnv
 from tests._helpers.fakes.graph_runtime import GraphRuntimeDouble as MockGraphRuntime
 from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_all_graphs,
@@ -36,7 +36,6 @@ from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_with_import_graph,
 )
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.rows import function_meta
 from tests._helpers.seeds.golden_graphs import GOLDEN_COMMIT, GOLDEN_REPO, seed_golden_graphs
 
 if TYPE_CHECKING:
@@ -88,6 +87,26 @@ def graph_snapshot(tmp_path: Path) -> SnapshotRef:
 
 
 @pytest.fixture
+def graph_executor_env(graph_gateway: StorageGateway, tmp_path: Path) -> GraphTestEnv:
+    """Provide combined gateway and snapshot environment for graph tests.
+
+    Parameters
+    ----------
+    graph_gateway
+        Storage gateway with schema applied.
+    tmp_path
+        Pytest temporary directory fixture.
+
+    Returns
+    -------
+    GraphTestEnv
+        Environment with gateway and standard test snapshot.
+    """
+    snapshot = create_test_snapshot(tmp_path)
+    return GraphTestEnv(gateway=graph_gateway, snapshot=snapshot)
+
+
+@pytest.fixture
 def golden_gateway() -> Iterator[StorageGateway]:
     """Provide a gateway seeded with golden graph data.
 
@@ -129,7 +148,7 @@ def golden_snapshot(tmp_path: Path) -> SnapshotRef:
 class CatalogSampleData:
     """Sample catalog dataset for catalog resource tests."""
 
-    functions: list[FunctionMeta]
+    functions: list[FunctionSpan]
     module_by_path: dict[str, str]
 
 
@@ -143,7 +162,7 @@ def catalog_sample_data() -> CatalogSampleData:
         Sample functions and module mapping.
     """
     functions = [
-        FunctionMeta(
+        FunctionSpan(
             goid=1001,
             rel_path="pkg/module_a.py",
             qualname="func1",
@@ -151,7 +170,7 @@ def catalog_sample_data() -> CatalogSampleData:
             end_line=15,
             urn="urn:test:func1",
         ),
-        FunctionMeta(
+        FunctionSpan(
             goid=1002,
             rel_path="pkg/module_a.py",
             qualname="ClassA.method1",
@@ -159,7 +178,7 @@ def catalog_sample_data() -> CatalogSampleData:
             end_line=30,
             urn="urn:test:func2",
         ),
-        FunctionMeta(
+        FunctionSpan(
             goid=1003,
             rel_path="pkg/module_b.py",
             qualname="func2",
@@ -191,25 +210,25 @@ def sample_catalog(catalog_sample_data: CatalogSampleData) -> FunctionCatalog:
 
 
 @pytest.fixture
-def catalog_resource(sample_catalog: FunctionCatalog) -> CatalogResource:
-    """Provide a CatalogResource backed by the sample catalog.
+def catalog_resource(sample_catalog: FunctionCatalog) -> CatalogService:
+    """Provide a CatalogService backed by the sample catalog.
 
     Returns
     -------
-    CatalogResource
+    CatalogService
         Resource provider wrapping the sample catalog.
     """
-    return CatalogResource(catalog=sample_catalog)
+    return CatalogService(sample_catalog)
 
 
 @pytest.fixture
-def function_meta_factory() -> Callable[..., FunctionMeta]:
-    """Create FunctionMeta entries with normalized URNs.
+def function_span_factory() -> Callable[..., FunctionSpan]:
+    """Create FunctionSpan entries with normalized URNs.
 
     Returns
     -------
-    Callable[..., FunctionMeta]
-        Builder that constructs FunctionMeta with consistent URN formatting.
+    Callable[..., FunctionSpan]
+        Builder that constructs FunctionSpan with consistent URN formatting.
     """
 
     def _build(
@@ -219,13 +238,17 @@ def function_meta_factory() -> Callable[..., FunctionMeta]:
         qualname: str,
         snapshot: tuple[str, str] = ("demo/repo", "deadbeef"),
         line_span: tuple[int, int] = (1, 1),
-    ) -> FunctionMeta:
-        return function_meta(
+    ) -> FunctionSpan:
+        repo, commit = snapshot
+        start_line, end_line = line_span
+        urn = f"urn:codeintel:{repo}:{commit}:{rel_path}:{qualname}"
+        return FunctionSpan(
             goid=goid,
             rel_path=rel_path,
             qualname=qualname,
-            snapshot=snapshot,
-            line_span=line_span,
+            start_line=start_line,
+            end_line=end_line,
+            urn=urn,
         )
 
     return _build
@@ -321,6 +344,7 @@ def mock_runtime_all_graphs() -> MockGraphRuntime:
 __all__ = [
     "golden_gateway",
     "golden_snapshot",
+    "graph_executor_env",
     "graph_gateway",
     "graph_snapshot",
     "mock_graph_runtime",

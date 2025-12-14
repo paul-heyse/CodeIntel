@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from codeintel.analytics.testing import compute_test_coverage_edges
+from codeintel.analytics.testing import TestCoverageOptions, compute_test_coverage_edges
 from tests._helpers.orchestration import build_span_graph_components, collect_span_snapshot
 
 if TYPE_CHECKING:
@@ -30,7 +30,8 @@ def test_span_alignment_across_components(
     build_span_graph_components(span_env)
     compute_test_coverage_edges(
         span_env.gateway,
-        span_env.builder.analytics.test_coverage(coverage_file=span_coverage_artifact),
+        span_env.builder.snapshot,
+        options=TestCoverageOptions(coverage_file=span_coverage_artifact),
     )
 
     snapshot = collect_span_snapshot(span_env.gateway.con)
