@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.serving import domain_models as dm
 from codeintel.serving.context import get_current_request_context
@@ -64,20 +64,94 @@ class ServiceCallContext:
     retries: int | None = None
 
 
+class _NullMetrics:
+    """Null metrics collector for ObservabilityProtocol compatibility."""
+
+    def increment(self, name: str, value: float = 1, **labels: str) -> None:
+        """No-op increment."""
+        _ = self, name, value, labels
+
+    def gauge(self, name: str, value: float, **labels: str) -> None:
+        """No-op gauge."""
+        _ = self, name, value, labels
+
+    def histogram(self, name: str, value: float, **labels: str) -> None:
+        """No-op histogram."""
+        _ = self, name, value, labels
+
+
+class _NullTracer:
+    """Null tracer for ObservabilityProtocol compatibility."""
+
+    def start_span(self, name: str, **attributes: object) -> _NullSpan:
+        """Return a null span.
+
+        Returns
+        -------
+        _NullSpan
+            A null span that does nothing.
+        """
+        _ = self, name, attributes
+        return _NullSpan()
+
+
+class _NullSpan:
+    """Null span for ObservabilityProtocol compatibility."""
+
+    def set_attribute(self, key: str, value: object) -> None:
+        """No-op set attribute."""
+        _ = self, key, value
+
+    def set_status(self, status: str, message: str | None = None) -> None:
+        """No-op set status."""
+        _ = self, status, message
+
+    def end(self) -> None:
+        """No-op end."""
+        _ = self
+
+
 @dataclass
 class ServiceObservability:
-    """Configuration for service-level observability."""
+    """Configuration for service-level observability.
+
+    This class implements ObservabilityProtocol for compatibility
+    with the core observability infrastructure.
+    """
+
+    COMPONENT_NAME: ClassVar[str] = "serving"
 
     enabled: bool = False
     logger: logging.Logger = field(default_factory=lambda: LOG)
+
+    @property
+    def metrics(self) -> _NullMetrics:
+        """Get the metrics collector (ObservabilityProtocol compatibility).
+
+        Returns
+        -------
+        _NullMetrics
+            Null metrics collector (serving uses structured logging).
+        """
+        return _NullMetrics()
+
+    @property
+    def tracer(self) -> _NullTracer:
+        """Get the tracer (ObservabilityProtocol compatibility).
+
+        Returns
+        -------
+        _NullTracer
+            Null tracer (serving uses structured logging).
+        """
+        return _NullTracer()
 
     def record(
         self,
         metrics: ServiceCallMetrics,
         context: RequestContext | None = None,
     ) -> None:
-        """
-        Emit a structured log line for a service call.
+        """Emit a structured log line for a service call.
 
         Parameters
         ----------

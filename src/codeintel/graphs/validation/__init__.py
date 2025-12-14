@@ -8,6 +8,8 @@ Key Components
 - runner: Main orchestration for running validations
 - checks: Individual validation check implementations
 - findings: Finding types, persistence, and severity handling
+- context: GraphValidationContext for CheckProtocol-based checks
+- base: GraphCheckBase for implementing CheckProtocol
 
 Example
 -------
@@ -24,11 +26,42 @@ run_graph_validations(gateway, snapshot=snapshot, runtime=runtime)
 
 findings = warn_graph_structure(engine, repo, commit)
 ```
+
+CheckProtocol Example
+--------------------
+```python
+from codeintel.graphs.validation import (
+    GraphValidationContext,
+    create_validation_runner,
+    run_graph_validations_with_runner,
+)
+
+
+report = run_graph_validations_with_runner(gateway, snapshot=snapshot, runtime=runtime)
+print(f"Found {report.error_count} errors")
+```
 """
 
 from __future__ import annotations
 
+from codeintel.graphs.validation.base import GraphCheckBase
 from codeintel.graphs.validation.checks import (
+    ALL_ANOMALY_CHECKS,
+    ALL_DATABASE_CHECKS,
+    ALL_STRUCTURE_CHECKS,
+    CallGraphStructureCheck,
+    CallsiteSpanMismatchCheck,
+    ConfigKeyCheck,
+    ImportBridgeCheck,
+    ImportCycleCheck,
+    ImportGraphStructureCheck,
+    ImportHubCheck,
+    ImportUpwardCheck,
+    MissingFunctionGoidsCheck,
+    OrphanModulesCheck,
+    SubsystemDisagreementCheck,
+    SymbolCommunityCheck,
+    SymbolGraphCheck,
     call_graph_findings,
     config_key_findings,
     import_bridge_findings,
@@ -44,6 +77,7 @@ from codeintel.graphs.validation.checks import (
     warn_missing_function_goids,
     warn_orphan_modules,
 )
+from codeintel.graphs.validation.context import GraphValidationContext
 from codeintel.graphs.validation.findings import (
     CALL_SCC_MIN,
     CONFIG_KEY_MIN_THRESHOLD,
@@ -60,23 +94,55 @@ from codeintel.graphs.validation.findings import (
     resolve_validation_options,
 )
 from codeintel.graphs.validation.runner import (
+    ALL_GRAPH_CHECKS,
+    create_validation_runner,
     log_db_snapshot,
     resolve_validation_runtime,
     run_graph_validations,
+    run_graph_validations_with_runner,
 )
 
 __all__ = [
+    # Check class tuples
+    "ALL_ANOMALY_CHECKS",
+    "ALL_DATABASE_CHECKS",
+    "ALL_GRAPH_CHECKS",
+    "ALL_STRUCTURE_CHECKS",
+    # Constants
     "CALL_SCC_MIN",
     "CONFIG_KEY_MIN_THRESHOLD",
     "HUB_DEGREE_RATIO",
     "HUB_MIN_DEGREE_FLOOR",
     "SAMPLE_LIMIT",
     "SYMBOL_COMMUNITY_MIN",
+    # Structure check classes
+    "CallGraphStructureCheck",
+    # Database check classes
+    "CallsiteSpanMismatchCheck",
+    "ConfigKeyCheck",
+    # Base classes
+    "GraphCheckBase",
+    "GraphValidationContext",
     "GraphValidationOptions",
+    "ImportBridgeCheck",
+    "ImportCycleCheck",
+    "ImportGraphStructureCheck",
+    "ImportHubCheck",
+    "ImportUpwardCheck",
+    "MissingFunctionGoidsCheck",
+    "OrphanModulesCheck",
+    # Anomaly check classes
+    "SubsystemDisagreementCheck",
+    "SymbolCommunityCheck",
+    "SymbolGraphCheck",
+    # Finding utilities
     "apply_severity_overrides",
+    # Backward-compatible functions (structure)
     "call_graph_findings",
     "cap_findings",
     "config_key_findings",
+    # Runner functions
+    "create_validation_runner",
     "has_error_findings",
     "hub_threshold",
     "import_bridge_findings",
@@ -89,9 +155,12 @@ __all__ = [
     "resolve_validation_options",
     "resolve_validation_runtime",
     "run_graph_validations",
+    "run_graph_validations_with_runner",
+    # Backward-compatible functions (anomaly)
     "subsystem_disagreement_findings",
     "symbol_community_findings",
     "symbol_graph_findings",
+    # Backward-compatible functions (database)
     "warn_callsite_span_mismatches",
     "warn_graph_structure",
     "warn_missing_function_goids",

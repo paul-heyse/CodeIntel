@@ -10,7 +10,7 @@ directly.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.config.datasets import load_columns_by_table
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
@@ -44,10 +44,29 @@ def build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
 class DuckDBStorageAdapter(IngestStoragePort):
     """Compatibility shim implementing IngestStoragePort via policy backend."""
 
+    ADAPTER_NAME: ClassVar[str] = "duckdb_storage"
+
     def __init__(self, gateway: StorageGateway) -> None:
         """Initialize adapter with a storage gateway."""
         self._gateway = gateway
         self._backend = DuckDBPolicyBackend(gateway)
+
+    def initialize(self) -> None:
+        """Initialize the adapter (no-op, gateway is passed in constructor)."""
+
+    def close(self) -> None:
+        """Close the adapter (no-op, does not own gateway lifecycle)."""
+
+    @property
+    def is_available(self) -> bool:
+        """Check if adapter is available.
+
+        Returns
+        -------
+        bool
+            True if gateway is available.
+        """
+        return self._gateway is not None
 
     @property
     def con(self) -> DuckDBConnection:

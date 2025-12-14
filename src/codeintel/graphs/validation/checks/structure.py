@@ -2,19 +2,24 @@
 
 This module contains validation checks that analyze graph structure
 for anomalies like cycles, hubs, and connectivity issues.
+
+Check classes implement CheckProtocol from core/validation; legacy
+function wrappers are provided for backward compatibility.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import networkx as nx
 
+from codeintel.graphs.validation.base import GraphCheckBase
 from codeintel.graphs.validation.checks.anomaly import (
     subsystem_disagreement_findings,
     symbol_community_findings,
 )
+from codeintel.graphs.validation.context import GraphValidationContext
 from codeintel.graphs.validation.findings import (
     CALL_SCC_MIN,
     CONFIG_KEY_MIN_THRESHOLD,
@@ -25,24 +30,270 @@ from codeintel.graphs.validation.findings import (
 )
 
 if TYPE_CHECKING:
+    from codeintel.core.validation import ValidationSeverity
     from codeintel.graphs.engine import GraphEngine
 
 
-def call_graph_findings(
-    call_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
+# =============================================================================
+# Check Classes (CheckProtocol-compliant)
+# =============================================================================
+
+
+class CallGraphStructureCheck(GraphCheckBase):
     """Check for call graph structural anomalies.
 
-    Parameters
-    ----------
-    call_graph
-        Call graph to analyze.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Logger for output.
+    Detects isolated nodes, large strongly connected components (recursion),
+    and high-degree hubs.
+    """
+
+    check_name: ClassVar[str] = "call_graph_structure"
+    check_description: ClassVar[str] = "Detect call graph anomalies"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute call graph structure checks.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with call_graph or engine.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for call graph anomalies.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        call_graph = ctx.call_graph
+        if call_graph is None and ctx.engine is not None:
+            call_graph = ctx.engine.call_graph()
+        if call_graph is None:
+            return []
+
+        return _call_graph_findings_impl(call_graph, ctx.repo, ctx.commit, ctx.logger)
+
+
+class ImportGraphStructureCheck(GraphCheckBase):
+    """Check for import graph structural anomalies.
+
+    Orchestrates import cycle, hub, upward, and bridge checks.
+    """
+
+    check_name: ClassVar[str] = "import_graph_structure"
+    check_description: ClassVar[str] = "Detect import graph anomalies"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute import graph structure checks.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with import_graph or engine.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for import graph anomalies.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        import_graph = ctx.import_graph
+        if import_graph is None and ctx.engine is not None:
+            import_graph = ctx.engine.import_graph()
+        if import_graph is None:
+            return []
+
+        return _import_graph_findings_impl(import_graph, ctx.repo, ctx.commit, ctx.logger)
+
+
+class ImportCycleCheck(GraphCheckBase):
+    """Check for import cycles."""
+
+    check_name: ClassVar[str] = "import_cycles"
+    check_description: ClassVar[str] = "Detect import cycle anomalies"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute import cycle check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with import_graph or engine.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for import cycle anomalies.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        import_graph = ctx.import_graph
+        if import_graph is None and ctx.engine is not None:
+            import_graph = ctx.engine.import_graph()
+        if import_graph is None:
+            return []
+
+        sccs = list(nx.strongly_connected_components(import_graph))
+        return _import_cycle_findings_impl(sccs, ctx.repo, ctx.commit, ctx.logger)
+
+
+class ImportHubCheck(GraphCheckBase):
+    """Check for import graph hubs."""
+
+    check_name: ClassVar[str] = "import_hubs"
+    check_description: ClassVar[str] = "Detect import graph hubs"
+    default_severity: ClassVar[ValidationSeverity] = "info"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute import hub check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with import_graph or engine.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for import hub anomalies.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        import_graph = ctx.import_graph
+        if import_graph is None and ctx.engine is not None:
+            import_graph = ctx.engine.import_graph()
+        if import_graph is None:
+            return []
+
+        return _import_hub_findings_impl(import_graph, ctx.repo, ctx.commit, ctx.logger)
+
+
+class ImportUpwardCheck(GraphCheckBase):
+    """Check for upward imports against layering."""
+
+    check_name: ClassVar[str] = "import_upward"
+    check_description: ClassVar[str] = "Detect upward import violations"
+    default_severity: ClassVar[ValidationSeverity] = "info"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute upward import check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with import_graph or engine.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for upward import anomalies.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        import_graph = ctx.import_graph
+        if import_graph is None and ctx.engine is not None:
+            import_graph = ctx.engine.import_graph()
+        if import_graph is None:
+            return []
+
+        return _import_upward_findings_impl(import_graph, ctx.repo, ctx.commit, ctx.logger)
+
+
+class ImportBridgeCheck(GraphCheckBase):
+    """Check for bridge-like import modules."""
+
+    check_name: ClassVar[str] = "import_bridges"
+    check_description: ClassVar[str] = "Detect import bridge modules"
+    default_severity: ClassVar[ValidationSeverity] = "info"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute import bridge check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with import_graph or engine.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for import bridge anomalies.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        import_graph = ctx.import_graph
+        if import_graph is None and ctx.engine is not None:
+            import_graph = ctx.engine.import_graph()
+        if import_graph is None:
+            return []
+
+        return _import_bridge_findings_impl(import_graph, ctx.repo, ctx.commit, ctx.logger)
+
+
+class SymbolGraphCheck(GraphCheckBase):
+    """Check for symbol graph structural anomalies."""
+
+    check_name: ClassVar[str] = "symbol_graph_structure"
+    check_description: ClassVar[str] = "Detect symbol graph anomalies"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute symbol graph structure check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with symbol_graph or engine.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for symbol graph anomalies.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        symbol_graph = ctx.symbol_graph
+        if symbol_graph is None and ctx.engine is not None:
+            symbol_graph = ctx.engine.symbol_module_graph()
+        if symbol_graph is None:
+            return []
+
+        return _symbol_graph_findings_impl(symbol_graph, ctx.repo, ctx.commit, ctx.logger)
+
+
+class ConfigKeyCheck(GraphCheckBase):
+    """Check for broadly-used config keys."""
+
+    check_name: ClassVar[str] = "config_key_usage"
+    check_description: ClassVar[str] = "Detect widely-used config keys"
+    default_severity: ClassVar[ValidationSeverity] = "info"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute config key usage check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with engine.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for config key usage anomalies.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        if ctx.engine is None:
+            return []
+
+        cfg_bipartite = ctx.engine.config_module_bipartite()
+        return _config_key_findings_impl(cfg_bipartite, ctx.repo, ctx.commit, ctx.logger)
+
+
+# =============================================================================
+# Implementation Functions (internal)
+# =============================================================================
+
+
+def _call_graph_findings_impl(
+    call_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    """Check for call graph structural anomalies (implementation).
 
     Returns
     -------
@@ -121,21 +372,10 @@ def call_graph_findings(
     return findings
 
 
-def import_graph_findings(
+def _import_graph_findings_impl(
     import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
-    """Check for import graph structural anomalies.
-
-    Parameters
-    ----------
-    import_graph
-        Import graph to analyze.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Logger for output.
+    """Check for import graph structural anomalies (implementation).
 
     Returns
     -------
@@ -144,17 +384,17 @@ def import_graph_findings(
     """
     findings: list[dict[str, object]] = []
     sccs = list(nx.strongly_connected_components(import_graph))
-    findings.extend(import_cycle_findings(sccs, repo, commit, log))
-    findings.extend(import_hub_findings(import_graph, repo, commit, log))
-    findings.extend(import_upward_findings(import_graph, repo, commit, log))
-    findings.extend(import_bridge_findings(import_graph, repo, commit, log))
+    findings.extend(_import_cycle_findings_impl(sccs, repo, commit, log))
+    findings.extend(_import_hub_findings_impl(import_graph, repo, commit, log))
+    findings.extend(_import_upward_findings_impl(import_graph, repo, commit, log))
+    findings.extend(_import_bridge_findings_impl(import_graph, repo, commit, log))
     return findings
 
 
-def import_cycle_findings(
+def _import_cycle_findings_impl(
     sccs: list[set[str]], repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
-    """Check for import cycles.
+    """Check for import cycles (implementation).
 
     Returns
     -------
@@ -206,10 +446,10 @@ def import_cycle_findings(
     return findings
 
 
-def import_hub_findings(
+def _import_hub_findings_impl(
     import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
-    """Check for import graph hubs.
+    """Check for import graph hubs (implementation).
 
     Returns
     -------
@@ -243,10 +483,10 @@ def import_hub_findings(
     return findings
 
 
-def import_upward_findings(
+def _import_upward_findings_impl(
     import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
-    """Check for upward imports against layering.
+    """Check for upward imports against layering (implementation).
 
     Returns
     -------
@@ -281,15 +521,15 @@ def import_upward_findings(
     ]
 
 
-def import_bridge_findings(
+def _import_bridge_findings_impl(
     import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
-    """Check for bridge-like import modules.
+    """Check for bridge-like import modules (implementation).
 
     Returns
     -------
     list[dict[str, object]]
-        Findings for bridge module anomalies.
+        Findings for import bridge anomalies.
     """
     betweenness: dict[str, float] = {}
     if import_graph.number_of_nodes() > 0:
@@ -324,10 +564,10 @@ def import_bridge_findings(
     ]
 
 
-def symbol_graph_findings(
+def _symbol_graph_findings_impl(
     symbol_graph: nx.Graph, repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
-    """Check for symbol graph structural anomalies.
+    """Check for symbol graph structural anomalies (implementation).
 
     Returns
     -------
@@ -361,10 +601,10 @@ def symbol_graph_findings(
     ]
 
 
-def config_key_findings(
+def _config_key_findings_impl(
     cfg_bipartite: nx.Graph, repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
-    """Check for broadly-used config keys.
+    """Check for broadly-used config keys (implementation).
 
     Returns
     -------
@@ -399,6 +639,137 @@ def config_key_findings(
     ]
 
 
+# =============================================================================
+# Backward-Compatible Function Wrappers
+# =============================================================================
+
+
+def call_graph_findings(
+    call_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    """Check for call graph structural anomalies.
+
+    Parameters
+    ----------
+    call_graph
+        Call graph to analyze.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
+    log
+        Logger for output.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for call graph anomalies.
+    """
+    return _call_graph_findings_impl(call_graph, repo, commit, log)
+
+
+def import_graph_findings(
+    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    """Check for import graph structural anomalies.
+
+    Parameters
+    ----------
+    import_graph
+        Import graph to analyze.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
+    log
+        Logger for output.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for import graph anomalies.
+    """
+    return _import_graph_findings_impl(import_graph, repo, commit, log)
+
+
+def import_cycle_findings(
+    sccs: list[set[str]], repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    """Check for import cycles.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for import cycle anomalies.
+    """
+    return _import_cycle_findings_impl(sccs, repo, commit, log)
+
+
+def import_hub_findings(
+    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    """Check for import graph hubs.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for import hub anomalies.
+    """
+    return _import_hub_findings_impl(import_graph, repo, commit, log)
+
+
+def import_upward_findings(
+    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    """Check for upward imports against layering.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for upward import anomalies.
+    """
+    return _import_upward_findings_impl(import_graph, repo, commit, log)
+
+
+def import_bridge_findings(
+    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    """Check for bridge-like import modules.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for bridge module anomalies.
+    """
+    return _import_bridge_findings_impl(import_graph, repo, commit, log)
+
+
+def symbol_graph_findings(
+    symbol_graph: nx.Graph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    """Check for symbol graph structural anomalies.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for symbol graph anomalies.
+    """
+    return _symbol_graph_findings_impl(symbol_graph, repo, commit, log)
+
+
+def config_key_findings(
+    cfg_bipartite: nx.Graph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    """Check for broadly-used config keys.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for config key usage anomalies.
+    """
+    return _config_key_findings_impl(cfg_bipartite, repo, commit, log)
+
+
 def warn_graph_structure(
     engine: GraphEngine,
     repo: str,
@@ -427,23 +798,49 @@ def warn_graph_structure(
     active_log = log or logging.getLogger(__name__)
 
     call_graph = engine.call_graph()
-    findings.extend(call_graph_findings(call_graph, repo, commit, active_log))
+    findings.extend(_call_graph_findings_impl(call_graph, repo, commit, active_log))
 
     import_graph = engine.import_graph()
-    findings.extend(import_graph_findings(import_graph, repo, commit, active_log))
+    findings.extend(_import_graph_findings_impl(import_graph, repo, commit, active_log))
 
     symbol_graph = engine.symbol_module_graph()
-    findings.extend(symbol_graph_findings(symbol_graph, repo, commit, active_log))
+    findings.extend(_symbol_graph_findings_impl(symbol_graph, repo, commit, active_log))
     findings.extend(symbol_community_findings(engine.gateway, repo, commit, active_log))
 
     cfg_bipartite = engine.config_module_bipartite()
-    findings.extend(config_key_findings(cfg_bipartite, repo, commit, active_log))
+    findings.extend(_config_key_findings_impl(cfg_bipartite, repo, commit, active_log))
 
     findings.extend(subsystem_disagreement_findings(engine.gateway, repo, commit, active_log))
     return findings
 
 
+# =============================================================================
+# All Check Classes (for runner registration)
+# =============================================================================
+
+ALL_STRUCTURE_CHECKS: tuple[type[GraphCheckBase], ...] = (
+    CallGraphStructureCheck,
+    ImportGraphStructureCheck,
+    ImportCycleCheck,
+    ImportHubCheck,
+    ImportUpwardCheck,
+    ImportBridgeCheck,
+    SymbolGraphCheck,
+    ConfigKeyCheck,
+)
+
 __all__ = [
+    # Check classes
+    "ALL_STRUCTURE_CHECKS",
+    "CallGraphStructureCheck",
+    "ConfigKeyCheck",
+    "ImportBridgeCheck",
+    "ImportCycleCheck",
+    "ImportGraphStructureCheck",
+    "ImportHubCheck",
+    "ImportUpwardCheck",
+    "SymbolGraphCheck",
+    # Backward-compatible functions
     "call_graph_findings",
     "config_key_findings",
     "import_bridge_findings",

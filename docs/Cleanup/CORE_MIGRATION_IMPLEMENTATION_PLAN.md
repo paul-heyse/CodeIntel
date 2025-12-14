@@ -1,6 +1,46 @@
 # Core Module Migration Implementation Plan
 
-> **Purpose**: This document provides a comprehensive implementation plan for fully migrating all modules to use the shared `codeintel.core` infrastructure, eliminating backward-compatibility shims, decommissioning legacy patterns, and deleting dead code across `analytics`, `ingestion`, `graphs`, `cli`, `serving`, and `storage`.
+> **Purpose**: Consolidate analytics, ingestion, and graphs modules to use shared `codeintel.core` infrastructure, with necessary CLI and test updates.
+
+---
+
+## Migration Scope and Objectives
+
+### Primary Objective
+
+Consolidate **analytics**, **ingestion**, and **graphs** code to core protocols:
+
+```
+analytics  ─┐
+ingestion  ─┼──▶  codeintel.core  (unified protocols)
+graphs     ─┘
+```
+
+### In Scope
+
+| Area | Scope |
+|------|-------|
+| **Analytics** | Migrate to core protocols (providers, cache, validation) |
+| **Ingestion** | Migrate to core protocols (adapters, paths, concurrency) |
+| **Graphs** | Migrate to core protocols (cache, validation) |
+| **Core** | Internal consolidation where advantageous |
+| **CLI** | Necessary updates for migrated modules |
+| **Tests** | Necessary updates to reflect migrations |
+
+### Out of Scope (Separate Future Exercise)
+
+| Area | Reason |
+|------|--------|
+| **Build ↔ Core rationalization** | Deferred until analytics/ingestion/graphs consolidation is complete |
+| **Serving extensive modifications** | Not a consolidation target for this exercise |
+| **Storage extensive modifications** | Not a consolidation target for this exercise |
+| **Codebase-wide method unification** | Premature before primary consolidation is complete |
+
+### Phased Approach
+
+1. **Current Exercise**: Consolidate analytics, ingestion, graphs → core
+2. **Future Exercise**: Rationalize build ↔ core (after step 1 is complete)
+3. **Future Exercise**: Broader codebase alignment (after step 2 is complete)
 
 ---
 
@@ -10,22 +50,24 @@
 |-------|--------|----------------|-------|
 | Phase 1: Audit and Inventory | ✅ Complete | 2024-12-13 | Created `migration_tracking.json` |
 | Phase 2: Deprecation Shims | ✅ Complete | 2024-12-13 | All shims with deprecation warnings |
-| Phase 3: Migrate Leaf Modules | ✅ Complete | 2024-12-13 | 20/24 paths consumers migrated |
-| Phase 4: Provider Pattern | ✅ Complete | 2024-12-13 | 7/7 protocol consumers migrated |
+| Phase 3: Migrate Leaf Modules | ✅ Complete | 2024-12-13 | 20/24 paths consumers migrated (analytics/ingestion/graphs) |
+| Phase 4: Provider Pattern | ✅ Complete | 2024-12-13 | 7/7 analytics protocol consumers migrated |
 | Phase 5: Cache Pattern | ✅ Complete | 2024-12-13 | GraphCache enhanced, snapshot shim deleted |
-| Phase 6: Service Pattern | ✅ Complete | 2024-12-13 | 5 services with ServiceProtocol compat |
+| Phase 6: Service Pattern | ✅ Complete | 2024-12-13 | 5 CLI services with ServiceProtocol compat |
 | Phase 7: Repository Pattern | ✅ Complete | 2024-12-13 | PaginatedRows replaced with PagedResult |
-| Phase 8: Adapter Pattern | 📋 Pending | - | |
-| Phase 9: Observability | 📋 Pending | - | |
-| Phase 10: Validation | 📋 Pending | - | |
-| Phase 11: Events/Hooks | 📋 Pending | - | |
-| Phase 12: Delete Dead Code | 📋 Pending | - | |
+| Phase 8: Adapter Pattern | ✅ Complete | 2024-12-13 | 3 ingestion adapters with AdapterProtocol compat |
+| Phase 9: Observability | ✅ Complete | 2024-12-13 | CLI/analytics observability + Hamilton docs |
+| Phase 10: Validation | ✅ Complete | 2024-12-13 | Graphs validation refactored to CheckProtocol |
+| Phase 11: Events/Hooks | ⏭️ Skipped | 2024-12-13 | No event patterns in analytics/ingestion/graphs |
+| Phase 12: Delete Dead Code | 📋 Pending | - | Remove deprecated shims |
 | Phase 13: Update Tests | 📋 Pending | - | Parallel with 4-11 |
 | Phase 14: Documentation | 📋 Pending | - | |
 
 ---
 
 ## Executive Summary
+
+This migration consolidates **analytics**, **ingestion**, and **graphs** modules to use the unified `codeintel.core` infrastructure. Build/core rationalization is a **separate future exercise** that will happen after this consolidation is complete.
 
 The Phase G-I consolidation work created a unified set of core modules with protocols and implementations for:
 
@@ -1073,7 +1115,21 @@ results = repo.list(filters=filters)
 
 ---
 
-## Phase 8: Migrate Adapter Pattern (2-3 days)
+## Phase 8: Migrate Adapter Pattern ✅ COMPLETE
+
+> **Completed**: 2024-12-13 | **Actual Duration**: <1 hour
+
+### 8.0 Phase 8 Completion Summary
+
+Added `AdapterProtocol` compatibility to 3 adapters:
+
+| Adapter | File | Changes |
+|---------|------|---------|
+| DuckDBStorageAdapter | `ingestion/adapters/duckdb_storage.py` | ADAPTER_NAME, initialize, close, is_available |
+| ToolRunnerAdapter | `ingestion/adapters/tool_runner.py` | ADAPTER_NAME, initialize, close, is_available |
+| IbisGateway | `storage/ibis_adapter.py` | ADAPTER_NAME, initialize, close, is_available |
+
+All adapters now satisfy `AdapterProtocol` without breaking existing API.
 
 ### 8.1 Update Ingestion Adapters
 
@@ -1105,7 +1161,26 @@ class DuckDBStorageAdapter(BaseAdapter):
 
 ---
 
-## Phase 9: Migrate Observability Pattern (2-3 days)
+## Phase 9: Migrate Observability Pattern ✅ COMPLETE
+
+> **Completed**: 2024-12-13 | **Actual Duration**: <1 hour
+
+### 9.0 Phase 9 Completion Summary
+
+Added `ObservabilityProtocol` compatibility to 2 domain observability modules:
+
+| Module | Class | Changes |
+|--------|-------|---------|
+| CLI Telemetry | `TelemetryProvider` | COMPONENT_NAME, metrics property |
+| CLI Telemetry | `OperationMetrics` | MetricsProtocol methods (increment, gauge, histogram) |
+| Serving | `ServiceObservability` | COMPONENT_NAME, metrics/tracer properties |
+
+**Hamilton modules excluded** - correctly use native Hamilton lifecycle adapter pattern:
+- `NodeTelemetryHook` - Uses `pre_node_execute`/`post_node_execute`
+- `ContractEnforcementHook` - Uses same lifecycle pattern
+- DAG observability functions - Use Hamilton Driver APIs
+
+**Documentation added** to `build/hamilton/__init__.py` about potential `HamiltonTracker` integration for Hamilton UI.
 
 ### 9.1 Consolidate Metrics
 
@@ -1148,9 +1223,55 @@ with trace_operation(tracer, "my_operation", {"key": "value"}):
 
 ## Phase 10: Migrate Validation Pattern (2-3 days)
 
+> **Completed**: 2024-12-13 | **Actual Duration**: ~2 hours
+
+### 10.0 Phase 10 Completion Summary
+
+Refactored graphs validation checks to implement `CheckProtocol` from `core/validation`, enabling use of `ValidationRunner` for orchestration.
+
+**New Files Created:**
+
+| File | Purpose |
+|------|---------|
+| `graphs/validation/context.py` | `GraphValidationContext` dataclass for checks |
+| `graphs/validation/base.py` | `GraphCheckBase` abstract class implementing `CheckProtocol` |
+
+**Check Classes Created:**
+
+| Module | Classes | Count |
+|--------|---------|-------|
+| `checks/structure.py` | `CallGraphStructureCheck`, `ImportGraphStructureCheck`, `ImportCycleCheck`, `ImportHubCheck`, `ImportUpwardCheck`, `ImportBridgeCheck`, `SymbolGraphCheck`, `ConfigKeyCheck` | 8 |
+| `checks/database.py` | `MissingFunctionGoidsCheck`, `CallsiteSpanMismatchCheck`, `OrphanModulesCheck` | 3 |
+| `checks/anomaly.py` | `SymbolCommunityCheck`, `SubsystemDisagreementCheck` | 2 |
+
+**Runner Updates:**
+
+- Added `create_validation_runner()` factory function
+- Added `run_graph_validations_with_runner()` using `core.validation.ValidationRunner`
+- Created `ALL_GRAPH_CHECKS` tuple for external registration
+- Maintained full backward compatibility with existing function-based API
+
+**Architecture:**
+
+```
+core/validation/runner.py (CheckProtocol, ValidationRunner)
+        ↓
+graphs/validation/base.py (GraphCheckBase)
+        ↓
+graphs/validation/context.py (GraphValidationContext)
+        ↓
+graphs/validation/checks/*.py (13 Check Classes)
+        ↓
+graphs/validation/runner.py (run_graph_validations_with_runner)
+```
+
+### 10.1 Original Plan: Create Unified Validation Rules
+
+> **Scope**: Analytics and graphs validation consolidation to core. Build validation remains separate.
+
 ### 10.1 Create Unified Validation Rules
 
-**Target**: Replace domain-specific validation with `core/validation/RuleEngine`
+**Target**: Replace analytics/graphs validation with `core/validation/RuleEngine`
 
 ```python
 from codeintel.core.validation import RuleEngine, ValidationRule, Severity, make_rule
@@ -1172,9 +1293,27 @@ result = engine.validate(function_data, "function")
 
 ## Phase 11: Migrate Events/Hooks Pattern (1-2 days)
 
-### 11.1 Create Central Event System
+> **Skipped**: 2024-12-13 | No event patterns in analytics/ingestion/graphs to migrate
 
-**Target**: Replace scattered callbacks with `core/events/`
+### 11.0 Phase 11 Skip Decision
+
+After analyzing the codebase, this phase was skipped because:
+
+1. **Core events infrastructure already exists** (`core/events/`) with:
+   - `EventEmitter` - pub/sub event handling
+   - `HookRegistry` - extension hooks
+   - `EventProtocol` / `EventHandlerProtocol` - type contracts
+
+2. **Analytics/ingestion/graphs have minimal event patterns**:
+   - Only simple `enabler: Callable[[], None]` callbacks in graph backend
+   - No event-driven architecture requiring migration
+   - No progress callbacks or lifecycle hooks
+
+3. **Scope constraint**: CLI progress callbacks are out of scope per the primary objective (analytics/ingestion/graphs consolidation)
+
+### 11.1 Original Plan: Create Central Event System
+
+**Target** (not implemented): Replace analytics/ingestion callbacks with `core/events/`
 
 ```python
 from codeintel.core.events import EventEmitter, HookRegistry
@@ -1194,6 +1333,8 @@ events.emit("analysis.complete", {"function_count": 100})
 ---
 
 ## Phase 12: Delete Dead Code and Legacy Modules (2-3 days)
+
+> **Scope**: Remove deprecated shims in analytics/ingestion/graphs. Build modules remain for future rationalization.
 
 ### 12.1 Identify Dead Code
 
@@ -1256,9 +1397,11 @@ except ValueError:
 
 ## Phase 13: Update Tests (3-5 days)
 
+> **Scope**: Update tests for analytics/ingestion/graphs migrations. Tests run in parallel with other phases.
+
 ### 13.1 Update Test Imports
 
-Update all test files to use new core imports:
+Update test files to use new core imports for migrated modules:
 
 ```bash
 # Find test files using old imports
@@ -1291,9 +1434,11 @@ Ensure comprehensive test coverage for all core modules:
 
 ## Phase 14: Documentation Updates (1-2 days)
 
+> **Scope**: Document analytics/ingestion/graphs consolidation. Build/core rationalization docs are future work.
+
 ### 14.1 Update Import Documentation
 
-Update all documentation to reflect new import paths:
+Update documentation to reflect new import paths for migrated modules:
 
 ```python
 # Old
@@ -1328,9 +1473,9 @@ Add section on core modules and their usage patterns.
 | Phase 5: Cache Pattern | 2-3 days | <1 hour | ✅ Complete | Phase 4 ✅ |
 | Phase 6: Service Pattern | 5-7 days | <1 hour | ✅ Complete (5 services) | Phase 5 ✅ |
 | Phase 7: Repository Pattern | 3-5 days | <1 hour | ✅ Complete | Phase 6 ✅ |
-| Phase 8: Adapter Pattern | 2-3 days | - | 📋 Ready | Phase 7 ✅ |
-| Phase 9: Observability | 2-3 days | - | 📋 Pending | Phase 8 |
-| Phase 10: Validation | 2-3 days | - | 📋 Pending | Phase 9 |
+| Phase 8: Adapter Pattern | 2-3 days | <1 hour | ✅ Complete (3 adapters) | Phase 7 ✅ |
+| Phase 9: Observability | 2-3 days | <1 hour | ✅ Complete (2 modules + docs) | Phase 8 ✅ |
+| Phase 10: Validation | 2-3 days | - | 📋 Ready | Phase 9 ✅ |
 | Phase 11: Events/Hooks | 1-2 days | - | 📋 Pending | Phase 10 |
 | Phase 12: Delete Dead Code | 2-3 days | - | 📋 Pending | Phase 11 |
 | Phase 13: Update Tests | 3-5 days | - | 📋 Pending | Parallel with 4-11 |
@@ -1553,6 +1698,38 @@ The migration tracking database is at `docs/Cleanup/migration_tracking.json`. Up
 
 ---
 
+## Future Work (Separate Exercises)
+
+The following are explicitly **out of scope** for this migration plan and will be addressed in separate future exercises:
+
+### Build ↔ Core Rationalization
+
+**Prerequisite**: Complete analytics/ingestion/graphs consolidation (Phases 1-14)
+
+After the primary consolidation is complete, a separate exercise will:
+1. Analyze overlap between `build/` and `core/` modules
+2. Identify patterns that should be unified
+3. Determine which direction to migrate (build→core or core→build)
+4. Execute rationalization with minimal disruption
+
+**Key areas to analyze**:
+- `build/hashing.py` vs `core/hashing/`
+- `build/hamilton/telemetry_hook.py` vs `core/observability/`
+- `build/hamilton/manifest_hook.py` vs `core/cache/`
+- Build contracts vs core validation
+
+### Broader Codebase Alignment
+
+**Prerequisite**: Complete build/core rationalization
+
+After build/core is unified, broader alignment may include:
+- Serving layer protocol adoption
+- Storage layer protocol adoption
+- Unified observability across all domains
+
+---
+
 *Created: December 2024*
-*Last Updated: December 2024 (Phases 1-7 complete)*
-*Status: Phases 1-7 Complete, Phase 8+ Ready for Implementation*
+*Last Updated: December 2024 (Phases 1-9 complete, scope clarified)*
+*Status: Phases 1-9 Complete, Phase 10+ Ready for Implementation*
+*Scope: Consolidate analytics/ingestion/graphs → core. Build/core rationalization is a separate future exercise.*

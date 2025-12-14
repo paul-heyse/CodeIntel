@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.ports.tools import (
@@ -90,6 +90,8 @@ class ToolRunnerAdapter:
         ToolService instance for executing tools.
     """
 
+    ADAPTER_NAME: ClassVar[str] = "tool_runner"
+
     def __init__(self, tool_service: ToolService) -> None:
         """Initialize the adapter with a tool service.
 
@@ -99,6 +101,23 @@ class ToolRunnerAdapter:
             ToolService instance for executing tools.
         """
         self._service = tool_service
+
+    def initialize(self) -> None:
+        """Initialize the adapter (no-op, service is passed in constructor)."""
+
+    def close(self) -> None:
+        """Close the adapter (no-op, does not own service lifecycle)."""
+
+    @property
+    def is_available(self) -> bool:
+        """Check if adapter is available.
+
+        Returns
+        -------
+        bool
+            True if tool service is available.
+        """
+        return self._service is not None
 
     async def _run_diagnostic_tool(
         self,

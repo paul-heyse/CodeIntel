@@ -204,22 +204,25 @@
       "id": 401,
       "source": "codeintel.ingestion.adapters.duckdb_storage",
       "target": "codeintel.core.adapters",
-      "status": "pending",
-      "class": "DuckDBStorageAdapter"
+      "status": "enhanced",
+      "class": "DuckDBStorageAdapter",
+      "notes": "Phase 8: Added AdapterProtocol compatibility (ADAPTER_NAME, initialize, close, is_available)"
     },
     {
       "id": 402,
       "source": "codeintel.ingestion.adapters.tool_runner",
       "target": "codeintel.core.adapters",
-      "status": "pending",
-      "class": "ToolRunnerAdapter"
+      "status": "enhanced",
+      "class": "ToolRunnerAdapter",
+      "notes": "Phase 8: Added AdapterProtocol compatibility (ADAPTER_NAME, initialize, close, is_available)"
     },
     {
       "id": 403,
       "source": "codeintel.storage.ibis_adapter",
       "target": "codeintel.core.adapters",
-      "status": "pending",
-      "class": "IbisGateway"
+      "status": "enhanced",
+      "class": "IbisGateway",
+      "notes": "Phase 8: Added AdapterProtocol compatibility (ADAPTER_NAME, initialize, close, is_available)"
     }
   ],
   "factories": [
@@ -236,6 +239,105 @@
       "target": "codeintel.core.factory",
       "status": "pending",
       "class": "RepositoryFactory"
+    }
+  ],
+  "observability": [
+    {
+      "id": 601,
+      "source": "codeintel.cli.observability._telemetry",
+      "target": "codeintel.core.observability",
+      "status": "enhanced",
+      "class": "TelemetryProvider",
+      "notes": "Phase 9: Added ObservabilityProtocol compatibility (COMPONENT_NAME, metrics property)"
+    },
+    {
+      "id": 602,
+      "source": "codeintel.cli.observability._telemetry",
+      "target": "codeintel.core.observability",
+      "status": "enhanced",
+      "class": "OperationMetrics",
+      "notes": "Phase 9: Added MetricsProtocol compatibility (increment, gauge, histogram)"
+    },
+    {
+      "id": 603,
+      "source": "codeintel.serving.services.observability",
+      "target": "codeintel.core.observability",
+      "status": "enhanced",
+      "class": "ServiceObservability",
+      "notes": "Phase 9: Added ObservabilityProtocol compatibility (COMPONENT_NAME, metrics, tracer)"
+    },
+    {
+      "id": 604,
+      "source": "codeintel.build.hamilton.telemetry_hook",
+      "target": null,
+      "status": "keep",
+      "class": "NodeTelemetryHook",
+      "notes": "Uses Hamilton native lifecycle adapter pattern correctly"
+    },
+    {
+      "id": 605,
+      "source": "codeintel.build.hamilton.observability",
+      "target": null,
+      "status": "keep",
+      "class": "DAG observability functions",
+      "notes": "Uses Hamilton Driver APIs for DAG visualization"
+    }
+  ],
+  "validation": [
+    {
+      "id": 701,
+      "source": "codeintel.graphs.validation.checks.structure",
+      "target": "codeintel.core.validation",
+      "status": "enhanced",
+      "checks": ["CallGraphStructureCheck", "ImportGraphStructureCheck", "ImportCycleCheck", "ImportHubCheck", "ImportUpwardCheck", "ImportBridgeCheck", "SymbolGraphCheck", "ConfigKeyCheck"],
+      "notes": "Phase 10: Converted 8 structure check functions to CheckProtocol-compliant classes with backward-compatible wrappers"
+    },
+    {
+      "id": 702,
+      "source": "codeintel.graphs.validation.checks.database",
+      "target": "codeintel.core.validation",
+      "status": "enhanced",
+      "checks": ["MissingFunctionGoidsCheck", "CallsiteSpanMismatchCheck", "OrphanModulesCheck"],
+      "notes": "Phase 10: Converted 3 database check functions to CheckProtocol-compliant classes with backward-compatible wrappers"
+    },
+    {
+      "id": 703,
+      "source": "codeintel.graphs.validation.checks.anomaly",
+      "target": "codeintel.core.validation",
+      "status": "enhanced",
+      "checks": ["SymbolCommunityCheck", "SubsystemDisagreementCheck"],
+      "notes": "Phase 10: Converted 2 anomaly check functions to CheckProtocol-compliant classes with backward-compatible wrappers"
+    },
+    {
+      "id": 704,
+      "source": "codeintel.graphs.validation.runner",
+      "target": "codeintel.core.validation",
+      "status": "enhanced",
+      "class": "GraphValidationRunner",
+      "notes": "Phase 10: Added run_graph_validations_with_runner using core.validation.ValidationRunner, created GraphValidationContext and GraphCheckBase"
+    }
+  ],
+  "events": [
+    {
+      "id": 801,
+      "source": "codeintel.analytics",
+      "target": "codeintel.core.events",
+      "status": "skip",
+      "notes": "Phase 11: Skipped - No event patterns in analytics to migrate"
+    },
+    {
+      "id": 802,
+      "source": "codeintel.ingestion",
+      "target": "codeintel.core.events",
+      "status": "skip",
+      "notes": "Phase 11: Skipped - No event patterns in ingestion to migrate"
+    },
+    {
+      "id": 803,
+      "source": "codeintel.graphs",
+      "target": "codeintel.core.events",
+      "status": "skip",
+      "notes": "Phase 11: Skipped - Only simple enabler callbacks, no event-driven architecture"
     }
   ]
 }

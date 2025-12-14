@@ -11,7 +11,7 @@ import os
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from codeintel.core.singleton import SingletonHolder
 
@@ -188,19 +188,31 @@ class TelemetryProvider:
 
     Manage tracer and meter instances, providing a facade
     that gracefully degrades when OTEL is not available.
+
+    This class implements ObservabilityProtocol for compatibility
+    with the core observability infrastructure.
     """
 
-    def __init__(self, config: TelemetryConfig | None = None) -> None:
+    COMPONENT_NAME: ClassVar[str] = "cli"
+
+    def __init__(
+        self,
+        config: TelemetryConfig | None = None,
+        metrics: OperationMetrics | None = None,
+    ) -> None:
         """Initialize the telemetry provider.
 
         Parameters
         ----------
         config
             Telemetry configuration.
+        metrics
+            Optional metrics collector (defaults to singleton).
         """
         self._config = config or TelemetryConfig.from_env()
         self._tracer: Tracer | None = None
         self._initialized = False
+        self._metrics = metrics
 
     def _initialize(self) -> None:
         """Initialize OpenTelemetry if available."""
@@ -267,6 +279,19 @@ class TelemetryProvider:
         """
         self._initialize()
         return self._tracer
+
+    @property
+    def metrics(self) -> OperationMetrics:
+        """Get the metrics collector (ObservabilityProtocol compatibility).
+
+        Returns
+        -------
+        OperationMetrics
+            Metrics collector instance.
+        """
+        if self._metrics is None:
+            self._metrics = OperationMetricsHolder.get(OperationMetrics)
+        return self._metrics
 
     @contextmanager
     def span(
@@ -417,6 +442,63 @@ class OperationMetrics:
         sorted_values = sorted(values)
         index = int(len(sorted_values) * percentile / 100)
         return sorted_values[min(index, len(sorted_values) - 1)]
+
+    # MetricsProtocol compatibility methods
+
+    def increment(self, name: str, value: float = 1, **labels: str) -> None:
+        """Increment a counter metric (MetricsProtocol compatibility).
+
+        Parameters
+        ----------
+        name
+            Metric name (used as operation_id).
+        value
+            Value to increment by.
+        **labels
+            Metric labels (status label determines success/error).
+        """
+        status = labels.get("status", "success")
+        success = status == "success"
+        if name not in self.operation_counts:
+            self.operation_counts[name] = {"success": 0, "error": 0}
+        count_key = "success" if success else "error"
+        self.operation_counts[name][count_key] += int(value)
+
+    def gauge(self, name: str, value: float, **labels: str) -> None:
+        """Set a gauge metric value (MetricsProtocol compatibility).
+
+        Parameters
+        ----------
+        name
+            Metric name.
+        value
+            Current value.
+        **labels
+            Metric labels.
+
+        Note
+        ----
+        OperationMetrics does not track gauges natively; this is a no-op
+        for protocol compatibility.
+        """
+        _ = self, name, value, labels
+
+    def histogram(self, name: str, value: float, **labels: str) -> None:
+        """Record a histogram observation (MetricsProtocol compatibility).
+
+        Parameters
+        ----------
+        name
+            Metric name (used as operation_id).
+        value
+            Observed value (duration in seconds).
+        **labels
+            Metric labels.
+        """
+        _ = labels
+        if name not in self.operation_durations:
+            self.operation_durations[name] = []
+        self.operation_durations[name].append(value)
 
 
 class TracingMiddleware:
