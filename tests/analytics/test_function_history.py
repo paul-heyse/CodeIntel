@@ -137,7 +137,12 @@ def test_function_history_respects_min_threshold(
         _seed_function_for_history(ctx, goid=GOID_TEST_FUNC_2, urn="urn:fn2", commit=commit)
 
         snapshot = SnapshotRef(repo=ctx.repo, commit=commit, repo_root=repo_root)
-        compute_function_history(ctx.gateway, snapshot, runner=git_ctx.runner)
+        compute_function_history(
+            ctx.gateway,
+            snapshot,
+            runner=git_ctx.runner,
+            min_lines_threshold=5,
+        )
 
         rows = ctx.con.execute(
             "SELECT commit_count, lines_added FROM analytics.function_history"

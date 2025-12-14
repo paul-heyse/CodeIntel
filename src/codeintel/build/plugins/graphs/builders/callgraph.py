@@ -24,7 +24,6 @@ import contextlib
 import json
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import ibis
@@ -39,11 +38,9 @@ from codeintel.config.datasets import (
     call_graph_edge_to_tuple,
     call_graph_node_to_tuple,
 )
+from codeintel.core.catalog import load_function_index
 from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.graphs.catalog import (
-    load_function_index,
-)
 from codeintel.graphs.compute.callgraph import (
     EdgeResolutionContext,
     collect_aliases,
@@ -55,13 +52,13 @@ from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.build.context import TargetExecutionContext
     from codeintel.config.datasets import (
         CallGraphEdgeRow,
     )
-    from codeintel.graphs.catalog import (
-        FunctionSpanIndex,
-    )
+    from codeintel.core.catalog import FunctionSpanIndex
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

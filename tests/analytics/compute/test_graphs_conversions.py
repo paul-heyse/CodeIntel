@@ -17,11 +17,11 @@ import pytest
 from codeintel.analytics.compute.graphs.conversions import (
     log_empty_graph,
     log_projection_skipped,
-    normalize_decimal_id,
     normalize_node_id,
     safe_float,
     to_decimal_id,
 )
+from codeintel.core.data_models.ids import normalize_decimal_id
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,

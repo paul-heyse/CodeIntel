@@ -12,12 +12,12 @@ import networkx as nx
 from networkx.exception import NetworkXAlgorithmError
 
 from codeintel.analytics.compute.graphs import centrality as centrality_module
-from codeintel.analytics.runtime.context import GraphContext
-from codeintel.graphs.compute.metrics.centrality import (
+from codeintel.core.compute.centrality import (
     CentralityMetrics,
     compute_betweenness,
     compute_pagerank,
 )
+from codeintel.graphs.runtime.context import GraphContext
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     assert_logged,

@@ -47,7 +47,6 @@ if TYPE_CHECKING:
 
     import pandas as pd
 
-    from codeintel.analytics.runtime import GraphRuntime
     from codeintel.build.contracts import OutputContract, TableSchema
     from codeintel.build.parameters import TargetParameters
     from codeintel.build.protocols import (
@@ -60,7 +59,8 @@ if TYPE_CHECKING:
     from codeintel.build.providers import Providers, RealTestReporter
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import BuildPaths, SnapshotRef
-    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.core.catalog import FunctionCatalogProvider
+    from codeintel.graphs.runtime import GraphRuntime
     from codeintel.ingestion.tracker import ChangeTracker
     from codeintel.storage.gateway import StorageGateway
 

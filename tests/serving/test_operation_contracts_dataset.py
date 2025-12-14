@@ -5,14 +5,14 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from codeintel.config.datasets.operation_contracts_dataset import (
+    OPERATION_CONTRACT_TABLE_KEY,
+)
 from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from codeintel.serving.contracts.operation_contract_reflection import (
     ComponentSpec,
     build_operation_contract_dataframe,
     validate_operation_contracts,
-)
-from codeintel.serving.contracts.operation_contracts_dataset import (
-    OPERATION_CONTRACT_TABLE_KEY,
 )
 from codeintel.serving.mcp.backend import DuckDBBackend, HttpBackend
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService

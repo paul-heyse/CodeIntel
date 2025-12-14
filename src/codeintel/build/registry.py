@@ -24,6 +24,7 @@ from codeintel.build.resources import (
     TargetResources,
 )
 from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.unified_registry import get_unified_registry
 from codeintel.config.datasets.contracts import get_table_schemas
 
 if TYPE_CHECKING:
@@ -689,8 +690,6 @@ def build_target_graph_from_unified() -> TargetGraph:
     TargetGraph
         Graph built from unified registry.
     """
-    from codeintel.build.unified_registry import get_unified_registry
-
     unified = get_unified_registry()
     return build_target_graph(unified.get_all_targets())
 

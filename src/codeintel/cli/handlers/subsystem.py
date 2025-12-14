@@ -19,11 +19,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_subsystem_not_found
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.serving_models import ServingConfig
+from codeintel.graphs.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import (

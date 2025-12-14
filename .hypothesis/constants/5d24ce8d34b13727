@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/schema/ddl.py
+# hypothesis_version: 6.148.7
+
+['; ', 'SCHEMAS', 'apply_all_schemas', 'create_schemas']

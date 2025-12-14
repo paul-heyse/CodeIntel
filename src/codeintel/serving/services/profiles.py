@@ -13,7 +13,7 @@ from codeintel.serving.mcp.models import (
     ModuleProfileResponse,
 )
 from codeintel.serving.services.conversion import to_domain_result
-from codeintel.serving.services.transport import _HttpTransportMixin
+from codeintel.serving.services.transport import HttpQuerySpec, _HttpTransportMixin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -74,47 +74,57 @@ class _HttpProfileQueryMixin(_HttpTransportMixin):
 
     def get_function_profile(self, *, goid_h128: int) -> dm.FunctionProfileResult:
         return self._http_query(
-            "get_function_profile",
-            "/profiles/function",
-            {"goid_h128": goid_h128},
-            FunctionProfileResponse,
-            dm.FunctionProfileResult,
+            HttpQuerySpec(
+                name="get_function_profile",
+                path="/profiles/function",
+                params={"goid_h128": goid_h128},
+                response_type=FunctionProfileResponse,
+                domain_type=dm.FunctionProfileResult,
+            )
         )
 
     def get_file_profile(self, *, rel_path: str) -> dm.FileProfileResult:
         return self._http_query(
-            "get_file_profile",
-            "/profiles/file",
-            {"rel_path": rel_path},
-            FileProfileResponse,
-            dm.FileProfileResult,
+            HttpQuerySpec(
+                name="get_file_profile",
+                path="/profiles/file",
+                params={"rel_path": rel_path},
+                response_type=FileProfileResponse,
+                domain_type=dm.FileProfileResult,
+            )
         )
 
     def get_module_profile(self, *, module: str) -> dm.ModuleProfileResult:
         return self._http_query(
-            "get_module_profile",
-            "/profiles/module",
-            {"module": module},
-            ModuleProfileResponse,
-            dm.ModuleProfileResult,
+            HttpQuerySpec(
+                name="get_module_profile",
+                path="/profiles/module",
+                params={"module": module},
+                response_type=ModuleProfileResponse,
+                domain_type=dm.ModuleProfileResult,
+            )
         )
 
     def get_function_architecture(self, *, goid_h128: int) -> dm.FunctionArchitectureResult:
         return self._http_query(
-            "get_function_architecture",
-            "/architecture/function",
-            {"goid_h128": goid_h128},
-            FunctionArchitectureResponse,
-            dm.FunctionArchitectureResult,
+            HttpQuerySpec(
+                name="get_function_architecture",
+                path="/architecture/function",
+                params={"goid_h128": goid_h128},
+                response_type=FunctionArchitectureResponse,
+                domain_type=dm.FunctionArchitectureResult,
+            )
         )
 
     def get_module_architecture(self, *, module: str) -> dm.ModuleArchitectureResult:
         return self._http_query(
-            "get_module_architecture",
-            "/architecture/module",
-            {"module": module},
-            ModuleArchitectureResponse,
-            dm.ModuleArchitectureResult,
+            HttpQuerySpec(
+                name="get_module_architecture",
+                path="/architecture/module",
+                params={"module": module},
+                response_type=ModuleArchitectureResponse,
+                domain_type=dm.ModuleArchitectureResult,
+            )
         )
 
 

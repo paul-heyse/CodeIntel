@@ -8,17 +8,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.functions.parsing import parse_python_file
+from codeintel.core.catalog import CatalogService
 from codeintel.core.paths import normalize_path
-from codeintel.graphs.catalog import (
-    CatalogService,
-)
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.graphs.catalog import (
-        FunctionCatalogProvider,
-    )
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

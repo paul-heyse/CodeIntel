@@ -19,12 +19,14 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.assets.fingerprinting import (
     DEFAULT_FINGERPRINT_POLICY,
-    FingerprintPolicy,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from codeintel.build.assets.fingerprinting import (
+        FingerprintPolicy,
+    )
     from codeintel.build.config import BuildConfig
     from codeintel.build.manifest import OutputManifest
     from codeintel.build.providers import Providers

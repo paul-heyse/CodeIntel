@@ -18,7 +18,7 @@ from codeintel.serving.mcp.models import (
 )
 from codeintel.serving.services.conversion import to_domain_result
 from codeintel.serving.services.errors import ProblemError
-from codeintel.serving.services.transport import _HttpTransportMixin
+from codeintel.serving.services.transport import HttpQuerySpec, _HttpTransportMixin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -121,13 +121,15 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
         q: str | None = None,
     ) -> dm.SubsystemSummaryResult:
         return self._http_query(
-            "list_subsystems",
-            "/architecture/subsystems",
-            {"role": role, "q": q},
-            SubsystemSummaryResponse,
-            dm.SubsystemSummaryResult,
-            empty_data=SubsystemSummaryResponse(subsystems=[]),
-            limit=limit,
+            HttpQuerySpec(
+                name="list_subsystems",
+                path="/architecture/subsystems",
+                params={"role": role, "q": q},
+                response_type=SubsystemSummaryResponse,
+                domain_type=dm.SubsystemSummaryResult,
+                empty_data=SubsystemSummaryResponse(subsystems=[]),
+                limit=limit,
+            )
         )
 
     def get_module_subsystems(self, *, module: str) -> dm.ModuleSubsystemResult:
@@ -198,13 +200,15 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
         q: str | None = None,
     ) -> dm.SubsystemSearchResult:
         return self._http_query(
-            "search_subsystems",
-            "/architecture/subsystems",
-            {"role": role, "q": q},
-            SubsystemSearchResponse,
-            dm.SubsystemSearchResult,
-            empty_data=SubsystemSearchResponse(subsystems=[]),
-            limit=limit,
+            HttpQuerySpec(
+                name="search_subsystems",
+                path="/architecture/subsystems",
+                params={"role": role, "q": q},
+                response_type=SubsystemSearchResponse,
+                domain_type=dm.SubsystemSearchResult,
+                empty_data=SubsystemSearchResponse(subsystems=[]),
+                limit=limit,
+            )
         )
 
     def summarize_subsystem(
@@ -217,26 +221,30 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
 
     def list_subsystem_profiles(self, *, limit: int | None = None) -> dm.SubsystemProfileResult:
         return self._http_query(
-            "list_subsystem_profiles",
-            "/architecture/subsystem-profiles",
-            {},
-            SubsystemProfileResponse,
-            dm.SubsystemProfileResult,
-            empty_data=SubsystemProfileResponse(profiles=[]),
-            limit=limit,
-            dataset="docs.v_subsystem_profile",
+            HttpQuerySpec(
+                name="list_subsystem_profiles",
+                path="/architecture/subsystem-profiles",
+                params={},
+                response_type=SubsystemProfileResponse,
+                domain_type=dm.SubsystemProfileResult,
+                empty_data=SubsystemProfileResponse(profiles=[]),
+                limit=limit,
+                dataset="docs.v_subsystem_profile",
+            )
         )
 
     def list_subsystem_coverage(self, *, limit: int | None = None) -> dm.SubsystemCoverageResult:
         return self._http_query(
-            "list_subsystem_coverage",
-            "/architecture/subsystem-coverage",
-            {},
-            SubsystemCoverageResponse,
-            dm.SubsystemCoverageResult,
-            empty_data=SubsystemCoverageResponse(coverage=[]),
-            limit=limit,
-            dataset="docs.v_subsystem_coverage",
+            HttpQuerySpec(
+                name="list_subsystem_coverage",
+                path="/architecture/subsystem-coverage",
+                params={},
+                response_type=SubsystemCoverageResponse,
+                domain_type=dm.SubsystemCoverageResult,
+                empty_data=SubsystemCoverageResponse(coverage=[]),
+                limit=limit,
+                dataset="docs.v_subsystem_coverage",
+            )
         )
 
 

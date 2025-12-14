@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, Unpack
 
-from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
+from codeintel.graphs.runtime import GraphRuntimeOptions
 
 if TYPE_CHECKING:
     from codeintel.config import GraphBackendConfig

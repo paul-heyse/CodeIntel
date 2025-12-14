@@ -51,13 +51,15 @@ from codeintel.build.hamilton.naming import (
     target_node,
 )
 from codeintel.build.parameters import EMPTY_PARAMETERS
-from codeintel.build.plugin import TargetPluginProtocol
-from codeintel.build.plugin_registry import get_plugin_for_target
 from codeintel.build.registry import get_target_graph
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import TargetGraph
+from codeintel.build.unified_registry import get_unified_registry
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from codeintel.build.plugin import TargetPluginProtocol
+    from codeintel.build.targets import OutputTarget
 
 __all__ = [
     "GenerationOptions",
@@ -154,7 +156,7 @@ def _run_target(
         )
 
     target = graph.get(target_name)
-    plugin = get_plugin_for_target(target_name)
+    plugin = get_unified_registry().instantiate_plugin(target_name)
     meta = from_target(target)
     plugin_name = meta.name  # Canonical name like "analytics.function_metrics"
 

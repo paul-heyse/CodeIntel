@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     )
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.ingestion.engine.infrastructure import ToolRunner
     from codeintel.storage.gateway import StorageGateway
 
@@ -130,6 +130,7 @@ def compute_function_history(
     snapshot: SnapshotRef,
     *,
     runner: ToolRunner | None = None,
+    min_lines_threshold: int = 2,
 ) -> None:
     """Compute historical metrics for functions from SCM or tool outputs.
 
@@ -141,6 +142,8 @@ def compute_function_history(
         Repository and commit identifiers.
     runner
         Optional shared ToolRunner for git invocations.
+    min_lines_threshold
+        Minimum number of overlapping line edits required to count a commit towards churn.
     """
     func = cast(
         "Callable[..., None]",
@@ -150,6 +153,7 @@ def compute_function_history(
         gateway,
         snapshot,
         runner=runner,
+        min_lines_threshold=min_lines_threshold,
     )
 
 

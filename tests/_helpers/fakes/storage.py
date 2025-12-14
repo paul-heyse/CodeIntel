@@ -96,7 +96,7 @@ class FakeIngestStorage:
                 op="write_batch", target=table_key, details={"rows": len(rows), "scope": scope}
             )
         )
-        return BatchResult(table_key=table_key, rows_written=len(rows), duration_s=0.0)
+        return BatchResult.from_write(table_key=table_key, rows_written=len(rows), duration_s=0.0)
 
     def delete_by_params(
         self,
@@ -176,7 +176,7 @@ class FakeIngestStorage:
         self.operations.record(
             StorageOpCall(op="execute_query", target=sql, details={"params": params})
         )
-        return QueryResult(rows=[], columns=(), row_count=0)
+        return QueryResult.empty()
 
     def fetch_dataframe(
         self,

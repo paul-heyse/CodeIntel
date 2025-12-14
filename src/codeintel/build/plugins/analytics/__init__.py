@@ -2,12 +2,12 @@
 
 This package contains all analytics plugins that implement the
 TargetPlugin protocol from codeintel.build.plugin. Plugins are
-registered in the build registry (codeintel.build.plugin_registry).
+registered in the build registry (codeintel.build.unified_registry).
 
 Example
 -------
->>> from codeintel.build.plugin_registry import get_plugin_for_target
->>> plugin = get_plugin_for_target("function_metrics")
+>>> from codeintel.build.unified_registry import get_unified_registry
+>>> plugin = get_unified_registry().instantiate_plugin("function_metrics")
 >>> result = await plugin.execute(ctx)
 """
 

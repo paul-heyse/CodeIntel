@@ -29,13 +29,13 @@ from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.session import BuildSession
 from codeintel.build.state_computer import StateComputer
-from codeintel.build.state_types import BuildState as UnifiedBuildState
-from codeintel.build.state_types import TargetState as UnifiedTargetState
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.build.manifest import OutputManifest
+    from codeintel.build.state_types import BuildState as UnifiedBuildState
+    from codeintel.build.state_types import TargetState as UnifiedTargetState
     from codeintel.build.targets import TargetGraph
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway

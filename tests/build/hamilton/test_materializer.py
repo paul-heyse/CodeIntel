@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, cast
 import pandas as pd
 import pytest
 
-from codeintel.build.hamilton.native import materializer
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
 from codeintel.config.primitives import SnapshotRef
 
@@ -172,7 +171,7 @@ def test_materialize_table_uses_policy_and_insert_select() -> None:
     )
 
 
-def test_materialize_table_validates_when_schema_available(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_materialize_table_validates_when_schema_available() -> None:
     """materialize_table should validate DataFrame when schema is present."""
     df = pd.DataFrame(
         {"repo": ["r", "r"], "commit": ["c", "c"], "value": [1, 2]},
@@ -198,7 +197,6 @@ def test_materialize_table_validates_when_schema_available(monkeypatch: pytest.M
             return frame
 
     schema = StubSchema()
-    monkeypatch.setattr(materializer, "get_pandera_schema", lambda _: schema)
 
     ref = materialize_table(
         MaterializationContext(
@@ -206,6 +204,7 @@ def test_materialize_table_validates_when_schema_available(monkeypatch: pytest.M
         ),
         "analytics.example",
         cast("ir.Table", table),
+        schema_resolver=lambda _: schema,
     )
 
     expect(condition=bool(schema.calls), message="Schema.validate should be invoked")

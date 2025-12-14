@@ -22,8 +22,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.core.catalog import CatalogService, FunctionCatalog, FunctionSpan
 from codeintel.core.resources import ResourceRegistry
-from codeintel.graphs.catalog import CatalogService, FunctionCatalog, FunctionSpan
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot

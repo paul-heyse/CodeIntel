@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Final, cast
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.graphs.catalog import FunctionCatalog, FunctionSpan
+    from codeintel.core.catalog import FunctionCatalog, FunctionSpan
 
 # ---------------------------------------------------------------------------
 # Constants

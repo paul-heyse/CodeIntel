@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,6 +23,8 @@ __all__ = [
     "get_module_paths",
     "paths_to_modules",
 ]
+
+log = logging.getLogger(__name__)
 
 
 def paths_to_modules(paths: Sequence[str], repo_root: Path) -> list[ModuleRecord]:
@@ -174,5 +177,6 @@ def get_module_paths(ctx: TargetExecutionContext) -> list[str]:
             .execute()
         )
         return [str(path) for path in df["path"].tolist()]
-    except (RuntimeError, OSError):
+    except (RuntimeError, OSError) as exc:
+        log.warning("gateway error fetching module paths: %s", exc)
         return []

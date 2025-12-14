@@ -18,15 +18,11 @@ from codeintel.analytics.parsing.ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )
-from codeintel.analytics.runtime import (
-    resolve_graph_runtime,
-)
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
+from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.graphs.catalog import (
-    CatalogService,
-)
+from codeintel.graphs.runtime import resolve_graph_runtime
 from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
@@ -36,14 +32,9 @@ if TYPE_CHECKING:
     from codeintel.analytics.parsing.ast_cache import (
         FunctionAst,
     )
-    from codeintel.analytics.runtime import (
-        GraphRuntime,
-        GraphRuntimeOptions,
-    )
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.catalog import (
-        FunctionCatalogProvider,
-    )
+    from codeintel.core.catalog import FunctionCatalogProvider
+    from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

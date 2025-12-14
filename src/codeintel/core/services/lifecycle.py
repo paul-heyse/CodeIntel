@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from codeintel.core.services.base import ServiceError
-from codeintel.core.services.protocol import ServiceProtocol, ServiceState
+from codeintel.core.services.protocol import ServiceState
+
+if TYPE_CHECKING:
+    from codeintel.core.services.protocol import ServiceProtocol
 
 log = logging.getLogger(__name__)
 

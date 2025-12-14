@@ -144,7 +144,8 @@ class TestBuildFunctionGraphMetricRows:
     def test_builds_empty_list_for_no_nodes() -> None:
         """Verify empty list returned when no graph nodes."""
         inputs = FunctionGraphMetricInputs(
-            cfg=FakeConfig(),  # type: ignore[arg-type]
+            repo="test/repo",
+            commit="abc123",
             stats=FakeNeighborStats(),  # type: ignore[arg-type]
             centrality={"pagerank": {}, "betweenness": {}, "closeness": {}},
             components=FakeComponentBundle(),  # type: ignore[arg-type]
@@ -173,7 +174,8 @@ class TestBuildFunctionGraphMetricRows:
         created_at = datetime.now(UTC)
 
         inputs = FunctionGraphMetricInputs(
-            cfg=FakeConfig(),  # type: ignore[arg-type]
+            repo="test/repo",
+            commit="abc123",
             stats=stats,  # type: ignore[arg-type]
             centrality={
                 "pagerank": {1: 0.5, 2: 0.3},

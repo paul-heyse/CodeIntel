@@ -26,10 +26,7 @@ from tests.ingestion.plugins._wiring import ResourceCase, run_sync_plugin_wiring
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.build.plugins.ingestion.ast_extract import (
-        StepFactory,
-        StorageFactory,
-    )
+    from codeintel.build.plugin import StepFactory, StorageFactory
     from codeintel.storage.gateway import StorageGateway
 
 

@@ -17,7 +17,7 @@ from codeintel.config.datasets.dependencies import (
     DependencyCallRow,
     compute_dep_id,
 )
-from codeintel.graphs.catalog import FunctionSpan
+from codeintel.core.catalog import FunctionSpan
 from tests._helpers.builders import FunctionMetricsRow, ModuleRow
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 

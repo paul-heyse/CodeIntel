@@ -9,12 +9,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.core.catalog import CatalogService
 from codeintel.core.resources import LazyResource, ResourceNotLoadedError
-from codeintel.graphs.catalog import CatalogService
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

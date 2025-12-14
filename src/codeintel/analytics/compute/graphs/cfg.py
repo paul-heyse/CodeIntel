@@ -26,7 +26,7 @@ from codeintel.graphs.compute.metrics.paths import (
 
 if TYPE_CHECKING:
     from codeintel.analytics.compute.graphs.types import CentralityBundle
-    from codeintel.analytics.runtime.context import GraphContext
+    from codeintel.graphs.runtime.context import GraphContext
 
 
 def cfg_dominance_metrics(graph: nx.DiGraph, entry_idx: int) -> DominanceMetrics:

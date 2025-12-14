@@ -24,18 +24,20 @@ Example
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from codeintel.build.session import BuildSession
 from codeintel.build.state_types import (
-    BlockingReason,
     BuildState,
     TargetState,
-    TargetStatus,
 )
 
 if TYPE_CHECKING:
     from codeintel.build.manifest import OutputManifest
+    from codeintel.build.state_types import (
+        BlockingReason,
+        TargetStatus,
+    )
     from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
@@ -353,7 +355,7 @@ class StateComputer:
                     if first_reason is None:
                         first_reason = "dependency_stale"
 
-        return blocking_deps, first_reason
+        return blocking_deps, cast("BlockingReason | None", first_reason)
 
     def _find_blocking_deps_from_states(
         self,
@@ -387,7 +389,7 @@ class StateComputer:
                 if first_reason is None:
                     first_reason = reason
 
-        return blocking_deps, first_reason
+        return blocking_deps, cast("BlockingReason | None", first_reason)
 
     @staticmethod
     def _check_dep_blocking(dep_state: TargetState) -> BlockingReason | None:

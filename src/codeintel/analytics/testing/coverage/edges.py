@@ -17,11 +17,8 @@ from codeintel.config.datasets import (
     TestCoverageEdgeRow,
     serialize_test_coverage_edge,
 )
-from codeintel.config.primitives import SnapshotRef
+from codeintel.core.catalog import CatalogService
 from codeintel.core.paths import normalize_path
-from codeintel.graphs.catalog import (
-    CatalogService,
-)
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
@@ -29,9 +26,8 @@ if TYPE_CHECKING:
 
     from coverage import CoverageData
 
-    from codeintel.graphs.catalog import (
-        FunctionCatalogProvider,
-    )
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

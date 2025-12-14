@@ -9,7 +9,6 @@ function wrappers are provided for backward compatibility.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.graphs.validation.base import GraphCheckBase
@@ -21,6 +20,8 @@ from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import bool_not, filter_by, ibis_bool
 
 if TYPE_CHECKING:
+    import logging
+
     from codeintel.core.validation import ValidationSeverity
     from codeintel.graphs.validation.context import GraphValidationContext
     from codeintel.storage.gateway import StorageGateway

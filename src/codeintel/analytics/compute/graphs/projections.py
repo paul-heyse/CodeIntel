@@ -23,7 +23,7 @@ from codeintel.graphs.compute.metrics.community import detect_communities_greedy
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from codeintel.analytics.runtime.context import GraphContext
+    from codeintel.graphs.runtime.context import GraphContext
 
 log = logging.getLogger(__name__)
 

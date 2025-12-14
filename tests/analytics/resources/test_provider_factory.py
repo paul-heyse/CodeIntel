@@ -21,16 +21,12 @@ from codeintel.analytics.resources.factory import (
     ProviderFactoryOptions,
 )
 from codeintel.analytics.resources.features import FeaturesProvider
-from codeintel.analytics.resources.graphs import GraphProvider, GraphRuntimeLike
 from codeintel.analytics.resources.module_map import ModuleMapProvider
-from codeintel.analytics.resources.registry import ResourceRegistry
-from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.graphs.catalog import (
-    CatalogService,
-    FunctionCatalog,
-    FunctionCatalogProvider,
-)
+from codeintel.core.catalog import CatalogService, FunctionCatalog, FunctionCatalogProvider
+from codeintel.core.resources import ResourceRegistry
+from codeintel.graphs.resources.graph_provider import GraphProvider, GraphRuntimeLike
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
@@ -43,9 +39,7 @@ if TYPE_CHECKING:
     import pytest
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.catalog import (
-        FunctionSpan,
-    )
+    from codeintel.core.catalog import FunctionSpan
     from codeintel.storage.gateway import StorageGateway
 
 

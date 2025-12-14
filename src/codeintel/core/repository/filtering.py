@@ -7,10 +7,12 @@ for repository queries.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 class FilterOperator(Enum):

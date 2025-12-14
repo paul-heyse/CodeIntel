@@ -17,7 +17,7 @@ from codeintel.graphs.compute.callgraph.types import ResolutionResult
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from codeintel.graphs.catalog import FunctionSpan
+    from codeintel.core.catalog import FunctionSpan
 
 
 def resolve_callee(

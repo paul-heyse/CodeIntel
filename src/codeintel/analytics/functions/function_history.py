@@ -86,6 +86,7 @@ def compute_function_history(
     snapshot: SnapshotRef,
     *,
     runner: ToolRunner | None = None,
+    min_lines_threshold: int = 2,
 ) -> None:
     """
     Populate `analytics.function_history` for the given repo/commit snapshot.
@@ -98,9 +99,10 @@ def compute_function_history(
         Repository and commit identifiers.
     runner
         Optional shared ToolRunner for git invocations.
+    min_lines_threshold
+        Minimum number of overlapping line edits required to count a commit towards churn.
     """
     max_history_days = 365
-    min_lines_threshold = 5
     default_branch = "main"
     table = gateway.ibis.table("analytics.function_history")
     where = and_predicates(table.repo == snapshot.repo, table.commit == snapshot.commit)

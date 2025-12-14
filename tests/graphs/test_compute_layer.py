@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Final, cast
 
 import libcst as cst
 
-from codeintel.graphs.catalog import FunctionSpan, FunctionSpanIndex
+from codeintel.core.catalog import FunctionSpan, FunctionSpanIndex
 from codeintel.graphs.compute.callgraph import (
     CallEdge,
     EdgeResolutionContext,

@@ -12,11 +12,11 @@ from codeintel.analytics.graphs.symbol_orchestrator import (
     UndirectedMetricsConfig,
     compute_undirected_symbol_metrics,
 )
-from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
 
 if TYPE_CHECKING:
+    from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
     from codeintel.storage.gateway import StorageGateway
 
 

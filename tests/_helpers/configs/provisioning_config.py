@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Self
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.analytics.runtime.context import GraphMetricsOptions
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths
+    from codeintel.graphs.runtime import GraphMetricsOptions
     from codeintel.ingestion import (
         DuckDBStorageAdapter,
         FilesystemDiscoveryAdapter,

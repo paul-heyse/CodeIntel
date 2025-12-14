@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
 import ibis
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import (
@@ -24,6 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import (
         SnapshotGatewayResolver,
         StorageGateway,

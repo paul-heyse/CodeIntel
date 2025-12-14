@@ -8,13 +8,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.core.cache import CacheStats, CacheStatsCollector
+from codeintel.core.cache import CacheStatsCollector
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     import networkx as nx
 
+    from codeintel.core.cache import CacheStats
     from codeintel.graphs.engine.protocol import GraphKind
 
 

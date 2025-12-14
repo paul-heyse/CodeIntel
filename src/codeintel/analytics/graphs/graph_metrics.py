@@ -28,33 +28,28 @@ from codeintel.analytics.compute.row_builders import (
     load_symbol_module_edges,
     merge_component_metadata,
 )
-from codeintel.analytics.runtime import (
-    GraphMetricsOptions,
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
-)
-from codeintel.analytics.runtime.context import (
-    GraphContextSpec,
-    resolve_graph_context,
-)
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
     validate_contract_rows,
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
+from codeintel.graphs.runtime import (
+    GraphMetricsOptions,
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
+from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
 from codeintel.storage.repositories.subsystems import SubsystemRepository
 
 if TYPE_CHECKING:
-    from codeintel.analytics.runtime.context import (
-        GraphContext,
-    )
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.core.catalog import FunctionCatalogProvider
+    from codeintel.graphs.runtime.context import GraphContext
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

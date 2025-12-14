@@ -56,12 +56,9 @@ from typing import TYPE_CHECKING
 import anyio
 import httpx
 
-from codeintel.analytics.runtime import (
-    GraphRuntimeOptions,
-    build_graph_runtime,
-)
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import verify_db_identity
+from codeintel.graphs.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.serving.backend import (
     BackendContext,
     DuckDBQueryService,
@@ -82,12 +79,9 @@ from codeintel.serving.services.query_service import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from codeintel.analytics.runtime import (
-        GraphRuntime,
-        GraphRuntimePool,
-    )
     from codeintel.config.serving_models import ServingConfig
     from codeintel.graphs.engine import GraphEngine
+    from codeintel.graphs.runtime import GraphRuntime, GraphRuntimePool
     from codeintel.serving.backend import (
         BackendLimits,
     )

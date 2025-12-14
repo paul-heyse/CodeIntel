@@ -19,7 +19,7 @@ from codeintel.core.resources import LazyResource, ResourceNotLoadedError
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

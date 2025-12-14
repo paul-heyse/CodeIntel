@@ -5,14 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
-from codeintel.graphs.catalog import CatalogService, FunctionCatalog
+from codeintel.core.catalog import CatalogService, FunctionCatalog
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.catalog import FunctionSpan
+    from codeintel.core.catalog import FunctionSpan
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 

@@ -11,6 +11,7 @@ import inspect
 import logging
 import types
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from codeintel.cli.core.parsing import parse_bool
@@ -322,6 +323,37 @@ def _generate_help_text(name: str, role: ParamRole, python_type: type[Any] | Non
     return f"{role_hints[role]}: {human_name}{type_desc}"
 
 
+def _fallback_annotation_type(annotation: object) -> type[Any] | None:
+    """Best-effort fallback when type hint evaluation fails.
+
+    Parameters
+    ----------
+    annotation
+        Raw annotation from ``inspect.Signature`` which may be a string when
+        ``from __future__ import annotations`` is enabled.
+
+    Returns
+    -------
+    type[Any] | None
+        Best-effort Python type or None if unavailable.
+    """
+    if annotation is inspect.Parameter.empty:
+        return None
+    if isinstance(annotation, type):
+        return annotation
+    if isinstance(annotation, str):
+        token = annotation.split("|", 1)[0].strip()
+        builtin_map: dict[str, type[Any]] = {
+            "bool": bool,
+            "float": float,
+            "int": int,
+            "pathlib.Path": Path,
+            "str": str,
+        }
+        return builtin_map.get(token, object)
+    return object
+
+
 def build_cli_param_spec(
     param: inspect.Parameter,
     type_hints: dict[str, Any],
@@ -345,6 +377,8 @@ def build_cli_param_spec(
     """
     name = param.name
     python_type = type_hints.get(name)
+    if python_type is None:
+        python_type = _fallback_annotation_type(param.annotation)
     default = param.default
     has_default = default is not inspect.Parameter.empty
 

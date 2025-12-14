@@ -1,0 +1,606 @@
+{
+    "version": "1.1.407",
+    "time": "1765704298873",
+    "generalDiagnostics": [
+        {
+            "file": "/home/paul/CodeIntel/src/codeintel/build/readiness.py",
+            "severity": "error",
+            "message": "Argument of type \"SnapshotRef | Mapping[str, OutputManifest]\" cannot be assigned to parameter \"snapshot\" of type \"SnapshotRef\" in function \"__init__\"\n  Type \"SnapshotRef | Mapping[str, OutputManifest]\" is not assignable to type \"SnapshotRef\"\n    \"Mapping[str, OutputManifest]\" is not assignable to \"SnapshotRef\"",
+            "range": {
+                "start": {
+                    "line": 286,
+                    "character": 50
+                },
+                "end": {
+                    "line": 286,
+                    "character": 58
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/src/codeintel/build/resolver.py",
+            "severity": "error",
+            "message": "Argument of type \"str\" cannot be assigned to parameter \"module\" of type \"TargetModule\" in function \"targets_for_module\"\n  Type \"str\" is not assignable to type \"TargetModule\"\n    \"str\" is not assignable to type \"Literal['ingestion']\"\n    \"str\" is not assignable to type \"Literal['graphs']\"\n    \"str\" is not assignable to type \"Literal['analytics']\"\n    \"str\" is not assignable to type \"Literal['export']\"",
+            "range": {
+                "start": {
+                    "line": 218,
+                    "character": 80
+                },
+                "end": {
+                    "line": 218,
+                    "character": 86
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/src/codeintel/core/repository/protocol.py",
+            "severity": "warning",
+            "message": "Type variable \"T_co\" used in generic Protocol \"RepositoryProtocol\" should be invariant",
+            "range": {
+                "start": {
+                    "line": 20,
+                    "character": 6
+                },
+                "end": {
+                    "line": 20,
+                    "character": 24
+                }
+            },
+            "rule": "reportInvalidTypeVarUse"
+        },
+        {
+            "file": "/home/paul/CodeIntel/src/codeintel/ingestion/adapters/hash_change_detection.py",
+            "severity": "error",
+            "message": "Argument of type \"Any | object\" cannot be assigned to parameter \"x\" of type \"ConvertibleToInt\" in function \"__new__\"\n  Type \"Any | object\" is not assignable to type \"ConvertibleToInt\"\n    Type \"object\" is not assignable to type \"ConvertibleToInt\"\n      \"object\" is not assignable to \"str\"\n      \"object\" is incompatible with protocol \"Buffer\"\n        \"__buffer__\" is not present\n      \"object\" is incompatible with protocol \"SupportsInt\"\n        \"__int__\" is not present\n      \"object\" is incompatible with protocol \"SupportsIndex\"\n  ...",
+            "range": {
+                "start": {
+                    "line": 195,
+                    "character": 31
+                },
+                "end": {
+                    "line": 195,
+                    "character": 48
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/src/codeintel/ingestion/adapters/hash_change_detection.py",
+            "severity": "error",
+            "message": "Argument of type \"Any | object\" cannot be assigned to parameter \"x\" of type \"ConvertibleToInt\" in function \"__new__\"\n  Type \"Any | object\" is not assignable to type \"ConvertibleToInt\"\n    Type \"object\" is not assignable to type \"ConvertibleToInt\"\n      \"object\" is not assignable to \"str\"\n      \"object\" is incompatible with protocol \"Buffer\"\n        \"__buffer__\" is not present\n      \"object\" is incompatible with protocol \"SupportsInt\"\n        \"__int__\" is not present\n      \"object\" is incompatible with protocol \"SupportsIndex\"",
+            "range": {
+                "start": {
+                    "line": 195,
+                    "character": 31
+                },
+                "end": {
+                    "line": 195,
+                    "character": 48
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/src/codeintel/ingestion/adapters/hash_change_detection.py",
+            "severity": "error",
+            "message": "Argument of type \"Any | object\" cannot be assigned to parameter \"x\" of type \"ConvertibleToInt\" in function \"__new__\"\n  Type \"Any | object\" is not assignable to type \"ConvertibleToInt\"\n    Type \"object\" is not assignable to type \"ConvertibleToInt\"\n      \"object\" is not assignable to \"str\"\n      \"object\" is incompatible with protocol \"Buffer\"\n        \"__buffer__\" is not present\n      \"object\" is incompatible with protocol \"SupportsInt\"\n        \"__int__\" is not present\n      \"object\" is incompatible with protocol \"SupportsIndex\"\n  ...",
+            "range": {
+                "start": {
+                    "line": 196,
+                    "character": 29
+                },
+                "end": {
+                    "line": 196,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/src/codeintel/ingestion/adapters/hash_change_detection.py",
+            "severity": "error",
+            "message": "Argument of type \"Any | object\" cannot be assigned to parameter \"x\" of type \"ConvertibleToInt\" in function \"__new__\"\n  Type \"Any | object\" is not assignable to type \"ConvertibleToInt\"\n    Type \"object\" is not assignable to type \"ConvertibleToInt\"\n      \"object\" is not assignable to \"str\"\n      \"object\" is incompatible with protocol \"Buffer\"\n        \"__buffer__\" is not present\n      \"object\" is incompatible with protocol \"SupportsInt\"\n        \"__int__\" is not present\n      \"object\" is incompatible with protocol \"SupportsIndex\"",
+            "range": {
+                "start": {
+                    "line": 196,
+                    "character": 29
+                },
+                "end": {
+                    "line": 196,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/src/codeintel/serving/contracts/check_operation_contracts.py",
+            "severity": "error",
+            "message": "Argument of type \"Series | Any | ndarray[_AnyShape, dtype[Any]] | Unknown\" cannot be assigned to parameter \"key\" of type \"str\" in function \"__getitem__\"\n  Type \"Series | Any | ndarray[_AnyShape, dtype[Any]] | Unknown\" is not assignable to type \"str\"\n    \"Series\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 101,
+                    "character": 8
+                },
+                "end": {
+                    "line": 101,
+                    "character": 41
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/src/codeintel/serving/contracts/operation_contracts_dataset.py",
+            "severity": "error",
+            "message": "Type \"Series | bool\" is not assignable to return type \"bool\"\n  Type \"Series | bool\" is not assignable to type \"bool\"\n    \"Series\" is not assignable to \"bool\"",
+            "range": {
+                "start": {
+                    "line": 28,
+                    "character": 11
+                },
+                "end": {
+                    "line": 30,
+                    "character": 11
+                }
+            },
+            "rule": "reportReturnType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/src/codeintel/serving/services/http_helpers.py",
+            "severity": "error",
+            "message": "Argument of type \"int | None\" cannot be assigned to parameter \"applied_limit\" of type \"int\" in function \"__init__\"\n  Type \"int | None\" is not assignable to type \"int\"\n    \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 118,
+                    "character": 22
+                },
+                "end": {
+                    "line": 118,
+                    "character": 35
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/_helpers/orchestration/tooling.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"GIT\" for class \"type[ToolName]\"\n  Attribute \"GIT\" is unknown",
+            "range": {
+                "start": {
+                    "line": 290,
+                    "character": 28
+                },
+                "end": {
+                    "line": 290,
+                    "character": 31
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/_helpers/orchestration/tooling.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"GIT\" for class \"type[ToolName]\"\n  Attribute \"GIT\" is unknown",
+            "range": {
+                "start": {
+                    "line": 295,
+                    "character": 21
+                },
+                "end": {
+                    "line": 295,
+                    "character": 24
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/_helpers/orchestration/tooling.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"GIT\" for class \"type[ToolName]\"\n  Attribute \"GIT\" is unknown",
+            "range": {
+                "start": {
+                    "line": 303,
+                    "character": 21
+                },
+                "end": {
+                    "line": 303,
+                    "character": 24
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/_helpers/orchestration/tooling.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"GIT\" for class \"type[ToolName]\"\n  Attribute \"GIT\" is unknown",
+            "range": {
+                "start": {
+                    "line": 321,
+                    "character": 35
+                },
+                "end": {
+                    "line": 321,
+                    "character": 38
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/_helpers/orchestration/tooling.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"GIT\" for class \"type[ToolName]\"\n  Attribute \"GIT\" is unknown",
+            "range": {
+                "start": {
+                    "line": 323,
+                    "character": 28
+                },
+                "end": {
+                    "line": 323,
+                    "character": 31
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/_helpers/orchestration/tooling.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"GIT\" for class \"type[ToolName]\"\n  Attribute \"GIT\" is unknown",
+            "range": {
+                "start": {
+                    "line": 326,
+                    "character": 39
+                },
+                "end": {
+                    "line": 326,
+                    "character": 42
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/_helpers/orchestration/tooling.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"GIT\" for class \"type[ToolName]\"\n  Attribute \"GIT\" is unknown",
+            "range": {
+                "start": {
+                    "line": 339,
+                    "character": 28
+                },
+                "end": {
+                    "line": 339,
+                    "character": 31
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/_helpers/orchestration/tooling.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"GIT\" for class \"type[ToolName]\"\n  Attribute \"GIT\" is unknown",
+            "range": {
+                "start": {
+                    "line": 343,
+                    "character": 28
+                },
+                "end": {
+                    "line": 343,
+                    "character": 31
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/_helpers/orchestration/tooling.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"GIT\" for class \"type[ToolName]\"\n  Attribute \"GIT\" is unknown",
+            "range": {
+                "start": {
+                    "line": 346,
+                    "character": 40
+                },
+                "end": {
+                    "line": 346,
+                    "character": 43
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/analytics/compute/test_graphs_conversions.py",
+            "severity": "error",
+            "message": "\"normalize_decimal_id\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 19,
+                    "character": 4
+                },
+                "end": {
+                    "line": 19,
+                    "character": 24
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/analytics/profiles/test_utils.py",
+            "severity": "error",
+            "message": "\"int_or_default\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 17,
+                    "character": 4
+                },
+                "end": {
+                    "line": 17,
+                    "character": 18
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/analytics/profiles/test_utils.py",
+            "severity": "error",
+            "message": "\"optional_bool\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 18,
+                    "character": 4
+                },
+                "end": {
+                    "line": 18,
+                    "character": 17
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/analytics/profiles/test_utils.py",
+            "severity": "error",
+            "message": "\"optional_float\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 19,
+                    "character": 4
+                },
+                "end": {
+                    "line": 19,
+                    "character": 18
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/analytics/profiles/test_utils.py",
+            "severity": "error",
+            "message": "\"optional_int\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 20,
+                    "character": 4
+                },
+                "end": {
+                    "line": 20,
+                    "character": 16
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/analytics/profiles/test_utils.py",
+            "severity": "error",
+            "message": "\"optional_str\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 21,
+                    "character": 4
+                },
+                "end": {
+                    "line": 21,
+                    "character": 16
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/analytics/test_graph_stats_validation.py",
+            "severity": "error",
+            "message": "\"warn_graph_structure\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 14,
+                    "character": 40
+                },
+                "end": {
+                    "line": 14,
+                    "character": 60
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/hamilton/test_pr08_defaults.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal['phase0']\" cannot be assigned to parameter \"mode\" of type \"HamiltonNodeMode\" in function \"__init__\"\n  Type \"Literal['phase0']\" is not assignable to type \"HamiltonNodeMode\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['generated']\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['auto']\"",
+            "range": {
+                "start": {
+                    "line": 91,
+                    "character": 65
+                },
+                "end": {
+                    "line": 91,
+                    "character": 73
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/hamilton/test_pr14_graph_exports.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal['phase0']\" cannot be assigned to parameter \"mode\" of type \"HamiltonNodeMode\" in function \"build_driver\"\n  Type \"Literal['phase0']\" is not assignable to type \"HamiltonNodeMode\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['generated']\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['auto']\"",
+            "range": {
+                "start": {
+                    "line": 24,
+                    "character": 36
+                },
+                "end": {
+                    "line": 24,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/hamilton/test_pr14_graph_exports.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal['phase0']\" cannot be assigned to parameter \"mode\" of type \"HamiltonNodeMode\" in function \"build_driver\"\n  Type \"Literal['phase0']\" is not assignable to type \"HamiltonNodeMode\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['generated']\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['auto']\"",
+            "range": {
+                "start": {
+                    "line": 36,
+                    "character": 36
+                },
+                "end": {
+                    "line": 36,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/hamilton/test_pr14_graph_exports.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal['phase0']\" cannot be assigned to parameter \"mode\" of type \"HamiltonNodeMode\" in function \"build_driver\"\n  Type \"Literal['phase0']\" is not assignable to type \"HamiltonNodeMode\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['generated']\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['auto']\"",
+            "range": {
+                "start": {
+                    "line": 46,
+                    "character": 36
+                },
+                "end": {
+                    "line": 46,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/hamilton/test_pr14_graph_exports.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal['phase0']\" cannot be assigned to parameter \"mode\" of type \"HamiltonNodeMode\" in function \"build_driver\"\n  Type \"Literal['phase0']\" is not assignable to type \"HamiltonNodeMode\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['generated']\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['auto']\"",
+            "range": {
+                "start": {
+                    "line": 60,
+                    "character": 36
+                },
+                "end": {
+                    "line": 60,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/hamilton/test_pr14_graph_exports.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal['phase0']\" cannot be assigned to parameter \"mode\" of type \"HamiltonNodeMode\" in function \"build_driver\"\n  Type \"Literal['phase0']\" is not assignable to type \"HamiltonNodeMode\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['generated']\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['auto']\"",
+            "range": {
+                "start": {
+                    "line": 72,
+                    "character": 36
+                },
+                "end": {
+                    "line": 72,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/hamilton/test_pr14_graph_exports.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal['phase0']\" cannot be assigned to parameter \"mode\" of type \"HamiltonNodeMode\" in function \"build_driver\"\n  Type \"Literal['phase0']\" is not assignable to type \"HamiltonNodeMode\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['generated']\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['auto']\"",
+            "range": {
+                "start": {
+                    "line": 85,
+                    "character": 36
+                },
+                "end": {
+                    "line": 85,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/hamilton/test_pr14_graph_exports.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal['phase0']\" cannot be assigned to parameter \"mode\" of type \"HamiltonNodeMode\" in function \"build_driver\"\n  Type \"Literal['phase0']\" is not assignable to type \"HamiltonNodeMode\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['generated']\"\n    \"Literal['phase0']\" is not assignable to type \"Literal['auto']\"",
+            "range": {
+                "start": {
+                    "line": 99,
+                    "character": 36
+                },
+                "end": {
+                    "line": 99,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/test_hamilton_phase0.py",
+            "severity": "error",
+            "message": "\"targets_phase0\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 34,
+                    "character": 43
+                },
+                "end": {
+                    "line": 34,
+                    "character": 57
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/test_plan.py",
+            "severity": "error",
+            "message": "Argument of type \"object\" cannot be assigned to parameter \"sequence\" of type \"Iterable[object]\" in function \"expect_length\"\n  \"object\" is incompatible with protocol \"Iterable[object]\"\n    \"__iter__\" is not present",
+            "range": {
+                "start": {
+                    "line": 320,
+                    "character": 22
+                },
+                "end": {
+                    "line": 320,
+                    "character": 37
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/paul/CodeIntel/tests/build/test_plan.py",
+            "severity": "error",
+            "message": "Argument of type \"object\" cannot be assigned to parameter \"sequence\" of type \"Iterable[object]\" in function \"expect_length\"\n  \"object\" is incompatible with protocol \"Iterable[object]\"\n    \"__iter__\" is not present",
+            "range": {
+                "start": {
+                    "line": 444,
+                    "character": 22
+                },
+                "end": {
+                    "line": 444,
+                    "character": 38
+                }
+            },
+            "rule": "reportArgumentType"
+        }
+    ],
+    "summary": {
+        "filesAnalyzed": 1421,
+        "errorCount": 36,
+        "warningCount": 1,
+        "informationCount": 0,
+        "timeInSec": 11.457
+    }
+}
+

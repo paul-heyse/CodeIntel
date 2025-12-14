@@ -15,13 +15,14 @@ from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.constants import SCHEMAS
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from duckdb import DuckDBPyConnection
+
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 log = logging.getLogger(__name__)
 

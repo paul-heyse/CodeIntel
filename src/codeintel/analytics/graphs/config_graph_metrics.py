@@ -14,18 +14,11 @@ from codeintel.analytics.compute.graphs import (
     projection_metrics,
 )
 from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES
-from codeintel.analytics.runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
-)
-from codeintel.analytics.runtime.context import (
-    GraphContextSpec,
-    resolve_graph_context,
-)
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
@@ -34,9 +27,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.compute.graphs import (
         ProjectionMetrics,
     )
-    from codeintel.analytics.runtime.context import (
-        GraphContext,
-    )
+    from codeintel.graphs.runtime.context import GraphContext
     from codeintel.storage.gateway import StorageGateway
 
 NODE_ID_INDEX = 2

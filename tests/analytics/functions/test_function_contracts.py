@@ -16,7 +16,6 @@ from codeintel.analytics.functions.function_contracts import (
     compute_function_contracts,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
-from codeintel.config.primitives import SnapshotRef
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import expect_equal, expect_is_none
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
@@ -26,6 +25,7 @@ from tests._helpers.factories import make_snapshot
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 

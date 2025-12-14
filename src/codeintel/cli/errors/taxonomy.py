@@ -1,40 +1,40 @@
 """Standardized error types and codes for CLI operations.
 
-This module re-exports error taxonomy from core/errors and provides
-CLI-specific factory functions for creating RFC 9457 Problem Details.
+This module re-exports error codes from `codeintel.core.errors.taxonomy`, but emits
+CLI-scoped RFC 9457 Problem `type` URNs using the `urn:codeintel:cli:` namespace.
 
-The error taxonomy follows this hierarchy:
+The CLI taxonomy follows this hierarchy:
 
-    urn:codeintel:
-    ├── validation/
+    urn:codeintel:cli:
+    ├── validation:
     │   ├── missing-required
     │   ├── invalid-type
     │   ├── invalid-format
     │   ├── out-of-range
     │   └── constraint-violation
-    ├── operation/
+    ├── operation:
     │   ├── not-found
     │   ├── already-exists
     │   ├── timeout
     │   ├── dependency-failed
     │   ├── cancelled
     │   └── internal-error
-    ├── storage/
+    ├── storage:
     │   ├── connection-failed
     │   ├── query-failed
     │   ├── schema-mismatch
     │   └── corruption-detected
-    ├── config/
+    ├── config:
     │   ├── file-not-found
     │   ├── parse-error
     │   ├── invalid-value
     │   └── schema-violation
-    ├── service/
+    ├── service:
     │   ├── unavailable
     │   ├── rate-limited
     │   ├── authentication-failed
     │   └── permission-denied
-    └── job/
+    └── job:
         ├── not-found
         ├── already-running
         ├── failed
@@ -96,13 +96,30 @@ from codeintel.core.errors.taxonomy import (
     ServiceErrorCode,
     StorageErrorCode,
     ValidationErrorCode,
-    make_error_type,
 )
 
 # Status code lookup - re-export from core
 from codeintel.core.errors.taxonomy import STATUS_CODES as _CORE_STATUS_CODES
 
 _STATUS_CODES: dict[str, int] = _CORE_STATUS_CODES
+
+
+def make_error_type(category: ErrorCategory, code: str) -> str:
+    """Construct a CLI-scoped error type URN.
+
+    Parameters
+    ----------
+    category
+        Error category.
+    code
+        Category-specific error code value.
+
+    Returns
+    -------
+    str
+        RFC 9457 `type` identifier for CLI errors.
+    """
+    return f"urn:codeintel:cli:{category.value}:{code}"
 
 
 def validation_error(

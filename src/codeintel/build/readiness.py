@@ -50,17 +50,18 @@ ActionNeeded(kind='run_first', target='ast', reason='data missing')
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.session import BuildSession
+from codeintel.config.primitives import SnapshotRef
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterator
 
     from codeintel.build.manifest import OutputManifest
     from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
-    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -238,27 +239,68 @@ class TargetReadinessView:
         The target to compute readiness for.
     graph
         Complete target graph for dependency lookups.
-    session
-        Build session for caching and storage access.
+    session_or_gateway
+        Either a BuildSession (preferred) or a StorageGateway for legacy call sites.
+    snapshot_or_manifest_cache
+        SnapshotRef when passing a gateway, or an optional manifest cache when passing a session.
     manifest_cache
-        Optional pre-loaded manifests (deprecated, use session).
+        Optional pre-loaded manifests (legacy). Prefer a shared BuildSession.
     """
+
+    class ManifestCacheTypeError(TypeError):
+        """Raised when TargetReadinessView receives an invalid manifest cache argument."""
+
+        def __init__(self) -> None:
+            super().__init__(
+                "manifest_cache must be a mapping when initializing TargetReadinessView with a session."
+            )
+
+    class SnapshotRequiredError(TypeError):
+        """Raised when TargetReadinessView is constructed without a SnapshotRef."""
+
+        def __init__(self) -> None:
+            super().__init__(
+                "SnapshotRef is required when initializing TargetReadinessView with a gateway."
+            )
+
+    class SnapshotTypeError(TypeError):
+        """Raised when TargetReadinessView receives an invalid snapshot argument."""
+
+        def __init__(self) -> None:
+            super().__init__(
+                "snapshot_or_manifest_cache must be a SnapshotRef when initializing "
+                "TargetReadinessView with a gateway."
+            )
 
     def __init__(
         self,
         target: OutputTarget,
         graph: TargetGraph,
-        session: BuildSession,
+        session_or_gateway: BuildSession | StorageGateway,
+        snapshot_or_manifest_cache: SnapshotRef | Mapping[str, OutputManifest] | None = None,
         manifest_cache: Mapping[str, OutputManifest] | None = None,
     ) -> None:
         self._target = target
         self._graph = graph
-        self._session = session
-        # Legacy manifest_cache support for backward compatibility
-        if manifest_cache:
-            for name, manifest in manifest_cache.items():
-                if name not in self._session._manifest_cache:
-                    self._session._manifest_cache[name] = manifest
+        if isinstance(session_or_gateway, BuildSession):
+            self._session = session_or_gateway
+            cache = manifest_cache
+            if snapshot_or_manifest_cache is not None:
+                if not isinstance(snapshot_or_manifest_cache, Mapping):
+                    raise TargetReadinessView.ManifestCacheTypeError
+                cache = snapshot_or_manifest_cache if cache is None else cache
+        else:
+            snapshot = snapshot_or_manifest_cache
+            if snapshot is None:
+                raise TargetReadinessView.SnapshotRequiredError
+            if not isinstance(snapshot, SnapshotRef):
+                raise TargetReadinessView.SnapshotTypeError
+            self._session = BuildSession(snapshot=snapshot, gateway=session_or_gateway)
+            self._session.preload_manifests()
+            cache = manifest_cache
+
+        if cache:
+            self._session.seed_manifest_cache(cache)
 
         self._readiness: TargetReadiness | None = None
 

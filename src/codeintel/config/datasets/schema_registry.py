@@ -47,12 +47,12 @@ def _get_plugin_metadata() -> dict[str, object]:
     """
     try:
         # Lazy import to avoid circular dependency at module load time
-        from codeintel.build.plugin_registry import get_all_plugins  # noqa: PLC0415
+        from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
     except ImportError:
         log.debug("Build plugin registry not available")
         return {}
 
-    registry = get_all_plugins()
+    registry = get_unified_registry().get_all_plugins()
     result: dict[str, object] = {}
     for name, cls in registry.items():
         try:

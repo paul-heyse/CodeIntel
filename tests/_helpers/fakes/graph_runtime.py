@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, Final, TypedDict, TypeVar, Unpack, cast
 import networkx as nx
 from duckdb import Error as DuckDBError
 
-from codeintel.analytics.resources.graphs import GraphRuntimeLike
-from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.graphs.engine.protocol import GraphEngine, GraphKind
+from codeintel.graphs.resources.graph_provider import GraphRuntimeLike
+from codeintel.graphs.runtime import GraphRuntimeOptions
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping

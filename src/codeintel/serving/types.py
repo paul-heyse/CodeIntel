@@ -52,6 +52,7 @@ if TYPE_CHECKING:
         DatasetDescriptor,
         DatasetRowsResponse,
         DatasetSchemaResponse,
+        DatasetSpecDescriptor,
         FileHintsResponse,
         FileProfileResponse,
         FileSummaryResponse,
@@ -64,6 +65,7 @@ if TYPE_CHECKING:
         ImportBoundaryResponse,
         ModuleArchitectureResponse,
         ModuleProfileResponse,
+        ModuleSubsystemResponse,
         SubsystemCoverageResponse,
         SubsystemModulesResponse,
         SubsystemProfileResponse,
@@ -700,33 +702,26 @@ BackendFactory = Callable[..., QueryBackendProtocol]
 
 
 __all__ = [
-    # Composite protocols (primary)
-    "QueryBackendProtocol",
-    "QueryServiceProtocol",
-    # Queryable protocols
+    "BackendFactory",
     "DatasetQueryable",
     "FunctionQueryable",
-    "ProfileQueryable",
-    "SubsystemQueryable",
-    # Base protocols
-    "RepoCommitProtocol",
-    # Repository protocols
     "FunctionRepositoryProtocol",
-    "ModuleRepositoryProtocol",
-    "RepositoryProtocol",
-    "SubsystemRepositoryProtocol",
-    # Utility protocols
     "GraphEngineProtocol",
     "HasClose",
     "HasModelDump",
     "HasModelValidate",
+    "JsonPayload",
+    "ModuleRepositoryProtocol",
+    "ProfileQueryable",
+    "QueryBackendProtocol",
+    "QueryServiceProtocol",
+    "RepoCommitProtocol",
+    "RepositoryProtocol",
     "ResponseMetaLike",
+    "RowDict",
+    "ServiceFactory",
     "ServiceResult",
     "StorageGatewayProtocol",
-    # Factory types
-    "BackendFactory",
-    "ServiceFactory",
-    # Type aliases
-    "JsonPayload",
-    "RowDict",
+    "SubsystemQueryable",
+    "SubsystemRepositoryProtocol",
 ]

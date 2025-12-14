@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     import networkx as nx
 
-    from codeintel.analytics.runtime.context import GraphContext
+    from codeintel.graphs.runtime.context import GraphContext
 
 log = logging.getLogger(__name__)
 

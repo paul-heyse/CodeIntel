@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
 from codeintel.build.manifest import OutputManifest
 from codeintel.build.plugin import TargetPlugin
-from codeintel.build.plugin_registry import PluginRegistryStore
 from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
@@ -40,7 +39,7 @@ from tests._helpers.fakes.fake_providers import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Mapping
 
     from codeintel.build.context import TargetExecutionContext
     from codeintel.config.primitives import BuildPaths, SnapshotRef
@@ -141,19 +140,6 @@ def sample_target_graph(
     for target in targets or _default_targets():
         graph.register(target)
     return graph
-
-
-def make_plugin_registry_store(
-    loader: Callable[[PluginRegistryStore], None] | None = None,
-) -> PluginRegistryStore:
-    """Create a plugin registry store with an optional loader.
-
-    Returns
-    -------
-    PluginRegistryStore
-        Registry store configured with the provided loader.
-    """
-    return PluginRegistryStore(loader=loader)
 
 
 @dataclass(frozen=True)
@@ -325,7 +311,6 @@ __all__ = [
     "RecordingProviders",
     "make_build_config",
     "make_build_paths",
-    "make_plugin_registry_store",
     "make_snapshot",
     "sample_manifest",
     "sample_target_graph",

@@ -12,7 +12,6 @@ of truth for target state computation. Tests verify:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.contracts import EMPTY_CONTRACT
@@ -32,6 +31,8 @@ from tests._helpers.assertions import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -83,6 +84,7 @@ class TestStateComputer:
         target = OutputTarget(
             name="test_target",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -109,6 +111,7 @@ class TestStateComputer:
         target = OutputTarget(
             name="test_target",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -142,6 +145,7 @@ class TestStateComputer:
         target = OutputTarget(
             name="test_target",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -172,12 +176,14 @@ class TestStateComputer:
         dep_target = OutputTarget(
             name="dependency",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
         main_target = OutputTarget(
             name="main",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=("dependency",),
             contract=EMPTY_CONTRACT,
         )
@@ -211,12 +217,14 @@ class TestStateComputer:
         dep_target = OutputTarget(
             name="dependency",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
         main_target = OutputTarget(
             name="main",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=("dependency",),
             contract=EMPTY_CONTRACT,
         )
@@ -250,10 +258,26 @@ class TestStateComputer:
         tmp_path: Path,
     ) -> None:
         """BuildState query methods return correct results."""
-        t1 = OutputTarget(name="t1", module="ingestion", dependencies=(), contract=EMPTY_CONTRACT)
-        t2 = OutputTarget(name="t2", module="ingestion", dependencies=(), contract=EMPTY_CONTRACT)
+        t1 = OutputTarget(
+            name="t1",
+            module="ingestion",
+            plugin="test_plugin",
+            dependencies=(),
+            contract=EMPTY_CONTRACT,
+        )
+        t2 = OutputTarget(
+            name="t2",
+            module="ingestion",
+            plugin="test_plugin",
+            dependencies=(),
+            contract=EMPTY_CONTRACT,
+        )
         t3 = OutputTarget(
-            name="t3", module="ingestion", dependencies=("t1",), contract=EMPTY_CONTRACT
+            name="t3",
+            module="ingestion",
+            plugin="test_plugin",
+            dependencies=("t1",),
+            contract=EMPTY_CONTRACT,
         )
 
         graph = TargetGraph()
@@ -264,12 +288,11 @@ class TestStateComputer:
         snapshot = make_snapshot(tmp_path)
         session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
 
-        # t1: current
+        # Mark t1 as current via a matching manifest.
         t1_hash = session.get_input_hash(t1)
         analytics_gateway.build.save_manifest(make_manifest("t1", input_hash=t1_hash))
 
-        # t2: missing (no manifest)
-        # t3: blocked (t1 needs to be rechecked after we make it current)
+        # Leave t2 and t3 without manifests (missing).
 
         computer = StateComputer(graph=graph, session=session)
         state = computer.compute_all()
@@ -288,6 +311,7 @@ class TestStateComputer:
         target = OutputTarget(
             name="single",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -313,6 +337,7 @@ class TestStateComputer:
         target = OutputTarget(
             name="cached",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -345,6 +370,7 @@ class TestStateValidatorEquivalence:
         target = OutputTarget(
             name="equiv_test",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -375,6 +401,7 @@ class TestStateValidatorEquivalence:
         target = OutputTarget(
             name="equiv_current",
             module="ingestion",
+            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -408,9 +435,19 @@ class TestStateValidatorEquivalence:
         tmp_path: Path,
     ) -> None:
         """StateValidator and StateComputer agree on blocked targets."""
-        dep = OutputTarget(name="dep", module="ingestion", dependencies=(), contract=EMPTY_CONTRACT)
+        dep = OutputTarget(
+            name="dep",
+            module="ingestion",
+            plugin="test_plugin",
+            dependencies=(),
+            contract=EMPTY_CONTRACT,
+        )
         main = OutputTarget(
-            name="main", module="ingestion", dependencies=("dep",), contract=EMPTY_CONTRACT
+            name="main",
+            module="ingestion",
+            plugin="test_plugin",
+            dependencies=("dep",),
+            contract=EMPTY_CONTRACT,
         )
 
         graph = TargetGraph()

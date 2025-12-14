@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/runtime/context.py
+# hypothesis_version: 6.148.7
+
+[200, 500, 'GraphContext', 'GraphContextCaps', 'GraphContextSpec', 'GraphMetricsOptions', 'build_graph_context', 'load_prior_manifest', 'meta', 'name', 'records', 'utf-8', 'weight']

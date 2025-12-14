@@ -40,7 +40,7 @@ from codeintel.analytics.compute.graphs.structural import (
     bounded_simple_path_count,
     structural_metrics,
 )
-from codeintel.analytics.runtime.context import GraphContext
+from codeintel.graphs.runtime.context import GraphContext
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,

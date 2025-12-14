@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
-from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.build.plugins.analytics.functions.effects import FunctionEffectsPlugin
-from codeintel.graphs.catalog import CatalogService, FunctionCatalog
+from codeintel.core.catalog import CatalogService, FunctionCatalog
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers.assertions import expect_true
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.contexts import TargetResourceOverrides

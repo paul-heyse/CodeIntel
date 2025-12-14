@@ -7,7 +7,7 @@ This package contains all graph plugins organized by category:
 - validation: Graph validation plugin
 
 All plugins implement the TargetPlugin protocol for the build system.
-Plugins are registered with the build registry in codeintel.build.plugin_registry.
+Plugins are registered with the build registry in codeintel.build.unified_registry.
 """
 
 from __future__ import annotations

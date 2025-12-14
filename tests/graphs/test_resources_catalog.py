@@ -1,7 +1,7 @@
 """Tests for CatalogService resource provider.
 
 This module tests the CatalogService from
-`codeintel.graphs.catalog`, including:
+`codeintel.core.catalog`, including:
 
 - Resource protocol compliance
 - Catalog delegation
@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Final
 
 import pytest
 
-from codeintel.graphs.catalog import CatalogService, FunctionCatalog, FunctionSpan
+from codeintel.core.catalog import CatalogService, FunctionCatalog, FunctionSpan
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
@@ -148,9 +148,10 @@ def test_function_spans_caches_result(catalog_resource: CatalogService) -> None:
 
 def test_invalidate_clears_cache(catalog_resource: CatalogService) -> None:
     """invalidate() clears the cached spans."""
-    _ = catalog_resource.function_spans
+    spans_before = catalog_resource.function_spans
     catalog_resource.invalidate()
-    expect_true(catalog_resource._cached_spans is None)
+    spans_after = catalog_resource.function_spans
+    expect_true(spans_before is not spans_after)
 
 
 def test_function_spans_repopulates_after_invalidate(

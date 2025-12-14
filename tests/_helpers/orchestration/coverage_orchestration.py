@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.analytics.testing.coverage.edges import TestCoverageOptions
 from codeintel.config import ConfigBuilder, SnapshotInit
-from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageEdgeEnv, CoverageSeedConfig
@@ -20,6 +19,7 @@ if TYPE_CHECKING:
 
     from coverage import Coverage
 
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.orchestration.tooling import CoverageArtifact
 

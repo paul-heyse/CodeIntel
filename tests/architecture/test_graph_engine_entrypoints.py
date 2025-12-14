@@ -8,7 +8,7 @@ import pytest
 
 ALLOWED = {
     Path("src/codeintel/graphs/engine/factory.py"),
-    Path("src/codeintel/analytics/runtime/graph.py"),
+    Path("src/codeintel/graphs/runtime/runtime.py"),
 }
 
 

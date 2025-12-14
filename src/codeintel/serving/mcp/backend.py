@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from abc import ABC
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import TYPE_CHECKING, cast
@@ -112,7 +113,11 @@ class DatasetBackendMixin:
     if TYPE_CHECKING:
         # These are provided by BackendDispatchMixin at runtime
         service: QueryService
-        is_local: bool
+
+        @property
+        def is_local(self) -> bool:
+            """Return True when the backend dispatches locally."""
+            ...
 
     def _dispatch_dataset[R](
         self,
@@ -148,7 +153,8 @@ class DatasetBackendMixin:
         """
         method = getattr(self.service, method_name)
 
-        if self.is_local:
+        is_local = bool(getattr(self, "is_local", True))
+        if is_local:
             try:
                 domain_result = method(**kwargs)
             except DatasetNotFoundError as exc:
@@ -283,8 +289,379 @@ def _validate_direction(direction: str) -> str:
     raise errors.invalid_argument(message)
 
 
+class FunctionBackendMixin(BackendDispatchMixin, ABC):
+    """Backend methods for function and graph operations."""
+
+    def get_function_summary(
+        self,
+        *,
+        urn: str | None = None,
+        goid_h128: int | None = None,
+        rel_path: str | None = None,
+        qualname: str | None = None,
+        scope: object | None = None,
+    ) -> FunctionSummaryResponse:
+        """Return a function summary.
+
+        Returns
+        -------
+        FunctionSummaryResponse
+            Summary payload with found flag and metadata.
+        """
+        _require_identifier(urn=urn, goid_h128=goid_h128, rel_path=rel_path)
+        return self._dispatch(
+            "get_function_summary",
+            FunctionSummaryResponse,
+            urn=urn,
+            goid_h128=goid_h128,
+            rel_path=rel_path,
+            qualname=qualname,
+            scope=scope,
+        )
+
+    def list_high_risk_functions(
+        self,
+        *,
+        min_risk: float = 0.7,
+        limit: int | None = None,
+        tested_only: bool = False,
+        scope: object | None = None,
+    ) -> HighRiskFunctionsResponse:
+        """List high-risk functions.
+
+        Returns
+        -------
+        HighRiskFunctionsResponse
+            High-risk functions plus truncation metadata.
+        """
+        return self._dispatch(
+            "list_high_risk_functions",
+            HighRiskFunctionsResponse,
+            min_risk=min_risk,
+            limit=limit,
+            tested_only=tested_only,
+            scope=scope,
+        )
+
+    def get_callgraph_neighbors(
+        self,
+        *,
+        goid_h128: int,
+        direction: str = "both",
+        limit: int | None = None,
+        scope: object | None = None,
+    ) -> CallGraphNeighborsResponse:
+        """Return call graph neighbors for a function GOID.
+
+        Returns
+        -------
+        CallGraphNeighborsResponse
+            Incoming and outgoing edges with metadata.
+        """
+        normalized_direction = _validate_direction(direction)
+        return self._dispatch(
+            "get_callgraph_neighbors",
+            CallGraphNeighborsResponse,
+            goid_h128=goid_h128,
+            direction=normalized_direction,
+            limit=limit,
+            scope=scope,
+        )
+
+    def get_callgraph_neighborhood(
+        self,
+        *,
+        goid_h128: int,
+        radius: int = 1,
+        max_nodes: int | None = None,
+    ) -> GraphNeighborhoodResponse:
+        """Return a bounded ego neighborhood for a function.
+
+        Returns
+        -------
+        GraphNeighborhoodResponse
+            Nodes and edges in the neighborhood plus metadata.
+        """
+        return self._dispatch(
+            "get_callgraph_neighborhood",
+            GraphNeighborhoodResponse,
+            goid_h128=goid_h128,
+            radius=radius,
+            max_nodes=max_nodes,
+        )
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        """Return import graph edges crossing a subsystem boundary.
+
+        Returns
+        -------
+        ImportBoundaryResponse
+            Boundary edges and truncation metadata.
+        """
+        return self._dispatch(
+            "get_import_boundary",
+            ImportBoundaryResponse,
+            subsystem_id=subsystem_id,
+            max_edges=max_edges,
+        )
+
+    def get_tests_for_function(
+        self,
+        *,
+        goid_h128: int | None = None,
+        urn: str | None = None,
+        limit: int | None = None,
+        scope: object | None = None,
+    ) -> TestsForFunctionResponse:
+        """Return tests linked to a function.
+
+        Returns
+        -------
+        TestsForFunctionResponse
+            Tests exercising the function plus messages.
+        """
+        _require_identifier(urn=urn, goid_h128=goid_h128)
+        return self._dispatch(
+            "get_tests_for_function",
+            TestsForFunctionResponse,
+            goid_h128=goid_h128,
+            urn=urn,
+            limit=limit,
+            scope=scope,
+        )
+
+    def get_file_summary(
+        self,
+        *,
+        rel_path: str,
+        scope: object | None = None,
+    ) -> FileSummaryResponse:
+        """Return a file summary plus function rows.
+
+        Returns
+        -------
+        FileSummaryResponse
+            File-level summary and nested function entries.
+        """
+        return self._dispatch(
+            "get_file_summary",
+            FileSummaryResponse,
+            rel_path=rel_path,
+            scope=scope,
+        )
+
+
+class ProfileBackendMixin(BackendDispatchMixin, ABC):
+    """Backend methods for profile and architecture operations."""
+
+    def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
+        """Return a denormalized function profile.
+
+        Returns
+        -------
+        FunctionProfileResponse
+            Profile payload and found flag.
+        """
+        return self._dispatch(
+            "get_function_profile",
+            FunctionProfileResponse,
+            goid_h128=goid_h128,
+        )
+
+    def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
+        """Return a denormalized file profile.
+
+        Returns
+        -------
+        FileProfileResponse
+            Profile payload and found flag.
+        """
+        return self._dispatch(
+            "get_file_profile",
+            FileProfileResponse,
+            rel_path=rel_path,
+        )
+
+    def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
+        """Return a module profile.
+
+        Returns
+        -------
+        ModuleProfileResponse
+            Profile payload and found flag.
+        """
+        return self._dispatch(
+            "get_module_profile",
+            ModuleProfileResponse,
+            module=module,
+        )
+
+    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
+        """Return call-graph architecture metrics for a function.
+
+        Returns
+        -------
+        FunctionArchitectureResponse
+            Architecture payload and found flag.
+        """
+        return self._dispatch(
+            "get_function_architecture",
+            FunctionArchitectureResponse,
+            goid_h128=goid_h128,
+        )
+
+    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
+        """Return import-graph and symbol-coupling metrics for a module.
+
+        Returns
+        -------
+        ModuleArchitectureResponse
+            Architecture payload and found flag.
+        """
+        return self._dispatch(
+            "get_module_architecture",
+            ModuleArchitectureResponse,
+            module=module,
+        )
+
+
+class SubsystemBackendMixin(BackendDispatchMixin, ABC):
+    """Backend methods for subsystem and IDE hint operations."""
+
+    def list_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSummaryResponse:
+        """List inferred subsystems for the configured repo snapshot.
+
+        Returns
+        -------
+        SubsystemSummaryResponse
+            Subsystem rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystems",
+            SubsystemSummaryResponse,
+            limit=limit,
+            role=role,
+            q=q,
+        )
+
+    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
+        """Return subsystem memberships for a module.
+
+        Returns
+        -------
+        ModuleSubsystemResponse
+            Membership rows and metadata.
+        """
+        return self._dispatch(
+            "get_module_subsystems",
+            ModuleSubsystemResponse,
+            module=module,
+        )
+
+    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
+        """Return IDE-focused hints for a file path.
+
+        Returns
+        -------
+        FileHintsResponse
+            Hint rows and metadata for the path.
+        """
+        return self._dispatch(
+            "get_file_hints",
+            FileHintsResponse,
+            rel_path=rel_path,
+        )
+
+    def get_subsystem_modules(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
+        """Return subsystem details and module memberships.
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Subsystem detail payload.
+        """
+        return self._dispatch(
+            "get_subsystem_modules",
+            SubsystemModulesResponse,
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
+        )
+
+    def search_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSearchResponse:
+        """Search subsystems with optional role/name filters.
+
+        Returns
+        -------
+        SubsystemSearchResponse
+            Subsystem rows and metadata.
+        """
+        return self._dispatch(
+            "search_subsystems",
+            SubsystemSearchResponse,
+            limit=limit,
+            role=role,
+            q=q,
+        )
+
+    def summarize_subsystem(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
+        """Summarize a subsystem with optional module truncation.
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Subsystem detail payload.
+        """
+        return self._dispatch(
+            "summarize_subsystem",
+            SubsystemModulesResponse,
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
+        )
+
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        """List subsystem profiles from docs views.
+
+        Returns
+        -------
+        SubsystemProfileResponse
+            Subsystem profile rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_profiles",
+            SubsystemProfileResponse,
+            limit=limit,
+        )
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        """List subsystem coverage rollups from docs views.
+
+        Returns
+        -------
+        SubsystemCoverageResponse
+            Subsystem coverage rows and metadata.
+        """
+        return self._dispatch(
+            "list_subsystem_coverage",
+            SubsystemCoverageResponse,
+            limit=limit,
+        )
+
+
 @dataclass
-class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
+class DuckDBBackend(SubsystemBackendMixin, DatasetBackendMixin):
     """DuckDB-backed implementation of QueryBackend.
 
     This class implements the ``QueryBackend`` protocol via duck typing
@@ -581,239 +958,9 @@ class DuckDBBackend(BackendDispatchMixin, DatasetBackendMixin):
             module=module,
         )
 
-    def list_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSummaryResponse:
-        """
-        List inferred subsystems for the current repo/commit.
-
-        Returns
-        -------
-        SubsystemSummaryResponse
-            Subsystem rows and metadata.
-        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
-        """
-        return self._dispatch(
-            "list_subsystems",
-            SubsystemSummaryResponse,
-            limit=limit,
-            role=role,
-            q=q,
-        )
-
-    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
-        """
-        Return subsystem memberships for a module.
-
-        Returns
-        -------
-        ModuleSubsystemResponse
-            Membership rows and metadata.
-        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
-        """
-        return self._dispatch(
-            "get_module_subsystems",
-            ModuleSubsystemResponse,
-            module=module,
-        )
-
-    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
-        """
-        Return IDE-focused hints for a file path.
-
-        Returns
-        -------
-        FileHintsResponse
-            Hints including subsystem context and module metrics.
-        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
-        """
-        return self._dispatch(
-            "get_file_hints",
-            FileHintsResponse,
-            rel_path=rel_path,
-        )
-
-    def get_subsystem_modules(
-        self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
-        """
-        Return subsystem details and module memberships.
-
-        Returns
-        -------
-        SubsystemModulesResponse
-            Subsystem detail payload.
-        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
-        """
-        return self._dispatch(
-            "get_subsystem_modules",
-            SubsystemModulesResponse,
-            subsystem_id=subsystem_id,
-            module_limit=module_limit,
-        )
-
-    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
-        """
-        List subsystem profiles from the remote API.
-
-        Returns
-        -------
-        SubsystemProfileResponse
-            Subsystem profile rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystem_profiles",
-            SubsystemProfileResponse,
-            limit=limit,
-        )
-
-    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
-        """
-        List subsystem coverage rollups from the remote API.
-
-        Returns
-        -------
-        SubsystemCoverageResponse
-            Subsystem coverage rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystem_coverage",
-            SubsystemCoverageResponse,
-            limit=limit,
-        )
-
-    def search_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSearchResponse:
-        """
-        Search subsystems with optional role/name filters.
-
-        Returns
-        -------
-        SubsystemSearchResponse
-            Subsystem rows and metadata.
-        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
-        """
-        return self._dispatch(
-            "search_subsystems",
-            SubsystemSearchResponse,
-            limit=limit,
-            role=role,
-            q=q,
-        )
-
-    def summarize_subsystem(
-        self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
-        """
-        Summarize a subsystem with optional module truncation.
-
-        Returns
-        -------
-        SubsystemModulesResponse
-            Subsystem detail payload.
-        The dispatch layer may propagate ``errors.McpError`` when the service reports a problem.
-        """
-        return self._dispatch(
-            "summarize_subsystem",
-            SubsystemModulesResponse,
-            subsystem_id=subsystem_id,
-            module_limit=module_limit,
-        )
-
-    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
-        """
-        List subsystem profiles from the remote API.
-
-        Returns
-        -------
-        SubsystemProfileResponse
-            Subsystem profile rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystem_profiles",
-            SubsystemProfileResponse,
-            limit=limit,
-        )
-
-    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
-        """
-        List subsystem coverage rollups from the remote API.
-
-        Returns
-        -------
-        SubsystemCoverageResponse
-            Subsystem coverage rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystem_coverage",
-            SubsystemCoverageResponse,
-            limit=limit,
-        )
-
-    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
-        """
-        List subsystem profiles from the remote API.
-
-        Returns
-        -------
-        SubsystemProfileResponse
-            Subsystem profile rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystem_profiles",
-            SubsystemProfileResponse,
-            limit=limit,
-        )
-
-    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
-        """
-        List subsystem coverage rollups from the remote API.
-
-        Returns
-        -------
-        SubsystemCoverageResponse
-            Subsystem coverage rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystem_coverage",
-            SubsystemCoverageResponse,
-            limit=limit,
-        )
-
-    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
-        """
-        List subsystem profiles from the remote API.
-
-        Returns
-        -------
-        SubsystemProfileResponse
-            Subsystem profile rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystem_profiles",
-            SubsystemProfileResponse,
-            limit=limit,
-        )
-
-    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
-        """
-        List subsystem coverage rollups from the remote API.
-
-        Returns
-        -------
-        SubsystemCoverageResponse
-            Subsystem coverage rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystem_coverage",
-            SubsystemCoverageResponse,
-            limit=limit,
-        )
-
 
 @dataclass
-class HttpBackend(BackendDispatchMixin, DatasetBackendMixin):
+class HttpBackend(SubsystemBackendMixin, DatasetBackendMixin):
     """HTTP-backed QueryBackend that talks to the FastAPI server.
 
     This class implements the ``QueryBackend`` protocol via duck typing
@@ -1189,138 +1336,4 @@ class HttpBackend(BackendDispatchMixin, DatasetBackendMixin):
             "get_module_architecture",
             ModuleArchitectureResponse,
             module=module,
-        )
-
-    def list_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSummaryResponse:
-        """
-        List subsystems from the remote API.
-
-        Returns
-        -------
-        SubsystemSummaryResponse
-            Subsystem rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystems",
-            SubsystemSummaryResponse,
-            limit=limit,
-            role=role,
-            q=q,
-        )
-
-    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
-        """
-        Return subsystem memberships for a module from the remote API.
-
-        Returns
-        -------
-        ModuleSubsystemResponse
-            Membership rows and metadata.
-        """
-        return self._dispatch(
-            "get_module_subsystems",
-            ModuleSubsystemResponse,
-            module=module,
-        )
-
-    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
-        """
-        Return IDE-focused hints for a file from the remote API.
-
-        Returns
-        -------
-        FileHintsResponse
-            Hint rows and metadata for the path.
-        """
-        return self._dispatch(
-            "get_file_hints",
-            FileHintsResponse,
-            rel_path=rel_path,
-        )
-
-    def get_subsystem_modules(
-        self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
-        """
-        Return subsystem details and module memberships from the remote API.
-
-        Returns
-        -------
-        SubsystemModulesResponse
-            Subsystem detail payload.
-        """
-        return self._dispatch(
-            "get_subsystem_modules",
-            SubsystemModulesResponse,
-            subsystem_id=subsystem_id,
-            module_limit=module_limit,
-        )
-
-    def search_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSearchResponse:
-        """
-        Search subsystems from the remote API.
-
-        Returns
-        -------
-        SubsystemSearchResponse
-            Subsystem rows and metadata.
-        """
-        return self._dispatch(
-            "search_subsystems",
-            SubsystemSearchResponse,
-            limit=limit,
-            role=role,
-            q=q,
-        )
-
-    def summarize_subsystem(
-        self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
-        """
-        Summarize subsystem detail with optional module truncation.
-
-        Returns
-        -------
-        SubsystemModulesResponse
-            Subsystem detail payload.
-        """
-        return self._dispatch(
-            "summarize_subsystem",
-            SubsystemModulesResponse,
-            subsystem_id=subsystem_id,
-            module_limit=module_limit,
-        )
-
-    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
-        """
-        List subsystem profiles from the remote API.
-
-        Returns
-        -------
-        SubsystemProfileResponse
-            Subsystem profile rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystem_profiles",
-            SubsystemProfileResponse,
-            limit=limit,
-        )
-
-    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
-        """
-        List subsystem coverage rollups from the remote API.
-
-        Returns
-        -------
-        SubsystemCoverageResponse
-            Subsystem coverage rows and metadata.
-        """
-        return self._dispatch(
-            "list_subsystem_coverage",
-            SubsystemCoverageResponse,
-            limit=limit,
         )

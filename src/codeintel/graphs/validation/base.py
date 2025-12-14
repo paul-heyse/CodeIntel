@@ -7,10 +7,11 @@ should inherit from to implement the CheckProtocol from core/validation.
 from __future__ import annotations
 
 from abc import abstractmethod
-from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from codeintel.core.validation import ValidationSeverity
     from codeintel.graphs.validation.context import GraphValidationContext
 

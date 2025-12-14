@@ -75,12 +75,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.analytics.resources.catalog import FunctionCatalogProvider
-    from codeintel.analytics.runtime import GraphRuntime
     from codeintel.build.context import TargetResult
     from codeintel.build.parameters import TargetParameters
     from codeintel.build.plugin import TargetPlugin
     from codeintel.build.providers import Providers
     from codeintel.core.execution import RunContext
+    from codeintel.graphs.runtime import GraphRuntime
     from codeintel.ingestion.tracker import ChangeTracker
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 

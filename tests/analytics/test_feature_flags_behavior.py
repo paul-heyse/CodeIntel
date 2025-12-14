@@ -8,9 +8,9 @@ import networkx as nx
 import pytest
 
 from codeintel.analytics.compute.graphs.structural import structural_metrics
-from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphFeatureFlags
 from codeintel.graphs.engine import GraphKind
+from codeintel.graphs.runtime import GraphRuntimeOptions, build_graph_runtime
 from tests._helpers.assertions import expect_true
 from tests._helpers.context import create_test_context
 from tests._helpers.env_options import EnvOptions

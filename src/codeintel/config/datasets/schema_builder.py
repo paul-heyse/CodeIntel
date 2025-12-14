@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.contracts import get_dataset_contracts_by_table_key
+from codeintel.config.datasets.operation_contracts_dataset import build_operation_contract_schema
 from codeintel.config.datasets.pandera_schemas import _get_dataset_schemas
 from codeintel.config.datasets.schema import DatasetMetadata, DatasetSchema
 
@@ -141,10 +142,6 @@ def _build_additional_schemas() -> dict[str, DatasetSchema]:
     dict[str, DatasetSchema]
         Mapping of additional schema name to DatasetSchema instance.
     """
-    from codeintel.serving.contracts.operation_contracts_dataset import (  # noqa: PLC0415
-        build_operation_contract_schema,
-    )
-
     operation_contract_schema = build_operation_contract_schema()
 
     return {operation_contract_schema.name: operation_contract_schema}

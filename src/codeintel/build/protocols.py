@@ -41,24 +41,22 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 __all__ = [
-    # Types (re-exported from types.py for backward compatibility)
+    "CoverageCollector",
     "CoverageData",
+    "GitHistoryProvider",
     "GitLogEntry",
     "ScipIndexResult",
+    "ScipIndexer",
     "ScipOccurrence",
     "ScipParseResult",
     "ScipSymbol",
+    "TestReporter",
     "TestResult",
     "ToolRunResult",
-    "TypeCheckResult",
-    "TypeDiagnostic",
-    # Protocols
-    "CoverageCollector",
-    "GitHistoryProvider",
-    "ScipIndexer",
-    "TestReporter",
     "ToolRunner",
+    "TypeCheckResult",
     "TypeChecker",
+    "TypeDiagnostic",
 ]
 
 

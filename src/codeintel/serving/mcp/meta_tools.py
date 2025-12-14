@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
     from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
-    from codeintel.serving.mcp.models import ProblemDetail
     from codeintel.serving.mcp.tool_builder import McpToolRegistrar
     from codeintel.serving.mcp.tool_utils import QueryBackendOrService
     from codeintel.serving.services.query_service import QueryService
@@ -274,13 +273,13 @@ def _operation_payload(spec: OperationLike, limits: BackendLimits) -> OperationM
 
 def _build_list_datasets_tool(dataset_meta: Iterable[DatasetMetaLike]) -> Callable[[], object]:
     @_wrap
-    def _tool() -> list[dict[str, object]] | dict[str, ProblemDetail]:
+    def _tool() -> list[dict[str, object]] | dict[str, object]:
         """List dataset metadata and serving limits via MCP.
 
         Returns
         -------
-        list[dict[str, object]] | dict[str, ProblemDetail]
-            Serialized DatasetMetaResponse payloads or a ProblemDetail on error.
+        list[dict[str, object]] | dict[str, object]
+            Serialized DatasetMetaResponse payloads or an error payload.
         """
         return [_dataset_meta_payload(meta).model_dump() for meta in dataset_meta]
 
@@ -291,13 +290,13 @@ def _build_list_operations_tool(
     context: _MetaToolsContext, operations: Iterable[OperationLike]
 ) -> Callable[[], object]:
     @_wrap
-    def _tool() -> list[dict[str, object]] | dict[str, ProblemDetail]:
+    def _tool() -> list[dict[str, object]] | dict[str, object]:
         """List available operations and their characteristics via MCP.
 
         Returns
         -------
-        list[dict[str, object]] | dict[str, ProblemDetail]
-            Serialized OperationMetaResponse payloads or a ProblemDetail on error.
+        list[dict[str, object]] | dict[str, object]
+            Serialized OperationMetaResponse payloads or an error payload.
         """
         payloads = [_operation_payload(spec, context.limits) for spec in operations]
         return [payload.model_dump() for payload in payloads]

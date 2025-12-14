@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.plugins.analytics.functions.ast_features import FunctionAstFeaturesPlugin
 from codeintel.build.plugins.analytics.functions.contracts import FunctionContractsPlugin
-from codeintel.graphs.catalog import CatalogService, FunctionCatalog
+from codeintel.core.catalog import CatalogService, FunctionCatalog
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.contexts import TargetResourceOverrides

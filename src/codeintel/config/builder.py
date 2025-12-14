@@ -12,17 +12,19 @@ from typing import TYPE_CHECKING, Self
 
 from codeintel.config.primitives import (
     BuildLayoutOptions,
-    BuildPaths,
     GraphBackendConfig,
     ScanProfiles,
-    SnapshotRef,
     ToolBinaries,
 )
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.config.primitives import SnapshotInit
+    from codeintel.config.primitives import (
+        BuildPaths,
+        SnapshotInit,
+        SnapshotRef,
+    )
 
 
 @dataclass(frozen=True)

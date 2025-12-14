@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/datasets/plugin_constraints.py
+# hypothesis_version: 6.148.7
+
+['PluginTableRelation', 'consumes', 'consumes_tables', 'core_metadata', 'get_consumer_plugins', 'get_producer_plugins', 'produces', 'produces_tables', 'value']

@@ -32,7 +32,7 @@ _STORAGE_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 @storage_app.command(name="validate-macros")
 @dataclass
 class ValidateMacrosCommand:
-    """Validate macro registry hashes and normalized macro schemas."""
+    """Validate the dataset schema registry."""
 
     db_path: Annotated[
         Path | None,

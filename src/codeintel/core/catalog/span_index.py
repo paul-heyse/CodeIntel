@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.core.catalog.function_span import FunctionSpan
-
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
+
+    from codeintel.core.catalog.function_span import FunctionSpan
 
 
 def normalize_path(path: str) -> str:
@@ -136,6 +136,61 @@ class SpanIndex:
             mapping.setdefault(span.qualname, span.goid)
         return mapping
 
+    @staticmethod
+    def _lookup_predicates(
+        *,
+        start: int,
+        end: int,
+        qualname: str | None,
+    ) -> list[Callable[[FunctionSpan], bool]]:
+        """Return predicate functions for span lookup.
+
+        Returns
+        -------
+        list[Callable[[FunctionSpan], bool]]
+            Predicate functions in priority order.
+        """
+        predicates: list[Callable[[FunctionSpan], bool]] = []
+
+        if qualname:
+            exact_qualname = qualname
+
+            def _exact_span_with_qualname(span: FunctionSpan) -> bool:
+                return (
+                    span.start_line == start
+                    and span.end_line == end
+                    and _qualname_matches(span.qualname, exact_qualname)
+                )
+
+            predicates.append(_exact_span_with_qualname)
+
+        def _exact_span(span: FunctionSpan) -> bool:
+            return span.start_line == start and span.end_line == end
+
+        predicates.append(_exact_span)
+
+        if qualname:
+            overlap_qualname = qualname
+
+            def _overlap_qualname_match(span: FunctionSpan) -> bool:
+                return _qualname_matches(span.qualname, overlap_qualname) and (
+                    span.start_line <= start <= span.end_line
+                )
+
+            predicates.append(_overlap_qualname_match)
+
+        def _enclosing_span(span: FunctionSpan) -> bool:
+            return span.start_line <= start <= span.end_line
+
+        predicates.append(_enclosing_span)
+
+        def _start_line_only(span: FunctionSpan) -> bool:
+            return span.start_line == start
+
+        predicates.append(_start_line_only)
+
+        return predicates
+
     def lookup(
         self,
         rel_path: str,
@@ -181,34 +236,7 @@ class SpanIndex:
                     return span.goid
             return None
 
-        # Build resolution predicates in priority order
-        predicates: list[Callable[[FunctionSpan], bool]] = []
-
-        # 1. Exact span match with qualname
-        if qualname:
-            predicates.append(
-                lambda span, qn=qualname: span.start_line == start
-                and span.end_line == end
-                and _qualname_matches(span.qualname, qn)
-            )
-
-        # 2. Exact span match
-        predicates.append(lambda span: span.start_line == start and span.end_line == end)
-
-        # 3. Qualname match overlapping span
-        if qualname:
-            predicates.append(
-                lambda span, qn=qualname: _qualname_matches(span.qualname, qn)
-                and span.start_line <= start <= span.end_line
-            )
-
-        # 4. Any enclosing span
-        predicates.append(lambda span: span.start_line <= start <= span.end_line)
-
-        # 5. Function starting on same line
-        predicates.append(lambda span: span.start_line == start)
-
-        for predicate in predicates:
+        for predicate in self._lookup_predicates(start=start, end=end, qualname=qualname):
             match = _first_match(predicate)
             if match is not None:
                 return match

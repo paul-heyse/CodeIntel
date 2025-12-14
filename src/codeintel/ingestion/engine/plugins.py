@@ -47,7 +47,6 @@ from codeintel.core.plugins.types import (
     PluginMetadata as CorePluginMetadata,
 )
 from codeintel.ingestion.engine.infrastructure import (
-    ToolName,
     ToolNotFoundError,
 )
 from codeintel.ingestion.engine.results import DiagnosticReport
@@ -58,6 +57,7 @@ if TYPE_CHECKING:
 
     from codeintel.config.models import ToolsConfig
     from codeintel.ingestion.engine.infrastructure import (
+        ToolName,
         ToolRunner,
         ToolRunResult,
     )

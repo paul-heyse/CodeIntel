@@ -16,7 +16,7 @@ Hexagonal Architecture (Ports, Compute, Resources):
 - resources/: DI container and resource providers
 
 Consolidated Domain Packages:
-- catalog/: Function catalog (spans, metadata, service) - unified module
+- core.catalog: Function catalog (spans, metadata, service)
 - validation/: Graph validation checks, findings, and orchestration
 - engine/: Graph engine protocol, NetworkX implementation, and views
 
@@ -48,14 +48,14 @@ The graphs package uses hexagonal architecture:
 All builder modules have been consolidated into their corresponding plugins
 under plugins/builders/. Pure computation logic is in compute/.
 
-Plugin registration is handled by the build registry in codeintel.build.plugin_registry.
+Plugin registration is handled by the build registry in codeintel.build.unified_registry.
 """
 
 from __future__ import annotations
 
+from codeintel.core.catalog import CatalogService, FunctionSpan
 from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs import compute, ports, resources
-from codeintel.graphs.catalog import CatalogService, FunctionSpan
 from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
 from codeintel.graphs.resources import ResourceProvider
 

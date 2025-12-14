@@ -9,13 +9,7 @@ from datetime import UTC, datetime
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
-)
 from codeintel.analytics.subsystems.affinity import (
-    AffinityWeights,
     build_weighted_graph,
     clusters_from_labels,
     graph_to_adjacency,
@@ -29,11 +23,15 @@ from codeintel.analytics.subsystems.edge_stats import (
     compute_subsystem_edge_stats,
 )
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     import networkx as nx
 
+    from codeintel.analytics.subsystems.affinity import (
+        AffinityWeights,
+    )
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 

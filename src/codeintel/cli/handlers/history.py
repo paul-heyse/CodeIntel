@@ -17,10 +17,8 @@ from typing import TYPE_CHECKING
 
 from ibis.common.exceptions import IbisError
 
-from codeintel.analytics.history import (
-    HistoryTimeseriesOptions,
-    compute_history_timeseries_gateways,
-)
+from codeintel.analytics.history import compute_history_timeseries_gateways
+from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult

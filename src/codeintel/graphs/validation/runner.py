@@ -5,9 +5,7 @@ full validation suite and coordinating individual checks.
 
 Architecture Notes
 ------------------
-This module imports from analytics.graph_runtime for GraphRuntime access.
-This is an intentional delegation - the graphs package orchestrates validation
-but delegates runtime resolution to analytics (Option B architecture).
+This module imports from graphs.runtime for GraphRuntime access.
 
 All validations use CheckProtocol-based validation via core.validation.ValidationRunner.
 """
@@ -20,12 +18,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, SupportsInt, cast
 
-from codeintel.analytics.runtime import (
-    GraphRuntime,
-    resolve_graph_runtime,
-)
+from codeintel.core.catalog import load_function_catalog
 from codeintel.core.validation.runner import ValidationRunner
-from codeintel.graphs.catalog import load_function_catalog
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.validation.checks.anomaly import (
     ALL_ANOMALY_CHECKS,
     SubsystemDisagreementCheck,
@@ -56,13 +51,10 @@ if TYPE_CHECKING:
     import ibis.expr.types as it
     from ibis.expr.types import Table
 
-    from codeintel.analytics.runtime import (
-        GraphRuntimeOptions,
-    )
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.core.validation.runner import ValidationReport
-    from codeintel.graphs.catalog import FunctionCatalogProvider
-    from codeintel.graphs.engine import GraphEngine
+    from codeintel.graphs.engine import GraphEngine, NxGraphEngine
     from codeintel.graphs.validation.base import GraphCheckBase
     from codeintel.graphs.validation.findings import (
         GraphValidationOptions,
@@ -210,6 +202,53 @@ def run_graph_validations_with_runner(
         raise RuntimeError(message)
 
     return report
+
+
+def warn_graph_structure(
+    engine: NxGraphEngine,
+    repo: str,
+    commit: str,
+    log: logging.Logger | None = None,
+) -> list[dict[str, object]]:
+    """Run graph validations and return the resulting findings.
+
+    Parameters
+    ----------
+    engine
+        Graph engine bound to a snapshot.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
+    log
+        Optional logger used for validation output.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Validation findings emitted by registered checks.
+    """
+    active_log = log or logging.getLogger(__name__)
+    snapshot = engine.snapshot
+    runtime = resolve_validation_runtime(
+        engine.gateway,
+        snapshot=snapshot,
+        runtime=GraphRuntimeOptions(snapshot=snapshot, engine=engine),
+    )
+    validation_opts = resolve_validation_options(runtime=runtime, options=None)
+    runner = create_validation_runner(options=validation_opts)
+    catalog = load_function_catalog(engine.gateway, repo=repo, commit=commit)
+    ctx = GraphValidationContext(
+        gateway=engine.gateway,
+        repo=repo,
+        commit=commit,
+        engine=engine,
+        catalog=catalog,
+        runtime=runtime,
+        logger=active_log,
+    )
+    report = runner.run(ctx)
+    return report.findings
 
 
 # =============================================================================

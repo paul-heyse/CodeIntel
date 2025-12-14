@@ -20,8 +20,8 @@ The following plugins are available:
 Example
 -------
 >>> from codeintel.build.plugins.ingestion import AstExtractPlugin
->>> from codeintel.build.plugin_registry import get_plugin_for_target
->>> plugin = get_plugin_for_target("ast")
+>>> from codeintel.build.unified_registry import get_unified_registry
+>>> plugin = get_unified_registry().instantiate_plugin("ast")
 >>>
 """
 

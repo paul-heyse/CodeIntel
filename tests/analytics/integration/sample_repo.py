@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Self
 import networkx as nx
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
-from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers.contracts import count_rows
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graphs import (

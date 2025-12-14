@@ -15,15 +15,15 @@ from codeintel.analytics.graphs import (
     compute_graph_stats,
 )
 from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps
-from codeintel.analytics.runtime import (
-    GraphMetricsOptions,
-    GraphRuntimeOptions,
-    build_graph_runtime,
-)
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.graphs.runtime import (
+    GraphMetricsOptions,
+    GraphRuntimeOptions,
+    build_graph_runtime,
+)
 from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:

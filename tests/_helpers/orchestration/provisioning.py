@@ -16,9 +16,9 @@ from coverage import Coverage
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
-from codeintel.analytics.runtime import GraphMetricsOptions
 from codeintel.build.plugins.graphs.builders.callgraph import CallGraphPlugin
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
+from codeintel.graphs.runtime import GraphMetricsOptions
 from codeintel.ingestion import (
     CoverageIngestStep,
     DuckDBStorageAdapter,

@@ -48,11 +48,6 @@ from typing import TYPE_CHECKING, cast
 import networkx as nx
 
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
-from codeintel.analytics.runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
-)
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
@@ -60,12 +55,13 @@ from codeintel.analytics.utilities.datasets import (
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters
-    from codeintel.analytics.runtime.context import GraphContext
+    from codeintel.graphs.runtime.context import GraphContext
     from codeintel.storage.gateway import StorageGateway
 
 

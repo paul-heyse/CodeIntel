@@ -8,6 +8,7 @@ across the graphs and analytics packages.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import SupportsInt, cast
 
 
 def normalize_decimal_id(value: object) -> int | None:
@@ -44,8 +45,8 @@ def normalize_decimal_id(value: object) -> int | None:
         return int(value)
     if isinstance(value, (bytes, bytearray)):
         try:
-            return int(value.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError):
+            value = value.decode("utf-8")
+        except UnicodeDecodeError:
             return None
     try:
         return int(str(value))
@@ -83,11 +84,18 @@ def as_int(value: object) -> int | None:
         return value
     if isinstance(value, Decimal):
         return int(value)
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+    result: int | None
     try:
-        # int() can directly handle bytes/bytearray, str, etc.
-        return int(value)  # type: ignore[arg-type]
+        result = int(value) if isinstance(value, str) else int(cast("SupportsInt", value))
     except (TypeError, ValueError, OverflowError):
-        return None
+        result = None
+    return result
 
 
 __all__ = [

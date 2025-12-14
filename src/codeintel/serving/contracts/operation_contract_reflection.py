@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import get_type_hints
+from typing import TYPE_CHECKING, get_type_hints
 
 import pandas as pd
 
-from codeintel.config.datasets.schema import DatasetSchema
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
-from codeintel.serving.contracts.operation_contracts_dataset import (
+from codeintel.config.datasets.operation_contracts_dataset import (
     OPERATION_CONTRACT_TABLE_KEY,
     TRANSPORT_KINDS,
 )
+from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from codeintel.serving.operations import iter_operations
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping, Sequence
+
+    from codeintel.config.datasets.schema import DatasetSchema
 
 
 @dataclass(frozen=True)
@@ -45,7 +48,7 @@ def _annotation_to_str(annotation: object) -> str:
     Returns
     -------
     str
-        String form of the annotation or ``\"Any\"`` when missing.
+        String form of the annotation or ``"Any"`` when missing.
     """
     if annotation is inspect.Signature.empty:
         return "Any"

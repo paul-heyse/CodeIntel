@@ -10,7 +10,7 @@ import logging
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.errors import GatewayNotAvailableError
-from codeintel.build.plugin import DiscoveryFactory, FactoryPlugin, StorageFactory
+from codeintel.build.plugin import FactoryPlugin
 from codeintel.build.plugins.ingestion.helpers import get_module_paths, paths_to_modules
 from codeintel.build.result import TargetResult
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
@@ -19,6 +19,7 @@ from codeintel.ingestion.compute import DocstringsExtractStep
 
 if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
+    from codeintel.build.plugin import DiscoveryFactory, StorageFactory
 
 log = logging.getLogger(__name__)
 

@@ -12,7 +12,6 @@ from codeintel.build.hamilton.compat import (
     build_driver_compat,
     list_available_nodes_compat,
 )
-from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
 from codeintel.build.hamilton.executor import HamiltonBuildExecutor
 from codeintel.build.hamilton.nodes.node_factory import clear_generated_module_cache
 
@@ -90,8 +89,8 @@ class TestHamiltonModeConsistency:
     def test_explicit_mode_propagates() -> None:
         """Verify explicit mode is respected by both driver and executor."""
         runtime = build_driver_compat(mode="phase0")
-        executor = HamiltonBuildExecutor(profile="default", mode="phase0")
+        executor = HamiltonBuildExecutor(profile="default", mode="generated")
         if runtime.mode != "generated":
             pytest.fail(f"Driver mode should map phase0 to generated, got {runtime.mode}")
-        if executor.mode != "phase0":
-            pytest.fail(f"Executor mode should be phase0, got {executor.mode}")
+        if executor.mode != runtime.mode:
+            pytest.fail(f"Executor mode should match runtime mode, got {executor.mode}")

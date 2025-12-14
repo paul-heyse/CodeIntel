@@ -120,7 +120,7 @@ class TestRepoRelpath:
         repo_root = Path("/project")
         file_path = Path("/other/path/file.py")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="is not in the subpath"):
             repo_relpath(repo_root, file_path)
 
     @staticmethod
@@ -260,17 +260,6 @@ class TestImportsWork:
     @staticmethod
     def test_all_functions_importable() -> None:
         """Test that all functions can be imported from core.paths."""
-        from codeintel.core.paths import (
-            ensure_repo_root,
-            is_package_path,
-            module_to_path,
-            normalize_path,
-            path_to_module,
-            relpath_to_module,
-            repo_relpath,
-            safe_relpath,
-        )
-
         # Verify they're callable
         expect_true(callable(ensure_repo_root))
         expect_true(callable(is_package_path))

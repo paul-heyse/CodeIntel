@@ -12,16 +12,9 @@ from codeintel.analytics.compute.graphs import (
     bipartite_degrees,
     projection_metrics,
 )
-from codeintel.analytics.runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
-)
-from codeintel.analytics.runtime.context import (
-    GraphContextSpec,
-    resolve_graph_context,
-)
 from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
@@ -30,9 +23,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.compute.graphs import (
         BipartiteDegrees,
     )
-    from codeintel.analytics.runtime.context import (
-        GraphContext,
-    )
+    from codeintel.graphs.runtime.context import GraphContext
     from codeintel.storage.gateway import StorageGateway
 
 TEST_GRAPH_METRICS_TESTS_COLS = [

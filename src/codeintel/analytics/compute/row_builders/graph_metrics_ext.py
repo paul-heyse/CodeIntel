@@ -15,7 +15,7 @@ from codeintel.config.datasets import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.analytics.runtime.context import GraphContext
+    from codeintel.graphs.runtime.context import GraphContext
 
 
 @dataclass(frozen=True)

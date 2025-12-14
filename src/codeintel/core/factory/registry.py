@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-from codeintel.core.factory.protocol import FactoryError, FactoryProtocol
+from codeintel.core.factory.protocol import FactoryError
+
+if TYPE_CHECKING:
+    from codeintel.core.factory.protocol import FactoryProtocol
 
 log = logging.getLogger(__name__)
 

@@ -12,15 +12,11 @@ from codeintel.analytics.profiles.functions import (
 )
 from codeintel.analytics.profiles.modules import build_module_profile as _build_module_profile
 from codeintel.analytics.profiles.utils import seed_catalog_modules
-from codeintel.graphs.catalog import (
-    CatalogService,
-)
+from codeintel.core.catalog import CatalogService
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.catalog import (
-        FunctionCatalogProvider,
-    )
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.config.primitives import GraphFeatureFlags
+from codeintel.graphs.runtime import GraphRuntimeOptions
 from tests._helpers.factories.config_factories import make_snapshot
 
 

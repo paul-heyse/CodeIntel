@@ -31,6 +31,10 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 
+CUSTOM_MIN_WORKERS = 1
+CUSTOM_MAX_WORKERS = 2
+
+
 class TestWorkerConfig:
     """Tests for WorkerConfig dataclass."""
 
@@ -118,9 +122,9 @@ class TestResolveWorkerCount:
     @staticmethod
     def test_custom_min_max() -> None:
         """Test custom min/max bounds."""
-        result = resolve_worker_count(default_min=1, default_max=2)
-        expect_true(result >= 1)
-        expect_true(result <= 2)
+        result = resolve_worker_count(default_min=CUSTOM_MIN_WORKERS, default_max=CUSTOM_MAX_WORKERS)
+        expect_true(result >= CUSTOM_MIN_WORKERS)
+        expect_true(result <= CUSTOM_MAX_WORKERS)
 
 
 class TestCreateExecutor:
