@@ -83,6 +83,11 @@ from codeintel.build.hamilton.driver_factory import (
     list_available_nodes,
     target_to_node_name,
 )
+from codeintel.build.hamilton.compat import (
+    LEGACY_PHASE0,
+    build_driver_compat,
+    list_available_nodes_compat,
+)
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
 from codeintel.build.hamilton.io import DatasetRef, IbisIOConfig, refs_from_target_result
@@ -114,10 +119,12 @@ __all__ = [
     "HamiltonNodeMode",
     "HamiltonRuntime",
     "IbisIOConfig",
+    "LEGACY_PHASE0",
     "PlanEntry",
     "StalenessExplanation",
     "TargetRunRecord",
     "build_driver",
+    "build_driver_compat",
     "compute_plan",
     "dataset_node",
     "explain_plan",
@@ -126,6 +133,7 @@ __all__ = [
     "get_dag_info",
     "get_pandera_schema",
     "list_available_nodes",
+    "list_available_nodes_compat",
     "list_execution_order",
     "list_execution_targets",
     "refs_from_target_result",

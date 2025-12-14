@@ -22,8 +22,7 @@ from codeintel.graphs.resources import StorageResource
 from codeintel.graphs.catalog import CatalogService
 
 
-def process(storage: StorageResource, catalog: CatalogService) -> None:
-    ...
+def process(storage: StorageResource, catalog: CatalogService) -> None: ...
 ```
 """
 

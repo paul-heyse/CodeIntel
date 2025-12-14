@@ -75,8 +75,7 @@ class PaginatedRows(PagedResult[RowDict]):
             Total row count if known (maps to total).
         """
         warnings.warn(
-            "PaginatedRows is deprecated. Use PagedResult from "
-            "codeintel.core.repository instead.",
+            "PaginatedRows is deprecated. Use PagedResult from codeintel.core.repository instead.",
             DeprecationWarning,
             stacklevel=2,
         )

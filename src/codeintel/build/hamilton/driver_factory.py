@@ -32,6 +32,9 @@ if TYPE_CHECKING:
 
 HamiltonNodeMode = Literal["generated", "auto"]
 
+# Legacy alias to keep tests that still reference "phase0" working.
+LegacyHamiltonNodeMode = Literal["generated", "auto", "phase0"]
+
 
 @dataclass(frozen=True)
 class HamiltonRuntime:
