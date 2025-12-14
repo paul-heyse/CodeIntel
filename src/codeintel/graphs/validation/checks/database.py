@@ -2,39 +2,123 @@
 
 This module contains validation checks that verify data integrity
 by querying the database for inconsistencies.
+
+Check classes implement CheckProtocol from core/validation; legacy
+function wrappers are provided for backward compatibility.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+import logging
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import ibis
 
+from codeintel.graphs.validation.base import GraphCheckBase
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import filter_by, ibis_bool, isin_values
 
 if TYPE_CHECKING:
-    import logging
-
+    from codeintel.core.validation import ValidationSeverity
     from codeintel.graphs.catalog import FunctionCatalog
+    from codeintel.graphs.validation.context import GraphValidationContext
     from codeintel.storage.gateway import StorageGateway
 
 
-def warn_missing_function_goids(
+# =============================================================================
+# Check Classes (CheckProtocol-compliant)
+# =============================================================================
+
+
+class MissingFunctionGoidsCheck(GraphCheckBase):
+    """Check for files with functions in AST that are missing GOIDs."""
+
+    check_name: ClassVar[str] = "missing_function_goids"
+    check_description: ClassVar[str] = "Detect files with functions missing GOIDs"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute missing function GOIDs check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with gateway.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for files with missing function GOIDs.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        if ctx.gateway is None:
+            return []
+        return _warn_missing_function_goids_impl(ctx.gateway, ctx.repo, ctx.commit, ctx.logger)
+
+
+class CallsiteSpanMismatchCheck(GraphCheckBase):
+    """Check for call graph edges whose callsites lie outside caller spans."""
+
+    check_name: ClassVar[str] = "callsite_span_mismatch"
+    check_description: ClassVar[str] = "Detect callsites outside caller spans"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute callsite span mismatch check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with gateway and catalog.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for callsite span mismatches.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        if ctx.gateway is None or ctx.catalog is None:
+            return []
+        return _warn_callsite_span_mismatches_impl(
+            ctx.gateway, ctx.catalog, ctx.repo, ctx.commit, ctx.logger
+        )
+
+
+class OrphanModulesCheck(GraphCheckBase):
+    """Check for modules with no GOIDs (orphans)."""
+
+    check_name: ClassVar[str] = "orphan_modules"
+    check_description: ClassVar[str] = "Detect modules with no GOIDs"
+    default_severity: ClassVar[ValidationSeverity] = "warning"
+
+    def execute(self, ctx: GraphValidationContext) -> list[dict[str, object]]:
+        """Execute orphan modules check.
+
+        Parameters
+        ----------
+        ctx
+            Graph validation context with gateway and catalog.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Findings for orphan modules.
+        """
+        _ = self  # Instance method required for CheckProtocol
+        if ctx.gateway is None or ctx.catalog is None:
+            return []
+        return _warn_orphan_modules_impl(ctx.gateway, ctx.repo, ctx.commit, ctx.logger, ctx.catalog)
+
+
+# =============================================================================
+# Implementation Functions (internal)
+# =============================================================================
+
+
+def _warn_missing_function_goids_impl(
     gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
-    """Check for files with functions in AST that are missing GOIDs.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Logger for output.
+    """Check for files with functions in AST that are missing GOIDs (implementation).
 
     Returns
     -------
@@ -110,27 +194,14 @@ def warn_missing_function_goids(
     ]
 
 
-def warn_callsite_span_mismatches(
+def _warn_callsite_span_mismatches_impl(
     gateway: StorageGateway,
     catalog: FunctionCatalog,
     repo: str,
     commit: str,
     log: logging.Logger,
 ) -> list[dict[str, object]]:
-    """Check for call graph edges whose callsites lie outside caller spans.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    catalog
-        Function catalog with span information.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Logger for output.
+    """Check for call graph edges outside caller spans (implementation).
 
     Returns
     -------
@@ -183,27 +254,14 @@ def warn_callsite_span_mismatches(
     ]
 
 
-def warn_orphan_modules(
+def _warn_orphan_modules_impl(
     gateway: StorageGateway,
     repo: str,
     commit: str,
     log: logging.Logger,
     catalog: FunctionCatalog,
 ) -> list[dict[str, object]]:
-    """Check for modules with no GOIDs (orphans).
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Logger for output.
-    catalog
-        Function catalog for fallback module lookup.
+    """Check for modules with no GOIDs (implementation).
 
     Returns
     -------
@@ -280,7 +338,112 @@ def warn_orphan_modules(
     ]
 
 
+# =============================================================================
+# Backward-Compatible Function Wrappers
+# =============================================================================
+
+
+def warn_missing_function_goids(
+    gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    """Check for files with functions in AST that are missing GOIDs.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
+    log
+        Logger for output.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for files with missing function GOIDs.
+    """
+    return _warn_missing_function_goids_impl(gateway, repo, commit, log)
+
+
+def warn_callsite_span_mismatches(
+    gateway: StorageGateway,
+    catalog: FunctionCatalog,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
+) -> list[dict[str, object]]:
+    """Check for call graph edges whose callsites lie outside caller spans.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    catalog
+        Function catalog with span information.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
+    log
+        Logger for output.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for callsite span mismatches.
+    """
+    return _warn_callsite_span_mismatches_impl(gateway, catalog, repo, commit, log)
+
+
+def warn_orphan_modules(
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
+    catalog: FunctionCatalog,
+) -> list[dict[str, object]]:
+    """Check for modules with no GOIDs (orphans).
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
+    log
+        Logger for output.
+    catalog
+        Function catalog for fallback module lookup.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings for orphan modules.
+    """
+    return _warn_orphan_modules_impl(gateway, repo, commit, log, catalog)
+
+
+# =============================================================================
+# All Check Classes (for runner registration)
+# =============================================================================
+
+ALL_DATABASE_CHECKS: tuple[type[GraphCheckBase], ...] = (
+    MissingFunctionGoidsCheck,
+    CallsiteSpanMismatchCheck,
+    OrphanModulesCheck,
+)
+
 __all__ = [
+    # Check classes
+    "ALL_DATABASE_CHECKS",
+    "CallsiteSpanMismatchCheck",
+    "MissingFunctionGoidsCheck",
+    "OrphanModulesCheck",
+    # Backward-compatible functions
     "warn_callsite_span_mismatches",
     "warn_missing_function_goids",
     "warn_orphan_modules",

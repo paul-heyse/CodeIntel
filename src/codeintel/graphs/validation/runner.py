@@ -8,6 +8,13 @@ Architecture Notes
 This module imports from analytics.graph_runtime for GraphRuntime access.
 This is an intentional delegation - the graphs package orchestrates validation
 but delegates runtime resolution to analytics (Option B architecture).
+
+The module supports two validation modes:
+1. Legacy function-based validation (run_graph_validations)
+2. CheckProtocol-based validation via core.validation.ValidationRunner
+   (run_graph_validations_with_runner)
+
+Both modes produce equivalent findings and maintain the same interface.
 """
 
 from __future__ import annotations
@@ -22,6 +29,7 @@ from codeintel.analytics.runtime import (
     GraphRuntime,
     resolve_graph_runtime,
 )
+from codeintel.core.validation.runner import ValidationRunner
 from codeintel.graphs.catalog import load_function_catalog
 from codeintel.graphs.validation.checks import (
     warn_callsite_span_mismatches,
@@ -29,6 +37,25 @@ from codeintel.graphs.validation.checks import (
     warn_missing_function_goids,
     warn_orphan_modules,
 )
+from codeintel.graphs.validation.checks.anomaly import (
+    ALL_ANOMALY_CHECKS,
+    SubsystemDisagreementCheck,
+    SymbolCommunityCheck,
+)
+from codeintel.graphs.validation.checks.database import (
+    ALL_DATABASE_CHECKS,
+    CallsiteSpanMismatchCheck,
+    MissingFunctionGoidsCheck,
+    OrphanModulesCheck,
+)
+from codeintel.graphs.validation.checks.structure import (
+    ALL_STRUCTURE_CHECKS,
+    CallGraphStructureCheck,
+    ConfigKeyCheck,
+    ImportGraphStructureCheck,
+    SymbolGraphCheck,
+)
+from codeintel.graphs.validation.context import GraphValidationContext
 from codeintel.graphs.validation.findings import (
     apply_severity_overrides,
     cap_findings,
@@ -47,12 +74,65 @@ if TYPE_CHECKING:
         GraphRuntimeOptions,
     )
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.validation.runner import ValidationReport
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.graphs.engine import GraphEngine
+    from codeintel.graphs.validation.base import GraphCheckBase
     from codeintel.graphs.validation.findings import (
         GraphValidationOptions,
     )
     from codeintel.storage.gateway import StorageGateway
+
+
+# =============================================================================
+# Check Registration
+# =============================================================================
+
+
+def create_validation_runner(
+    options: GraphValidationOptions | None = None,
+) -> ValidationRunner[GraphValidationContext, dict[str, object]]:
+    """Create a ValidationRunner with all registered graph checks.
+
+    Parameters
+    ----------
+    options
+        Optional validation options for severity overrides and capping.
+
+    Returns
+    -------
+    ValidationRunner
+        Configured runner with all graph validation checks.
+    """
+    runner: ValidationRunner[GraphValidationContext, dict[str, object]] = ValidationRunner(
+        options=options,
+    )
+
+    # Register all check classes
+    all_checks: list[GraphCheckBase] = [
+        # Database integrity checks
+        MissingFunctionGoidsCheck(),
+        CallsiteSpanMismatchCheck(),
+        OrphanModulesCheck(),
+        # Structure checks
+        CallGraphStructureCheck(),
+        ImportGraphStructureCheck(),
+        SymbolGraphCheck(),
+        ConfigKeyCheck(),
+        # Anomaly checks
+        SymbolCommunityCheck(),
+        SubsystemDisagreementCheck(),
+    ]
+
+    for check in all_checks:
+        runner.register(check)  # type: ignore[arg-type]
+
+    return runner
+
+
+# =============================================================================
+# Primary Validation Functions
+# =============================================================================
 
 
 def run_graph_validations(
@@ -63,8 +143,7 @@ def run_graph_validations(
     runtime: GraphRuntime | GraphRuntimeOptions,
     options: GraphValidationOptions | None = None,
 ) -> None:
-    """
-    Emit warnings for common graph integrity issues.
+    """Emit warnings for common graph integrity issues.
 
     Checks include:
     - Files with functions in AST that are missing GOIDs.
@@ -124,14 +203,109 @@ def run_graph_validations(
         raise RuntimeError(message)
 
 
+def run_graph_validations_with_runner(
+    gateway: StorageGateway,
+    *,
+    snapshot: SnapshotRef,
+    catalog_provider: FunctionCatalogProvider | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions,
+    options: GraphValidationOptions | None = None,
+) -> ValidationReport[dict[str, object]]:
+    """Run graph validations using core ValidationRunner.
+
+    This function uses the CheckProtocol-based validation approach,
+    enabling unified validation infrastructure across the codebase.
+
+    Parameters
+    ----------
+    gateway : StorageGateway
+        Storage gateway for database access.
+    snapshot : SnapshotRef
+        Repository snapshot reference.
+    catalog_provider : FunctionCatalogProvider | None
+        Optional catalog provider for function metadata.
+    runtime : GraphRuntime | GraphRuntimeOptions
+        Runtime or options for graph access.
+    options : GraphValidationOptions | None
+        Optional validation options.
+
+    Returns
+    -------
+    ValidationReport
+        Validation report with all findings and statistics.
+
+    Raises
+    ------
+    RuntimeError
+        When hard_fail is enabled and error-level findings are present.
+    """
+    validation_opts = resolve_validation_options(runtime=runtime, options=options)
+    active_log = logging.getLogger(__name__)
+    repo = snapshot.repo
+    commit = snapshot.commit
+
+    log_db_snapshot(gateway, repo, commit, active_log)
+
+    catalog = (
+        catalog_provider.catalog()
+        if catalog_provider is not None
+        else load_function_catalog(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    )
+
+    resolved_runtime = resolve_validation_runtime(
+        gateway,
+        snapshot=snapshot,
+        runtime=runtime,
+    )
+    engine: GraphEngine = resolved_runtime.engine
+
+    # Build context for validation checks
+    ctx = GraphValidationContext(
+        gateway=gateway,
+        repo=repo,
+        commit=commit,
+        engine=engine,
+        catalog=catalog,
+        runtime=resolved_runtime,
+        logger=active_log,
+    )
+
+    # Create and run the validation runner
+    runner = create_validation_runner(options=validation_opts)
+    report = runner.run(ctx)
+
+    # Persist findings
+    persist_findings(gateway, report.findings, repo, commit)
+
+    active_log.info(
+        "Graph validation completed for %s@%s: %d finding(s), %d checks run, %d skipped, %d failed",
+        repo,
+        commit,
+        len(report.findings),
+        report.checks_run,
+        report.checks_skipped,
+        report.checks_failed,
+    )
+
+    if validation_opts.hard_fail and report.has_errors:
+        message = "Graph validation failed with error-level findings"
+        raise RuntimeError(message)
+
+    return report
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+
 def resolve_validation_runtime(
     gateway: StorageGateway,
     *,
     snapshot: SnapshotRef,
     runtime: GraphRuntime | GraphRuntimeOptions,
 ) -> GraphRuntime:
-    """
-    Resolve the runtime for validation, ensuring snapshot consistency.
+    """Resolve the runtime for validation, ensuring snapshot consistency.
 
     Parameters
     ----------
@@ -169,8 +343,7 @@ def resolve_validation_runtime(
 
 
 def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: logging.Logger) -> None:
-    """
-    Record table counts to aid debugging validation state.
+    """Record table counts to aid debugging validation state.
 
     Parameters
     ----------
@@ -252,8 +425,24 @@ def _append_log(message: str) -> None:
         f.write(f"{timestamp} {message}\n")
 
 
+# =============================================================================
+# Exports
+# =============================================================================
+
+# All check class tuples for external registration
+ALL_GRAPH_CHECKS: tuple[type[GraphCheckBase], ...] = (
+    *ALL_DATABASE_CHECKS,
+    *ALL_STRUCTURE_CHECKS,
+    *ALL_ANOMALY_CHECKS,
+)
+
 __all__ = [
+    # Check class tuples
+    "ALL_GRAPH_CHECKS",
+    # Functions
+    "create_validation_runner",
     "log_db_snapshot",
     "resolve_validation_runtime",
     "run_graph_validations",
+    "run_graph_validations_with_runner",
 ]

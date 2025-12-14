@@ -23,6 +23,42 @@ Phase 1 Implementation (Full Production Features)
 - Dataset nodes: d__* nodes generated for all contract tables
 - Observability: DAG export and visualization via CLI
 
+Observability Architecture
+--------------------------
+This package uses Hamilton's native lifecycle adapter pattern for telemetry:
+
+- ``NodeTelemetryHook``: Records per-node execution timing via Hamilton's
+  ``pre_node_execute`` / ``post_node_execute`` hooks. Telemetry is persisted
+  to the ``build.run_nodes`` table for profiling and debugging.
+
+- ``ContractEnforcementHook``: Activates contract validation per-node using
+  the same lifecycle adapter pattern.
+
+- DAG observability functions (``get_dag_info``, ``export_dag_json``, etc.)
+  use Hamilton's native Driver introspection APIs.
+
+Future Enhancement: HamiltonTracker Integration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Hamilton provides an official ``HamiltonTracker`` adapter for integration with
+the Hamilton UI (https://hamilton.dagworks.io/). This would enable:
+
+- Visual DAG exploration in a web UI
+- Execution history and lineage tracking
+- Data quality monitoring dashboards
+
+To integrate, add ``sf-hamilton[ui]`` to dependencies and configure::
+
+    from hamilton_sdk import adapters
+    tracker = adapters.HamiltonTracker(
+        project_id=<project_id>,
+        username=<username>,
+        dag_name="codeintel-build",
+    )
+    # Pass tracker in execute_kwargs["adapters"]
+
+This is not currently implemented but is a natural extension of the existing
+lifecycle adapter pattern.
+
 Example
 -------
 >>> from codeintel.build.hamilton import HamiltonBuildExecutor, BuildEnv

@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import ibis
 import ibis.expr.types as it
@@ -160,9 +160,29 @@ class IbisGateway:
     circular imports. The MinimalStorageGateway acts as composition root.
     """
 
+    ADAPTER_NAME: ClassVar[str] = "ibis_gateway"
+
     def __init__(self, gateway: MinimalGateway) -> None:
         self._gateway = gateway
         self._ibis_con: DuckDBBackend | None = None
+
+    def initialize(self) -> None:
+        """Initialize the adapter (no-op, connection is lazy via property)."""
+
+    def close(self) -> None:
+        """Close the adapter by clearing the cached Ibis connection."""
+        self._ibis_con = None
+
+    @property
+    def is_available(self) -> bool:
+        """Check if adapter is available.
+
+        Returns
+        -------
+        bool
+            True if gateway is available.
+        """
+        return self._gateway is not None
 
     @property
     def _policy(self) -> DuckDBPolicyBackend:
