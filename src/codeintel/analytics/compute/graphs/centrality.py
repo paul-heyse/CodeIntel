@@ -2,7 +2,7 @@
 
 This module provides high-level functions for computing bundles of
 centrality metrics on graphs, delegating to pure computation functions
-in codeintel.graphs.compute.metrics.
+in codeintel.core.compute.centrality.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from networkx.algorithms import structuralholes
 from networkx.exception import NetworkXAlgorithmError
 
 from codeintel.analytics.compute.graphs.types import CentralityBundle, NeighborStats
-from codeintel.graphs.compute.metrics.centrality import (
+from codeintel.core.compute.centrality import (
     compute_betweenness,
     compute_closeness,
     compute_eigenvector_centrality,

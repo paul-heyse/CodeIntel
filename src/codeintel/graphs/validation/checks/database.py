@@ -339,95 +339,6 @@ def _warn_orphan_modules_impl(
 
 
 # =============================================================================
-# Backward-Compatible Function Wrappers
-# =============================================================================
-
-
-def warn_missing_function_goids(
-    gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for files with functions in AST that are missing GOIDs.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Logger for output.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for files with missing function GOIDs.
-    """
-    return _warn_missing_function_goids_impl(gateway, repo, commit, log)
-
-
-def warn_callsite_span_mismatches(
-    gateway: StorageGateway,
-    catalog: FunctionCatalog,
-    repo: str,
-    commit: str,
-    log: logging.Logger,
-) -> list[dict[str, object]]:
-    """Check for call graph edges whose callsites lie outside caller spans.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    catalog
-        Function catalog with span information.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Logger for output.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for callsite span mismatches.
-    """
-    return _warn_callsite_span_mismatches_impl(gateway, catalog, repo, commit, log)
-
-
-def warn_orphan_modules(
-    gateway: StorageGateway,
-    repo: str,
-    commit: str,
-    log: logging.Logger,
-    catalog: FunctionCatalog,
-) -> list[dict[str, object]]:
-    """Check for modules with no GOIDs (orphans).
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Logger for output.
-    catalog
-        Function catalog for fallback module lookup.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for orphan modules.
-    """
-    return _warn_orphan_modules_impl(gateway, repo, commit, log, catalog)
-
-
-# =============================================================================
 # All Check Classes (for runner registration)
 # =============================================================================
 
@@ -443,8 +354,4 @@ __all__ = [
     "CallsiteSpanMismatchCheck",
     "MissingFunctionGoidsCheck",
     "OrphanModulesCheck",
-    # Backward-compatible functions
-    "warn_callsite_span_mismatches",
-    "warn_missing_function_goids",
-    "warn_orphan_modules",
 ]

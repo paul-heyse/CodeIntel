@@ -138,26 +138,24 @@ This document catalogs every instance of deprecated, legacy, or backward-compati
 | `graphs/catalog.py` | `FunctionCatalogService` in `__all__` | ✅ Deleted | Removed from exports |
 | `graphs/catalog.py:58-61` | `SpanIndex` wrapper class docstring | 🟢 Keep | Documents it's for backward compat but still useful |
 
-### Backward-Compatible Function Wrappers (Keep by Design)
-
-These are intentionally retained for API stability:
+### Backward-Compatible Function Wrappers (Deleted in Phase G)
 
 | File | Functions | Status | Notes |
 |------|-----------|--------|-------|
-| `graphs/validation/checks/structure.py:641-844` | `call_graph_findings`, `import_graph_findings`, `import_cycle_findings`, `import_hub_findings`, `import_upward_findings`, `import_bridge_findings`, `symbol_graph_findings`, `config_key_findings` | 🟢 Keep | Wrappers around CheckProtocol classes for API stability |
-| `graphs/validation/checks/database.py:340-447` | `warn_missing_function_goids`, `warn_callsite_span_mismatches`, `warn_orphan_modules`, `warn_graph_structure` | 🟢 Keep | Wrappers around CheckProtocol classes |
-| `graphs/validation/checks/anomaly.py:184-227` | `symbol_community_findings`, `subsystem_disagreement_findings` | 🟢 Keep | Wrappers around CheckProtocol classes |
-| `graphs/validation/__init__.py` | Re-exports above functions | 🟢 Keep | API stability exports |
-| `graphs/validation/checks/__init__.py` | Re-exports above functions | 🟢 Keep | API stability exports |
-| `graphs/validation/runner.py:13-14` | "Legacy function-based validation" mode | 🟢 Keep | Supports both old and new patterns |
+| `graphs/validation/checks/structure.py` | `call_graph_findings`, `import_graph_findings`, `import_cycle_findings`, `import_hub_findings`, `import_upward_findings`, `import_bridge_findings`, `symbol_graph_findings`, `config_key_findings`, `warn_graph_structure` | ✅ Deleted | Wrappers deleted, tests migrated to Check classes directly |
+| `graphs/validation/checks/database.py` | `warn_missing_function_goids`, `warn_callsite_span_mismatches`, `warn_orphan_modules` | ✅ Deleted | Wrappers deleted, tests migrated to Check classes directly |
+| `graphs/validation/checks/anomaly.py` | `symbol_community_findings`, `subsystem_disagreement_findings` | ✅ Deleted | Wrappers deleted |
+| `graphs/validation/__init__.py` | Re-exports of above functions | ✅ Deleted | Cleaned up exports |
+| `graphs/validation/checks/__init__.py` | Re-exports of above functions | ✅ Deleted | Cleaned up exports |
+| `graphs/validation/runner.py` | `run_graph_validations()` function | ✅ Deleted | Legacy function deleted, all code uses `run_graph_validations_with_runner()` |
 
 ### Re-export Modules
 
 | File | Pattern | Status | Notes |
 |------|---------|--------|-------|
-| `graphs/catalog.py:36-37` | Re-exports `FunctionSpan` from `core.catalog` | 🟢 Keep | Core type re-export |
-| `graphs/catalog.py:38` | Re-exports `SpanIndex` from `core.catalog` | 🟢 Keep | Core type re-export |
-| `graphs/compute/metrics/centrality.py:4` | Re-exports from `core.compute.centrality` | 🟢 Keep | Good migration pattern |
+| `graphs/catalog.py:36-37` | Re-exports `FunctionSpan` from `core.catalog` | 🟢 Keep | Core type re-export, active consumers |
+| `graphs/catalog.py:38` | Re-exports `SpanIndex` from `core.catalog` | 🟢 Keep | Core type re-export, active consumers |
+| `graphs/compute/metrics/centrality.py` | Re-exports from `core.compute.centrality` | ✅ Deleted | File deleted, consumer migrated to `core.compute.centrality` |
 
 ### Other Comments
 
@@ -174,10 +172,10 @@ These are intentionally retained for API stability:
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ✅ Deleted/Updated | 31 | Removed/updated in Phase A through E |
+| ✅ Deleted/Updated | 46 | Removed/updated in Phase A through G |
 | 🔴 Delete | 0 | Ready to delete (no/minimal consumers) |
 | 🟡 Migrate | 0 | Needs consumer migration first |
-| 🟢 Keep | 25+ | Intentional compatibility, keep |
+| 🟢 Keep | 12+ | Intentional compatibility, keep |
 | 📝 Update | 0 | All docstring updates complete |
 
 ### By Module
@@ -186,7 +184,7 @@ These are intentionally retained for API stability:
 |--------|-------------|---------|-----------|------------|------|--------|
 | analytics/ | 15 | 10 | 0 | 0 | 4 | 1 |
 | ingestion/ | 12 | 4 | 0 | 0 | 8 | 0 |
-| graphs/ | 30+ | 17 | 0 | 0 | 13+ | 0 |
+| graphs/ | 45+ | 32 | 0 | 0 | 2 | 0 |
 
 ---
 
@@ -233,9 +231,21 @@ Cleaned up ingestion re-exports and docstrings:
 - **Updated** module docstring in `ingestion/adapters/duckdb_storage.py` (removed "shim" terminology)
 - **Updated** class docstring in `DuckDBStorageAdapter` (removed "Compatibility shim" terminology)
 
-### Phase F (Optional - Low Priority)
-1. Review all 🟢 Keep items for potential future consolidation
-2. Consider whether remaining re-export patterns should emit deprecation warnings
+### Phase G (Complete ✅)
+Deleted validation wrapper functions and legacy validation mode:
+- **Deleted** 9 wrapper functions from `graphs/validation/checks/structure.py`
+- **Deleted** 3 wrapper functions from `graphs/validation/checks/database.py`
+- **Deleted** 2 wrapper functions from `graphs/validation/checks/anomaly.py`
+- **Deleted** `run_graph_validations()` legacy function from `graphs/validation/runner.py`
+- **Migrated** all tests to use `run_graph_validations_with_runner()` and Check classes directly
+- **Deleted** `graphs/compute/metrics/centrality.py` re-export module
+- **Migrated** `analytics/compute/graphs/centrality.py` to import from `core.compute.centrality`
+- **Updated** `graphs/compute/metrics/__init__.py` to remove centrality exports
+- **Updated** all `__init__.py` exports to remove deleted functions
+
+### Phase H (Optional - Low Priority)
+1. Review remaining 🟢 Keep items for potential future consolidation
+2. Consider whether remaining re-export patterns (FunctionSpan, SpanIndex) should emit deprecation warnings
 
 ---
 
@@ -265,3 +275,4 @@ grep -r ": ProtocolName" src/  # Type annotation usage
 | 2024-12-14 | Phase D complete - deleted dead test code (`PreparedStatements`, `prepared_statements_dynamic`), updated type alias comment (total: 27 deleted) |
 | 2024-12-14 | Phase E complete - cleaned up ingestion re-exports (`AstSpanIndex`, `db_queries.py`), updated `duckdb_storage.py` docstrings (total: 31 deleted/updated) |
 | 2024-12-14 | Phase E addendum - enhanced docstrings for `IngestStoragePort`, `DuckDBStorageAdapter`, `FakeIngestStorage` with "Why This Exists" documentation |
+| 2024-12-14 | Phase G complete - deleted 14 validation wrapper functions, `run_graph_validations()` legacy function, `graphs/compute/metrics/centrality.py` re-export; migrated tests to CheckProtocol pattern (total: 46 deleted/updated) |

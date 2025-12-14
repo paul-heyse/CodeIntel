@@ -8,12 +8,6 @@ from typing import TYPE_CHECKING, Final
 import pytest
 
 from codeintel.graphs.validation import GraphValidationOptions, run_graph_validations_with_runner
-from codeintel.graphs.validation.checks.anomaly import SubsystemDisagreementCheck, SymbolCommunityCheck
-from codeintel.graphs.validation.checks.database import (
-    CallsiteSpanMismatchCheck,
-    MissingFunctionGoidsCheck,
-    OrphanModulesCheck,
-)
 from codeintel.graphs.validation.checks.structure import (
     CallGraphStructureCheck,
     ConfigKeyCheck,

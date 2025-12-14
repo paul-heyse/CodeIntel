@@ -15,23 +15,8 @@ Example
 -------
 ```python
 from codeintel.graphs.validation import (
-    GraphValidationOptions,
-    run_graph_validations,
-    warn_graph_structure,
-)
-
-
-run_graph_validations(gateway, snapshot=snapshot, runtime=runtime)
-
-
-findings = warn_graph_structure(engine, repo, commit)
-```
-
-CheckProtocol Example
---------------------
-```python
-from codeintel.graphs.validation import (
     GraphValidationContext,
+    GraphValidationOptions,
     create_validation_runner,
     run_graph_validations_with_runner,
 )
@@ -62,20 +47,6 @@ from codeintel.graphs.validation.checks import (
     SubsystemDisagreementCheck,
     SymbolCommunityCheck,
     SymbolGraphCheck,
-    call_graph_findings,
-    config_key_findings,
-    import_bridge_findings,
-    import_cycle_findings,
-    import_graph_findings,
-    import_hub_findings,
-    import_upward_findings,
-    subsystem_disagreement_findings,
-    symbol_community_findings,
-    symbol_graph_findings,
-    warn_callsite_span_mismatches,
-    warn_graph_structure,
-    warn_missing_function_goids,
-    warn_orphan_modules,
 )
 from codeintel.graphs.validation.context import GraphValidationContext
 from codeintel.graphs.validation.findings import (
@@ -98,7 +69,6 @@ from codeintel.graphs.validation.runner import (
     create_validation_runner,
     log_db_snapshot,
     resolve_validation_runtime,
-    run_graph_validations,
     run_graph_validations_with_runner,
 )
 
@@ -137,32 +107,14 @@ __all__ = [
     "SymbolGraphCheck",
     # Finding utilities
     "apply_severity_overrides",
-    # Backward-compatible functions (structure)
-    "call_graph_findings",
     "cap_findings",
-    "config_key_findings",
     # Runner functions
     "create_validation_runner",
     "has_error_findings",
     "hub_threshold",
-    "import_bridge_findings",
-    "import_cycle_findings",
-    "import_graph_findings",
-    "import_hub_findings",
-    "import_upward_findings",
     "log_db_snapshot",
     "persist_findings",
     "resolve_validation_options",
     "resolve_validation_runtime",
-    "run_graph_validations",
     "run_graph_validations_with_runner",
-    # Backward-compatible functions (anomaly)
-    "subsystem_disagreement_findings",
-    "symbol_community_findings",
-    "symbol_graph_findings",
-    # Backward-compatible functions (database)
-    "warn_callsite_span_mismatches",
-    "warn_graph_structure",
-    "warn_missing_function_goids",
-    "warn_orphan_modules",
 ]
