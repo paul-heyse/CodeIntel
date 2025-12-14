@@ -122,7 +122,9 @@ class TestResolveWorkerCount:
     @staticmethod
     def test_custom_min_max() -> None:
         """Test custom min/max bounds."""
-        result = resolve_worker_count(default_min=CUSTOM_MIN_WORKERS, default_max=CUSTOM_MAX_WORKERS)
+        result = resolve_worker_count(
+            default_min=CUSTOM_MIN_WORKERS, default_max=CUSTOM_MAX_WORKERS
+        )
         expect_true(result >= CUSTOM_MIN_WORKERS)
         expect_true(result <= CUSTOM_MAX_WORKERS)
 

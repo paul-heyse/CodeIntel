@@ -1,8 +1,11 @@
 """External dependency analytics plugins package.
 
 For Hamilton native execution, use the pure compute functions:
-- `compute_dependency_calls_pure` returns `DependencyCallsResult` without writing
-- `compute_external_dependencies_pure` returns `ExternalDependenciesResult` without writing
+- ``compute_dependency_calls_pure`` returns ``DependencyCallsResult`` without writing
+- ``compute_external_dependencies_pure`` returns ``ExternalDependenciesResult`` without writing
+
+The Hamilton native module is at:
+``codeintel.build.hamilton.native.analytics.dependencies``
 """
 
 from codeintel.analytics.dependencies.compute import (
@@ -15,8 +18,6 @@ from codeintel.analytics.dependencies.core import (
     DependencyAggregate,
     DependencyCall,
     DependencyContext,
-    build_external_dependencies,
-    build_external_dependency_calls,
     load_config_key_map,
 )
 
@@ -26,8 +27,6 @@ __all__ = [
     "DependencyCallsResult",
     "DependencyContext",
     "ExternalDependenciesResult",
-    "build_external_dependencies",
-    "build_external_dependency_calls",
     "compute_dependency_calls_pure",
     "compute_external_dependencies_pure",
     "load_config_key_map",

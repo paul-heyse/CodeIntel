@@ -41,7 +41,7 @@ class ValidateMacrosCommand:
             help="Path to DuckDB database.",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("storage.generate_macros", handler=generate_macros_handler, config=_STORAGE_CONFIG)
@@ -57,7 +57,7 @@ class GenerateMacrosCommand:
             help="Tables to generate macros for (repeatable).",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("storage.profile", handler=profile_storage_handler, config=_STORAGE_CONFIG)
@@ -88,7 +88,7 @@ class ProfileStorageCommand:
             negative=(),
         ),
     ] = False
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["storage_app"]

@@ -1,17 +1,16 @@
 """Validation reporters shared across analytics domains.
 
-.. deprecated::
-    The `flush()` methods in reporter classes contain direct database writes.
-    For new code, use the `to_rows()` method with Hamilton materializers.
+Column definitions and row collection for validation findings.
 
-    Pure compute helpers are available in `codeintel.analytics.parsing.compute`:
-    - `materialize_function_validation` for function validation rows
-    - `materialize_graph_validation` for graph validation rows
+For persistence, use the ``to_rows()`` method with Hamilton materializers.
+
+Pure compute helpers are available in ``codeintel.analytics.parsing.compute``:
+- ``materialize_function_validation`` for function validation rows
+- ``materialize_graph_validation`` for graph validation rows
 """
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypeVar, cast
@@ -25,8 +24,6 @@ from codeintel.config.datasets import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-    from codeintel.storage.gateway import StorageGateway
 
 FUNCTION_VALIDATION_COLS = [
     "repo",
@@ -56,16 +53,12 @@ RowT = TypeVar("RowT")
 
 @dataclass
 class BaseValidationReporter[RowT]:
-    """Collect validation rows and flush them to DuckDB."""
+    """Collect validation rows for persistence via policy backend."""
 
     repo: str
     commit: str
     rows: list[RowT] = field(default_factory=list)
     total: int = 0
-
-    def flush(self, gateway: StorageGateway) -> None:
-        """Persist collected rows."""
-        raise NotImplementedError
 
 
 @dataclass
@@ -109,8 +102,7 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
     def to_rows(self) -> tuple[tuple[object, ...], ...]:
         """Return accumulated rows as tuples without writing.
 
-        Use this method with Hamilton materializers for persistence instead
-        of the deprecated `flush()` method.
+        Use this method with Hamilton materializers for persistence.
 
         Returns
         -------
@@ -118,28 +110,6 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
             Accumulated validation rows ready for materialization.
         """
         return tuple(function_validation_row_to_tuple(r) for r in self.rows)
-
-    def flush(self, gateway: StorageGateway) -> None:
-        """Persist recorded function validation rows.
-
-        .. deprecated::
-            Use `to_rows()` with Hamilton materializers instead.
-        """
-        warnings.warn(
-            "FunctionValidationReporter.flush is deprecated. Use to_rows() "
-            "with Hamilton materializers for persistence.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if not self.rows:
-            return
-        tuples = [function_validation_row_to_tuple(r) for r in self.rows]
-        gateway.ibis.write(
-            "analytics.function_validation",
-            tuples,
-            columns=FUNCTION_VALIDATION_COLS,
-        )
-        self.rows.clear()
 
 
 @dataclass
@@ -178,8 +148,7 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
     def to_rows(self) -> tuple[tuple[object, ...], ...]:
         """Return accumulated rows as tuples without writing.
 
-        Use this method with Hamilton materializers for persistence instead
-        of the deprecated `flush()` method.
+        Use this method with Hamilton materializers for persistence.
 
         Returns
         -------
@@ -187,28 +156,6 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
             Accumulated validation rows ready for materialization.
         """
         return tuple(graph_validation_row_to_tuple(r) for r in self.rows)
-
-    def flush(self, gateway: StorageGateway) -> None:
-        """Persist recorded graph validation rows.
-
-        .. deprecated::
-            Use `to_rows()` with Hamilton materializers instead.
-        """
-        warnings.warn(
-            "GraphValidationReporter.flush is deprecated. Use to_rows() "
-            "with Hamilton materializers for persistence.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if not self.rows:
-            return
-        tuples = [graph_validation_row_to_tuple(r) for r in self.rows]
-        gateway.ibis.write(
-            "analytics.graph_validation",
-            tuples,
-            columns=GRAPH_VALIDATION_COLS,
-        )
-        self.rows.clear()
 
 
 def gateway_timestamp() -> datetime:

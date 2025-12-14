@@ -6,7 +6,7 @@ registry guards, and snapshot validation.
 
 from __future__ import annotations
 
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path as PathLib
 from types import SimpleNamespace
@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.analytics.profiles import writer_guard
 from codeintel.analytics.testing.behavioral import importance
 from codeintel.analytics.testing.behavioral import tags as behavioral_tags
 from codeintel.analytics.testing.behavioral.importance import (
@@ -700,12 +699,8 @@ def test_test_profile_model_snapshot() -> None:
         pytest.fail("Serialized tuple length mismatch for test_profile.")
 
 
-def test_behavioral_writer_registry_guard() -> None:
-    """Ensure behavioral writer honors registry columns and schema guardrails."""
-    fake_con = _FakeCon()
-    fake_ibis = _FakeIbis()
-    gateway = cast("StorageGateway", SimpleNamespace(con=fake_con, ibis=fake_ibis))
-    snapshot, _, _ = _snapshot_cfg()
+def test_behavioral_coverage_serialization() -> None:
+    """Ensure behavioral coverage row serialization produces correct tuple length."""
     row = blank_behavioral_coverage_row()
     row["repo"] = "r"
     row["commit"] = "c"
@@ -716,44 +711,13 @@ def test_behavioral_writer_registry_guard() -> None:
     row["tag_source"] = "heuristic"
     row["created_at"] = datetime.now(tz=UTC)
 
-    with ExitStack() as stack:
-        stack.enter_context(
-            _override(
-                rows.DuckDBPolicyBackend,
-                "ensure_table",
-                lambda _self, _table_key: None,
-            )
-        )
-        stack.enter_context(
-            _override(
-                writer_guard,
-                "load_columns_by_table",
-                lambda: {"analytics.behavioral_coverage": list(BEHAVIORAL_COVERAGE_COLUMNS)},
-            )
-        )
-
-        inserted = rows.write_behavioral_coverage_rows(gateway, snapshot, [row])
-        if inserted != 1:
-            pytest.fail("Writer did not report one inserted row.")
-
-        if not fake_ibis.write_calls:
-            pytest.fail("ibis.write() was not called.")
-        table_key, data, _columns = fake_ibis.write_calls[0]
-        if table_key != "analytics.behavioral_coverage":
-            pytest.fail(f"Wrong table key: {table_key}")
-        if len(data) != 1:
-            pytest.fail(f"Expected 1 row, got {len(data)}")
-        serialized = behavioral_coverage_row_to_tuple(row)
-        if len(serialized) != len(BEHAVIORAL_COVERAGE_COLUMNS):
-            pytest.fail("Serialized tuple length mismatch for behavioral_coverage.")
+    serialized = behavioral_coverage_row_to_tuple(row)
+    if len(serialized) != len(BEHAVIORAL_COVERAGE_COLUMNS):
+        pytest.fail("Serialized tuple length mismatch for behavioral_coverage.")
 
 
-def test_write_test_profile_rows_with_stubs() -> None:
-    """Writer should honor registry columns and insert via Ibis write."""
-    fake_con = _FakeCon()
-    fake_ibis = _FakeIbis()
-    gateway = cast("StorageGateway", SimpleNamespace(con=fake_con, ibis=fake_ibis))
-    snapshot, _, _ = _snapshot_cfg()
+def test_test_profile_serialization() -> None:
+    """Ensure test profile row serialization produces correct tuple length."""
     sample_row = blank_test_profile_row()
     sample_row["repo"] = "r"
     sample_row["commit"] = "c"
@@ -765,34 +729,6 @@ def test_write_test_profile_rows_with_stubs() -> None:
     sample_row["subsystems_covered"] = []
     sample_row["created_at"] = datetime.now(tz=UTC)
 
-    with ExitStack() as stack:
-        stack.enter_context(
-            _override(
-                rows.DuckDBPolicyBackend,
-                "ensure_table",
-                lambda _self, _table_key: None,
-            )
-        )
-        stack.enter_context(
-            _override(
-                writer_guard,
-                "load_columns_by_table",
-                lambda: {"analytics.test_profile": list(TEST_PROFILE_COLUMNS)},
-            )
-        )
-
-        inserted = rows.write_test_profile_rows(gateway, snapshot, [sample_row])
-        if inserted != 1:
-            msg = "Writer did not report one inserted row."
-            pytest.fail(msg)
-
-        if not fake_ibis.write_calls:
-            msg = "ibis.write() was not called."
-            pytest.fail(msg)
-        table_key, data, _columns = fake_ibis.write_calls[0]
-        if table_key != "analytics.test_profile":
-            msg = f"Wrong table key: {table_key}"
-            pytest.fail(msg)
-        if len(data) != 1:
-            msg = f"Expected 1 row, got {len(data)}"
-            pytest.fail(msg)
+    serialized = serialize_test_profile_row(sample_row)
+    if len(serialized) != len(TEST_PROFILE_COLUMNS):
+        pytest.fail("Serialized tuple length mismatch for test_profile.")

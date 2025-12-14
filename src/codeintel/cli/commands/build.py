@@ -115,7 +115,7 @@ class BuildRunCommand:
             help="Only allow wrapper implementation for these targets (comma-separated).",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.status", handler=build_status_handler, config=_BUILD_CONFIG)
@@ -132,7 +132,7 @@ class BuildStatusCommand:
             show_choices=True,
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.history", handler=build_history_handler, config=_BUILD_CONFIG)
@@ -155,7 +155,7 @@ class BuildHistoryCommand:
             help="Number of recent runs to show.",
         ),
     ] = 10
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.plan", handler=build_plan_handler, config=_BUILD_CONFIG)
@@ -201,7 +201,7 @@ class BuildPlanCommand:
             help="Output file path (stdout if not specified).",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.explain", handler=build_explain_handler, config=_BUILD_CONFIG)
@@ -224,7 +224,7 @@ class BuildExplainCommand:
             help="Mark specific targets as forced (repeatable).",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.graph", handler=build_graph_handler, config=_BUILD_CONFIG)
@@ -270,7 +270,7 @@ class BuildGraphCommand:
             help="Output file path (stdout if not specified).",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.assets", handler=build_assets_handler, config=_BUILD_CONFIG)
@@ -315,7 +315,7 @@ class BuildAssetsCommand:
             help="Output format: table (default), json, or csv.",
         ),
     ] = "table"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.lineage", handler=build_lineage_handler, config=_BUILD_CONFIG)
@@ -353,7 +353,7 @@ class BuildLineageCommand:
             help="Output format: json (default) or text.",
         ),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.promote", handler=build_promote_handler, config=_BUILD_CONFIG)
@@ -404,7 +404,7 @@ class BuildPromoteCommand:
             help="Output format: json (default) or text.",
         ),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.resolve", handler=build_resolve_handler, config=_BUILD_CONFIG)
@@ -434,7 +434,7 @@ class BuildResolveCommand:
             help="Output format: json (default) or text.",
         ),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.diff", handler=build_diff_handler, config=_BUILD_CONFIG)
@@ -471,7 +471,7 @@ class BuildDiffCommand:
             help="Output format: json (default) or text.",
         ),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("build.impact", handler=build_impact_handler, config=_BUILD_CONFIG)
@@ -527,7 +527,7 @@ class BuildImpactCommand:
             help="Output format: json (default) or text.",
         ),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["build_app"]

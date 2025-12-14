@@ -1,24 +1,21 @@
 """Extract structured data models from class definitions.
 
-.. deprecated::
-    This module contains legacy functions with direct database writes.
-    Use the Hamilton native module `codeintel.build.hamilton.native.analytics.data_models`
-    for new code, which separates compute from persistence.
+Column definitions and internal helper functions for data model extraction.
 
-    The pure compute functions are available in `codeintel.analytics.data_models.compute`:
-    - `compute_data_models_pure` returns `DataModelsResult`
+The pure compute functions are available in ``codeintel.analytics.data_models.compute``:
+- ``compute_data_models_pure`` returns ``DataModelsResult``
+
+The Hamilton native module is at:
+``codeintel.build.hamilton.native.analytics.data_models``
 """
 
 from __future__ import annotations
 
 import ast
 import hashlib
-import json
 import logging
-import warnings
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,13 +28,12 @@ from codeintel.analytics.utilities.ast import (
 )
 from codeintel.core.paths import normalize_path, path_to_module
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.gateway import DuckDBConnection
 
 
 DATA_MODELS_COLS = [
@@ -883,167 +879,3 @@ def _attach_relationships(models: list[ModelRecord]) -> None:
             model,
             lookup=lookup,
         )
-
-
-def _persist_models(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    models: list[ModelRecord],
-    now: datetime,
-) -> None:
-    rows: list[tuple[object, ...]] = [
-        (
-            snapshot.repo,
-            snapshot.commit,
-            model.model_id,
-            model.goid,
-            model.model_name,
-            model.module,
-            model.rel_path,
-            model.model_kind,
-            json.dumps(model.base_classes),
-            model.doc_short,
-            model.doc_long,
-            now,
-        )
-        for model in models
-    ]
-    field_rows: list[tuple[object, ...]] = []
-    relationship_rows: list[tuple[object, ...]] = []
-    for model in models:
-        field_rows.extend(
-            [
-                (
-                    snapshot.repo,
-                    snapshot.commit,
-                    model.model_id,
-                    field_spec.name,
-                    field_spec.type,
-                    field_spec.required,
-                    field_spec.has_default,
-                    field_spec.default_expr,
-                    json.dumps(field_spec.constraints),
-                    field_spec.source,
-                    model.rel_path,
-                    field_spec.lineno,
-                    now,
-                )
-                for field_spec in model.fields
-            ]
-        )
-        relationship_rows.extend(
-            [
-                (
-                    snapshot.repo,
-                    snapshot.commit,
-                    model.model_id,
-                    rel.target_model_id,
-                    rel.target_module,
-                    rel.target_model_name,
-                    rel.field_name,
-                    rel.kind,
-                    rel.multiplicity,
-                    rel.via,
-                    json.dumps(rel.evidence) if rel.evidence else None,
-                    rel.rel_path,
-                    rel.lineno,
-                    now,
-                )
-                for rel in model.relationships
-            ]
-        )
-
-    if rows:
-        gateway.ibis.write(
-            "analytics.data_models",
-            rows,
-            columns=DATA_MODELS_COLS,
-        )
-    if field_rows:
-        gateway.ibis.write(
-            "analytics.data_model_fields",
-            field_rows,
-            columns=DATA_MODEL_FIELDS_COLS,
-        )
-    if relationship_rows:
-        gateway.ibis.write(
-            "analytics.data_model_relationships",
-            relationship_rows,
-            columns=DATA_MODEL_RELATIONSHIPS_COLS,
-        )
-
-
-def compute_data_models(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-) -> None:
-    """
-    Populate analytics.data_models with extracted model definitions.
-
-    .. deprecated::
-        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.data_models`
-        instead. For pure compute, use `compute_data_models_pure` from
-        `codeintel.analytics.data_models.compute`.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway scoped to the target repository.
-    snapshot
-        Repository and commit snapshot reference.
-    """
-    warnings.warn(
-        "compute_data_models is deprecated. Use the Hamilton native module "
-        "'codeintel.build.hamilton.native.analytics.data_models' or "
-        "'compute_data_models_pure' for pure compute.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    backend = DuckDBPolicyBackend(gateway)
-    backend.ensure_table("analytics.data_models")
-    backend.ensure_table("analytics.data_model_fields")
-    backend.ensure_table("analytics.data_model_relationships")
-    con = gateway.con
-    backend.delete_for_snapshot("analytics.data_models", repo=snapshot.repo, commit=snapshot.commit)
-    backend.delete_for_snapshot(
-        "analytics.data_model_fields", repo=snapshot.repo, commit=snapshot.commit
-    )
-    backend.delete_for_snapshot(
-        "analytics.data_model_relationships", repo=snapshot.repo, commit=snapshot.commit
-    )
-
-    class_metas = _load_class_metadata(con, snapshot.repo, snapshot.commit)
-    if not class_metas:
-        log.info(
-            "No class metadata found for %s@%s; skipping data model extraction",
-            snapshot.repo,
-            snapshot.commit,
-        )
-        return
-
-    metas_by_path: dict[str, list[ClassMeta]] = {}
-    for meta in class_metas:
-        metas_by_path.setdefault(meta.rel_path, []).append(meta)
-    docs = _doc_map(con, repo=snapshot.repo, commit=snapshot.commit)
-
-    models: list[ModelRecord] = []
-    for rel_path, metas in metas_by_path.items():
-        abs_path = (Path(snapshot.repo_root) / rel_path).resolve()
-        if not abs_path.is_file():
-            log.debug("Skipping %s; file missing on disk", abs_path)
-            continue
-        models.extend(
-            _gather_models_for_path(
-                rel_path,
-                abs_path,
-                metas,
-                docs,
-                snapshot,
-            )
-        )
-
-    _attach_relationships(models)
-    _persist_models(gateway, snapshot, models, datetime.now(tz=UTC))
-    log.info(
-        "data_models populated: %d models for %s@%s", len(models), snapshot.repo, snapshot.commit
-    )

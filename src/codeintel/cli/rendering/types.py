@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from io import StringIO
 from typing import Literal, TextIO
 
 
-class OutputFormat(Enum):
+class OutputFormat(StrEnum):
     """Canonical output formats for CLI commands.
 
     Attributes

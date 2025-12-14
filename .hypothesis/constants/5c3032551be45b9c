@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/testing/graph_metrics.py
+# hypothesis_version: 6.148.7
+
+[0.0, 'commit', 'created_at', 'degree', 'degree_centrality', 'function_goid_h128', 'int', 'proj_betweenness', 'proj_clustering', 'proj_degree', 'proj_weight', 'repo', 'risk_weighted_degree', 'test_id', 'tests_degree', 'weight', 'weighted_degree']

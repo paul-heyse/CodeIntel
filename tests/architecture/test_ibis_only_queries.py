@@ -102,6 +102,8 @@ PENDING_IBIS_MIGRATION_ANALYTICS = frozenset(
         Path("src/codeintel/analytics/functions/function_effects.py"),
         # History timeseries
         Path("src/codeintel/analytics/history/history_timeseries.py"),
+        # Testing compute (risk score query pending Ibis migration)
+        Path("src/codeintel/analytics/testing/compute.py"),
         # Compute modules
         Path("src/codeintel/analytics/compute/coverage/functions.py"),
         Path("src/codeintel/analytics/compute/data_models/usage.py"),

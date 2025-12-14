@@ -14,7 +14,10 @@ from codeintel.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
     DEFAULT_MODULE_TABLE,
 )
-from codeintel.analytics.profiles.writer_guard import create_profile_writer
+from codeintel.analytics.profiles.writer_guard import (
+    PolicyWriterConfig,
+    write_rows_via_policy_backend,
+)
 from codeintel.analytics.utilities.type_coercion import (
     optional_float,
     optional_int,
@@ -365,24 +368,13 @@ def _load_module_aggregates(
     return modules_scoped, func_stats, files, imports, roles
 
 
-# Factory-created writer for module profiles
-write_module_profile_rows: Callable[[StorageGateway, Iterable[ModuleProfileRowModel]], int] = (
-    create_profile_writer(
-        "analytics.module_profile",
-        MODULE_PROFILE_COLUMNS,
-        cast("Callable[[Mapping[str, object]], tuple[object, ...]]", module_profile_row_to_tuple),
-    )
-)
-
-
 def build_module_profile(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     module_table: str = DEFAULT_MODULE_TABLE,
 ) -> int:
-    """
-    Compute and persist analytics.module_profile rows.
+    """Compute and persist analytics.module_profile rows.
 
     Parameters
     ----------
@@ -399,5 +391,18 @@ def build_module_profile(
         Number of rows inserted.
     """
     inputs = compute_module_profile_inputs(gateway, snapshot)
-    rows = build_module_profile_rows(inputs, module_table=module_table)
-    return write_module_profile_rows(gateway, rows)
+    rows = list(build_module_profile_rows(inputs, module_table=module_table))
+    if not rows:
+        return 0
+
+    config = PolicyWriterConfig(
+        table_key="analytics.module_profile",
+        columns=MODULE_PROFILE_COLUMNS,
+        serialize_row=cast(
+            "Callable[[Mapping[str, object]], tuple[object, ...]]",
+            module_profile_row_to_tuple,
+        ),
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    return write_rows_via_policy_backend(gateway, rows=rows, config=config)

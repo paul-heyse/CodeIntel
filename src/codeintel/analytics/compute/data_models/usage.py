@@ -1,8 +1,9 @@
 """Classify how functions use extracted data models.
 
-.. deprecated::
-    The `compute_data_model_usage` function contains direct database writes.
-    For new code, use `build_data_model_usage_rows` with Hamilton materializers.
+For new code, use ``build_data_model_usage_rows`` with Hamilton materializers.
+
+The Hamilton native module is at:
+``codeintel.build.hamilton.native.analytics.data_models``
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ import ast
 import json
 import logging
 import re
-import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.paths import normalize_path
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates
 from codeintel.storage.repositories import fetch_models
 
@@ -563,107 +562,6 @@ def build_data_model_usage_rows(
         max_examples_per_usage=max_examples_per_usage,
     )
     return tuple(rows)
-
-
-def compute_data_model_usage(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    module_map: dict[str, str],
-    ast_by_goid: dict[int, FunctionAst],
-    missing_goids: set[int] | None = None,
-) -> None:
-    """Populate analytics.data_model_usage with per-function model usage classifications.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for the active DuckDB database.
-    snapshot
-        Repository and commit identifiers.
-    module_map
-        Mapping of file path to module name.
-    ast_by_goid
-        Mapping of function GOID to parsed AST data.
-    missing_goids
-        Optional set of function GOIDs that lack AST spans.
-
-    .. deprecated::
-        Use `build_data_model_usage_rows` with Hamilton materializers instead.
-    """
-    warnings.warn(
-        "compute_data_model_usage is deprecated. Use build_data_model_usage_rows "
-        "with Hamilton materializers for persistence.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    max_examples_per_usage = 3
-    backend = DuckDBPolicyBackend(gateway)
-    backend.ensure_table("analytics.data_model_usage")
-    backend.delete_for_snapshot(
-        "analytics.data_model_usage", repo=snapshot.repo, commit=snapshot.commit
-    )
-
-    models = _load_models(gateway, snapshot.repo, snapshot.commit)
-    if not models:
-        log.info(
-            "No data models found for %s@%s; skipping usage analysis",
-            snapshot.repo,
-            snapshot.commit,
-        )
-        return
-    model_index = _build_model_index(models)
-
-    subsystem_map = _subsystem_by_module(gateway, snapshot.repo, snapshot.commit)
-    missing = missing_goids or set()
-    if missing:
-        log.debug(
-            "Skipping %d functions without AST spans during model usage analysis",
-            len(missing),
-        )
-
-    function_types = gateway.ibis.table("analytics.function_types")
-    param_rows = (
-        function_types.filter(
-            and_predicates(
-                function_types["repo"] == snapshot.repo,
-                function_types["commit"] == snapshot.commit,
-            )
-        )
-        .select("function_goid_h128", "param_types")
-        .execute()
-    )
-    param_types: dict[int, dict[str, str]] = {}
-    for goid_raw, raw_param_types in param_rows.itertuples(index=False):
-        goid_int = int(goid_raw)
-        param_types[goid_int] = _parse_param_types(raw_param_types)
-
-    artifacts = ModelUsageArtifacts(
-        ast_by_goid=ast_by_goid,
-        module_map=module_map,
-        param_types=param_types,
-        model_index=model_index,
-        subsystem_map=subsystem_map,
-    )
-    rows_to_insert = _build_usage_rows(
-        artifacts=artifacts,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        max_examples_per_usage=max_examples_per_usage,
-    )
-
-    if rows_to_insert:
-        gateway.ibis.write(
-            "analytics.data_model_usage",
-            rows_to_insert,
-            columns=DATA_MODEL_USAGE_COLS,
-        )
-    log.info(
-        "data_model_usage populated: %d rows for %s@%s",
-        len(rows_to_insert),
-        snapshot.repo,
-        snapshot.commit,
-    )
 
 
 def _build_usage_rows(

@@ -40,7 +40,7 @@ class HealthCheck(Command[HealthCheckResult]):
 
     __operation_id__ = "health.check"
 
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[HealthCheckResult]:
         """Execute health checks.

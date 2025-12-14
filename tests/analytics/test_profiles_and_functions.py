@@ -54,9 +54,6 @@ from codeintel.analytics.profiles import (
     build_function_profile,
     build_module_profile,
 )
-from codeintel.analytics.profiles import files as profile_files
-from codeintel.analytics.profiles import functions as profile_functions
-from codeintel.analytics.profiles import modules as profile_modules
 from codeintel.analytics.testing.profiles import rows as profile_rows
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
@@ -384,56 +381,6 @@ def test_profile_tuple_alignment() -> None:
         pytest.fail("Test profile tuple length mismatch with column constants.")
     if len(behavioral_coverage_row_to_tuple(beh_row)) != len(BEHAVIORAL_COVERAGE_COLUMNS):
         pytest.fail("Behavioral coverage tuple length mismatch with column constants.")
-
-
-@pytest.mark.parametrize(
-    ("rows_builder", "writer", "select_sql", "delete_sql"),
-    [
-        (
-            _function_rows,
-            profile_functions.write_function_profile_rows,
-            "SELECT function_goid_h128, tags, owners "
-            "FROM analytics.function_profile ORDER BY function_goid_h128",
-            "DELETE FROM analytics.function_profile",
-        ),
-        (
-            _file_rows,
-            profile_files.write_file_profile_rows,
-            "SELECT rel_path, module, tags FROM analytics.file_profile ORDER BY rel_path",
-            "DELETE FROM analytics.file_profile",
-        ),
-        (
-            _module_rows,
-            profile_modules.write_module_profile_rows,
-            "SELECT module, path, tags FROM analytics.module_profile ORDER BY module",
-            "DELETE FROM analytics.module_profile",
-        ),
-    ],
-)
-def test_profile_writers_replace_existing_rows(
-    tmp_path: Path,
-    rows_builder: RowBuilder,
-    writer: WriterFn,
-    select_sql: str,
-    delete_sql: str,
-) -> None:
-    """Profile writers should overwrite existing rows for the same snapshot."""
-    ctx = TestScenario.minimal().build(tmp_path)
-    try:
-        ctx.gateway.con.execute(delete_sql)
-        rows = rows_builder(ctx.repo, ctx.commit)
-        inserted_first = writer(ctx.gateway, rows)
-        expect_equal(inserted_first, len(rows))
-        stored_first = ctx.gateway.con.execute(select_sql).fetchall()
-        expect_equal(len(stored_first), len(rows))
-
-        inserted_second = writer(ctx.gateway, rows[:1])
-        expect_equal(inserted_second, 1)
-        stored_second = ctx.gateway.con.execute(select_sql).fetchall()
-        expect_equal(len(stored_second), 1)
-        expect_equal(stored_second[0][0], stored_first[0][0])
-    finally:
-        ctx.close()
 
 
 def test_test_and_behavioral_profile_writers(

@@ -89,7 +89,7 @@ class LintCommand:
             help="Sampling mode: enabled or disabled.",
         ),
     ] = "disabled"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("datasets.list", handler=datasets_list_handler, config=_DATASETS_CONFIG)
@@ -119,7 +119,7 @@ class ListDatasetsCommand:
             help="Maximum description length before truncation.",
         ),
     ] = 80
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("datasets.snapshot", handler=datasets_snapshot_handler, config=_DATASETS_CONFIG)
@@ -135,7 +135,7 @@ class SnapshotCommand:
             help="Output file path for JSON dataset specs.",
         ),
     ] = Path("build/dataset_specs.json")
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("datasets.diff", handler=datasets_diff_handler, config=_DATASETS_CONFIG)
@@ -172,7 +172,7 @@ class DiffCommand:
             help="Path of the snapshot file inside the git ref.",
         ),
     ] = Path("build/dataset_specs.json")
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("datasets.scaffold", config=_SCAFFOLD_CONFIG)
@@ -204,7 +204,7 @@ class ScaffoldDatasetCommand(Command[dict[str, object]]):
             negative=("--no-dry-run",),
         ),
     ] = False
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[dict[str, object]]:
         """Validate scaffold request and report status.

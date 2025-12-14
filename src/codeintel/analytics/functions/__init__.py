@@ -9,6 +9,9 @@ compute_typedness_flags), import directly from:
 
 For Hamilton native execution, use ``build_function_history_rows`` to get row
 tuples, then materialize with ``materialize_rows``.
+
+The Hamilton native module for function history is at:
+``codeintel.build.hamilton.native.analytics.function_history``
 """
 
 from __future__ import annotations
@@ -33,7 +36,6 @@ if TYPE_CHECKING:
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
-    from codeintel.ingestion.engine.infrastructure import ToolRunner
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
@@ -42,7 +44,6 @@ __all__ = [
     "build_function_history_rows",
     "compute_function_contracts",
     "compute_function_effects",
-    "compute_function_history",
     "compute_function_metrics_and_types",
 ]
 
@@ -54,10 +55,6 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "compute_function_effects": (
         "codeintel.analytics.functions.function_effects",
         "compute_function_effects",
-    ),
-    "compute_function_history": (
-        "codeintel.analytics.functions.function_history",
-        "compute_function_history",
     ),
     "compute_function_metrics_and_types": (
         "codeintel.analytics.functions.metrics",
@@ -132,38 +129,6 @@ def compute_function_effects(
         _load("compute_function_effects"),
     )
     return func(gateway, snapshot, options=options, inputs=inputs)
-
-
-def compute_function_history(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    runner: ToolRunner | None = None,
-    min_lines_threshold: int = 2,
-) -> None:
-    """Compute historical metrics for functions from SCM or tool outputs.
-
-    Parameters
-    ----------
-    gateway
-        StorageGateway bound to the CodeIntel DuckDB database.
-    snapshot
-        Repository and commit identifiers.
-    runner
-        Optional shared ToolRunner for git invocations.
-    min_lines_threshold
-        Minimum number of overlapping line edits required to count a commit towards churn.
-    """
-    func = cast(
-        "Callable[..., None]",
-        _load("compute_function_history"),
-    )
-    return func(
-        gateway,
-        snapshot,
-        runner=runner,
-        min_lines_threshold=min_lines_threshold,
-    )
 
 
 def compute_function_metrics_and_types(

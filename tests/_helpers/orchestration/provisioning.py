@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 
 from coverage import Coverage
 
-from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.build.plugins.graphs.builders.callgraph import CallGraphPlugin
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
@@ -349,8 +348,8 @@ def _run_ingestion_steps(
         )
     if opts.build_graph_metrics:
         seed_cfg_dfg_for_metrics(setup.gateway, rel_path="pkg/mod.py")
-        compute_cfg_metrics(setup.gateway, repo=repo, commit=commit)
-        compute_dfg_metrics(setup.gateway, repo=repo, commit=commit)
+        # CFG/DFG metrics computation now happens via Hamilton native modules
+        # See codeintel.build.hamilton.native.analytics.cfg_dfg for full context
 
 
 @contextmanager

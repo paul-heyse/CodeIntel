@@ -1,13 +1,13 @@
 """Detect external dependency usage and populate analytics tables.
 
-.. deprecated::
-    This module contains legacy functions with direct database writes.
-    Use the Hamilton native module `codeintel.build.hamilton.native.analytics.dependencies`
-    for new code, which separates compute from persistence.
+Column definitions and internal helper functions for dependency analysis.
 
-    The pure compute functions are available in `codeintel.analytics.dependencies.compute`:
-    - `compute_dependency_calls_pure` returns `DependencyCallsResult`
-    - `compute_external_dependencies_pure` returns `ExternalDependenciesResult`
+The pure compute functions are available in ``codeintel.analytics.dependencies.compute``:
+- ``compute_dependency_calls_pure`` returns ``DependencyCallsResult``
+- ``compute_external_dependencies_pure`` returns ``ExternalDependenciesResult``
+
+The Hamilton native module is at:
+``codeintel.build.hamilton.native.analytics.dependencies``
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ import ast
 import hashlib
 import json
 import logging
-import warnings
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -28,7 +27,6 @@ import yaml
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse, snippet_from_lines
 from codeintel.core.paths import normalize_path
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 EXTERNAL_DEPENDENCY_CALLS_COLS = [
     "repo",
@@ -74,7 +72,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.gateway import DuckDBConnection
 
 log = logging.getLogger(__name__)
 
@@ -221,93 +219,6 @@ class ExternalDependencyInputs:
     missing_goids: set[int] | None = None
 
 
-def build_external_dependency_calls(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    inputs: ExternalDependencyInputs,
-    dependency_patterns_path: Path | None = None,
-) -> None:
-    """
-    Populate analytics.external_dependency_calls from AST traversal.
-
-    .. deprecated::
-        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.dependencies`
-        instead. For pure compute, use `compute_dependency_calls_pure` from
-        `codeintel.analytics.dependencies.compute`.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway with live DuckDB connection.
-    snapshot
-        Repository and commit identifiers.
-    inputs
-        Grouped inputs containing catalog, module map, AST data, and features.
-    dependency_patterns_path
-        Optional path to dependency patterns YAML file.
-    """
-    warnings.warn(
-        "build_external_dependency_calls is deprecated. Use the Hamilton native module "
-        "'codeintel.build.hamilton.native.analytics.dependencies' or "
-        "'compute_dependency_calls_pure' for pure compute.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    patterns = _load_dependency_patterns(snapshot.repo_root, dependency_patterns_path)
-    if not patterns:
-        log.warning("No dependency patterns loaded; skipping dependency call analysis")
-        return
-
-    backend = DuckDBPolicyBackend(gateway)
-    backend.ensure_table("analytics.external_dependency_calls")
-    backend.delete_for_snapshot(
-        "analytics.external_dependency_calls", repo=snapshot.repo, commit=snapshot.commit
-    )
-
-    missing = inputs.missing_goids or set()
-    if missing:
-        log.debug(
-            "Skipping %d functions without AST spans during dependency analysis", len(missing)
-        )
-    alias_maps = _build_alias_maps(snapshot.repo_root, inputs.module_map)
-    now = datetime.now(tz=UTC)
-    dep_context = DependencyContext(
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        alias_maps=alias_maps,
-        patterns=patterns,
-        module_map=inputs.module_map,
-        catalog=inputs.catalog_provider,
-        now=now,
-        features=inputs.features_map,
-    )
-
-    rows: list[tuple[object, ...]] = []
-
-    for goid, func_ast in inputs.ast_by_goid.items():
-        rows.extend(
-            _function_call_rows(
-                goid=goid,
-                func_ast=func_ast,
-                context=dep_context,
-            )
-        )
-
-    if rows:
-        gateway.ibis.write(
-            "analytics.external_dependency_calls",
-            rows,
-            columns=EXTERNAL_DEPENDENCY_CALLS_COLS,
-        )
-    log.info(
-        "external_dependency_calls populated: %d rows for %s@%s",
-        len(rows),
-        snapshot.repo,
-        snapshot.commit,
-    )
-
-
 def _function_call_rows(
     *,
     goid: int,
@@ -378,76 +289,6 @@ def _function_call_rows(
             )
         )
     return rows
-
-
-def build_external_dependencies(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    dependency_patterns_path: Path | None = None,
-    language: str = "python",
-) -> None:
-    """
-    Aggregate dependency usage into analytics.external_dependencies.
-
-    .. deprecated::
-        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.dependencies`
-        instead. For pure compute, use `compute_external_dependencies_pure` from
-        `codeintel.analytics.dependencies.compute`.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway with live DuckDB connection.
-    snapshot
-        Repository and commit identifiers.
-    dependency_patterns_path
-        Optional path to dependency patterns YAML file.
-    language
-        Programming language for the dependencies.
-    """
-    warnings.warn(
-        "build_external_dependencies is deprecated. Use the Hamilton native module "
-        "'codeintel.build.hamilton.native.analytics.dependencies' or "
-        "'compute_external_dependencies_pure' for pure compute.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    patterns = _load_dependency_patterns(snapshot.repo_root, dependency_patterns_path)
-    if not patterns:
-        log.warning("No dependency patterns loaded; skipping dependency aggregation")
-        return
-
-    con = gateway.con
-    _prepare_external_dependencies(gateway, snapshot)
-
-    config_keys_by_module = _load_config_keys(con, snapshot.repo, snapshot.commit)
-    rows = _fetch_dependency_call_rows(con, snapshot)
-    aggregates = _aggregate_dependency_calls(rows, patterns)
-    dep_rows = _serialize_dependency_rows(
-        aggregates, config_keys_by_module, snapshot, language=language
-    )
-
-    if dep_rows:
-        gateway.ibis.write(
-            "analytics.external_dependencies",
-            dep_rows,
-            columns=EXTERNAL_DEPENDENCIES_COLS,
-        )
-    log.info(
-        "external_dependencies populated: %d rows for %s@%s",
-        len(dep_rows),
-        snapshot.repo,
-        snapshot.commit,
-    )
-
-
-def _prepare_external_dependencies(gateway: StorageGateway, snapshot: SnapshotRef) -> None:
-    backend = DuckDBPolicyBackend(gateway)
-    backend.ensure_table("analytics.external_dependencies")
-    backend.delete_for_snapshot(
-        "analytics.external_dependencies", repo=snapshot.repo, commit=snapshot.commit
-    )
 
 
 def _fetch_dependency_call_rows(
@@ -774,7 +615,5 @@ def _decimal(value: int) -> Decimal:
 
 
 __all__ = [
-    "build_external_dependencies",
-    "build_external_dependency_calls",
     "load_config_key_map",
 ]

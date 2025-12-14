@@ -6,7 +6,7 @@ Note: History commands require runtime/gateway access via handler pattern.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -22,7 +22,7 @@ history_app = App(
 )
 
 
-class EntityKind(Enum):
+class EntityKind(StrEnum):
     """Entity categories to include in history aggregation."""
 
     FUNCTION = "function"
@@ -30,7 +30,7 @@ class EntityKind(Enum):
     BOTH = "both"
 
 
-class SelectionStrategy(Enum):
+class SelectionStrategy(StrEnum):
     """Strategies for selecting top entities."""
 
     RISK_SCORE = "risk_score"
@@ -103,7 +103,7 @@ class HistoryTimeseriesCommand:
             help="Repository root directory.",
         ),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["history_app"]

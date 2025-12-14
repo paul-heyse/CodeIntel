@@ -16,16 +16,16 @@ from tests._helpers.rows import list_public_exports
 def test_functions_module_exports() -> None:
     """Functions API should retain expected callables and options."""
     expected = {
+        "FUNCTION_HISTORY_COLS",
         "FunctionAnalyticsOptions",
+        "build_function_history_rows",
         "compute_function_contracts",
         "compute_function_effects",
-        "compute_function_history",
         "compute_function_metrics_and_types",
     }
     exports = set(list_public_exports(functions_mod))
     for name in expected:
         expect_in(name, exports)
-        expect_true(callable(getattr(functions_mod, name)))
     assert_frozen(tuple(sorted(exports)), "__len__", len(exports))
 
 
@@ -56,11 +56,12 @@ def test_graphs_module_exports() -> None:
 def test_history_module_exports() -> None:
     """History API should expose timeseries helpers."""
     expected = {
-        "compute_history_timeseries",
-        "compute_history_timeseries_gateways",
+        "FileCommitDelta",
+        "HISTORY_TIMESERIES_COLS",
+        "build_history_timeseries_rows",
+        "iter_file_history",
     }
     exports = set(list_public_exports(history_mod))
     for name in expected:
         expect_in(name, exports)
-        expect_true(callable(getattr(history_mod, name)))
     assert_frozen(tuple(sorted(exports)), "__len__", len(exports))
