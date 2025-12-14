@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping, Sequence
 
     from codeintel.build.context import TargetExecutionContext
     from codeintel.storage.gateway import StorageGateway
@@ -18,9 +18,11 @@ if TYPE_CHECKING:
 __all__ = [
     "compute_row_count",
     "compute_row_counts",
+    "filter_mapping",
     "filter_paths",
     "get_source_root",
     "is_test_path",
+    "persist_rows",
 ]
 
 log = logging.getLogger(__name__)
@@ -243,3 +245,108 @@ def filter_paths(
         result = [path for path in result if not is_test_path(path)]
 
     return result
+
+
+def filter_mapping[T](
+    mapping: Mapping[str, T],
+    *,
+    scope_paths: list[str] | None = None,
+    include_tests: bool = True,
+) -> dict[str, T]:
+    """Filter a path-keyed mapping by scope and test inclusion.
+
+    Provides a unified filtering mechanism for dict-based data structures
+    where keys are relative file paths.
+
+    Parameters
+    ----------
+    mapping
+        Mapping with relative paths as keys.
+    scope_paths
+        Optional list of path prefixes to include. If None or empty,
+        all paths are included.
+    include_tests
+        Whether to include test paths. Uses ``is_test_path()`` for detection.
+        Defaults to True.
+
+    Returns
+    -------
+    dict[str, T]
+        Filtered mapping containing only matching entries.
+
+    Examples
+    --------
+    Filter module map by scope:
+
+    >>> modules = {"src/a.py": "a", "lib/b.py": "b"}
+    >>> filter_mapping(modules, scope_paths=["src/"])
+    {'src/a.py': 'a'}
+
+    Exclude test files:
+
+    >>> paths = {"src/main.py": 1, "tests/test_main.py": 2}
+    >>> filter_mapping(paths, include_tests=False)
+    {'src/main.py': 1}
+    """
+    result = dict(mapping)
+
+    if scope_paths:
+        prefixes = tuple(scope_paths)
+        result = {k: v for k, v in result.items() if k.startswith(prefixes)}
+
+    if not include_tests:
+        result = {k: v for k, v in result.items() if not is_test_path(k)}
+
+    return result
+
+
+def persist_rows(
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[Any],
+    *,
+    repo: str,
+    commit: str,
+) -> int:
+    """Persist rows to a table with snapshot cleanup.
+
+    Implements the standard persistence pattern:
+    1. Return 0 for empty input
+    2. Ensure table exists
+    3. Delete existing snapshot data
+    4. Bulk insert new rows
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    table_key
+        Fully-qualified table name (e.g., "graph.cfg_blocks").
+    rows
+        Rows to persist. Each row must have a ``to_tuple()`` method.
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+
+    Returns
+    -------
+    int
+        Number of rows persisted.
+
+    Examples
+    --------
+    Persist CFG blocks:
+
+    >>> blocks = [CFGBlockRow(...), CFGBlockRow(...)]
+    >>> count = persist_rows(gateway, "graph.cfg_blocks", blocks, repo="org/repo", commit="abc123")
+    >>> print(f"Persisted {count} blocks")
+    Persisted 2 blocks
+    """
+    if not rows:
+        return 0
+
+    gateway.policy.ensure_table(table_key)
+    gateway.policy.delete_for_snapshot(table_key, repo=repo, commit=commit)
+    gateway.policy.bulk_insert(table_key, [row.to_tuple() for row in rows])
+    return len(rows)

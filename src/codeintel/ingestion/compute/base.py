@@ -10,10 +10,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Iterator, Mapping, Sequence
 
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.ports.storage import IngestStoragePort
+    from codeintel.ingestion.ports.tools import IngestToolPort
 
 
 @dataclass
@@ -199,5 +200,82 @@ class BaseExtractStep:
         result = self._storage.write_batch(table_key, list(rows), scope=scope)
         return {table_key: result.rows_written}
 
+    def _finalize_result(
+        self,
+        table_rows: Mapping[str, Sequence[Sequence[object]]],
+        *,
+        repo: str,
+        commit: str,
+        errors: list[str] | None = None,
+    ) -> StepResult:
+        """Write rows to multiple tables and build StepResult.
 
-__all__ = ["BaseExtractStep", "StepResult"]
+        Parameters
+        ----------
+        table_rows
+            Mapping of table keys to row sequences.
+        repo
+            Repository identifier.
+        commit
+            Commit identifier.
+        errors
+            Optional list of error messages.
+
+        Returns
+        -------
+        StepResult
+            Result with total rows written and table counts.
+        """
+        table_counts: dict[str, int] = {}
+        total_rows = 0
+        scope = f"{repo}@{commit}"
+
+        for table_key, rows in table_rows.items():
+            if rows:
+                result = self._storage.write_batch(table_key, list(rows), scope=scope)
+                table_counts[table_key] = result.rows_written
+                total_rows += result.rows_written
+
+        return StepResult(
+            rows_written=total_rows,
+            table_counts=table_counts,
+            errors=errors or [],
+        )
+
+
+class BaseToolIngestStep:
+    """Base class for ingestion steps requiring tool execution.
+
+    Provides shared initialization for steps that need storage and tool ports
+    but not discovery (like CoverageIngestStep, ScipIngestStep).
+
+    Parameters
+    ----------
+    storage
+        Storage port for persisting data.
+    tools
+        Tool port for running external tools.
+    """
+
+    _storage: IngestStoragePort
+    _tools: IngestToolPort
+
+    def __init__(
+        self,
+        storage: IngestStoragePort,
+        tools: IngestToolPort,
+    ) -> None:
+        """Initialize the step with storage and tool ports.
+
+        Parameters
+        ----------
+        storage
+            Storage port for persisting data.
+        tools
+            Tool port for running external tools.
+        """
+        self._storage = storage
+        self._tools = tools
+
+
+__all__ = ["BaseExtractStep", "BaseToolIngestStep", "StepResult"]

@@ -68,7 +68,6 @@ from codeintel.graphs.compute.symbols import (
     edges_to_rows,
     parse_symbol_roles,
 )
-from codeintel.graphs.ports.catalog import FunctionSpanData
 from codeintel.graphs.ports.parsing import ParsedModule
 from tests._helpers.assertions import (
     assert_cannot_setattr,
@@ -356,14 +355,14 @@ def test_build_callee_map_empty() -> None:
 def test_build_callee_map_sets_local_and_qualname() -> None:
     """Build callee map indexes both qualname and local name."""
     spans = [
-        FunctionSpanData(
+        FunctionSpan(
             goid=TEST_GOID_A,
             rel_path=REL_PATH,
             qualname="pkg.mod.func",
             start_line=1,
             end_line=5,
         ),
-        FunctionSpanData(
+        FunctionSpan(
             goid=TEST_GOID_B,
             rel_path=REL_PATH,
             qualname="pkg.mod.inner",

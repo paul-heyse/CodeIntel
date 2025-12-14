@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.build.plugins.analytics.entrypoints.build import EntrypointsPlugin
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
+from codeintel.graphs.catalog import CatalogService, FunctionCatalog
 from tests._helpers.assertions import expect_false, expect_true
 from tests._helpers.fakes.contexts import TargetResourceOverrides
 from tests._helpers.plugin_harness import PluginHarnessFactory
@@ -26,7 +26,7 @@ def test_entrypoints_plugin_handles_empty_features(tmp_path: Path) -> None:
     """Plugin should succeed with an empty catalog and no modules."""
     factory = PluginHarnessFactory(tmp_path)
     with factory.entrypoints() as harness:
-        catalog = FunctionCatalogService(FunctionCatalog(functions=[], module_by_path={}))
+        catalog = CatalogService(FunctionCatalog(functions=[], module_by_path={}))
         resources = TargetResourceOverrides(catalog=catalog)
 
         result = harness.execute_plugin(EntrypointsPlugin(), resources=resources)

@@ -5,15 +5,15 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
+from codeintel.analytics.cfg_dfg.helpers import degree_dict, load_function_metadata, parse_block_idx
 from codeintel.analytics.compute.graphs import (
     bounded_simple_path_count,
     build_dfg_graph,
     dfg_centralities,
     dfg_component_stats,
     dfg_path_lengths,
-    normalize_decimal_id,
 )
 from codeintel.analytics.graphs.constants import MAX_CFG_EIGEN_SAMPLE, MAX_DFG_CENTRALITY_SAMPLE
 from codeintel.storage.gateway import DuckDBError
@@ -76,27 +76,6 @@ class DfgInputs:
     graph_ctx: GraphContext
 
 
-def _degree_dict(
-    graph: nx.DiGraph,
-    *,
-    direction: str,
-    weight: str | None = None,
-) -> dict[int, int]:
-    """
-    Materialize degree counts into a concrete mapping for type safety.
-
-    Returns
-    -------
-    dict[int, int]
-        Mapping of node -> degree.
-    """
-    raw_pairs = (
-        graph.in_degree(weight=weight) if direction == "in" else graph.out_degree(weight=weight)
-    )
-    pairs = cast("Iterable[tuple[int, int | float]]", raw_pairs)
-    return {int(node): int(deg) for node, deg in pairs}
-
-
 def load_dfg_edges(
     gateway: StorageGateway, _repo: str, _commit: str
 ) -> dict[int, list[tuple[int, int, str, str, bool, str]]]:
@@ -120,34 +99,14 @@ def load_dfg_edges(
     except DuckDBError:
         return edges_by_fn
     for fn, src_id, dst_id, src_sym, dst_sym, via_phi, use_kind in rows:
-        src_idx = _parse_block_idx(src_id)
-        dst_idx = _parse_block_idx(dst_id)
+        src_idx = parse_block_idx(src_id)
+        dst_idx = parse_block_idx(dst_id)
         if src_idx is None or dst_idx is None:
             continue
         edges_by_fn[int(fn)].append(
             (src_idx, dst_idx, str(src_sym), str(dst_sym), bool(via_phi), str(use_kind))
         )
     return edges_by_fn
-
-
-def _parse_block_idx(block_id: str | int | None) -> int | None:
-    """
-    Extract the integer block index from a block identifier.
-
-    Returns
-    -------
-    int | None
-        Parsed block index when available.
-    """
-    if block_id is None:
-        return None
-    block_text = str(block_id)
-    if "block" not in block_text:
-        return None
-    try:
-        return int(block_text.rsplit("block", 1)[-1])
-    except ValueError:
-        return None
 
 
 def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
@@ -164,8 +123,8 @@ def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
         return None
 
     graph, phi_edges, symbol_count = build_dfg_graph(inputs.edges)
-    dfg_in_deg = _degree_dict(graph, direction="in")
-    dfg_out_deg = _degree_dict(graph, direction="out")
+    dfg_in_deg = degree_dict(graph, direction="in")
+    dfg_out_deg = degree_dict(graph, direction="out")
     dfg_phi_in = dict.fromkeys(graph.nodes, 0)
     dfg_phi_out = dict.fromkeys(graph.nodes, 0)
     for src, dst, data in graph.edges(data=True):
@@ -332,35 +291,5 @@ def dfg_ext_row(ctx: DfgFnContext) -> tuple[object, ...]:
     )
 
 
-def dfg_function_metadata(
-    gateway: StorageGateway, repo: str, commit: str
-) -> dict[int, tuple[str, str | None, str | None]]:
-    """
-    Load function metadata for DFG metrics.
-
-    Returns
-    -------
-    dict[int, tuple[str, str | None, str | None]]
-        Mapping of GOID -> (rel_path, module, qualname).
-    """
-    rows: Iterable[tuple[object, str, str | None, str | None]] = gateway.execute(
-        """
-        SELECT g.goid_h128,
-               g.rel_path,
-               m.module,
-               g.qualname
-        FROM core.goids g
-        LEFT JOIN core.modules m
-          ON m.path = g.rel_path
-        WHERE g.repo = ? AND g.commit = ?
-          AND g.kind IN ('function', 'method')
-        """,
-        [repo, commit],
-    ).fetchall()
-    result: dict[int, tuple[str, str | None, str | None]] = {}
-    for goid_raw, rel_path, module, qualname in rows:
-        goid = normalize_decimal_id(goid_raw)
-        if goid is None:
-            continue
-        result[int(goid)] = (rel_path, module, qualname)
-    return result
+# Re-export for backward compatibility - prefer load_function_metadata from helpers
+dfg_function_metadata = load_function_metadata

@@ -126,3 +126,76 @@ def write_rows_via_policy_backend(
 
     tuples = [config.serialize_row(row) for row in rows_list]
     return backend.bulk_insert(config.table_key, tuples, columns=list(config.columns))
+
+
+def create_profile_writer(
+    table_key: str,
+    columns: Sequence[str],
+    serialize_row: SerializeRow,
+) -> Callable[[StorageGateway, Iterable[Mapping[str, object]]], int]:
+    """Create a profile writer function for the specified table.
+
+    This factory produces standardized profile writer functions that handle
+    registry alignment checks and delete-before-insert semantics.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table name (e.g. "analytics.function_profile").
+    columns
+        Column names in insertion order.
+    serialize_row
+        Function to convert row dict to tuple for insertion.
+
+    Returns
+    -------
+    Callable[[StorageGateway, Iterable[Mapping[str, object]]], int]
+        Writer function that takes gateway and rows, returning row count.
+
+    Examples
+    --------
+    >>> write_function_profile = create_profile_writer(
+    ...     "analytics.function_profile",
+    ...     FUNCTION_PROFILE_COLUMNS,
+    ...     function_profile_row_to_tuple,
+    ... )
+    >>> count = write_function_profile(gateway, rows)
+    """
+
+    def writer(gateway: StorageGateway, rows: Iterable[Mapping[str, object]]) -> int:
+        """Write profile rows to the configured table.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        rows
+            Iterable of row dictionaries to insert.
+
+        Returns
+        -------
+        int
+            Number of rows inserted.
+        """
+        rows_list = list(rows)
+        if not rows_list:
+            return 0
+
+        repo = str(rows_list[0]["repo"])
+        commit = str(rows_list[0]["commit"])
+        context = WriterContext(
+            table_key=table_key,
+            columns=columns,
+            serialize_row=serialize_row,
+            repo=repo,
+            commit=commit,
+            ensure_schema_fn=lambda _gateway, _table: None,
+        )
+        return write_rows_with_registry_guard(
+            gateway,
+            rows=rows_list,
+            context=context,
+            delete_on_empty=False,
+        )
+
+    return writer

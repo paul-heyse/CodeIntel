@@ -29,7 +29,9 @@ codeintel.ingestion.tool_service : Facade using these Report types internally
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
+
+from codeintel.ingestion.ports import tools as port_types
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -37,6 +39,25 @@ if TYPE_CHECKING:
 
 MIN_SCIP_RANGE_FIELDS = 3
 FULL_SCIP_RANGE_FIELDS = 4
+
+
+class ReportProtocol(Protocol):
+    """Protocol for tool result report types with factory methods.
+
+    All Report types (DiagnosticReport, CoverageReport, TestReport, ScipIndexResult)
+    implement this protocol, providing a common interface for creating empty instances.
+    """
+
+    @staticmethod
+    def empty() -> ReportProtocol:
+        """Create an empty report instance.
+
+        Returns
+        -------
+        ReportProtocol
+            Empty report with no data.
+        """
+        ...
 
 
 @dataclass(frozen=True)
@@ -288,7 +309,7 @@ class CoverageReport:
         return {f.rel_path: f for f in self.files}
 
 
-def _parse_test_duration(entry: Mapping[str, object]) -> float:
+def parse_test_duration(entry: Mapping[str, object]) -> float:
     """Extract duration from test entry call data.
 
     Parameters
@@ -309,7 +330,7 @@ def _parse_test_duration(entry: Mapping[str, object]) -> float:
     return 0.0
 
 
-def _parse_test_markers(entry: Mapping[str, object]) -> list[str]:
+def parse_test_markers(entry: Mapping[str, object]) -> tuple[str, ...]:
     """Extract markers from test entry keywords.
 
     Parameters
@@ -319,37 +340,15 @@ def _parse_test_markers(entry: Mapping[str, object]) -> list[str]:
 
     Returns
     -------
-    list[str]
-        Sorted list of marker names.
+    tuple[str, ...]
+        Sorted tuple of marker names.
     """
     keywords = entry.get("keywords", {})
     if isinstance(keywords, dict):
-        return sorted(k for k, v in keywords.items() if v)
+        return tuple(sorted(k for k, v in keywords.items() if v))
     if isinstance(keywords, list):
-        return sorted(str(k) for k in keywords)
-    return []
-
-
-def parse_test_duration(entry: Mapping[str, object]) -> float:
-    """Public wrapper for parsing a test duration in seconds.
-
-    Returns
-    -------
-    float
-        Duration in seconds from the test entry.
-    """
-    return _parse_test_duration(entry)
-
-
-def parse_test_markers(entry: Mapping[str, object]) -> tuple[str, ...]:
-    """Public wrapper for parsing pytest markers.
-
-    Returns
-    -------
-    tuple[str, ...]
-        Sorted marker names extracted from the entry.
-    """
-    return tuple(_parse_test_markers(entry))
+        return tuple(sorted(str(k) for k in keywords))
+    return ()
 
 
 @dataclass(frozen=True)
@@ -439,8 +438,8 @@ class TestReport:
                 continue
 
             outcome = str(entry.get("outcome", entry.get("status", "unknown")))
-            duration = _parse_test_duration(entry)
-            markers = _parse_test_markers(entry)
+            duration = parse_test_duration(entry)
+            markers = parse_test_markers(entry)
 
             tests.append(
                 TestCaseResult(
@@ -502,6 +501,23 @@ class ScipOccurrence:
     range_: tuple[int, int, int, int]
     is_definition: bool = False
 
+    def to_port_occurrence(self) -> port_types.ScipOccurrence:
+        """Convert to port interface type.
+
+        Returns
+        -------
+        port_types.ScipOccurrence
+            Port-level occurrence with flattened range fields.
+        """
+        return port_types.ScipOccurrence(
+            symbol=self.symbol,
+            range_start_line=self.range_[0],
+            range_start_col=self.range_[1],
+            range_end_line=self.range_[2],
+            range_end_col=self.range_[3],
+            symbol_roles=1 if self.is_definition else 0,
+        )
+
 
 @dataclass(frozen=True)
 class ScipDocument:
@@ -518,8 +534,22 @@ class ScipDocument:
     relative_path: str
     occurrences: Sequence[ScipOccurrence] = ()
 
+    def to_port_document(self) -> port_types.ScipDocument:
+        """Convert to port interface type.
 
-def _parse_scip_range(rng: Sequence[object]) -> tuple[int, int, int, int] | None:
+        Returns
+        -------
+        port_types.ScipDocument
+            Port-level document with converted occurrences.
+        """
+        return port_types.ScipDocument(
+            relative_path=self.relative_path,
+            symbols=[],  # Domain type doesn't track symbols separately
+            occurrences=[occ.to_port_occurrence() for occ in self.occurrences],
+        )
+
+
+def parse_scip_range(rng: Sequence[object]) -> tuple[int, int, int, int] | None:
     """Parse SCIP range from list to tuple.
 
     SCIP ranges have 3 or 4 elements. Three-element ranges represent
@@ -548,7 +578,7 @@ def _parse_scip_range(rng: Sequence[object]) -> tuple[int, int, int, int] | None
     return None
 
 
-def _parse_scip_occurrence(occ: Mapping[str, object]) -> tuple[ScipOccurrence, bool] | None:
+def parse_scip_occurrence(occ: Mapping[str, object]) -> tuple[ScipOccurrence, bool] | None:
     """Parse a single SCIP occurrence from a dict.
 
     Parameters
@@ -569,7 +599,7 @@ def _parse_scip_occurrence(occ: Mapping[str, object]) -> tuple[ScipOccurrence, b
     if not isinstance(rng, list) or len(rng) < MIN_SCIP_RANGE_FIELDS:
         return None
 
-    range_tuple = _parse_scip_range(rng)
+    range_tuple = parse_scip_range(rng)
     if range_tuple is None:
         return None
 
@@ -580,28 +610,6 @@ def _parse_scip_occurrence(occ: Mapping[str, object]) -> tuple[ScipOccurrence, b
         ScipOccurrence(symbol=symbol, range_=range_tuple, is_definition=is_def),
         is_def,
     )
-
-
-def parse_scip_range(rng: Sequence[object]) -> tuple[int, int, int, int] | None:
-    """Public wrapper for parsing SCIP ranges.
-
-    Returns
-    -------
-    tuple[int, int, int, int] | None
-        Parsed range tuple or None when invalid.
-    """
-    return _parse_scip_range(rng)
-
-
-def parse_scip_occurrence(occ: Mapping[str, object]) -> tuple[ScipOccurrence, bool] | None:
-    """Public wrapper for parsing SCIP occurrences.
-
-    Returns
-    -------
-    tuple[ScipOccurrence, bool] | None
-        Parsed occurrence and definition flag, or None when invalid.
-    """
-    return _parse_scip_occurrence(occ)
 
 
 @dataclass(frozen=True)
@@ -668,7 +676,7 @@ class ScipIndexResult:
                 for occ in occurrences_raw:
                     if not isinstance(occ, dict):
                         continue
-                    parsed = _parse_scip_occurrence(occ)
+                    parsed = parse_scip_occurrence(occ)
                     if parsed is None:
                         continue
                     occurrence, is_def = parsed
@@ -710,6 +718,7 @@ __all__ = [
     "DiagnosticReport",
     "FileDiagnosticCount",
     "ParsedToolResult",
+    "ReportProtocol",
     "ScipDocument",
     "ScipIndexResult",
     "ScipOccurrence",

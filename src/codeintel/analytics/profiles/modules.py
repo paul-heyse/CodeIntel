@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
@@ -17,10 +18,7 @@ from codeintel.analytics.profiles.utils import (
     optional_int,
     optional_str,
 )
-from codeintel.analytics.profiles.writer_guard import (
-    WriterContext,
-    write_rows_with_registry_guard,
-)
+from codeintel.analytics.profiles.writer_guard import create_profile_writer
 from codeintel.config.datasets import (
     MODULE_PROFILE_COLUMNS,
     ModuleProfileRowModel,
@@ -43,9 +41,6 @@ if TYPE_CHECKING:
     import ibis.expr.types as it
     from ibis import BaseBackend
 
-    from codeintel.analytics.profiles.writer_guard import (
-        SerializeRow,
-    )
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
@@ -369,37 +364,14 @@ def _load_module_aggregates(
     return modules_scoped, func_stats, files, imports, roles
 
 
-def write_module_profile_rows(
-    gateway: StorageGateway, rows: Iterable[ModuleProfileRowModel]
-) -> int:
-    """
-    Insert rows into analytics.module_profile with registry alignment checks.
-
-    Returns
-    -------
-    int
-        Number of inserted rows.
-    """
-    rows_list = list(rows)
-    if not rows_list:
-        return 0
-
-    repo = rows_list[0]["repo"]
-    commit = rows_list[0]["commit"]
-    context = WriterContext(
-        table_key="analytics.module_profile",
-        columns=MODULE_PROFILE_COLUMNS,
-        serialize_row=cast("SerializeRow", module_profile_row_to_tuple),
-        repo=repo,
-        commit=commit,
-        ensure_schema_fn=lambda _gateway, _table: None,
+# Factory-created writer for module profiles
+write_module_profile_rows: Callable[[StorageGateway, Iterable[ModuleProfileRowModel]], int] = (
+    create_profile_writer(
+        "analytics.module_profile",
+        MODULE_PROFILE_COLUMNS,
+        cast("Callable[[Mapping[str, object]], tuple[object, ...]]", module_profile_row_to_tuple),
     )
-    return write_rows_with_registry_guard(
-        gateway,
-        rows=rows_list,
-        context=context,
-        delete_on_empty=False,
-    )
+)
 
 
 def build_module_profile(

@@ -43,6 +43,7 @@ from codeintel.analytics.compute.row_builders.subsystem_metrics import (
 from codeintel.analytics.compute.row_builders.symbol_metrics import (
     SymbolFunctionMetricInputs,
     SymbolFunctionRow,
+    SymbolMetricInputs,
     SymbolModuleMetricInputs,
     SymbolModuleRow,
     build_symbol_function_rows,
@@ -58,6 +59,7 @@ __all__ = [
     "SubsystemMetricRow",
     "SymbolFunctionMetricInputs",
     "SymbolFunctionRow",
+    "SymbolMetricInputs",
     "SymbolModuleMetricInputs",
     "SymbolModuleRow",
     "build_function_graph_metric_rows",

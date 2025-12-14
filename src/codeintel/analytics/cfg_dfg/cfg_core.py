@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
+from codeintel.analytics.cfg_dfg.helpers import degree_dict, load_function_metadata, parse_block_idx
 from codeintel.analytics.compute.graphs import (
     bounded_simple_path_count,
     build_cfg_graph,
@@ -14,7 +15,6 @@ from codeintel.analytics.compute.graphs import (
     cfg_longest_path_length,
     cfg_reachable_nodes,
     dfg_component_stats,
-    normalize_decimal_id,
 )
 from codeintel.storage.gateway import DuckDBError
 
@@ -83,27 +83,6 @@ class CfgCentralityData:
     in_deg_map: dict[int, int]
 
 
-def _degree_dict(
-    graph: nx.DiGraph,
-    *,
-    direction: str,
-    weight: str | None = None,
-) -> dict[int, int]:
-    """
-    Materialize degree counts into a concrete mapping for type safety.
-
-    Returns
-    -------
-    dict[int, int]
-        Mapping of node -> degree.
-    """
-    raw_pairs = (
-        graph.in_degree(weight=weight) if direction == "in" else graph.out_degree(weight=weight)
-    )
-    pairs = cast("Iterable[tuple[int, int | float]]", raw_pairs)
-    return {int(node): int(deg) for node, deg in pairs}
-
-
 def load_cfg_blocks(
     gateway: StorageGateway, _repo: str, _commit: str
 ) -> tuple[dict[int, list[tuple[int, str, int, int]]], dict[int, list[tuple[int, int, str]]]]:
@@ -149,26 +128,6 @@ def load_cfg_blocks(
     return blocks_by_fn, edges_by_fn
 
 
-def parse_block_idx(block_id: str | int | None) -> int | None:
-    """
-    Extract the integer block index from a block identifier.
-
-    Returns
-    -------
-    int | None
-        Parsed block index when available.
-    """
-    if block_id is None:
-        return None
-    block_text = str(block_id)
-    if "block" not in block_text:
-        return None
-    try:
-        return int(block_text.rsplit("block", 1)[-1])
-    except ValueError:
-        return None
-
-
 def branching_stats(graph: nx.DiGraph) -> tuple[float, int, float]:
     """
     Return branching mean, max, and linear fraction for a CFG.
@@ -178,8 +137,8 @@ def branching_stats(graph: nx.DiGraph) -> tuple[float, int, float]:
     tuple[float, int, float]
         Mean branching factor, maximum branching factor, and linear block fraction.
     """
-    in_degrees = _degree_dict(graph, direction="in")
-    out_degrees_map = _degree_dict(graph, direction="out")
+    in_degrees = degree_dict(graph, direction="in")
+    out_degrees_map = degree_dict(graph, direction="out")
     out_degrees = [deg for deg in out_degrees_map.values() if deg > 0]
     branching_mean = (sum(out_degrees) / len(out_degrees)) if out_degrees else 0.0
     branching_max = max(out_degrees) if out_degrees else 0
@@ -241,8 +200,8 @@ def _compute_centrality_data(
         eig=centrality.eigenvector,
         dom_depth=dominance.depth,
         dom_frontier_sizes=dominance.frontier_sizes,
-        out_deg_map=_degree_dict(graph, direction="out"),
-        in_deg_map=_degree_dict(graph, direction="in"),
+        out_deg_map=degree_dict(graph, direction="out"),
+        in_deg_map=degree_dict(graph, direction="in"),
     )
 
 
@@ -417,35 +376,5 @@ def cfg_rows_for_fn(
     return CfgFnRows(fn_row=fn_row, ext_row=ext_row, block_rows=block_rows)
 
 
-def function_metadata(
-    gateway: StorageGateway, repo: str, commit: str
-) -> dict[int, tuple[str, str | None, str | None]]:
-    """
-    Load function metadata keyed by GOID.
-
-    Returns
-    -------
-    dict[int, tuple[str, str | None, str | None]]
-        Mapping of GOID -> (rel_path, module, qualname).
-    """
-    rows: Iterable[tuple[object, str, str | None, str | None]] = gateway.execute(
-        """
-        SELECT g.goid_h128,
-               g.rel_path,
-               m.module,
-               g.qualname
-        FROM core.goids g
-        LEFT JOIN core.modules m
-          ON m.path = g.rel_path
-        WHERE g.repo = ? AND g.commit = ?
-          AND g.kind IN ('function', 'method')
-        """,
-        [repo, commit],
-    ).fetchall()
-    result: dict[int, tuple[str, str | None, str | None]] = {}
-    for goid_raw, rel_path, module, qualname in rows:
-        goid = normalize_decimal_id(goid_raw)
-        if goid is None:
-            continue
-        result[int(goid)] = (rel_path, module, qualname)
-    return result
+# Re-export for backward compatibility - prefer load_function_metadata from helpers
+function_metadata = load_function_metadata

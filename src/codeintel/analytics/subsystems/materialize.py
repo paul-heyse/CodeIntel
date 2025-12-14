@@ -38,28 +38,6 @@ if TYPE_CHECKING:
     from codeintel.graphs.engine import GraphEngine
     from codeintel.storage.gateway import StorageGateway
 
-SUBSYSTEM_MODULES_COLS = ["repo", "commit", "subsystem_id", "module", "role"]
-SUBSYSTEMS_COLS = [
-    "repo",
-    "commit",
-    "subsystem_id",
-    "name",
-    "description",
-    "module_count",
-    "modules_json",
-    "entrypoints_json",
-    "internal_edge_count",
-    "external_edge_count",
-    "fan_in",
-    "fan_out",
-    "function_count",
-    "avg_risk_score",
-    "max_risk_score",
-    "high_risk_function_count",
-    "risk_level",
-    "created_at",
-]
-
 log = logging.getLogger(__name__)
 
 HASH_PREFIX_LENGTH = 16
@@ -185,18 +163,10 @@ def build_subsystems(
     subsystem_rows, membership_rows = _build_rows(clusters_from_labels(labels), ctx)
 
     if membership_rows:
-        gateway.ibis.write(
-            "analytics.subsystem_modules",
-            membership_rows,
-            columns=SUBSYSTEM_MODULES_COLS,
-        )
+        backend.bulk_insert("analytics.subsystem_modules", membership_rows)
 
     if subsystem_rows:
-        gateway.ibis.write(
-            "analytics.subsystems",
-            subsystem_rows,
-            columns=SUBSYSTEMS_COLS,
-        )
+        backend.bulk_insert("analytics.subsystems", subsystem_rows)
         log.info(
             "subsystems populated: %d subsystems, %d memberships for %s@%s",
             len(subsystem_rows),

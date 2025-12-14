@@ -1,13 +1,13 @@
 # Graphs Package Cleanup Plan
 
 > **Generated:** 2025-12-13  
-> **Updated:** 2025-12-13 (Phases 1-7a completed, test fixtures fixed)  
+> **Updated:** 2025-12-13 (Phases 1-7c, 9a-b completed)  
 > **Package:** `codeintel.graphs`  
-> **Status:** Phases 1-7a Complete, Phase 7b-9 Pending
+> **Status:** Phases 1-9b Complete, Phase 8 + Future Work Pending
 
 ## Executive Summary
 
-The `graphs` package has undergone extensive cleanup with Phases 1-7a now complete:
+The `graphs` package has undergone extensive cleanup with Phases 1-7c and 9a-9b now complete:
 
 **Completed:**
 - ~~2 empty directories deleted~~ ✅
@@ -21,14 +21,15 @@ The `graphs` package has undergone extensive cleanup with Phases 1-7a now comple
 - ~~Fixed pyright error in resolution.py (FunctionSpanData → FunctionSpan)~~ ✅
 - ~~Migrated 5 analytics files to use CatalogService~~ ✅
 - ~~Fixed missing `graph_executor_env` fixture and `GraphTestEnv` type~~ ✅
+- ~~Created `core/data_models/ids.py` with unified ID normalization functions~~ ✅
+- ~~Created `core/ports` package with shared result base types~~ ✅
+- ~~Migrated 10 test files to canonical types~~ ✅
 
-**Remaining Opportunities (Phase 7b+):**
-- Migrate build plugins from load_function_index to load_function_catalog
-- Migrate test files to use CatalogService
+**Remaining Opportunities (Phase 8+):**
 - Remove deprecation shims after migration period (v6.0.0)
-- Consolidate duplicate normalize_decimal functions
-- Cross-package port unification (analytics/ingestion)
-- Test helper modernization
+- Consolidate additional ID utilities (`to_decimal_id`, `normalize_node_id`)
+- Consolidate function loading patterns
+- Unify graph building utilities across packages
 
 ---
 
@@ -122,6 +123,63 @@ Fixed `test_span_consistency_integration.py` which was using deprecated `ConfigB
   - Changed `function_goid_h128` → `test_goid_h128` to match `test_catalog` schema
 - All 719 graph tests now pass
 
+### Phase 7c: Test Migration ✅
+
+**Completed 2025-12-13**
+
+Migrated 10 test files from deprecated types to canonical types:
+
+| File | Migration |
+|------|-----------|
+| `tests/analytics/integration/test_analytics_pipeline.py` | `FunctionCatalogService` → `CatalogService` |
+| `tests/analytics/plugins/test_functions_effects_plugin.py` | `FunctionCatalogService` → `CatalogService` |
+| `tests/analytics/plugins/test_dependencies_external_plugin.py` | `FunctionCatalogService` → `CatalogService` |
+| `tests/analytics/plugins/test_entrypoints_plugin.py` | `FunctionCatalogService` → `CatalogService` |
+| `tests/analytics/plugins/test_functions_plugins.py` | `FunctionCatalogService` → `CatalogService` |
+| `tests/analytics/plugins/test_semantic_roles_plugin.py` | `FunctionCatalogService` → `CatalogService` |
+| `tests/analytics/resources/test_provider_factory.py` | `FunctionMeta` → `FunctionSpan` |
+| `tests/_helpers/rows.py` | `FunctionMeta` → `FunctionSpan` |
+| `tests/_helpers/fakes/function_catalogs.py` | `FunctionMeta` → `FunctionSpan` |
+| `tests/graphs/test_compute_layer.py` | `FunctionSpanData` → `FunctionSpan` |
+
+### Phase 9a: ID Normalization Consolidation ✅
+
+**Completed 2025-12-13**
+
+Created unified ID normalization module at `core/data_models/ids.py`:
+
+```
+core/data_models/
+├── __init__.py          # Exports normalize_decimal_id, as_int
+├── ids.py               # Canonical ID normalization functions (NEW)
+└── rows.py              # Row data models
+```
+
+**Changes:**
+- Created `normalize_decimal_id()` - canonical function for DuckDB DECIMAL normalization
+- Created `as_int()` - general integer coercion with bytes support
+- Updated `graphs/engine/views.py` to import from `core.data_models.ids`
+- Updated `analytics/compute/graphs/conversions.py` to re-export from core
+- Maintains backward compatibility via aliases
+
+### Phase 9b: Shared Ports Package ✅
+
+**Completed 2025-12-13**
+
+Created unified port protocols at `core/ports/`:
+
+```
+core/ports/
+├── __init__.py          # Exports BaseQueryResult, BaseBatchResult
+└── results.py           # Protocol definitions
+```
+
+**Protocols:**
+- `BaseQueryResult` - protocol for query results with `row_count`
+- `BaseBatchResult` - protocol for batch results with `rows_affected`
+
+Both `graphs/ports/storage.py` and `ingestion/ports/storage.py` implementations now satisfy these protocols.
+
 ---
 
 ## 2. Current Architecture
@@ -136,7 +194,7 @@ graphs/
 │   ├── FunctionSpanIndex    # Lookup structure
 │   ├── FunctionCatalog      # Main catalog class
 │   ├── FunctionCatalogProvider  # Protocol for DI
-│   ├── CatalogService       # Unified service (NEW)
+│   ├── CatalogService       # Unified service
 │   ├── FunctionMeta         # DEPRECATED compatibility wrapper
 │   └── FunctionCatalogService   # DEPRECATED compatibility wrapper
 │
@@ -163,14 +221,26 @@ graphs/
 │
 ├── engine/                  # Graph engine implementations
 └── validation/              # Graph validation checks
+
+core/
+├── data_models/
+│   ├── ids.py               # normalize_decimal_id, as_int (NEW)
+│   └── rows.py              # Row data models
+│
+└── ports/
+    ├── __init__.py          # BaseQueryResult, BaseBatchResult (NEW)
+    └── results.py           # Protocol definitions (NEW)
 ```
 
-### New Canonical Types
+### Canonical Types
 
 | Canonical Type | Replaces | Location |
 |----------------|----------|----------|
 | `FunctionSpan` | `FunctionMeta`, `FunctionSpanData` | `graphs/catalog.py` |
 | `CatalogService` | `FunctionCatalogService`, `CatalogResource` | `graphs/catalog.py` |
+| `normalize_decimal_id` | `normalize_decimal` | `core/data_models/ids.py` |
+| `BaseQueryResult` | (protocol) | `core/ports/results.py` |
+| `BaseBatchResult` | (protocol) | `core/ports/results.py` |
 
 ---
 
@@ -178,106 +248,180 @@ graphs/
 
 ### Completed Migrations ✅
 
-The following files have been migrated from `FunctionCatalogService` to `CatalogService`:
+All planned migrations are complete:
 
-| File | Status |
-|------|--------|
-| `analytics/resources/catalog.py` | ✅ Migrated |
-| `analytics/testing/coverage/edges.py` | ✅ Migrated |
-| `analytics/profiles/__init__.py` | ✅ Migrated |
-| `analytics/functions/function_effects.py` | ✅ Migrated |
-| `analytics/parsing/ast_cache.py` | ✅ Migrated |
-| `graphs/compute/callgraph/resolution.py` | ✅ Fixed (FunctionSpanData → FunctionSpan) |
+| Category | Files Migrated |
+|----------|----------------|
+| Analytics source files | 5 files |
+| Test plugin files | 6 files |
+| Test helper files | 4 files |
+| **Total** | **15 files** |
 
-### Remaining Migrations
+### Remaining (Optional)
 
-#### Medium Priority (Build Plugins)
+#### Build Plugins (Not Required)
 
-| File | Deprecated Import | Migration |
-|------|-------------------|-----------|
-| `build/plugins/graphs/builders/callgraph.py` | `load_function_index` | Use `load_function_catalog` |
-| `build/plugins/graphs/builders/cfg_dfg.py` | `load_function_index` | Use `load_function_catalog` |
+| File | Current Usage | Notes |
+|------|---------------|-------|
+| `build/plugins/graphs/builders/callgraph.py` | `load_function_index` | Appropriate for span lookups |
+| `build/plugins/graphs/builders/cfg_dfg.py` | `load_function_index` | Appropriate for span lookups |
 
-**Note:** The build plugins use `load_function_index` which returns `FunctionSpanIndex`. This is acceptable as-is since the index is needed for span lookups. Consider consolidating after `load_function_catalog` can efficiently serve both use cases.
-
-#### Lower Priority (Tests)
-
-| File | Deprecated Import | Migration |
-|------|-------------------|-----------|
-| `tests/analytics/plugins/test_*.py` (6 files) | `FunctionCatalogService` | Use `CatalogService` |
-| `tests/analytics/resources/test_provider_factory.py` | `FunctionMeta` | Use `FunctionSpan` |
-| `tests/graphs/conftest.py` | `FunctionMeta` | Use `FunctionSpan` |
-| `tests/_helpers/rows.py` | `FunctionMeta` | Use `FunctionSpan` |
-| `tests/_helpers/fakes/function_catalogs.py` | `FunctionMeta` | Use `FunctionSpan` |
+**Decision:** Keep as-is. The build plugins use `load_function_index` which returns `FunctionSpanIndex` - the appropriate type for span lookups.
 
 ---
 
 ## 4. Cross-Package Consolidation
 
-### 4.1 Redundant Port Re-Exports
+### 4.1 Completed: ID Normalization ✅
 
-During implementation, I discovered that multiple packages maintain their own port modules that simply re-export from `graphs.ports`:
+**Status:** Consolidated to `core/data_models/ids.py`
 
-```
-analytics/ports/__init__.py  → re-exports from graphs.ports (CORRECT pattern)
-ingestion/ports/storage.py   → has DIFFERENT BatchResult/QueryResult definitions
-```
-
-**Note:** The `analytics.ports` pattern is correct and should be preserved. The `ingestion.ports` definitions are different and serve a different purpose (ingestion-specific batch operations).
-
-### 4.2 Duplicate normalize_decimal Functions
-
-**New Finding (2025-12-13):** Two nearly identical functions exist for converting DuckDB DECIMAL values:
-
-| Location | Function | Purpose |
+| Function | Location | Purpose |
 |----------|----------|---------|
-| `graphs/engine/views.py` | `normalize_decimal()` | Graph loading from DuckDB |
-| `analytics/compute/graphs/conversions.py` | `normalize_decimal_id()` | Analytics graph computations |
+| `normalize_decimal_id()` | `core/data_models/ids.py` | DuckDB DECIMAL → int |
+| `as_int()` | `core/data_models/ids.py` | General int coercion |
 
-**Code comparison:**
+**Consumers:**
+- `graphs/engine/views.py` - imports as `normalize_decimal`
+- `analytics/compute/graphs/conversions.py` - re-exports for backward compatibility
+- `analytics/cfg_dfg/helpers.py` - uses via `analytics/compute/graphs`
+
+### 4.2 Completed: Shared Port Protocols ✅
+
+**Status:** Created `core/ports` package
+
+| Protocol | Location | Purpose |
+|----------|----------|---------|
+| `BaseQueryResult` | `core/ports/results.py` | Query result with `row_count` |
+| `BaseBatchResult` | `core/ports/results.py` | Batch result with `rows_affected` |
+
+**Implementations:**
+- `graphs/ports/storage.py` - `QueryResult`, `BatchResult`
+- `ingestion/ports/storage.py` - `QueryResult`, `BatchResult`
+
+### 4.3 Future: Additional ID Utilities
+
+**Finding:** Two related functions exist in `analytics/compute/graphs/conversions.py` that could move to `core/data_models/ids.py`:
+
+| Function | Purpose | Effort |
+|----------|---------|--------|
+| `to_decimal_id()` | Convert int/str to `Decimal` for DuckDB writes | Low |
+| `normalize_node_id()` | Normalize graph node IDs to int/str | Low |
+
 ```python
-# Both functions are semantically identical:
-# - Accept object value
-# - Handle None, int, Decimal, bytes, str
-# - Return int | None
-```
+# Candidate for core/data_models/ids.py
+def to_decimal_id(value: int | str | Decimal | None) -> Decimal | None:
+    """Coerce identifiers to Decimal for DuckDB writes."""
+    if value is None:
+        return None
+    return Decimal(int(value))
 
-**Recommendation:** Consolidate into a shared utility module:
-
-```python
-# Option A: codeintel/storage/helpers/decimal.py (storage layer)
-# Option B: codeintel/core/utils/decimal.py (core utilities)
-
-def normalize_decimal(value: object) -> int | None:
-    """Normalize DuckDB DECIMAL(38,0) values to Python ints."""
+def normalize_node_id(node: Decimal | float | str | None) -> int | str | None:
+    """Normalize graph node identifiers for consistent dictionary keys."""
     ...
 ```
 
-Then have both `graphs/engine/views.py` and `analytics/compute/graphs/conversions.py` import from there.
+**Benefit:** Complete ID utility consolidation in one module
+**Effort:** 30 minutes
 
-**Effort:** Low (30 minutes)
-**Benefit:** Single source of truth, reduced maintenance
+### 4.4 Future: Function Loading Patterns
 
-### 4.3 Port Unification Recommendation
+**Finding:** Multiple modules implement function loading from the database:
 
-Consider a single shared ports package for common data types only:
+| Location | Function | Returns |
+|----------|----------|---------|
+| `graphs/catalog.py` | `load_function_spans()` | `list[FunctionSpan]` |
+| `graphs/catalog.py` | `load_function_index()` | `FunctionSpanIndex` |
+| `graphs/catalog.py` | `load_function_catalog()` | `FunctionCatalog` |
+| `analytics/cfg_dfg/helpers.py` | `load_function_metadata()` | `dict[int, tuple]` |
+| `analytics/parsing/ast_cache.py` | `load_function_asts()` | `dict[int, FunctionAst]` |
+| `analytics/profiles/functions.py` | `load_function_base_info()` | Profile info |
 
+**Observation:** These serve different purposes but share common patterns:
+- All query `core.goids` with repo/commit filters
+- All normalize GOID columns
+- All build dicts or lists keyed by GOID
+
+**Potential consolidation:**
 ```python
-# codeintel/core/ports/__init__.py (or similar)
-from codeintel.graphs.ports import (
-    FunctionSpan,
-    GraphData,
-    ParsedFunction,
-    ParsedModule,
-)
+# graphs/catalog.py - add thin helper
+def load_function_rows(gateway, *, repo, commit, columns="*") -> Iterator[tuple]:
+    """Base row iterator for function queries."""
+    ...
+
+# Other modules can use this as foundation
 ```
 
-**Benefits:**
-- Single source of truth for shared data classes
-- Clearer import paths
-- Reduced maintenance burden
+**Effort:** Medium (2-3 hours)
+**Benefit:** Reduced SQL duplication, consistent normalization
 
-**Effort:** Low (1-2 hours)
+### 4.5 Future: Graph Building Utilities
+
+**Finding:** 24 graph-building functions across packages:
+
+```
+graphs/engine/views.py           - 7 graph creation sites (nx.DiGraph/Graph)
+analytics/compute/graphs/cfg.py  - build_cfg_graph()
+analytics/compute/graphs/dfg.py  - build_dfg_graph()
+analytics/subsystems/affinity.py - build_weighted_graph()
++ 14 more build_*_graph functions
+```
+
+**Common patterns:**
+1. Create empty graph: `nx.DiGraph()` or `nx.Graph()`
+2. Add nodes with attributes
+3. Add edges with weights
+4. Return graph
+
+**Potential utility:**
+```python
+# core/graph_utils.py (or similar)
+def build_directed_graph(
+    nodes: Iterable[tuple[int, dict]],
+    edges: Iterable[tuple[int, int, dict]],
+) -> nx.DiGraph:
+    """Construct a directed graph from nodes and edges."""
+    ...
+```
+
+**Effort:** High (4-6 hours)
+**Benefit:** Consistent graph construction patterns
+
+### 4.6 Future: Type Coercion Utilities
+
+**Finding:** Multiple `safe_*` functions scattered across packages:
+
+| Function | Location | Purpose |
+|----------|----------|---------|
+| `safe_float()` | `analytics/compute/graphs/conversions.py` | Float coercion |
+| `safe_relpath()` | `ingestion/infrastructure/paths.py` | Safe relative path |
+| `safe_ratio()` | `analytics/compute/ibis_utils.py` | Safe division |
+| `safe_count()` | `ingestion/infrastructure/db_queries.py` | Safe DB count |
+| `safe_unparse()` | `analytics/utilities/ast.py` | Safe AST unparse |
+| + 10 more | `ingestion/infrastructure/db_queries.py` | Safe DB operations |
+
+**Observation:** These follow a consistent pattern:
+```python
+def safe_X(value: T | None) -> R | None:
+    """Safe coercion that never raises."""
+    if value is None:
+        return None
+    try:
+        return convert(value)
+    except Exception:
+        return None
+```
+
+**Potential consolidation:**
+```python
+# core/utils/safe.py
+def safe_coerce[T, R](value: T | None, converter: Callable[[T], R]) -> R | None:
+    """Generic safe coercion wrapper."""
+    ...
+```
+
+**Effort:** Medium (2-3 hours)
+**Benefit:** Consistent error handling, reduced boilerplate
 
 ---
 
@@ -297,7 +441,7 @@ All deprecated items emit `DeprecationWarning` at runtime:
 | `StoragePort` | `graphs/ports/storage.py` | `StorageResource` | v6.0.0 |
 | `EnginePort` | `graphs/ports/engine.py` | `GraphResource` | v6.0.0 |
 
-### Removal Checklist (Phase 7)
+### Removal Checklist (Phase 8)
 
 After all consumers migrate:
 
@@ -347,6 +491,11 @@ def seed_goids_from_catalog(ctx: CatalogCtxLike, catalog: CatalogService) -> Non
 
 **Observation:** The `graphs/validation/` package was not touched in this cleanup.
 
+**Current state:** Well-structured with clear separation:
+- `runner.py` - Orchestration
+- `checks.py` - Individual validators
+- `findings.py` - Finding types and persistence
+
 **Potential opportunities:**
 - Check if validation uses deprecated types
 - Assess if validation can use `CatalogService` directly
@@ -360,6 +509,27 @@ def seed_goids_from_catalog(ctx: CatalogCtxLike, catalog: CatalogService) -> Non
 - Check for unused backward-compatibility code
 - Assess if `GraphEngine` protocol can be simplified
 - Look for opportunities to use `CatalogService`
+
+### 6.5 Resource Provider Pattern Standardization
+
+**Finding:** All resource providers follow the same pattern:
+
+```python
+class XProvider(LazyResource[T]):
+    RESOURCE_NAME: ClassVar[str] = "name"
+    
+    def _load(self) -> T: ...
+    def get(self) -> T: ...
+```
+
+**Current implementations:**
+- `CatalogProvider` → `FunctionCatalog`
+- `GraphProvider` → `GraphResources`
+- `AstProvider` → `AstResourceData`
+- `FeaturesProvider` → `dict[int, FunctionAstFeatures]`
+- `ModuleMapProvider` → `dict[str, str]`
+
+**Observation:** Pattern is already clean and consistent. No consolidation needed.
 
 ---
 
@@ -400,15 +570,9 @@ def seed_goids_from_catalog(ctx: CatalogCtxLike, catalog: CatalogService) -> Non
 - [x] Update `ports/__init__.py` with deprecation notes
 
 #### Phase 6: Polish ✅
-
-**Completed 2025-12-13**
-
 - [x] Update `compute/__init__.py` docstring
 
 #### Phase 7a: Core Consumer Migration ✅
-
-**Completed 2025-12-13**
-
 - [x] Fix pyright error in `graphs/compute/callgraph/resolution.py` (FunctionSpanData → FunctionSpan)
 - [x] Migrate `analytics/resources/catalog.py` to use `CatalogService`
 - [x] Migrate `analytics/testing/coverage/edges.py`
@@ -423,22 +587,27 @@ def seed_goids_from_catalog(ctx: CatalogCtxLike, catalog: CatalogService) -> Non
 - [x] Export `TestCoverageOptions` from `analytics.testing`
 - [x] Fix `TEST_CATALOG_UPDATE_GOIDS` schema mismatch bug
 
+#### Phase 7c: Test Migration ✅
+- [x] Migrate `tests/analytics/plugins/test_*.py` (6 files)
+- [x] Migrate `tests/analytics/resources/test_provider_factory.py`
+- [x] Migrate `tests/_helpers/rows.py`
+- [x] Migrate `tests/_helpers/fakes/function_catalogs.py`
+- [x] Migrate `tests/graphs/test_compute_layer.py`
+- [x] Run full test suite (719 graph tests pass)
+
+#### Phase 9a: ID Normalization Consolidation ✅
+- [x] Create `core/data_models/ids.py` with `normalize_decimal_id` and `as_int`
+- [x] Update `graphs/engine/views.py` to import from `core.data_models.ids`
+- [x] Update `analytics/compute/graphs/conversions.py` to re-export from core
+- [x] Update `core/data_models/__init__.py` exports
+
+#### Phase 9b: Shared Ports Package ✅
+- [x] Create `core/ports/__init__.py` with `BaseQueryResult`, `BaseBatchResult`
+- [x] Create `core/ports/results.py` with protocol definitions
+- [x] Update `graphs/ports/storage.py` with protocol documentation
+- [x] Update `ingestion/ports/storage.py` with protocol documentation
+
 ### Remaining Phases
-
-#### Phase 7b: Build Plugin Migration (Optional)
-- [ ] Assess whether `load_function_index` should migrate to `load_function_catalog`
-- [ ] If yes, migrate `build/plugins/graphs/builders/callgraph.py`
-- [ ] If yes, migrate `build/plugins/graphs/builders/cfg_dfg.py`
-
-**Note:** Build plugins use `load_function_index` for span lookups. This is acceptable since `FunctionSpanIndex` is the appropriate type for those use cases.
-
-#### Phase 7c: Test Migration
-- [ ] Migrate `tests/analytics/plugins/test_*.py` (6 files)
-- [ ] Migrate `tests/analytics/resources/test_provider_factory.py`
-- [ ] Migrate `tests/graphs/conftest.py`
-- [ ] Migrate `tests/_helpers/rows.py`
-- [ ] Migrate `tests/_helpers/fakes/function_catalogs.py`
-- [ ] Run full test suite
 
 #### Phase 8: Deprecation Removal (After v6.0.0)
 - [ ] Remove `FunctionMeta` compatibility wrapper
@@ -448,10 +617,17 @@ def seed_goids_from_catalog(ctx: CatalogCtxLike, catalog: CatalogService) -> Non
 - [ ] Remove deprecated port protocols
 - [ ] Update all `__all__` exports
 
-#### Phase 9: Cross-Package Consolidation (Optional)
-- [ ] Consolidate duplicate `normalize_decimal` functions (see section 4.2)
-- [ ] Assess shared `core/ports` package for common data types
-- [ ] Assess `ingestion/ports` patterns
+#### Phase 10: Additional ID Utility Consolidation (Optional)
+- [ ] Move `to_decimal_id()` to `core/data_models/ids.py`
+- [ ] Move `normalize_node_id()` to `core/data_models/ids.py`
+- [ ] Move `safe_float()` to `core/data_models/ids.py` or `core/utils/coerce.py`
+- [ ] Update imports in `analytics/compute/graphs/conversions.py`
+- [ ] Update imports in `analytics/compute/row_builders/*.py`
+
+#### Phase 11: Function Loading Consolidation (Optional)
+- [ ] Create `load_function_rows()` base helper in `graphs/catalog.py`
+- [ ] Refactor `load_function_metadata()` in `analytics/cfg_dfg/helpers.py`
+- [ ] Assess other function loading patterns
 
 ---
 
@@ -479,9 +655,12 @@ grep -r "FunctionCatalogService\|FunctionMeta\|FunctionSpanData" src/ --include=
 
 ### Verification Status (2025-12-13)
 
-After Phase 7a completion:
-- ✅ `uv run pyright --warnings --pythonversion=3.13 src/codeintel/graphs src/codeintel/analytics` - 0 errors
-- ✅ `uv run ruff check --fix src/codeintel/graphs src/codeintel/analytics` - All checks passed
+After Phase 9b completion:
+- ✅ `uv run pyright` - 0 errors on all modified files
+- ✅ `uv run ruff check --fix` - All checks passed
+- ✅ `uv run pytest tests/graphs/` - 719 passed
+- ✅ `uv run pytest tests/analytics/plugins/` - 9 passed
+- ✅ `uv run pytest tests/analytics/resources/test_provider_factory.py` - 30 passed
 
 Remaining deprecated usage in `src/`:
 - `analytics/ports/__init__.py` - Re-export layer (intentional)

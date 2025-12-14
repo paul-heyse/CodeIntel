@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
-from codeintel.build.plugins._helpers import filter_paths, get_source_root
+from codeintel.build.plugins._helpers import filter_paths, get_source_root, persist_rows
 from codeintel.build.plugins.graphs.builders.cfg_dfg_options import CfgDfgOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.catalog import load_function_index
@@ -36,7 +36,6 @@ if TYPE_CHECKING:
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.data_models import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
     from codeintel.graphs.catalog import FunctionSpanIndex
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -128,114 +127,6 @@ def _build_cfg_dfg_for_function(
     dfg_edges = dfg_compute.dfg_to_rows(dfg_result)
 
     return list(cfg_blocks), list(cfg_edges), list(dfg_edges)
-
-
-def _persist_cfg_blocks(
-    gateway: StorageGateway,
-    blocks: list[CFGBlockRow],
-    repo: str,
-    commit: str,
-) -> int:
-    """Persist CFG blocks.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    blocks
-        Block rows to persist.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Number of blocks persisted.
-    """
-    if not blocks:
-        return 0
-
-    gateway.policy.ensure_table("graph.cfg_blocks")
-    gateway.policy.delete_for_snapshot("graph.cfg_blocks", repo=repo, commit=commit)
-    gateway.policy.bulk_insert(
-        "graph.cfg_blocks",
-        [block.to_tuple() for block in blocks],
-    )
-    return len(blocks)
-
-
-def _persist_cfg_edges(
-    gateway: StorageGateway,
-    edges: list[CFGEdgeRow],
-    repo: str,
-    commit: str,
-) -> int:
-    """Persist CFG edges.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    edges
-        Edge rows to persist.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Number of edges persisted.
-    """
-    if not edges:
-        return 0
-
-    gateway.policy.ensure_table("graph.cfg_edges")
-    gateway.policy.delete_for_snapshot("graph.cfg_edges", repo=repo, commit=commit)
-    gateway.policy.bulk_insert(
-        "graph.cfg_edges",
-        [edge.to_tuple() for edge in edges],
-    )
-    return len(edges)
-
-
-def _persist_dfg_edges(
-    gateway: StorageGateway,
-    edges: list[DFGEdgeRow],
-    repo: str,
-    commit: str,
-) -> int:
-    """Persist DFG edges.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    edges
-        Edge rows to persist.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Number of edges persisted.
-    """
-    if not edges:
-        return 0
-
-    gateway.policy.ensure_table("graph.dfg_edges")
-    gateway.policy.delete_for_snapshot("graph.dfg_edges", repo=repo, commit=commit)
-    gateway.policy.bulk_insert(
-        "graph.dfg_edges",
-        [edge.to_tuple() for edge in edges],
-    )
-    return len(edges)
 
 
 def _process_all_files(
@@ -348,9 +239,9 @@ class CfgDfgPlugin(MetadataPlugin):
                 len(paths),
             )
 
-            bc = _persist_cfg_blocks(gateway, blocks, repo, commit)
-            ce = _persist_cfg_edges(gateway, cfg_edges, repo, commit)
-            de = _persist_dfg_edges(gateway, dfg_edges, repo, commit)
+            bc = persist_rows(gateway, "graph.cfg_blocks", blocks, repo=repo, commit=commit)
+            ce = persist_rows(gateway, "graph.cfg_edges", cfg_edges, repo=repo, commit=commit)
+            de = persist_rows(gateway, "graph.dfg_edges", dfg_edges, repo=repo, commit=commit)
 
             log.info("cfg_dfg: Persisted %d blocks, %d cfg_edges, %d dfg_edges", bc, ce, de)
             return TargetResult.succeeded(

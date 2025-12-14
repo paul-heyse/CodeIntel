@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.build.plugins.analytics.dependencies.external import ExternalDepsPlugin
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
+from codeintel.graphs.catalog import CatalogService, FunctionCatalog
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.fakes.contexts import TargetResourceOverrides
@@ -55,12 +55,12 @@ def _seed_dependency_sources(ctx_repo_root: Path) -> None:
     )
 
 
-def _catalog_for_dependencies(repo: str, commit: str) -> FunctionCatalogService:
+def _catalog_for_dependencies(repo: str, commit: str) -> CatalogService:
     """Build a catalog with spans for the dependency functions.
 
     Returns
     -------
-    FunctionCatalogService
+    CatalogService
         Catalog provider with spans for seeded functions.
     """
     functions = [
@@ -86,7 +86,7 @@ def _catalog_for_dependencies(repo: str, commit: str) -> FunctionCatalogService:
             "pkg/worker.py": "pkg.worker",
         },
     )
-    return FunctionCatalogService(catalog)
+    return CatalogService(catalog)
 
 
 def test_external_deps_plugin_builds_dependency_rows(tmp_path: Path) -> None:

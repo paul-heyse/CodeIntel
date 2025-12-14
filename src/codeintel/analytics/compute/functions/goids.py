@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+from codeintel.analytics.utilities.dataframe import to_records
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
@@ -112,17 +114,6 @@ class FunctionGoid:
         )
 
 
-def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
-    """Convert a pandas DataFrame to record dictionaries.
-
-    Returns
-    -------
-    list[dict[str, Any]]
-        Records returned by ``DataFrame.to_dict(orient="records")``.
-    """
-    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
-
-
 class FunctionGoidLoader:
     """Loader for function GOIDs from core.goids table.
 
@@ -183,7 +174,7 @@ class FunctionGoidLoader:
         )
         df = cast("pd.DataFrame", expr.execute())
 
-        for record in _to_records(df):
+        for record in to_records(df):
             goid_row: GoidRow = {
                 "goid_h128": record["goid_h128"],
                 "urn": record["urn"],

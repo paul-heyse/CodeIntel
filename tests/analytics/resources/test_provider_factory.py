@@ -27,9 +27,9 @@ from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.catalog import (
+    CatalogService,
     FunctionCatalog,
     FunctionCatalogProvider,
-    FunctionCatalogService,
 )
 from tests._helpers.assertions import (
     expect_equal,
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import (
-        FunctionMeta,
+        FunctionSpan,
     )
     from codeintel.storage.gateway import StorageGateway
 
@@ -56,7 +56,7 @@ class DummyCatalogProvider(FunctionCatalogProvider):
     """Minimal catalog provider for testing."""
 
     def __init__(self) -> None:
-        empty_functions: list[FunctionMeta] = []
+        empty_functions: list[FunctionSpan] = []
         self._catalog = FunctionCatalog(functions=empty_functions, module_by_path={})
 
     def catalog(self) -> FunctionCatalog:
@@ -345,9 +345,9 @@ def test_create_registry_all_providers(
 
 
 def test_function_catalog_service_module_lookup() -> None:
-    """FunctionCatalogService should expose module_for_path."""
+    """CatalogService should expose module_for_path."""
     catalog = FunctionCatalog(functions=[], module_by_path={"src/a.py": "src.a"})
-    provider = FunctionCatalogService(catalog)
+    provider = CatalogService(catalog)
 
     expect_equal(provider.module_for_path("src/a.py"), "src.a")
     expect_true(provider.module_for_path("missing.py") is None)

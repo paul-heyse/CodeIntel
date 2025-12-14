@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Final, cast
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.graphs.catalog import FunctionCatalog, FunctionMeta
+    from codeintel.graphs.catalog import FunctionCatalog, FunctionSpan
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -168,11 +168,11 @@ class MockFunctionCatalog:
     def __init__(
         self,
         *,
-        functions: Sequence[MockFunctionMeta | FunctionMeta] | None = None,
+        functions: Sequence[MockFunctionMeta | FunctionSpan] | None = None,
         module_by_path: dict[str, str] | None = None,
         function_spans: Sequence[MockFunctionSpan] | None = None,
     ) -> None:
-        """Construct a mock catalog, coercing real FunctionMeta inputs."""
+        """Construct a mock catalog, coercing real FunctionSpan inputs."""
         self.functions = [self._coerce_function(fn) for fn in functions or ()]
         self.module_by_path = dict(module_by_path or {})
         self.function_spans = list(function_spans or [])
@@ -193,12 +193,12 @@ class MockFunctionCatalog:
         self._urn_to_goid: dict[str, int] = {fn.urn: fn.goid for fn in self.functions}
 
     @staticmethod
-    def _coerce_function(fn: MockFunctionMeta | FunctionMeta) -> MockFunctionMeta:
+    def _coerce_function(fn: MockFunctionMeta | FunctionSpan) -> MockFunctionMeta:
         if isinstance(fn, MockFunctionMeta):
             return fn
         return MockFunctionMeta(
             goid=fn.goid,
-            urn=fn.urn,
+            urn=fn.urn or "",
             rel_path=fn.rel_path,
             qualname=fn.qualname,
             start_line=fn.start_line,
@@ -393,7 +393,7 @@ def create_mock_catalog_with_functions(
     ]
 
     return MockFunctionCatalog(
-        functions=cast("list[MockFunctionMeta | FunctionMeta]", functions),
+        functions=cast("list[MockFunctionMeta | FunctionSpan]", functions),
         module_by_path={rel_path: module_name},
     )
 
@@ -446,7 +446,7 @@ def create_mock_catalog_multi_file(
             goid_counter += 1
 
     return MockFunctionCatalog(
-        functions=cast("list[MockFunctionMeta | FunctionMeta]", functions),
+        functions=cast("list[MockFunctionMeta | FunctionSpan]", functions),
         module_by_path=module_by_path,
     )
 
@@ -521,7 +521,7 @@ def create_mock_catalog_realistic() -> MockFunctionCatalog:
     ]
 
     return MockFunctionCatalog(
-        functions=cast("list[MockFunctionMeta | FunctionMeta]", functions),
+        functions=cast("list[MockFunctionMeta | FunctionSpan]", functions),
         module_by_path={
             "main.py": "main",
             "utils.py": "utils",

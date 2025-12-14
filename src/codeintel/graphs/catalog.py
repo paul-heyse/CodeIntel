@@ -210,14 +210,30 @@ def _qualname_matches(full: str, candidate: str) -> bool:
     return full.endswith(f".{suffix}")
 
 
-def load_function_spans(gateway: StorageGateway, *, repo: str, commit: str) -> list[FunctionSpan]:
-    """
-    Load function spans from `core.goids` for a repo snapshot.
+def _load_function_rows(
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    include_urn: bool = False,
+) -> list[dict[str, Any]]:
+    """Load raw function rows from core.goids.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
+    include_urn
+        Whether to include URN column in results.
 
     Returns
     -------
-    list[FunctionSpan]
-        Normalized function spans keyed by GOID.
+    list[dict[str, Any]]
+        Raw row dictionaries from the query.
     """
     goids = cast("Any", gateway.ibis.table("core.goids"))
     filtered = filter_by(
@@ -226,17 +242,37 @@ def load_function_spans(gateway: StorageGateway, *, repo: str, commit: str) -> l
         ibis_bool(goids.commit == commit),
         ibis_bool(goids.kind.isin(["function", "method"])),
     )
-    df = cast(
-        "pd.DataFrame",
-        filtered.select("goid_h128", "rel_path", "qualname", "start_line", "end_line").execute(),
-    )
-    rows = df.to_dict(orient="records")
+    columns = ["goid_h128", "rel_path", "qualname", "start_line", "end_line"]
+    if include_urn:
+        columns.insert(1, "urn")
+    df = cast("pd.DataFrame", filtered.select(*columns).execute())
+    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
+
+
+def load_function_spans(gateway: StorageGateway, *, repo: str, commit: str) -> list[FunctionSpan]:
+    """Load function spans from core.goids for a repo snapshot.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
+
+    Returns
+    -------
+    list[FunctionSpan]
+        Normalized function spans keyed by GOID.
+    """
+    rows = _load_function_rows(gateway, repo=repo, commit=commit, include_urn=False)
     spans: list[FunctionSpan] = []
     for row in rows:
         start_line = row["start_line"]
-        end_line = row["end_line"]
         if start_line is None:
             continue
+        end_line = row["end_line"]
         spans.append(
             FunctionSpan(
                 goid=int(row["goid_h128"]),
@@ -430,47 +466,39 @@ def load_function_catalog(
     repo: str,
     commit: str,
 ) -> FunctionCatalog:
-    """
-    Load function spans and module map for a repo snapshot via a gateway.
+    """Load function spans and module map for a repo snapshot.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
 
     Returns
     -------
     FunctionCatalog
         Catalog containing spans, URNs, and module mapping.
     """
-    goids = cast("Any", gateway.ibis.table("core.goids"))
-    goids_filtered = filter_by(
-        goids,
-        ibis_bool(goids.repo == repo),
-        ibis_bool(goids.commit == commit),
-        ibis_bool(goids.kind.isin(["function", "method"])),
-    )
-    df = cast(
-        "pd.DataFrame",
-        goids_filtered.select(
-            "goid_h128", "urn", "rel_path", "qualname", "start_line", "end_line"
-        ).execute(),
-    )
-    rows = df.to_dict(orient="records")
-
+    rows = _load_function_rows(gateway, repo=repo, commit=commit, include_urn=True)
     functions: list[FunctionSpan] = []
     for row in rows:
         start_line = row["start_line"]
-        end_line = row["end_line"]
         if start_line is None:
             continue
-        end_val = int(end_line) if end_line is not None else int(start_line)
+        end_line = row["end_line"]
         functions.append(
             FunctionSpan(
                 goid=int(row["goid_h128"]),
                 rel_path=normalize_rel_path(row["rel_path"]),
                 qualname=str(row["qualname"]),
                 start_line=int(start_line),
-                end_line=end_val,
+                end_line=int(end_line) if end_line is not None else int(start_line),
                 urn=str(row["urn"]),
             )
         )
-
     module_by_path = load_module_map(gateway, repo, commit)
     return FunctionCatalog(functions=functions, module_by_path=module_by_path)
 
