@@ -226,33 +226,3 @@ def _cleanup_gateways() -> Iterator[None]:
         yield
     finally:
         close_gateways()
-
-
-@pytest.fixture(autouse=True)
-def _reset_pydantic_type_adapters() -> Iterator[None]:
-    """Clear pydantic TypeAdapter caches to avoid test isolation issues.
-
-    Cyclopts uses pydantic TypeAdapter for enum validation, and cached
-    adapters can become stale when tests run in different orders, causing
-    enum validation errors like "Input should be 'auto' not <Enum.VALUE>".
-    """
-    import pydantic
-
-    yield
-
-    # Clear pydantic caches after each test to prevent state pollution
-    if hasattr(pydantic, "_internal"):
-        internal = pydantic._internal
-        if hasattr(internal, "_core_utils"):
-            core_utils = internal._core_utils
-            if hasattr(core_utils, "collect_invalid_schemas"):
-                # Force cache invalidation
-                pass
-    # Also try to clear any module-level TypeAdapter caches
-    try:
-        from pydantic import TypeAdapter
-
-        if hasattr(TypeAdapter, "__cache__"):
-            TypeAdapter.__cache__.clear()  # type: ignore[attr-defined]
-    except (AttributeError, ImportError):
-        pass

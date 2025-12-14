@@ -1,14 +1,22 @@
-"""Help rendering hardening for Cyclopts-backed CLI commands."""
+"""Help rendering hardening for Cyclopts-backed CLI commands.
+
+Uses xdist_group to run in the same worker due to cyclopts/pydantic
+type adapter caching issues that cause ValidationError when tests run in parallel.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
+import pytest
 
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_in, expect_not_in
 from tests._helpers.cli import run_cli
 
 if TYPE_CHECKING:
     from tests._helpers.cli import CLIContext
+
+pytestmark = pytest.mark.xdist_group("cli_shared_flags")
 
 
 def test_docs_export_help_renders(cli_ctx: CLIContext) -> None:

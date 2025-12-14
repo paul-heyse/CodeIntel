@@ -230,7 +230,7 @@ class OpListCommand:
             help="Filter by operation category.",
         ),
     ] = None
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("op.call", handler=op_call_handler, config=_OP_RUNTIME_CONFIG)
@@ -261,7 +261,7 @@ class OpCallCommand:
             negative=(),
         ),
     ] = False
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 def _extract_base_type(type_hint: type[Any] | None) -> type[Any] | None:

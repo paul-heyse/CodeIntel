@@ -842,12 +842,14 @@ def test_dynamic_op_output_and_input_paths(tmp_path: Path) -> None:
         input_validator(Path, existing_input)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_op_list_succeeds_with_defaults() -> None:
     """Verify op list succeeds without requiring runtime args."""
     ns = ops.app_proxy(["op", "list"], result_action="return_value")
     expect_is_not_none(ns)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_run_cli_embedding_returns_parsed_command() -> None:
     """Verify run_cli with result_action returns parsed command result."""
     result = ops.app_proxy(

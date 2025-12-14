@@ -1,4 +1,8 @@
-"""Smoke test to ensure docs export validation flag is honored."""
+"""Smoke test to ensure docs export validation flag is honored.
+
+These tests use xdist_group to run in the same worker due to cyclopts/pydantic
+type adapter caching issues that cause ValidationError when tests run in parallel.
+"""
 
 from __future__ import annotations
 
@@ -102,6 +106,7 @@ def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
     ctx.close()
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> None:
     """Verify docs export honors validation toggle and surfaces failures."""
     db_path = tmp_path / "db.duckdb"
@@ -157,6 +162,7 @@ def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> No
         )
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_docs_export_usage_error_exit_code(tmp_path: Path) -> None:
     """Unknown flags should produce a usage error exit code 2."""
     result = run_cli(

@@ -239,7 +239,7 @@ class PluginsList(Command[PluginsListResult]):
 
     __operation_id__ = "plugins.list"
 
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginsListResult]:
         """Execute plugin listing.
@@ -278,7 +278,7 @@ class PluginsDiscover(Command[PluginsDiscoverResult]):
 
     __operation_id__ = "plugins.discover"
 
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginsDiscoverResult]:
         """Execute plugin discovery.
@@ -336,7 +336,7 @@ class PluginsInfo(Command[PluginInfoResult]):
     __operation_id__ = "plugins.info"
 
     name: Annotated[str, Parameter(help="Plugin name")]
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginInfoResult]:
         """Execute plugin info query.
@@ -384,7 +384,7 @@ class PluginsPaths(Command[PluginPathsResult]):
 
     __operation_id__ = "plugins.paths"
 
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginPathsResult]:
         """Execute paths listing.
@@ -430,7 +430,7 @@ class PluginsNew(Command[PluginNewResult]):
         Path | None,
         Parameter(name="--output", help="Output directory"),
     ] = None
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginNewResult]:
         """Execute plugin scaffold creation.
@@ -474,7 +474,7 @@ class PluginsTest(Command[PluginTestResult]):
     __operation_id__ = "plugins.test"
 
     path: Annotated[Path, Parameter(help="Plugin directory")]
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginTestResult]:
         """Execute plugin tests.
@@ -543,7 +543,7 @@ class PluginsValidate(Command[PluginValidateResult]):
     __operation_id__ = "plugins.validate"
 
     path: Annotated[Path, Parameter(help="Plugin directory")]
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginValidateResult]:
         """Execute manifest validation.

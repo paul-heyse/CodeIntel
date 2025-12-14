@@ -1,4 +1,8 @@
-"""App-specific CLI error parity tests."""
+"""App-specific CLI error parity tests.
+
+Uses xdist_group to run in the same worker due to cyclopts/pydantic
+type adapter caching issues that cause ValidationError when tests run in parallel.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,8 @@ from tests._helpers.cli import run_cli
 
 if TYPE_CHECKING:
     from tests._helpers.cli import CLIContext
+
+pytestmark = pytest.mark.xdist_group("cli_shared_flags")
 
 UNKNOWN_OPTION_CASES: list[tuple[list[str], str]] = [
     (["build", "run", "--bogus"], "--bogus"),

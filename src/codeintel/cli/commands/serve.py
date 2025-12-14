@@ -56,7 +56,7 @@ class ServeHttpCommand:
             negative=(),
         ),
     ] = False
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @serve_app.command(name="mcp")
@@ -73,7 +73,7 @@ class ServeMcpCommand:
             negative=(),
         ),
     ] = False
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = [

@@ -1,8 +1,14 @@
-"""Tests for datasets CLI command wiring."""
+"""Tests for datasets CLI command wiring.
+
+Uses xdist_group to run in the same worker due to cyclopts/pydantic
+type adapter caching issues that cause ValidationError when tests run in parallel.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
+import pytest
 
 from tests._helpers.assertions import expect_in, expect_true
 from tests._helpers.cli import assert_exit, assert_success
@@ -11,6 +17,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from tests._helpers.cli_project import CLIProjectHarness
+
+pytestmark = pytest.mark.xdist_group("cli_shared_flags")
 
 
 def test_datasets_list(
