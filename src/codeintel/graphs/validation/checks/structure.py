@@ -15,10 +15,6 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 import networkx as nx
 
 from codeintel.graphs.validation.base import GraphCheckBase
-from codeintel.graphs.validation.checks.anomaly import (
-    subsystem_disagreement_findings,
-    symbol_community_findings,
-)
 from codeintel.graphs.validation.context import GraphValidationContext
 from codeintel.graphs.validation.findings import (
     CALL_SCC_MIN,
@@ -31,7 +27,6 @@ from codeintel.graphs.validation.findings import (
 
 if TYPE_CHECKING:
     from codeintel.core.validation import ValidationSeverity
-    from codeintel.graphs.engine import GraphEngine
 
 
 # =============================================================================
@@ -640,181 +635,6 @@ def _config_key_findings_impl(
 
 
 # =============================================================================
-# Backward-Compatible Function Wrappers
-# =============================================================================
-
-
-def call_graph_findings(
-    call_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for call graph structural anomalies.
-
-    Parameters
-    ----------
-    call_graph
-        Call graph to analyze.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Logger for output.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for call graph anomalies.
-    """
-    return _call_graph_findings_impl(call_graph, repo, commit, log)
-
-
-def import_graph_findings(
-    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for import graph structural anomalies.
-
-    Parameters
-    ----------
-    import_graph
-        Import graph to analyze.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Logger for output.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for import graph anomalies.
-    """
-    return _import_graph_findings_impl(import_graph, repo, commit, log)
-
-
-def import_cycle_findings(
-    sccs: list[set[str]], repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for import cycles.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for import cycle anomalies.
-    """
-    return _import_cycle_findings_impl(sccs, repo, commit, log)
-
-
-def import_hub_findings(
-    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for import graph hubs.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for import hub anomalies.
-    """
-    return _import_hub_findings_impl(import_graph, repo, commit, log)
-
-
-def import_upward_findings(
-    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for upward imports against layering.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for upward import anomalies.
-    """
-    return _import_upward_findings_impl(import_graph, repo, commit, log)
-
-
-def import_bridge_findings(
-    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for bridge-like import modules.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for bridge module anomalies.
-    """
-    return _import_bridge_findings_impl(import_graph, repo, commit, log)
-
-
-def symbol_graph_findings(
-    symbol_graph: nx.Graph, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for symbol graph structural anomalies.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for symbol graph anomalies.
-    """
-    return _symbol_graph_findings_impl(symbol_graph, repo, commit, log)
-
-
-def config_key_findings(
-    cfg_bipartite: nx.Graph, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for broadly-used config keys.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for config key usage anomalies.
-    """
-    return _config_key_findings_impl(cfg_bipartite, repo, commit, log)
-
-
-def warn_graph_structure(
-    engine: GraphEngine,
-    repo: str,
-    commit: str,
-    log: logging.Logger | None = None,
-) -> list[dict[str, object]]:
-    """Emit warnings for common graph structure anomalies.
-
-    Parameters
-    ----------
-    engine
-        Graph engine providing access to graphs.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
-    log
-        Optional logger; uses module logger if not provided.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings describing graph hotspots and anomalies.
-    """
-    findings: list[dict[str, object]] = []
-    active_log = log or logging.getLogger(__name__)
-
-    call_graph = engine.call_graph()
-    findings.extend(_call_graph_findings_impl(call_graph, repo, commit, active_log))
-
-    import_graph = engine.import_graph()
-    findings.extend(_import_graph_findings_impl(import_graph, repo, commit, active_log))
-
-    symbol_graph = engine.symbol_module_graph()
-    findings.extend(_symbol_graph_findings_impl(symbol_graph, repo, commit, active_log))
-    findings.extend(symbol_community_findings(engine.gateway, repo, commit, active_log))
-
-    cfg_bipartite = engine.config_module_bipartite()
-    findings.extend(_config_key_findings_impl(cfg_bipartite, repo, commit, active_log))
-
-    findings.extend(subsystem_disagreement_findings(engine.gateway, repo, commit, active_log))
-    return findings
-
-
-# =============================================================================
 # All Check Classes (for runner registration)
 # =============================================================================
 
@@ -840,14 +660,4 @@ __all__ = [
     "ImportHubCheck",
     "ImportUpwardCheck",
     "SymbolGraphCheck",
-    # Backward-compatible functions
-    "call_graph_findings",
-    "config_key_findings",
-    "import_bridge_findings",
-    "import_cycle_findings",
-    "import_graph_findings",
-    "import_hub_findings",
-    "import_upward_findings",
-    "symbol_graph_findings",
-    "warn_graph_structure",
 ]

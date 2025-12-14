@@ -9,12 +9,7 @@ This module imports from analytics.graph_runtime for GraphRuntime access.
 This is an intentional delegation - the graphs package orchestrates validation
 but delegates runtime resolution to analytics (Option B architecture).
 
-The module supports two validation modes:
-1. Legacy function-based validation (run_graph_validations)
-2. CheckProtocol-based validation via core.validation.ValidationRunner
-   (run_graph_validations_with_runner)
-
-Both modes produce equivalent findings and maintain the same interface.
+All validations use CheckProtocol-based validation via core.validation.ValidationRunner.
 """
 
 from __future__ import annotations
@@ -31,12 +26,6 @@ from codeintel.analytics.runtime import (
 )
 from codeintel.core.validation.runner import ValidationRunner
 from codeintel.graphs.catalog import load_function_catalog
-from codeintel.graphs.validation.checks import (
-    warn_callsite_span_mismatches,
-    warn_graph_structure,
-    warn_missing_function_goids,
-    warn_orphan_modules,
-)
 from codeintel.graphs.validation.checks.anomaly import (
     ALL_ANOMALY_CHECKS,
     SubsystemDisagreementCheck,
@@ -57,9 +46,6 @@ from codeintel.graphs.validation.checks.structure import (
 )
 from codeintel.graphs.validation.context import GraphValidationContext
 from codeintel.graphs.validation.findings import (
-    apply_severity_overrides,
-    cap_findings,
-    has_error_findings,
     persist_findings,
     resolve_validation_options,
 )
@@ -133,74 +119,6 @@ def create_validation_runner(
 # =============================================================================
 # Primary Validation Functions
 # =============================================================================
-
-
-def run_graph_validations(
-    gateway: StorageGateway,
-    *,
-    snapshot: SnapshotRef,
-    catalog_provider: FunctionCatalogProvider | None = None,
-    runtime: GraphRuntime | GraphRuntimeOptions,
-    options: GraphValidationOptions | None = None,
-) -> None:
-    """Emit warnings for common graph integrity issues.
-
-    Checks include:
-    - Files with functions in AST that are missing GOIDs.
-    - Call graph edges whose callsites lie outside caller spans.
-    - Modules with no GOIDs (orphans).
-
-    Parameters
-    ----------
-    gateway : StorageGateway
-        Storage gateway for database access.
-    snapshot : SnapshotRef
-        Repository snapshot reference.
-    catalog_provider : FunctionCatalogProvider | None
-        Optional catalog provider for function metadata.
-    runtime : GraphRuntime | GraphRuntimeOptions
-        Runtime or options for graph access.
-    options : GraphValidationOptions | None
-        Optional validation options.
-
-    Raises
-    ------
-    RuntimeError
-        When hard_fail is enabled and error-level findings are present.
-    """
-    validation_opts = resolve_validation_options(runtime=runtime, options=options)
-    active_log = logging.getLogger(__name__)
-    repo = snapshot.repo
-    commit = snapshot.commit
-    log_db_snapshot(gateway, repo, commit, active_log)
-    catalog = (
-        catalog_provider.catalog()
-        if catalog_provider is not None
-        else load_function_catalog(gateway, repo=snapshot.repo, commit=snapshot.commit)
-    )
-    resolved_runtime = resolve_validation_runtime(
-        gateway,
-        snapshot=snapshot,
-        runtime=runtime,
-    )
-    engine: GraphEngine = resolved_runtime.engine
-    findings = []
-    findings.extend(warn_missing_function_goids(gateway, repo, commit, active_log))
-    findings.extend(warn_callsite_span_mismatches(gateway, catalog, repo, commit, active_log))
-    findings.extend(warn_orphan_modules(gateway, repo, commit, active_log, catalog))
-    findings.extend(warn_graph_structure(engine, repo, commit, active_log))
-    normalized_findings = apply_severity_overrides(findings, validation_opts.severity_overrides)
-    capped_findings = cap_findings(normalized_findings, validation_opts.max_findings_per_rule)
-    persist_findings(gateway, capped_findings, repo, commit)
-    active_log.info(
-        "Graph validation completed for %s@%s: %d finding(s)",
-        repo,
-        commit,
-        len(capped_findings),
-    )
-    if validation_opts.hard_fail and has_error_findings(capped_findings):
-        message = "Graph validation failed with error-level findings"
-        raise RuntimeError(message)
 
 
 def run_graph_validations_with_runner(
@@ -443,6 +361,5 @@ __all__ = [
     "create_validation_runner",
     "log_db_snapshot",
     "resolve_validation_runtime",
-    "run_graph_validations",
     "run_graph_validations_with_runner",
 ]

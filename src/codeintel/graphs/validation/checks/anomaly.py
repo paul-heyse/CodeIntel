@@ -183,37 +183,6 @@ def _subsystem_disagreement_findings_impl(
 
 
 # =============================================================================
-# Backward-Compatible Function Wrappers
-# =============================================================================
-
-
-def symbol_community_findings(
-    gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for large symbol communities.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for symbol community anomalies.
-    """
-    return _symbol_community_findings_impl(gateway, repo, commit, log)
-
-
-def subsystem_disagreement_findings(
-    gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
-) -> list[dict[str, object]]:
-    """Check for subsystem vs import community disagreements.
-
-    Returns
-    -------
-    list[dict[str, object]]
-        Findings for subsystem disagreement anomalies.
-    """
-    return _subsystem_disagreement_findings_impl(gateway, repo, commit, log)
-
-
-# =============================================================================
 # All Check Classes (for runner registration)
 # =============================================================================
 
@@ -227,7 +196,4 @@ __all__ = [
     "ALL_ANOMALY_CHECKS",
     "SubsystemDisagreementCheck",
     "SymbolCommunityCheck",
-    # Backward-compatible functions
-    "subsystem_disagreement_findings",
-    "symbol_community_findings",
 ]
