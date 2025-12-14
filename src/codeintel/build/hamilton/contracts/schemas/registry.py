@@ -6,7 +6,7 @@ dataset schemas.
 
 Examples
 --------
->>> from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+>>> from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 >>> schema = SCHEMA_REGISTRY.get("analytics.function_metrics")
 >>> schema is not None
 True
@@ -20,12 +20,13 @@ import logging
 from functools import cache
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.schema_builder import build_all_schemas
+from codeintel.build.hamilton.contracts.schemas.builder import build_all_schemas
+from codeintel.build.unified_registry import get_unified_registry
 
 if TYPE_CHECKING:
     from collections.abc import ItemsView, Iterator, ValuesView
 
-    from codeintel.config.datasets.schema import DatasetSchema
+    from codeintel.build.hamilton.contracts.schemas.schema import DatasetSchema
 
 __all__ = [
     "SCHEMA_REGISTRY",
@@ -45,13 +46,6 @@ def _get_plugin_metadata() -> dict[str, object]:
     dict[str, object]
         Mapping of target names to plugin instances with core_metadata.
     """
-    try:
-        # Lazy import to avoid circular dependency at module load time
-        from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
-    except ImportError:
-        log.debug("Build plugin registry not available")
-        return {}
-
     registry = get_unified_registry().get_all_plugins()
     result: dict[str, object] = {}
     for name, cls in registry.items():

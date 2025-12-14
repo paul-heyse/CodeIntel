@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.datasets.dependency_inference import (
+from codeintel.build.hamilton.contracts.schemas.dependency_inference import (
     DependencyGraph,
     DependencyNode,
     build_dependency_graph,

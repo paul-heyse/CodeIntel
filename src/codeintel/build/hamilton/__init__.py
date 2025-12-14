@@ -1,116 +1,36 @@
 """Hamilton integration for the CodeIntel build system.
 
-This package provides Hamilton-based execution orchestration as an alternative
-to the legacy BuildExecutor. Hamilton owns dependency ordering and observability
-while existing plugins retain their computation and write logic.
+Hamilton is the orchestration layer for CodeIntel's build graph. This package provides:
 
-Phase 0 Implementation
-----------------------
-- Wraps existing target plugins as Hamilton nodes
-- Reuses existing manifest/hashing infrastructure
-- Provides skip-if-unchanged caching via manifest checks
-- Explicit node definitions for the risk_factors chain
+- Driver construction for dynamic wrapper nodes and native pipelines
+- Execution via ``HamiltonBuildExecutor``
+- Planning (``compute_plan`` / ``explain_plan``) and DAG observability exports
+- Contract enforcement hooks for datasets and artifacts
 
-Phase 1 Implementation (Full Production Features)
--------------------------------------------------
-- HamiltonNodeMode: Support for "phase0" and "generated" node modes
-- HamiltonRuntime: Extended with target↔node mappings
-- Closure execution: Full dependency closure computed and executed
-- Upstream failure gating: Downstream skipped if upstream fails
-- Force targets: --force flag bypasses skip checks
-- Run tracking: Builds tracked in build.runs table
-- DatasetRef: Type-safe dataset references populated on success
-- Dataset nodes: d__* nodes generated for all contract tables
-- Observability: DAG export and visualization via CLI
+Node modes
+----------
+- ``"generated"``: Dynamic wrapper nodes for all targets
+- ``"auto"``: Native Hamilton modules where available, generated wrappers otherwise
 
-Observability Architecture
---------------------------
-This package uses Hamilton's native lifecycle adapter pattern for telemetry:
-
-- ``NodeTelemetryHook``: Records per-node execution timing via Hamilton's
-  ``pre_node_execute`` / ``post_node_execute`` hooks. Telemetry is persisted
-  to the ``build.run_nodes`` table for profiling and debugging.
-
-- ``ContractEnforcementHook``: Activates contract validation per-node using
-  the same lifecycle adapter pattern.
-
-- DAG observability functions (``get_dag_info``, ``export_dag_json``, etc.)
-  use Hamilton's native Driver introspection APIs.
-
-Future Enhancement: HamiltonTracker Integration
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Hamilton provides an official ``HamiltonTracker`` adapter for integration with
-the Hamilton UI (https://hamilton.dagworks.io/). This would enable:
-
-- Visual DAG exploration in a web UI
-- Execution history and lineage tracking
-- Data quality monitoring dashboards
-
-To integrate, add ``sf-hamilton[ui]`` to dependencies and configure::
-
-    from hamilton_sdk import adapters
-    tracker = adapters.HamiltonTracker(
-        project_id=<project_id>,
-        username=<username>,
-        dag_name="codeintel-build",
-    )
-    # Pass tracker in execute_kwargs["adapters"]
-
-This is not currently implemented but is a natural extension of the existing
-lifecycle adapter pattern.
+Observability
+-------------
+This package uses Hamilton lifecycle adapters for telemetry and contract enforcement.
 
 Example
 -------
->>> from codeintel.build.hamilton import HamiltonBuildExecutor, BuildEnv
+>>> from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
 >>> executor = HamiltonBuildExecutor(profile="default", mode="generated")
 >>> result = executor.run(env=env, targets=["risk_factors"])
->>> print(f"Computed: {result.computed_targets}")
->>> print(f"Skipped: {result.skipped_targets}")
+>>> result.success
+True
 """
 
 from __future__ import annotations
 
-from codeintel.build.hamilton.compat import (
-    LEGACY_PHASE0,
-    build_driver_compat,
-    list_available_nodes_compat,
-)
-from codeintel.build.hamilton.contracts import (
-    get_pandera_schema,
-    validate_dataframe,
-    validate_dataset_ref,
-    with_contract,
-)
-from codeintel.build.hamilton.driver_factory import (
-    HamiltonNodeMode,
-    HamiltonRuntime,
-    build_driver,
-    list_available_nodes,
-    target_to_node_name,
-)
-from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
-from codeintel.build.hamilton.io import DatasetRef, IbisIOConfig, refs_from_target_result
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.metadata_bridge import CanonicalPluginMeta
-from codeintel.build.hamilton.naming import dataset_node, target_node, to_node_name
-from codeintel.build.hamilton.observability import (
-    export_dag_json,
-    export_execution_json,
-    get_dag_info,
-    list_execution_order,
-    list_execution_targets,
-)
-from codeintel.build.hamilton.planner import (
-    HamiltonBuildPlan,
-    PlanEntry,
-    StalenessExplanation,
-    compute_plan,
-    explain_plan,
-)
+from importlib import import_module
+from typing import TYPE_CHECKING
 
 __all__ = [
-    "LEGACY_PHASE0",
     "BuildEnv",
     "CanonicalPluginMeta",
     "DatasetRef",
@@ -124,7 +44,6 @@ __all__ = [
     "StalenessExplanation",
     "TargetRunRecord",
     "build_driver",
-    "build_driver_compat",
     "compute_plan",
     "dataset_node",
     "explain_plan",
@@ -133,7 +52,6 @@ __all__ = [
     "get_dag_info",
     "get_pandera_schema",
     "list_available_nodes",
-    "list_available_nodes_compat",
     "list_execution_order",
     "list_execution_targets",
     "refs_from_target_result",
@@ -144,3 +62,99 @@ __all__ = [
     "validate_dataset_ref",
     "with_contract",
 ]
+
+if TYPE_CHECKING:
+    from codeintel.build.hamilton.contracts import (
+        get_pandera_schema,
+        validate_dataframe,
+        validate_dataset_ref,
+        with_contract,
+    )
+    from codeintel.build.hamilton.driver_factory import (
+        HamiltonNodeMode,
+        HamiltonRuntime,
+        build_driver,
+        list_available_nodes,
+        target_to_node_name,
+    )
+    from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
+    from codeintel.build.hamilton.io import DatasetRef, IbisIOConfig, refs_from_target_result
+    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+    from codeintel.build.hamilton.metadata_bridge import CanonicalPluginMeta
+    from codeintel.build.hamilton.naming import dataset_node, target_node, to_node_name
+    from codeintel.build.hamilton.observability import (
+        export_dag_json,
+        export_execution_json,
+        get_dag_info,
+        list_execution_order,
+        list_execution_targets,
+    )
+    from codeintel.build.hamilton.planner import (
+        HamiltonBuildPlan,
+        PlanEntry,
+        StalenessExplanation,
+        compute_plan,
+        explain_plan,
+    )
+
+_LAZY_IMPORTS: dict[str, tuple[str, str]] = {
+    "get_pandera_schema": ("codeintel.build.hamilton.contracts", "get_pandera_schema"),
+    "validate_dataframe": ("codeintel.build.hamilton.contracts", "validate_dataframe"),
+    "validate_dataset_ref": ("codeintel.build.hamilton.contracts", "validate_dataset_ref"),
+    "with_contract": ("codeintel.build.hamilton.contracts", "with_contract"),
+    "HamiltonNodeMode": ("codeintel.build.hamilton.driver_factory", "HamiltonNodeMode"),
+    "HamiltonRuntime": ("codeintel.build.hamilton.driver_factory", "HamiltonRuntime"),
+    "build_driver": ("codeintel.build.hamilton.driver_factory", "build_driver"),
+    "list_available_nodes": ("codeintel.build.hamilton.driver_factory", "list_available_nodes"),
+    "target_to_node_name": ("codeintel.build.hamilton.driver_factory", "target_to_node_name"),
+    "BuildEnv": ("codeintel.build.hamilton.env", "BuildEnv"),
+    "HamiltonBuildExecutor": ("codeintel.build.hamilton.executor", "HamiltonBuildExecutor"),
+    "HamiltonBuildResult": ("codeintel.build.hamilton.executor", "HamiltonBuildResult"),
+    "DatasetRef": ("codeintel.build.hamilton.io", "DatasetRef"),
+    "IbisIOConfig": ("codeintel.build.hamilton.io", "IbisIOConfig"),
+    "refs_from_target_result": ("codeintel.build.hamilton.io", "refs_from_target_result"),
+    "TargetRunRecord": ("codeintel.build.hamilton.manifest_hook", "TargetRunRecord"),
+    "CanonicalPluginMeta": ("codeintel.build.hamilton.metadata_bridge", "CanonicalPluginMeta"),
+    "dataset_node": ("codeintel.build.hamilton.naming", "dataset_node"),
+    "target_node": ("codeintel.build.hamilton.naming", "target_node"),
+    "to_node_name": ("codeintel.build.hamilton.naming", "to_node_name"),
+    "export_dag_json": ("codeintel.build.hamilton.observability", "export_dag_json"),
+    "export_execution_json": ("codeintel.build.hamilton.observability", "export_execution_json"),
+    "get_dag_info": ("codeintel.build.hamilton.observability", "get_dag_info"),
+    "list_execution_order": ("codeintel.build.hamilton.observability", "list_execution_order"),
+    "list_execution_targets": ("codeintel.build.hamilton.observability", "list_execution_targets"),
+    "HamiltonBuildPlan": ("codeintel.build.hamilton.planner", "HamiltonBuildPlan"),
+    "PlanEntry": ("codeintel.build.hamilton.planner", "PlanEntry"),
+    "StalenessExplanation": ("codeintel.build.hamilton.planner", "StalenessExplanation"),
+    "compute_plan": ("codeintel.build.hamilton.planner", "compute_plan"),
+    "explain_plan": ("codeintel.build.hamilton.planner", "explain_plan"),
+}
+
+
+def __getattr__(name: str) -> object:
+    """Lazily import Hamilton symbols to avoid import-time cycles.
+
+    Parameters
+    ----------
+    name
+        Attribute name requested from the package.
+
+    Returns
+    -------
+    object
+        The resolved attribute loaded from its defining module.
+
+    Raises
+    ------
+    AttributeError
+        Raised when the requested attribute is not registered for lazy loading.
+    """
+    if name in _LAZY_IMPORTS:
+        module_name, attr_name = _LAZY_IMPORTS[name]
+        module = import_module(module_name)
+        value = getattr(module, attr_name)
+        globals()[name] = value
+        return value
+    message = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(message)

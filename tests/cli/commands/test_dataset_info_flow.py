@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 from codeintel.cli.core.result_types import (
     DatasetFlowResult,
     DatasetInfoResult,
@@ -17,7 +18,6 @@ from codeintel.cli.handlers.ops import (
     dataset_info_handler,
     dataset_info_structured,
 )
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_instance,

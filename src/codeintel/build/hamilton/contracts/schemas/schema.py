@@ -6,7 +6,7 @@ DDL, JSON schemas) can be derived from it.
 
 Examples
 --------
->>> from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+>>> from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 >>> schema = SCHEMA_REGISTRY.require("analytics.function_metrics")
 >>> schema.column_names()
 ('function_goid_h128', 'urn', 'repo', ...)

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
 import pandas as pd
 
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
     from types import ModuleType

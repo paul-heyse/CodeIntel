@@ -24,4 +24,3 @@ Diff two versions of an asset.
 │                          [env var: CODEINTEL_BUILD_DIFF_VERBOSE] [default:   │
 │                          0]                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-

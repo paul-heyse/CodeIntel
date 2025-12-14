@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from codeintel.config.datasets.validation import validate_df
+from codeintel.build.hamilton.contracts.schemas.validation import validate_df
 from codeintel.core.repository import PagedResult
 
 if TYPE_CHECKING:

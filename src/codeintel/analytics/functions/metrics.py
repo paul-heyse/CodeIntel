@@ -46,7 +46,7 @@ from codeintel.analytics.utilities.dataframe import to_records
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
 )
-from codeintel.config.datasets.validation import validate_df
+from codeintel.build.hamilton.contracts.schemas.validation import validate_df
 from codeintel.core.parsing import SourceSpan
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 

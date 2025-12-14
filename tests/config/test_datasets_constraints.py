@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandera as pa
 import pytest
 
-from codeintel.config.datasets.constraints import (
+from codeintel.build.hamilton.contracts.schemas.constraints import (
     Constraint,
     ConstraintKind,
     ConstraintSet,

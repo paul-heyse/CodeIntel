@@ -20,10 +20,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.compute.entrypoints.detection import (
-    DetectorSettings,
-    detect_entrypoints,
-)
+from codeintel.analytics.compute.entrypoints.detection import detect_entrypoints
 from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
@@ -78,6 +75,7 @@ if TYPE_CHECKING:
 
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.compute.entrypoints.detection import (
+        DetectorSettings,
         EntryPointCandidate,
     )
     from codeintel.config.primitives import SnapshotRef

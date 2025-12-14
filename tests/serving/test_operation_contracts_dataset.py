@@ -5,10 +5,10 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from codeintel.config.datasets.operation_contracts_dataset import (
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.operation_contracts_dataset import (
     OPERATION_CONTRACT_TABLE_KEY,
 )
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from codeintel.serving.contracts.operation_contract_reflection import (
     ComponentSpec,
     build_operation_contract_dataframe,

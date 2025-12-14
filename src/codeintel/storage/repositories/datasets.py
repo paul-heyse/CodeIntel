@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.config.datasets.validation import validate_df
+from codeintel.build.hamilton.contracts.schemas.validation import validate_df
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:

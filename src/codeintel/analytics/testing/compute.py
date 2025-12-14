@@ -24,11 +24,11 @@ from codeintel.analytics.testing.graph_metrics import (
     _build_function_rows,
     _build_test_rows,
 )
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 
 if TYPE_CHECKING:
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 

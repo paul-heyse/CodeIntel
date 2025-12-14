@@ -14,8 +14,8 @@ from codeintel.analytics.functions import (
     compute_function_metrics_and_types,
 )
 from codeintel.build.context import TargetResult
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 from codeintel.build.plugin import MetadataPlugin
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -88,7 +88,8 @@ class FunctionMetricsPlugin(MetadataPlugin):
         Notes
         -----
         This plugin validates output data against Pandera schemas when available.
-        Schema validation occurs in the persistence layer via `codeintel.config.datasets.validation.validate_df`.
+        Schema validation occurs in the persistence layer via
+        `codeintel.build.hamilton.contracts.schemas.validation.validate_df`.
         """
         _ = self
 

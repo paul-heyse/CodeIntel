@@ -1,4 +1,4 @@
-"""Tests for codeintel.config.datasets.schema_builder module."""
+"""Tests for the build-owned DatasetSchema builder."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING, TypedDict
 import pytest
 from pandera import Column, DataFrameSchema
 
-from codeintel.config.datasets.contracts import DatasetContract, RowBinding
-from codeintel.config.datasets.primitives import Column as DuckDBColumn
-from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
-from codeintel.config.datasets.schema import DatasetSchema
-from codeintel.config.datasets.schema_builder import (
+from codeintel.build.hamilton.contracts.schemas.builder import (
     build_all_schemas,
     build_dataset_schema,
 )
+from codeintel.build.hamilton.contracts.schemas.schema import DatasetSchema
+from codeintel.config.datasets.contracts import DatasetContract, RowBinding
+from codeintel.config.datasets.primitives import Column as DuckDBColumn
+from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

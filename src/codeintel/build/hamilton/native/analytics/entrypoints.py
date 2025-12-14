@@ -33,6 +33,7 @@ from codeintel.build.hamilton.native.materializer import (
 )
 from codeintel.core.catalog import CatalogService
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.helpers.module_index import load_module_map
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -71,16 +72,12 @@ def _build_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
         log.warning("Failed to load catalog: %s", exc)
         return None
 
-    # Load module map from core.modules
-    rows = env.gateway.con.execute(
-        """
-        SELECT path, module
-        FROM core.modules
-        WHERE repo = ? AND commit = ?
-        """,
-        [env.snapshot.repo, env.snapshot.commit],
-    ).fetchall()
-    module_map = {str(row[0]): str(row[1]) for row in rows}
+    module_map = load_module_map(
+        env.gateway,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        logger=log,
+    )
 
     # Load function features
     features_map: Mapping[int, FunctionAstFeatures] = {}

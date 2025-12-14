@@ -14,11 +14,13 @@ import networkx as nx
 from codeintel.analytics.compute.graphs.centrality import _betweenness_sample
 from codeintel.analytics.compute.graphs.conversions import log_projection_skipped
 from codeintel.analytics.compute.graphs.types import BipartiteDegrees, ProjectionMetrics
+from codeintel.core.compute.centrality import compute_betweenness, compute_closeness
 from codeintel.graphs.compute.metrics.bipartite import (
     compute_bipartite_degrees,
     compute_weighted_projection,
 )
 from codeintel.graphs.compute.metrics.community import detect_communities_greedy
+from codeintel.graphs.compute.metrics.structural import compute_clustering_coefficient
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -174,19 +176,18 @@ def projection_metrics(
         )
 
     log.debug("projection_metrics.clustering label=%s", label or "unnamed")
-    clustering_val = nx.clustering(proj, weight=weight_attr)
-    clustering = clustering_val if isinstance(clustering_val, dict) else {}
+    clustering = compute_clustering_coefficient(proj, weight=weight_attr)
 
     log.debug("projection_metrics.betweenness label=%s", label or "unnamed")
-    betweenness = nx.betweenness_centrality(
+    betweenness = compute_betweenness(
         proj,
-        weight=weight_attr,
         k=_betweenness_sample(proj, ctx),
+        weight=weight_attr,
         seed=ctx.seed,
     )
 
     log.debug("projection_metrics.closeness label=%s", label or "unnamed")
-    closeness = {node: float(val) for node, val in nx.closeness_centrality(proj).items()}
+    closeness = compute_closeness(proj)
 
     log.debug("projection_metrics.community label=%s", label or "unnamed")
     communities = community_ids(proj, weight=weight_attr)

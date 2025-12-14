@@ -16,10 +16,7 @@ from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
-from codeintel.analytics.testing.compute import (
-    TestGraphMetricsResult,
-    compute_test_graph_metrics_pure,
-)
+from codeintel.analytics.testing.compute import compute_test_graph_metrics_pure
 from codeintel.analytics.testing.graph_metrics import (
     TEST_GRAPH_METRICS_FUNCTIONS_COLS,
     TEST_GRAPH_METRICS_TESTS_COLS,
@@ -33,6 +30,7 @@ from codeintel.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
+    from codeintel.analytics.testing.compute import TestGraphMetricsResult
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.targets import TargetGraph

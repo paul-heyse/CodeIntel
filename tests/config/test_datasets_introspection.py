@@ -8,13 +8,17 @@ from __future__ import annotations
 import pandera as pa
 import pytest
 
-from codeintel.config.datasets.constraints import Constraint, ConstraintKind, ConstraintSet
-from codeintel.config.datasets.introspection import (
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.constraints import (
+    Constraint,
+    ConstraintKind,
+    ConstraintSet,
+)
+from codeintel.build.hamilton.contracts.schemas.introspection import (
     DatasetIntrospection,
     introspect_dataset,
 )
-from codeintel.config.datasets.schema import DatasetMetadata, DatasetSchema
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.schema import DatasetMetadata, DatasetSchema
 
 
 def _require(*, condition: bool, message: str) -> None:

@@ -43,6 +43,8 @@ class StructuralMetrics:
 
 def compute_clustering_coefficient(
     graph: nx.Graph | nx.DiGraph,
+    *,
+    weight: str | None = None,
 ) -> dict[Any, float]:
     """Compute local clustering coefficient for all nodes.
 
@@ -52,6 +54,8 @@ def compute_clustering_coefficient(
     ----------
     graph
         Graph (directed or undirected).
+    weight
+        Edge attribute to use as weight (None for unweighted).
 
     Returns
     -------
@@ -62,7 +66,7 @@ def compute_clustering_coefficient(
         return {}
 
     work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-    clustering_result = cast("dict[Any, float]", nx.clustering(work_graph))
+    clustering_result = cast("dict[Any, float]", nx.clustering(work_graph, weight=weight))
     return {node: float(val) for node, val in clustering_result.items()}
 
 

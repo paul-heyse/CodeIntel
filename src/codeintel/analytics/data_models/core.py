@@ -16,7 +16,6 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
@@ -31,6 +30,7 @@ from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
+    from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import DuckDBConnection

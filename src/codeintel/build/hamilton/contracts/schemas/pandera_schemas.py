@@ -1,4 +1,4 @@
-"""Pandera schemas and validation helpers for CodeIntel datasets."""
+"""Pandera schema definitions for CodeIntel datasets."""
 
 from __future__ import annotations
 
@@ -22,11 +22,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ValidationResult",
-    "dataset_json_schema",
-    "dataset_json_schemas",
-    "get_dataset_schema",
-    "pandera_to_json_schema",
-    "validate_dataset_df",
     "validate_with_result",
 ]
 
@@ -1192,54 +1187,6 @@ def _get_dataset_schemas() -> dict[str, DataFrameSchema]:
     return schemas
 
 
-def get_dataset_schema(table_key: str) -> DataFrameSchema | None:
-    """Return the Pandera schema for a dataset when registered.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified dataset table identifier.
-
-    Returns
-    -------
-    DataFrameSchema | None
-        Schema when registered, otherwise ``None``.
-
-    Examples
-    --------
-    >>> schema = get_dataset_schema("analytics.function_metrics")
-    >>> schema is not None
-    True
-    """
-    # Lazy import to avoid circular dependency
-    from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY  # noqa: PLC0415
-
-    ds_schema = SCHEMA_REGISTRY.get(table_key)
-    if ds_schema is None:
-        return None
-    return ds_schema.pandera_schema
-
-
-def validate_dataset_df(table_key: str, df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Validate a dataset DataFrame against its Pandera schema when available.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table name (e.g., ``analytics.function_metrics``).
-    df
-        DataFrame to validate.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Validated (and possibly coerced) DataFrame.
-    """
-    schema = get_dataset_schema(table_key)
-    if schema is None:
-        return df
-    return schema.validate(df, lazy=True)
 
 
 @dataclass
@@ -1330,7 +1277,7 @@ def validate_with_result(
         Detailed validation outcome with errors when applicable.
     """
     log = logging.getLogger(__name__)
-    schema = get_dataset_schema(table_key)
+    schema = _get_dataset_schemas().get(table_key)
     if schema is None:
         return ValidationResult.ok(table_key, df)
 
@@ -1468,42 +1415,3 @@ _SCHEMA_DESCRIPTIONS: dict[str, str] = {
     "docs.v_call_graph_enriched": "Call graph edges with caller/callee metadata.",
     "docs.v_subsystem_summary": "Subsystem overview with structure and risk profile.",
 }
-
-
-def dataset_json_schema(table_key: str) -> dict[str, Any] | None:
-    """
-    Return JSON Schema for a dataset when a Pandera schema is registered.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified dataset table identifier.
-
-    Returns
-    -------
-    dict[str, Any] | None
-        JSON Schema document when available, otherwise ``None``.
-    """
-    df_schema = get_dataset_schema(table_key)
-    if df_schema is None:
-        return None
-    return pandera_to_json_schema(df_schema)
-
-
-def dataset_json_schemas() -> dict[str, dict[str, Any]]:
-    """
-    Return JSON Schemas for all registered Pandera dataset schemas.
-
-    Returns
-    -------
-    dict[str, dict[str, Any]]
-        Mapping from dataset table key to JSON Schema.
-    """
-    # Lazy import to avoid circular dependency
-    from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY  # noqa: PLC0415
-
-    result: dict[str, dict[str, Any]] = {}
-    for table_key, ds_schema in SCHEMA_REGISTRY.items():
-        if ds_schema.pandera_schema is not None:
-            result[table_key] = pandera_to_json_schema(ds_schema.pandera_schema)
-    return result

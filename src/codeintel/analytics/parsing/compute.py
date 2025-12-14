@@ -20,18 +20,17 @@ Example
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from codeintel.analytics.parsing.validation import (
-    FUNCTION_VALIDATION_COLS,
-    GRAPH_VALIDATION_COLS,
-    FunctionValidationReporter,
-    GraphValidationReporter,
-)
-from codeintel.build.hamilton.native.materializer import (
-    DatasetRef,
-    MaterializationContext,
-    materialize_rows,
-)
+from codeintel.analytics.parsing.validation import FUNCTION_VALIDATION_COLS, GRAPH_VALIDATION_COLS
+from codeintel.build.hamilton.native.materializer import materialize_rows
+
+if TYPE_CHECKING:
+    from codeintel.analytics.parsing.validation import (
+        FunctionValidationReporter,
+        GraphValidationReporter,
+    )
+    from codeintel.build.hamilton.native.materializer import DatasetRef, MaterializationContext
 
 
 @dataclass(frozen=True)

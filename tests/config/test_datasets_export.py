@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.datasets.constraints import ConstraintKind
-from codeintel.config.datasets.export import (
+from codeintel.build.hamilton.contracts.schemas.constraints import ConstraintKind
+from codeintel.build.hamilton.contracts.schemas.export import (
     export_all_constraints_json,
     export_dataset_catalog_json,
     export_dependency_graph_json,

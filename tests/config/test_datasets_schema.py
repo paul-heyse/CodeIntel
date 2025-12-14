@@ -1,4 +1,4 @@
-"""Tests for codeintel.config.datasets.schema module."""
+"""Tests for the build-owned DatasetSchema abstraction."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 from pandera import Column, DataFrameSchema
 from pandera.errors import SchemaErrors
 
-from codeintel.config.datasets.schema import (
+from codeintel.build.hamilton.contracts.schemas.schema import (
     DatasetMetadata,
     DatasetSchema,
 )

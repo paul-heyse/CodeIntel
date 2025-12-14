@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 
 
 def _require(*, condition: bool, message: str) -> None:
