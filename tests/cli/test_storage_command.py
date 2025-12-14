@@ -1,8 +1,14 @@
-"""Tests for storage CLI commands."""
+"""Tests for storage CLI commands.
+
+These tests use xdist_group to run in the same worker due to cyclopts/pydantic
+type adapter caching issues that cause ValidationError when tests run in parallel.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
+import pytest
 
 from tests._helpers.assertions import expect_equal, expect_is_not_none
 from tests._helpers.cli import assert_exit, assert_success
@@ -11,6 +17,7 @@ if TYPE_CHECKING:
     from tests._helpers.cli_project import CLIProjectHarness
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_storage_validate_macros_success(
     cli_project_harness: CLIProjectHarness,
 ) -> None:
@@ -21,6 +28,7 @@ def test_storage_validate_macros_success(
     assert_success(result)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_storage_validate_macros_failure(cli_project_harness: CLIProjectHarness) -> None:
     """Validation error should exit with code 1 when schema registry is missing."""
     db_path = cli_project_harness.ctx.db_path

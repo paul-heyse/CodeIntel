@@ -1,4 +1,8 @@
-"""Tests for build CLI commands."""
+"""Tests for build CLI commands.
+
+Uses xdist_group to run in the same worker due to cyclopts/pydantic
+type adapter caching issues that cause ValidationError when tests run in parallel.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +21,8 @@ from tests._helpers.cli import run_cli
 
 if TYPE_CHECKING:
     from codeintel.build.targets import TargetModule
+
+pytestmark = pytest.mark.xdist_group("cli_shared_flags")
 
 
 class TestBuildStatusHelp:

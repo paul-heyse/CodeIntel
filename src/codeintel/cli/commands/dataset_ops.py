@@ -38,7 +38,7 @@ _DATASET_RUNTIME_CONFIG = CommandConfig(require_runtime=True, require_gateway=Tr
 class DatasetListCommand:
     """List datasets from the registry."""
 
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command(
@@ -56,7 +56,7 @@ class DatasetDescribeCommand:
             help="Dataset table key (e.g., 'core.goids').",
         ),
     ]
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("dataset.verify", handler=dataset_verify_handler, config=_DATASET_RUNTIME_CONFIG)
@@ -72,7 +72,7 @@ class DatasetVerifyCommand:
             help="Dataset table key to verify (verifies all if not specified).",
         ),
     ] = None
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("dataset.info", handler=dataset_info_handler, config=_DATASET_NO_RUNTIME_CONFIG)
@@ -96,7 +96,7 @@ class DatasetInfoCommand:
             help="Dataset table key (e.g., 'analytics.function_metrics').",
         ),
     ]
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command("dataset.flow", handler=dataset_flow_handler, config=_DATASET_NO_RUNTIME_CONFIG)
@@ -116,7 +116,7 @@ class DatasetFlowCommand:
             help="Dataset table key (e.g., 'analytics.function_metrics').",
         ),
     ]
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 @cli_command(
@@ -143,7 +143,7 @@ class DatasetConstraintsCommand:
             help="Dataset table key (e.g., 'analytics.function_metrics').",
         ),
     ]
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = [

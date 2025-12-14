@@ -1,4 +1,8 @@
-"""Tests for the CLI entrypoint using the shared run_cli helper."""
+"""Tests for the CLI entrypoint using the shared run_cli helper.
+
+These tests use xdist_group to run in the same worker due to cyclopts/pydantic
+type adapter caching issues that cause ValidationError when tests run in parallel.
+"""
 
 from __future__ import annotations
 
@@ -74,6 +78,7 @@ def test_load_project_config_parses_yaml(temp_project: Path) -> None:
     expect_equal(config.default_profile, "default")
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_op_list_shows_operations() -> None:
     """Verify op list shows available operations."""
     result = run_cli(["op", "list"])
@@ -84,6 +89,7 @@ def test_op_list_shows_operations() -> None:
     expect_in("function.summary", result.stdout)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_op_list_json_output() -> None:
     """Verify op list --output-format json produces valid JSON."""
     result = run_cli(["op", "list", "--output-format", "json"])
@@ -102,6 +108,7 @@ def test_op_list_json_output() -> None:
     expect_in("category", operations[0])
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_op_list_filter_by_category() -> None:
     """Verify op list --category filters operations."""
     result = run_cli(["op", "list", "--category", "functions"])
@@ -110,6 +117,7 @@ def test_op_list_filter_by_category() -> None:
     expect_in("function.summary", result.stdout)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_dataset_describe_known_dataset() -> None:
     """Verify dataset describe shows contract details."""
     result = run_cli(["dataset", "describe", "core.goids"])
@@ -119,6 +127,7 @@ def test_dataset_describe_known_dataset() -> None:
     expect_in("core.goids", result.stdout)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_dataset_describe_unknown_dataset() -> None:
     """Verify dataset describe fails for unknown dataset."""
     result = run_cli(["dataset", "describe", "nonexistent.table"])
@@ -129,6 +138,7 @@ def test_dataset_describe_unknown_dataset() -> None:
     expect_true("not found" in output.lower() or "error" in output.lower())
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_serve_http_help() -> None:
     """Verify serve http --help shows options."""
     result = run_cli(["serve", "http", "--help"])
@@ -139,6 +149,7 @@ def test_serve_http_help() -> None:
     expect_in("--auto-pipeline", result.stdout)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_serve_mcp_help() -> None:
     """Verify serve mcp --help shows options."""
     result = run_cli(["serve", "mcp", "--help"])
@@ -147,6 +158,7 @@ def test_serve_mcp_help() -> None:
     expect_in("--auto-pipeline", result.stdout)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_main_help() -> None:
     """Verify main help shows all command groups."""
     result = run_cli(["--help"])
@@ -158,6 +170,7 @@ def test_main_help() -> None:
     expect_in("serve", result.stdout)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_pipeline_removed() -> None:
     """Verify pipeline command has been removed (replaced by build)."""
     result = run_cli(["pipeline"])
@@ -166,6 +179,7 @@ def test_pipeline_removed() -> None:
     expect_true("No such command" in result.stderr)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_op_help() -> None:
     """Verify op group help shows subcommands."""
     result = run_cli(["op", "--help"])
@@ -175,6 +189,7 @@ def test_op_help() -> None:
     expect_in("call", result.stdout)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_dataset_help() -> None:
     """Verify dataset group help shows subcommands."""
     result = run_cli(["dataset", "--help"])
@@ -185,6 +200,7 @@ def test_dataset_help() -> None:
     expect_in("verify", result.stdout)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_build_help() -> None:
     """Verify build group help shows subcommands."""
     result = run_cli(["build", "--help"])
@@ -195,6 +211,7 @@ def test_build_help() -> None:
     expect_in("history", result.stdout)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_build_run_help() -> None:
     """Verify build run --help shows all options."""
     result = run_cli(["build", "run", "--help"])
@@ -206,6 +223,7 @@ def test_build_run_help() -> None:
     expect_in("--force", result.stdout)
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_build_run_all_requires_project() -> None:
     """Verify build run --all fails without project context."""
     result = run_cli(["build", "run", "--all", "--root", "/nonexistent/path"])
@@ -215,6 +233,7 @@ def test_build_run_all_requires_project() -> None:
     expect_true("error" in output.lower() or "not found" in output.lower())
 
 
+@pytest.mark.xdist_group("cli_shared_flags")
 def test_build_status_requires_project() -> None:
     """Verify build status fails without project context."""
     result = run_cli(["build", "status", "--root", "/nonexistent/path"])

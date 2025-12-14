@@ -1,8 +1,14 @@
-"""CLI coverage for history-timeseries command."""
+"""CLI coverage for history-timeseries command.
+
+Uses xdist_group to run in the same worker due to cyclopts/pydantic
+type adapter caching issues that cause ValidationError when tests run in parallel.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
+import pytest
 
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions import expect_equal, expect_true
@@ -12,6 +18,8 @@ from tests._helpers.orchestration.history import create_snapshot_db
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+pytestmark = pytest.mark.xdist_group("cli_shared_flags")
 
 EXPECTED_HISTORY_ROW_COUNT = 2
 

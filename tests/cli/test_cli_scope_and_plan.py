@@ -1,4 +1,8 @@
-"""CLI scope parsing and plan output coverage."""
+"""CLI scope parsing and plan output coverage.
+
+Uses xdist_group to run in the same worker due to cyclopts/pydantic
+type adapter caching issues that cause ValidationError when tests run in parallel.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,8 @@ import json
 import pytest
 
 from tests._helpers.cli import run_cli
+
+pytestmark = pytest.mark.xdist_group("cli_shared_flags")
 
 
 def test_cli_plan_outputs_isolation_and_scope_metadata() -> None:

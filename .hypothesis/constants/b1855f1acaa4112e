@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/graphs.py
+# hypothesis_version: 6.148.7
+
+['--dependency-policy', '--names', '--no-plan', '--plan', '--selection-policy', 'GraphPlanResult', 'GraphPlanStage', 'GraphTargetInfo', 'GraphTargets', 'GraphTargetsList', 'GraphTargetsPlan', 'GraphTargetsResult', 'core_metadata', 'graph', 'graph.plugins.list', 'graph.targets', 'graph.targets.list', 'graph.targets.plan', 'graphs', 'graphs_app', 'lenient', 'plugin_name', 'plugins', 'stage', 'strict', 'targets', 'targets-list', 'targets-plan']

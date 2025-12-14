@@ -103,7 +103,7 @@ class HistoryTimeseriesCommand:
             help="Repository root directory.",
         ),
     ] = None
-    flags: SharedFlags = field(default_factory=SharedFlags, metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
 __all__ = ["history_app"]
