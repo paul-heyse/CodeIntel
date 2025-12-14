@@ -94,4 +94,3 @@ __all__ = [
     "as_int",
     "normalize_decimal_id",
 ]
-

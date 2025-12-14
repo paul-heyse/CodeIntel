@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/data_models/ids.py
+# hypothesis_version: 6.148.7
+
+['as_int', 'normalize_decimal_id', 'utf-8']

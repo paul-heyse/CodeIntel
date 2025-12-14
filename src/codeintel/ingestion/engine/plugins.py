@@ -16,8 +16,16 @@ needed by ingestion steps. The ``ToolRunnerAdapter`` then converts these
 rich results into simpler port interface types for clean architectural
 boundaries.
 
+Integration with Core
+---------------------
+This module integrates with the core plugin system:
+- ``ToolPlugin`` protocol is compatible with ``AsyncPluginProtocol``
+- ``ToolPluginMetadata`` can be converted to core ``PluginMetadata``
+- Use ``to_core_metadata()`` for unified plugin introspection
+
 See Also
 --------
+codeintel.core.plugins.types : Unified plugin types
 codeintel.ingestion.engine.results : Rich parsed result types
 codeintel.ingestion.tool_service : Facade for tool orchestration
 codeintel.ingestion.ports.tools : Port interface types
@@ -31,6 +39,13 @@ from enum import StrEnum
 from importlib import import_module
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
+# Core plugin types for interoperability
+from codeintel.core.plugins.types import (
+    AsyncPluginProtocol,
+)
+from codeintel.core.plugins.types import (
+    PluginMetadata as CorePluginMetadata,
+)
 from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolNotFoundError,
@@ -90,8 +105,7 @@ class ToolStatus(StrEnum):
 
 @dataclass(frozen=True)
 class ToolPluginResult:
-    """
-    High-level result from a tool plugin execution.
+    """High-level result from a tool plugin execution.
 
     Attributes
     ----------
@@ -124,41 +138,151 @@ class ToolPluginResult:
 
 @dataclass(frozen=True)
 class ToolPluginMetadata:
-    """
-    Declarative metadata for a plugin.
+    """Declarative metadata for a tool plugin.
+
+    This class provides tool-specific metadata that can be converted to
+    core ``PluginMetadata`` for unified plugin introspection.
 
     Attributes
     ----------
-    name:
+    name
         Registry name (e.g., "pyright").
-    produces_artifacts:
+    produces_artifacts
         Logical artifact names exposed by this plugin.
-    consumes_configs:
+    consumes_configs
         ToolConfig fields this plugin depends on (e.g., "pyright_bin").
-    datasets:
+    datasets
         Datasets (table keys) that conceptually rely on this tool.
+    tool_binary
+        Optional explicit binary name for the tool.
+    description
+        Human-readable description of the plugin.
     """
 
     name: str
     produces_artifacts: tuple[str, ...]
     consumes_configs: tuple[str, ...] = ()
     datasets: tuple[str, ...] = ()
+    tool_binary: str | None = None
+    description: str | None = None
+
+    def to_core_metadata(self) -> CorePluginMetadata:
+        """Convert to core PluginMetadata for unified introspection.
+
+        Returns
+        -------
+        CorePluginMetadata
+            Core plugin metadata with tool-specific fields populated.
+        """
+        return CorePluginMetadata(
+            name=self.name,
+            description=self.description or f"Tool plugin: {self.name}",
+            kind="tool",
+            stage="pipeline_ingestion",
+            tool_binary=self.tool_binary,
+            produces_artifacts=self.produces_artifacts,
+            consumes_configs=self.consumes_configs,
+            produces_tables=self.datasets,
+        )
+
+
+def tool_metadata(
+    name: str,
+    produces_artifacts: tuple[str, ...],
+    **kwargs: object,
+) -> ToolPluginMetadata:
+    """Create tool plugin metadata with sensible defaults.
+
+    Parameters
+    ----------
+    name
+        Registry name for the plugin.
+    produces_artifacts
+        Logical artifact names exposed by this plugin.
+    **kwargs
+        Additional optional fields:
+        - consumes_configs: ToolConfig fields this plugin depends on.
+        - datasets: Datasets (table keys) that rely on this tool.
+        - tool_binary: Explicit binary name for the tool.
+        - description: Human-readable description of the plugin.
+
+    Returns
+    -------
+    ToolPluginMetadata
+        Configured metadata instance.
+
+    Examples
+    --------
+    >>> meta = tool_metadata(
+    ...     "pyright",
+    ...     ("pyright_json",),
+    ...     consumes_configs=("pyright_bin",),
+    ... )
+    >>> meta.name
+    'pyright'
+    """
+    raw_configs = kwargs.get("consumes_configs", ())
+    raw_datasets = kwargs.get("datasets", ())
+    tool_binary = kwargs.get("tool_binary")
+    description = kwargs.get("description")
+
+    consumes_configs: tuple[str, ...]
+    if isinstance(raw_configs, tuple):
+        consumes_configs = raw_configs
+    elif hasattr(raw_configs, "__iter__") and not isinstance(raw_configs, str):
+        consumes_configs = tuple(str(x) for x in raw_configs)  # type: ignore[union-attr]
+    else:
+        consumes_configs = ()
+
+    datasets: tuple[str, ...]
+    if isinstance(raw_datasets, tuple):
+        datasets = raw_datasets
+    elif hasattr(raw_datasets, "__iter__") and not isinstance(raw_datasets, str):
+        datasets = tuple(str(x) for x in raw_datasets)  # type: ignore[union-attr]
+    else:
+        datasets = ()
+
+    return ToolPluginMetadata(
+        name=name,
+        produces_artifacts=produces_artifacts,
+        consumes_configs=consumes_configs,
+        datasets=datasets,
+        tool_binary=str(tool_binary) if tool_binary else None,
+        description=str(description) if description else None,
+    )
 
 
 @runtime_checkable
 class ToolPlugin(Protocol):
-    """Protocol implemented by all tool plugins."""
+    """Protocol implemented by all tool plugins.
+
+    This protocol is compatible with the core ``AsyncPluginProtocol`` and
+    can be used interchangeably where async execution is expected.
+
+    Notes
+    -----
+    Tool plugins have their own metadata type (``ToolPluginMetadata``) but
+    can be converted to core metadata via ``metadata.to_core_metadata()``.
+    """
 
     metadata: ToolPluginMetadata
     runner: ToolRunner
     tools_config: ToolsConfig
 
     async def run(self, *, repo_root: Path, **kwargs: object) -> ToolPluginResult:
-        """
-        Execute the tool for the given repository root.
+        """Execute the tool for the given repository root.
 
-        Additional keyword arguments are tool-specific (for example,
-        coverage_file, json_output_path, rel_paths for sharded SCIP).
+        Parameters
+        ----------
+        repo_root
+            Repository root path for tool execution.
+        **kwargs
+            Tool-specific arguments (e.g., coverage_file, json_output_path).
+
+        Returns
+        -------
+        ToolPluginResult
+            Result containing status, artifacts, and parsed output.
         """
         ...
 
@@ -208,16 +332,15 @@ class DiagnosticToolPlugin:
 
 @dataclass
 class ToolPluginRegistry:
-    """
-    Registry of tool plugins keyed by logical name.
+    """Registry of tool plugins keyed by logical name.
 
     Parameters
     ----------
-    runner:
+    runner
         Shared ToolRunner used by plugins.
-    tools_config:
+    tools_config
         Effective ToolsConfig configuration.
-    plugins:
+    plugins
         Initial mapping of name -> plugin instance (optional).
     """
 
@@ -226,8 +349,7 @@ class ToolPluginRegistry:
     _plugins: MutableMapping[str, ToolPlugin] = field(default_factory=dict)
 
     def register(self, plugin: ToolPlugin) -> None:
-        """
-        Register or overwrite a plugin.
+        """Register or overwrite a plugin.
 
         Parameters
         ----------
@@ -239,8 +361,7 @@ class ToolPluginRegistry:
         log.debug("Registered tool plugin %s", name)
 
     def get(self, name: str) -> ToolPlugin:
-        """
-        Return a plugin by name or raise KeyError.
+        """Return a plugin by name or raise KeyError.
 
         Parameters
         ----------
@@ -264,8 +385,7 @@ class ToolPluginRegistry:
             raise KeyError(message) from exc
 
     def names(self) -> tuple[str, ...]:
-        """
-        Return all registered plugin names.
+        """Return all registered plugin names.
 
         Returns
         -------
@@ -275,8 +395,7 @@ class ToolPluginRegistry:
         return tuple(self._plugins.keys())
 
     def items(self) -> Mapping[str, ToolPlugin]:
-        """
-        Return an immutable view of registered plugins.
+        """Return an immutable view of registered plugins.
 
         Returns
         -------
@@ -285,10 +404,35 @@ class ToolPluginRegistry:
         """
         return dict(self._plugins)
 
+    def get_core_metadata(self, name: str) -> CorePluginMetadata:
+        """Return core-compatible metadata for a plugin.
+
+        Parameters
+        ----------
+        name
+            Plugin registry name.
+
+        Returns
+        -------
+        CorePluginMetadata
+            Core plugin metadata for unified introspection.
+        """
+        plugin = self.get(name)
+        return plugin.metadata.to_core_metadata()
+
+    def all_core_metadata(self) -> Mapping[str, CorePluginMetadata]:
+        """Return core-compatible metadata for all plugins.
+
+        Returns
+        -------
+        Mapping[str, CorePluginMetadata]
+            Mapping of plugin names to core metadata.
+        """
+        return {name: p.metadata.to_core_metadata() for name, p in self._plugins.items()}
+
 
 def build_default_registry(runner: ToolRunner, tools_config: ToolsConfig) -> ToolPluginRegistry:
-    """
-    Construct a registry with all built-in tool plugins.
+    """Construct a registry with all built-in tool plugins.
 
     Parameters
     ----------
@@ -319,3 +463,17 @@ def build_default_registry(runner: ToolRunner, tools_config: ToolsConfig) -> Too
     registry.register(scip_plugin(runner=runner, tools_config=tools_config))
 
     return registry
+
+
+__all__ = [
+    "AsyncPluginProtocol",
+    "CorePluginMetadata",
+    "DiagnosticToolPlugin",
+    "ToolPlugin",
+    "ToolPluginMetadata",
+    "ToolPluginRegistry",
+    "ToolPluginResult",
+    "ToolStatus",
+    "build_default_registry",
+    "tool_metadata",
+]

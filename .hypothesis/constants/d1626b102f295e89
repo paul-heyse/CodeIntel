@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/ports/storage.py
+# hypothesis_version: 6.148.7
+
+[0.0, 'BatchResult', 'MutableQueryResult', 'QueryResult', 'StoragePort', 'rel_path']
