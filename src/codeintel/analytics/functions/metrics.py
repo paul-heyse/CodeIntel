@@ -40,6 +40,7 @@ from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.analytics.parsing.models import SourceSpan
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.parsing.validation import FunctionValidationReporter
+from codeintel.analytics.utilities.dataframe import to_records
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
 )
@@ -63,18 +64,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
-
-
-def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
-    """
-    Convert DataFrame rows into plain dictionaries.
-
-    Returns
-    -------
-    list[dict[str, Any]]
-        Records returned by ``DataFrame.to_dict(orient="records")``.
-    """
-    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
 
 
 @dataclass(frozen=True)
@@ -456,7 +445,7 @@ def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, lis
         return {}
 
     goids_by_file: dict[str, list[GoidRow]] = {}
-    for record in _to_records(df):
+    for record in to_records(df):
         rel_path = str(record["rel_path"]).replace("\\", "/")
         goid_row: GoidRow = {
             "goid_h128": int(record["goid_h128"]),

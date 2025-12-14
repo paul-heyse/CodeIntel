@@ -16,29 +16,27 @@ SymbolFunctionRow = tuple[Any, ...]
 
 
 @dataclass(frozen=True)
-class SymbolModuleMetricInputs:
-    """Inputs required to build symbol module graph metrics rows."""
+class SymbolMetricInputs[TNode]:
+    """Generic inputs for symbol graph metrics computation.
+
+    Type Parameters
+    ---------------
+    TNode
+        Node type for graph nodes (e.g., str for modules, int for functions).
+    """
 
     repo: str
     commit: str
-    centrality: Mapping[str, Mapping[Any, float]]
-    structure: Mapping[str, Mapping[Any, float | int]]
-    comp_id: Mapping[Any, int]
-    comp_size: Mapping[Any, int]
+    centrality: Mapping[str, Mapping[TNode, float]]
+    structure: Mapping[str, Mapping[TNode, float | int]]
+    comp_id: Mapping[TNode, int]
+    comp_size: Mapping[TNode, int]
     created_at: datetime
 
 
-@dataclass(frozen=True)
-class SymbolFunctionMetricInputs:
-    """Inputs required to build symbol function graph metrics rows."""
-
-    repo: str
-    commit: str
-    centrality: Mapping[str, Mapping[Any, float]]
-    structure: Mapping[str, Mapping[Any, float | int]]
-    comp_id: Mapping[Any, int]
-    comp_size: Mapping[Any, int]
-    created_at: datetime
+# Type aliases for backward compatibility
+SymbolModuleMetricInputs = SymbolMetricInputs[str]
+SymbolFunctionMetricInputs = SymbolMetricInputs[int]
 
 
 def build_symbol_module_rows(inputs: SymbolModuleMetricInputs) -> list[SymbolModuleRow]:
@@ -102,6 +100,7 @@ def build_symbol_function_rows(inputs: SymbolFunctionMetricInputs) -> list[Symbo
 __all__ = [
     "SymbolFunctionMetricInputs",
     "SymbolFunctionRow",
+    "SymbolMetricInputs",
     "SymbolModuleMetricInputs",
     "SymbolModuleRow",
     "build_symbol_function_rows",

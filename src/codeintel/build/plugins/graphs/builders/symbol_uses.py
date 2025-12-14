@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
-from codeintel.build.plugins._helpers import is_test_path
+from codeintel.build.plugins._helpers import filter_mapping, is_test_path
 from codeintel.build.plugins.graphs.builders.symbol_uses_options import SymbolUsesOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import symbols as symbols_compute
@@ -51,20 +51,6 @@ SYMBOL_USES_METADATA = CorePluginMetadata(
 )
 
 
-def _matches_scope(path: str, scope_paths: list[str] | None) -> bool:
-    """Check whether a path matches configured scope prefixes.
-
-    Returns
-    -------
-    bool
-        True when the path is within scope or no scope is set.
-    """
-    if not scope_paths:
-        return True
-    prefixes = tuple(scope_paths)
-    return path.startswith(prefixes)
-
-
 def _filter_occurrences(
     occurrences: list[symbols_compute.SymbolOccurrence],
     options: SymbolUsesOptions,
@@ -76,52 +62,16 @@ def _filter_occurrences(
     list[SymbolOccurrence]
         Filtered symbol occurrences.
     """
+    scope_prefixes = tuple(options.scope_paths) if options.scope_paths else None
     filtered: list[symbols_compute.SymbolOccurrence] = []
     for occurrence in occurrences:
-        if not _matches_scope(occurrence.rel_path, options.scope_paths):
+        path = occurrence.rel_path
+        if scope_prefixes and not path.startswith(scope_prefixes):
             continue
-        if not options.include_tests and is_test_path(occurrence.rel_path):
+        if not options.include_tests and is_test_path(path):
             continue
         filtered.append(occurrence)
     return filtered
-
-
-def _filter_module_map(
-    module_map: dict[str, str],
-    options: SymbolUsesOptions,
-) -> dict[str, str]:
-    """Filter module map to align with scope configuration.
-
-    Returns
-    -------
-    dict[str, str]
-        Filtered module map keyed by relative path.
-    """
-    return {
-        path: module
-        for path, module in module_map.items()
-        if _matches_scope(path, options.scope_paths)
-        and (options.include_tests or not is_test_path(path))
-    }
-
-
-def _filter_path_to_goid_map(
-    path_to_goid: dict[str, int],
-    options: SymbolUsesOptions,
-) -> dict[str, int]:
-    """Filter path->GOID map to align with scope configuration.
-
-    Returns
-    -------
-    dict[str, int]
-        Filtered path to GOID mapping.
-    """
-    return {
-        path: goid
-        for path, goid in path_to_goid.items()
-        if _matches_scope(path, options.scope_paths)
-        and (options.include_tests or not is_test_path(path))
-    }
 
 
 def build_scip_candidates(
@@ -430,7 +380,11 @@ class SymbolUsesPlugin(MetadataPlugin):
 
             log.info("symbol_uses: Loaded %d symbol occurrences", len(occurrences))
 
-            module_by_path = _filter_module_map(_load_module_map(gateway, repo, commit), opts)
+            module_by_path = filter_mapping(
+                _load_module_map(gateway, repo, commit),
+                scope_paths=opts.scope_paths,
+                include_tests=opts.include_tests,
+            )
             log.debug("symbol_uses: Loaded %d module mappings", len(module_by_path))
 
             def_map = symbols_compute.build_def_map(occurrences)
@@ -439,8 +393,10 @@ class SymbolUsesPlugin(MetadataPlugin):
             edges = symbols_compute.build_use_edges(occurrences, def_map, module_by_path)
             log.info("symbol_uses: Built %d use edges", len(edges))
 
-            path_to_goid = _filter_path_to_goid_map(
-                _load_path_to_goid_map(gateway, repo, commit), opts
+            path_to_goid = filter_mapping(
+                _load_path_to_goid_map(gateway, repo, commit),
+                scope_paths=opts.scope_paths,
+                include_tests=opts.include_tests,
             )
             log.debug("symbol_uses: Loaded %d path->goid mappings", len(path_to_goid))
             edges = _enrich_edges_with_goids(edges, path_to_goid)

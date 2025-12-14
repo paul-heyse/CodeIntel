@@ -49,6 +49,7 @@ values = row.to_tuple()
 
 from __future__ import annotations
 
+from codeintel.core.data_models.ids import as_int, normalize_decimal_id
 from codeintel.core.data_models.rows import (
     CFGBlockRow,
     CFGEdgeRow,
@@ -69,4 +70,6 @@ __all__ = [
     "ImportEdgeRow",
     "ImportModuleRow",
     "SymbolUseRow",
+    "as_int",
+    "normalize_decimal_id",
 ]

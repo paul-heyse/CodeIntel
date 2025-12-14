@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
@@ -16,10 +17,7 @@ from codeintel.analytics.profiles.utils import (
     optional_int,
     optional_str,
 )
-from codeintel.analytics.profiles.writer_guard import (
-    WriterContext,
-    write_rows_with_registry_guard,
-)
+from codeintel.analytics.profiles.writer_guard import create_profile_writer
 from codeintel.config.datasets import (
     FILE_PROFILE_COLUMNS,
     FileProfileRowModel,
@@ -39,9 +37,6 @@ from codeintel.storage.ibis_types import (
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from codeintel.analytics.profiles.writer_guard import (
-        SerializeRow,
-    )
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
@@ -333,35 +328,14 @@ def _row_to_file_profile_model(
     )
 
 
-def write_file_profile_rows(gateway: StorageGateway, rows: Iterable[FileProfileRowModel]) -> int:
-    """
-    Insert rows into analytics.file_profile with registry alignment checks.
-
-    Returns
-    -------
-    int
-        Number of inserted rows.
-    """
-    rows_list = list(rows)
-    if not rows_list:
-        return 0
-
-    repo = rows_list[0]["repo"]
-    commit = rows_list[0]["commit"]
-    context = WriterContext(
-        table_key="analytics.file_profile",
-        columns=FILE_PROFILE_COLUMNS,
-        serialize_row=cast("SerializeRow", file_profile_row_to_tuple),
-        repo=repo,
-        commit=commit,
-        ensure_schema_fn=lambda _gateway, _table: None,
+# Factory-created writer for file profiles
+write_file_profile_rows: Callable[[StorageGateway, Iterable[FileProfileRowModel]], int] = (
+    create_profile_writer(
+        "analytics.file_profile",
+        FILE_PROFILE_COLUMNS,
+        cast("Callable[[Mapping[str, object]], tuple[object, ...]]", file_profile_row_to_tuple),
     )
-    return write_rows_with_registry_guard(
-        gateway,
-        rows=rows_list,
-        context=context,
-        delete_on_empty=False,
-    )
+)
 
 
 def build_file_profile(

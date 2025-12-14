@@ -14,19 +14,18 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from codeintel.ingestion.compute.base import StepResult
+from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
+    from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
 
 
-def _flatten_dict(
+def flatten_dict(
     d: dict[str, Any],
     parent_key: str = "",
     sep: str = ".",
@@ -51,18 +50,18 @@ def _flatten_dict(
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
         if isinstance(v, dict):
-            items.extend(_flatten_dict(v, new_key, sep))
+            items.extend(flatten_dict(v, new_key, sep))
         elif isinstance(v, list):
-            items.extend(_flatten_list_items(v, new_key, sep))
+            items.extend(flatten_list_items(v, new_key, sep))
         else:
             items.append((new_key, v))
     return items
 
 
-def _flatten_list_items(
+def flatten_list_items(
     items_list: list[Any],
-    parent_key: str,
-    sep: str,
+    parent_key: str = "",
+    sep: str = ".",
 ) -> list[tuple[str, Any]]:
     """Flatten list items into key-value pairs.
 
@@ -83,13 +82,13 @@ def _flatten_list_items(
     result: list[tuple[str, Any]] = []
     for i, item in enumerate(items_list):
         if isinstance(item, dict):
-            result.extend(_flatten_dict(item, f"{parent_key}[{i}]", sep))
+            result.extend(flatten_dict(item, f"{parent_key}[{i}]", sep))
         else:
             result.append((f"{parent_key}[{i}]", item))
     return result
 
 
-def _parse_toml(content: str) -> list[tuple[str, Any]] | None:
+def parse_toml(content: str) -> list[tuple[str, Any]] | None:
     """Parse TOML content.
 
     Parameters
@@ -108,10 +107,10 @@ def _parse_toml(content: str) -> list[tuple[str, Any]] | None:
         log.debug("Failed to parse TOML: %s", exc)
         return None
     else:
-        return _flatten_dict(data)
+        return flatten_dict(data)
 
 
-def _parse_yaml(content: str) -> list[tuple[str, Any]] | None:
+def parse_yaml(content: str) -> list[tuple[str, Any]] | None:
     """Parse YAML content.
 
     Parameters
@@ -131,11 +130,11 @@ def _parse_yaml(content: str) -> list[tuple[str, Any]] | None:
         return None
     else:
         if isinstance(data, dict):
-            return _flatten_dict(data)
+            return flatten_dict(data)
         return None
 
 
-def _parse_ini(content: str) -> list[tuple[str, Any]] | None:
+def parse_ini(content: str) -> list[tuple[str, Any]] | None:
     """Parse INI/CFG content.
 
     Parameters
@@ -162,7 +161,7 @@ def _parse_ini(content: str) -> list[tuple[str, Any]] | None:
         ]
 
 
-def _parse_json(content: str) -> list[tuple[str, Any]] | None:
+def parse_json(content: str) -> list[tuple[str, Any]] | None:
     """Parse JSON content.
 
     Parameters
@@ -182,11 +181,11 @@ def _parse_json(content: str) -> list[tuple[str, Any]] | None:
         return None
     else:
         if isinstance(data, dict):
-            return _flatten_dict(data)
+            return flatten_dict(data)
         return None
 
 
-def _get_config_format(path: Path) -> str:
+def get_config_format(path: Path) -> str:
     """Get the configuration format from file extension.
 
     Parameters
@@ -212,7 +211,7 @@ def _get_config_format(path: Path) -> str:
     return format_map.get(suffix, "unknown")
 
 
-def _parse_config_file(path: Path, content: str) -> list[tuple[str, Any]] | None:
+def parse_config_file(path: Path, content: str) -> list[tuple[str, Any]] | None:
     """Parse a configuration file and return flattened key-value pairs.
 
     Parameters
@@ -230,21 +229,21 @@ def _parse_config_file(path: Path, content: str) -> list[tuple[str, Any]] | None
     suffix = path.suffix.lower()
 
     if suffix == ".toml":
-        return _parse_toml(content)
+        return parse_toml(content)
 
     if suffix in {".yaml", ".yml"}:
-        return _parse_yaml(content)
+        return parse_yaml(content)
 
     if suffix in {".ini", ".cfg"}:
-        return _parse_ini(content)
+        return parse_ini(content)
 
     if suffix == ".json":
-        return _parse_json(content)
+        return parse_json(content)
 
     return None
 
 
-class ConfigIngestStep:
+class ConfigIngestStep(BaseExtractStep):
     """Configuration file ingestion step with port injection.
 
     This step flattens and ingests configuration files,
@@ -257,23 +256,6 @@ class ConfigIngestStep:
     discovery
         Discovery port for reading file content.
     """
-
-    def __init__(
-        self,
-        storage: IngestStoragePort,
-        discovery: ModuleDiscoveryPort,
-    ) -> None:
-        """Initialize the step.
-
-        Parameters
-        ----------
-        storage
-            Storage port for persisting data.
-        discovery
-            Discovery port for reading file content.
-        """
-        self._storage = storage
-        self._discovery = discovery
 
     def execute(
         self,
@@ -306,12 +288,12 @@ class ConfigIngestStep:
             if content is None:
                 continue
 
-            kvs = _parse_config_file(record.file_path, content)
+            kvs = parse_config_file(record.file_path, content)
             if kvs is None:
                 errors.append(f"Failed to parse {record.rel_path}")
                 continue
 
-            config_format = _get_config_format(record.file_path)
+            config_format = get_config_format(record.file_path)
 
             for key, _value in kvs:
                 all_rows.append(
@@ -347,136 +329,11 @@ class ConfigIngestStep:
         return StepResult(rows_written=total_rows, table_counts=table_counts, errors=errors)
 
 
-def flatten_dict(
-    data: dict[str, Any], parent_key: str = "", sep: str = "."
-) -> list[tuple[str, Any]]:
-    """Public wrapper for flattening nested dictionaries.
-
-    Parameters
-    ----------
-    data
-        Dictionary to flatten.
-    parent_key
-        Prefix for keys.
-    sep
-        Separator between key parts.
-
-    Returns
-    -------
-    list[tuple[str, Any]]
-        Flattened key/value pairs.
-    """
-    return _flatten_dict(data, parent_key, sep)
-
-
-def flatten_list_items(
-    items: list[Any], parent_key: str = "", sep: str = "."
-) -> list[tuple[str, Any]]:
-    """Public wrapper for flattening list structures.
-
-    Parameters
-    ----------
-    items
-        List to flatten.
-    parent_key
-        Prefix for keys.
-    sep
-        Separator between key parts.
-
-    Returns
-    -------
-    list[tuple[str, Any]]
-        Flattened key/value pairs.
-    """
-    return _flatten_list_items(items, parent_key, sep)
-
-
-def parse_config_file(file_path: Path, content: str) -> list[tuple[str, Any]] | None:
-    """Public wrapper for parsing config files by extension.
-
-    Parameters
-    ----------
-    file_path
-        File path for format detection.
-    content
-        File content.
-
-    Returns
-    -------
-    list[tuple[str, Any]] | None
-        Parsed key/value pairs or None when parsing fails.
-    """
-    return _parse_config_file(file_path, content)
-
-
-def parse_ini(content: str) -> list[tuple[str, Any]] | None:
-    """Public wrapper for parsing INI config content.
-
-    Parameters
-    ----------
-    content
-        INI content string.
-
-    Returns
-    -------
-    list[tuple[str, Any]] | None
-        Parsed key/value pairs or None on failure.
-    """
-    return _parse_ini(content)
-
-
-def parse_json(content: str) -> list[tuple[str, Any]] | None:
-    """Public wrapper for parsing JSON config content.
-
-    Parameters
-    ----------
-    content
-        JSON content string.
-
-    Returns
-    -------
-    list[tuple[str, Any]] | None
-        Parsed key/value pairs or None on failure.
-    """
-    return _parse_json(content)
-
-
-def parse_toml(content: str) -> list[tuple[str, Any]] | None:
-    """Public wrapper for parsing TOML config content.
-
-    Parameters
-    ----------
-    content
-        TOML content string.
-
-    Returns
-    -------
-    list[tuple[str, Any]] | None
-        Parsed key/value pairs or None on failure.
-    """
-    return _parse_toml(content)
-
-
-def parse_yaml(content: str) -> list[tuple[str, Any]] | None:
-    """Public wrapper for parsing YAML config content.
-
-    Parameters
-    ----------
-    content
-        YAML content string.
-
-    Returns
-    -------
-    list[tuple[str, Any]] | None
-        Parsed key/value pairs or None on failure.
-    """
-    return _parse_yaml(content)
-
-
 __all__ = [
     "ConfigIngestStep",
     "flatten_dict",
     "flatten_list_items",
+    "get_config_format",
     "parse_config_file",
     "parse_ini",
     "parse_json",

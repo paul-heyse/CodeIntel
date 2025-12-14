@@ -40,6 +40,7 @@ from codeintel.analytics.utilities.ast import (
     safe_unparse,
     snippet_from_lines,
 )
+from codeintel.analytics.utilities.dataframe import to_records
 from codeintel.analytics.utilities.datasets import (
     AnalyticsDatasetContract,
     build_analytics_dataset_contracts,
@@ -48,6 +49,13 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
+from codeintel.analytics.utilities.type_coercion import (
+    int_or_default,
+    optional_bool,
+    optional_float,
+    optional_int,
+    optional_str,
+)
 
 __all__ = [
     "AnalyticsDatasetContract",
@@ -58,12 +66,18 @@ __all__ = [
     "get_analytics_dataset_contract",
     "get_function_ast_features_contract",
     "insert_analytics_rows",
+    "int_or_default",
     "literal_bool",
     "literal_int",
     "literal_int_sequence",
     "literal_str",
     "literal_value",
+    "optional_bool",
+    "optional_float",
+    "optional_int",
+    "optional_str",
     "resolve_call_target",
     "safe_unparse",
     "snippet_from_lines",
+    "to_records",
 ]

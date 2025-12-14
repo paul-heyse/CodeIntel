@@ -5,8 +5,8 @@ StoragePort protocol.
 
 Data Classes
 ------------
-- QueryResult: Result of a database query operation
-- BatchResult: Result of a batch insert/update operation
+- QueryResult: Result of a database query operation (implements BaseQueryResult)
+- BatchResult: Result of a batch insert/update operation (implements BaseBatchResult)
 
 Deprecated
 ----------
@@ -15,6 +15,11 @@ Deprecated
 .. deprecated:: 5.0.0
     The StoragePort protocol is deprecated. Use StorageResource from
     ``codeintel.graphs.resources.storage`` directly instead.
+
+See Also
+--------
+codeintel.core.ports.BaseQueryResult : Base protocol for query results
+codeintel.core.ports.BaseBatchResult : Base protocol for batch results
 """
 
 from __future__ import annotations
@@ -25,6 +30,9 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
+
+# Note: QueryResult and BatchResult implement the protocols from
+# codeintel.core.ports (BaseQueryResult and BaseBatchResult respectively)
 
 
 @dataclass(frozen=True)

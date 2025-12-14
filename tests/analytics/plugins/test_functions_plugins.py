@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.plugins.analytics.functions.ast_features import FunctionAstFeaturesPlugin
 from codeintel.build.plugins.analytics.functions.contracts import FunctionContractsPlugin
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
+from codeintel.graphs.catalog import CatalogService, FunctionCatalog
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.contexts import TargetResourceOverrides
@@ -37,12 +37,12 @@ def _seed_function_sources(repo_root: Path) -> None:
     )
 
 
-def _make_catalog(ctx_repo: str, ctx_commit: str) -> FunctionCatalogService:
+def _make_catalog(ctx_repo: str, ctx_commit: str) -> CatalogService:
     """Construct a catalog provider aligned to written sources.
 
     Returns
     -------
-    FunctionCatalogService
+    CatalogService
         Catalog provider for the seeded functions.
     """
     functions = [
@@ -62,7 +62,7 @@ def _make_catalog(ctx_repo: str, ctx_commit: str) -> FunctionCatalogService:
         ),
     ]
     catalog = FunctionCatalog(functions=functions, module_by_path={"main.py": "main"})
-    return FunctionCatalogService(catalog)
+    return CatalogService(catalog)
 
 
 def test_function_ast_features_plugin(tmp_path: Path) -> None:

@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
-from codeintel.build.plugins._helpers import filter_paths, get_source_root
+from codeintel.build.plugins._helpers import filter_paths, get_source_root, persist_rows
 from codeintel.build.plugins.graphs.builders.goid_options import GoidBuilderOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import goid as goid_compute
@@ -263,72 +263,6 @@ def _extract_entities_from_file(
     return goid_rows, crosswalk_rows
 
 
-def _persist_goid_rows(
-    gateway: StorageGateway,
-    rows: list[GoidRow],
-    repo: str,
-    commit: str,
-) -> int:
-    """Persist GOID rows.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    rows
-        Rows to persist.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Number of rows persisted.
-    """
-    if not rows:
-        return 0
-
-    gateway.policy.ensure_table("core.goids")
-    gateway.policy.delete_for_snapshot("core.goids", repo=repo, commit=commit)
-    gateway.policy.bulk_insert("core.goids", [row.to_tuple() for row in rows])
-    return len(rows)
-
-
-def _persist_crosswalk_rows(
-    gateway: StorageGateway,
-    rows: list[GoidCrosswalkRow],
-    repo: str,
-    commit: str,
-) -> int:
-    """Persist crosswalk rows.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    rows
-        Rows to persist.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Number of rows persisted.
-    """
-    if not rows:
-        return 0
-
-    gateway.policy.ensure_table("core.goid_crosswalk")
-    gateway.policy.delete_for_snapshot("core.goid_crosswalk", repo=repo, commit=commit)
-    gateway.policy.bulk_insert("core.goid_crosswalk", [row.to_tuple() for row in rows])
-    return len(rows)
-
-
 class GoidBuilderPlugin(MetadataPlugin):
     """Build global object identifiers.
 
@@ -409,8 +343,12 @@ class GoidBuilderPlugin(MetadataPlugin):
                 len(tracked_files),
             )
 
-            goid_count = _persist_goid_rows(ctx.gateway, all_goid_rows, repo, commit)
-            crosswalk_count = _persist_crosswalk_rows(ctx.gateway, all_crosswalk_rows, repo, commit)
+            goid_count = persist_rows(
+                ctx.gateway, "core.goids", all_goid_rows, repo=repo, commit=commit
+            )
+            crosswalk_count = persist_rows(
+                ctx.gateway, "core.goid_crosswalk", all_crosswalk_rows, repo=repo, commit=commit
+            )
 
             log.info(
                 "goid_builder: Persisted %d GOIDs and %d crosswalk entries",

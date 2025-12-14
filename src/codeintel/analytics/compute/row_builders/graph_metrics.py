@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, cast
 import ibis
 from ibis.common.exceptions import IbisError
 
+from codeintel.analytics.utilities.dataframe import to_records
 from codeintel.config.datasets import (
     GraphMetricsFunctionsRow,
     GraphMetricsModulesRow,
@@ -22,17 +23,6 @@ if TYPE_CHECKING:
 
     from codeintel.analytics.compute.graphs import ComponentBundle, NeighborStats
     from codeintel.storage.gateway import StorageGateway
-
-
-def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
-    """Convert DataFrame rows into a list of dictionaries.
-
-    Returns
-    -------
-    list[dict[str, Any]]
-        Records returned by ``DataFrame.to_dict(orient="records")``.
-    """
-    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
 
 
 @dataclass(frozen=True)
@@ -134,7 +124,7 @@ def component_metadata_from_import_table(
     comp_id: dict[str, int] = {}
     in_cycle: dict[str, bool] = {}
     layer_by_module: dict[str, int] = {}
-    for record in _to_records(df):
+    for record in to_records(df):
         name = str(record["module"])
         scc_id = record["scc_id"]
         component_size = record["component_size"]
@@ -226,7 +216,7 @@ def load_symbol_module_edges(
         )
         df = cast("pd.DataFrame", joined.execute())
 
-        for record in _to_records(df):
+        for record in to_records(df):
             src = str(record["use_module"])
             dst = str(record["def_module"])
             modules.update((src, dst))
@@ -238,7 +228,7 @@ def load_symbol_module_edges(
     expr = su.select("def_path", "use_path")
     df = cast("pd.DataFrame", expr.execute())
 
-    for record in _to_records(df):
+    for record in to_records(df):
         def_module = module_by_path.get(str(record["def_path"]))
         use_module = module_by_path.get(str(record["use_path"]))
         if def_module is None or use_module is None:

@@ -3,6 +3,11 @@
 This module defines the port protocol for persisting ingestion data to storage.
 The protocol abstracts database-specific operations like schema management,
 batch writes, and queries.
+
+See Also
+--------
+codeintel.core.ports.BaseQueryResult : Base protocol for query results
+codeintel.core.ports.BaseBatchResult : Base protocol for batch results
 """
 
 from __future__ import annotations
@@ -12,6 +17,9 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+# Note: BatchResult and QueryResult implement the protocols from
+# codeintel.core.ports (BaseBatchResult and BaseQueryResult respectively)
 
 
 @dataclass(frozen=True)

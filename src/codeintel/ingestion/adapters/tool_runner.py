@@ -47,7 +47,7 @@ from codeintel.ingestion.ports.tools import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Awaitable, Callable, Sequence
     from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -100,22 +100,32 @@ class ToolRunnerAdapter:
         """
         self._service = tool_service
 
-    async def run_pyright(self, repo_root: Path) -> DiagnosticResult:
-        """Run pyright type checker.
+    async def _run_diagnostic_tool(
+        self,
+        tool_name: str,
+        repo_root: Path,
+    ) -> DiagnosticResult:
+        """Run a diagnostic tool and convert to DiagnosticResult.
 
         Parameters
         ----------
+        tool_name
+            Name of the tool (for logging and diagnostic entries).
+            Must correspond to a method name on the service (run_{tool_name}).
         repo_root
             Repository root directory.
 
         Returns
         -------
         DiagnosticResult
-            Type checking results with diagnostics.
+            Diagnostic results with error counts per file.
         """
+        service_method: Callable[[Path], Awaitable[dict[str, int]]] = getattr(
+            self._service, f"run_{tool_name}"
+        )
         start = time.perf_counter()
         try:
-            errors_by_path = await self._service.run_pyright(repo_root)
+            errors_by_path = await service_method(repo_root)
             duration = time.perf_counter() - start
 
             diagnostics = [
@@ -124,7 +134,7 @@ class ToolRunnerAdapter:
                     line=1,
                     column=1,
                     severity="error",
-                    code="pyright",
+                    code=tool_name,
                     message=f"{count} error(s)",
                 )
                 for path, count in errors_by_path.items()
@@ -138,12 +148,27 @@ class ToolRunnerAdapter:
             )
         except (OSError, RuntimeError, ValueError) as exc:
             duration = time.perf_counter() - start
-            log.warning("pyright execution failed: %s", exc)
+            log.warning("%s execution failed: %s", tool_name, exc)
             return DiagnosticResult(
                 status=ToolStatus.FAILED,
                 error=str(exc),
                 duration_s=duration,
             )
+
+    async def run_pyright(self, repo_root: Path) -> DiagnosticResult:
+        """Run pyright type checker.
+
+        Parameters
+        ----------
+        repo_root
+            Repository root directory.
+
+        Returns
+        -------
+        DiagnosticResult
+            Type checking results with diagnostics.
+        """
+        return await self._run_diagnostic_tool("pyright", repo_root)
 
     async def run_pyrefly(self, repo_root: Path) -> DiagnosticResult:
         """Run pyrefly type checker.
@@ -158,37 +183,7 @@ class ToolRunnerAdapter:
         DiagnosticResult
             Type checking results with diagnostics.
         """
-        start = time.perf_counter()
-        try:
-            errors_by_path = await self._service.run_pyrefly(repo_root)
-            duration = time.perf_counter() - start
-
-            diagnostics = [
-                DiagnosticEntry(
-                    path=path,
-                    line=1,
-                    column=1,
-                    severity="error",
-                    code="pyrefly",
-                    message=f"{count} error(s)",
-                )
-                for path, count in errors_by_path.items()
-                if count > 0
-            ]
-
-            return DiagnosticResult(
-                status=ToolStatus.OK,
-                diagnostics=diagnostics,
-                duration_s=duration,
-            )
-        except (OSError, RuntimeError, ValueError) as exc:
-            duration = time.perf_counter() - start
-            log.warning("pyrefly execution failed: %s", exc)
-            return DiagnosticResult(
-                status=ToolStatus.FAILED,
-                error=str(exc),
-                duration_s=duration,
-            )
+        return await self._run_diagnostic_tool("pyrefly", repo_root)
 
     async def run_ruff(self, repo_root: Path) -> DiagnosticResult:
         """Run ruff linter.
@@ -203,37 +198,7 @@ class ToolRunnerAdapter:
         DiagnosticResult
             Linting results with diagnostics.
         """
-        start = time.perf_counter()
-        try:
-            errors_by_path = await self._service.run_ruff(repo_root)
-            duration = time.perf_counter() - start
-
-            diagnostics = [
-                DiagnosticEntry(
-                    path=path,
-                    line=1,
-                    column=1,
-                    severity="error",
-                    code="ruff",
-                    message=f"{count} error(s)",
-                )
-                for path, count in errors_by_path.items()
-                if count > 0
-            ]
-
-            return DiagnosticResult(
-                status=ToolStatus.OK,
-                diagnostics=diagnostics,
-                duration_s=duration,
-            )
-        except (OSError, RuntimeError, ValueError) as exc:
-            duration = time.perf_counter() - start
-            log.warning("ruff execution failed: %s", exc)
-            return DiagnosticResult(
-                status=ToolStatus.FAILED,
-                error=str(exc),
-                duration_s=duration,
-            )
+        return await self._run_diagnostic_tool("ruff", repo_root)
 
     async def run_coverage(
         self,

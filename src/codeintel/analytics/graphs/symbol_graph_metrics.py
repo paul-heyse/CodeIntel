@@ -2,38 +2,81 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.compute.graphs import (
-    centrality_undirected,
-    component_ids_undirected,
-    log_empty_graph,
-    structural_metrics,
-)
 from codeintel.analytics.compute.row_builders import (
-    SymbolFunctionMetricInputs,
-    SymbolModuleMetricInputs,
     build_symbol_function_rows,
     build_symbol_module_rows,
 )
-from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES, MAX_COMMUNITY_NODES
-from codeintel.analytics.runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
+from codeintel.analytics.graphs.symbol_orchestrator import (
+    UndirectedMetricsConfig,
+    compute_undirected_symbol_metrics,
 )
-from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
-from codeintel.analytics.utilities.datasets import validate_tuple_rows
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
-from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
+
+
+def _get_known_modules(gateway: StorageGateway, repo: str, commit: str) -> set[str]:
+    """Load known modules from the database.
+
+    Returns
+    -------
+    set[str]
+        Set of known module names.
+    """
+    module_repo = ModuleRepository(gateway=gateway, repo=repo, commit=commit)
+    return set(module_repo.list_modules())
+
+
+def _get_known_functions(gateway: StorageGateway, repo: str, commit: str) -> set[int]:
+    """Load known function GOIDs from the database.
+
+    Returns
+    -------
+    set[int]
+        Set of known function GOIDs.
+    """
+    function_repo = FunctionRepository(gateway=gateway, repo=repo, commit=commit)
+    return set(function_repo.list_function_goids())
+
+
+# Configuration for module-level metrics
+_MODULE_CONFIG: UndirectedMetricsConfig[str] = UndirectedMetricsConfig(
+    table_key="analytics.symbol_graph_metrics_modules",
+    graph_name="symbol_module_graph",
+    get_graph=lambda rt: rt.ensure_symbol_module_graph(),
+    get_known_nodes=_get_known_modules,
+    filter_node=lambda node, known: str(node) in known,
+    build_rows=build_symbol_module_rows,
+)
+
+def _filter_function_node(node: object, known: set[int]) -> bool:
+    """Check if a function node should be included in the graph.
+
+    Returns
+    -------
+    bool
+        True if the node is in the set of known functions.
+    """
+    try:
+        return int(node) in known  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False
+
+
+# Configuration for function-level metrics
+_FUNCTION_CONFIG: UndirectedMetricsConfig[int] = UndirectedMetricsConfig(
+    table_key="analytics.symbol_graph_metrics_functions",
+    graph_name="symbol_function_graph",
+    get_graph=lambda rt: rt.ensure_symbol_function_graph(),
+    get_known_nodes=_get_known_functions,
+    filter_node=_filter_function_node,
+    build_rows=build_symbol_function_rows,
+)
 
 
 def compute_symbol_graph_metrics_modules(
@@ -44,82 +87,13 @@ def compute_symbol_graph_metrics_modules(
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate analytics.symbol_graph_metrics_modules from module symbol coupling."""
-    runtime_opts = (
-        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
-    )
-    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
-    resolved_runtime = resolve_graph_runtime(
+    compute_undirected_symbol_metrics(
         gateway,
-        snapshot,
-        runtime_opts,
+        repo=repo,
+        commit=commit,
+        config=_MODULE_CONFIG,
+        runtime=runtime,
     )
-    backend = DuckDBPolicyBackend(gateway)
-    backend.ensure_table("analytics.symbol_graph_metrics_modules")
-    ctx = resolve_graph_context(
-        GraphContextSpec(
-            repo=repo,
-            commit=commit,
-            use_gpu=resolved_runtime.backend.use_gpu,
-            now=datetime.now(UTC),
-            betweenness_cap=MAX_BETWEENNESS_NODES,
-            pagerank_weight="weight",
-            betweenness_weight="weight",
-            community_detection_limit=runtime_opts.features.community_detection_limit,
-        )
-    )
-
-    graph = resolved_runtime.ensure_symbol_module_graph()
-    module_repo = ModuleRepository(gateway=gateway, repo=repo, commit=commit)
-    known_modules = set(module_repo.list_modules())
-    if known_modules:
-        graph = graph.subgraph([module for module in graph.nodes if module in known_modules]).copy()
-    if graph.number_of_nodes() == 0:
-        log_empty_graph("symbol_module_graph", graph)
-        backend.delete_for_snapshot(
-            "analytics.symbol_graph_metrics_modules", repo=repo, commit=commit
-        )
-        return
-
-    centrality = centrality_undirected(graph, ctx)
-    structure = structural_metrics(
-        graph,
-        weight=ctx.pagerank_weight,
-        community_limit=ctx.community_detection_limit,
-    )
-    comp_id, comp_size = component_ids_undirected(graph)
-
-    rows = build_symbol_module_rows(
-        SymbolModuleMetricInputs(
-            repo=repo,
-            commit=commit,
-            centrality={
-                "betweenness": centrality.betweenness,
-                "closeness": centrality.closeness,
-                "eigenvector": centrality.eigenvector,
-                "harmonic": centrality.harmonic,
-            },
-            structure={
-                "core_number": structure.core_number,
-                "constraint": structure.constraint,
-                "effective_size": structure.effective_size,
-                "community_id": (
-                    structure.community_id if graph.number_of_nodes() <= MAX_COMMUNITY_NODES else {}
-                ),
-            },
-            comp_id=comp_id,
-            comp_size=comp_size,
-            created_at=ctx.resolved_now(),
-        )
-    )
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.symbol_graph_metrics_modules"]
-    validated_rows = validate_tuple_rows(
-        contract.table_key,
-        rows,
-        schema=contract.schema,
-    )
-    backend.delete_for_snapshot("analytics.symbol_graph_metrics_modules", repo=repo, commit=commit)
-    if validated_rows:
-        backend.bulk_insert("analytics.symbol_graph_metrics_modules", validated_rows)
 
 
 def compute_symbol_graph_metrics_functions(
@@ -130,81 +104,10 @@ def compute_symbol_graph_metrics_functions(
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate analytics.symbol_graph_metrics_functions from function symbol coupling."""
-    runtime_opts = (
-        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
-    )
-    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
-    resolved_runtime = resolve_graph_runtime(
+    compute_undirected_symbol_metrics(
         gateway,
-        snapshot,
-        runtime_opts,
+        repo=repo,
+        commit=commit,
+        config=_FUNCTION_CONFIG,
+        runtime=runtime,
     )
-    backend = DuckDBPolicyBackend(gateway)
-    backend.ensure_table("analytics.symbol_graph_metrics_functions")
-    ctx = resolve_graph_context(
-        GraphContextSpec(
-            repo=repo,
-            commit=commit,
-            use_gpu=resolved_runtime.backend.use_gpu,
-            now=datetime.now(UTC),
-            betweenness_cap=MAX_BETWEENNESS_NODES,
-            pagerank_weight="weight",
-            betweenness_weight="weight",
-            community_detection_limit=runtime_opts.features.community_detection_limit,
-        )
-    )
-
-    graph = resolved_runtime.ensure_symbol_function_graph()
-    function_repo = FunctionRepository(gateway=gateway, repo=repo, commit=commit)
-    known_goids = set(function_repo.list_function_goids())
-    if known_goids:
-        graph = graph.subgraph([goid for goid in graph.nodes if int(goid) in known_goids]).copy()
-    if graph.number_of_nodes() == 0:
-        log_empty_graph("symbol_function_graph", graph)
-        backend.delete_for_snapshot(
-            "analytics.symbol_graph_metrics_functions", repo=repo, commit=commit
-        )
-        return
-
-    centrality = centrality_undirected(graph, ctx)
-    structure = structural_metrics(
-        graph,
-        weight=ctx.pagerank_weight,
-        community_limit=ctx.community_detection_limit,
-    )
-    comp_id, comp_size = component_ids_undirected(graph)
-
-    rows = build_symbol_function_rows(
-        SymbolFunctionMetricInputs(
-            repo=repo,
-            commit=commit,
-            centrality={
-                "betweenness": centrality.betweenness,
-                "closeness": centrality.closeness,
-                "eigenvector": centrality.eigenvector,
-                "harmonic": centrality.harmonic,
-            },
-            structure={
-                "core_number": structure.core_number,
-                "constraint": structure.constraint,
-                "effective_size": structure.effective_size,
-                "community_id": (
-                    structure.community_id if graph.number_of_nodes() <= MAX_COMMUNITY_NODES else {}
-                ),
-            },
-            comp_id=comp_id,
-            comp_size=comp_size,
-            created_at=ctx.resolved_now(),
-        )
-    )
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.symbol_graph_metrics_functions"]
-    validated_rows = validate_tuple_rows(
-        contract.table_key,
-        rows,
-        schema=contract.schema,
-    )
-    backend.delete_for_snapshot(
-        "analytics.symbol_graph_metrics_functions", repo=repo, commit=commit
-    )
-    if validated_rows:
-        backend.bulk_insert("analytics.symbol_graph_metrics_functions", validated_rows)

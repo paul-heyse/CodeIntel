@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
-from codeintel.build.plugins._helpers import get_source_root
+from codeintel.build.plugins._helpers import filter_mapping, get_source_root, persist_rows
 from codeintel.build.plugins.graphs.builders.import_graph_options import ImportGraphOptions
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import imports as imports_compute
@@ -29,10 +29,7 @@ from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.core.data_models import ImportEdgeRow, ImportModuleRow
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -129,89 +126,6 @@ def _extract_imports_from_file(file_path: Path) -> list[tuple[str, tuple[str, ..
     return imports
 
 
-def _persist_import_modules(
-    gateway: StorageGateway,
-    rows: list[ImportModuleRow],
-    repo: str,
-    commit: str,
-) -> int:
-    """Persist import module rows.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    rows
-        Module rows to persist.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Number of rows persisted.
-    """
-    if not rows:
-        return 0
-
-    gateway.policy.ensure_table("graph.import_modules")
-    gateway.policy.delete_for_snapshot("graph.import_modules", repo=repo, commit=commit)
-    gateway.policy.bulk_insert("graph.import_modules", [row.to_tuple() for row in rows])
-    return len(rows)
-
-
-def _persist_import_edges(
-    gateway: StorageGateway,
-    rows: list[ImportEdgeRow],
-    repo: str,
-    commit: str,
-) -> int:
-    """Persist import edge rows.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    rows
-        Edge rows to persist.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Number of rows persisted.
-    """
-    if not rows:
-        return 0
-
-    gateway.policy.ensure_table("graph.import_graph_edges")
-    gateway.policy.delete_for_snapshot("graph.import_graph_edges", repo=repo, commit=commit)
-    gateway.policy.bulk_insert("graph.import_graph_edges", [row.to_tuple() for row in rows])
-    return len(rows)
-
-
-def _filter_paths_by_scope(
-    module_by_path: Mapping[str, str],
-    scope_paths: list[str] | None,
-) -> dict[str, str]:
-    """Filter module map by configured scope prefixes.
-
-    Returns
-    -------
-    dict[str, str]
-        Filtered mapping keyed by relative path.
-    """
-    if not scope_paths:
-        return dict(module_by_path)
-    prefixes = tuple(scope_paths)
-    return {path: module for path, module in module_by_path.items() if path.startswith(prefixes)}
-
-
 class ImportGraphPlugin(MetadataPlugin):
     """Build module-level import graph.
 
@@ -248,9 +162,9 @@ class ImportGraphPlugin(MetadataPlugin):
 
         try:
             source_root = ctx.snapshot.repo_root or get_source_root(gateway, repo, commit)
-            module_by_path = _filter_paths_by_scope(
+            module_by_path = filter_mapping(
                 _load_modules(gateway, repo, commit),
-                opts.scope_paths,
+                scope_paths=opts.scope_paths,
             )
 
             if not module_by_path:
@@ -273,14 +187,19 @@ class ImportGraphPlugin(MetadataPlugin):
                 "import_graph: %d edges, %d SCCs", len(edges), len(set(result.scc_map.values()))
             )
 
-            mc = _persist_import_modules(
+            mc = persist_rows(
                 gateway,
+                "graph.import_modules",
                 imports_compute.build_import_module_rows(repo, commit, result),
-                repo,
-                commit,
+                repo=repo,
+                commit=commit,
             )
-            ec = _persist_import_edges(
-                gateway, imports_compute.build_import_edge_rows(repo, commit, result), repo, commit
+            ec = persist_rows(
+                gateway,
+                "graph.import_graph_edges",
+                imports_compute.build_import_edge_rows(repo, commit, result),
+                repo=repo,
+                commit=commit,
             )
 
             log.info("import_graph: Persisted %d modules, %d edges", mc, ec)

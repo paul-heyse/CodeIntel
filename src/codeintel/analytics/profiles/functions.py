@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
@@ -30,10 +31,7 @@ from codeintel.analytics.profiles.utils import (
     optional_int,
     optional_str,
 )
-from codeintel.analytics.profiles.writer_guard import (
-    WriterContext,
-    write_rows_with_registry_guard,
-)
+from codeintel.analytics.profiles.writer_guard import create_profile_writer
 from codeintel.config.datasets import (
     FUNCTION_PROFILE_COLUMNS,
     function_profile_row_to_tuple,
@@ -58,9 +56,6 @@ if TYPE_CHECKING:
 
     from codeintel.analytics.profiles.types import (
         FunctionGraphFeatures,
-    )
-    from codeintel.analytics.profiles.writer_guard import (
-        SerializeRow,
     )
     from codeintel.config.datasets import (
         FunctionProfileRowModel,
@@ -972,38 +967,14 @@ def build_function_profile_rows(
         yield row
 
 
-def write_function_profile_rows(
-    gateway: StorageGateway,
-    rows: Iterable[FunctionProfileRowModel],
-) -> int:
-    """
-    Insert rows into analytics.function_profile with registry alignment checks.
-
-    Returns
-    -------
-    int
-        Number of inserted rows.
-    """
-    rows_list = list(rows)
-    if not rows_list:
-        return 0
-
-    repo = rows_list[0]["repo"]
-    commit = rows_list[0]["commit"]
-    context = WriterContext(
-        table_key="analytics.function_profile",
-        columns=FUNCTION_PROFILE_COLUMNS,
-        serialize_row=cast("SerializeRow", function_profile_row_to_tuple),
-        repo=repo,
-        commit=commit,
-        ensure_schema_fn=lambda _gateway, _table: None,
-    )
-    return write_rows_with_registry_guard(
-        gateway,
-        rows=rows_list,
-        context=context,
-        delete_on_empty=False,
-    )
+# Factory-created writer for function profiles
+write_function_profile_rows: Callable[
+    [StorageGateway, Iterable[FunctionProfileRowModel]], int
+] = create_profile_writer(
+    "analytics.function_profile",
+    FUNCTION_PROFILE_COLUMNS,
+    cast("Callable[[Mapping[str, object]], tuple[object, ...]]", function_profile_row_to_tuple),
+)
 
 
 def build_function_profile_recipe(

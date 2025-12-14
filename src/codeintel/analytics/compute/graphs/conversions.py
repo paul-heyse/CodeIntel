@@ -2,6 +2,10 @@
 
 This module provides functions for converting and normalizing node
 identifiers across different representations (Decimal, int, str).
+
+The canonical ``normalize_decimal_id`` function is now in
+``codeintel.core.data_models.ids`` and re-exported here for
+backward compatibility.
 """
 
 from __future__ import annotations
@@ -9,6 +13,8 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING
+
+from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -32,39 +38,6 @@ def to_decimal_id(value: int | str | Decimal | None) -> Decimal | None:
     if value is None:
         return None
     return Decimal(int(value))
-
-
-def normalize_decimal_id(value: object) -> int | None:
-    """Normalize DuckDB DECIMAL identifiers to integers.
-
-    Parameters
-    ----------
-    value
-        Raw identifier value sourced from DuckDB.
-
-    Returns
-    -------
-    int | None
-        Parsed integer when coercion succeeds, otherwise None.
-    """
-    result: int | None
-    if value is None:
-        result = None
-    elif isinstance(value, int):
-        result = value
-    elif isinstance(value, Decimal):
-        result = int(value)
-    elif isinstance(value, (bytes, bytearray)):
-        try:
-            result = int(value.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError):
-            result = None
-    else:
-        try:
-            result = int(str(value))
-        except (TypeError, ValueError):
-            result = None
-    return result
 
 
 def normalize_node_id(node: Decimal | float | str | None) -> int | str | None:

@@ -17,7 +17,7 @@ from codeintel.config.datasets.dependencies import (
     DependencyCallRow,
     compute_dep_id,
 )
-from codeintel.graphs.catalog import FunctionMeta
+from codeintel.graphs.catalog import FunctionSpan
 from tests._helpers.builders import FunctionMetricsRow, ModuleRow
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
@@ -77,8 +77,8 @@ def function_meta(
     qualname: str,
     snapshot: tuple[str, str] = (DEFAULT_REPO, DEFAULT_COMMIT),
     line_span: tuple[int, int] = (1, 1),
-) -> FunctionMeta:
-    """Build a FunctionMeta with consistent URN formatting.
+) -> FunctionSpan:
+    """Build a FunctionSpan with consistent URN formatting.
 
     Returns
     -------
@@ -88,7 +88,7 @@ def function_meta(
     repo, commit = snapshot
     start_line, end_line = line_span
     urn = f"urn:{repo}:{commit}:{rel_path}#{qualname}"
-    return FunctionMeta(
+    return FunctionSpan(
         goid=goid,
         urn=urn,
         rel_path=rel_path,

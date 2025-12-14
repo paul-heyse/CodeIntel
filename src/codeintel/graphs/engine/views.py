@@ -9,15 +9,17 @@ from __future__ import annotations
 import importlib
 import json
 import logging
-from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
 import networkx as nx
 
+from codeintel.core.data_models.ids import as_int
+from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from decimal import Decimal
 
     from codeintel.storage.gateway import StorageGateway
 
@@ -51,57 +53,6 @@ def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
 
     log.debug("GPU backend requested; relying on nx_cugraph backend dispatch.")
     return graph
-
-
-def as_int(value: int | Decimal | str | bytes | bytearray | None) -> int | None:
-    """
-    Best-effort conversion to int for DuckDB numeric fields.
-
-    Returns
-    -------
-    int | None
-        Parsed integer or None when conversion fails.
-    """
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
-
-
-def normalize_decimal(value: object) -> int | None:
-    """
-    Normalize DuckDB DECIMAL(38,0) values to Python ints.
-
-    Parameters
-    ----------
-    value : object
-        Value from DuckDB rows representing a GOID.
-
-    Returns
-    -------
-    int | None
-        Integer representation or None when parsing fails.
-    """
-    result: int | None = None
-    if value is None:
-        return None
-    if isinstance(value, int):
-        result = value
-    elif isinstance(value, Decimal):
-        result = int(value)
-    elif isinstance(value, (bytes, bytearray)):
-        try:
-            result = int(value.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError):
-            result = None
-    else:
-        try:
-            result = int(str(value))
-        except (TypeError, ValueError):
-            result = None
-    return result
 
 
 def module_attrs_from_row(

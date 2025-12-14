@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.plugins.analytics.semantic_roles.compute import SemanticRolesPlugin
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
+from codeintel.graphs.catalog import CatalogService, FunctionCatalog
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.builders import insert_rows
 from tests._helpers.catalogs import ensure_catalog_with_goids
@@ -42,12 +42,12 @@ def _seed_test_module(repo_root: Path) -> None:
     )
 
 
-def _catalog_with_tests(ctx: TestContext) -> FunctionCatalogService:
+def _catalog_with_tests(ctx: TestContext) -> CatalogService:
     """Construct a catalog using canonical AST artifacts plus a test function.
 
     Returns
     -------
-    FunctionCatalogService
+    CatalogService
         Catalog service combining canonical artifacts with a sample test function.
     """
     artifacts = canonical_ast_artifacts(ctx)
@@ -61,10 +61,10 @@ def _catalog_with_tests(ctx: TestContext) -> FunctionCatalogService:
     module_by_path = dict(artifacts.catalog.module_by_path)
     module_by_path["tests/test_sample.py"] = "tests.test_sample"
     catalog = FunctionCatalog(functions=[test_function], module_by_path=module_by_path)
-    return FunctionCatalogService(catalog)
+    return CatalogService(catalog)
 
 
-def _apply_catalog(ctx: TestContext, catalog_provider: FunctionCatalogService) -> None:
+def _apply_catalog(ctx: TestContext, catalog_provider: CatalogService) -> None:
     """Ensure GOIDs are seeded for the provided catalog."""
     ensure_catalog_with_goids(ctx, catalog_provider)
 

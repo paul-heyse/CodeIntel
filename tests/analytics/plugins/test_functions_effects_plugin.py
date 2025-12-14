@@ -8,7 +8,7 @@ import networkx as nx
 
 from codeintel.analytics.runtime.graph import GraphRuntime, GraphRuntimeOptions
 from codeintel.build.plugins.analytics.functions.effects import FunctionEffectsPlugin
-from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
+from codeintel.graphs.catalog import CatalogService, FunctionCatalog
 from tests._helpers.assertions import expect_true
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.fakes.contexts import TargetResourceOverrides
@@ -42,12 +42,12 @@ def _seed_effect_sources(repo_root: Path) -> None:
     )
 
 
-def _make_catalog(repo: str, commit: str) -> FunctionCatalogService:
+def _make_catalog(repo: str, commit: str) -> CatalogService:
     """Construct a catalog aligned with the seeded module.
 
     Returns
     -------
-    FunctionCatalogService
+    CatalogService
         Catalog provider that mirrors the seeded functions.
     """
     functions = [
@@ -67,7 +67,7 @@ def _make_catalog(repo: str, commit: str) -> FunctionCatalogService:
         ),
     ]
     catalog = FunctionCatalog(functions=functions, module_by_path={"mod.py": "mod"})
-    return FunctionCatalogService(catalog)
+    return CatalogService(catalog)
 
 
 def _call_graph() -> nx.DiGraph:

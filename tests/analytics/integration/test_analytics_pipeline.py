@@ -17,7 +17,7 @@ from codeintel.analytics.functions.function_effects import (
 )
 from codeintel.analytics.functions.function_history import compute_function_history
 from codeintel.analytics.functions.metrics import compute_function_metrics_and_types
-from codeintel.graphs.catalog import FunctionCatalogService
+from codeintel.graphs.catalog import CatalogService
 from tests._helpers.assertions import expect_true
 from tests.analytics.integration.sample_repo import (
     build_runtime,
@@ -34,7 +34,7 @@ MIN_ROWS = 2
 
 def test_full_analytics_pipeline(sample_repo: SampleRepo) -> None:
     """Execute compute flows end-to-end on a small in-memory snapshot."""
-    catalog = FunctionCatalogService.from_db(
+    catalog = CatalogService.from_db(
         sample_repo.gateway,
         repo=sample_repo.snapshot.repo,
         commit=sample_repo.snapshot.commit,

@@ -73,48 +73,9 @@ Replaced generic exceptions with structured error types in key locations:
 - `targets.py` → `CycleDetectedError`
 - Ingestion plugins → `GatewayNotAvailableError`
 
----
+### Part 12: Source Root Helper Consolidation ✅ COMPLETE
 
-## Remaining Work & New Opportunities
-
-### Part 12: Source Root Helper Consolidation (NEW - HIGH PRIORITY)
-
-#### Problem
-
-The `_get_source_root` function is **duplicated verbatim in 4 graph builder plugins**:
-
-```python
-# Identical in: callgraph.py, import_graph.py, cfg_dfg.py, goid.py
-def _get_source_root(gateway: StorageGateway, repo: str, commit: str) -> Path | None:
-    """Retrieve source root from core.snapshots."""
-    try:
-        snapshots = gateway.ibis.table("core.snapshots")
-        expr = (
-            snapshots.filter(
-                cast("Any", snapshots.repo == repo) & cast("Any", snapshots.commit == commit)
-            )
-            .select(snapshots.source_root)
-            .limit(1)
-        )
-        df = expr.execute()
-        if not getattr(df, "empty", True):
-            value = df.iloc[0][0]
-            if value:
-                return Path(str(value))
-    except DuckDBError as exc:
-        log.debug("...: Could not get source root: %s", exc)
-    return None
-```
-
-**Files with duplication:**
-- `graphs/builders/callgraph.py`
-- `graphs/builders/import_graph.py`
-- `graphs/builders/cfg_dfg.py`
-- `graphs/builders/goid.py`
-
-#### Solution
-
-Move to `build/plugins/_helpers.py`:
+Created `get_source_root()` in `build/plugins/_helpers.py`:
 
 ```python
 def get_source_root(
@@ -124,151 +85,37 @@ def get_source_root(
     *,
     fallback: Path | None = None,
 ) -> Path:
-    """Retrieve source root from core.snapshots.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-    fallback
-        Fallback path if not found (defaults to Path.cwd()).
-
-    Returns
-    -------
-    Path
-        Source root path.
-    """
-    try:
-        snapshots = gateway.ibis.table("core.snapshots")
-        expr = (
-            snapshots.filter(
-                cast("Any", snapshots.repo == repo) & cast("Any", snapshots.commit == commit)
-            )
-            .select(snapshots.source_root)
-            .limit(1)
-        )
-        df = expr.execute()
-        if not getattr(df, "empty", True):
-            value = df.iloc[0][0]
-            if value:
-                return Path(str(value))
-    except DuckDBError:
-        pass
-    return fallback or Path.cwd()
+    """Retrieve source root from core.snapshots with fallback."""
 ```
 
-**Estimated savings:** ~80 lines
+Updated 4 graph builders:
+- `graphs/builders/callgraph.py`
+- `graphs/builders/import_graph.py`
+- `graphs/builders/cfg_dfg.py`
+- `graphs/builders/goid.py`
 
----
+**Lines removed:** ~80
 
-### Part 13: Test Path Detection Consolidation (NEW - HIGH PRIORITY)
+### Part 13: Test Path Detection Consolidation ✅ COMPLETE
 
-#### Problem
-
-The `_is_test_path` function is **duplicated in 4 files** with identical logic:
+Created `is_test_path()` in `build/plugins/_helpers.py`:
 
 ```python
-# Identical in: symbol_uses.py, cfg_dfg.py, goid.py, ingestion/helpers.py
-def _is_test_path(path: str) -> bool:
-    """Return True when the path looks like a test file."""
-    lowered = path.lower()
-    return (
-        "tests/" in lowered
-        or lowered.endswith("_test.py")
-        or "/test_" in lowered
-        or lowered.startswith("test_")
-    )
+def is_test_path(path: str) -> bool:
+    """Check whether a path appears to be a test file."""
 ```
 
-**Files with duplication:**
+Updated 4 files:
 - `graphs/builders/symbol_uses.py`
 - `graphs/builders/cfg_dfg.py`
 - `graphs/builders/goid.py`
 - `ingestion/helpers.py`
 
-#### Solution
+**Lines removed:** ~40
 
-Move to `build/plugins/_helpers.py` as a public utility:
+### Part 14: Path Filtering Consolidation ✅ COMPLETE
 
-```python
-def is_test_path(path: str) -> bool:
-    """Check whether a path appears to be a test file.
-
-    Uses common Python test file naming conventions:
-    - Files in a `tests/` directory
-    - Files ending in `_test.py`
-    - Files containing `/test_` in the path
-    - Files starting with `test_`
-
-    Parameters
-    ----------
-    path
-        Relative file path to check.
-
-    Returns
-    -------
-    bool
-        True if the path matches test file patterns.
-    """
-    lowered = path.lower()
-    return (
-        "tests/" in lowered
-        or lowered.endswith("_test.py")
-        or "/test_" in lowered
-        or lowered.startswith("test_")
-    )
-```
-
-**Estimated savings:** ~40 lines
-
----
-
-### Part 14: Path Filtering Consolidation (NEW - HIGH PRIORITY)
-
-#### Problem
-
-Multiple plugins have nearly identical path filtering functions with minor variations:
-
-```python
-# In callgraph.py:
-def _filter_paths_by_scope(paths: list[str], scope_paths: list[str] | None) -> list[str]:
-    if not scope_paths:
-        return paths
-    prefixes = tuple(scope_paths)
-    return [path for path in paths if path.startswith(prefixes)]
-
-# In cfg_dfg.py (adds test filtering):
-def _filter_paths(paths: list[str], options: CfgDfgOptions) -> list[str]:
-    filtered = list(paths)
-    if options.scope_paths:
-        prefixes = tuple(options.scope_paths)
-        filtered = [path for path in filtered if path.startswith(prefixes)]
-    if not options.include_test_files:
-        filtered = [path for path in filtered if not _is_test_path(path)]
-    return filtered
-
-# In scip_plugin.py:
-def _filter_paths(paths: list[str], scope_paths: list[str] | None) -> list[str]:
-    if not scope_paths:
-        return paths
-    prefixes = tuple(scope_paths)
-    return [path for path in paths if path.startswith(prefixes)]
-```
-
-**Files with variations:**
-- `graphs/builders/callgraph.py`
-- `graphs/builders/import_graph.py`
-- `graphs/builders/cfg_dfg.py`
-- `graphs/builders/goid.py`
-- `ingestion/scip_plugin.py`
-
-#### Solution
-
-Create unified filter function in `build/plugins/_helpers.py`:
+Created `filter_paths()` in `build/plugins/_helpers.py`:
 
 ```python
 def filter_paths(
@@ -277,52 +124,105 @@ def filter_paths(
     scope_paths: list[str] | None = None,
     include_tests: bool = True,
 ) -> list[str]:
-    """Filter paths by scope and test inclusion.
-
-    Parameters
-    ----------
-    paths
-        Paths to filter.
-    scope_paths
-        Optional list of path prefixes to include. If None, all paths are included.
-    include_tests
-        Whether to include test files. Uses `is_test_path()` for detection.
-
-    Returns
-    -------
-    list[str]
-        Filtered list of paths.
-    """
-    result = list(paths)
-    
-    if scope_paths:
-        prefixes = tuple(scope_paths)
-        result = [path for path in result if path.startswith(prefixes)]
-    
-    if not include_tests:
-        result = [path for path in result if not is_test_path(path)]
-    
-    return result
+    """Filter paths by scope and test inclusion."""
 ```
 
-**Estimated savings:** ~50 lines
+Updated 4 files:
+- `graphs/builders/callgraph.py` - removed `_filter_paths_by_scope`
+- `graphs/builders/cfg_dfg.py` - removed `_filter_paths`
+- `graphs/builders/goid.py` - removed `_filter_tracked_files`
+- `ingestion/scip_plugin.py` - removed `_filter_paths`
+
+**Lines removed:** ~50
 
 ---
 
-### Part 15: Persistence Pattern Consolidation (NEW - HIGH PRIORITY)
+## Remaining Work & New Opportunities
+
+### Part 15: Dict-Based Filtering Consolidation (NEW - MEDIUM PRIORITY)
 
 #### Problem
 
-All graph builder plugins follow an identical persistence pattern:
+Two plugins have dict-based filtering that can't use `filter_paths()` directly:
 
 ```python
-# Repeated in 6+ files with minor variations:
-def _persist_X(
-    gateway: StorageGateway,
-    rows: list[XRow],
-    repo: str,
-    commit: str,
-) -> int:
+# In import_graph.py:
+def _filter_paths_by_scope(
+    module_by_path: Mapping[str, str],
+    scope_paths: list[str] | None,
+) -> dict[str, str]:
+    if not scope_paths:
+        return dict(module_by_path)
+    prefixes = tuple(scope_paths)
+    return {path: module for path, module in module_by_path.items() if path.startswith(prefixes)}
+
+# In symbol_uses.py (3 functions with identical pattern):
+def _filter_module_map(module_map: dict[str, str], options: SymbolUsesOptions) -> dict[str, str]:
+    return {
+        path: module
+        for path, module in module_map.items()
+        if _matches_scope(path, options.scope_paths)
+        and (options.include_tests or not is_test_path(path))
+    }
+```
+
+**Files with this pattern:**
+- `graphs/builders/import_graph.py` - `_filter_paths_by_scope`
+- `graphs/builders/symbol_uses.py` - `_matches_scope`, `_filter_module_map`, `_filter_path_to_goid_map`, `_filter_occurrences`
+
+#### Solution
+
+Add `filter_mapping()` helper to `build/plugins/_helpers.py`:
+
+```python
+def filter_mapping(
+    mapping: Mapping[str, T],
+    *,
+    scope_paths: list[str] | None = None,
+    include_tests: bool = True,
+) -> dict[str, T]:
+    """Filter a path-keyed mapping by scope and test inclusion.
+
+    Parameters
+    ----------
+    mapping
+        Mapping with relative paths as keys.
+    scope_paths
+        Optional path prefixes to include.
+    include_tests
+        Whether to include test paths.
+
+    Returns
+    -------
+    dict[str, T]
+        Filtered mapping.
+    """
+    result = dict(mapping)
+
+    if scope_paths:
+        prefixes = tuple(scope_paths)
+        result = {k: v for k, v in result.items() if k.startswith(prefixes)}
+
+    if not include_tests:
+        result = {k: v for k, v in result.items() if not is_test_path(k)}
+
+    return result
+```
+
+Also remove `_matches_scope` from symbol_uses.py (can be inlined or use scope check directly).
+
+**Estimated savings:** ~40 lines
+
+---
+
+### Part 16: Persistence Pattern Consolidation (MEDIUM PRIORITY - REASSESSED)
+
+#### Problem
+
+10 persistence functions across 5 graph builder files follow an identical 3-step pattern:
+
+```python
+def _persist_X(gateway, rows, repo, commit) -> int:
     if not rows:
         return 0
     gateway.policy.ensure_table("table.key")
@@ -331,38 +231,34 @@ def _persist_X(
     return len(rows)
 ```
 
-**Files with this pattern:**
-- `graphs/builders/callgraph.py` (2 functions: nodes, edges)
-- `graphs/builders/import_graph.py` (2 functions: modules, edges)
-- `graphs/builders/cfg_dfg.py` (3 functions: blocks, cfg_edges, dfg_edges)
-- `graphs/builders/goid.py` (2 functions: goids, crosswalk)
-- `graphs/builders/symbol_uses.py` (1 function: edges)
+**Files with this pattern (10 functions total):**
+- `callgraph.py` - `_persist_nodes`, `_persist_edges` (edge has JSON serialization)
+- `import_graph.py` - `_persist_import_modules`, `_persist_import_edges`
+- `cfg_dfg.py` - `_persist_cfg_blocks`, `_persist_cfg_edges`, `_persist_dfg_edges`
+- `goid.py` - `_persist_goid_rows`, `_persist_crosswalk_rows`
+- `symbol_uses.py` - persistence inline (symbol use edges)
+
+#### Complexity Note
+
+The `_persist_edges` in callgraph.py has custom JSON serialization logic for `evidence_json`, making it unsuitable for a generic helper without significant complexity.
 
 #### Solution
 
-Create generic `persist_rows` helper in `build/plugins/_helpers.py`:
+Create a simple `persist_rows()` helper for the 9 standard cases:
 
 ```python
-from typing import Protocol, TypeVar
-
-class RowWithTuple(Protocol):
-    """Protocol for rows that can be converted to tuples."""
-    def to_tuple(self) -> tuple[Any, ...]: ...
-
-TRow = TypeVar("TRow", bound=RowWithTuple)
-
 def persist_rows(
     gateway: StorageGateway,
     table_key: str,
-    rows: Sequence[TRow],
+    rows: Sequence[Any],
     *,
     repo: str,
     commit: str,
 ) -> int:
     """Persist rows to a table with snapshot cleanup.
 
-    Handles the common pattern of:
-    1. Early return on empty input
+    Standard persistence pattern:
+    1. Return 0 for empty input
     2. Ensure table exists
     3. Delete existing snapshot data
     4. Bulk insert new rows
@@ -372,7 +268,7 @@ def persist_rows(
     gateway
         Storage gateway.
     table_key
-        Fully-qualified table name (e.g., "graph.call_graph_edges").
+        Fully-qualified table name (e.g., "graph.cfg_blocks").
     rows
         Rows to persist. Must have `.to_tuple()` method.
     repo
@@ -393,75 +289,43 @@ def persist_rows(
     return len(rows)
 ```
 
-Alternative: Support both `to_tuple()` and pre-converted tuples:
+Keep `_persist_edges` in callgraph.py for the JSON serialization case.
 
-```python
-def persist_rows(
-    gateway: StorageGateway,
-    table_key: str,
-    rows: Sequence[TRow] | Sequence[tuple[Any, ...]],
-    *,
-    repo: str,
-    commit: str,
-    convert: Callable[[TRow], tuple[Any, ...]] | None = None,
-) -> int:
-    """Persist rows with optional conversion."""
-    if not rows:
-        return 0
-    
-    gateway.policy.ensure_table(table_key)
-    gateway.policy.delete_for_snapshot(table_key, repo=repo, commit=commit)
-    
-    if convert:
-        tuples = [convert(row) for row in rows]
-    elif hasattr(rows[0], "to_tuple"):
-        tuples = [row.to_tuple() for row in rows]  # type: ignore
-    else:
-        tuples = list(rows)  # Already tuples
-    
-    gateway.policy.bulk_insert(table_key, tuples)
-    return len(tuples)
-```
-
-**Estimated savings:** ~100 lines
+**Estimated savings:** ~160 lines (9 functions × ~18 lines each)
 
 ---
 
-### Part 16: GraphBuilderPlugin Base Class (NEW - MEDIUM PRIORITY)
+### Part 17: GraphBuilderPlugin Base Class (MEDIUM PRIORITY)
 
 #### Problem
 
-All 5 graph builder plugins share a common structure:
-
-1. Load function/module index from tables
-2. Filter paths by scope/tests
-3. Get source root
-4. Process files and collect results
-5. Persist results
-6. Return row counts
+All 5 graph builder plugins share a common `execute()` structure:
 
 ```python
-# Common pattern in all graph builders:
 async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
     opts = self.resolve_options(XOptions)
     snapshot = ctx.snapshot
     gateway, repo, commit = ctx.gateway, snapshot.repo, snapshot.commit
 
     try:
+        # 1. Load index data
         function_index = load_function_index(gateway, repo=repo, commit=commit)
-        paths = _filter_paths(function_index.paths(), opts)
+        
+        # 2. Filter paths
+        paths = filter_paths(function_index.paths(), scope_paths=opts.scope_paths, ...)
 
+        # 3. Early return if empty
         if not paths:
-            log.info("...: No functions found, skipping")
-            return TargetResult.succeeded(row_counts={"table": 0, ...})
+            log.info("...: No data found, skipping")
+            return TargetResult.succeeded(row_counts={...})
 
-        source_root = (
-            snapshot.repo_root or _get_source_root(gateway, repo, commit) or Path.cwd()
-        )
+        # 4. Get source root
+        source_root = snapshot.repo_root or get_source_root(gateway, repo, commit)
         
-        # ... process and collect ...
-        # ... persist ...
+        # 5. Process and collect results
+        # ... plugin-specific logic ...
         
+        # 6. Persist and return
         return TargetResult.succeeded(row_counts={...})
     except (RuntimeError, ValueError, OSError) as e:
         return TargetResult.failed(f"... failed: {e}")
@@ -476,40 +340,41 @@ class GraphBuilderPlugin(MetadataPlugin, Generic[TOptions]):
     """Base class for graph builder plugins.
 
     Provides common infrastructure for:
-    - Loading function/module indices
-    - Path filtering
-    - Source root resolution
-    - Error handling
+    - Source root resolution with fallback
+    - Path filtering by scope and test inclusion
+    - Standardized error handling
+    - Empty row counts helper
+
+    Subclasses implement `_execute_impl()` with the actual build logic.
     """
 
     @property
     def empty_row_counts(self) -> dict[str, int]:
-        """Return row counts when no data to process."""
+        """Return zero row counts for all output tables."""
         return {table: 0 for table in self._core_metadata.produces_tables}
 
     def get_source_root(self, ctx: TargetExecutionContext) -> Path:
-        """Get source root with fallbacks."""
+        """Get source root with fallback to snapshot or cwd."""
         if ctx.snapshot.repo_root:
             return ctx.snapshot.repo_root
-        return get_source_root(ctx.gateway, ctx.repo, ctx.commit, fallback=Path.cwd())
+        return get_source_root(ctx.gateway, ctx.repo, ctx.commit)
 
     def filter_paths(
         self,
-        paths: list[str],
+        paths: Iterable[str],
         opts: TOptions,
     ) -> list[str]:
-        """Filter paths using options. Override for custom filtering."""
+        """Filter paths using options attributes.
+        
+        Looks for scope_paths, include_tests, include_test_files on opts.
+        """
         scope_paths = getattr(opts, "scope_paths", None)
         include_tests = getattr(opts, "include_tests", True)
-        include_test_files = getattr(opts, "include_test_files", True)
-        return filter_paths(
-            paths,
-            scope_paths=scope_paths,
-            include_tests=include_tests and include_test_files,
-        )
+        include_test_files = getattr(opts, "include_test_files", include_tests)
+        return filter_paths(paths, scope_paths=scope_paths, include_tests=include_test_files)
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
-        """Execute with standard error handling."""
+        """Execute with standardized error handling."""
         try:
             return await self._execute_impl(ctx)
         except (RuntimeError, ValueError, OSError) as e:
@@ -528,55 +393,106 @@ class GraphBuilderPlugin(MetadataPlugin, Generic[TOptions]):
 - `graphs/builders/goid.py`
 - `graphs/builders/symbol_uses.py`
 
-**Estimated savings:** ~150 lines + standardized error handling
+**Estimated savings:** ~80 lines + standardized error handling
 
 ---
 
-### Part 17: Snapshot Destructuring Pattern (NEW - LOW PRIORITY)
+### Part 18: Common Table Loading Patterns (NEW - LOW PRIORITY)
 
 #### Problem
 
-Nearly every plugin starts with the same destructuring pattern:
+Several graph builders have nearly identical table loading patterns:
 
 ```python
-# Repeated in ~20+ plugin execute() methods:
-gateway, repo, commit = ctx.gateway, ctx.snapshot.repo, ctx.snapshot.commit
-# or
-gateway = ctx.gateway
-repo = snapshot.repo
-commit = snapshot.commit
+# Loading modules (in import_graph.py):
+def _load_modules(gateway, repo, commit) -> dict[str, str]:
+    modules = gateway.ibis.table("core.modules")
+    expr = modules.filter(
+        cast("Any", modules.repo == repo) & cast("Any", modules.commit == commit)
+    ).select(modules.path, modules.module)
+    df = expr.execute()
+    return {normalize_rel_path(str(path)): str(module) for ...}
+
+# Loading similar data in goid.py, symbol_uses.py
 ```
 
 #### Solution
 
-Add convenience property to `TargetExecutionContext`:
+Consider adding common loaders to `_helpers.py`:
 
 ```python
-@dataclass(frozen=True)
-class TargetExecutionContext:
-    # ... existing fields ...
+def load_module_map(
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+) -> dict[str, str]:
+    """Load module name by path mapping from core.modules."""
+    ...
 
-    @property
-    def snapshot_key(self) -> tuple[str, str]:
-        """Return (repo, commit) tuple."""
-        return (self.snapshot.repo, self.snapshot.commit)
-    
-    @property
-    def repo(self) -> str:
-        """Shorthand for snapshot.repo."""
-        return self.snapshot.repo
-    
-    @property
-    def commit(self) -> str:
-        """Shorthand for snapshot.commit."""
-        return self.snapshot.commit
+def load_path_to_goid_map(
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+    *,
+    kind: str | None = None,
+) -> dict[str, int]:
+    """Load path to GOID mapping from core.goids."""
+    ...
 ```
 
-This is already partially done (`ctx.repo`, `ctx.commit` exist). Verify all plugins use them consistently.
+This is lower priority as each loader has slight variations.
+
+**Estimated savings:** ~40 lines
 
 ---
 
-### Part 7: Context Hierarchy Simplification
+### Part 19: Ingestion Plugin Step Pattern (NEW - LOW PRIORITY)
+
+#### Problem
+
+Ingestion plugins follow a consistent pattern with storage/tool adapters:
+
+```python
+# Repeated in coverage_plugin.py, scip_plugin.py, typing_plugin.py, etc.
+storage = DuckDBStorageAdapter(ctx.gateway)
+tool = BuildToolAdapter(...)
+
+step = XIngestStep(storage=storage, tools=tool)
+result = await step.execute_async(modules, ...)
+
+if not result.success:
+    errors = "; ".join(result.errors) if result.errors else "Unknown error"
+    return TargetResult.failed(f"X ingest failed: {errors}")
+
+return TargetResult.succeeded(row_counts=result.table_counts or {})
+```
+
+The `FactoryPlugin` base class already partially addresses this for storage/discovery factories.
+
+#### Solution
+
+Consider adding an `execute_step()` helper method to `FactoryPlugin`:
+
+```python
+async def execute_step(
+    self,
+    step: Any,
+    modules: Sequence[ModuleRecord],
+    **kwargs: Any,
+) -> TargetResult:
+    """Execute an ingestion step with standard error handling."""
+    result = await step.execute_async(modules, **kwargs)
+    if not result.success:
+        errors = "; ".join(result.errors) if result.errors else "Unknown error"
+        return TargetResult.failed(f"{self.plugin_name} failed: {errors}")
+    return TargetResult.succeeded(row_counts=result.table_counts or {})
+```
+
+**Estimated savings:** ~30 lines across 4+ plugins
+
+---
+
+### Part 7: Context Hierarchy Simplification (DEFERRED)
 
 #### Problem
 
@@ -593,7 +509,7 @@ Multiple overlapping context types:
 
 ---
 
-### Part 8: Native Target Pattern Improvements
+### Part 8: Native Target Pattern Improvements (DEFERRED)
 
 #### Problem
 
@@ -645,7 +561,7 @@ Import cleanup was performed as part of the factory plugin migration.
 
 ---
 
-### Part 11: Import Organization
+### Part 11: Import Organization (DEFERRED)
 
 #### Problem
 
@@ -670,27 +586,42 @@ Create a facade for common type imports in `build/typing.py`.
 
 | Priority | Part | Effort | Impact | Status |
 |----------|------|--------|--------|--------|
-| 1 | Part 2: Row Count Helper | Low | High | ✅ COMPLETE |
-| 2 | Part 1: Plugin Migration | Medium | High | ✅ COMPLETE (28/28) |
-| 3 | Part 3: Options Resolver | Low | Medium | ✅ COMPLETE |
-| 4 | Part 4: Factory Plugin Base | Medium | Medium | ✅ COMPLETE |
-| 5 | Part 5: Module Path Helpers | Low | Medium | ✅ COMPLETE |
-| 6 | Part 6: Legacy Plugin Metadata | Low | Medium | ✅ COMPLETE |
-| 7 | Part 10: Error Handling | Low | Medium | ✅ COMPLETE (key locations) |
-| **8** | **Part 12: Source Root Helper** | **Low** | **High** | **Pending** |
-| **9** | **Part 13: Test Path Detection** | **Low** | **Medium** | **Pending** |
-| **10** | **Part 14: Path Filtering** | **Low** | **Medium** | **Pending** |
-| **11** | **Part 15: Persistence Pattern** | **Medium** | **High** | **Pending** |
-| **12** | **Part 16: GraphBuilderPlugin** | **Medium** | **High** | **Pending** |
-| 13 | Part 17: Snapshot Destructuring | Low | Low | Pending |
-| 14 | Part 7: Context Simplification | Medium | Medium | Pending |
-| 15 | Part 8.1: Executor Artifacts | Low | Medium | Pending |
-| 16 | Part 8.2: Export Mixin | Low | Low | Pending |
-| 17 | Part 11: Import Organization | Medium | Low | Pending |
+| ✅ | Part 2: Row Count Helper | Low | High | COMPLETE |
+| ✅ | Part 1: Plugin Migration | Medium | High | COMPLETE (28/28) |
+| ✅ | Part 3: Options Resolver | Low | Medium | COMPLETE |
+| ✅ | Part 4: Factory Plugin Base | Medium | Medium | COMPLETE |
+| ✅ | Part 5: Module Path Helpers | Low | Medium | COMPLETE |
+| ✅ | Part 6: Legacy Plugin Metadata | Low | Medium | COMPLETE |
+| ✅ | Part 10: Error Handling | Low | Medium | COMPLETE |
+| ✅ | Part 12: Source Root Helper | Low | High | COMPLETE |
+| ✅ | Part 13: Test Path Detection | Low | Medium | COMPLETE |
+| ✅ | Part 14: Path Filtering | Low | Medium | COMPLETE |
+| **1** | **Part 15: Dict Filtering** | **Low** | **Medium** | **Pending** |
+| **2** | **Part 16: Persistence Pattern** | **Medium** | **High** | **Pending** |
+| **3** | **Part 17: GraphBuilderPlugin** | **Medium** | **High** | **Pending** |
+| 4 | Part 18: Table Loaders | Low | Low | Pending |
+| 5 | Part 19: Step Execution | Low | Low | Pending |
+| 6 | Part 7: Context Simplification | Medium | Medium | Deferred |
+| 7 | Part 8: Export Patterns | Low | Low | Deferred |
+| 8 | Part 11: Import Organization | Medium | Low | Deferred |
 
 ---
 
-## Validation Checklist
+## Current State Summary
+
+### Shared Helpers in `_helpers.py`
+
+The `build/plugins/_helpers.py` module now contains:
+
+| Function | Purpose | Consumers |
+|----------|---------|-----------|
+| `compute_row_counts()` | Count rows for output tables | 3+ plugins |
+| `compute_row_count()` | Single table row count | convenience |
+| `get_source_root()` | Source root from snapshots | 4 graph builders |
+| `is_test_path()` | Test file detection | 4 files |
+| `filter_paths()` | Path filtering by scope/tests | 4 files |
+
+### Validation Checklist
 
 After each phase:
 
@@ -719,7 +650,7 @@ uv run pytest tests/build/ -q
 
 ## Summary
 
-### Completed (Phase 1)
+### Completed (Phase 1 + Phase 2)
 
 - **28 plugins** migrated to `MetadataPlugin` (~700 lines removed)
 - **Row count helper** created and used in 3+ plugins
@@ -728,19 +659,24 @@ uv run pytest tests/build/ -q
 - **Module path helpers** consolidated
 - **Legacy plugins** migrated to metadata pattern
 - **Error handling** improved with structured types
+- **`get_source_root()`** consolidated from 4 graph builders (~80 lines)
+- **`is_test_path()`** consolidated from 4 files (~40 lines)
+- **`filter_paths()`** consolidated from 4 files (~50 lines)
 
-### Remaining (Phase 2 - Graph Builder Consolidation)
+**Total lines removed in Phase 1+2:** ~870 lines
+
+### Remaining (Phase 3 - Graph Builder Refinement)
 
 | Item | Estimated Savings | Effort |
 |------|-------------------|--------|
-| `get_source_root` helper | ~80 lines | 30 min |
-| `is_test_path` helper | ~40 lines | 15 min |
-| `filter_paths` helper | ~50 lines | 20 min |
-| `persist_rows` helper | ~100 lines | 30 min |
-| `GraphBuilderPlugin` base class | ~150 lines | 2 hours |
-| **Total** | **~420 lines** | **~3.5 hours** |
+| `filter_mapping()` helper | ~40 lines | 30 min |
+| `persist_rows()` helper | ~160 lines | 1 hour |
+| `GraphBuilderPlugin` base class | ~80 lines | 2 hours |
+| Common table loaders | ~40 lines | 1 hour |
+| Step execution helper | ~30 lines | 30 min |
+| **Total** | **~350 lines** | **~5 hours** |
 
-### Remaining (Phase 3 - Infrastructure)
+### Remaining (Phase 4 - Infrastructure)
 
 | Item | Effort |
 |------|--------|
@@ -750,44 +686,33 @@ uv run pytest tests/build/ -q
 
 ---
 
-## Appendix: Duplication Analysis
-
-### Files with `_get_source_root`
-
-| File | Lines |
-|------|-------|
-| `graphs/builders/callgraph.py` | 235-266 |
-| `graphs/builders/import_graph.py` | 60-93 |
-| `graphs/builders/cfg_dfg.py` | 99-132 |
-| `graphs/builders/goid.py` | 110-143 |
-
-### Files with `_is_test_path`
-
-| File | Lines |
-|------|-------|
-| `graphs/builders/symbol_uses.py` | 53-67 |
-| `graphs/builders/cfg_dfg.py` | 62-76 |
-| `graphs/builders/goid.py` | 70-84 |
-| `ingestion/helpers.py` | 28-42 |
+## Appendix: Files with Remaining Consolidation Opportunities
 
 ### Files with `_persist_*` Functions
 
-| File | Function Count | Total Lines |
-|------|----------------|-------------|
-| `graphs/builders/callgraph.py` | 2 | ~60 |
-| `graphs/builders/import_graph.py` | 2 | ~50 |
-| `graphs/builders/cfg_dfg.py` | 3 | ~70 |
-| `graphs/builders/goid.py` | 2 | ~50 |
-| `graphs/builders/symbol_uses.py` | 1 | ~25 |
-| **Total** | **10** | **~255** |
+| File | Function Count | Can Use Generic |
+|------|----------------|-----------------|
+| `callgraph.py` | 2 | 1 (nodes only, edges have JSON) |
+| `import_graph.py` | 2 | 2 |
+| `cfg_dfg.py` | 3 | 3 |
+| `goid.py` | 2 | 2 |
+| `symbol_uses.py` | 1 | 1 |
+| **Total** | **10** | **9** |
+
+### Files with Dict Filtering
+
+| File | Functions |
+|------|-----------|
+| `import_graph.py` | `_filter_paths_by_scope` (mapping) |
+| `symbol_uses.py` | `_matches_scope`, `_filter_module_map`, `_filter_path_to_goid_map`, `_filter_occurrences` |
 
 ---
 
 ## Next Steps
 
-1. **Immediate (Parts 12-15):** Create shared helpers in `_helpers.py`
-2. **Short-term (Part 16):** Design and implement `GraphBuilderPlugin`
-3. **Medium-term (Parts 7-8):** Context and executor improvements
-4. **Long-term (Part 11):** Import organization and facade creation
+1. **Immediate (Part 15):** Add `filter_mapping()` helper
+2. **Short-term (Part 16):** Add `persist_rows()` helper
+3. **Medium-term (Part 17):** Design and implement `GraphBuilderPlugin`
+4. **Long-term:** Context and infrastructure improvements
 
-The highest-impact items are Parts 12-16, which would eliminate ~420 lines of duplication from the graph builders and standardize their implementation pattern.
+The highest-impact remaining items are Parts 15-17, which would eliminate ~280 lines of duplication and standardize the graph builder implementation pattern.
