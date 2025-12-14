@@ -125,4 +125,21 @@ def build_all_schemas() -> dict[str, DatasetSchema]:
 
         schemas[table_key] = build_dataset_schema(contract, pandera_schema)
 
+    schemas.update(_build_additional_schemas())
+
     return schemas
+
+
+def _build_additional_schemas() -> dict[str, DatasetSchema]:
+    """Return DatasetSchema objects that are not backed by contracts.
+
+    These schemas are used for internal validation datasets that leverage
+    the unified DatasetSchema abstraction but do not have physical tables.
+    """
+    from codeintel.serving.contracts.operation_contracts_dataset import (  # noqa: PLC0415
+        build_operation_contract_schema,
+    )
+
+    operation_contract_schema = build_operation_contract_schema()
+
+    return {operation_contract_schema.name: operation_contract_schema}

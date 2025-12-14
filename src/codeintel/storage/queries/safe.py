@@ -33,6 +33,11 @@ from ibis.common.exceptions import (
     TableNotFound,
 )
 
+from codeintel.core.errors.storage import (
+    ColumnNotFoundError,
+    QueryError,
+    TableNotFoundError,
+)
 from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
     DuckDBCatalogException,
@@ -70,58 +75,6 @@ DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 log = logging.getLogger(__name__)
-
-
-class QueryError(Exception):
-    """Base class for query execution errors.
-
-    Attributes
-    ----------
-    table
-        The table involved in the failed query.
-    message
-        Description of the error.
-    """
-
-    def __init__(self, table: str, message: str) -> None:
-        """Initialize the error.
-
-        Parameters
-        ----------
-        table
-            The table involved in the failed query.
-        message
-            Description of the error.
-        """
-        self.table = table
-        super().__init__(f"Query error on {table}: {message}")
-
-
-class TableNotFoundError(QueryError):
-    """Table does not exist in the database."""
-
-
-class ColumnNotFoundError(QueryError):
-    """Column does not exist in the table.
-
-    Attributes
-    ----------
-    column
-        The missing column name.
-    """
-
-    def __init__(self, table: str, column: str) -> None:
-        """Initialize the error.
-
-        Parameters
-        ----------
-        table
-            The table being queried.
-        column
-            The missing column name.
-        """
-        self.column = column
-        super().__init__(table, f"column '{column}' not found")
 
 
 def safe_count(gateway: StorageGateway, table_key: str) -> int | None:

@@ -1,17 +1,25 @@
-"""Shared graph runtime options for analytics modules."""
+"""Shared graph runtime options for analytics modules.
+
+Note
+----
+For common timing and step tracking utilities, see `codeintel.core.runtime`
+which provides `TimingContext`, `ExecutionTracker`, and `StepResult` types.
+These can be used to instrument graph operations.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, TypeVar, cast
+from dataclasses import dataclass, field, fields
+from typing import TYPE_CHECKING, Self, TypeVar, cast
 
 import networkx as nx
 from networkx.readwrite import json_graph
 
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
+from codeintel.core.options import ValidationResult
 from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.engine.factory import EngineBuildOptions, build_graph_engine
 
@@ -32,7 +40,10 @@ GraphT = TypeVar("GraphT", nx.Graph, nx.DiGraph)
 
 @dataclass(frozen=True)
 class GraphRuntimeOptions:
-    """Configuration describing how to construct a `GraphRuntime`."""
+    """Configuration describing how to construct a `GraphRuntime`.
+
+    Implements OptionsProtocol for consistent validation and serialization.
+    """
 
     snapshot: SnapshotRef | None = None
     backend: GraphBackendConfig | None = None
@@ -66,6 +77,75 @@ class GraphRuntimeOptions:
     def __post_init__(self) -> None:
         """Validate nested feature flags."""
         self.features.validate()
+
+    def options_validate(self) -> ValidationResult:
+        """Validate options and return any issues.
+
+        Returns
+        -------
+        ValidationResult
+            Validation result with errors/warnings if any.
+        """
+        errors: list[str] = []
+
+        # Validate feature flags
+        try:
+            self.features.validate()
+        except (ValueError, TypeError) as exc:
+            errors.append(f"Feature flags validation failed: {exc}")
+
+        if errors:
+            return ValidationResult.failure(*errors)
+        return ValidationResult.success()
+
+    def with_defaults(self, defaults: Self) -> Self:
+        """Merge with default values, preferring self's non-None values.
+
+        Parameters
+        ----------
+        defaults
+            Default options to merge from.
+
+        Returns
+        -------
+        Self
+            New options with defaults filled in.
+        """
+        return type(self)(
+            snapshot=self.snapshot if self.snapshot is not None else defaults.snapshot,
+            backend=self.backend if self.backend is not None else defaults.backend,
+            graphs=self.graphs,
+            eager=self.eager if self.eager else defaults.eager,
+            validate=self.validate if self.validate else defaults.validate,
+            cache_key=self.cache_key if self.cache_key is not None else defaults.cache_key,
+            engine=self.engine if self.engine is not None else defaults.engine,
+            graph_cache_dir=(
+                self.graph_cache_dir
+                if self.graph_cache_dir is not None
+                else defaults.graph_cache_dir
+            ),
+            features=self.features,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize to dictionary for logging/debugging.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation of options.
+        """
+        result: dict[str, object] = {}
+        for f in fields(self):
+            value = getattr(self, f.name)
+            # Convert complex types to serializable form
+            if hasattr(value, "to_dict"):
+                result[f.name] = value.to_dict()
+            elif hasattr(value, "__dict__"):
+                result[f.name] = str(value)
+            else:
+                result[f.name] = value
+        return result
 
 
 @dataclass
