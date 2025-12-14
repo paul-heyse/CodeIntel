@@ -6,13 +6,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.parsing.models import ParsedFunction, SourceSpan
 from codeintel.analytics.parsing.span_resolver import (
     SpanResolutionError,
     SpanResolutionResult,
     build_span_index,
     resolve_span,
 )
+from codeintel.core.parsing import ParsedFunction, SourceSpan
 
 if TYPE_CHECKING:
     from pathlib import Path

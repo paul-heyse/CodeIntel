@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.graphs.validation import run_graph_validations
+from codeintel.graphs.validation import run_graph_validations_with_runner
 from tests._helpers import seed_graph_validation_gaps
 from tests._helpers.assertions import expect_rows_equal
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
@@ -24,7 +24,7 @@ def test_graph_validation_orphan_uses_catalog_map(graph_executor_env: GraphTestE
     provider = MockFunctionCatalog(module_by_path={"pkg/a.py": "pkg.a"})
     snapshot = graph_executor_env.snapshot
     seed_graph_validation_gaps(gateway, repo=snapshot.repo, commit=snapshot.commit)
-    run_graph_validations(
+    run_graph_validations_with_runner(
         gateway,
         snapshot=snapshot,
         catalog_provider=provider,

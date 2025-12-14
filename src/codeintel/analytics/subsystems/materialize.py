@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     import networkx as nx
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.graphs.engine import GraphEngine
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -92,7 +91,6 @@ def build_subsystems(
     snapshot: SnapshotRef,
     *,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
-    engine: GraphEngine | None = None,
     options: SubsystemOptions | None = None,
 ) -> None:
     """
@@ -106,8 +104,6 @@ def build_subsystems(
         Repository and commit identifiers.
     runtime :
         Shared graph runtime or options describing how to build one.
-    engine :
-        Deprecated direct graph engine override; prefer `runtime`.
     options :
         Subsystem inference options.
     """
@@ -136,16 +132,6 @@ def build_subsystems(
         runtime_opts = runtime.options
     else:
         runtime_opts = runtime or GraphRuntimeOptions()
-        if engine is not None and runtime_opts.engine is None:
-            runtime_opts = GraphRuntimeOptions(
-                snapshot=runtime_opts.snapshot,
-                backend=runtime_opts.backend,
-                graphs=runtime_opts.graphs,
-                eager=runtime_opts.eager,
-                validate=runtime_opts.validate,
-                cache_key=runtime_opts.cache_key,
-                engine=engine,
-            )
 
     resolved_runtime = resolve_graph_runtime(
         gateway,

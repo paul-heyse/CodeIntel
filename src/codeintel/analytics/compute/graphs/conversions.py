@@ -3,9 +3,10 @@
 This module provides functions for converting and normalizing node
 identifiers across different representations (Decimal, int, str).
 
-The canonical ``normalize_decimal_id`` function is now in
-``codeintel.core.data_models.ids`` and re-exported here for
-backward compatibility.
+Note
+----
+For the canonical ``normalize_decimal_id`` function, import directly
+from ``codeintel.core.data_models.ids``.
 """
 
 from __future__ import annotations
@@ -13,8 +14,6 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING
-
-from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -136,7 +135,6 @@ def log_projection_skipped(label: str, reason: str, *, nodes: int, graph_nodes: 
 __all__ = [
     "log_empty_graph",
     "log_projection_skipped",
-    "normalize_decimal_id",
     "normalize_node_id",
     "safe_float",
     "to_decimal_id",

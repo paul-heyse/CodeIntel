@@ -3,8 +3,8 @@
 This module provides `GraphProvider` which wraps `GraphRuntime` to provide
 lazy loading of call, import, symbol, and bipartite graphs.
 
-The ``GraphResources`` type is an alias for ``GraphBundle`` from
-``codeintel.core.resources.graphs``, providing backward compatibility.
+The ``GraphBundle`` type from ``codeintel.core.resources.graphs`` is used
+for bundling graph resources together.
 """
 
 from __future__ import annotations
@@ -107,16 +107,7 @@ class GraphRuntimeLike(Protocol):
 log = logging.getLogger(__name__)
 
 
-# Backward-compatible alias for the unified GraphBundle type
-GraphResources = GraphBundle
-"""Alias for GraphBundle from codeintel.core.resources.graphs.
-
-This type alias provides backward compatibility with existing code
-that uses GraphResources while enabling unified graph resource handling.
-"""
-
-
-class GraphProvider(LazyResource[GraphResources]):
+class GraphProvider(LazyResource[GraphBundle]):
     """Provider for graph resources with lazy loading.
 
     This provider wraps a `GraphRuntime` and exposes individual graphs
@@ -129,7 +120,7 @@ class GraphProvider(LazyResource[GraphResources]):
     >>> call_graph = resources.call_graph
     """
 
-    RESOURCE_NAME: ClassVar[str] = "GraphResources"
+    RESOURCE_NAME: ClassVar[str] = "GraphBundle"
 
     def __init__(
         self,
@@ -157,7 +148,7 @@ class GraphProvider(LazyResource[GraphResources]):
         options
             Options for building a new runtime.
         """
-        super().__init__("GraphResources")
+        super().__init__("GraphBundle")
         self._gateway = gateway
         self._snapshot = snapshot
 
@@ -223,12 +214,12 @@ class GraphProvider(LazyResource[GraphResources]):
         """
         return cls(runtime=runtime)
 
-    def _load(self) -> GraphResources:
+    def _load(self) -> GraphBundle:
         """Load graph resources.
 
         Returns
         -------
-        GraphResources
+        GraphBundle
             Loaded graph resources.
 
         Notes
@@ -256,7 +247,7 @@ class GraphProvider(LazyResource[GraphResources]):
             log.warning("cfg_graph is not a DiGraph, setting to None")
             cfg_graph = None
 
-        return GraphResources(
+        return GraphBundle(
             call_graph=call_graph,
             import_graph=import_graph,
             symbol_module_graph=symbol_module_graph,
@@ -507,6 +498,5 @@ class SingleGraphProvider(LazyResource[nx.DiGraph]):
 __all__ = [
     "GraphBundle",
     "GraphProvider",
-    "GraphResources",
     "SingleGraphProvider",
 ]

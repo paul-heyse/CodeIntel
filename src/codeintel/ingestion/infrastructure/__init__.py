@@ -2,24 +2,38 @@
 
 This package provides foundational infrastructure used across the ingestion system:
 
-- `paths`: Repository-relative path normalization and module name conversion
 - `scanning`: File discovery with glob patterns and ignore lists
-- `workers`: Worker pool infrastructure for parallel processing
 - `cst_utils`: CST visitor helpers for LibCST-based parsing
 - `ast_utils`: AST parsing and span lookup utilities
 - `db_queries`: Safe database query helpers
 
-NOTE: This package was renamed from 'utilities' to 'infrastructure' for alignment
-with the graphs package structure (compute/ vs infrastructure concerns).
+Path and worker utilities are now consolidated in core modules:
 
-.. deprecated:: 1.0
-    The ``paths`` and ``workers`` modules are being consolidated into
-    ``codeintel.core.paths`` and ``codeintel.core.concurrency`` respectively.
-    Import from those core modules instead for new code.
+- Path utilities: ``codeintel.core.paths``
+- Worker utilities: ``codeintel.core.concurrency``
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from codeintel.core.concurrency import (
+    DEFAULT_MAX_WORKERS,
+    DEFAULT_MIN_WORKERS,
+    WorkerConfig,
+    create_executor,
+    executor_factory,
+    resolve_worker_count,
+    worker_pool,
+)
+from codeintel.core.parsing import AstSpanIndex
+from codeintel.core.paths import (
+    ensure_repo_root,
+    repo_relpath,
+)
+from codeintel.core.paths import (
+    path_to_module as relpath_to_module,
+)
 from codeintel.ingestion.engine._scip_resolver import (
     ResolvedScipConfig,
     ScipPathConfig,
@@ -27,7 +41,6 @@ from codeintel.ingestion.engine._scip_resolver import (
     resolve_scip_inputs,
 )
 from codeintel.ingestion.infrastructure.ast_utils import (
-    AstSpanIndex,
     parse_python_module,
     timed_parse,
 )
@@ -36,7 +49,16 @@ from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureVisitor,
     LineIndexedSource,
 )
-from codeintel.ingestion.infrastructure.db_queries import (
+from codeintel.ingestion.infrastructure.scanning import (
+    DEFAULT_IGNORE_DIRS,
+    IGNORES,
+    ScanProfile,
+    SourceScanner,
+    default_code_profile,
+    default_config_profile,
+    profile_from_env,
+)
+from codeintel.storage.queries.safe import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
     QueryError,
@@ -53,30 +75,23 @@ from codeintel.ingestion.infrastructure.db_queries import (
     safe_not_null_fraction,
     safe_table_exists,
 )
-from codeintel.ingestion.infrastructure.paths import (
-    ensure_repo_root,
-    normalize_rel_path,
-    relpath_to_module,
-    repo_relpath,
-)
-from codeintel.ingestion.infrastructure.scanning import (
-    DEFAULT_IGNORE_DIRS,
-    IGNORES,
-    ScanProfile,
-    SourceScanner,
-    default_code_profile,
-    default_config_profile,
-    profile_from_env,
-)
-from codeintel.ingestion.infrastructure.workers import (
-    DEFAULT_MAX_WORKERS,
-    DEFAULT_MIN_WORKERS,
-    WorkerConfig,
-    create_executor,
-    executor_factory,
-    resolve_worker_count,
-    worker_pool,
-)
+
+
+def normalize_rel_path(path: str | Path) -> str:
+    """Return a POSIX-style relative path.
+
+    Parameters
+    ----------
+    path
+        Path to normalize.
+
+    Returns
+    -------
+    str
+        Normalized path with forward slashes.
+    """
+    return Path(path).as_posix()
+
 
 __all__ = [
     "DEFAULT_IGNORE_DIRS",

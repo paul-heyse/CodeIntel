@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from codeintel.analytics.parsing.function_parsing import parse_python_module
-from codeintel.analytics.parsing.models import ParsedFunction, ParsedModule, SourceSpan
 from codeintel.analytics.parsing.registry import FunctionParserRegistry, get_parser, register_parser
 from codeintel.analytics.parsing.span_resolver import (
     SpanResolutionError,
@@ -16,6 +15,7 @@ from codeintel.analytics.parsing.validation import (
     FunctionValidationReporter,
     GraphValidationReporter,
 )
+from codeintel.core.parsing import ParsedFunction, ParsedModule, SourceSpan
 
 __all__ = [
     "BaseValidationReporter",

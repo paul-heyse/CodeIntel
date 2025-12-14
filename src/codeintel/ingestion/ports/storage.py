@@ -179,14 +179,34 @@ class QueryResult:
 class IngestStoragePort(Protocol):
     """Port protocol for persisting ingestion data.
 
-    This protocol abstracts storage operations to enable testing with
-    mock implementations and potential future database swaps.
+    This protocol defines the contract for all storage operations in the
+    ingestion layer, enabling:
 
-    Implementations should handle:
-    - Schema creation and validation
-    - Batch row insertion with appropriate batching strategy
-    - Row deletion for incremental updates
-    - Query execution for data retrieval
+    1. **Test isolation**: ``FakeIngestStorage`` implements this protocol
+       for unit testing ingestion compute steps without a database.
+    2. **Consistent return types**: All write operations return ``BatchResult``
+       with uniform access to ``rows_written``, ``table_key``, etc.
+    3. **Clear architectural boundary**: Separates ingestion compute logic
+       from database implementation details.
+
+    Implementations
+    ---------------
+    - ``DuckDBStorageAdapter``: Production adapter using ``StorageGateway``
+      and ``DuckDBPolicyBackend`` for actual database operations.
+    - ``FakeIngestStorage``: Test fake with in-memory storage and operation
+      recording for verification.
+
+    Why This Abstraction Exists
+    ---------------------------
+    The ingestion compute steps (``AstExtractStep``, ``ScipIngestStep``, etc.)
+    need to write data to storage. By depending on this protocol rather than
+    concrete implementations, the compute logic can be tested in isolation
+    using ``FakeIngestStorage`` without spinning up a database.
+
+    See Also
+    --------
+    codeintel.ingestion.adapters.DuckDBStorageAdapter : Production implementation
+    tests._helpers.fakes.storage.FakeIngestStorage : Test implementation
     """
 
     def ensure_schema(self, table_key: str) -> None:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
+from pathlib import Path as PathLib
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
@@ -181,8 +182,6 @@ def _make_snapshot(repo_root: Path | None = None) -> SnapshotRef:
     SnapshotRef
         Configured snapshot reference with test defaults.
     """
-    from pathlib import Path as PathLib
-
     return SnapshotRef(
         repo="demo/repo",
         commit="deadbeef",
@@ -732,15 +731,6 @@ def test_behavioral_writer_registry_guard() -> None:
                 lambda: {"analytics.behavioral_coverage": list(BEHAVIORAL_COVERAGE_COLUMNS)},
             )
         )
-        stack.enter_context(
-            _override(
-                rows,
-                "prepared_statements_dynamic",
-                lambda _con, _table_key: SimpleNamespace(
-                    insert_sql="INSERT INTO analytics.behavioral_coverage"
-                ),
-            )
-        )
 
         inserted = rows.write_behavioral_coverage_rows(gateway, snapshot, [row])
         if inserted != 1:
@@ -788,15 +778,6 @@ def test_write_test_profile_rows_with_stubs() -> None:
                 writer_guard,
                 "load_columns_by_table",
                 lambda: {"analytics.test_profile": list(TEST_PROFILE_COLUMNS)},
-            )
-        )
-        stack.enter_context(
-            _override(
-                rows,
-                "prepared_statements_dynamic",
-                lambda _con, _table_key: SimpleNamespace(
-                    insert_sql="INSERT INTO analytics.test_profile"
-                ),
             )
         )
 

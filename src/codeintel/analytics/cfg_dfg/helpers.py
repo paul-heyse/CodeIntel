@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from codeintel.analytics.compute.graphs import normalize_decimal_id
+from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

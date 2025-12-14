@@ -37,7 +37,6 @@ from codeintel.analytics.functions.config import (
     ProcessState,
 )
 from codeintel.analytics.functions.parsing import parse_python_file
-from codeintel.analytics.parsing.models import SourceSpan
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.parsing.validation import FunctionValidationReporter
 from codeintel.analytics.utilities.dataframe import to_records
@@ -45,6 +44,7 @@ from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
 )
 from codeintel.config.datasets.validation import validate_df
+from codeintel.core.parsing import SourceSpan
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
@@ -58,9 +58,9 @@ if TYPE_CHECKING:
         ParamStats,
         TypednessFlags,
     )
-    from codeintel.analytics.parsing.models import ParsedModule
     from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.parsing import ParsedModule
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

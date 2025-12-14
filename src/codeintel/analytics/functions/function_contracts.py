@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-from codeintel.analytics.compute.graphs import normalize_decimal_id
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:

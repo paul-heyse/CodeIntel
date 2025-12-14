@@ -49,6 +49,21 @@ The following plugins are registered by default:
 
 from __future__ import annotations
 
+from codeintel.core.concurrency import (
+    WorkerConfig,
+    create_executor,
+    executor_factory,
+    resolve_worker_count,
+    worker_pool,
+)
+from codeintel.core.paths import (
+    ensure_repo_root,
+    repo_relpath,
+)
+from codeintel.core.paths import (
+    path_to_module as relpath_to_module,
+)
+
 # Note: Plugin imports are deferred to avoid circular imports.
 # Use `from codeintel.build.plugins.ingestion import FooPlugin` directly.
 from codeintel.ingestion.adapters import (
@@ -71,24 +86,12 @@ from codeintel.ingestion.compute import (
     TestsIngestStep,
     TypingIngestStep,
 )
-from codeintel.ingestion.infrastructure.paths import (
-    ensure_repo_root,
-    normalize_rel_path,
-    relpath_to_module,
-    repo_relpath,
-)
+from codeintel.ingestion.infrastructure import normalize_rel_path
 from codeintel.ingestion.infrastructure.scanning import (
     ScanProfile,
     default_code_profile,
     default_config_profile,
     profile_from_env,
-)
-from codeintel.ingestion.infrastructure.workers import (
-    WorkerConfig,
-    create_executor,
-    executor_factory,
-    resolve_worker_count,
-    worker_pool,
 )
 from codeintel.ingestion.ports import (
     BatchResult,

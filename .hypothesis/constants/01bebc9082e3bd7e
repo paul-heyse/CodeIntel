@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/observability/_telemetry.py
+# hypothesis_version: 6.148.7
+
+[0.0, 100, 1000, 'OTEL_SDK_DISABLED', 'OTEL_SERVICE_NAME', 'OperationMetrics', 'TelemetryConfig', 'TelemetryProvider', 'TracingMiddleware', 'avg_duration_ms', 'cli', 'cli.duration_ms', 'cli.error_type', 'cli.operation_id', 'cli.param_count', 'cli.success', 'codeintel-cli', 'console_export', 'enabled', 'end', 'error', 'error_count', 'export_metrics', 'export_traces', 'false', 'op_id', 'otlp_endpoint', 'p95_duration_ms', 'record_exception', 'service.name', 'service_name', 'set_attribute', 'span', 'start_time', 'status', 'success', 'success_count', 'total_calls', 'true']

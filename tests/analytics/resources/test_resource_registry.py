@@ -13,13 +13,13 @@ from typing import ClassVar
 
 import pytest
 
-from codeintel.analytics.resources.protocol import (
-    ResourceError,
-    ResourceNotLoadedError,
-)
 from codeintel.analytics.resources.registry import (
     ResourceNotFoundError,
     ResourceRegistry,
+)
+from codeintel.core.resources import (
+    ResourceError,
+    ResourceNotLoadedError,
 )
 from tests._helpers.assertions import (
     expect_equal,

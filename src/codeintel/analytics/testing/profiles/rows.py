@@ -6,9 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-import sqlglot.expressions as exp
-
-from codeintel.analytics.profiles.utils import optional_int
 from codeintel.analytics.profiles.writer_guard import (
     WriterContext,
     write_rows_with_registry_guard,
@@ -28,6 +25,7 @@ from codeintel.analytics.testing.profiles.types import (
     TestProfileContext,
     TestProfileOptions,
 )
+from codeintel.analytics.utilities.type_coercion import optional_int
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
@@ -36,7 +34,6 @@ from codeintel.config.datasets import (
     behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
-from codeintel.config.datasets.contracts import get_dataset_contracts_by_table_key
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
@@ -64,16 +61,6 @@ else:
 
 
 @dataclass(frozen=True)
-class PreparedStatements:
-    """Container for prepared SQL statements (legacy test hook surface)."""
-
-    insert_sql: str
-    delete_sql: str | None
-    select_sql: str | None
-    select_params: list[object] | None
-
-
-@dataclass(frozen=True)
 class TestProfileInputs:
     """Bundled inputs for test profile context construction.
 
@@ -95,61 +82,6 @@ class TestProfileInputs:
     subsystems_covered: Mapping[str, SubsystemCoverageEntryProtocol]
     tg_metrics: Mapping[str, TestGraphMetricsProtocol]
     ast_info: Mapping[str, TestAstInfo]
-
-
-def prepared_statements_dynamic(con: object, table_key: str) -> object:
-    """Compatibility shim for tests patching prepared statement generation.
-
-    Returns
-    -------
-    object
-        Prepared statements object for the given table.
-
-    Raises
-    ------
-    RuntimeError
-        If the contract or schema for the table key is missing.
-    """
-    _ = con  # maintained for signature compatibility
-    contract = get_dataset_contracts_by_table_key().get(table_key)
-    if contract is None or contract.schema is None:
-        message = f"Table {table_key} missing contract schema for prepared statements"
-        raise RuntimeError(message)
-
-    schema_name, table_name = table_key.split(".", 1)
-    columns = [col.name for col in contract.schema.columns]
-    insert_table = exp.Table(this=exp.to_identifier(table_name), db=exp.to_identifier(schema_name))
-    insert_schema = exp.Schema(
-        this=insert_table,
-        expressions=[exp.to_identifier(col) for col in columns],
-    )
-    insert_values = exp.Values(
-        expressions=[exp.Tuple(expressions=[exp.Placeholder() for _ in columns])],
-    )
-    insert_sql = exp.Insert(this=insert_schema, expression=insert_values).sql(dialect="duckdb")
-    select_sql = (
-        exp.select("*")
-        .from_(insert_table)
-        .where(
-            exp.and_(
-                exp.EQ(
-                    this=exp.Column(this=exp.to_identifier("repo")),
-                    expression=exp.Placeholder(),
-                ),
-                exp.EQ(
-                    this=exp.Column(this=exp.to_identifier("commit")),
-                    expression=exp.Placeholder(),
-                ),
-            )
-        )
-        .sql(dialect="duckdb")
-    )
-    return PreparedStatements(
-        insert_sql=insert_sql,
-        delete_sql=None,
-        select_sql=select_sql,
-        select_params=None,
-    )
 
 
 def build_test_profile_context(

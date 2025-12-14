@@ -34,7 +34,7 @@ class SymbolMetricInputs[TNode]:
     created_at: datetime
 
 
-# Type aliases for backward compatibility
+# Convenience type aliases for clearer function signatures
 SymbolModuleMetricInputs = SymbolMetricInputs[str]
 SymbolFunctionMetricInputs = SymbolMetricInputs[int]
 

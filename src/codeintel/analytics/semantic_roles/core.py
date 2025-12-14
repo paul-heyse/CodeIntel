@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 import ibis
 
-from codeintel.analytics.compute.graphs import normalize_decimal_id
 from codeintel.analytics.utilities.ast import safe_unparse
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates

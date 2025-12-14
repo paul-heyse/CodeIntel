@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/cfg_dfg/helpers.py
+# hypothesis_version: 6.148.7
+
+['block', 'degree_dict', 'in', 'parse_block_idx']

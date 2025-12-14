@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/cache/scoped.py
+# hypothesis_version: 6.148.7
+
+['SnapshotKey', 'SnapshotScopedCache', 'T', 'TypedScopedCache', 'matches']

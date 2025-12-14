@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.cfg_dfg.helpers import degree_dict, load_function_metadata, parse_block_idx
+from codeintel.analytics.cfg_dfg.helpers import degree_dict, parse_block_idx
 from codeintel.analytics.compute.graphs import (
     bounded_simple_path_count,
     build_cfg_graph,
@@ -374,7 +374,3 @@ def cfg_rows_for_fn(
     fn_row, block_rows = cfg_fn_rows(ctx)
     ext_row = cfg_ext_row(ctx, edges)
     return CfgFnRows(fn_row=fn_row, ext_row=ext_row, block_rows=block_rows)
-
-
-# Re-export for backward compatibility - prefer load_function_metadata from helpers
-function_metadata = load_function_metadata

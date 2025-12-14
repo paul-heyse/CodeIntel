@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from codeintel.analytics.parsing.models import ParsedFunction
 from codeintel.config.parser_types import FunctionParserKind
+from codeintel.core.parsing import ParsedFunction
 
 ParseModuleFn = Callable[[Path, bytes], Iterable[ParsedFunction]]
 DEFAULT_PARSERS: dict[FunctionParserKind, ParseModuleFn] = {}
