@@ -11,7 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.parsing.validation import GraphValidationReporter
+from codeintel.analytics.parsing.validation import (
+    GRAPH_VALIDATION_COLS,
+    GraphValidationReporter,
+)
 from codeintel.core.validation import (
     BaseValidationOptions,
     ValidationSeverity,
@@ -20,6 +23,7 @@ from codeintel.core.validation import (
     has_error_findings,
 )
 from codeintel.graphs.runtime import GraphRuntime
+from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import and_predicates
 
@@ -145,7 +149,14 @@ def persist_findings(
             detail=detail,
             extras=extras,
         )
-    reporter.flush(gateway)
+    validation_rows = reporter.to_rows()
+    if validation_rows:
+        backend = DuckDBPolicyBackend(gateway)
+        backend.bulk_insert(
+            "analytics.graph_validation",
+            list(validation_rows),
+            columns=list(GRAPH_VALIDATION_COLS),
+        )
 
 
 __all__ = [

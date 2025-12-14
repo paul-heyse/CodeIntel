@@ -1,13 +1,20 @@
-"""
-Aggregate line-level coverage data into function-level coverage statistics.
+"""Aggregate line-level coverage data into function-level coverage statistics.
 
 The utilities here join GOIDs with coverage line spans to compute per-function
 execution ratios, which downstream risk scoring relies on.
+
+.. deprecated::
+    The `compute_coverage_functions` function contains direct database writes.
+    For new code, use `build_coverage_functions_expr` from
+    `codeintel.analytics.compute.coverage.compute` with Hamilton materializers.
+
+    Native Hamilton module: `codeintel.build.hamilton.native.analytics.coverage_functions`
 """
 
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import TYPE_CHECKING, cast
 
 import ibis
@@ -101,7 +108,17 @@ def compute_coverage_functions(
     ...     " FROM analytics.coverage_functions"
     ... ).fetchall()
     [(2, 1, 0.5, True)]
+
+    .. deprecated::
+        Use `build_coverage_functions_expr` with Hamilton materializers instead.
     """
+    warnings.warn(
+        "compute_coverage_functions is deprecated. Use build_coverage_functions_expr "
+        "from codeintel.analytics.compute.coverage.compute with Hamilton materializers, "
+        "or the native module codeintel.build.hamilton.native.analytics.coverage_functions.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     log.info(
         "Computing coverage_functions for repo=%s commit=%s",
         snapshot.repo,

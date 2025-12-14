@@ -1,4 +1,9 @@
-"""Classify how functions use extracted data models."""
+"""Classify how functions use extracted data models.
+
+.. deprecated::
+    The `compute_data_model_usage` function contains direct database writes.
+    For new code, use `build_data_model_usage_rows` with Hamilton materializers.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,7 @@ import ast
 import json
 import logging
 import re
+import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -464,6 +470,101 @@ def _context_for_module(
     return context
 
 
+def build_data_model_usage_rows(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    module_map: dict[str, str],
+    ast_by_goid: dict[int, FunctionAst],
+    missing_goids: set[int] | None = None,
+) -> tuple[tuple[object, ...], ...]:
+    """Build data_model_usage rows without writing to database.
+
+    Analyze per-function data model read/write usage patterns and return
+    rows suitable for materialization via Hamilton.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for reading model and function metadata.
+    snapshot
+        Repository and commit identifiers.
+    module_map
+        Mapping of file path to module name.
+    ast_by_goid
+        Mapping of function GOID to parsed AST data.
+    missing_goids
+        Optional set of function GOIDs that lack AST spans.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...]
+        Tuple of row tuples with columns: repo, commit, model_id,
+        function_goid_h128, usage_kinds_json, evidence_json, context_json,
+        created_at. Empty tuple if no models found.
+
+    Notes
+    -----
+    This is the pure compute version that returns rows without writing.
+    Use with `materialize_rows` for Hamilton-based persistence.
+
+    Examples
+    --------
+    >>> rows = build_data_model_usage_rows(gateway, snapshot, ...)
+    >>> ref = materialize_rows(ctx, "analytics.data_model_usage", rows, DATA_MODEL_USAGE_COLS)
+    """
+    max_examples_per_usage = 3
+    models = _load_models(gateway, snapshot.repo, snapshot.commit)
+    if not models:
+        log.info(
+            "No data models found for %s@%s; skipping usage analysis",
+            snapshot.repo,
+            snapshot.commit,
+        )
+        return ()
+
+    model_index = _build_model_index(models)
+    subsystem_map = _subsystem_by_module(gateway, snapshot.repo, snapshot.commit)
+
+    missing = missing_goids or set()
+    if missing:
+        log.debug(
+            "Skipping %d functions without AST spans during model usage analysis",
+            len(missing),
+        )
+
+    function_types = gateway.ibis.table("analytics.function_types")
+    param_rows = (
+        function_types.filter(
+            and_predicates(
+                function_types["repo"] == snapshot.repo,
+                function_types["commit"] == snapshot.commit,
+            )
+        )
+        .select("function_goid_h128", "param_types")
+        .execute()
+    )
+    param_types: dict[int, dict[str, str]] = {}
+    for goid_raw, raw_param_types in param_rows.itertuples(index=False):
+        goid_int = int(goid_raw)
+        param_types[goid_int] = _parse_param_types(raw_param_types)
+
+    artifacts = ModelUsageArtifacts(
+        ast_by_goid=ast_by_goid,
+        module_map=module_map,
+        param_types=param_types,
+        model_index=model_index,
+        subsystem_map=subsystem_map,
+    )
+    rows = _build_usage_rows(
+        artifacts=artifacts,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        max_examples_per_usage=max_examples_per_usage,
+    )
+    return tuple(rows)
+
+
 def compute_data_model_usage(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
@@ -472,8 +573,7 @@ def compute_data_model_usage(
     ast_by_goid: dict[int, FunctionAst],
     missing_goids: set[int] | None = None,
 ) -> None:
-    """
-    Populate analytics.data_model_usage with per-function model usage classifications.
+    """Populate analytics.data_model_usage with per-function model usage classifications.
 
     Parameters
     ----------
@@ -487,7 +587,16 @@ def compute_data_model_usage(
         Mapping of function GOID to parsed AST data.
     missing_goids
         Optional set of function GOIDs that lack AST spans.
+
+    .. deprecated::
+        Use `build_data_model_usage_rows` with Hamilton materializers instead.
     """
+    warnings.warn(
+        "compute_data_model_usage is deprecated. Use build_data_model_usage_rows "
+        "with Hamilton materializers for persistence.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     max_examples_per_usage = 3
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.data_model_usage")

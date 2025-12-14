@@ -1,9 +1,18 @@
-"""Cross-commit history aggregation for functions and modules."""
+"""Cross-commit history aggregation for functions and modules.
+
+.. deprecated::
+    The ``compute_history_timeseries`` and ``compute_history_timeseries_gateways``
+    functions contain direct database writes.
+    For new code, use ``build_history_timeseries_rows`` with Hamilton materializers.
+
+    Native Hamilton module: ``codeintel.build.hamilton.native.analytics.history_timeseries``
+"""
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -139,21 +148,23 @@ def _safe_number(value: NumericLike | None) -> float | None:
         return None
 
 
-def compute_history_timeseries(
+def build_history_timeseries_rows(
     history_gateway: StorageGateway,
     snapshot: SnapshotRef,
     db_resolver: DBResolver,
     *,
     options: HistoryTimeseriesOptions,
     runner: ToolRunner | None = None,
-) -> None:
-    """
-    Populate `analytics.history_timeseries` across multiple commits.
+) -> tuple[tuple[object, ...], ...]:
+    """Build history_timeseries rows without writing to database.
+
+    Compute cross-commit history aggregation for functions and modules,
+    returning row tuples suitable for materialization via Hamilton materializers.
 
     Parameters
     ----------
     history_gateway
-        Gateway to the database where history rows will be written.
+        Gateway to the database (used for entity selection queries).
     snapshot
         Snapshot reference with repo, commit, and repo_root.
     db_resolver
@@ -162,22 +173,24 @@ def compute_history_timeseries(
         History timeseries configuration options.
     runner
         Optional ToolRunner for git timestamp lookups.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...]
+        Row tuples matching HISTORY_TIMESERIES_COLS schema, ready for bulk insert.
     """
+    # history_gateway is kept for API consistency but not used directly;
+    # entity selection uses db_resolver to resolve per-commit connections
+    _ = history_gateway
+
     if not options.commits:
         log.info("No commits provided for history_timeseries; skipping.")
-        return
-
-    backend = DuckDBPolicyBackend(history_gateway)
-    backend.ensure_table("analytics.history_timeseries")
-
-    history_table = history_gateway.ibis.table("analytics.history_timeseries")
-    delete_predicate = and_predicates(history_table["repo"] == snapshot.repo)
-    history_gateway.ibis.delete("analytics.history_timeseries", where=delete_predicate)
+        return ()
 
     selection = _select_entities(snapshot, options, db_resolver)
     if not selection.functions and not selection.modules:
         log.info("No entities selected for history_timeseries; skipping.")
-        return
+        return ()
 
     now = datetime.now(tz=UTC)
     rows: list[tuple[object, ...]] = []
@@ -207,10 +220,74 @@ def compute_history_timeseries(
                 )
             )
 
+    log.info(
+        "history_timeseries computed: %s rows for %s commits",
+        len(rows),
+        len(options.commits),
+    )
+    return tuple(rows)
+
+
+def compute_history_timeseries(
+    history_gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    db_resolver: DBResolver,
+    *,
+    options: HistoryTimeseriesOptions,
+    runner: ToolRunner | None = None,
+) -> None:
+    """Populate `analytics.history_timeseries` across multiple commits.
+
+    Parameters
+    ----------
+    history_gateway
+        Gateway to the database where history rows will be written.
+    snapshot
+        Snapshot reference with repo, commit, and repo_root.
+    db_resolver
+        Callable returning a DuckDB connection for a given commit.
+    options
+        History timeseries configuration options.
+    runner
+        Optional ToolRunner for git timestamp lookups.
+
+    .. deprecated::
+        Use ``build_history_timeseries_rows`` with Hamilton materializers instead.
+    """
+    warnings.warn(
+        "compute_history_timeseries is deprecated. Use build_history_timeseries_rows "
+        "with Hamilton materializers, or the native module "
+        "codeintel.build.hamilton.native.analytics.history_timeseries.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    if not options.commits:
+        log.info("No commits provided for history_timeseries; skipping.")
+        return
+
+    # Ensure table exists and delete existing rows for this repo
+    backend = DuckDBPolicyBackend(history_gateway)
+    backend.ensure_table("analytics.history_timeseries")
+
+    history_table = history_gateway.ibis.table("analytics.history_timeseries")
+    delete_predicate = and_predicates(history_table["repo"] == snapshot.repo)
+    history_gateway.ibis.delete("analytics.history_timeseries", where=delete_predicate)
+
+    # Build rows using pure function
+    rows = build_history_timeseries_rows(
+        history_gateway,
+        snapshot,
+        db_resolver,
+        options=options,
+        runner=runner,
+    )
+
+    # Write rows (deprecated path)
     if rows:
         history_gateway.ibis.write(
             "analytics.history_timeseries",
-            rows,
+            list(rows),
             columns=HISTORY_TIMESERIES_COLS,
         )
     log.info(
@@ -228,8 +305,7 @@ def compute_history_timeseries_gateways(
     options: HistoryTimeseriesOptions,
     runner: ToolRunner | None = None,
 ) -> None:
-    """
-    Gateway-based wrapper around compute_history_timeseries.
+    """Gateway-based wrapper around compute_history_timeseries.
 
     Parameters
     ----------
@@ -243,7 +319,18 @@ def compute_history_timeseries_gateways(
         History timeseries configuration options.
     runner
         Optional ToolRunner for git timestamp lookups.
+
+    .. deprecated::
+        Use ``build_history_timeseries_rows`` with Hamilton materializers instead.
     """
+    warnings.warn(
+        "compute_history_timeseries_gateways is deprecated. Use build_history_timeseries_rows "
+        "with Hamilton materializers, or the native module "
+        "codeintel.build.hamilton.native.analytics.history_timeseries.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     snapshot_gateways: dict[str, StorageGateway] = {}
 
     def _db_resolver(commit: str) -> DuckDBConnection:

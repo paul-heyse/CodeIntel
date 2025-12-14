@@ -2,10 +2,18 @@
 
 This module provides utilities for writing profile data with schema validation
 and bulk insertion support.
+
+.. deprecated::
+    The ``write_rows_with_registry_guard`` and ``create_profile_writer`` functions
+    contain direct database writes via ``gateway.ibis.write()``.
+    For new code, use ``materialize_rows`` from
+    ``codeintel.build.hamilton.native.materializer`` with Hamilton materializers,
+    or ``write_rows_via_policy_backend`` as an interim solution.
 """
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -52,7 +60,19 @@ def write_rows_with_registry_guard(
     ------
     RuntimeError
         If columns from TABLE_SCHEMAS diverge from serializer constants.
+
+    .. deprecated::
+        Use ``materialize_rows`` from ``codeintel.build.hamilton.native.materializer``
+        with Hamilton materializers, or ``write_rows_via_policy_backend`` as an
+        interim solution.
     """
+    warnings.warn(
+        "write_rows_with_registry_guard is deprecated. Use materialize_rows from "
+        "codeintel.build.hamilton.native.materializer with Hamilton materializers, "
+        "or write_rows_via_policy_backend as an interim solution.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     rows_list = list(rows)
     if not rows_list and not delete_on_empty:
         return 0
@@ -160,7 +180,21 @@ def create_profile_writer(
     ...     function_profile_row_to_tuple,
     ... )
     >>> count = write_function_profile(gateway, rows)
+
+    .. deprecated::
+        This factory produces writers using the deprecated ``write_rows_with_registry_guard``.
+        Use ``materialize_rows`` from ``codeintel.build.hamilton.native.materializer``
+        with Hamilton materializers, or ``write_rows_via_policy_backend`` as an
+        interim solution.
     """
+    warnings.warn(
+        "create_profile_writer is deprecated. The writers it produces use "
+        "write_rows_with_registry_guard which contains direct DB writes. "
+        "Use materialize_rows from codeintel.build.hamilton.native.materializer "
+        "with Hamilton materializers, or write_rows_via_policy_backend.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     def writer(gateway: StorageGateway, rows: Iterable[Mapping[str, object]]) -> int:
         """Write profile rows to the configured table.

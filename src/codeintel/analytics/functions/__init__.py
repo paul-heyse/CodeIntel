@@ -6,6 +6,9 @@ callers do not need to import individual implementation modules.
 For typedness utilities (ParamStats, TypednessFlags, compute_param_stats,
 compute_typedness_flags), import directly from:
     codeintel.analytics.compute.functions.typedness
+
+For Hamilton native execution, use ``build_function_history_rows`` to get row
+tuples, then materialize with ``materialize_rows``.
 """
 
 from __future__ import annotations
@@ -14,6 +17,10 @@ from importlib import import_module
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.functions.config import FunctionAnalyticsOptions
+from codeintel.analytics.functions.function_history import (
+    FUNCTION_HISTORY_COLS,
+    build_function_history_rows,
+)
 from codeintel.analytics.utilities.lazy_module import make_lazy_getattr
 
 if TYPE_CHECKING:
@@ -30,7 +37,9 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
+    "FUNCTION_HISTORY_COLS",
     "FunctionAnalyticsOptions",
+    "build_function_history_rows",
     "compute_function_contracts",
     "compute_function_effects",
     "compute_function_history",
