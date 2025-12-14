@@ -1,4 +1,14 @@
-"""Detect external dependency usage and populate analytics tables."""
+"""Detect external dependency usage and populate analytics tables.
+
+.. deprecated::
+    This module contains legacy functions with direct database writes.
+    Use the Hamilton native module `codeintel.build.hamilton.native.analytics.dependencies`
+    for new code, which separates compute from persistence.
+
+    The pure compute functions are available in `codeintel.analytics.dependencies.compute`:
+    - `compute_dependency_calls_pure` returns `DependencyCallsResult`
+    - `compute_external_dependencies_pure` returns `ExternalDependenciesResult`
+"""
 
 from __future__ import annotations
 
@@ -6,6 +16,7 @@ import ast
 import hashlib
 import json
 import logging
+import warnings
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -220,6 +231,11 @@ def build_external_dependency_calls(
     """
     Populate analytics.external_dependency_calls from AST traversal.
 
+    .. deprecated::
+        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.dependencies`
+        instead. For pure compute, use `compute_dependency_calls_pure` from
+        `codeintel.analytics.dependencies.compute`.
+
     Parameters
     ----------
     gateway
@@ -231,6 +247,13 @@ def build_external_dependency_calls(
     dependency_patterns_path
         Optional path to dependency patterns YAML file.
     """
+    warnings.warn(
+        "build_external_dependency_calls is deprecated. Use the Hamilton native module "
+        "'codeintel.build.hamilton.native.analytics.dependencies' or "
+        "'compute_dependency_calls_pure' for pure compute.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     patterns = _load_dependency_patterns(snapshot.repo_root, dependency_patterns_path)
     if not patterns:
         log.warning("No dependency patterns loaded; skipping dependency call analysis")
@@ -367,6 +390,11 @@ def build_external_dependencies(
     """
     Aggregate dependency usage into analytics.external_dependencies.
 
+    .. deprecated::
+        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.dependencies`
+        instead. For pure compute, use `compute_external_dependencies_pure` from
+        `codeintel.analytics.dependencies.compute`.
+
     Parameters
     ----------
     gateway
@@ -378,6 +406,13 @@ def build_external_dependencies(
     language
         Programming language for the dependencies.
     """
+    warnings.warn(
+        "build_external_dependencies is deprecated. Use the Hamilton native module "
+        "'codeintel.build.hamilton.native.analytics.dependencies' or "
+        "'compute_external_dependencies_pure' for pure compute.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     patterns = _load_dependency_patterns(snapshot.repo_root, dependency_patterns_path)
     if not patterns:
         log.warning("No dependency patterns loaded; skipping dependency aggregation")

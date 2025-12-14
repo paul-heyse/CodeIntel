@@ -1,4 +1,13 @@
-"""Extract structured data models from class definitions."""
+"""Extract structured data models from class definitions.
+
+.. deprecated::
+    This module contains legacy functions with direct database writes.
+    Use the Hamilton native module `codeintel.build.hamilton.native.analytics.data_models`
+    for new code, which separates compute from persistence.
+
+    The pure compute functions are available in `codeintel.analytics.data_models.compute`:
+    - `compute_data_models_pure` returns `DataModelsResult`
+"""
 
 from __future__ import annotations
 
@@ -6,6 +15,7 @@ import ast
 import hashlib
 import json
 import logging
+import warnings
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
@@ -970,6 +980,11 @@ def compute_data_models(
     """
     Populate analytics.data_models with extracted model definitions.
 
+    .. deprecated::
+        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.data_models`
+        instead. For pure compute, use `compute_data_models_pure` from
+        `codeintel.analytics.data_models.compute`.
+
     Parameters
     ----------
     gateway
@@ -977,6 +992,13 @@ def compute_data_models(
     snapshot
         Repository and commit snapshot reference.
     """
+    warnings.warn(
+        "compute_data_models is deprecated. Use the Hamilton native module "
+        "'codeintel.build.hamilton.native.analytics.data_models' or "
+        "'compute_data_models_pure' for pure compute.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.data_models")
     backend.ensure_table("analytics.data_model_fields")

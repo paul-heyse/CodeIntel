@@ -31,7 +31,7 @@ from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.storage.tracking.asset_tracking import AssetRecord
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     import ibis.expr.types as ir
 
@@ -309,9 +309,103 @@ def materialize_tables(
     return tuple(refs)
 
 
+def materialize_rows(
+    ctx: BuildContext | MaterializationContext,
+    table_key: str,
+    rows: Sequence[tuple[object, ...]],
+    columns: Sequence[str],
+) -> DatasetRef:
+    """Materialize row tuples to a DuckDB table for this snapshot.
+
+    This function writes row tuples to DuckDB, replacing any existing
+    data for this repo/commit combination to ensure snapshot isolation.
+    Use this for analytics computations that produce row data rather than
+    Ibis expressions.
+
+    Accepts either BuildContext or MaterializationContext for backward
+    compatibility. For new code, prefer using BuildContext directly.
+
+    Parameters
+    ----------
+    ctx
+        Context with gateway and snapshot info (BuildContext or
+        MaterializationContext).
+    table_key
+        Fully-qualified table name (e.g., "analytics.cfg_function_metrics").
+    rows
+        Sequence of row tuples to write. Each tuple must have values in the
+        same order as the columns parameter.
+    columns
+        Column names matching the row tuple positions.
+
+    Returns
+    -------
+    DatasetRef
+        Reference to the materialized dataset with row count.
+
+    Notes
+    -----
+    Unlike ``materialize_table``, this function does not support Pandera
+    schema validation. The rows are written directly to the database.
+
+    Examples
+    --------
+    >>> rows = [
+    ...     ("goid1", "repo", "commit", 100),
+    ...     ("goid2", "repo", "commit", 200),
+    ... ]
+    >>> columns = ["goid", "repo", "commit", "loc"]
+    >>> ref = materialize_rows(ctx, "analytics.my_table", rows, columns)
+    >>> ref.row_count
+    2
+    """
+    # Validate contract if strict mode is enabled
+    ContractEnforcer.validate_table_write(table_key)
+
+    # Extract common fields from either context type
+    gateway = ctx.gateway
+    snapshot = ctx.snapshot
+    owner_target = ctx.owner_target
+    input_hash = ctx.input_hash
+
+    # Delete existing data for this snapshot
+    gateway.policy.delete_for_snapshot(
+        table_key,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+
+    # Write rows if any exist
+    row_count = len(rows)
+    if row_count > 0:
+        gateway.ibis.write(table_key, rows, columns=list(columns))
+
+    # Record in asset catalog if owner_target provided
+    if owner_target is not None:
+        gateway.assets.record_asset(
+            AssetRecord(
+                asset_key=table_key,
+                asset_type="table",
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+                owner_target=owner_target,
+                row_count=row_count,
+                input_hash=input_hash,
+            )
+        )
+
+    return DatasetRef(
+        table_key=table_key,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        row_count=row_count,
+    )
+
+
 __all__ = [
     "MaterializationContext",
     "MaterializationContextProtocol",
+    "materialize_rows",
     "materialize_table",
     "materialize_tables",
 ]

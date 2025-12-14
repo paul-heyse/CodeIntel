@@ -1,10 +1,20 @@
-"""Build analytics.entrypoints and analytics.entrypoint_tests tables."""
+"""Build analytics.entrypoints and analytics.entrypoint_tests tables.
+
+.. deprecated::
+    This module contains legacy functions with direct database writes.
+    Use the Hamilton native module `codeintel.build.hamilton.native.analytics.entrypoints`
+    for new code, which separates compute from persistence.
+
+    The pure compute functions are available in `codeintel.analytics.entrypoints.compute`:
+    - `compute_entrypoints_pure` returns `EntrypointsResult`
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
+import warnings
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -159,6 +169,11 @@ def build_entrypoints(
     """
     Populate analytics.entrypoints and analytics.entrypoint_tests.
 
+    .. deprecated::
+        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.entrypoints`
+        instead. For pure compute, use `compute_entrypoints_pure` from
+        `codeintel.analytics.entrypoints.compute`.
+
     Parameters
     ----------
     gateway
@@ -168,6 +183,13 @@ def build_entrypoints(
     inputs
         Bundled inputs containing catalog, module map, features, and settings.
     """
+    warnings.warn(
+        "build_entrypoints is deprecated. Use the Hamilton native module "
+        "'codeintel.build.hamilton.native.analytics.entrypoints' or "
+        "'compute_entrypoints_pure' for pure compute.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     backend = DuckDBPolicyBackend(gateway)
     backend.ensure_table("analytics.entrypoints")
     backend.ensure_table("analytics.entrypoint_tests")

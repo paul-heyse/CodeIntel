@@ -1,7 +1,17 @@
-"""Graph metrics over the test <-> function bipartite graph."""
+"""Graph metrics over the test <-> function bipartite graph.
+
+.. deprecated::
+    This module contains legacy functions with direct database writes.
+    Use the Hamilton native module `codeintel.build.hamilton.native.analytics.test_graph_metrics`
+    for new code, which separates compute from persistence.
+
+    The pure compute functions are available in `codeintel.analytics.testing.compute`:
+    - `compute_test_graph_metrics_pure` returns `TestGraphMetricsResult`
+"""
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -155,7 +165,20 @@ def compute_test_graph_metrics(
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
-    """Populate test and function-side metrics derived from test coverage graphs."""
+    """Populate test and function-side metrics derived from test coverage graphs.
+
+    .. deprecated::
+        Use the Hamilton native module `codeintel.build.hamilton.native.analytics.test_graph_metrics`
+        instead. For pure compute, use `compute_test_graph_metrics_pure` from
+        `codeintel.analytics.testing.compute`.
+    """
+    warnings.warn(
+        "compute_test_graph_metrics is deprecated. Use the Hamilton native module "
+        "'codeintel.build.hamilton.native.analytics.test_graph_metrics' or "
+        "'compute_test_graph_metrics_pure' for pure compute.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     resolved_options = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime
     ) or GraphRuntimeOptions()
