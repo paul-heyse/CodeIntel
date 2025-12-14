@@ -9,9 +9,9 @@ from collections.abc import Iterable
 
 import pytest
 
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.cli.core.result_types import BuildHistoryResult
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from codeintel.storage.tracking.build_tracking import BuildTracking
 
 

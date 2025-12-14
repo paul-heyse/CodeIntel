@@ -38,9 +38,9 @@ from pandera.errors import SchemaError, SchemaErrors
 
 from codeintel.build.context_base import ExecutionContext
 from codeintel.build.errors import ColumnCountMismatchError, SchemaNotFoundError
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.result import TargetResult
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

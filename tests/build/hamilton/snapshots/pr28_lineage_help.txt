@@ -29,4 +29,3 @@ Show asset lineage for the current snapshot.
 │                              2=debug). [env var:                             │
 │                              CODEINTEL_BUILD_LINEAGE_VERBOSE] [default: 0]   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-

@@ -3,6 +3,9 @@
 This package is the canonical source for dataset configuration. All new code
 should import from `codeintel.config.datasets`.
 
+Schema registry and validation have moved to the Hamilton build layer:
+`codeintel.build.hamilton.contracts.schemas`.
+
 Submodules
 ----------
 primitives
@@ -53,12 +56,6 @@ from codeintel.config.datasets.columns import (
     load_columns_by_table,
     serialize_row,
 )
-from codeintel.config.datasets.constraints import (
-    Constraint,
-    ConstraintKind,
-    ConstraintSet,
-    extract_constraints_from_pandera,
-)
 from codeintel.config.datasets.dataflow import (
     DataflowEdge,
     DataflowNode,
@@ -76,11 +73,6 @@ from codeintel.config.datasets.dependencies import (
     DependencyCallRow,
     compute_dep_id,
     to_decimal,
-)
-from codeintel.config.datasets.introspection import (
-    DatasetIntrospection,
-    introspect_all_datasets,
-    introspect_dataset,
 )
 from codeintel.config.datasets.primitives import (
     COLUMN_TYPE,
@@ -104,22 +96,9 @@ from codeintel.config.datasets.primitives import (
     RowToTuple,
     TableSchema,
 )
-from codeintel.config.datasets.row_binding_factory import (
-    compare_row_bindings,
-    get_or_create_row_binding,
-    row_binding_from_schema,
-    row_serializer_from_schema,
-)
 from codeintel.config.datasets.row_factory import (
     row_serializer_from_pandera,
     typed_dict_from_pandera,
-)
-from codeintel.config.datasets.row_migration import (
-    MigrationStatus,
-    RowModelMigrationResult,
-    get_row_model,
-    validate_all_row_models,
-    validate_row_model_compatibility,
 )
 from codeintel.config.datasets.rows import (
     BEHAVIORAL_COVERAGE_COLUMNS,
@@ -208,19 +187,6 @@ from codeintel.config.datasets.rows import (
     subsystem_profile_cache_to_tuple,
     typedness_row_to_tuple,
 )
-from codeintel.config.datasets.schema import (
-    DatasetMetadata,
-    DatasetSchema,
-)
-from codeintel.config.datasets.schema_builder import (
-    build_all_schemas,
-    build_dataset_schema,
-)
-from codeintel.config.datasets.schema_registry import (
-    SCHEMA_REGISTRY,
-    DatasetSchemaRegistry,
-    get_schema,
-)
 from codeintel.config.datasets.semantic_roles import (
     FUNCTION_COLUMNS as SEMANTIC_ROLE_FUNCTION_COLUMNS,
 )
@@ -240,12 +206,6 @@ from codeintel.config.datasets.semantic_roles import (
 from codeintel.config.datasets.semantic_roles import (
     timestamp_str as semantic_role_timestamp_str,
 )
-from codeintel.config.datasets.validation import (
-    ValidationMode,
-    get_pandera_schema,
-    validate_df,
-    validate_rows,
-)
 
 
 def get_table_columns(table_key: str) -> list[str]:
@@ -262,35 +222,6 @@ def get_table_columns(table_key: str) -> list[str]:
         Column names in storage order.
     """
     return list(load_columns_by_table().get(table_key, []))
-
-
-_EXPORTS_FOR_API: dict[str, object] = {
-    "Constraint": Constraint,
-    "ConstraintKind": ConstraintKind,
-    "ConstraintSet": ConstraintSet,
-    "DatasetIntrospection": DatasetIntrospection,
-    "DatasetMetadata": DatasetMetadata,
-    "DatasetSchema": DatasetSchema,
-    "DatasetSchemaRegistry": DatasetSchemaRegistry,
-    "MigrationStatus": MigrationStatus,
-    "RowModelMigrationResult": RowModelMigrationResult,
-    "SCHEMA_REGISTRY": SCHEMA_REGISTRY,
-    "build_all_schemas": build_all_schemas,
-    "build_dataset_schema": build_dataset_schema,
-    "compare_row_bindings": compare_row_bindings,
-    "extract_constraints_from_pandera": extract_constraints_from_pandera,
-    "get_or_create_row_binding": get_or_create_row_binding,
-    "get_row_model": get_row_model,
-    "get_schema": get_schema,
-    "introspect_all_datasets": introspect_all_datasets,
-    "introspect_dataset": introspect_dataset,
-    "row_binding_from_schema": row_binding_from_schema,
-    "row_serializer_from_pandera": row_serializer_from_pandera,
-    "row_serializer_from_schema": row_serializer_from_schema,
-    "typed_dict_from_pandera": typed_dict_from_pandera,
-    "validate_all_row_models": validate_all_row_models,
-    "validate_row_model_compatibility": validate_row_model_compatibility,
-}
 
 
 TABLE_SCHEMAS: dict[str, TableSchema] = get_table_schemas()
@@ -407,7 +338,6 @@ __all__ = [
     "RETENTION_BY_DATASET_NAME",
     "RISK_COLS",
     "ROW_BINDINGS_BY_TABLE_KEY",
-    "SCHEMA_REGISTRY",
     "SCHEMA_VERSION_BY_DATASET_NAME",
     "SEMANTIC_ROLE_FUNCTION_COLUMNS",
     "SEMANTIC_ROLE_MODULE_COLUMNS",
@@ -438,9 +368,6 @@ __all__ = [
     "DataflowEdge",
     "DataflowNode",
     "DatasetContract",
-    "DatasetMetadata",
-    "DatasetSchema",
-    "DatasetSchemaRegistry",
     "DependencyAggregateRow",
     "DependencyCallRow",
     "DocstringRow",
@@ -482,11 +409,8 @@ __all__ = [
     "TestCatalogRowModel",
     "TestCoverageEdgeRow",
     "TypednessRow",
-    "ValidationMode",
     "behavioral_coverage_row_to_tuple",
-    "build_all_schemas",
     "build_contract_dataflow_graph",
-    "build_dataset_schema",
     "call_graph_edge_to_tuple",
     "call_graph_node_to_tuple",
     "compute_dep_id",
@@ -506,9 +430,7 @@ __all__ = [
     "get_composite_schemas",
     "get_dataset_contracts",
     "get_dataset_contracts_by_table_key",
-    "get_pandera_schema",
     "get_row_bindings",
-    "get_schema",
     "get_table_columns",
     "get_table_schemas",
     "graph_metrics_functions_ext_row_to_tuple",
@@ -539,8 +461,4 @@ __all__ = [
     "to_decimal",
     "typed_dict_from_pandera",
     "typedness_row_to_tuple",
-    "validate_df",
-    "validate_rows",
 ]
-
-__all__ += [name for name in _EXPORTS_FOR_API if name not in __all__]

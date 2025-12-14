@@ -1,10 +1,10 @@
-"""Tests for codeintel.config.datasets.schema_registry module."""
+"""Tests for the build-owned dataset schema registry."""
 
 from __future__ import annotations
 
 import pytest
 
-from codeintel.config.datasets.schema_registry import (
+from codeintel.build.hamilton.contracts.schemas.registry import (
     SCHEMA_REGISTRY,
     DatasetSchemaRegistry,
     get_schema,

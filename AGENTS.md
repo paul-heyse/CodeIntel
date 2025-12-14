@@ -1013,17 +1013,17 @@ This project uses a unified schema approach where Pandera `DataFrameSchema` is t
 
 ### Core Components
 
-- **DatasetSchema** (`config/datasets/schema.py`): Unified wrapper for Pandera schemas with metadata
-- **DatasetSchemaRegistry** (`config/datasets/schema_registry.py`): Global registry for all dataset schemas
-- **Constraint Layer** (`config/datasets/constraints.py`): Extract and aggregate constraints from schemas
-- **Introspection Service** (`config/datasets/introspection.py`): Complete dataset introspection for LLM/tooling
+- **DatasetSchema** (`build/hamilton/contracts/schemas/schema.py`): Unified wrapper for Pandera schemas with metadata
+- **DatasetSchemaRegistry** (`build/hamilton/contracts/schemas/registry.py`): Global registry for all dataset schemas
+- **Constraint Layer** (`build/hamilton/contracts/schemas/constraints.py`): Extract and aggregate constraints from schemas
+- **Introspection Service** (`build/hamilton/contracts/schemas/introspection.py`): Complete dataset introspection for LLM/tooling
 
 ### Schema Registration
 
 All datasets should be registered in `SCHEMA_REGISTRY`:
 
 ```python
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 
 # Get a schema
 schema = SCHEMA_REGISTRY.require("analytics.function_metrics")
@@ -1068,7 +1068,7 @@ async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
 Introspect datasets for LLM/agent consumption:
 
 ```python
-from codeintel.config.datasets.introspection import introspect_dataset
+from codeintel.build.hamilton.contracts.schemas.introspection import introspect_dataset
 
 intro = introspect_dataset("analytics.function_metrics")
 print(intro.summary_for_llm())
@@ -1082,7 +1082,7 @@ print(intro.summary_for_llm())
 
 ### Adding New Datasets
 
-1. Define the Pandera schema in `storage/pandera_schemas.py`
+1. Define the Pandera schema in `build/hamilton/contracts/schemas/pandera_schemas.py`
 2. Register via `build_dataset_schema()` or directly in `SCHEMA_REGISTRY`
 3. Use `typed_dict_from_pandera()` to generate row models
 4. Inherit `SchemaValidationMixin` in adapters for validation
@@ -1092,7 +1092,7 @@ print(intro.summary_for_llm())
 Use the migration utilities to validate compatibility:
 
 ```python
-from codeintel.config.datasets.row_migration import validate_row_model_compatibility
+from codeintel.build.hamilton.contracts.schemas.row_migration import validate_row_model_compatibility
 
 status = validate_row_model_compatibility("analytics.function_metrics")
 if status.compatible:

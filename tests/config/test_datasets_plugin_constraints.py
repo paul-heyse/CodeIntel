@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.datasets.constraints import (
+from codeintel.build.hamilton.contracts.schemas.constraints import (
     Constraint,
     ConstraintKind,
     ConstraintSet,
 )
-from codeintel.config.datasets.plugin_constraints import (
+from codeintel.build.hamilton.contracts.schemas.plugin_constraints import (
     PluginTableRelation,
     extract_constraints_from_plugins,
     get_consumer_plugins,

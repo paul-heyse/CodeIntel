@@ -93,11 +93,14 @@ pytest -m cli_snapshot -k my_new_case
 
 Use consistent tags for easy filtering:
 
-- **PR tags**: `pr08`, `pr09`, `pr10`, `pr11`, `pr12`, `pr13`, `pr14`, `pr15`
-- **Command tags**: `graph`, `plan`, `explain`, `history`, `status`, `run`
+- **PR tags**: `prNN` (e.g., `pr08`, `pr23`, `pr52`, `pr55`)
+- **Phase tags**: `phaseN` (e.g., `phase4`)
+- **Command tags**: `graph`, `plan`, `explain`, `history`, `status`, `run`, `assets`, `lineage`,
+  `promote`, `resolve`, `diff`
 - **Format tags**: `json`, `dot`, `mermaid`, `text`
 - **Scope tags**: `tiny`, `integration`
-- **Mode tags**: `generated`, `phase0`
+- **Mode tags**: `generated`, `native`
+- **Domain tags**: `analytics`, `graphs`, `export`
 
 ## Normalization
 
@@ -145,4 +148,3 @@ pytest -m cli_snapshot --cli-snapshot-fail-fast
 - `_runner.py` - CLI execution and comparison
 - `*.json` - JSON golden snapshots
 - `*.txt` - Text golden snapshots (DOT, Mermaid, help text)
-

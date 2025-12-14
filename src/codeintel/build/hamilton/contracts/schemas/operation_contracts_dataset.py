@@ -7,7 +7,7 @@ from typing import Final
 import pandas as pd
 from pandera import Check, Column, DataFrameSchema
 
-from codeintel.config.datasets.schema import DatasetMetadata, DatasetSchema
+from codeintel.build.hamilton.contracts.schemas.schema import DatasetMetadata, DatasetSchema
 
 OPERATION_CONTRACT_TABLE_KEY: Final = "analytics.operation_contracts"
 TRANSPORT_KINDS: Final = (

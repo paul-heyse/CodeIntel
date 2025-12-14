@@ -12,7 +12,6 @@ The Hamilton native module is at:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
@@ -21,6 +20,8 @@ from codeintel.analytics.compute.graphs import (
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     import networkx as nx
 
     from codeintel.analytics.compute.graphs import (

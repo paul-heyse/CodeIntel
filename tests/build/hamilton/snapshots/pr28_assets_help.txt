@@ -25,4 +25,3 @@ List materialized assets for the current snapshot.
 │ VERBOSE --verbose -v  Increase verbosity (0=warnings, 1=info, 2=debug). [env │
 │                       var: CODEINTEL_BUILD_ASSETS_VERBOSE] [default: 0]      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-

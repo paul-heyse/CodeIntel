@@ -22,7 +22,6 @@ from codeintel.analytics.data_models.core import (
     DATA_MODEL_FIELDS_COLS,
     DATA_MODEL_RELATIONSHIPS_COLS,
     DATA_MODELS_COLS,
-    ModelRecord,
     _attach_relationships,
     _doc_map,
     _gather_models_for_path,
@@ -31,6 +30,7 @@ from codeintel.analytics.data_models.core import (
 from codeintel.core.paths import normalize_path
 
 if TYPE_CHECKING:
+    from codeintel.analytics.data_models.core import ModelRecord
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 

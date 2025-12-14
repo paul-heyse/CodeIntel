@@ -14,18 +14,18 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.constraints import (
+from codeintel.build.hamilton.contracts.schemas.constraints import (
     ConstraintKind,
     extract_constraints_from_pandera,
 )
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
-    from codeintel.config.datasets.constraints import (
+    from codeintel.build.hamilton.contracts.schemas.constraints import (
         Constraint,
         ConstraintSet,
     )
-    from codeintel.config.datasets.schema import DatasetSchema
+    from codeintel.build.hamilton.contracts.schemas.schema import DatasetSchema
 
 __all__ = [
     "DatasetIntrospection",

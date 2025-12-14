@@ -8,17 +8,17 @@ from typing import TYPE_CHECKING, get_type_hints
 
 import pandas as pd
 
-from codeintel.config.datasets.operation_contracts_dataset import (
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.operation_contracts_dataset import (
     OPERATION_CONTRACT_TABLE_KEY,
     TRANSPORT_KINDS,
 )
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 from codeintel.serving.operations import iter_operations
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from codeintel.config.datasets.schema import DatasetSchema
+    from codeintel.build.hamilton.contracts.schemas.schema import DatasetSchema
 
 
 @dataclass(frozen=True)

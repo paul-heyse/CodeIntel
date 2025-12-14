@@ -12,8 +12,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 
+from codeintel.build.hamilton.contracts.schemas.registry import SCHEMA_REGISTRY
 from codeintel.config.datasets.contracts import RowBinding, get_row_bindings
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 
 __all__ = [
     "compare_row_bindings",

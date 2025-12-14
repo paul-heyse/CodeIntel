@@ -10,15 +10,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.datasets.constraints import Constraint, ConstraintKind
-from codeintel.config.datasets.lineage import (
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.constraints import Constraint, ConstraintKind
+from codeintel.build.hamilton.contracts.schemas.lineage import (
     ColumnLineage,
     TableLineage,
     get_all_columns_with_constraint,
     trace_column_lineage,
     trace_table_lineage,
 )
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
     from collections.abc import Container

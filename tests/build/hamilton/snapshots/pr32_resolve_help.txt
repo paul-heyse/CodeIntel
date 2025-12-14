@@ -22,4 +22,3 @@ Resolve an alias to a version hash.
 │                          [env var: CODEINTEL_BUILD_RESOLVE_VERBOSE]          │
 │                          [default: 0]                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-

@@ -31,7 +31,6 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import (
-    DuckDBConnection,
     DuckDBError,
     DuckDBInvalidInputException,
     StorageConfig,
@@ -43,7 +42,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
     from codeintel.cli.context import CommandContext
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 LOG = logging.getLogger(__name__)
 

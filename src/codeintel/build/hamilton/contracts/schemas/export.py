@@ -15,13 +15,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from codeintel.config.datasets.constraints import (
+from codeintel.build.hamilton.contracts.schemas.constraints import (
     ConstraintKind,
     extract_constraints_from_pandera,
 )
-from codeintel.config.datasets.dependency_inference import build_dependency_graph
-from codeintel.config.datasets.introspection import introspect_dataset
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.dependency_inference import build_dependency_graph
+from codeintel.build.hamilton.contracts.schemas.introspection import introspect_dataset
+from codeintel.build.hamilton.contracts.schemas.registry import SCHEMA_REGISTRY
 
 __all__ = [
     "export_all_constraints_json",

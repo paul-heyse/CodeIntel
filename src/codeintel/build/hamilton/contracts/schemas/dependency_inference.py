@@ -13,11 +13,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from codeintel.config.datasets.plugin_constraints import (
+from codeintel.build.hamilton.contracts.schemas.plugin_constraints import (
     get_consumer_plugins,
     get_producer_plugins,
 )
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.registry import SCHEMA_REGISTRY
 
 __all__ = [
     "DependencyGraph",

@@ -16,12 +16,7 @@ from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
-from codeintel.analytics.cfg_dfg.compute import (
-    CfgMetricsResult,
-    DfgMetricsResult,
-    compute_cfg_metrics_pure,
-    compute_dfg_metrics_pure,
-)
+from codeintel.analytics.cfg_dfg.compute import compute_cfg_metrics_pure, compute_dfg_metrics_pure
 from codeintel.analytics.cfg_dfg.materialize import (
     CFG_BLOCK_METRICS_COLS,
     CFG_FUNCTION_METRICS_COLS,
@@ -38,6 +33,7 @@ from codeintel.build.hamilton.native.materializer import (
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
+    from codeintel.analytics.cfg_dfg.compute import CfgMetricsResult, DfgMetricsResult
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.targets import TargetGraph

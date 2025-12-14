@@ -38,4 +38,3 @@ Set an alias for an asset version.
 │                                 CODEINTEL_BUILD_PROMOTE_VERBOSE] [default:   │
 │                                 0]                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-

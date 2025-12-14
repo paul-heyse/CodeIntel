@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from codeintel.storage.datasets import DatasetRegistry
     from codeintel.storage.gateway import StorageGateway
 
+from codeintel.build.hamilton.contracts.schemas.validation import validate_df
 from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     BehavioralCoverageRowModel,
@@ -47,7 +48,6 @@ from codeintel.config.datasets import (
     graph_metrics_modules_row_to_tuple,
     serialize_test_profile_row,
 )
-from codeintel.config.datasets.validation import validate_df
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 

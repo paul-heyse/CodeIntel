@@ -15,7 +15,12 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.constraints import Constraint, ConstraintKind, ConstraintSet
+from codeintel.build.hamilton.contracts.schemas.constraints import (
+    Constraint,
+    ConstraintKind,
+    ConstraintSet,
+)
+from codeintel.build.unified_registry import get_unified_registry
 
 if TYPE_CHECKING:
     from codeintel.core.plugins.types.metadata import CorePluginMetadata
@@ -41,13 +46,6 @@ def _get_all_plugins_metadata() -> dict[str, CorePluginMetadata]:
     dict[str, CorePluginMetadata]
         Mapping of target name to core metadata.
     """
-    try:
-        # Lazy import to avoid circular dependency at module load time
-        from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
-    except ImportError:
-        log.debug("Build plugin registry not available")
-        return {}
-
     result: dict[str, CorePluginMetadata] = {}
     for target_name, plugin_class in get_unified_registry().get_all_plugins().items():
         try:

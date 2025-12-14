@@ -10,15 +10,15 @@ from typing import TypedDict
 import pandera as pa
 import pytest
 
-from codeintel.config.datasets.row_migration import (
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.row_migration import (
     MigrationStatus,
     RowModelMigrationResult,
     get_row_model,
     validate_all_row_models,
     validate_row_model_compatibility,
 )
-from codeintel.config.datasets.schema import DatasetSchema
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
+from codeintel.build.hamilton.contracts.schemas.schema import DatasetSchema
 
 
 def _require(*, condition: bool, message: str) -> None:

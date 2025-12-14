@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 from pandera.errors import SchemaErrors
 
+from codeintel.build.hamilton.contracts.schemas.registry import SCHEMA_REGISTRY
 from codeintel.config.datasets.pandera_json_schema import pandera_to_json_schema
-from codeintel.config.datasets.schema_registry import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

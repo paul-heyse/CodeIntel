@@ -12,6 +12,12 @@ from typing import TYPE_CHECKING
 
 import uvicorn
 
+from codeintel.build.hamilton.contracts.schemas import (
+    SCHEMA_REGISTRY,
+    DatasetMetadata,
+    DatasetSchemaRegistry,
+)
+from codeintel.build.hamilton.contracts.schemas.constraints import extract_constraints_from_pandera
 from codeintel.cli.core import CliResult, parse_cli_value
 from codeintel.cli.core.result_types import (
     DatasetConstraintsResult,
@@ -31,12 +37,6 @@ from codeintel.cli.errors.results import (
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
-from codeintel.config.datasets.constraints import extract_constraints_from_pandera
-from codeintel.config.datasets.schema import DatasetMetadata
-from codeintel.config.datasets.schema_registry import (
-    SCHEMA_REGISTRY,
-    DatasetSchemaRegistry,
-)
 from codeintel.serving.http.fastapi import create_app as create_http_app
 from codeintel.serving.mcp.server import main as run_mcp_server
 from codeintel.serving.operations.catalog import get_operation, iter_operations

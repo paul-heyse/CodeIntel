@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from codeintel.config.datasets.validation import dataset_json_schema
+from codeintel.build.hamilton.contracts.schemas.validation import dataset_json_schema
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend.domain_builders import DatasetSchemaInput, build_dataset_schema
 from codeintel.serving.backend.pagination import clamp_limit, clamp_offset

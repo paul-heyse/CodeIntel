@@ -4,6 +4,8 @@ This module provides infrastructure for extracting, aggregating, and querying
 constraints that define a dataset's structure. Constraints are collected from
 multiple sources including Pandera schemas, DuckDB DDL, and plugin metadata.
 
+This module is owned by the Hamilton build layer.
+
 The Constraint Aggregation Layer is a key enabler for the logic framework:
 once all constraints are in one queryable structure, behavior can be inferred
 from dependencies rather than declared explicitly.

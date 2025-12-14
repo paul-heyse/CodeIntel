@@ -15,10 +15,7 @@ from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
-from codeintel.analytics.data_models.compute import (
-    DataModelsResult,
-    compute_data_models_pure,
-)
+from codeintel.analytics.data_models.compute import compute_data_models_pure
 from codeintel.analytics.data_models.core import (
     DATA_MODEL_FIELDS_COLS,
     DATA_MODEL_RELATIONSHIPS_COLS,
@@ -32,6 +29,7 @@ from codeintel.build.hamilton.native.materializer import (
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
+    from codeintel.analytics.data_models.compute import DataModelsResult
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.targets import TargetGraph

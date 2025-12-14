@@ -6,7 +6,7 @@ to the unified schema layer.
 
 Examples
 --------
->>> from codeintel.config.datasets.schema_builder import build_all_schemas
+>>> from codeintel.build.hamilton.contracts.schemas.builder import build_all_schemas
 >>> schemas = build_all_schemas()
 >>> "analytics.function_metrics" in schemas
 True
@@ -16,10 +16,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.contracts.schemas.operation_contracts_dataset import (
+    build_operation_contract_schema,
+)
+from codeintel.build.hamilton.contracts.schemas.pandera_schemas import _get_dataset_schemas
+from codeintel.build.hamilton.contracts.schemas.schema import DatasetMetadata, DatasetSchema
 from codeintel.config.datasets.contracts import get_dataset_contracts_by_table_key
-from codeintel.config.datasets.operation_contracts_dataset import build_operation_contract_schema
-from codeintel.config.datasets.pandera_schemas import _get_dataset_schemas
-from codeintel.config.datasets.schema import DatasetMetadata, DatasetSchema
 
 if TYPE_CHECKING:
     from pandera import DataFrameSchema
@@ -56,7 +58,7 @@ def build_dataset_schema(
     Examples
     --------
     >>> from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
-    >>> from codeintel.config.datasets.pandera_schemas import _get_dataset_schemas
+    >>> from codeintel.build.hamilton.contracts.schemas.pandera_schemas import _get_dataset_schemas
     >>> contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.function_metrics"]
     >>> pa_schema = _get_dataset_schemas()["analytics.function_metrics"]
     >>> ds = build_dataset_schema(contract, pa_schema)

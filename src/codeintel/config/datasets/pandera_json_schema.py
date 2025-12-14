@@ -2,7 +2,7 @@
 
 This module is intentionally independent of the dataset schema registry to
 avoid import cycles during bootstrap. Callers that need registry access
-should depend on ``codeintel.config.datasets.validation`` instead.
+should depend on ``codeintel.build.hamilton.contracts.schemas.validation`` instead.
 """
 
 from __future__ import annotations

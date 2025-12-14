@@ -10,7 +10,7 @@ import sys
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.operation_contracts_dataset import TRANSPORT_KINDS
+from codeintel.build.hamilton.contracts.schemas.operation_contracts_dataset import TRANSPORT_KINDS
 from codeintel.serving.contracts.operation_contract_reflection import (
     ComponentSpec,
     build_operation_contract_dataframe,
