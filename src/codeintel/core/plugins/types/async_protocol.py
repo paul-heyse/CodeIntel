@@ -19,6 +19,7 @@ Example
 ```python
 from codeintel.core.plugins.types import AsyncPluginProtocol, PluginMetadata
 
+
 class MyToolPlugin:
     @property
     def metadata(self) -> PluginMetadata:

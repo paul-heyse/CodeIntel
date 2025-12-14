@@ -364,9 +364,7 @@ def aggregate_errors(errors: Sequence[CodeIntelError]) -> ProblemDetail:
 
     # Use the most severe status code
     max_status = max(e.error_code.status for e in errors)
-    error_details = [
-        {"type": e.error_code.type_uri, "detail": e.detail} for e in errors
-    ]
+    error_details = [{"type": e.error_code.type_uri, "detail": e.detail} for e in errors]
 
     return ProblemDetail(
         type="urn:codeintel:validation/multiple-errors",

@@ -193,15 +193,11 @@ def make_error_type(category: ErrorCategory, code: str) -> str:
 MISSING_REQUIRED = ErrorCode(
     ErrorCategory.VALIDATION, "missing-required", 400, "Missing Required Parameter"
 )
-INVALID_TYPE = ErrorCode(
-    ErrorCategory.VALIDATION, "invalid-type", 400, "Invalid Parameter Type"
-)
+INVALID_TYPE = ErrorCode(ErrorCategory.VALIDATION, "invalid-type", 400, "Invalid Parameter Type")
 INVALID_FORMAT = ErrorCode(
     ErrorCategory.VALIDATION, "invalid-format", 400, "Invalid Parameter Format"
 )
-OUT_OF_RANGE = ErrorCode(
-    ErrorCategory.VALIDATION, "out-of-range", 400, "Value Out of Range"
-)
+OUT_OF_RANGE = ErrorCode(ErrorCategory.VALIDATION, "out-of-range", 400, "Value Out of Range")
 CONSTRAINT_VIOLATION = ErrorCode(
     ErrorCategory.VALIDATION, "constraint-violation", 400, "Constraint Violation"
 )
@@ -219,9 +215,7 @@ DEPENDENCY_FAILED = ErrorCode(
     ErrorCategory.OPERATION, "dependency-failed", 424, "Dependency Failed"
 )
 CANCELLED = ErrorCode(ErrorCategory.OPERATION, "cancelled", 499, "Operation Cancelled")
-INTERNAL_ERROR = ErrorCode(
-    ErrorCategory.OPERATION, "internal-error", 500, "Internal Error"
-)
+INTERNAL_ERROR = ErrorCode(ErrorCategory.OPERATION, "internal-error", 500, "Internal Error")
 
 # -----------------------------------------------------------------------------
 # Storage Error Codes
@@ -231,18 +225,12 @@ CONNECTION_FAILED = ErrorCode(
     ErrorCategory.STORAGE, "connection-failed", 503, "Storage Connection Failed"
 )
 QUERY_FAILED = ErrorCode(ErrorCategory.STORAGE, "query-failed", 500, "Query Failed")
-SCHEMA_MISMATCH = ErrorCode(
-    ErrorCategory.STORAGE, "schema-mismatch", 500, "Schema Mismatch"
-)
+SCHEMA_MISMATCH = ErrorCode(ErrorCategory.STORAGE, "schema-mismatch", 500, "Schema Mismatch")
 CORRUPTION_DETECTED = ErrorCode(
     ErrorCategory.STORAGE, "corruption-detected", 500, "Data Corruption Detected"
 )
-TABLE_NOT_FOUND = ErrorCode(
-    ErrorCategory.STORAGE, "table-not-found", 404, "Table Not Found"
-)
-COLUMN_NOT_FOUND = ErrorCode(
-    ErrorCategory.STORAGE, "column-not-found", 404, "Column Not Found"
-)
+TABLE_NOT_FOUND = ErrorCode(ErrorCategory.STORAGE, "table-not-found", 404, "Table Not Found")
+COLUMN_NOT_FOUND = ErrorCode(ErrorCategory.STORAGE, "column-not-found", 404, "Column Not Found")
 
 # -----------------------------------------------------------------------------
 # Config Error Codes
@@ -265,25 +253,19 @@ CONFIG_SCHEMA_VIOLATION = ErrorCode(
 # Service Error Codes
 # -----------------------------------------------------------------------------
 
-SERVICE_UNAVAILABLE = ErrorCode(
-    ErrorCategory.SERVICE, "unavailable", 503, "Service Unavailable"
-)
+SERVICE_UNAVAILABLE = ErrorCode(ErrorCategory.SERVICE, "unavailable", 503, "Service Unavailable")
 RATE_LIMITED = ErrorCode(ErrorCategory.SERVICE, "rate-limited", 429, "Rate Limited")
 AUTH_FAILED = ErrorCode(
     ErrorCategory.SERVICE, "authentication-failed", 401, "Authentication Failed"
 )
-PERMISSION_DENIED = ErrorCode(
-    ErrorCategory.SERVICE, "permission-denied", 403, "Permission Denied"
-)
+PERMISSION_DENIED = ErrorCode(ErrorCategory.SERVICE, "permission-denied", 403, "Permission Denied")
 
 # -----------------------------------------------------------------------------
 # Job Error Codes
 # -----------------------------------------------------------------------------
 
 JOB_NOT_FOUND = ErrorCode(ErrorCategory.JOB, "not-found", 404, "Job Not Found")
-JOB_ALREADY_RUNNING = ErrorCode(
-    ErrorCategory.JOB, "already-running", 409, "Job Already Running"
-)
+JOB_ALREADY_RUNNING = ErrorCode(ErrorCategory.JOB, "already-running", 409, "Job Already Running")
 JOB_FAILED = ErrorCode(ErrorCategory.JOB, "failed", 500, "Job Execution Failed")
 JOB_EXPIRED = ErrorCode(ErrorCategory.JOB, "expired", 410, "Job Results Expired")
 
@@ -294,9 +276,7 @@ JOB_EXPIRED = ErrorCode(ErrorCategory.JOB, "expired", 410, "Job Results Expired"
 PLUGIN_FATAL = ErrorCode(ErrorCategory.PLUGIN, "fatal", 500, "Plugin Fatal Error")
 PLUGIN_TIMEOUT = ErrorCode(ErrorCategory.PLUGIN, "timeout", 504, "Plugin Timeout")
 PLUGIN_SKIPPED = ErrorCode(ErrorCategory.PLUGIN, "skipped", 200, "Plugin Skipped")
-PLUGIN_SKIP_REQUEST = ErrorCode(
-    ErrorCategory.PLUGIN, "skip-request", 200, "Plugin Skip Requested"
-)
+PLUGIN_SKIP_REQUEST = ErrorCode(ErrorCategory.PLUGIN, "skip-request", 200, "Plugin Skip Requested")
 
 
 # Status code lookup for backward compatibility

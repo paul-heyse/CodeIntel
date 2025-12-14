@@ -1,32 +1,64 @@
 """Shared worker pool infrastructure for ingestion pipelines.
 
 This module provides consolidated worker pool management used by AST, CST,
-and other parser-based ingestion pipelines. It eliminates duplicate
-implementations across ingest modules.
+and other parser-based ingestion pipelines.
+
+.. deprecated:: 1.0
+    Import from ``codeintel.core.concurrency`` instead.
+    This module will be removed in a future version.
+
+Examples
+--------
+Instead of:
+
+>>> from codeintel.ingestion.infrastructure.workers import WorkerConfig
+
+Use:
+
+>>> from codeintel.core.concurrency import WorkerConfig
 """
 
 from __future__ import annotations
 
-import logging
-import os
+import warnings
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.concurrency import (
+    DEFAULT_MAX_WORKERS,
+    DEFAULT_MIN_WORKERS,
+)
+from codeintel.core.concurrency import (
+    executor_factory as _core_executor_factory,
+)
+from codeintel.core.concurrency import (
+    resolve_worker_count as _core_resolve_worker_count,
+)
+from codeintel.core.concurrency import (
+    worker_pool as _core_worker_pool,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
     from concurrent.futures import Executor
 
-log = logging.getLogger(__name__)
-
-DEFAULT_MAX_WORKERS = 16
-DEFAULT_MIN_WORKERS = 2
+if not TYPE_CHECKING:
+    warnings.warn(
+        "Importing from codeintel.ingestion.infrastructure.workers is deprecated. "
+        "Import from codeintel.core.concurrency instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
 
 @dataclass(frozen=True)
 class WorkerConfig:
     """Configuration for worker pool behavior.
+
+    .. deprecated:: 1.0
+        Use ``codeintel.core.concurrency.WorkerConfig`` instead.
 
     Attributes
     ----------
@@ -54,8 +86,10 @@ def resolve_worker_count(
     default_min: int = DEFAULT_MIN_WORKERS,
     env: Mapping[str, str] | None = None,
 ) -> int:
-    """
-    Resolve worker pool size from explicit value, environment, or CPU count.
+    """Resolve worker pool size from explicit value, environment, or CPU count.
+
+    .. deprecated:: 1.0
+        Use ``codeintel.core.concurrency.resolve_worker_count`` instead.
 
     Parameters
     ----------
@@ -75,30 +109,23 @@ def resolve_worker_count(
     int
         Resolved worker count.
     """
-    environment = env or os.environ
-
-    if explicit_count is not None and explicit_count > 0:
-        return explicit_count
-
-    env_value = environment.get(env_var)
-    if env_value:
-        try:
-            value = int(env_value)
-            if value > 0:
-                return value
-        except ValueError:
-            log.warning("Ignoring invalid %s=%s", env_var, env_value)
-
-    cpu_count = os.cpu_count() or 1
-    return min(default_max, max(default_min, cpu_count // 2))
+    return _core_resolve_worker_count(
+        explicit_count,
+        env_var=env_var,
+        default_max=default_max,
+        default_min=default_min,
+        env=env,
+    )
 
 
 def create_executor(
     kind: str,
     workers: int,
 ) -> ThreadPoolExecutor | ProcessPoolExecutor:
-    """
-    Create an executor of the specified type.
+    """Create an executor of the specified type.
+
+    .. deprecated:: 1.0
+        Use ``codeintel.core.concurrency.create_executor`` instead.
 
     Parameters
     ----------
@@ -122,8 +149,10 @@ def worker_pool(
     kind: str,
     workers: int,
 ) -> Iterator[Executor]:
-    """
-    Context manager for worker pool lifecycle.
+    """Context manager for worker pool lifecycle.
+
+    .. deprecated:: 1.0
+        Use ``codeintel.core.concurrency.worker_pool`` instead.
 
     Parameters
     ----------
@@ -137,21 +166,20 @@ def worker_pool(
     Executor
         Configured executor for use within the context.
     """
-    executor = create_executor(kind, workers)
-    try:
+    # The core version expects Literal["thread", "process"]
+    # but we accept any string here for backward compatibility
+    with _core_worker_pool(kind, workers) as executor:  # type: ignore[arg-type]
         yield executor
-    finally:
-        executor.shutdown(wait=True)
 
 
 def executor_factory(
     kind: str,
     workers: int,
 ) -> Callable[[], Executor]:
-    """
-    Create a factory function that produces executors.
+    """Create a factory function that produces executors.
 
-    This is useful for deferred executor creation in pipeline execution.
+    .. deprecated:: 1.0
+        Use ``codeintel.core.concurrency.executor_factory`` instead.
 
     Parameters
     ----------
@@ -165,13 +193,11 @@ def executor_factory(
     Callable[[], Executor]
         Factory function that creates executors.
     """
-
-    def _factory() -> Executor:
-        return create_executor(kind, workers)
-
-    return _factory
+    # The core version expects Literal["thread", "process"]
+    return _core_executor_factory(kind, workers)  # type: ignore[arg-type]
 
 
+# Domain-specific worker configurations for ingestion pipelines
 AST_WORKER_CONFIG = WorkerConfig(
     env_var="CODEINTEL_AST_WORKERS",
     default_max=DEFAULT_MAX_WORKERS,

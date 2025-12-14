@@ -1,0 +1,231 @@
+{
+  "version": "1.0",
+  "created": "2024-12-13",
+  "updated": "2024-12-13",
+  "description": "Tracks migration progress of legacy modules to core/ infrastructure",
+  "modules": [
+    {
+      "id": 1,
+      "source": "codeintel.core.data.snapshot",
+      "target": "codeintel.core.cache",
+      "status": "pending",
+      "pattern_type": "cache",
+      "consumers": 2,
+      "notes": "Re-export shim for SnapshotKey, SnapshotScopedCache"
+    },
+    {
+      "id": 2,
+      "source": "codeintel.analytics.resources.protocol",
+      "target": "codeintel.core.resources",
+      "status": "pending",
+      "pattern_type": "provider",
+      "consumers": 7,
+      "notes": "Re-export shim for LazyResource, ResourceProvider, ResourceRegistry"
+    },
+    {
+      "id": 3,
+      "source": "codeintel.ingestion.infrastructure.workers",
+      "target": "codeintel.core.concurrency",
+      "status": "pending",
+      "pattern_type": "concurrency",
+      "consumers": 2,
+      "notes": "WorkerConfig, create_executor, resolve_worker_count, worker_pool, executor_factory"
+    },
+    {
+      "id": 4,
+      "source": "codeintel.ingestion.infrastructure.paths",
+      "target": "codeintel.core.paths",
+      "status": "pending",
+      "pattern_type": "paths",
+      "consumers": 25,
+      "notes": "normalize_rel_path, relpath_to_module, safe_relpath, ensure_repo_root, repo_relpath"
+    },
+    {
+      "id": 5,
+      "source": "codeintel.graphs.engine.cache",
+      "target": null,
+      "status": "keep",
+      "pattern_type": "cache",
+      "consumers": 2,
+      "notes": "Domain-specific GraphCache, not migrating to core"
+    }
+  ],
+  "services": [
+    {
+      "id": 101,
+      "source": "codeintel.cli.services.runtime",
+      "target": "codeintel.core.services",
+      "status": "pending",
+      "class": "RuntimeService"
+    },
+    {
+      "id": 102,
+      "source": "codeintel.cli.services.storage",
+      "target": "codeintel.core.services",
+      "status": "pending",
+      "class": "StorageService"
+    },
+    {
+      "id": 103,
+      "source": "codeintel.cli.services.params",
+      "target": "codeintel.core.services",
+      "status": "pending",
+      "class": "ParamService"
+    },
+    {
+      "id": 104,
+      "source": "codeintel.cli.services.jobs",
+      "target": "codeintel.core.services",
+      "status": "pending",
+      "class": "JobService"
+    },
+    {
+      "id": 105,
+      "source": "codeintel.cli.services.serving",
+      "target": "codeintel.core.services",
+      "status": "pending",
+      "class": "ServingService"
+    },
+    {
+      "id": 106,
+      "source": "codeintel.cli.config.service",
+      "target": "codeintel.core.services",
+      "status": "pending",
+      "class": "ConfigService"
+    },
+    {
+      "id": 107,
+      "source": "codeintel.cli.rendering.service",
+      "target": "codeintel.core.services",
+      "status": "pending",
+      "class": "RenderingService"
+    },
+    {
+      "id": 108,
+      "source": "codeintel.graphs.catalog",
+      "target": "codeintel.core.services",
+      "status": "pending",
+      "class": "CatalogService"
+    },
+    {
+      "id": 109,
+      "source": "codeintel.serving.bootstrap",
+      "target": "codeintel.core.services",
+      "status": "pending",
+      "class": "ServiceStack"
+    }
+  ],
+  "repositories": [
+    {
+      "id": 201,
+      "source": "codeintel.storage.repositories.base",
+      "target": "codeintel.core.repository",
+      "status": "pending",
+      "class": "BaseRepository"
+    },
+    {
+      "id": 202,
+      "source": "codeintel.storage.repositories.functions",
+      "target": "codeintel.core.repository",
+      "status": "pending",
+      "class": "FunctionRepository"
+    },
+    {
+      "id": 203,
+      "source": "codeintel.storage.repositories.modules",
+      "target": "codeintel.core.repository",
+      "status": "pending",
+      "class": "ModuleRepository"
+    },
+    {
+      "id": 204,
+      "source": "codeintel.storage.repositories.tests",
+      "target": "codeintel.core.repository",
+      "status": "pending",
+      "class": "TestRepository"
+    },
+    {
+      "id": 205,
+      "source": "codeintel.storage.repositories.graphs",
+      "target": "codeintel.core.repository",
+      "status": "pending",
+      "class": "GraphRepository"
+    }
+  ],
+  "providers": [
+    {
+      "id": 301,
+      "source": "codeintel.analytics.resources.catalog",
+      "target": "codeintel.core.providers",
+      "status": "pending",
+      "class": "CatalogProvider"
+    },
+    {
+      "id": 302,
+      "source": "codeintel.analytics.resources.graphs",
+      "target": "codeintel.core.providers",
+      "status": "pending",
+      "class": "GraphProvider"
+    },
+    {
+      "id": 303,
+      "source": "codeintel.analytics.resources.asts",
+      "target": "codeintel.core.providers",
+      "status": "pending",
+      "class": "AstProvider"
+    },
+    {
+      "id": 304,
+      "source": "codeintel.analytics.resources.features",
+      "target": "codeintel.core.providers",
+      "status": "pending",
+      "class": "FeaturesProvider"
+    },
+    {
+      "id": 305,
+      "source": "codeintel.analytics.resources.module_map",
+      "target": "codeintel.core.providers",
+      "status": "pending",
+      "class": "ModuleMapProvider"
+    }
+  ],
+  "adapters": [
+    {
+      "id": 401,
+      "source": "codeintel.ingestion.adapters.duckdb_storage",
+      "target": "codeintel.core.adapters",
+      "status": "pending",
+      "class": "DuckDBStorageAdapter"
+    },
+    {
+      "id": 402,
+      "source": "codeintel.ingestion.adapters.tool_runner",
+      "target": "codeintel.core.adapters",
+      "status": "pending",
+      "class": "ToolRunnerAdapter"
+    },
+    {
+      "id": 403,
+      "source": "codeintel.storage.ibis_adapter",
+      "target": "codeintel.core.adapters",
+      "status": "pending",
+      "class": "IbisGateway"
+    }
+  ],
+  "factories": [
+    {
+      "id": 501,
+      "source": "codeintel.analytics.resources.factory",
+      "target": "codeintel.core.factory",
+      "status": "pending",
+      "class": "ProviderFactory"
+    },
+    {
+      "id": 502,
+      "source": "codeintel.storage.repositories.factory",
+      "target": "codeintel.core.factory",
+      "status": "pending",
+      "class": "RepositoryFactory"
+    }
+  ]
+}

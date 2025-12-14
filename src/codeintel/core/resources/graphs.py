@@ -15,6 +15,7 @@ Example
 ```python
 from codeintel.core.resources.graphs import GraphBundle, GraphProviderProtocol
 
+
 class MyGraphProvider:
     RESOURCE_NAME = "graphs"
 
@@ -163,6 +164,7 @@ class GraphProviderProtocol(Protocol[T_co]):
     --------
     >>> class MyProvider:
     ...     RESOURCE_NAME = "graphs"
+    ...
     ...     def get(self) -> GraphBundle: ...
     ...     def invalidate(self) -> None: ...
     ...     @property

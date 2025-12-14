@@ -22,9 +22,11 @@ class ResultProtocol(Protocol):
     ...     @property
     ...     def success(self) -> bool:
     ...         return True
+    ...
     ...     @property
     ...     def error(self) -> str | None:
     ...         return None
+    ...
     ...     @property
     ...     def duration_s(self) -> float:
     ...         return 0.0
