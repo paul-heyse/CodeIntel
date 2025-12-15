@@ -15,7 +15,7 @@ List fetch with pagination:
     def list_X(self, *, limit: int | None = None) -> list[RowDict]: ...
 
 Paginated fetch with truncation detection:
-    def list_X_paginated(self, *, limit: int) -> PaginatedRows: ...
+    def list_X_paginated(self, *, limit: int) -> PagedResult[RowDict]: ...
 
 Existence check:
     def has_X(self, id: int) -> bool: ...
@@ -24,7 +24,6 @@ Existence check:
 from __future__ import annotations
 
 import logging
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -41,61 +40,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 RowDict = dict[str, Any]
-
-
-class PaginatedRows(PagedResult[RowDict]):
-    """Deprecated alias for PagedResult[RowDict].
-
-    .. deprecated:: 1.0
-        Use :class:`~codeintel.core.repository.PagedResult` instead.
-
-    This class exists for backward compatibility. New code should use
-    PagedResult directly from codeintel.core.repository.
-    """
-
-    def __init__(
-        self,
-        rows: list[RowDict],
-        limit: int,
-        *,
-        truncated: bool,
-        total_available: int | None = None,
-    ) -> None:
-        """Initialize with legacy field names.
-
-        Parameters
-        ----------
-        rows
-            The fetched rows (maps to items).
-        limit
-            The limit used for the query.
-        truncated
-            Whether more rows exist beyond the limit.
-        total_available
-            Total row count if known (maps to total).
-        """
-        warnings.warn(
-            "PaginatedRows is deprecated. Use PagedResult from codeintel.core.repository instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(
-            items=rows,
-            total=total_available,
-            limit=limit,
-            offset=0,
-            truncated=truncated,
-        )
-
-    @property
-    def rows(self) -> list[RowDict]:
-        """Return rows (alias for items, for backward compatibility)."""
-        return self.items
-
-    @property
-    def total_available(self) -> int | None:
-        """Return total available (alias for total, for backward compatibility)."""
-        return self.total
 
 
 @dataclass(frozen=True)

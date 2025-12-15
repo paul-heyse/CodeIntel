@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.registry import get_target_graph
 from codeintel.build.schemas import (
     UnifiedSchemaProvider,
     clear_schema_provider_cache,
@@ -158,8 +159,6 @@ def test_unified_provider_has_inferable_table_keys() -> None:
 
 def test_inferable_table_keys_not_empty() -> None:
     """Verify there are some inferable table keys in the target graph."""
-    from codeintel.build.registry import get_target_graph  # noqa: PLC0415
-
     graph = get_target_graph()
     inferable = inferable_native_table_keys(graph=graph)
     # We expect at least some inferable keys from Hamilton native compute
@@ -297,8 +296,6 @@ def test_unified_provider_has_dataclass_fields() -> None:
 
 def test_target_contract_schemas_accessible() -> None:
     """Verify schemas from target contracts are accessible."""
-    from codeintel.build.registry import get_target_graph  # noqa: PLC0415
-
     graph = get_target_graph()
     provider = unified_schema_provider()
 

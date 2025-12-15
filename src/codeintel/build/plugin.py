@@ -18,13 +18,16 @@ Example
 
 from __future__ import annotations
 
+import importlib
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Protocol, TypeVar, cast, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from types import ModuleType
     from typing import Any
 
     from codeintel.build.context import TargetExecutionContext, TargetResult
@@ -36,6 +39,19 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 TOptions = TypeVar("TOptions")
+
+
+@lru_cache(maxsize=1)
+def _metadata_module() -> ModuleType:
+    """Get the plugins metadata module lazily.
+
+    Returns
+    -------
+    ModuleType
+        The codeintel.build.plugins._metadata module.
+    """
+    return importlib.import_module("codeintel.build.plugins._metadata")
+
 
 # Factory type aliases for ingestion plugins
 StorageFactory = Callable[["StorageGateway"], "IngestStoragePort"]
@@ -244,9 +260,8 @@ class MetadataPlugin(TargetPlugin, ABC):
         PluginMetadata
             Protocol-compatible metadata for registry consumers.
         """
-        from codeintel.build.plugins._metadata import to_plugin_metadata  # noqa: PLC0415
-
-        return to_plugin_metadata(self._core_metadata)
+        mod = _metadata_module()
+        return mod.to_plugin_metadata(self._core_metadata)
 
     @property
     def core_metadata(self) -> CorePluginMetadata:

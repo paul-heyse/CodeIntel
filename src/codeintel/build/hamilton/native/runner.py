@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Self
 
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.manifest_hook import (
@@ -91,7 +91,175 @@ def should_skip_native_target(
     return should_skip(request)
 
 
-def create_run_record(  # noqa: PLR0913
+@dataclass
+class RunRecordBuilder:
+    """Builder for TargetRunRecord instances.
+
+    Provides a fluent interface for constructing run records, avoiding the need
+    for functions with many parameters. Use the status-specific class methods
+    to start building.
+
+    Attributes
+    ----------
+    target
+        Target that was executed.
+    status
+        Completion status: succeeded, skipped, or failed.
+    input_hash
+        Input hash for this execution.
+
+    Examples
+    --------
+    >>> record = (
+    ...     RunRecordBuilder.for_success(target, input_hash).with_env(env).with_run(run).build()
+    ... )
+    >>> record.status
+    'succeeded'
+
+    >>> record = RunRecordBuilder.for_failure(target, input_hash).with_error(exc).build()
+    >>> record.status
+    'failed'
+    """
+
+    target: OutputTarget
+    status: Literal["succeeded", "skipped", "failed"]
+    input_hash: str
+    _env: BuildEnv | None = None
+    _run: NativeRunInfo | None = None
+    _error: Exception | None = None
+
+    @classmethod
+    def for_success(cls, target: OutputTarget, input_hash: str) -> Self:
+        """Create a builder for a successful run.
+
+        Parameters
+        ----------
+        target
+            Target that was executed.
+        input_hash
+            Input hash for this execution.
+
+        Returns
+        -------
+        Self
+            Builder instance configured for success status.
+        """
+        return cls(target=target, status="succeeded", input_hash=input_hash)
+
+    @classmethod
+    def for_skipped(cls, target: OutputTarget, input_hash: str) -> Self:
+        """Create a builder for a skipped run.
+
+        Parameters
+        ----------
+        target
+            Target that was checked but skipped.
+        input_hash
+            Input hash for this execution.
+
+        Returns
+        -------
+        Self
+            Builder instance configured for skipped status.
+        """
+        return cls(target=target, status="skipped", input_hash=input_hash)
+
+    @classmethod
+    def for_failure(cls, target: OutputTarget, input_hash: str) -> Self:
+        """Create a builder for a failed run.
+
+        Parameters
+        ----------
+        target
+            Target that failed.
+        input_hash
+            Input hash for this execution.
+
+        Returns
+        -------
+        Self
+            Builder instance configured for failed status.
+        """
+        return cls(target=target, status="failed", input_hash=input_hash)
+
+    def with_env(self, env: BuildEnv) -> Self:
+        """Set the build environment.
+
+        Required for succeeded and skipped statuses.
+
+        Parameters
+        ----------
+        env
+            Build environment with gateway and paths.
+
+        Returns
+        -------
+        Self
+            This builder instance for chaining.
+        """
+        self._env = env
+        return self
+
+    def with_run(self, run: NativeRunInfo) -> Self:
+        """Set the run metadata.
+
+        Required for succeeded and skipped statuses.
+
+        Parameters
+        ----------
+        run
+            Run metadata with timing and hashes.
+
+        Returns
+        -------
+        Self
+            This builder instance for chaining.
+        """
+        self._run = run
+        return self
+
+    def with_error(self, error: Exception) -> Self:
+        """Set the exception that caused failure.
+
+        Required for failed status.
+
+        Parameters
+        ----------
+        error
+            The exception that caused the failure.
+
+        Returns
+        -------
+        Self
+            This builder instance for chaining.
+        """
+        self._error = error
+        return self
+
+    def build(self) -> TargetRunRecord:
+        """Build the TargetRunRecord.
+
+        Returns
+        -------
+        TargetRunRecord
+            The constructed run record.
+
+        Raises
+        ------
+        ValueError
+            If required fields for the given status are missing.
+        """
+        return create_run_record(
+            self.target,
+            self.status,
+            self.input_hash,
+            env=self._env,
+            run=self._run,
+            error=self._error,
+        )
+
+
+def create_run_record(
     target: OutputTarget,
     status: Literal["succeeded", "skipped", "failed"],
     input_hash: str,
@@ -244,6 +412,7 @@ def save_manifest(
 
 __all__ = [
     "NativeRunInfo",
+    "RunRecordBuilder",
     "create_run_record",
     "save_manifest",
     "should_skip_native_target",

@@ -7,21 +7,26 @@ view schemas and export artifact specifications.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.native.registry import native_target_names
 from codeintel.build.registry import get_target_graph
+from codeintel.build.schemas.infer_duckdb import infer_view_schema
 from codeintel.build.schemas.manifest import ExportArtifact, SchemaManifest
 from codeintel.build.schemas.provider_hamilton import (
     HamiltonSchemaProvider,
     infer_schema_for_table_key,
     inferable_native_table_keys,
 )
+from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from types import ModuleType
 
     from codeintel.build.targets import TargetModule
     from codeintel.core.schemas.primitives import TableSchema
@@ -32,6 +37,18 @@ _logger = logging.getLogger(__name__)
 
 DEFAULT_SCHEMA_MANIFEST_VERSION = "v1"
 V2_SCHEMA_MANIFEST_VERSION = "v2"
+
+
+@lru_cache(maxsize=1)
+def _contracts_module() -> ModuleType:
+    """Get the contracts module lazily.
+
+    Returns
+    -------
+    ModuleType
+        The codeintel.config.datasets.contracts module.
+    """
+    return importlib.import_module("codeintel.config.datasets.contracts")
 
 
 @dataclass(frozen=True)
@@ -138,9 +155,6 @@ def _collect_view_schemas(
     tuple[TableSchema, ...]
         Inferred view schemas.
     """
-    from codeintel.build.schemas.infer_duckdb import infer_view_schema  # noqa: PLC0415
-    from codeintel.storage.view_names import DERIVED_DOCS_VIEWS  # noqa: PLC0415
-
     views: list[TableSchema] = []
     for view_key in DERIVED_DOCS_VIEWS:
         try:
@@ -173,14 +187,13 @@ def _collect_export_artifacts(*, stable: bool) -> tuple[ExportArtifact, ...]:
         Export artifact specifications.
     """
     # Lazy import to avoid circular dependency
-    from codeintel.config.datasets.contracts import (  # noqa: PLC0415
-        _DEFAULT_JSONL_FILENAMES,
-        _DEFAULT_PARQUET_FILENAMES,
-    )
+    contracts_mod = _contracts_module()
+    jsonl_filenames: dict[str, str] = contracts_mod.DEFAULT_JSONL_FILENAMES
+    parquet_filenames: dict[str, str] = contracts_mod.DEFAULT_PARQUET_FILENAMES
 
     artifacts: list[ExportArtifact] = []
 
-    for table_key, filename in _DEFAULT_JSONL_FILENAMES.items():
+    for table_key, filename in jsonl_filenames.items():
         artifacts.append(
             ExportArtifact(
                 kind="jsonl",
@@ -189,7 +202,7 @@ def _collect_export_artifacts(*, stable: bool) -> tuple[ExportArtifact, ...]:
             )
         )
 
-    for table_key, filename in _DEFAULT_PARQUET_FILENAMES.items():
+    for table_key, filename in parquet_filenames.items():
         artifacts.append(
             ExportArtifact(
                 kind="parquet",

@@ -133,7 +133,10 @@ def test_row_models_column_constants_match_contracts() -> None:
             "analytics.graph_metrics_functions_ext",
             column_registry["analytics.graph_metrics_functions_ext"],
         ),
-        ("analytics.graph_metrics_modules_ext", column_registry["analytics.graph_metrics_modules_ext"]),
+        (
+            "analytics.graph_metrics_modules_ext",
+            column_registry["analytics.graph_metrics_modules_ext"],
+        ),
         ("analytics.test_coverage_edges", column_registry["analytics.test_coverage_edges"]),
         ("analytics.function_profile", column_registry["analytics.function_profile"]),
         ("analytics.file_profile", column_registry["analytics.file_profile"]),
@@ -141,7 +144,10 @@ def test_row_models_column_constants_match_contracts() -> None:
         ("analytics.test_profile", column_registry["analytics.test_profile"]),
         ("analytics.behavioral_coverage", column_registry["analytics.behavioral_coverage"]),
         ("analytics.subsystem_profile_cache", column_registry["analytics.subsystem_profile_cache"]),
-        ("analytics.subsystem_coverage_cache", column_registry["analytics.subsystem_coverage_cache"]),
+        (
+            "analytics.subsystem_coverage_cache",
+            column_registry["analytics.subsystem_coverage_cache"],
+        ),
     ]
     contracts_by_key = dict(iter_contracts_by_table_key())
     mismatches: list[str] = []

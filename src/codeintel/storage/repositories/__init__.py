@@ -15,7 +15,6 @@ Example
 from codeintel.core.repository import PagedResult
 from codeintel.storage.repositories.base import (
     BaseRepository,
-    PaginatedRows,
     RowDict,
 )
 from codeintel.storage.repositories.data_models import (
@@ -49,7 +48,6 @@ __all__ = [
     "ModuleRepository",
     "NormalizedDataModel",
     "PagedResult",
-    "PaginatedRows",
     "RepositoryFactory",
     "RowDict",
     "SubsystemRepository",

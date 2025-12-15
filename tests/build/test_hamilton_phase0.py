@@ -13,7 +13,6 @@ production-parity execution paths.
 from __future__ import annotations
 
 import inspect
-from typing import Any, cast
 
 import pytest
 
@@ -34,6 +33,7 @@ from codeintel.build.hamilton.naming import (
 )
 from codeintel.build.hamilton.nodes.node_factory import get_generated_module
 from codeintel.build.registry import MODULES_TARGET
+from tests._helpers import assert_frozen
 
 
 class TestNamingConventions:
@@ -134,8 +134,7 @@ class TestMetadataBridge:
             description="Test plugin",
         )
 
-        with pytest.raises(AttributeError):
-            object.__setattr__(cast("Any", meta), "name", "changed")  # noqa: PLC2801
+        assert_frozen(meta, "name", "changed")
 
 
 class TestDriverFactory:

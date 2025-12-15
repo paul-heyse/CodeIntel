@@ -7,14 +7,32 @@ from the unified build registry (codeintel.build.unified_registry).
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import logging
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from types import ModuleType
 
 log = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _unified_registry_module() -> ModuleType | None:
+    """Get the unified registry module lazily.
+
+    Returns
+    -------
+    ModuleType | None
+        The codeintel.build.unified_registry module, or None if unavailable.
+    """
+    try:
+        return importlib.import_module("codeintel.build.unified_registry")
+    except ImportError:
+        return None
 
 
 def _compute_version_hash(name: str, version: str) -> str:
@@ -47,14 +65,12 @@ def build_plugin_catalog() -> dict[str, Any]:
     dict[str, Any]
         Catalog dict with 'plugins' key containing plugin metadata.
     """
-    try:
-        # Lazy import to avoid circular dependency at module load time
-        from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
-    except ImportError:
+    mod = _unified_registry_module()
+    if mod is None:
         log.warning("Build plugin registry not available")
         return {"plugins": {}, "count": 0}
 
-    registry = get_unified_registry().get_all_plugins()
+    registry = mod.get_unified_registry().get_all_plugins()
     plugins: dict[str, dict[str, Any]] = {}
 
     for target_name, plugin_class in registry.items():

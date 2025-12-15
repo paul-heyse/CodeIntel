@@ -15,8 +15,11 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import pandas as pd
 
+from codeintel.build.exports.exprs import build_export_expr, compile_export_sql
 from codeintel.build.schemas import iter_contracts
+from codeintel.build.schemas.json_schema_registry import compute_json_schema_digest
 from codeintel.core.errors import ProblemDetailBuilder
+from codeintel.core.errors.schema import SchemaError
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.validation import validate_contract_or_raise
@@ -282,13 +285,9 @@ def compute_schema_digest(dataset: DatasetContract | None) -> str | None:
     if dataset is None or dataset.json_schema_id is None:
         return None
     try:
-        from codeintel.build.schemas.json_schema_registry import (  # noqa: PLC0415
-            compute_json_schema_digest,
-        )
-
         return compute_json_schema_digest(dataset.table_key)
-    except Exception:  # noqa: BLE001
-        log.debug("Generated schema digest unavailable for %s", dataset.table_key, exc_info=True)
+    except SchemaError as e:
+        log.debug("Generated schema digest unavailable for %s: %s", dataset.table_key, e)
         return None
 
 
@@ -353,11 +352,6 @@ def build_export_relation(
     DuckDBRelation
         Relation ready for export.
     """
-    from codeintel.build.exports.exprs import (  # noqa: PLC0415
-        build_export_expr,
-        compile_export_sql,
-    )
-
     expr = build_export_expr(gateway, table_key, limit=row_limit, offset=row_offset)
     sql = compile_export_sql(expr)
     return gateway.con.sql(sql)

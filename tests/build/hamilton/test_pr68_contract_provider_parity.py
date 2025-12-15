@@ -7,8 +7,6 @@ need for manually maintained contract dictionaries.
 
 from __future__ import annotations
 
-import warnings
-
 import pytest
 
 from codeintel.build.schemas import (
@@ -17,10 +15,6 @@ from codeintel.build.schemas import (
     is_view,
     iter_contracts,
     iter_contracts_by_table_key,
-)
-from codeintel.config.datasets.contracts import (
-    get_dataset_contracts,
-    get_dataset_contracts_by_table_key,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
@@ -33,8 +27,6 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_not_empty,
     expect_true,
 )
-
-MIN_LEGACY_CONTRACT_COVERAGE = 0.8
 
 
 @pytest.fixture(autouse=True)
@@ -161,77 +153,6 @@ class TestIterContractsByTableKey:
             expect_equal(contract.table_key, table_key)
 
 
-class TestContractProviderParityWithLegacy:
-    """Parity tests comparing contract provider with legacy DATASET_CONTRACTS."""
-
-    @staticmethod
-    def test_is_view_matches_legacy_contract_is_view() -> None:
-        """Verify is_view() matches legacy contract.is_view for all contracts."""
-        # Get legacy contracts with suppressed deprecation warning
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            legacy_contracts = get_dataset_contracts_by_table_key()
-
-        mismatches: list[str] = []
-        for table_key, legacy_contract in legacy_contracts.items():
-            provider_is_view = is_view(table_key)
-            legacy_is_view = legacy_contract.is_view
-            if provider_is_view != legacy_is_view:
-                mismatches.append(
-                    f"{table_key}: provider={provider_is_view}, legacy={legacy_is_view}"
-                )
-
-        if mismatches:
-            pytest.fail("is_view mismatches:\n" + "\n".join(mismatches))
-
-    @staticmethod
-    def test_derived_contract_table_key_matches_legacy() -> None:
-        """Verify derived contracts have matching table_key values."""
-        # Get legacy contracts with suppressed deprecation warning
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            legacy_contracts = get_dataset_contracts_by_table_key()
-
-        # Check that we can derive contracts for all legacy table keys
-        failed_keys: list[str] = []
-        for table_key in legacy_contracts:
-            try:
-                derived = get_contract_for_table_key(table_key)
-                expect_equal(derived.table_key, table_key)
-            except KeyError:
-                failed_keys.append(table_key)
-
-        # Some tables might not be derivable (e.g., source tables without targets)
-        # This is acceptable, but we should have most of them
-        coverage = (len(legacy_contracts) - len(failed_keys)) / len(legacy_contracts)
-        expect_true(
-            coverage >= MIN_LEGACY_CONTRACT_COVERAGE,
-            message=f"Coverage too low: {coverage:.2%}, failed: {failed_keys[:10]}",
-        )
-
-    @staticmethod
-    def test_derived_contract_name_matches_legacy() -> None:
-        """Verify derived contracts have matching name values."""
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            legacy_contracts = get_dataset_contracts_by_table_key()
-
-        mismatches: list[str] = []
-        for table_key, legacy_contract in legacy_contracts.items():
-            try:
-                derived = get_contract_for_table_key(table_key)
-                if derived.name != legacy_contract.name:
-                    mismatches.append(
-                        f"{table_key}: derived={derived.name}, legacy={legacy_contract.name}"
-                    )
-            except KeyError:
-                # Table not derivable, skip
-                continue
-
-        if mismatches:
-            pytest.fail("Name mismatches:\n" + "\n".join(mismatches))
-
-
 class TestViewHandling:
     """Tests for view-specific contract derivation."""
 
@@ -294,24 +215,6 @@ class TestContractCacheManagement:
 
         # Both should have same values even after cache clear
         expect_equal(contract1.table_key, contract2.table_key)
-
-
-class TestDeprecationWarnings:
-    """Tests for deprecation warnings on legacy APIs."""
-
-    @staticmethod
-    def test_get_dataset_contracts_emits_deprecation_warning() -> None:
-        """Verify get_dataset_contracts() emits DeprecationWarning."""
-        with pytest.warns(DeprecationWarning, match="get_dataset_contracts.*deprecated"):
-            get_dataset_contracts()
-
-    @staticmethod
-    def test_get_dataset_contracts_by_table_key_emits_deprecation_warning() -> None:
-        """Verify get_dataset_contracts_by_table_key() emits DeprecationWarning."""
-        with pytest.warns(
-            DeprecationWarning, match="get_dataset_contracts_by_table_key.*deprecated"
-        ):
-            get_dataset_contracts_by_table_key()
 
 
 class TestContractMetadataDerivation:

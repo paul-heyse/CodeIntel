@@ -25,6 +25,8 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.build.schemas.registry import get_schema_provider
+from codeintel.core.providers.base import LazyProvider
+from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
 
 if TYPE_CHECKING:
@@ -36,11 +38,51 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
     from codeintel.core.schemas.primitives import TableSchema
 
-# Deferred imports to avoid circular dependencies at module load time
-_deferred_registry_module: ModuleType | None = None
-_deferred_row_registry_module: ModuleType | None = None
-_deferred_contracts_module: ModuleType | None = None
-_deferred_composites_module: ModuleType | None = None
+
+# -----------------------------------------------------------------------------
+# Lazy Module Providers
+#
+# These providers break circular dependencies by deferring imports until first
+# access. Using LazyProvider with importlib eliminates global statements
+# (PLW0603) and function-level imports (PLC0415).
+# -----------------------------------------------------------------------------
+
+import importlib
+
+
+def _load_module(name: str) -> ModuleType:
+    """Load a module by name using importlib.
+
+    Parameters
+    ----------
+    name
+        Fully qualified module name.
+
+    Returns
+    -------
+    ModuleType
+        The loaded module.
+    """
+    return importlib.import_module(name)
+
+
+# Module-level lazy providers (no global statements needed)
+_registry_provider: LazyProvider[ModuleType] = LazyProvider(
+    lambda: _load_module("codeintel.build.registry"),
+    name="registry_module",
+)
+_row_registry_provider: LazyProvider[ModuleType] = LazyProvider(
+    lambda: _load_module("codeintel.build.schemas.row_registry"),
+    name="row_registry_module",
+)
+_contracts_provider: LazyProvider[ModuleType] = LazyProvider(
+    lambda: _load_module("codeintel.config.datasets.contracts"),
+    name="contracts_module",
+)
+_composites_provider: LazyProvider[ModuleType] = LazyProvider(
+    lambda: _load_module("codeintel.config.datasets.composites"),
+    name="composites_module",
+)
 
 
 def _registry_module() -> ModuleType:
@@ -51,12 +93,7 @@ def _registry_module() -> ModuleType:
     ModuleType
         The codeintel.build.registry module.
     """
-    global _deferred_registry_module  # noqa: PLW0603
-    if _deferred_registry_module is None:
-        import codeintel.build.registry as mod  # noqa: PLC0415
-
-        _deferred_registry_module = mod
-    return _deferred_registry_module
+    return _registry_provider.get()
 
 
 def _row_registry_module() -> ModuleType:
@@ -67,12 +104,7 @@ def _row_registry_module() -> ModuleType:
     ModuleType
         The codeintel.build.schemas.row_registry module.
     """
-    global _deferred_row_registry_module  # noqa: PLW0603
-    if _deferred_row_registry_module is None:
-        import codeintel.build.schemas.row_registry as mod  # noqa: PLC0415
-
-        _deferred_row_registry_module = mod
-    return _deferred_row_registry_module
+    return _row_registry_provider.get()
 
 
 def _contracts_module() -> ModuleType:
@@ -83,12 +115,7 @@ def _contracts_module() -> ModuleType:
     ModuleType
         The codeintel.config.datasets.contracts module.
     """
-    global _deferred_contracts_module  # noqa: PLW0603
-    if _deferred_contracts_module is None:
-        import codeintel.config.datasets.contracts as mod  # noqa: PLC0415
-
-        _deferred_contracts_module = mod
-    return _deferred_contracts_module
+    return _contracts_provider.get()
 
 
 def _composites_module() -> ModuleType:
@@ -99,12 +126,7 @@ def _composites_module() -> ModuleType:
     ModuleType
         The codeintel.config.datasets.composites module.
     """
-    global _deferred_composites_module  # noqa: PLW0603
-    if _deferred_composites_module is None:
-        import codeintel.config.datasets.composites as mod  # noqa: PLC0415
-
-        _deferred_composites_module = mod
-    return _deferred_composites_module
+    return _composites_provider.get()
 
 
 def _get_composition_for_table_key(table_key: str) -> object | None:
@@ -158,7 +180,7 @@ def _get_jsonl_filename(table_key: str) -> str | None:
         The JSONL filename if this table has one, None otherwise.
     """
     contracts_mod = _contracts_module()
-    jsonl_filenames = getattr(contracts_mod, "_DEFAULT_JSONL_FILENAMES", {})
+    jsonl_filenames = getattr(contracts_mod, "DEFAULT_JSONL_FILENAMES", {})
     return jsonl_filenames.get(table_key)
 
 
@@ -176,7 +198,7 @@ def _get_parquet_filename(table_key: str) -> str | None:
         The Parquet filename if this table has one, None otherwise.
     """
     contracts_mod = _contracts_module()
-    parquet_filenames = getattr(contracts_mod, "_DEFAULT_PARQUET_FILENAMES", {})
+    parquet_filenames = getattr(contracts_mod, "DEFAULT_PARQUET_FILENAMES", {})
     return parquet_filenames.get(table_key)
 
 
@@ -627,7 +649,8 @@ class ContractProvider:
         return get_contract_for_table_key(table_key)
 
 
-_contract_provider_instance: ContractProvider | None = None
+class _ContractProviderHolder(SingletonHolder["ContractProvider"]):
+    """Thread-safe singleton holder for ContractProvider."""
 
 
 def get_contract_provider() -> ContractProvider:
@@ -644,10 +667,7 @@ def get_contract_provider() -> ContractProvider:
     >>> "function_metrics" in provider.json_schema_by_dataset_name
     True
     """
-    global _contract_provider_instance  # noqa: PLW0603
-    if _contract_provider_instance is None:
-        _contract_provider_instance = ContractProvider()
-    return _contract_provider_instance
+    return _ContractProviderHolder.get(ContractProvider)
 
 
 __all__ = [

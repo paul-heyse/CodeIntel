@@ -201,8 +201,7 @@ def collect_contract_issues(
     missing_json_schema = [
         name
         for name in json_schema_datasets
-        if name not in registry.by_name
-        and (include_views or not contracts_by_name[name].is_view)
+        if name not in registry.by_name and (include_views or not contracts_by_name[name].is_view)
     ]
     if missing_json_schema:
         issues.append(

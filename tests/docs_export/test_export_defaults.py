@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.build.exports import default_validation_schemas
-from codeintel.build.schemas import get_contract_provider
+from codeintel.build.schemas import get_contract_provider, iter_contracts
 from codeintel.build.schemas.json_schema_registry import get_json_schema_for_dataset_name
 
 
@@ -31,8 +31,6 @@ def test_generated_schemas_available_for_contracts() -> None:
     Views are excluded because they don't have TableSchema definitions - their
     schemas are derived from the underlying tables.
     """
-    from codeintel.build.schemas import iter_contracts  # noqa: PLC0415
-
     # Get all non-view datasets with json_schema_id
     non_view_with_schema = [
         c.name for c in iter_contracts() if c.json_schema_id is not None and not c.is_view

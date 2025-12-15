@@ -29,6 +29,7 @@ from codeintel.build.hamilton.native.runner import (
     should_skip_native_target,
 )
 from codeintel.build.hashing import compute_input_hash
+from codeintel.core.errors import CodeIntelError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -204,7 +205,14 @@ class NativeTargetExecutor:
         start = time.perf_counter()
         try:
             row_counts = compute_fn()
-        except Exception as exc:  # noqa: BLE001
+        except (
+            ValueError,
+            TypeError,
+            KeyError,
+            RuntimeError,
+            OSError,
+            CodeIntelError,
+        ) as exc:
             duration_ms = (time.perf_counter() - start) * 1000
             run = NativeRunInfo(
                 input_hash=self.input_hash,
@@ -217,6 +225,23 @@ class NativeTargetExecutor:
                 self.input_hash,
                 run=run,
                 error=exc,
+            )
+        except BaseException as exc:
+            # Re-raise system exceptions (KeyboardInterrupt, SystemExit, GeneratorExit)
+            if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                raise
+            duration_ms = (time.perf_counter() - start) * 1000
+            run = NativeRunInfo(
+                input_hash=self.input_hash,
+                options_hash=self.options_hash,
+                duration_ms=duration_ms,
+            )
+            return create_run_record(
+                self.target,
+                "failed",
+                self.input_hash,
+                run=run,
+                error=exc if isinstance(exc, Exception) else RuntimeError(str(exc)),
             )
 
         duration_ms = (time.perf_counter() - start) * 1000

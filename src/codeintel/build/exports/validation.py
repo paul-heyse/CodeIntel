@@ -15,6 +15,8 @@ import pyarrow.parquet as pq
 from referencing import Registry
 
 from codeintel.build.exports.common import ExportError, log_export_error
+from codeintel.build.schemas.json_schema_registry import get_json_schema_for_dataset_name
+from codeintel.core.errors.schema import SchemaError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,12 +38,9 @@ def _get_generated_schema(schema_name: str) -> dict[str, Any] | None:
         Generated JSON Schema, or None if not available.
     """
     try:
-        from codeintel.build.schemas.json_schema_registry import (  # noqa: PLC0415
-            get_json_schema_for_dataset_name,
-        )
-
         return get_json_schema_for_dataset_name(schema_name)
-    except Exception:  # noqa: BLE001
+    except SchemaError as e:
+        log.debug("Schema lookup failed for %s: %s", schema_name, e)
         return None
 
 

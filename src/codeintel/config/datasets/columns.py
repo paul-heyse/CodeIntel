@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+import importlib
 from functools import lru_cache
 from typing import TYPE_CHECKING, Final, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from types import ModuleType
 
 _Column = TypeVar("_Column", bound=str)
+
+
+@lru_cache(maxsize=1)
+def _schemas_module() -> ModuleType:
+    """Get the build schemas module lazily.
+
+    Returns
+    -------
+    ModuleType
+        The codeintel.build.schemas module.
+    """
+    return importlib.import_module("codeintel.build.schemas")
 
 
 @lru_cache(maxsize=1)
@@ -21,9 +35,8 @@ def load_columns_by_table() -> dict[str, list[str]]:
         Mapping of table key to column names.
     """
     # Lazy import to avoid circular dependency at module load time
-    from codeintel.build.schemas import get_schema_provider  # noqa: PLC0415
-
-    provider = get_schema_provider()
+    mod = _schemas_module()
+    provider = mod.get_schema_provider()
     return {
         schema.table_key: [col.name for col in schema.columns]
         for schema in provider.iter_table_schemas()
