@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from codeintel.config.datasets import (
-    BEHAVIORAL_COVERAGE_COLUMNS,
+from codeintel.config.datasets.rows.profiles import (
     FILE_PROFILE_COLUMNS,
     MODULE_PROFILE_COLUMNS,
-    TEST_PROFILE_COLUMNS,
-    behavioral_coverage_row_to_tuple,
     file_profile_row_to_tuple,
     module_profile_row_to_tuple,
+)
+from codeintel.config.datasets.rows.test import (
+    BEHAVIORAL_COVERAGE_COLUMNS,
+    TEST_PROFILE_COLUMNS,
+    behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
 from tests._helpers.factories import (

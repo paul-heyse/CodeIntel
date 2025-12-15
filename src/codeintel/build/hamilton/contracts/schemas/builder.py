@@ -21,12 +21,12 @@ from codeintel.build.hamilton.contracts.schemas.operation_contracts_dataset impo
 )
 from codeintel.build.hamilton.contracts.schemas.pandera_schemas import _get_dataset_schemas
 from codeintel.build.hamilton.contracts.schemas.schema import DatasetMetadata, DatasetSchema
-from codeintel.config.datasets.contracts import get_dataset_contracts_by_table_key
+from codeintel.build.schemas import iter_contracts_by_table_key
 
 if TYPE_CHECKING:
     from pandera import DataFrameSchema
 
-    from codeintel.config.datasets.contracts import DatasetContract
+    from codeintel.core.schemas.contract_primitives import DatasetContract
 
 __all__ = [
     "build_all_schemas",
@@ -57,9 +57,9 @@ def build_dataset_schema(
 
     Examples
     --------
-    >>> from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+    >>> from codeintel.build.schemas import get_contract_for_table_key
     >>> from codeintel.build.hamilton.contracts.schemas.pandera_schemas import _get_dataset_schemas
-    >>> contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.function_metrics"]
+    >>> contract = get_contract_for_table_key("analytics.function_metrics")
     >>> pa_schema = _get_dataset_schemas()["analytics.function_metrics"]
     >>> ds = build_dataset_schema(contract, pa_schema)
     >>> ds.name
@@ -120,7 +120,7 @@ def build_all_schemas() -> dict[str, DatasetSchema]:
     dataset_schemas = _get_dataset_schemas()
     schemas: dict[str, DatasetSchema] = {}
 
-    for table_key, contract in get_dataset_contracts_by_table_key().items():
+    for table_key, contract in iter_contracts_by_table_key():
         pandera_schema = dataset_schemas.get(table_key)
 
         if pandera_schema is None:

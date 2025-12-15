@@ -38,7 +38,7 @@ from codeintel.storage.datasets import dataset_for_name, list_dataset_specs, loa
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from codeintel.config.datasets import DatasetContract
+    from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.serving.backend.core import BackendContext, DuckDBConnection, DuckDBRepositories
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.repositories import DatasetReadRepository

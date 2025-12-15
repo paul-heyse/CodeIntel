@@ -8,13 +8,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
-from codeintel.build.plan import BuildPlan, PlanGenerator, PlanStage, PlanStep, format_duration
-from codeintel.build.resolver import ResolutionResult
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hashing import compute_input_hash, compute_options_hash
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.build.operations import OperationTargets
+from codeintel.build.plan import BuildPlan, PlanGenerator, PlanStage, PlanStep, format_duration
+from codeintel.build.resolver import ResolutionResult
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column, TableSchema
 from codeintel.serving.operations.catalog import DataSourceType, Operation

@@ -14,15 +14,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.config.datasets.contracts import (
-    get_composite_schemas,
-    get_dataset_contracts,
-    get_dataset_contracts_by_table_key,
-)
+from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.storage.view_names import ALIAS_DOCS_VIEWS
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Callable, Iterable, Iterator
+
+    from codeintel.core.schemas.contract_primitives import DatasetContract
+
+    GetContractFunc = Callable[[str], DatasetContract]
+    IterContractsFunc = Callable[[], Iterable[DatasetContract]]
 
 
 NodeKind = Literal["table", "view", "operation", "graph"]
@@ -73,6 +74,22 @@ class DataflowEdge:
     edge_type: EdgeType
 
 
+def _get_contract_provider() -> tuple[GetContractFunc, IterContractsFunc]:
+    """Get contract provider functions lazily to avoid circular imports.
+
+    Returns
+    -------
+    tuple[GetContractFunc, IterContractsFunc]
+        (get_contract_for_table_key, iter_contracts) functions.
+    """
+    from codeintel.build.schemas import (  # noqa: PLC0415
+        get_contract_for_table_key,
+        iter_contracts,
+    )
+
+    return get_contract_for_table_key, iter_contracts
+
+
 def iter_dataset_nodes() -> Iterator[DataflowNode]:
     """Iterate over dataset contracts and emit DataflowNodes.
 
@@ -81,7 +98,8 @@ def iter_dataset_nodes() -> Iterator[DataflowNode]:
     DataflowNode
         Node keyed by DatasetContract.table_key for tables and views.
     """
-    for contract in get_dataset_contracts().values():
+    _, iter_contracts = _get_contract_provider()
+    for contract in iter_contracts():
         kind: NodeKind = "view" if contract.is_view else "table"
         yield DataflowNode(
             id=contract.table_key,
@@ -100,18 +118,20 @@ def iter_composite_edges() -> Iterator[DataflowEdge]:
     DataflowEdge
         Edge from each composed_of source table to the profile table.
     """
+    get_contract_for_table_key, _ = _get_contract_provider()
     composite_schemas = get_composite_schemas()
-    contracts_by_key = get_dataset_contracts_by_table_key()
 
     for table_key, composition in composite_schemas.items():
-        target = contracts_by_key.get(table_key)
-        if target is None:
+        try:
+            target = get_contract_for_table_key(table_key)
+        except KeyError:
             continue
 
         dst_id = target.table_key
         for src_table_key in composition.composed_of:
-            upstream = contracts_by_key.get(src_table_key)
-            if upstream is None:
+            try:
+                upstream = get_contract_for_table_key(src_table_key)
+            except KeyError:
                 continue
             yield DataflowEdge(
                 src=upstream.table_key,
@@ -128,20 +148,25 @@ def iter_dependency_edges() -> Iterator[DataflowEdge]:
     DataflowEdge
         Edge from each declared upstream dependency to the dataset table_key.
     """
-    contracts = get_dataset_contracts()
+    _, iter_contracts = _get_contract_provider()
 
-    for contract in contracts.values():
+    # Build a name-to-contract mapping for upstream resolution
+    contracts_by_name: dict[str, DatasetContract] = {}
+    for contract in iter_contracts():
+        contracts_by_name[contract.name] = contract
+
+    for contract in iter_contracts():
         if not contract.upstream_dependencies:
             continue
 
         dst_id = contract.table_key
         for upstream_name in contract.upstream_dependencies:
-            upstream = contracts.get(upstream_name)
+            upstream = contracts_by_name.get(upstream_name)
             if upstream is None:
                 continue
 
             yield DataflowEdge(
-                src=upstream.table_key,
+                src=upstream.table_key,  # type: ignore[attr-defined]
                 dst=dst_id,
                 edge_type="builds",
             )

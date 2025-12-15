@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from codeintel.build.registry import ALL_TARGETS
-from codeintel.config.datasets import TABLE_SCHEMAS
+from codeintel.build.schemas import get_schema_provider
 
 DIVIDER = "=" * 70
 SECTION_DIVIDER = "-" * 70
@@ -41,23 +41,25 @@ def _collect_plugin_tables() -> tuple[dict[str, list[str]], list[tuple[str, str]
 
 
 def _find_missing_schemas(plugin_tables: dict[str, list[str]]) -> list[tuple[str, list[str]]]:
+    table_schemas = {s.table_key: s for s in get_schema_provider().iter_table_schemas()}
     return [
         (table_key, plugins)
         for table_key, plugins in sorted(plugin_tables.items())
-        if table_key not in TABLE_SCHEMAS
+        if table_key not in table_schemas
     ]
 
 
 def _find_orphan_tables(plugin_tables: dict[str, list[str]]) -> dict[str, list[str]]:
+    table_schemas = {s.table_key: s for s in get_schema_provider().iter_table_schemas()}
     used_tables = set(plugin_tables.keys())
     orphans: dict[str, list[str]] = {}
-    for table_key in sorted(TABLE_SCHEMAS.keys()):
+    for table_key in sorted(table_schemas.keys()):
         if table_key.startswith(("metadata.", "build.", "docs.")):
             continue
         if table_key in used_tables:
             continue
-        schema = table_key.split(".", maxsplit=1)[0]
-        orphans.setdefault(schema, []).append(table_key)
+        schema_prefix = table_key.split(".", maxsplit=1)[0]
+        orphans.setdefault(schema_prefix, []).append(table_key)
     return orphans
 
 

@@ -4,20 +4,24 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from codeintel.config.datasets import (
-    BEHAVIORAL_COVERAGE_COLUMNS,
+from codeintel.config.datasets.rows.profiles import (
     FILE_PROFILE_COLUMNS,
     FUNCTION_PROFILE_COLUMNS,
     MODULE_PROFILE_COLUMNS,
+)
+from codeintel.config.datasets.rows.test import (
+    BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
 )
 
 if TYPE_CHECKING:
-    from codeintel.config.datasets import (
-        BehavioralCoverageRowModel,
+    from codeintel.config.datasets.rows.profiles import (
         FileProfileRowModel,
         FunctionProfileRowModel,
         ModuleProfileRowModel,
+    )
+    from codeintel.config.datasets.rows.test import (
+        BehavioralCoverageRowModel,
         ProfileRowModel,
     )
 

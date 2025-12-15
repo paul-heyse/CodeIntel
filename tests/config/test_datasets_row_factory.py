@@ -1,4 +1,4 @@
-"""Tests for codeintel.config.datasets.row_factory module."""
+"""Tests for row factory utilities in codeintel.core.schemas.row_models."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from pandera import Column, DataFrameSchema
 
-from codeintel.config.datasets.row_factory import (
+from codeintel.core.schemas.row_models import (
     row_serializer_from_pandera,
     typed_dict_from_pandera,
 )

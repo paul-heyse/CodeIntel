@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from codeintel.config.datasets import DatasetContract, get_dataset_contracts_by_table_key
+from codeintel.build.schemas import get_contract_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from duckdb import DuckDBPyConnection
+
+    from codeintel.core.schemas.contract_primitives import DatasetContract
 
 __all__ = [
     "DatasetRegistry",
@@ -35,8 +37,7 @@ class DatasetRegistry:
 
     @property
     def all_datasets(self) -> tuple[str, ...]:
-        """
-        Return all dataset names.
+        """Return all dataset names.
 
         Returns
         -------
@@ -46,8 +47,7 @@ class DatasetRegistry:
         return tuple(self.by_name.keys())
 
     def datasets_with_json_schema(self) -> tuple[str, ...]:
-        """
-        Return dataset names that have JSON Schema validation configured.
+        """Return dataset names that have JSON Schema validation configured.
 
         Returns
         -------
@@ -57,8 +57,7 @@ class DatasetRegistry:
         return tuple(name for name, ds in self.by_name.items() if ds.json_schema_id is not None)
 
     def dataset_dependencies(self) -> dict[str, tuple[str, ...]]:
-        """
-        Return upstream dependencies for each dataset.
+        """Return upstream dependencies for each dataset.
 
         Returns
         -------
@@ -72,8 +71,7 @@ class DatasetRegistry:
         }
 
     def docs_dataset_names(self) -> tuple[str, ...]:
-        """
-        Return dataset names backed by docs.* views.
+        """Return dataset names backed by docs.* views.
 
         Returns
         -------
@@ -87,8 +85,7 @@ class DatasetRegistry:
         )
 
     def resolve_table_key(self, name: str) -> str:
-        """
-        Resolve dataset name into fully qualified table or view key.
+        """Resolve dataset name into fully qualified table or view key.
 
         Returns
         -------
@@ -108,8 +105,7 @@ class DatasetRegistry:
 
     @property
     def mapping(self) -> Mapping[str, str]:
-        """
-        Return name -> table_key mapping for compatibility.
+        """Return name -> table_key mapping for compatibility.
 
         Returns
         -------
@@ -120,8 +116,7 @@ class DatasetRegistry:
 
     @property
     def tables(self) -> tuple[str, ...]:
-        """
-        Return table dataset names (non-views).
+        """Return table dataset names (non-views).
 
         Returns
         -------
@@ -132,8 +127,7 @@ class DatasetRegistry:
 
     @property
     def views(self) -> tuple[str, ...]:
-        """
-        Return view dataset names.
+        """Return view dataset names.
 
         Returns
         -------
@@ -144,8 +138,7 @@ class DatasetRegistry:
 
     @property
     def meta(self) -> Mapping[str, DatasetContract]:
-        """
-        Return name -> contract mapping (alias for by_name).
+        """Return name -> contract mapping (alias for by_name).
 
         Returns
         -------
@@ -156,8 +149,7 @@ class DatasetRegistry:
 
     @property
     def jsonl_mapping(self) -> Mapping[str, str]:
-        """
-        Return jsonl_datasets (alias for compatibility).
+        """Return jsonl_datasets (alias for compatibility).
 
         Returns
         -------
@@ -168,8 +160,7 @@ class DatasetRegistry:
 
     @property
     def parquet_mapping(self) -> Mapping[str, str]:
-        """
-        Return parquet_datasets (alias for compatibility).
+        """Return parquet_datasets (alias for compatibility).
 
         Returns
         -------
@@ -179,8 +170,7 @@ class DatasetRegistry:
         return self.parquet_datasets
 
     def table_for_name(self, name: str) -> str:
-        """
-        Return table_key for dataset name (alias for resolve_table_key).
+        """Return table_key for dataset name (alias for resolve_table_key).
 
         Delegates to :meth:`resolve_table_key` for actual resolution.
 
@@ -198,8 +188,10 @@ class DatasetRegistry:
 
 
 def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
-    """
-    Load dataset metadata from DuckDB's metadata.datasets table and hydrate DatasetContracts.
+    """Load dataset metadata from DuckDB's metadata.datasets table.
+
+    Hydrates DatasetContracts by merging database metadata with contract
+    defaults from the contract provider.
 
     Returns
     -------
@@ -211,6 +203,9 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
     KeyError
         If a metadata row lacks a corresponding DatasetContract.
     """
+    # Import here to avoid circular import issues
+    from codeintel.config.datasets.contracts import DatasetContract  # noqa: PLC0415
+
     rows = con.execute(
         """
         SELECT
@@ -240,10 +235,11 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
         db_family,
         db_description,
     ) in rows:
-        base = get_dataset_contracts_by_table_key().get(table_key)
-        if base is None:
+        try:
+            base = get_contract_for_table_key(table_key)
+        except KeyError:
             msg = f"metadata.datasets row {table_key} has no DatasetContract"
-            raise KeyError(msg)
+            raise KeyError(msg) from None
 
         inferred_family = table_key.split(".", maxsplit=1)[0] if "." in table_key else None
         family = (
@@ -294,8 +290,7 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
 
 
 def dataset_for_name(registry: DatasetRegistry, name: str) -> DatasetContract:
-    """
-    Return dataset metadata for a dataset name.
+    """Return dataset metadata for a dataset name.
 
     Returns
     -------
@@ -315,8 +310,7 @@ def dataset_for_name(registry: DatasetRegistry, name: str) -> DatasetContract:
 
 
 def dataset_for_table(registry: DatasetRegistry, table_key: str) -> DatasetContract:
-    """
-    Return dataset metadata for a fully qualified table or view key.
+    """Return dataset metadata for a fully qualified table or view key.
 
     Returns
     -------
@@ -336,8 +330,7 @@ def dataset_for_table(registry: DatasetRegistry, table_key: str) -> DatasetContr
 
 
 def describe_dataset(ds: DatasetContract) -> dict[str, object]:
-    """
-    Return a JSON-serializable description of a dataset spec.
+    """Return a JSON-serializable description of a dataset spec.
 
     Returns
     -------
@@ -369,8 +362,7 @@ def describe_dataset(ds: DatasetContract) -> dict[str, object]:
 
 
 def list_dataset_specs(registry: DatasetRegistry) -> list[dict[str, object]]:
-    """
-    Serialize all dataset specs from a DatasetRegistry.
+    """Serialize all dataset specs from a DatasetRegistry.
 
     Returns
     -------
@@ -381,8 +373,7 @@ def list_dataset_specs(registry: DatasetRegistry) -> list[dict[str, object]]:
 
 
 def build_dataset_dependency_graph(registry: DatasetRegistry) -> dict[str, tuple[str, ...]]:
-    """
-    Construct a dependency graph mapping dataset -> upstream datasets.
+    """Construct a dependency graph mapping dataset -> upstream datasets.
 
     Returns
     -------
@@ -393,8 +384,7 @@ def build_dataset_dependency_graph(registry: DatasetRegistry) -> dict[str, tuple
 
 
 def describe_all_datasets(con: DuckDBPyConnection) -> list[dict[str, object]]:
-    """
-    Return a JSON-serializable description of all dataset specs for a database.
+    """Return a JSON-serializable description of all dataset specs for a database.
 
     Parameters
     ----------

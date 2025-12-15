@@ -38,7 +38,7 @@ from codeintel.analytics.testing.profiles.types import (
     TestProfileOptions,
     TestRecord,
 )
-from codeintel.config.datasets import (
+from codeintel.config.datasets.rows.test import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
     behavioral_coverage_row_to_tuple,

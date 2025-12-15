@@ -20,8 +20,6 @@ import json
 from datetime import datetime
 from typing import TYPE_CHECKING, Final, TypedDict, TypeVar
 
-from codeintel.config.datasets.schemas import TABLE_SCHEMAS
-
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -69,6 +67,8 @@ def _get_contract_columns(table_key: str) -> tuple[str, ...]:
     ValueError
         If no schema is defined for the given table key.
     """
+    from codeintel.config.datasets.schemas import TABLE_SCHEMAS  # noqa: PLC0415
+
     schema = TABLE_SCHEMAS.get(table_key)
     if schema is None:
         message = f"No schema defined for table key: {table_key}"

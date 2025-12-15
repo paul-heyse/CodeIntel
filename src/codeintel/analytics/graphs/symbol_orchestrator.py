@@ -21,7 +21,7 @@ from codeintel.analytics.compute.graphs import (
 from codeintel.analytics.compute.row_builders import SymbolMetricInputs
 from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES, MAX_COMMUNITY_NODES
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -159,7 +159,7 @@ def compute_undirected_symbol_metrics[TNode](
         created_at=ctx.resolved_now(),
     )
     rows = config.build_rows(inputs)
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY[config.table_key]
+    contract = get_contract_for_table_key(config.table_key)
     validated_rows = validate_tuple_rows(
         contract.table_key,
         list(rows),

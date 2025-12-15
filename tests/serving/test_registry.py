@@ -10,7 +10,7 @@ import dataclasses
 
 import pytest
 
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
 from codeintel.serving.operations.catalog import (
     DatasetMeta,
@@ -78,7 +78,7 @@ def test_iter_registry_operations_patched_datasets_match_contracts() -> None:
         pytest.fail("datasets.rows operation missing")
     expect_is_not_none(datasets_rows)
     exposed_set = set(datasets_rows.exposed_datasets)
-    contract_keys = set(DATASET_CONTRACTS_BY_TABLE_KEY.keys())
+    contract_keys = {k for k, _ in iter_contracts_by_table_key()}
 
     expect_equal(exposed_set, contract_keys)
 

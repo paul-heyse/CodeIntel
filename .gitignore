@@ -2,9 +2,11 @@
 __pycache__/
 *.py[oc]
 
+.hypothesis/
 build/build/db/
 build/db/
 build/scip/
+build/test-results/
 dist/
 wheels/
 *.egg-info

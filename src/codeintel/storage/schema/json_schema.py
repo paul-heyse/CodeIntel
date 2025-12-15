@@ -10,7 +10,7 @@ from typing import get_args, get_origin
 
 import jsonschema
 
-from codeintel.config.datasets import get_dataset_contracts
+from codeintel.build.schemas import iter_contracts
 
 if typing.TYPE_CHECKING:
     from pathlib import Path
@@ -194,9 +194,11 @@ def generate_export_schemas(
     output_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     datasets = getattr(registry, "by_name", {})
-    target_names = include_datasets or set(get_dataset_contracts())
+    # Build name-to-contract mapping from new contract provider
+    contracts_by_name = {c.name: c for c in iter_contracts()}
+    target_names = include_datasets or set(contracts_by_name.keys())
     for name in sorted(target_names):
-        contract = get_dataset_contracts().get(name)
+        contract = contracts_by_name.get(name)
         if contract is None or contract.json_schema_id is None:
             continue
         ds = datasets.get(name) if isinstance(datasets, Mapping) else None

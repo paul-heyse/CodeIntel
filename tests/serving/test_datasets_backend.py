@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.datasets import get_dataset_contracts, get_dataset_contracts_by_table_key
+from codeintel.build.schemas import iter_contracts, iter_contracts_by_table_key
 from codeintel.serving.backend.datasets import (
     DOCS_VIEWS,
     PREVIEW_COLUMN_COUNT,
@@ -78,7 +78,7 @@ class MockConfig:
 
 def test_docs_views_contains_only_views() -> None:
     """Verify DOCS_VIEWS dictionary contains only view contracts."""
-    contracts = get_dataset_contracts()
+    contracts = {c.name: c for c in iter_contracts()}
 
     for name in DOCS_VIEWS:
         contract = expect_is_not_none(
@@ -93,7 +93,7 @@ def test_docs_views_contains_only_views() -> None:
 
 def test_docs_views_values_are_table_keys() -> None:
     """Verify DOCS_VIEWS values match contract table_keys."""
-    contracts = get_dataset_contracts()
+    contracts = {c.name: c for c in iter_contracts()}
 
     for name, table_key in DOCS_VIEWS.items():
         contract = expect_is_not_none(contracts.get(name))
@@ -102,7 +102,7 @@ def test_docs_views_values_are_table_keys() -> None:
 
 def test_docs_views_is_non_empty_if_views_exist() -> None:
     """Verify DOCS_VIEWS is populated when view contracts exist."""
-    contracts = get_dataset_contracts()
+    contracts = {c.name: c for c in iter_contracts()}
     view_count = sum(1 for c in contracts.values() if c.is_view)
 
     expect_equal(len(DOCS_VIEWS), view_count)
@@ -133,7 +133,7 @@ def test_build_dataset_registry_excludes_docs_views_when_requested() -> None:
 def test_build_dataset_registry_values_are_table_keys() -> None:
     """Verify registry values match contract table_keys."""
     registry = build_dataset_registry()
-    contracts = get_dataset_contracts()
+    contracts = {c.name: c for c in iter_contracts()}
 
     for name, table_key in registry.items():
         contract = expect_is_not_none(
@@ -170,7 +170,7 @@ def test_build_dataset_registry_exclude_reduces_count() -> None:
 
 def test_build_dataset_registry_contains_all_non_view_datasets() -> None:
     """Verify all non-view datasets are in registry regardless of include mode."""
-    contracts = get_dataset_contracts()
+    contracts = {c.name: c for c in iter_contracts()}
     non_view_names = {name for name, c in contracts.items() if not c.is_view}
 
     registry_exclude = build_dataset_registry(include_docs_views="exclude")
@@ -229,7 +229,7 @@ def test_build_registry_and_limits_limits_has_expected_attributes() -> None:
 
 def test_describe_dataset_with_known_contract() -> None:
     """Verify describe_dataset includes column preview for known contracts."""
-    contracts_by_key = get_dataset_contracts_by_table_key()
+    contracts_by_key = dict(iter_contracts_by_table_key())
 
     for table_key, contract in contracts_by_key.items():
         if contract.schema is not None and len(contract.schema.columns) > 0:
@@ -257,7 +257,7 @@ def test_describe_dataset_with_unknown_table() -> None:
 
 def test_describe_dataset_shows_ellipsis_for_many_columns() -> None:
     """Verify ellipsis is shown when more columns exist than preview count."""
-    contracts_by_key = get_dataset_contracts_by_table_key()
+    contracts_by_key = dict(iter_contracts_by_table_key())
 
     for table_key, contract in contracts_by_key.items():
         if contract.schema is not None and len(contract.schema.columns) > PREVIEW_COLUMN_COUNT:
@@ -270,7 +270,7 @@ def test_describe_dataset_shows_ellipsis_for_many_columns() -> None:
 
 def test_describe_dataset_no_ellipsis_for_few_columns() -> None:
     """Verify no ellipsis when columns are within preview count."""
-    contracts_by_key = get_dataset_contracts_by_table_key()
+    contracts_by_key = dict(iter_contracts_by_table_key())
 
     for table_key, contract in contracts_by_key.items():
         if contract.schema is not None and len(contract.schema.columns) <= PREVIEW_COLUMN_COUNT:
@@ -283,7 +283,7 @@ def test_describe_dataset_no_ellipsis_for_few_columns() -> None:
 
 def test_describe_dataset_format_with_parentheses() -> None:
     """Verify describe_dataset uses parentheses for column list."""
-    contracts_by_key = get_dataset_contracts_by_table_key()
+    contracts_by_key = dict(iter_contracts_by_table_key())
 
     for table_key, contract in contracts_by_key.items():
         if contract.schema is not None and len(contract.schema.columns) > 0:
@@ -368,7 +368,7 @@ def test_preview_column_count_is_positive() -> None:
 
 def test_preview_column_count_used_in_describe() -> None:
     """Verify PREVIEW_COLUMN_COUNT affects describe_dataset output."""
-    contracts_by_key = get_dataset_contracts_by_table_key()
+    contracts_by_key = dict(iter_contracts_by_table_key())
 
     for table_key, contract in contracts_by_key.items():
         if contract.schema is not None and len(contract.schema.columns) > PREVIEW_COLUMN_COUNT:

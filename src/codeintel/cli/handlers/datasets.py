@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetDiffResult,
@@ -24,14 +25,13 @@ from codeintel.cli.errors.results import (
     fail_project_error,
 )
 from codeintel.cli.resolution.errors import ResolutionError
-from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.validation import collect_contract_issues
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     from codeintel.cli.context import CommandContext
-    from codeintel.config.datasets import DatasetContract
+    from codeintel.core.schemas.contract_primitives import DatasetContract
 
 LOG = logging.getLogger(__name__)
 
@@ -56,9 +56,20 @@ class DatasetDependencies:
     issue_collector: Callable[[Any], list[str]]
 
 
+def _contracts_by_table_key_provider() -> Mapping[str, DatasetContract]:
+    """Build contracts mapping for dependency injection.
+
+    Returns
+    -------
+    Mapping[str, DatasetContract]
+        Mapping from table_key to contract.
+    """
+    return dict(iter_contracts_by_table_key())
+
+
 DEFAULT_DATASET_DEPS = DatasetDependencies(
     runtime_builder=_build_runtime_from_ctx,
-    contracts_provider=get_dataset_contracts_by_table_key,
+    contracts_provider=_contracts_by_table_key_provider,
     issue_collector=collect_contract_issues,
 )
 

@@ -37,13 +37,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import duckdb
+from codeintel.build.executor import BuildExecutor, ExecutorEnv
 from codeintel.core.process import (
     CommandExecutionError,
     CommandExecutor,
     CommandNotAllowedError,
 )
 
-from codeintel.build.executor import BuildExecutor, ExecutorEnv
 from codeintel.build.plan import PlanGenerator
 from codeintel.build.registry import get_target_graph
 from codeintel.build.resolver import BuildResolver

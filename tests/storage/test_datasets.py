@@ -13,11 +13,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.datasets import (
-    JSON_SCHEMA_BY_DATASET_NAME,
-    DatasetContract,
-    RowBinding,
-)
+from codeintel.build.schemas import get_contract_provider
+from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
 from codeintel.storage.datasets import (
     DatasetRegistry,
     build_dataset_dependency_graph,
@@ -329,7 +326,7 @@ def test_json_schema_ids_attached_to_datasets() -> None:
     try:
         registry = load_dataset_registry(gateway.con)
         names_with_schema = set(registry.datasets_with_json_schema())
-        expected = set(JSON_SCHEMA_BY_DATASET_NAME.keys())
+        expected = set(get_contract_provider().json_schema_by_dataset_name.keys())
         _require(
             condition=names_with_schema == expected,
             message=f"datasets_with_json_schema mismatch: {names_with_schema} != {expected}",
@@ -405,11 +402,17 @@ def test_describe_dataset_shape_with_json_schema() -> None:
 
 def test_json_schema_datasets_have_row_bindings() -> None:
     """Datasets with JSON Schemas should expose row bindings where supported."""
-    allow_missing = {"data_model_fields", "data_model_relationships"}
+    # Views (prefixed with v_) don't have generated row bindings since they don't have schemas
+    allow_missing = {
+        "data_model_fields",
+        "data_model_relationships",
+        "v_subsystem_profile",
+        "v_subsystem_coverage",
+    }
     gateway = GatewayFactory().without_validation().open()
     try:
         registry = load_dataset_registry(gateway.con)
-        for dataset_name in JSON_SCHEMA_BY_DATASET_NAME:
+        for dataset_name in get_contract_provider().json_schema_by_dataset_name:
             if dataset_name in allow_missing:
                 continue
             dataset = registry.by_name.get(dataset_name)

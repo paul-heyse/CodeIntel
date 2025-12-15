@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.datasets import get_table_columns
+from codeintel.build.schemas import get_schema_provider
 from codeintel.core.parsing import AstSpanIndex
 from codeintel.ingestion.compute.ast_extract import AstVisitor
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module, timed_parse
@@ -34,7 +34,8 @@ from tests._helpers.ingestion_samples import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-AST_NODES_COLUMNS = get_table_columns("core.ast_nodes")
+_AST_NODES_SCHEMA = get_schema_provider().get_table_schema("core.ast_nodes")
+AST_NODES_COLUMNS = _AST_NODES_SCHEMA.column_names() if _AST_NODES_SCHEMA else ()
 
 
 EXPECTED_SOURCE_LINES = 3

@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, cast
 
 import duckdb
 import pytest
-from codeintel.build.resolver import BuildResolver
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hashing import compute_input_hash
@@ -19,6 +18,7 @@ from codeintel.build.registry import (
     derive_schemas_from_targets,
     get_target_by_table,
 )
+from codeintel.build.resolver import BuildResolver
 from codeintel.build.resources import TargetExecution, TargetResources
 from codeintel.build.state import DatabaseState, StalenessReason, TargetState
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions

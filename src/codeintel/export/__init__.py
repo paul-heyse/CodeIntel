@@ -31,20 +31,20 @@ programmatic control over export options (validation, datasets, etc.)::
 
 from __future__ import annotations
 
-from codeintel.config.datasets import JSON_SCHEMA_BY_DATASET_NAME
+from codeintel.build.schemas import iter_contracts
 
 
 def default_validation_schemas() -> list[str]:
     """Return the set of dataset names that should be validated by default.
 
-    Derived from JSON_SCHEMA_BY_DATASET_NAME in the dataset contract layer.
+    Derived from contracts in the build.schemas contract provider.
 
     Returns
     -------
     list[str]
         Sorted dataset names with JSON Schema validation configured.
     """
-    return sorted(JSON_SCHEMA_BY_DATASET_NAME.keys())
+    return sorted(c.name for c in iter_contracts() if c.json_schema_id is not None)
 
 
 __all__ = ["default_validation_schemas"]

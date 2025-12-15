@@ -33,7 +33,7 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins._helpers import filter_paths, get_source_root
 from codeintel.build.plugins.graphs.builders.callgraph_options import CallGraphOptions
-from codeintel.config.datasets import (
+from codeintel.config.datasets.rows.graph import (
     CallGraphNodeRow,
     call_graph_edge_to_tuple,
     call_graph_node_to_tuple,
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.config.datasets import (
+    from codeintel.config.datasets.rows.graph import (
         CallGraphEdgeRow,
     )
     from codeintel.core.catalog import FunctionSpanIndex

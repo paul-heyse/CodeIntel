@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets import get_table_columns
+from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
@@ -62,6 +62,22 @@ __all__ = [
     "DuckDBGateway",
     "GraphTables",
 ]
+
+
+def get_table_columns(table_key: str) -> list[str]:
+    """Return ordered column names for a specific table.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (e.g., "core.ast_nodes").
+
+    Returns
+    -------
+    list[str]
+        Column names in storage order.
+    """
+    return list(load_columns_by_table().get(table_key, []))
 
 
 @dataclass(frozen=True)

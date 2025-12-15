@@ -44,9 +44,9 @@ from codeintel.storage.validation.conformance import (
     run_conformance,
 )
 from codeintel.storage.validation.contract import (
-    BINDING_REQUIRED_DATASETS,
     _schema_path,
     collect_contract_issues,
+    get_binding_required_datasets,
     validate_contract_or_raise,
 )
 from codeintel.storage.validation.data_checks import (
@@ -57,13 +57,13 @@ from codeintel.storage.validation.data_checks import (
 )
 
 __all__ = [
-    "BINDING_REQUIRED_DATASETS",
     "ConformanceIssue",
     "ConformanceReport",
     "_schema_path",
     "collect_contract_issues",
     "count_rows_for_snapshot",
     "count_rows_for_tables",
+    "get_binding_required_datasets",
     "run_conformance",
     "safe_count_rows",
     "table_has_rows_for_snapshot",

@@ -17,7 +17,7 @@ from uuid import uuid4
 import pytest
 
 from codeintel.build.operations import get_targets_for_operation
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.config.serving_models import ServingConfig
 from codeintel.core.execution import RunContext
 from codeintel.serving.auto_pipeline import (
@@ -1267,9 +1267,7 @@ def test_dataset_has_rows_for_snapshot_returns_true_when_data_present(
         ]
     )
 
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get("core.goids")
-    if contract is None:
-        pytest.skip("core.goids contract not found")
+    contract = get_contract_for_table_key("core.goids")
 
     result = dataset_has_rows_for_snapshot(
         env.gateway,
@@ -1293,9 +1291,7 @@ def test_dataset_has_rows_for_snapshot_returns_false_when_empty(
     """
     env = auto_pipeline_test_env
 
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get("core.goids")
-    if contract is None:
-        pytest.skip("core.goids contract not found")
+    contract = get_contract_for_table_key("core.goids")
 
     result = dataset_has_rows_for_snapshot(
         env.gateway,

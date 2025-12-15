@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from codeintel.config.datasets import CallGraphEdgeRow
+    from codeintel.config.datasets.rows.graph import CallGraphEdgeRow
 
 
 def default_edge_key(row: CallGraphEdgeRow) -> tuple[object, ...]:

@@ -6,8 +6,8 @@ import logging
 from typing import TYPE_CHECKING
 
 import pytest
-from codeintel.build.resolver import BuildResolver
 
+from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import DatabaseState, StalenessReason, TargetState
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers.assertions import expect_equal, expect_in, expect_true

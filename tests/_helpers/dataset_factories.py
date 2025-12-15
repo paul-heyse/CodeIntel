@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from codeintel.config.datasets import DatasetContract
+from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.serving import domain_models as dm
 from codeintel.serving.mcp.models import DatasetDescriptor, DatasetSpecDescriptor
 from codeintel.storage.datasets import DatasetRegistry

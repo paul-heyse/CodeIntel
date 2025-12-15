@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.datasets.schemas import TABLE_SCHEMAS
+from codeintel.build.schemas import get_schema_provider
 from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
 from codeintel.storage.repositories import (
     DatasetReadRepository,
@@ -54,11 +54,11 @@ def _expect_in(member: object, container: Sequence[object], message: str) -> Non
 
 
 def _as_mapping(row: tuple[object, ...], table_key: str) -> dict[str, object]:
-    schema = TABLE_SCHEMAS.get(table_key)
-    if schema is None:
+    table_schema = get_schema_provider().get_table_schema(table_key)
+    if table_schema is None:
         message = f"Unknown table key: {table_key}"
         raise AssertionError(message)
-    columns = tuple(schema.column_names())
+    columns = tuple(table_schema.column_names())
     return dict(zip(columns, row, strict=True))
 
 

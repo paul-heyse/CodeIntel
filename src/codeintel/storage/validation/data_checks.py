@@ -19,7 +19,7 @@ from duckdb import Error as DuckDBError
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from codeintel.config.datasets import DatasetContract
+    from codeintel.core.schemas.contract_primitives import DatasetContract
 
 
 DuckDBConnection = DuckDBPyConnection

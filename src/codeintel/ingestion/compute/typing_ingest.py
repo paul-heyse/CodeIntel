@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets import (
+from codeintel.config.datasets.rows.analytics import (
     StaticDiagnosticRow,
     TypednessRow,
     static_diagnostic_to_tuple,

@@ -32,8 +32,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.build.schemas.contract_provider import (
+    ContractProvider,
     clear_contract_cache,
     get_contract_for_table_key,
+    get_contract_provider,
     is_view,
     iter_contracts,
     iter_contracts_by_table_key,
@@ -50,6 +52,7 @@ from codeintel.build.schemas.row_registry import (
     get_row_binding,
     iter_row_bindings,
 )
+from codeintel.config.datasets.composites import get_composite_schemas
 
 if TYPE_CHECKING:
     from codeintel.build.schemas.provider_unified import (
@@ -95,13 +98,16 @@ def __getattr__(name: str) -> object:
 
 
 __all__ = [
+    "ContractProvider",
     "UnifiedSchemaProvider",
     "clear_contract_cache",
     "clear_row_binding_cache",
     "clear_schema_provider_cache",
     "clear_unified_provider_cache",
     "declared_schema_provider",
+    "get_composite_schemas",
     "get_contract_for_table_key",
+    "get_contract_provider",
     "get_row_binding",
     "get_schema_provider",
     "is_view",

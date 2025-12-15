@@ -18,6 +18,7 @@ from codeintel.build.hamilton.contracts.schemas import (
     DatasetSchemaRegistry,
 )
 from codeintel.build.hamilton.contracts.schemas.constraints import extract_constraints_from_pandera
+from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.cli.core import CliResult, parse_cli_value
 from codeintel.cli.core.result_types import (
     DatasetConstraintsResult,
@@ -36,7 +37,6 @@ from codeintel.cli.errors.results import (
     fail_unknown_operation,
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
-from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.serving.http.fastapi import create_app as create_http_app
 from codeintel.serving.mcp.server import main as run_mcp_server
 from codeintel.serving.operations.catalog import get_operation, iter_operations
@@ -167,7 +167,7 @@ def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeR
     CliResult[DatasetDescribeResult]
         Dataset details.
     """
-    contracts = get_dataset_contracts_by_table_key()
+    contracts = dict(iter_contracts_by_table_key())
     contract = contracts.get(table_key)
     if contract is None:
         return fail_dataset_not_found(table_key)

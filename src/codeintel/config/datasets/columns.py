@@ -5,8 +5,6 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING, Final, TypeVar
 
-from codeintel.config.datasets.contracts import get_table_schemas
-
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -22,10 +20,13 @@ def load_columns_by_table() -> dict[str, list[str]]:
     dict[str, list[str]]
         Mapping of table key to column names.
     """
-    table_schemas = get_table_schemas()
+    # Lazy import to avoid circular dependency at module load time
+    from codeintel.build.schemas import get_schema_provider  # noqa: PLC0415
+
+    provider = get_schema_provider()
     return {
-        table_key: [col.name for col in schema.columns]
-        for table_key, schema in table_schemas.items()
+        schema.table_key: [col.name for col in schema.columns]
+        for schema in provider.iter_table_schemas()
     }
 
 

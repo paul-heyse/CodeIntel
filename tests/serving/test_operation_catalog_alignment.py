@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.serving.operations import (
     DataSourceType,
     get_operation,
@@ -80,7 +80,7 @@ def test_graph_engine_operations_have_required_graphs() -> None:
 
 def test_required_datasets_are_valid() -> None:
     """All required_datasets should exist in DATASET_CONTRACTS_BY_TABLE_KEY."""
-    valid_keys = set(get_dataset_contracts_by_table_key().keys())
+    valid_keys = {k for k, _ in iter_contracts_by_table_key()}
 
     for op in iter_operations():
         for dataset_key in op.required_datasets:
