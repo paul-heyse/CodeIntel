@@ -69,7 +69,7 @@ if TYPE_CHECKING:
 
 def create_validation_runner(
     options: GraphValidationOptions | None = None,
-) -> ValidationRunner[GraphValidationContext, dict[str, object]]:
+) -> ValidationRunner[GraphValidationContext]:
     """Create a ValidationRunner with all registered graph checks.
 
     Parameters
@@ -82,7 +82,7 @@ def create_validation_runner(
     ValidationRunner
         Configured runner with all graph validation checks.
     """
-    runner: ValidationRunner[GraphValidationContext, dict[str, object]] = ValidationRunner(
+    runner: ValidationRunner[GraphValidationContext] = ValidationRunner(
         options=options,
     )
 
@@ -103,7 +103,7 @@ def create_validation_runner(
     ]
 
     for check in all_checks:
-        runner.register(check)  # type: ignore[arg-type]
+        runner.register(check)
 
     return runner
 
@@ -120,7 +120,7 @@ def run_graph_validations_with_runner(
     catalog_provider: FunctionCatalogProvider | None = None,
     runtime: GraphRuntime | GraphRuntimeOptions,
     options: GraphValidationOptions | None = None,
-) -> ValidationReport[dict[str, object]]:
+) -> ValidationReport:
     """Run graph validations using core ValidationRunner.
 
     This function uses the CheckProtocol-based validation approach,

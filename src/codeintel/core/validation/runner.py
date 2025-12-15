@@ -17,9 +17,8 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codeintel.core.validation.findings import (
     apply_severity_overrides,
@@ -27,11 +26,13 @@ from codeintel.core.validation.findings import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from codeintel.core.validation.options import BaseValidationOptions, ValidationSeverity
 
 log = logging.getLogger(__name__)
+
+type Finding = dict[str, object]
 
 
 @runtime_checkable
@@ -98,7 +99,7 @@ class CheckProtocol[TContext](Protocol):
 
 
 @dataclass
-class CheckResult[TFinding: Mapping[str, object]]:
+class CheckResult:
     """Result from executing a single check.
 
     Attributes
@@ -116,14 +117,14 @@ class CheckResult[TFinding: Mapping[str, object]]:
     """
 
     check_name: str
-    findings: list[TFinding] = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
     duration_s: float = 0.0
     error: str | None = None
     skipped: bool = False
 
 
 @dataclass
-class ValidationReport[TFinding: Mapping[str, object]]:
+class ValidationReport:
     """Aggregate report from a validation run.
 
     Attributes
@@ -148,8 +149,8 @@ class ValidationReport[TFinding: Mapping[str, object]]:
         Number of checks that failed with errors.
     """
 
-    findings: list[TFinding] = field(default_factory=list)
-    check_results: list[CheckResult[TFinding]] = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
+    check_results: list[CheckResult] = field(default_factory=list)
     total_duration_s: float = 0.0
     error_count: int = 0
     warning_count: int = 0
@@ -182,7 +183,7 @@ class ValidationReport[TFinding: Mapping[str, object]]:
 
 
 @dataclass
-class ValidationRunner[TContext, TFinding: Mapping[str, object]]:
+class ValidationRunner[TContext]:
     """Generic runner for executing validation checks.
 
     This runner provides a unified interface for executing checks,
@@ -205,7 +206,7 @@ class ValidationRunner[TContext, TFinding: Mapping[str, object]]:
 
     Examples
     --------
-    >>> runner = ValidationRunner[MyContext, dict]()
+    >>> runner = ValidationRunner[MyContext]()
     >>> runner.register(MyCheck())
     >>> report = runner.run(my_context)
     >>> if report.has_errors:
@@ -240,7 +241,7 @@ class ValidationRunner[TContext, TFinding: Mapping[str, object]]:
         ctx: TContext,
         *,
         check_filter: Callable[[CheckProtocol[TContext]], bool] | None = None,
-    ) -> ValidationReport[TFinding]:
+    ) -> ValidationReport:
         """Execute all registered checks and return report.
 
         Parameters
@@ -256,8 +257,8 @@ class ValidationRunner[TContext, TFinding: Mapping[str, object]]:
             Aggregate validation report.
         """
         start = time.perf_counter()
-        report: ValidationReport[TFinding] = ValidationReport()
-        all_findings: list[TFinding] = []
+        report = ValidationReport()
+        all_findings: list[Finding] = []
 
         for check in self.checks:
             if check_filter is not None and not check_filter(check):
@@ -271,13 +272,13 @@ class ValidationRunner[TContext, TFinding: Mapping[str, object]]:
                 findings = [_with_defaults(f, check) for f in raw_findings]
                 check_duration = time.perf_counter() - check_start
 
-                result: CheckResult[TFinding] = CheckResult(
+                result = CheckResult(
                     check_name=check.name,
-                    findings=findings,  # type: ignore[arg-type]
+                    findings=findings,
                     duration_s=check_duration,
                 )
                 report.check_results.append(result)
-                all_findings.extend(findings)  # type: ignore[arg-type]
+                all_findings.extend(findings)
                 report.checks_run += 1
 
             except Exception as e:
@@ -296,11 +297,11 @@ class ValidationRunner[TContext, TFinding: Mapping[str, object]]:
             all_findings = apply_severity_overrides(
                 all_findings,
                 self.options.severity_overrides,
-            )  # type: ignore[assignment]
+            )
             all_findings = cap_findings(
                 all_findings,
                 self.options.max_findings_per_rule,
-            )  # type: ignore[assignment]
+            )
 
         report.findings = all_findings
         report.total_duration_s = time.perf_counter() - start
@@ -317,10 +318,10 @@ class ValidationRunner[TContext, TFinding: Mapping[str, object]]:
         return report
 
 
-def _with_defaults(
+def _with_defaults[TContext](
     finding: Mapping[str, object],
-    check: CheckProtocol[Any],
-) -> dict[str, object]:
+    check: CheckProtocol[TContext],
+) -> Finding:
     """Add default fields to a finding if missing.
 
     Parameters

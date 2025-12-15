@@ -166,7 +166,7 @@ def iter_dependency_edges() -> Iterator[DataflowEdge]:
                 continue
 
             yield DataflowEdge(
-                src=upstream.table_key,  # type: ignore[attr-defined]
+                src=upstream.table_key,
                 dst=dst_id,
                 edge_type="builds",
             )

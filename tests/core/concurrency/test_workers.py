@@ -71,8 +71,9 @@ class TestWorkerConfig:
         """Test that config is immutable."""
         config = WorkerConfig()
 
+        attribute = "max_workers"
         with pytest.raises(AttributeError):
-            config.max_workers = 10  # type: ignore[misc]
+            setattr(config, attribute, 10)
 
 
 class TestResolveWorkerCount:

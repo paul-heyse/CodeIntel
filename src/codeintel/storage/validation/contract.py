@@ -14,30 +14,31 @@ from codeintel.storage.datasets.registry import (
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
+    from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.datasets.registry import (
         DatasetRegistry,
     )
 
 
 @lru_cache(maxsize=1)
-def _get_contracts_by_name() -> dict[str, object]:
+def _get_contracts_by_name() -> dict[str, DatasetContract]:
     """Build name-to-contract mapping from contract provider.
 
     Returns
     -------
-    dict[str, object]
+    dict[str, DatasetContract]
         Mapping from contract name to DatasetContract.
     """
     return {c.name: c for c in iter_contracts()}
 
 
 @lru_cache(maxsize=1)
-def _get_contracts_by_table_key() -> dict[str, object]:
+def _get_contracts_by_table_key() -> dict[str, DatasetContract]:
     """Build table_key-to-contract mapping from contract provider.
 
     Returns
     -------
-    dict[str, object]
+    dict[str, DatasetContract]
         Mapping from table_key to DatasetContract.
     """
     return dict(iter_contracts_by_table_key())
@@ -99,7 +100,7 @@ def _validate_schema_alignment(registry: DatasetRegistry, *, include_views: bool
         for key, contract in contracts_by_table.items()
         if key not in registry.by_table_key
         and not key.startswith("tmp_")
-        and (include_views or not contract.is_view)  # type: ignore[attr-defined]
+        and (include_views or not contract.is_view)
     ]
     registry_errors = (
         [f"Table schemas missing from metadata registry: {', '.join(sorted(missing_in_registry))}"]
@@ -137,9 +138,9 @@ def _validate_schemas_match_contracts() -> list[str]:
     issues: list[str] = []
     contracts_by_table = _get_contracts_by_table_key()
     for table_key, contract in contracts_by_table.items():
-        if table_key.startswith("tmp_") or contract.is_view:  # type: ignore[attr-defined]
+        if table_key.startswith("tmp_") or contract.is_view:
             continue
-        if contract.schema is None:  # type: ignore[attr-defined]
+        if contract.schema is None:
             issues.append(f"DatasetContract missing schema for table {table_key}")
     return issues
 
@@ -158,9 +159,9 @@ def _validate_dependencies(registry: DatasetRegistry, *, include_views: bool) ->
 
     contracts_by_name = _get_contracts_by_name()
     for name, contract in contracts_by_name.items():
-        if contract.is_view and not include_views:  # type: ignore[attr-defined]
+        if contract.is_view and not include_views:
             continue
-        expected = set(contract.upstream_dependencies)  # type: ignore[attr-defined]
+        expected = set(contract.upstream_dependencies)
         actual = set(graph.get(name, ()))
         if expected != actual:
             issues.append(
@@ -201,9 +202,7 @@ def collect_contract_issues(
         name
         for name in json_schema_datasets
         if name not in registry.by_name
-        and (
-            include_views or not contracts_by_name[name].is_view  # type: ignore[attr-defined]
-        )
+        and (include_views or not contracts_by_name[name].is_view)
     ]
     if missing_json_schema:
         issues.append(

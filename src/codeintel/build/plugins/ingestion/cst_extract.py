@@ -58,7 +58,7 @@ class CstExtractPlugin(FactoryPlugin[CstExtractStep]):
 
     default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
     default_discovery_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
-    default_step_factory: ClassVar[CstExtractStep] = CstExtractStep  # type: ignore[assignment]
+    default_step_factory: ClassVar[type[CstExtractStep]] = CstExtractStep
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute CST extraction.

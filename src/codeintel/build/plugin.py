@@ -36,12 +36,11 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 TOptions = TypeVar("TOptions")
-TStep = TypeVar("TStep")
 
 # Factory type aliases for ingestion plugins
 StorageFactory = Callable[["StorageGateway"], "IngestStoragePort"]
 DiscoveryFactory = Callable[[Path], "ModuleDiscoveryPort"]
-StepFactory = Callable[..., TStep]
+type StepFactory[TStep] = Callable[..., TStep] | type[TStep]
 
 __all__ = [
     "DiscoveryFactory",
@@ -208,16 +207,16 @@ class MetadataPlugin(TargetPlugin, ABC):
         """
         super().__init_subclass__(**kwargs)
 
-        # Copy metadata to class variables if _core_metadata is defined
-        # This happens at class definition time, not at instance creation
-        if hasattr(cls, "_core_metadata") and cls._core_metadata is not None:
-            # Only set if not already overridden
-            if "plugin_name" not in cls.__dict__:
-                cls.plugin_name = cls._core_metadata.name  # pyright: ignore[reportIncompatibleVariableOverride]
-            if "plugin_version" not in cls.__dict__:
-                cls.plugin_version = cls._core_metadata.version  # pyright: ignore[reportIncompatibleVariableOverride]
-            if "plugin_description" not in cls.__dict__:
-                cls.plugin_description = cls._core_metadata.description  # pyright: ignore[reportIncompatibleVariableOverride]
+        core_metadata = getattr(cls, "_core_metadata", None)
+        if core_metadata is None:
+            return
+
+        if "plugin_name" not in cls.__dict__:
+            cls.plugin_name = core_metadata.name
+        if "plugin_version" not in cls.__dict__:
+            cls.plugin_version = core_metadata.version
+        if "plugin_description" not in cls.__dict__:
+            cls.plugin_description = core_metadata.description
 
     def __init__(
         self,
