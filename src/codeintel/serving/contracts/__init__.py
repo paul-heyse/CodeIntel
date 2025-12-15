@@ -1,5 +1,3 @@
-"""Serving-layer operation contract helpers."""
-
-from __future__ import annotations
+"""Serving operation contract checks."""
 
 __all__ = []

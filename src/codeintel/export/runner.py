@@ -10,13 +10,17 @@ from codeintel.export.export_jsonl import (
     export_all_jsonl,
 )
 from codeintel.export.export_parquet import export_all_parquet
-from codeintel.serving.backend.datasets import validate_dataset_registry
+from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     from codeintel.storage.gateway import StorageGateway
+
+
+def _validate_dataset_contract(gateway: StorageGateway) -> None:
+    validate_contract_or_raise(gateway.con)
 
 
 class Exporter(Protocol):
@@ -66,7 +70,7 @@ class ExportOptions:
     """Options controlling export validation and dataset selection."""
 
     export: ExportCallOptions = field(default_factory=ExportCallOptions)
-    validator: Callable[[StorageGateway], None] = validate_dataset_registry
+    validator: Callable[[StorageGateway], None] = _validate_dataset_contract
     export_parquet_fn: Exporter = field(default=export_all_parquet)
     export_jsonl_fn: JsonlExporter = field(default=export_all_jsonl)
 

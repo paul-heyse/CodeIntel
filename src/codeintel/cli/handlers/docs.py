@@ -16,15 +16,16 @@ from codeintel.cli.errors._cli_errors import ValidationError
 from codeintel.cli.errors.results import fail_project_error
 from codeintel.cli.errors.taxonomy import ValidationErrorCode, validation_error
 from codeintel.cli.resolution.errors import ResolutionError
+from codeintel.export.errors import ExportError
 from codeintel.export.export_jsonl import ExportCallOptions
 from codeintel.export.runner import ExportOptions, run_validated_exports
-from codeintel.serving.backend.datasets import validate_dataset_registry
-from codeintel.serving.services.errors import ProblemError
+from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from codeintel.cli.context import CommandContext
+    from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
 
@@ -158,6 +159,10 @@ def _default_runtime_builder(ctx: CommandContext) -> object:
 DEFAULT_DOCS_DEPS = DocsDependencies(runtime_builder=_default_runtime_builder)
 
 
+def _validate_dataset_contract(gateway: StorageGateway) -> None:
+    validate_contract_or_raise(gateway.con)
+
+
 def _collect_export_params(ctx: CommandContext) -> DocsExportParams:
     """Parse docs export parameters from the command context.
 
@@ -232,9 +237,7 @@ def _build_export_options(params: DocsExportParams) -> ExportOptions:
             schemas=params.schemas,
             datasets=params.datasets,
         ),
-        validator=validate_dataset_registry
-        if params.require_validation
-        else (lambda _gateway: None),
+        validator=_validate_dataset_contract if params.require_validation else (lambda _gateway: None),
     )
 
 
@@ -307,8 +310,8 @@ def docs_export_handler(
                     output_dir=params.output_dir,
                     options=export_options,
                 )
-            except ProblemError as exc:
-                message = exc.detail.detail or "Validation failed"
+            except ExportError as exc:
+                message = exc.detail.detail or exc.detail.title or "Validation failed"
                 return CliResult.fail(
                     validation_error(
                         ValidationErrorCode.INVALID_FORMAT,

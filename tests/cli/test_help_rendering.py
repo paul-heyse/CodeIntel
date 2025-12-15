@@ -70,15 +70,6 @@ def test_storage_help_rendering(cli_ctx: CLIContext) -> None:
     expect_not_in("simplenamespace", result.stdout.lower())
 
 
-def test_ops_help_rendering(cli_ctx: CLIContext) -> None:
-    """Ops command help should render without artifacts."""
-    result = run_cli(["op", "list", "--help"], env=cli_ctx.env, cwd=cli_ctx.repo_root)
-
-    expect_equal(result.exit_code, 0)
-    expect_in("usage", result.stdout.lower())
-    expect_not_in("simplenamespace", result.stdout.lower())
-
-
 def test_graphs_help_renders_enum_choices(cli_ctx: CLIContext) -> None:
     """Graphs plugins should render enum choices clearly."""
     result = run_cli(["graph", "plugins", "--help"], env=cli_ctx.env, cwd=cli_ctx.repo_root)
@@ -166,81 +157,6 @@ def test_build_history_help_renders_core_flags(cli_ctx: CLIContext) -> None:
     expect_not_in("simplenamespace", output)
 
 
-def test_op_list_help_renders_core_options(cli_ctx: CLIContext) -> None:
-    """Op list should render help without artifacts."""
-    result = run_cli(
-        ["op", "list", "--help"],
-        env=cli_ctx.env,
-        cwd=cli_ctx.repo_root,
-    )
-
-    expect_equal(result.exit_code, 0)
-    output = result.stdout.lower()
-    expect_in("usage", output)
-    expect_in("op", output)
-    expect_not_in("simplenamespace", output)
-
-
-def test_op_call_help_renders_core_options(cli_ctx: CLIContext) -> None:
-    """Op call should render help without artifacts."""
-    result = run_cli(
-        ["op", "call", "--help"],
-        env=cli_ctx.env,
-        cwd=cli_ctx.repo_root,
-    )
-
-    expect_equal(result.exit_code, 0)
-    output = result.stdout.lower()
-    expect_in("usage", output)
-    expect_in("op", output)
-    expect_not_in("simplenamespace", output)
-
-
-def test_op_graph_neighbors_help(cli_ctx: CLIContext) -> None:
-    """Op graph-call-neighbors should render help without artifacts."""
-    result = run_cli(
-        ["op", "graph-call-neighbors", "--help"],
-        env=cli_ctx.env,
-        cwd=cli_ctx.repo_root,
-    )
-
-    expect_equal(result.exit_code, 0)
-    output = result.stdout.lower()
-    expect_in("usage", output)
-    expect_in("graph-call-neighbors", output)
-    expect_not_in("simplenamespace", output)
-
-
-def test_op_profiles_function_help(cli_ctx: CLIContext) -> None:
-    """Op profiles-function should render help without artifacts."""
-    result = run_cli(
-        ["op", "profiles-function", "--help"],
-        env=cli_ctx.env,
-        cwd=cli_ctx.repo_root,
-    )
-
-    expect_equal(result.exit_code, 0)
-    output = result.stdout.lower()
-    expect_in("usage", output)
-    expect_in("profiles-function", output)
-    expect_not_in("simplenamespace", output)
-
-
-def test_op_datasets_list_help(cli_ctx: CLIContext) -> None:
-    """Op datasets-list should render help without artifacts."""
-    result = run_cli(
-        ["op", "datasets-list", "--help"],
-        env=cli_ctx.env,
-        cwd=cli_ctx.repo_root,
-    )
-
-    expect_equal(result.exit_code, 0)
-    output = result.stdout.lower()
-    expect_in("usage", output)
-    expect_in("datasets-list", output)
-    expect_not_in("simplenamespace", output)
-
-
 def test_dataset_list_help(cli_ctx: CLIContext) -> None:
     """Dataset list should render help without artifacts."""
     result = run_cli(
@@ -283,34 +199,4 @@ def test_serve_http_help(cli_ctx: CLIContext) -> None:
     output = result.stdout.lower()
     expect_in("usage", output)
     expect_in("http", output)
-    expect_not_in("simplenamespace", output)
-
-
-def test_ide_hints_help(cli_ctx: CLIContext) -> None:
-    """IDE hints should render help without artifacts."""
-    result = run_cli(
-        ["ide", "hints", "--help"],
-        env=cli_ctx.env,
-        cwd=cli_ctx.repo_root,
-    )
-
-    expect_equal(result.exit_code, 0)
-    output = result.stdout.lower()
-    expect_in("usage", output)
-    expect_in("hints", output)
-    expect_not_in("simplenamespace", output)
-
-
-def test_subsystem_list_help(cli_ctx: CLIContext) -> None:
-    """Subsystem list should render help without artifacts."""
-    result = run_cli(
-        ["subsystem", "list", "--help"],
-        env=cli_ctx.env,
-        cwd=cli_ctx.repo_root,
-    )
-
-    expect_equal(result.exit_code, 0)
-    output = result.stdout.lower()
-    expect_in("usage", output)
-    expect_in("subsystem", output)
     expect_not_in("simplenamespace", output)

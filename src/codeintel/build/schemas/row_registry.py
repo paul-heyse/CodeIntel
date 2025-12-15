@@ -20,13 +20,12 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.build.schemas.registry import get_schema_provider
-from codeintel.core.schemas.row_models import (
-    GeneratedRowBinding,
-    row_binding_for_table_schema,
-)
+from codeintel.core.schemas.row_models import row_binding_for_table_schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    from codeintel.core.schemas.row_models import GeneratedRowBinding
 
 
 @lru_cache(maxsize=256)

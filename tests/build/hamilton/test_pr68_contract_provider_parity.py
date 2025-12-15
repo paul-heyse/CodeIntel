@@ -18,6 +18,11 @@ from codeintel.build.schemas import (
     iter_contracts,
     iter_contracts_by_table_key,
 )
+from codeintel.config.datasets import (
+    DatasetContract,
+    get_dataset_contracts,
+    get_dataset_contracts_by_table_key,
+)
 from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -28,6 +33,8 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_not_empty,
     expect_true,
 )
+
+MIN_LEGACY_CONTRACT_COVERAGE = 0.8
 
 
 @pytest.fixture(autouse=True)
@@ -130,8 +137,6 @@ class TestIterContracts:
     @staticmethod
     def test_each_contract_is_dataset_contract() -> None:
         """Verify each yielded item is a DatasetContract."""
-        from codeintel.config.datasets.contracts import DatasetContract
-
         for contract in iter_contracts():
             expect_is_instance(contract, DatasetContract)
 
@@ -165,8 +170,6 @@ class TestContractProviderParityWithLegacy:
         # Get legacy contracts with suppressed deprecation warning
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            from codeintel.config.datasets import get_dataset_contracts_by_table_key
-
             legacy_contracts = get_dataset_contracts_by_table_key()
 
         mismatches: list[str] = []
@@ -187,8 +190,6 @@ class TestContractProviderParityWithLegacy:
         # Get legacy contracts with suppressed deprecation warning
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            from codeintel.config.datasets import get_dataset_contracts_by_table_key
-
             legacy_contracts = get_dataset_contracts_by_table_key()
 
         # Check that we can derive contracts for all legacy table keys
@@ -204,7 +205,7 @@ class TestContractProviderParityWithLegacy:
         # This is acceptable, but we should have most of them
         coverage = (len(legacy_contracts) - len(failed_keys)) / len(legacy_contracts)
         expect_true(
-            coverage >= 0.8,
+            coverage >= MIN_LEGACY_CONTRACT_COVERAGE,
             message=f"Coverage too low: {coverage:.2%}, failed: {failed_keys[:10]}",
         )
 
@@ -213,8 +214,6 @@ class TestContractProviderParityWithLegacy:
         """Verify derived contracts have matching name values."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            from codeintel.config.datasets import get_dataset_contracts_by_table_key
-
             legacy_contracts = get_dataset_contracts_by_table_key()
 
         mismatches: list[str] = []
@@ -303,16 +302,12 @@ class TestDeprecationWarnings:
     @staticmethod
     def test_get_dataset_contracts_emits_deprecation_warning() -> None:
         """Verify get_dataset_contracts() emits DeprecationWarning."""
-        from codeintel.config.datasets import get_dataset_contracts
-
         with pytest.warns(DeprecationWarning, match="get_dataset_contracts.*deprecated"):
             get_dataset_contracts()
 
     @staticmethod
     def test_get_dataset_contracts_by_table_key_emits_deprecation_warning() -> None:
         """Verify get_dataset_contracts_by_table_key() emits DeprecationWarning."""
-        from codeintel.config.datasets import get_dataset_contracts_by_table_key
-
         with pytest.warns(
             DeprecationWarning, match="get_dataset_contracts_by_table_key.*deprecated"
         ):

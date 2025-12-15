@@ -16,7 +16,7 @@ import jsonschema
 import pyarrow.parquet as pq
 from referencing import Registry, Resource
 
-from codeintel.serving.services.errors import ProblemDetails, log_problem, problem
+from codeintel.export.errors import ProblemDetails, log_problem, problem
 
 DEFAULT_SCHEMA_ROOT = Path(__file__).resolve().parent.parent / "config" / "schemas" / "export"
 

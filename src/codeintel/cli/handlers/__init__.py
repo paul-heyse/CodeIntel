@@ -76,10 +76,6 @@ from codeintel.cli.handlers.history import (
     HistoryTimeseriesResult,
     history_timeseries_handler,
 )
-from codeintel.cli.handlers.ide import (
-    IdeHintsResult,
-    ide_hints_handler,
-)
 from codeintel.cli.handlers.jobs import (
     JobCancelResult,
     JobOutputResult,
@@ -95,14 +91,10 @@ from codeintel.cli.handlers.jobs import (
 from codeintel.cli.handlers.ops import (
     DatasetDescribeResult,
     DatasetVerifyResult,
-    OperationCallResult,
-    OperationListResult,
     ServeStartResult,
     dataset_describe_handler,
     dataset_list_handler,
     dataset_verify_handler,
-    op_call_handler,
-    op_list_handler,
     serve_http_handler,
     serve_mcp_handler,
 )
@@ -130,18 +122,6 @@ from codeintel.cli.handlers.storage import (
     profile_storage_handler,
     validate_macros_handler,
 )
-from codeintel.cli.handlers.subsystem import (
-    SubsystemCoverageResult,
-    SubsystemListResult,
-    SubsystemMembershipResult,
-    SubsystemProfilesResult,
-    SubsystemShowResult,
-    subsystem_coverage_handler,
-    subsystem_list_handler,
-    subsystem_module_memberships_handler,
-    subsystem_profiles_handler,
-    subsystem_show_handler,
-)
 
 __all__ = [
     "BuildHistoryResult",
@@ -164,14 +144,11 @@ __all__ = [
     "GraphTargetsResult",
     "HealthCheckResult",
     "HistoryTimeseriesResult",
-    "IdeHintsResult",
     "JobCancelResult",
     "JobOutputResult",
     "JobStatusResult",
     "JobsCleanupResult",
     "JobsListResult",
-    "OperationCallResult",
-    "OperationListResult",
     "PluginInfoResult",
     "PluginNewResult",
     "PluginPathsResult",
@@ -181,11 +158,6 @@ __all__ = [
     "PluginsListResult",
     "ProfileStorageResult",
     "ServeStartResult",
-    "SubsystemCoverageResult",
-    "SubsystemListResult",
-    "SubsystemMembershipResult",
-    "SubsystemProfilesResult",
-    "SubsystemShowResult",
     "ValidateMacrosResult",
     "bootstrap_cli",
     "build_history_handler",
@@ -206,15 +178,12 @@ __all__ = [
     "graph_targets_plan_handler",
     "health_check_handler",
     "history_timeseries_handler",
-    "ide_hints_handler",
     "is_health_check_passing",
     "jobs_cancel_handler",
     "jobs_cleanup_handler",
     "jobs_list_handler",
     "jobs_output_handler",
     "jobs_status_handler",
-    "op_call_handler",
-    "op_list_handler",
     "open_handler_gateway",
     "plugins_discover_handler",
     "plugins_info_handler",
@@ -226,10 +195,5 @@ __all__ = [
     "profile_storage_handler",
     "serve_http_handler",
     "serve_mcp_handler",
-    "subsystem_coverage_handler",
-    "subsystem_list_handler",
-    "subsystem_module_memberships_handler",
-    "subsystem_profiles_handler",
-    "subsystem_show_handler",
     "validate_macros_handler",
 ]

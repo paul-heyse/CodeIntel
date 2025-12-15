@@ -544,13 +544,6 @@ class OperationTestHarness:
                 if spec.require_gateway:
                     gateway = GatewayFactory().open()
                     builder = builder.with_injected_gateway(gateway)
-                needs_serving = bool(
-                    getattr(spec, "require_serving", False)
-                    or spec.serving_op_id is not None
-                    or spec.backend_method is not None
-                )
-                if needs_serving:
-                    builder = builder.with_serving()
 
                 with builder.build() as ctx:
                     try:

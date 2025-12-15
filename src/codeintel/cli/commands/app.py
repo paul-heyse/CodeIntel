@@ -18,13 +18,10 @@ from codeintel.cli.commands.graphs import graphs_app
 from codeintel.cli.commands.health import health_app
 from codeintel.cli.commands.help_commands import help_commands_app
 from codeintel.cli.commands.history import history_app
-from codeintel.cli.commands.ide import ide_app
 from codeintel.cli.commands.jobs import jobs_app
-from codeintel.cli.commands.ops import op_app, set_root_app
 from codeintel.cli.commands.plugins import plugins_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
-from codeintel.cli.commands.subsystem import subsystem_app
 from codeintel.cli.errors import OutputFormat, handle_cli_error
 
 if TYPE_CHECKING:
@@ -40,7 +37,6 @@ except ImportError:
     _init_plugins = None
 
 app: App = build_patched_app(make_root_app)
-set_root_app(app)
 
 
 app.register_install_completion_command(
@@ -50,7 +46,6 @@ app.register_install_completion_command(
 
 
 app.command(build_app, name="build")
-app.command(op_app, name="op")
 app.command(dataset_app, name="dataset")
 app.command(serve_app, name="serve")
 
@@ -60,8 +55,6 @@ app.command(docs_app, name="docs")
 app.command(storage_app, name="storage")
 app.command(history_app, name="history")
 app.command(datasets_ext_app, name="datasets")
-app.command(ide_app, name="ide")
-app.command(subsystem_app, name="subsystem")
 
 
 app.command(config_app, name="config")
@@ -138,7 +131,6 @@ __all__ = [
     "help_commands_app",
     "history_app",
     "jobs_app",
-    "op_app",
     "plugins_app",
     "serve_app",
     "storage_app",

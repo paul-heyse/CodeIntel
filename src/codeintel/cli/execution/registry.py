@@ -519,74 +519,6 @@ def reset_registry() -> None:
     OperationRegistryHolder.reset()
 
 
-def create_spec_from_serving_operation(
-    serving_op_id: str,
-    handler: Callable[[CommandContext], CliResult[Any]],
-    *,
-    cli_operation_id: str | None = None,
-    group: str | None = None,
-) -> OperationSpec:
-    """Create an OperationSpec from a serving operation.
-
-    Bridge function that looks up a serving operation by ID and creates
-    an OperationSpec with the relevant metadata populated.
-
-    Parameters
-    ----------
-    serving_op_id
-        ID in the serving operations catalog (e.g., "function.summary").
-    handler
-        Handler function to execute for this CLI operation.
-    cli_operation_id
-        CLI operation ID. Defaults to "op.<serving_op_id>" if not provided.
-    group
-        CLI group. Defaults to "op" if not provided.
-
-    Returns
-    -------
-    OperationSpec
-        Specification with serving metadata populated.
-
-    Raises
-    ------
-    ValueError
-        If the serving operation is not found.
-
-    Examples
-    --------
-    >>> from codeintel.cli.execution.registry import create_spec_from_serving_operation
-    >>> spec = create_spec_from_serving_operation(
-    ...     "function.summary",
-    ...     my_handler,
-    ... )
-    >>> spec.serving_op_id
-    'function.summary'
-    """
-    serving_module = importlib.import_module("codeintel.serving.operations.catalog")
-    serving_op = serving_module.get_operation(serving_op_id)
-    if serving_op is None:
-        msg = f"Serving operation not found: {serving_op_id}"
-        raise ValueError(msg)
-
-    effective_cli_id = cli_operation_id or f"op.{serving_op_id.replace('.', '-')}"
-    effective_group = group or "op"
-
-    return OperationSpec(
-        operation_id=effective_cli_id,
-        name=serving_op.summary,
-        description=serving_op.description or serving_op.summary,
-        handler=handler,
-        group=effective_group,
-        require_runtime=True,
-        require_gateway=True,
-        require_graph_runtime=bool(serving_op.required_graphs),
-        serving_op_id=serving_op_id,
-        http_path=serving_op.http_path,
-        tool_name=serving_op.tool_name,
-        backend_method=serving_op.backend_method,
-    )
-
-
 def execute_operation(
     spec: OperationSpec,
     params: dict[str, Any],
@@ -636,7 +568,6 @@ def execute_operation(
 __all__ = [
     "OperationRegistry",
     "OperationSpec",
-    "create_spec_from_serving_operation",
     "execute_operation",
     "get_registry",
     "register_operation",

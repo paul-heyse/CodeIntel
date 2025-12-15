@@ -1,7 +1,4 @@
-"""Serve command group for HTTP and MCP servers.
-
-Note: Serve commands require runtime/gateway access via handler pattern.
-"""
+"""Serve command group for HTTP and MCP servers."""
 
 from __future__ import annotations
 
@@ -11,7 +8,7 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
-from codeintel.cli.commands.decorators import cli_command
+from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.ops import serve_http_handler, serve_mcp_handler
 
 serve_app = App(
@@ -19,35 +16,29 @@ serve_app = App(
     help="HTTP and MCP server commands.",
 )
 
+_SERVE_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
+
 
 @serve_app.command(name="http")
-@cli_command("serve.http", handler=serve_http_handler)
+@cli_command("serve.http", handler=serve_http_handler, config=_SERVE_CONFIG)
 @dataclass
 class ServeHttpCommand:
     """Start the HTTP server."""
 
     host: Annotated[
-        str,
+        str | None,
         Parameter(
             name=["--host", "-h"],
             help="Host to bind to.",
         ),
-    ] = "127.0.0.1"
+    ] = None
     port: Annotated[
-        int,
+        int | None,
         Parameter(
             name=["--port", "-p"],
             help="Port to bind to.",
         ),
-    ] = 8000
-    auto_pipeline: Annotated[
-        bool,
-        Parameter(
-            name="--auto-pipeline",
-            help="Enable automatic prerequisite pipeline execution.",
-            negative=(),
-        ),
-    ] = False
+    ] = None
     reload: Annotated[
         bool,
         Parameter(
@@ -60,19 +51,11 @@ class ServeHttpCommand:
 
 
 @serve_app.command(name="mcp")
-@cli_command("serve.mcp", handler=serve_mcp_handler)
+@cli_command("serve.mcp", handler=serve_mcp_handler, config=_SERVE_CONFIG)
 @dataclass
 class ServeMcpCommand:
     """Start the MCP server."""
 
-    auto_pipeline: Annotated[
-        bool,
-        Parameter(
-            name="--auto-pipeline",
-            help="Enable automatic prerequisite pipeline execution.",
-            negative=(),
-        ),
-    ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

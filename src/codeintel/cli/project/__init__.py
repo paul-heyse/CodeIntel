@@ -5,7 +5,6 @@ This package provides:
 - ``ProjectConfig``: Project configuration models
 - ``find_project_root()``: Project root detection
 - Pipeline and batch execution
-- Dry-run planning
 """
 
 from __future__ import annotations
@@ -22,11 +21,6 @@ from codeintel.cli.project._project import (
     detect_commit,
     find_project_root,
     load_project_config,
-)
-from codeintel.cli.project.dry_run import (
-    plan_dry_run,
-    render_dry_run,
-    render_dry_run_to,
 )
 from codeintel.cli.project.pipelines import (
     BatchItemResult,
@@ -57,9 +51,6 @@ __all__ = [
     "find_project_root",
     "load_batch",
     "load_project_config",
-    "plan_dry_run",
     "read_stdin_operations",
-    "render_dry_run",
-    "render_dry_run_to",
     "stream_results",
 ]

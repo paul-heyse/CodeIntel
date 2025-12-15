@@ -127,6 +127,14 @@ class BuildRunCommand:
             help="Only allow wrapper implementation for these targets (comma-separated).",
         ),
     ] = None
+    publish_serving_snapshot: Annotated[
+        bool,
+        Parameter(
+            name=["--publish-serving-snapshot"],
+            help="Publish an immutable serving snapshot (writes current.json and snapshot artifacts).",
+            negative=(),
+        ),
+    ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

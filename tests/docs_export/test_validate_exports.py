@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.export.errors import ExportError
 from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.export.export_parquet import export_all_parquet
 from codeintel.export.validate_exports import validate_files
-from codeintel.serving.services.errors import ExportError
 from tests._helpers import (
     GatewayOptions,
     ProvisioningConfig,

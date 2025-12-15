@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
+import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -26,6 +27,17 @@ from codeintel.build.hamilton.observability import (
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.providers import create_default_providers
 from codeintel.build.registry import get_target_graph
+from codeintel.build.schemas import unified_schema_provider
+from codeintel.build.schemas.manifest import SchemaManifest
+from codeintel.build.serving.publisher import (
+    PublishServingSnapshotRequest,
+    publish_serving_snapshot,
+)
+from codeintel.build.serving.semantic_compile import (
+    compile_semantic_registry_from_views,
+    write_semantic_registry,
+)
+from codeintel.build.serving.semantic_sources import collect_semantic_view_tags
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
@@ -67,6 +79,11 @@ LOG = logging.getLogger(__name__)
 
 class BuildResultLike(Protocol):
     """Protocol for build result objects."""
+
+    @property
+    def run_id(self) -> str:
+        """Return the build run ID."""
+        ...
 
     @property
     def completed_targets(self) -> tuple[str, ...]:
@@ -114,6 +131,7 @@ class BuildExecutionArgs:
     validate_outputs: bool
     strict_contracts: bool
     wrapper_allowlist: list[str] | None
+    publish_serving_snapshot: bool
 
     @property
     def is_dry_run(self) -> bool:
@@ -363,6 +381,11 @@ class _HamiltonResultAdapter:
         self._result = hamilton_result
 
     @property
+    def run_id(self) -> str:
+        """Return the build run ID."""
+        return self._result.run_id
+
+    @property
     def completed_targets(self) -> tuple[str, ...]:
         """Return targets that completed successfully.
 
@@ -505,6 +528,7 @@ class _BuildRunParams:
     validate_outputs: bool
     strict_contracts: bool
     wrapper_allowlist: list[str] | None
+    publish_serving_snapshot: bool
 
 
 def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
@@ -547,6 +571,7 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         validate_outputs=ctx.params.get_bool("validate_outputs"),
         strict_contracts=ctx.params.get_bool("strict_contracts"),
         wrapper_allowlist=wrapper_allowlist_list,
+        publish_serving_snapshot=ctx.params.get_bool("publish_serving_snapshot"),
     )
 
 
@@ -579,6 +604,9 @@ def _validate_build_run_params(
         return fail_invalid_target_selection(
             f"Invalid hamilton_mode '{params.hamilton_mode}'. Valid: {', '.join(valid_modes)}"
         )
+
+    if params.publish_serving_snapshot and params.dry_run:
+        return fail_invalid_target_selection("--publish-serving-snapshot is incompatible with --dry-run.")
 
     return None
 
@@ -638,6 +666,7 @@ def build_run_handler(
         validate_outputs=params.validate_outputs,
         strict_contracts=params.strict_contracts,
         wrapper_allowlist=params.wrapper_allowlist,
+        publish_serving_snapshot=params.publish_serving_snapshot,
     )
     return _execute_and_format_result(runtime, execution_args)
 
@@ -663,6 +692,13 @@ def _execute_and_format_result(
     try:
         with runtime_gateway(runtime, read_only=False) as gateway:
             result = _execute_build_hamilton(runtime, gateway, execution)
+            if (
+                execution.publish_serving_snapshot
+                and execution.run_mode is RunMode.EXECUTE
+                and result is not None
+                and not result.failed_targets
+            ):
+                _publish_serving_snapshot_from_build(runtime, gateway, run_id=result.run_id)
     except Exception as exc:
         LOG.exception("build.run.error hamilton_mode=%s", execution.hamilton_mode)
         return fail_execution_failed("build", str(exc))
@@ -684,6 +720,64 @@ def _execute_and_format_result(
             failed=list(result.failed_targets),
             duration_seconds=result.duration_ms / 1000.0,
         )
+    )
+
+
+def _publish_serving_snapshot_from_build(
+    runtime: ResolvedRuntime,
+    gateway: StorageGateway,
+    *,
+    run_id: str,
+) -> None:
+    """Compile serving artifacts and publish a snapshot for the current build DB.
+
+    Parameters
+    ----------
+    runtime
+        Resolved runtime for path and snapshot identity.
+    gateway
+        Open write-capable gateway for checkpointing the build DB.
+    run_id
+        Build run identifier used to name the published snapshot.
+    """
+    schema_provider = unified_schema_provider()
+    view_tags = collect_semantic_view_tags()
+    compiled_registry = compile_semantic_registry_from_views(
+        schema_provider=schema_provider,
+        view_tags=view_tags,
+        version="v1",
+    )
+
+    artifact_dir = runtime.paths.build_dir / "serving" / run_id
+    semantic_registry_path = artifact_dir / "semantic_registry.json"
+    schema_manifest_path = artifact_dir / "schema_manifest.json"
+
+    write_semantic_registry(registry=compiled_registry, out_path=semantic_registry_path)
+
+    tables = sorted(schema_provider.iter_table_schemas(), key=lambda s: s.table_key)
+    manifest = SchemaManifest(version="v1", tables=tuple(tables))
+    schema_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    schema_manifest_path.write_text(
+        _json.dumps(manifest.to_json_obj(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    serve_dir_env = os.environ.get("CODEINTEL_SERVE_DIR")
+    serve_dir = (
+        Path(serve_dir_env).resolve()
+        if serve_dir_env is not None
+        else (runtime.root / ".codeintel" / "serve").resolve()
+    )
+
+    publish_serving_snapshot(
+        gateway=gateway,
+        request=PublishServingSnapshotRequest(
+            run_id=run_id,
+            serve_dir=serve_dir,
+            semantic_registry_path=semantic_registry_path,
+            schema_manifest_path=schema_manifest_path,
+            keep_last=10,
+        ),
     )
 
 

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeIntel current.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "db_path",
+    "semantic_registry_path",
+    "schema_manifest_path",
+    "repo",
+    "commit",
+    "run_id",
+    "published_at",
+    "semantic_layer_version"
+  ],
+  "properties": {
+    "db_path": { "type": "string" },
+    "semantic_registry_path": { "type": "string" },
+    "schema_manifest_path": { "type": "string" },
+    "repo": { "type": "string" },
+    "commit": { "type": "string" },
+    "run_id": { "type": "string" },
+    "published_at": { "type": "string", "format": "date-time" },
+    "semantic_layer_version": { "type": "string" }
+  }
+}

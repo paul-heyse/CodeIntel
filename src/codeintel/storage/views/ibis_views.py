@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import ibis
 
+from codeintel.build.serving.semantic_tags import semantic_view
 from codeintel.storage.ibis_types import ne, or_predicates
 from codeintel.storage.views.ibis_registry import register_view
 
@@ -201,6 +202,20 @@ def build_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_function_summary")
+@semantic_view(
+    semantic_id="function.summary",
+    table_key="docs.v_function_summary",
+    entity="function",
+    grain="per_function",
+    primary_key=("function_goid_h128", "repo", "commit"),
+    description="Comprehensive function summary with risk, coverage, and typing metrics",
+    default_order_by=("-risk_score", "qualname"),
+    default_limit=200,
+    joins=[
+        {"to": "module.architecture", "on": [["module", "module"]]},
+        {"to": "call_graph.enriched", "on": [["function_goid_h128", "caller_goid_h128"]]},
+    ],
+)
 def build_docs_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_function_summary from risk factors and metrics.
 
@@ -282,6 +297,16 @@ def build_docs_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("graph.v_call_graph_degree")
+@semantic_view(
+    semantic_id="call_graph.degree",
+    table_key="graph.v_call_graph_degree",
+    entity="function",
+    grain="per_function",
+    primary_key=("function_goid_h128", "repo", "commit"),
+    description="Call graph in/out degree per function",
+    default_order_by=("-call_out_degree", "-call_in_degree"),
+    default_limit=200,
+)
 def build_callgraph_degree(ibis_gw: IbisViewGateway) -> it.Table:
     """Build the call graph degree view.
 
@@ -423,6 +448,16 @@ def build_goid_crosswalk_mismatches(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("analytics.v_function_hotspots")
+@semantic_view(
+    semantic_id="function.hotspots",
+    table_key="analytics.v_function_hotspots",
+    entity="function",
+    grain="per_function",
+    primary_key=("function_goid_h128", "repo", "commit"),
+    description="Function hotspot scores with risk and coverage context",
+    default_order_by=("-hotspot_score", "-risk_score", "qualname"),
+    default_limit=200,
+)
 def build_function_hotspots(ibis_gw: IbisViewGateway) -> it.Table:
     """Build the function hotspots view with normalized scores.
 
@@ -470,6 +505,16 @@ def build_function_hotspots(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("graph.v_import_graph_degree")
+@semantic_view(
+    semantic_id="import_graph.degree",
+    table_key="graph.v_import_graph_degree",
+    entity="module",
+    grain="per_module",
+    primary_key=("module", "repo", "commit"),
+    description="Import graph in/out degree per module",
+    default_order_by=("-import_out_degree", "-import_in_degree"),
+    default_limit=200,
+)
 def build_import_graph_degree(ibis_gw: IbisViewGateway) -> it.Table:
     """Build the import graph degree view.
 
@@ -510,6 +555,14 @@ def build_import_graph_degree(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_call_graph_enriched")
+@semantic_view(
+    semantic_id="call_graph.enriched",
+    table_key="docs.v_call_graph_enriched",
+    entity="call_edge",
+    grain="per_edge",
+    description="Call graph edges enriched with function/module metadata",
+    default_limit=200,
+)
 def build_call_graph_enriched(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_call_graph_enriched view.
 
@@ -596,6 +649,16 @@ def build_call_graph_enriched(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_file_summary")
+@semantic_view(
+    semantic_id="file.summary",
+    table_key="docs.v_file_summary",
+    entity="file",
+    grain="per_file",
+    primary_key=("rel_path", "repo", "commit"),
+    description="Per-file summary including risk, coverage, and typedness signals",
+    default_order_by=("-risk_score", "rel_path"),
+    default_limit=200,
+)
 def build_docs_file_summary(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_file_summary aggregating per-file statistics.
 
@@ -668,6 +731,16 @@ def build_docs_file_summary(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_module_architecture")
+@semantic_view(
+    semantic_id="module.architecture",
+    table_key="docs.v_module_architecture",
+    entity="module",
+    grain="per_module",
+    primary_key=("module", "repo", "commit"),
+    description="Module architecture summary including subsystem and dependency signals",
+    default_order_by=("-risk_score", "module"),
+    default_limit=200,
+)
 def build_docs_module_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_module_architecture view.
 
@@ -731,6 +804,16 @@ def build_docs_module_architecture(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_subsystem_summary")
+@semantic_view(
+    semantic_id="subsystem.summary",
+    table_key="docs.v_subsystem_summary",
+    entity="subsystem",
+    grain="per_subsystem",
+    primary_key=("subsystem", "repo", "commit"),
+    description="Subsystem summary including agreement, risk, and coverage aggregates",
+    default_order_by=("-risk_score", "subsystem"),
+    default_limit=200,
+)
 def build_docs_subsystem_summary(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_subsystem_summary with agreement stats.
 
@@ -796,6 +879,16 @@ def build_docs_subsystem_summary(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_subsystem_profile")
+@semantic_view(
+    semantic_id="subsystem.profile",
+    table_key="docs.v_subsystem_profile",
+    entity="subsystem",
+    grain="per_subsystem",
+    primary_key=("subsystem", "repo", "commit"),
+    description="Subsystem profile with graph and ownership aggregates",
+    default_order_by=("-risk_score", "subsystem"),
+    default_limit=200,
+)
 def build_docs_subsystem_profile(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_subsystem_profile with cache preference via coalesce.
 
@@ -858,6 +951,16 @@ def build_docs_subsystem_profile(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_subsystem_coverage")
+@semantic_view(
+    semantic_id="subsystem.coverage",
+    table_key="docs.v_subsystem_coverage",
+    entity="subsystem",
+    grain="per_subsystem",
+    primary_key=("subsystem", "repo", "commit"),
+    description="Subsystem coverage aggregates and test status",
+    default_order_by=("-coverage_ratio", "subsystem"),
+    default_limit=200,
+)
 def build_docs_subsystem_coverage(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_subsystem_coverage with CTE and cache preference.
 
@@ -940,6 +1043,15 @@ def build_docs_subsystem_coverage(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_function_architecture")
+@semantic_view(
+    semantic_id="function.architecture",
+    table_key="docs.v_function_architecture",
+    entity="function",
+    grain="per_function",
+    primary_key=("function_goid_h128", "repo", "commit"),
+    description="Function architecture context including control/data-flow and dependencies",
+    default_limit=200,
+)
 def build_docs_function_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_function_architecture with 9+ table joins.
 
@@ -1425,6 +1537,16 @@ def build_docs_module_history_timeseries(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_module_architecture_full")
+@semantic_view(
+    semantic_id="module.architecture_full",
+    table_key="docs.v_module_architecture_full",
+    entity="module",
+    grain="per_module",
+    primary_key=("module", "repo", "commit"),
+    description="Full module architecture including dependency expansions",
+    default_order_by=("-risk_score", "module"),
+    default_limit=200,
+)
 def build_docs_module_architecture_full(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_module_architecture with full 10+ table joins.
 
@@ -2000,6 +2122,14 @@ def build_docs_subsystem_agreement(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_test_to_function")
+@semantic_view(
+    semantic_id="test.to_function",
+    table_key="docs.v_test_to_function",
+    entity="coverage_edge",
+    grain="per_edge",
+    description="Test-to-function coverage edges",
+    default_limit=200,
+)
 def build_docs_test_to_function(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_test_to_function joining edges with catalog and risk.
 
@@ -2064,6 +2194,14 @@ def build_docs_test_to_function(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_test_architecture")
+@semantic_view(
+    semantic_id="test.architecture",
+    table_key="docs.v_test_architecture",
+    entity="test",
+    grain="per_test",
+    description="Test architecture summary with coverage and risk signals",
+    default_limit=200,
+)
 def build_docs_test_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_test_architecture joining profile with behavioral coverage.
 
@@ -2238,6 +2376,15 @@ def build_docs_validation_summary(ibis_gw: IbisViewGateway) -> it.Table:
 
 
 @register_view("docs.v_ide_hints")
+@semantic_view(
+    semantic_id="ide.hints",
+    table_key="docs.v_ide_hints",
+    entity="module",
+    grain="per_module",
+    primary_key=("module", "repo", "commit"),
+    description="IDE hint payloads derived from docs views",
+    default_limit=200,
+)
 def build_docs_ide_hints(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_ide_hints joining modules with architecture and subsystems.
 

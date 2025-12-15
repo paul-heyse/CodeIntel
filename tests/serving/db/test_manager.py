@@ -1,0 +1,161 @@
+"""Tests for the serving DB manager hot-swap behavior."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+import duckdb
+import pytest
+
+from codeintel.serving.db.manager import ServingDBManager
+from codeintel.serving.db.pool import DuckDBPoolConfig
+from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+def _write_pointer(
+    path: Path,
+    *,
+    db_path: Path,
+    run_id: str,
+    semantic_registry_path: Path,
+    schema_manifest_path: Path,
+) -> None:
+    payload = {
+        "db_path": str(db_path),
+        "semantic_registry_path": str(semantic_registry_path),
+        "schema_manifest_path": str(schema_manifest_path),
+        "repo": "demo/repo",
+        "commit": "deadbeef",
+        "run_id": run_id,
+        "published_at": datetime.now(tz=UTC).isoformat(),
+        "semantic_layer_version": "v123",
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _make_db(path: Path, *, value: int) -> None:
+    con = duckdb.connect(str(path))
+    con.execute("CREATE TABLE kv (value INTEGER)")
+    con.execute("INSERT INTO kv VALUES (?)", [value])
+    con.close()
+
+
+@pytest.mark.anyio
+async def test_manager_initial_load_and_connect(tmp_path: Path) -> None:
+    """Manager loads pointer and yields connections."""
+    db1 = tmp_path / "db1.duckdb"
+    _make_db(db1, value=1)
+
+    pointer_path = tmp_path / "current.json"
+    _write_pointer(
+        pointer_path,
+        db_path=db1,
+        run_id="run-1",
+        semantic_registry_path=tmp_path / "semantic_registry.json",
+        schema_manifest_path=tmp_path / "schema_manifest.json",
+    )
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=DuckDBPoolConfig(size=2),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        expect_equal(manager.current_pointer().run_id, "run-1")
+        with manager.connect() as (con, _pointer):
+            result = con.execute("SELECT value FROM kv").fetchone()
+            expect_equal(result, (1,))
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_manager_hot_swap_on_pointer_change(tmp_path: Path) -> None:
+    """Pointer update swaps pools and starts reading from new snapshot DB."""
+    db1 = tmp_path / "db1.duckdb"
+    db2 = tmp_path / "db2.duckdb"
+    _make_db(db1, value=1)
+    _make_db(db2, value=2)
+
+    pointer_path = tmp_path / "current.json"
+    _write_pointer(
+        pointer_path,
+        db_path=db1,
+        run_id="run-1",
+        semantic_registry_path=tmp_path / "semantic_registry.json",
+        schema_manifest_path=tmp_path / "schema_manifest.json",
+    )
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=DuckDBPoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        with manager.connect() as (con, _pointer):
+            expect_equal(con.execute("SELECT value FROM kv").fetchone(), (1,))
+
+        _write_pointer(
+            pointer_path,
+            db_path=db2,
+            run_id="run-2",
+            semantic_registry_path=tmp_path / "semantic_registry.json",
+            schema_manifest_path=tmp_path / "schema_manifest.json",
+        )
+
+        await asyncio.sleep(0.05)
+        expect_equal(manager.current_pointer().run_id, "run-2")
+        with manager.connect() as (con, _pointer):
+            expect_equal(con.execute("SELECT value FROM kv").fetchone(), (2,))
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_manager_same_path_no_swap_optimization(tmp_path: Path) -> None:
+    """When db_path is unchanged, pool is retained and pointer metadata updates."""
+    db1 = tmp_path / "db1.duckdb"
+    _make_db(db1, value=1)
+
+    pointer_path = tmp_path / "current.json"
+    _write_pointer(
+        pointer_path,
+        db_path=db1,
+        run_id="run-1",
+        semantic_registry_path=tmp_path / "semantic_registry.json",
+        schema_manifest_path=tmp_path / "schema_manifest.json",
+    )
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=DuckDBPoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        with manager.connect() as (first_con, _pointer):
+            expect_equal(first_con.execute("SELECT value FROM kv").fetchone(), (1,))
+
+        _write_pointer(
+            pointer_path,
+            db_path=db1,
+            run_id="run-2",
+            semantic_registry_path=tmp_path / "semantic_registry.json",
+            schema_manifest_path=tmp_path / "schema_manifest.json",
+        )
+
+        await asyncio.sleep(0.05)
+        expect_equal(manager.current_pointer().run_id, "run-2")
+        with manager.connect() as (second_con, _pointer):
+            expect_true(second_con is first_con)
+            expect_equal(second_con.execute("SELECT value FROM kv").fetchone(), (1,))
+    finally:
+        await manager.stop()

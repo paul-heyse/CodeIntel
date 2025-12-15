@@ -6,8 +6,6 @@ Handlers for operation listing, invocation, dataset management, and server contr
 from __future__ import annotations
 
 import logging
-import os
-import sys
 from typing import TYPE_CHECKING
 
 import uvicorn
@@ -19,7 +17,7 @@ from codeintel.build.hamilton.contracts.schemas import (
 )
 from codeintel.build.hamilton.contracts.schemas.constraints import extract_constraints_from_pandera
 from codeintel.build.schemas import iter_contracts_by_table_key
-from codeintel.cli.core import CliResult, parse_cli_value
+from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetConstraintsResult,
     DatasetDescribeResult,
@@ -27,131 +25,19 @@ from codeintel.cli.core.result_types import (
     DatasetInfoResult,
     DatasetListResult,
     DatasetVerifyResult,
-    OperationCallResult,
-    OperationListResult,
     ServeStartResult,
 )
-from codeintel.cli.errors.results import (
-    fail_dataset_not_found,
-    fail_invalid_param,
-    fail_unknown_operation,
-)
-from codeintel.cli.handlers._utilities import runtime_gateway
-from codeintel.serving.http.fastapi import create_app as create_http_app
+from codeintel.cli.errors.results import fail_dataset_not_found
+from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.mcp.server import main as run_mcp_server
-from codeintel.serving.operations.catalog import get_operation, iter_operations
+from codeintel.serving.settings import ServingSettings
 from codeintel.storage.validation import collect_contract_issues
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
-    from codeintel.cli.resolution.types import ResolvedRuntime
 
 LOG = logging.getLogger(__name__)
-
-AUTO_PIPELINE_ENV = "CODEINTEL_AUTO_PIPELINE"
-
-
-def _setup_serving_env(runtime: ResolvedRuntime, *, auto_pipeline: bool) -> None:
-    """Configure environment variables for serving operations.
-
-    Parameters
-    ----------
-    runtime
-        Resolved runtime with repo and path information.
-    auto_pipeline
-        Whether to enable automatic prerequisite pipeline execution.
-    """
-    os.environ["CODEINTEL_REPO"] = runtime.project.repo
-    os.environ["CODEINTEL_COMMIT"] = runtime.snapshot.commit
-    os.environ["CODEINTEL_DB_PATH"] = str(runtime.paths.db_path)
-    os.environ["CODEINTEL_REPO_ROOT"] = str(runtime.root)
-
-    if auto_pipeline:
-        os.environ[AUTO_PIPELINE_ENV] = "1"
-
-
-def op_list_structured(*, category: str | None) -> CliResult[OperationListResult]:
-    """List available serving operations (structured, no context needed).
-
-    Parameters
-    ----------
-    category
-        Optional category filter.
-
-    Returns
-    -------
-    CliResult[OperationListResult]
-        List of operations matching the filter.
-    """
-    operations = list(iter_operations())
-    if category:
-        operations = [op for op in operations if op.category == category]
-
-    operation_dicts: list[dict[str, str | None]] = [
-        {
-            "id": op.id,
-            "category": op.category,
-            "summary": op.summary,
-            "http_path": op.http_path,
-            "tool_name": op.tool_name,
-        }
-        for op in sorted(operations, key=lambda o: o.id)
-    ]
-
-    return CliResult.ok(OperationListResult(operations=operation_dicts, count=len(operations)))
-
-
-def op_list_handler(ctx: CommandContext) -> CliResult[OperationListResult]:
-    """List available serving operations.
-
-    Parameters
-    ----------
-    ctx
-        Command context with params:
-        - category: Optional category filter
-
-    Returns
-    -------
-    CliResult[OperationListResult]
-        List of operations matching the filter.
-    """
-    category = ctx.params.get_str("category")
-    return op_list_structured(category=category)
-
-
-def op_call_handler(ctx: CommandContext) -> CliResult[OperationCallResult]:
-    """Invoke an operation end-to-end with optional prerequisites.
-
-    Parameters
-    ----------
-    ctx
-        Command context with params:
-        - op_id: Operation ID to invoke
-        - params: List of key=value parameter strings
-        - skip_prereqs: Skip prerequisite execution
-
-    Returns
-    -------
-    CliResult[OperationCallResult]
-        Operation result.
-    """
-    op_id = ctx.params.require_str("op_id")
-    params_list = ctx.params.get_list("params")
-    skip_prereqs = ctx.params.get_bool("skip_prereqs", default=False)
-
-    op = get_operation(op_id)
-    if op is None:
-        return fail_unknown_operation(op_id)
-
-    kwargs: dict[str, object] = {}
-    for param_str in params_list:
-        if "=" not in param_str:
-            return fail_invalid_param(param_str)
-        key, value = param_str.split("=", 1)
-        kwargs[key] = parse_cli_value(value)
-
-    result = ctx.serving.invoke(op_id, kwargs, skip_prereqs=skip_prereqs)
-    return CliResult.ok(OperationCallResult(operation_id=op_id, result=result))
 
 
 def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeResult]:
@@ -464,9 +350,8 @@ def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
     ----------
     ctx
         Command context with params:
-        - host: Server host (default: 127.0.0.1)
-        - port: Server port (default: 8000)
-        - auto_pipeline: Enable auto-pipeline
+        - host: Server host (default: CODEINTEL_HOST)
+        - port: Server port (default: CODEINTEL_PORT)
         - reload: Enable hot reload
 
     Returns
@@ -478,82 +363,85 @@ def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
     -----
     This function blocks while the server is running.
     """
-    host = ctx.params.get_str("host", "127.0.0.1") or "127.0.0.1"
-    port = ctx.params.get_int("port", 8000)
-    auto_pipeline = ctx.params.get_bool("auto_pipeline", default=False)
+    settings = ServingSettings.from_env()
+    host = ctx.params.get_str("host") or settings.host
+    port = ctx.params.get_int("port", settings.port)
     reload = ctx.params.get_bool("reload", default=False)
 
-    runtime = ctx.runtime
-
-    _setup_serving_env(runtime, auto_pipeline=auto_pipeline)
-
-    LOG.info(
-        "Starting HTTP server at http://%s:%d (auto_pipeline=%s)",
-        host,
-        port,
-        auto_pipeline,
-    )
+    pointer = ServingSnapshotPointer.load(settings.serve_dir / "current.json")
+    LOG.info("Starting HTTP server at http://%s:%d", host, port)
 
     if reload:
         uvicorn.run(
-            "codeintel.serving.http.fastapi:app",
+            "codeintel.serving.http.app:create_serving_app",
             host=host,
             port=port,
             reload=True,
+            factory=True,
         )
     else:
-        with runtime_gateway(runtime, read_only=False) as gateway:
-            app = create_http_app(
-                gateway=gateway,
-                auto_pipeline=auto_pipeline,
-            )
-            uvicorn.run(app, host=host, port=port)
+        app = create_serving_app(settings)
+        uvicorn.run(app, host=host, port=port)
 
     return CliResult.ok(
         ServeStartResult(
             server_type="http",
             host=host,
             port=port,
-            auto_pipeline=auto_pipeline,
-            repo=runtime.repo,
-            commit=runtime.commit,
-            db_path=str(runtime.paths.db_path),
+            auto_pipeline=False,
+            repo=pointer.repo,
+            commit=pointer.commit,
+            db_path=str(pointer.db_path),
         )
     )
 
 
-def serve_mcp_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
+def serve_mcp_handler(_ctx: CommandContext) -> CliResult[ServeStartResult]:
     """Start the MCP server.
 
     Parameters
     ----------
-    ctx
-        Command context with params:
-        - auto_pipeline: Enable auto-pipeline
+    _ctx
+        Command context (unused for MCP start).
 
     Notes
     -----
-    This function blocks while the server is running and exits the process
-    via sys.exit(), so it never returns normally.
+    This function blocks while the server is running.
+
+    Returns
+    -------
+    CliResult[ServeStartResult]
+        Server start result (after server stops).
     """
-    auto_pipeline = ctx.params.get_bool("auto_pipeline", default=False)
+    settings = ServingSettings.from_env()
+    pointer = ServingSnapshotPointer.load(settings.serve_dir / "current.json")
 
-    _setup_serving_env(ctx.runtime, auto_pipeline=auto_pipeline)
+    LOG.info("Starting MCP server (transport=%s)", settings.mcp_transport)
+    run_mcp_server()
 
-    LOG.info("Starting MCP server (auto_pipeline=%s)", auto_pipeline)
+    is_http = settings.mcp_transport != "stdio"
+    host: str | None = settings.host if is_http else None
+    port: int | None = settings.port if is_http else None
 
-    sys.exit(run_mcp_server())
+    return CliResult.ok(
+        ServeStartResult(
+            server_type="mcp",
+            host=host,
+            port=port,
+            auto_pipeline=False,
+            repo=pointer.repo,
+            commit=pointer.commit,
+            db_path=str(pointer.db_path),
+        )
+    )
 
 
 __all__ = [
-    "AUTO_PIPELINE_ENV",
     "DatasetDescribeResult",
     "DatasetFlowResult",
     "DatasetInfoResult",
     "DatasetListResult",
     "DatasetVerifyResult",
-    "OperationCallResult",
-    "OperationListResult",
     "ServeStartResult",
     "dataset_describe_handler",
     "dataset_describe_structured",
@@ -563,9 +451,6 @@ __all__ = [
     "dataset_info_structured",
     "dataset_list_handler",
     "dataset_verify_handler",
-    "op_call_handler",
-    "op_list_handler",
-    "op_list_structured",
     "serve_http_handler",
     "serve_mcp_handler",
 ]

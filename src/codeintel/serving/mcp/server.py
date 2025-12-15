@@ -1,123 +1,67 @@
-"""MCP server exposing CodeIntel datasets and tools."""
+"""MCP server exposing the semantic serving kernel."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Literal
 
-from mcp.server.fastmcp import FastMCP
-
-from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.bootstrap import (
-    BackendResource,
-    build_backend_resource,
-)
-from codeintel.serving.mcp.registry import register_tools
-from codeintel.serving.mcp.tools_base import as_registrar, expose_tools
+from codeintel.serving.db.manager import ServingDBManager
+from codeintel.serving.db.pool import DuckDBPoolConfig
+from codeintel.serving.mcp.app import build_mcp_app
+from codeintel.serving.semantic.kernel import SemanticQueryKernel
+from codeintel.serving.settings import ServingSettings
 
 if TYPE_CHECKING:
-    import httpx
+    from collections.abc import AsyncGenerator
 
-    from codeintel.serving.bootstrap import (
-        BackendResourceOptions,
-    )
-    from codeintel.storage.gateway import StorageGateway
-
-BackendFactory = Callable[..., BackendResource]
-McpFactory = Callable[[str], object]
+    from mcp.server.fastmcp import FastMCP
 
 
-def create_mcp_server(
-    cfg: ServingConfig | None = None,
-    *,
-    backend_factory: BackendFactory | None = None,
-    gateway: StorageGateway | None = None,
-    register_tools_fn: Callable[[object, object, ServingConfig | None], None] | None = None,
-    mcp_factory: McpFactory | None = None,
-) -> tuple[object, Callable[[], None]]:
-    """
-    Create the MCP server instance plus shutdown hook.
+def create_mcp_server(settings: ServingSettings | None = None) -> FastMCP:
+    """Create an MCP server bound to the current serving snapshot.
 
     Parameters
     ----------
-    cfg:
-        Optional pre-loaded ServingConfig. When omitted, environment variables are used.
-    backend_factory:
-        Optional factory for producing BackendResource (defaults to build_backend_resource).
-    gateway:
-        StorageGateway supplying the DuckDB connection and registry.
-    register_tools_fn:
-        Optional function to register tools against the MCP server (defaults to registry helper).
-        It receives (mcp, service_or_backend, config).
-    mcp_factory:
-        Optional factory to construct the MCP registrar/server (defaults to FastMCP).
+    settings
+        Serving settings (defaults to environment).
 
     Returns
     -------
-    tuple[object, Callable[[], None]]
-        Configured MCP server and shutdown callback.
-
-    Raises
-    ------
-    ValueError
-        If a gateway is not provided for local_db mode.
+    FastMCP
+        Configured MCP server.
     """
-    config = cfg or ServingConfig.from_env()
-    if gateway is None and config.mode == "local_db":
-        message = "StorageGateway is required for MCP server in local_db mode"
-        raise ValueError(message)
+    cfg = settings or ServingSettings.from_env()
+    db_manager = ServingDBManager(
+        pointer_path=cfg.serve_dir / "current.json",
+        pool_cfg=DuckDBPoolConfig(size=cfg.pool_size),
+        poll_interval_s=cfg.poll_interval_s,
+    )
+    kernel = SemanticQueryKernel(db=db_manager)
 
-    def _adapt_factory(factory: BackendFactory) -> BackendFactory:
-        def _wrapped(
-            wrapped_cfg: ServingConfig,
-            *,
-            gateway: StorageGateway | None = None,
-            http_client: httpx.Client | httpx.AsyncClient | None = None,
-            options: BackendResourceOptions | None = None,
-        ) -> BackendResource:
-            try:
-                return factory(
-                    wrapped_cfg,
-                    gateway=gateway,
-                    http_client=http_client,
-                    options=options,
-                )
-            except TypeError:
-                return factory(wrapped_cfg)
+    @asynccontextmanager
+    async def lifespan(_mcp: FastMCP) -> AsyncGenerator[object]:
+        await db_manager.start()
+        try:
+            yield object()
+        finally:
+            await db_manager.stop()
 
-        return _wrapped
-
-    factory: BackendFactory = _adapt_factory(backend_factory or build_backend_resource)
-    resource: BackendResource = factory(config, gateway=gateway)
-    backend = resource.backend
-    close = resource.close
-    mcp_ctor = mcp_factory or (lambda name: FastMCP(name, json_response=True))
-    mcp_instance = mcp_ctor("CodeIntel")
-    service = getattr(backend, "service", None)
-
-    registrar = as_registrar(mcp_instance)
-    if register_tools_fn is not None:
-        register_tools_fn(registrar, service or backend, config)
-    else:
-        register_tools(registrar, service or backend, config)
-    expose_tools(mcp_instance)
-    return mcp_instance, close
+    return build_mcp_app(
+        kernel=kernel,
+        host=cfg.host,
+        port=cfg.port,
+        streamable_http_path="/mcp",
+        lifespan=lifespan,
+    )
 
 
 def main() -> None:
-    """
-    Run the CodeIntel MCP server.
-
-    By default this uses stdio transport, which is what Cursor and the
-    OpenAI CLI expect for local MCP servers. :contentReference[oaicite:14]{index=14}
-    """
-    server_obj, close = create_mcp_server()
-    mcp_server = cast("FastMCP", server_obj)
-    try:
-        mcp_server.run()
-    finally:
-        close()
+    """Run the CodeIntel MCP server with stdio or HTTP transport."""
+    cfg = ServingSettings.from_env()
+    mcp = create_mcp_server(cfg)
+    transport: Literal["stdio", "streamable-http"]
+    transport = "stdio" if cfg.mcp_transport == "stdio" else "streamable-http"
+    mcp.run(transport=transport)
 
 
-if __name__ == "__main__":
-    main()
+__all__ = ["create_mcp_server", "main"]
