@@ -16,6 +16,7 @@ from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.outputs import expected_artifacts
 from codeintel.build.hamilton.native.runner import (
     NativeRunInfo,
+    RunRecordInputs,
     create_run_record,
     save_manifest,
 )
@@ -190,8 +191,7 @@ def t__scip(
         executor.target,
         "succeeded",
         executor.input_hash,
-        env=env,
-        run=run,
+        inputs=RunRecordInputs(env=env, run=run),
     )
 
     save_manifest(env, record)

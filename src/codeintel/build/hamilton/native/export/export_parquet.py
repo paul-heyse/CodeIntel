@@ -22,6 +22,7 @@ from codeintel.build.hamilton.native.artifact_materializer import (
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.runner import (
     NativeRunInfo,
+    RunRecordInputs,
     create_run_record,
     save_manifest,
 )
@@ -150,8 +151,7 @@ def t__export_parquet(
         executor.target,
         "succeeded",
         executor.input_hash,
-        env=env,
-        run=run,
+        inputs=RunRecordInputs(env=env, run=run),
     )
 
     # Add artifact to record

@@ -208,10 +208,13 @@ def build_target_context_for_plugin(
 
     overrides = EnvOverrides(
         snapshot=cfg.snapshot,
-        tmp_path=effective_repo_root,
         gateway=gateway,
     )
-    builder = ExecutionContextBuilder.create(tmp_path, env_overrides=overrides)
+    builder = ExecutionContextBuilder.create(
+        tmp_path,
+        env_overrides=overrides,
+        repo_root=effective_repo_root,
+    )
     effective_target = target or make_test_output_target(cast("TargetPlugin", plugin))
     resource_overrides = cfg.resources or TargetResourceOverrides(
         providers=cfg.providers,

@@ -21,6 +21,7 @@ OutputTarget(name='my_target', ...)
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -423,10 +424,9 @@ def _build_unified_registry() -> UnifiedRegistry:
     """
     # Import here to break circular dependency - registrations imports targets
     # which may import registry. This is the ONE place we do deferred import.
-    from codeintel.build.registrations import register_all_targets
-
     registry = UnifiedRegistry()
-    register_all_targets(registry)
+    registrations = importlib.import_module("codeintel.build.registrations")
+    registrations.register_all_targets(registry)
 
     return registry
 

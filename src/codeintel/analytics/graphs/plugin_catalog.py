@@ -80,9 +80,12 @@ def build_plugin_catalog() -> dict[str, Any]:
             log.debug("Failed to instantiate plugin %s: %s", target_name, exc)
             continue
 
-        plugin_name = getattr(plugin, "plugin_name", target_name)
-        plugin_version = getattr(plugin, "plugin_version", "1.0.0")
-        plugin_description = getattr(plugin, "plugin_description", "")
+        plugin_name_raw = getattr(plugin, "plugin_name", target_name)
+        plugin_name = target_name if plugin_name_raw is None else str(plugin_name_raw)
+        plugin_version_raw = getattr(plugin, "plugin_version", "1.0.0")
+        plugin_version = "1.0.0" if plugin_version_raw is None else str(plugin_version_raw)
+        plugin_description_raw = getattr(plugin, "plugin_description", "")
+        plugin_description = "" if plugin_description_raw is None else str(plugin_description_raw)
 
         plugins[plugin_name] = {
             "name": plugin_name,
