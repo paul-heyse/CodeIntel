@@ -11,11 +11,20 @@ Test coverage:
 
 from __future__ import annotations
 
+import json as json_module
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import jsonschema
 import pytest
 
+from codeintel.build.schemas.json_schema_registry import (
+    clear_json_schema_cache,
+    compute_json_schema_digest,
+    get_json_schema,
+    get_json_schema_for_dataset_name,
+)
+from codeintel.core.constants.crypto import SHA256_HEX_DIGEST_LENGTH
 from codeintel.core.schemas.json_schema_gen import (
     json_schema_from_table_schema,
 )
@@ -445,10 +454,6 @@ class TestJsonSchemaRegistry:
     @staticmethod
     def test_get_json_schema_returns_valid_schema() -> None:
         """Verify get_json_schema returns valid schema for known table."""
-        from codeintel.build.schemas.json_schema_registry import (  # noqa: PLC0415
-            get_json_schema,
-        )
-
         # Use a well-known table key
         schema = get_json_schema("analytics.function_metrics")
 
@@ -460,11 +465,6 @@ class TestJsonSchemaRegistry:
     @staticmethod
     def test_get_json_schema_is_cached() -> None:
         """Verify get_json_schema caches results."""
-        from codeintel.build.schemas.json_schema_registry import (  # noqa: PLC0415
-            clear_json_schema_cache,
-            get_json_schema,
-        )
-
         clear_json_schema_cache()
         schema1 = get_json_schema("analytics.function_metrics")
         schema2 = get_json_schema("analytics.function_metrics")
@@ -476,10 +476,6 @@ class TestJsonSchemaRegistry:
     @staticmethod
     def test_get_json_schema_for_dataset_name() -> None:
         """Verify get_json_schema_for_dataset_name works."""
-        from codeintel.build.schemas.json_schema_registry import (  # noqa: PLC0415
-            get_json_schema_for_dataset_name,
-        )
-
         schema = get_json_schema_for_dataset_name("function_metrics")
 
         if schema is not None and schema["$schema"] != EXPECTED_SCHEMA_VERSION:
@@ -488,25 +484,17 @@ class TestJsonSchemaRegistry:
     @staticmethod
     def test_compute_json_schema_digest_returns_hex_string() -> None:
         """Verify compute_json_schema_digest returns valid hex digest."""
-        from codeintel.build.schemas.json_schema_registry import (  # noqa: PLC0415
-            compute_json_schema_digest,
-        )
-
         digest = compute_json_schema_digest("analytics.function_metrics")
 
         if digest is None:
             pytest.fail("Expected non-None digest for known table")
         # SHA-256 hex digest should be 64 characters
-        if len(digest) != 64:  # noqa: PLR2004
-            pytest.fail(f"Expected 64-char hex digest, got {len(digest)}")
+        if len(digest) != SHA256_HEX_DIGEST_LENGTH:
+            pytest.fail(f"Expected {SHA256_HEX_DIGEST_LENGTH}-char hex digest, got {len(digest)}")
 
     @staticmethod
     def test_compute_json_schema_digest_is_deterministic() -> None:
         """Verify digest is deterministic across calls."""
-        from codeintel.build.schemas.json_schema_registry import (  # noqa: PLC0415
-            compute_json_schema_digest,
-        )
-
         digest1 = compute_json_schema_digest("analytics.function_metrics")
         digest2 = compute_json_schema_digest("analytics.function_metrics")
 
@@ -525,13 +513,6 @@ class TestParityWithHandMaintained:
     @staticmethod
     def test_generated_schema_has_same_properties_as_hand_maintained() -> None:
         """Compare generated vs hand-maintained schema properties."""
-        import json as json_module  # noqa: PLC0415
-        from pathlib import Path  # noqa: PLC0415
-
-        from codeintel.build.schemas.json_schema_registry import (  # noqa: PLC0415
-            get_json_schema_for_dataset_name,
-        )
-
         # Load a hand-maintained schema
         schema_root = (
             Path(__file__).parent.parent.parent.parent

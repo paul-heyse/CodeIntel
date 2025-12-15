@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import duckdb
 import jsonschema
 
+from codeintel.build.schemas.json_schema_registry import get_json_schema_for_dataset_name
+from codeintel.core.errors.schema import SchemaError
 from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.validation.contract import collect_contract_issues
 
@@ -17,6 +20,8 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
     from codeintel.storage.datasets.registry import DatasetRegistry
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "ConformanceIssue",
@@ -65,12 +70,9 @@ def _get_generated_schema(dataset_name: str) -> dict[str, object] | None:
         Generated JSON Schema, or None if not available.
     """
     try:
-        from codeintel.build.schemas.json_schema_registry import (  # noqa: PLC0415
-            get_json_schema_for_dataset_name,
-        )
-
         return get_json_schema_for_dataset_name(dataset_name)
-    except Exception:  # noqa: BLE001
+    except SchemaError as e:
+        log.debug("Schema lookup failed for %s: %s", dataset_name, e)
         return None
 
 

@@ -1,13 +1,13 @@
 """Tests for PR-14: Graph exports (Mermaid and DOT).
 
-Validates export_dag_mermaid and export_dag_dot functions.
+Validate export_dag_mermaid and export_dag_dot functions.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.compat import build_driver_compat
+from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.nodes.node_factory import clear_generated_module_cache
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
@@ -22,7 +22,7 @@ class TestMermaidExport:
     def test_export_dag_mermaid_returns_string() -> None:
         """Verify export_dag_mermaid returns a string."""
         clear_generated_module_cache()
-        runtime = build_driver_compat(mode="phase0")
+        runtime = build_driver(mode="generated")
         result = export_dag_mermaid(runtime, ["modules"])
 
         if not isinstance(result, str):
@@ -34,7 +34,7 @@ class TestMermaidExport:
     def test_mermaid_output_starts_with_graph() -> None:
         """Verify Mermaid output starts with graph directive."""
         clear_generated_module_cache()
-        runtime = build_driver_compat(mode="phase0")
+        runtime = build_driver(mode="generated")
         result = export_dag_mermaid(runtime, ["modules"])
 
         if not result.strip().startswith(("graph", "flowchart")):
@@ -44,7 +44,7 @@ class TestMermaidExport:
     def test_mermaid_output_contains_target_nodes() -> None:
         """Verify Mermaid output contains target node references."""
         clear_generated_module_cache()
-        runtime = build_driver_compat(mode="phase0")
+        runtime = build_driver(mode="generated")
         result = export_dag_mermaid(runtime, ["modules"])
 
         if "modules" not in result.lower():
@@ -58,7 +58,7 @@ class TestDotExport:
     def test_export_dag_dot_returns_string() -> None:
         """Verify export_dag_dot returns a string."""
         clear_generated_module_cache()
-        runtime = build_driver_compat(mode="phase0")
+        runtime = build_driver(mode="generated")
         result = export_dag_dot(runtime, ["modules"])
 
         if not isinstance(result, str):
@@ -70,7 +70,7 @@ class TestDotExport:
     def test_dot_output_is_valid_digraph() -> None:
         """Verify DOT output is a valid digraph structure."""
         clear_generated_module_cache()
-        runtime = build_driver_compat(mode="phase0")
+        runtime = build_driver(mode="generated")
         result = export_dag_dot(runtime, ["modules"])
 
         if not result.strip().startswith("digraph"):
@@ -83,7 +83,7 @@ class TestDotExport:
     def test_dot_output_contains_target_nodes() -> None:
         """Verify DOT output contains target node references."""
         clear_generated_module_cache()
-        runtime = build_driver_compat(mode="phase0")
+        runtime = build_driver(mode="generated")
         result = export_dag_dot(runtime, ["modules"])
 
         if "modules" not in result.lower():
@@ -97,7 +97,7 @@ class TestGraphExportConsistency:
     def test_mermaid_and_dot_have_same_nodes() -> None:
         """Verify Mermaid and DOT exports reference same targets."""
         clear_generated_module_cache()
-        runtime = build_driver_compat(mode="phase0")
+        runtime = build_driver(mode="generated")
 
         mermaid = export_dag_mermaid(runtime, ["modules", "scip"])
         dot = export_dag_dot(runtime, ["modules", "scip"])

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from ibis.common.exceptions import IbisError, TableNotFound
 
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.gateway.protocol import DuckDBCatalogException
 from codeintel.storage.ibis_types import filter_by, ibis_bool
 
@@ -142,8 +143,6 @@ def get_source_root(
     Path
         Absolute path to the source root.
     """
-    from codeintel.storage.gateway import DuckDBError  # noqa: PLC0415
-
     try:
         snapshots = gateway.ibis.table("core.snapshots")
         repo_filter = cast("Any", snapshots.repo == repo)

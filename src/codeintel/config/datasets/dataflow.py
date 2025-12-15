@@ -11,7 +11,9 @@ how data flows from source tables through profile compositions to views.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.config.datasets.composites import get_composite_schemas
@@ -19,6 +21,7 @@ from codeintel.storage.view_names import ALIAS_DOCS_VIEWS
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator
+    from types import ModuleType
 
     from codeintel.core.schemas.contract_primitives import DatasetContract
 
@@ -28,6 +31,18 @@ if TYPE_CHECKING:
 
 NodeKind = Literal["table", "view", "operation", "graph"]
 EdgeType = Literal["builds", "reads", "exposes", "depends_on"]
+
+
+@lru_cache(maxsize=1)
+def _schemas_module() -> ModuleType:
+    """Get the build schemas module lazily.
+
+    Returns
+    -------
+    ModuleType
+        The codeintel.build.schemas module.
+    """
+    return importlib.import_module("codeintel.build.schemas")
 
 
 @dataclass(frozen=True)
@@ -82,12 +97,8 @@ def _get_contract_provider() -> tuple[GetContractFunc, IterContractsFunc]:
     tuple[GetContractFunc, IterContractsFunc]
         (get_contract_for_table_key, iter_contracts) functions.
     """
-    from codeintel.build.schemas import (  # noqa: PLC0415
-        get_contract_for_table_key,
-        iter_contracts,
-    )
-
-    return get_contract_for_table_key, iter_contracts
+    mod = _schemas_module()
+    return mod.get_contract_for_table_key, mod.iter_contracts
 
 
 def iter_dataset_nodes() -> Iterator[DataflowNode]:

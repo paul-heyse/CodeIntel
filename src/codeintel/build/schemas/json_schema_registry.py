@@ -7,14 +7,47 @@ This replaces the hand-maintained JSON schema files in config/schemas/export/.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
+import logging
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
+from codeintel.core.errors.schema import (
+    SchemaDigestError,
+    SchemaLoadError,
+    SchemaNotFoundError,
+)
 from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
 
 if TYPE_CHECKING:
+    from types import ModuleType
+
     from codeintel.core.schemas.primitives import TableSchema
+
+log = logging.getLogger(__name__)
+
+
+# -----------------------------------------------------------------------------
+# Lazy Module Access
+# -----------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=2)
+def _get_module(name: str) -> ModuleType:
+    """Load a module lazily with caching.
+
+    Parameters
+    ----------
+    name
+        Fully qualified module name.
+
+    Returns
+    -------
+    ModuleType
+        The loaded module.
+    """
+    return importlib.import_module(name)
 
 
 @lru_cache(maxsize=256)
@@ -38,9 +71,8 @@ def get_json_schema(table_key: str) -> dict[str, Any]:
     'https://json-schema.org/draft/2020-12/schema'
     """
     # Lazy import to avoid circular dependencies at module load time
-    from codeintel.build.schemas.registry import get_schema_provider  # noqa: PLC0415
-
-    table_schema = get_schema_provider().require_table_schema(table_key)
+    registry_mod = _get_module("codeintel.build.schemas.registry")
+    table_schema = registry_mod.get_schema_provider().require_table_schema(table_key)
     return json_schema_from_table_schema(
         table_schema,
         schema_id=f"urn:codeintel:schema:{table_key}",
@@ -89,11 +121,9 @@ def get_json_schema_for_dataset_name(dataset_name: str) -> dict[str, Any] | None
         JSON Schema 2020-12 dictionary, or None if not found.
     """
     # Lazy import to avoid circular dependencies
-    from codeintel.build.schemas.contract_provider import (  # noqa: PLC0415
-        iter_contracts,
-    )
+    contract_mod = _get_module("codeintel.build.schemas.contract_provider")
 
-    for contract in iter_contracts():
+    for contract in contract_mod.iter_contracts():
         if contract.name == dataset_name and contract.schema is not None:
             return json_schema_from_table_schema(
                 contract.schema,
@@ -102,7 +132,7 @@ def get_json_schema_for_dataset_name(dataset_name: str) -> dict[str, Any] | None
     return None
 
 
-def compute_json_schema_digest(table_key: str) -> str | None:
+def compute_json_schema_digest(table_key: str) -> str:
     """Compute a stable digest of the generated JSON Schema.
 
     Parameters
@@ -112,17 +142,31 @@ def compute_json_schema_digest(table_key: str) -> str | None:
 
     Returns
     -------
-    str | None
-        SHA-256 hex digest of the canonical JSON representation, or None if
-        the table key is not found.
+    str
+        SHA-256 hex digest of the canonical JSON representation.
+
+    Raises
+    ------
+    SchemaNotFoundError
+        If the table key is not found in the schema registry.
+    SchemaLoadError
+        If schema loading fails for any reason.
+    SchemaDigestError
+        If digest computation fails for any reason.
     """
     try:
         schema = get_json_schema(table_key)
-    except KeyError:
-        return None
-    # Use sorted keys for deterministic output
-    canonical = json.dumps(schema, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    except KeyError as e:
+        raise SchemaNotFoundError(table_key) from e
+    except Exception as e:
+        raise SchemaLoadError(table_key, e) from e
+
+    try:
+        # Use sorted keys for deterministic output
+        canonical = json.dumps(schema, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    except Exception as e:
+        raise SchemaDigestError(table_key, e) from e
 
 
 def clear_json_schema_cache() -> None:
@@ -134,6 +178,9 @@ def clear_json_schema_cache() -> None:
 
 
 __all__ = [
+    "SchemaDigestError",
+    "SchemaLoadError",
+    "SchemaNotFoundError",
     "clear_json_schema_cache",
     "compute_json_schema_digest",
     "get_json_schema",

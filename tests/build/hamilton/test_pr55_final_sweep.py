@@ -47,11 +47,13 @@ PHASE_TAG_RE = re.compile(r"^phase\d+$")
 
 COMMAND_TAGS = {
     "assets",
+    "compile",
     "diff",
     "explain",
     "graph",
     "history",
     "lineage",
+    "migrate",
     "plan",
     "promote",
     "resolve",

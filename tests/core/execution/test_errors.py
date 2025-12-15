@@ -1,4 +1,4 @@
-"""Test error types from codeintel.core.execution.errors.
+"""Test error types from codeintel.core.errors.execution.
 
 This module tests:
 - PLUGIN_CATCHABLE_ERRORS tuple contents
@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.core.execution.errors import (
+from codeintel.core.errors.execution import (
     PLUGIN_CATCHABLE_ERRORS,
     PluginFatalError,
     PluginSkippedError,

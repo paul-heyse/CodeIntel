@@ -29,6 +29,7 @@ True
 
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING
 
 from codeintel.build.schemas.contract_provider import (
@@ -114,8 +115,6 @@ def __getattr__(name: str) -> object:
         If the attribute is not found in this module or lazy imports.
     """
     if name in _LAZY_IMPORTS:
-        import importlib  # noqa: PLC0415
-
         module = importlib.import_module(_LAZY_IMPORTS[name])
         return getattr(module, name)
     msg = f"module {__name__!r} has no attribute {name!r}"

@@ -1,47 +1,24 @@
-"""Deprecated shim for legacy dataset helpers.
+"""Dataset schema primitives and column utilities.
 
-This package used to be the source of truth for:
-- Table schemas (TABLE_SCHEMAS)
-- Dataset contracts and row bindings
-- Hand-maintained TypedDict row models and serializers
+This package provides primitive types for defining table schemas and
+utilities for column-based operations.
 
-Hamilton Consolidation moved schema and contract authority to build-owned providers.
-New code should prefer:
+For schema and contract access, prefer the build-owned providers:
+
 - Schemas: ``codeintel.build.schemas.get_schema_provider()``
 - Contracts: ``codeintel.build.schemas.get_contract_for_table_key()``
 - Row bindings: ``codeintel.build.schemas.get_row_binding()``
 - Row types: ``codeintel.core.schemas.generated_types``
-
-Notes
------
-This module intentionally avoids eager imports of legacy helpers to prevent
-circular imports (notably between schema declarations and dataset shims).
-Consumers should import the concrete submodules directly when possible.
+- Dataflow graph: ``codeintel.config.datasets.dataflow.build_contract_dataflow_graph()``
 """
 
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.config.datasets.primitives import Column, ColumnType, Index, TableSchema
 from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
-
-if TYPE_CHECKING:
-    from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
-
-
-def build_contract_dataflow_graph() -> tuple[list[DataflowNode], list[DataflowEdge]]:
-    """Return the dataset lineage graph derived from dataset contracts.
-
-    Returns
-    -------
-    tuple[list[DataflowNode], list[DataflowEdge]]
-        Nodes and edges describing datasets, views, and composition relationships.
-    """
-    mod = importlib.import_module("codeintel.config.datasets.dataflow")
-    return mod.build_contract_dataflow_graph()
 
 
 def get_row_bindings() -> dict[str, RowBinding]:
@@ -75,7 +52,6 @@ __all__ = [
     "Index",
     "RowBinding",
     "TableSchema",
-    "build_contract_dataflow_graph",
     "get_row_bindings",
     "get_table_schemas",
     "load_columns_by_table",

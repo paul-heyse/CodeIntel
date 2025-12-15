@@ -1,6 +1,7 @@
-"""Dataset contract shims for backwards compatibility.
+"""Dataset schema and row binding utilities.
 
-This module is deprecated in favor of build-owned schema and contract providers:
+This module provides access to declared table schemas and schema-generated
+row bindings. For dataset contracts, use the build-owned providers:
 
 - Table schemas: `codeintel.build.schemas.get_schema_provider()`
 - Row bindings: `codeintel.build.schemas.get_row_binding()`
@@ -9,11 +10,9 @@ This module is deprecated in favor of build-owned schema and contract providers:
 
 from __future__ import annotations
 
-import warnings
 from functools import lru_cache
 from typing import TYPE_CHECKING, Final
 
-from codeintel.build.schemas import iter_contracts, iter_contracts_by_table_key
 from codeintel.build.schemas.declared_schemas import TABLE_SCHEMAS
 from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
@@ -40,7 +39,7 @@ _JSON_SCHEMA_BY_DATASET_NAME: Final[dict[str, str]] = {
     "data_model_relationships": "data_model_relationships",
 }
 
-_DEFAULT_JSONL_FILENAMES: Final[dict[str, str]] = {
+DEFAULT_JSONL_FILENAMES: Final[dict[str, str]] = {
     "core.goids": "goids.jsonl",
     "core.goid_crosswalk": "goid_crosswalk.jsonl",
     "graph.call_graph_nodes": "call_graph_nodes.jsonl",
@@ -113,7 +112,7 @@ _DEFAULT_JSONL_FILENAMES: Final[dict[str, str]] = {
     "docs.v_validation_summary": "validation_summary.jsonl",
 }
 
-_DEFAULT_PARQUET_FILENAMES: Final[dict[str, str]] = {
+DEFAULT_PARQUET_FILENAMES: Final[dict[str, str]] = {
     "core.goids": "goids.parquet",
     "core.goid_crosswalk": "goid_crosswalk.parquet",
     "graph.call_graph_nodes": "call_graph_nodes.parquet",
@@ -217,54 +216,13 @@ def get_row_bindings() -> dict[str, RowBinding]:
     return bindings
 
 
-def get_dataset_contracts() -> dict[str, DatasetContract]:
-    """Return dataset contracts keyed by dataset name.
-
-    .. deprecated::
-        Use ``codeintel.build.schemas.iter_contracts()``.
-
-    Returns
-    -------
-    dict[str, DatasetContract]
-        Mapping from dataset name to the derived DatasetContract.
-    """
-    warnings.warn(
-        "get_dataset_contracts() is deprecated. Use codeintel.build.schemas.iter_contracts().",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return {contract.name: contract for contract in iter_contracts()}
-
-
-def get_dataset_contracts_by_table_key() -> dict[str, DatasetContract]:
-    """Return dataset contracts keyed by table_key.
-
-    .. deprecated::
-        Use ``codeintel.build.schemas.iter_contracts_by_table_key()``.
-
-    Returns
-    -------
-    dict[str, DatasetContract]
-        Mapping from table_key to the derived DatasetContract.
-    """
-    warnings.warn(
-        "get_dataset_contracts_by_table_key() is deprecated. "
-        "Use codeintel.build.schemas.iter_contracts_by_table_key().",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return dict(iter_contracts_by_table_key())
-
-
 __all__ = [
-    "_DEFAULT_JSONL_FILENAMES",
-    "_DEFAULT_PARQUET_FILENAMES",
+    "DEFAULT_JSONL_FILENAMES",
+    "DEFAULT_PARQUET_FILENAMES",
     "_JSON_SCHEMA_BY_DATASET_NAME",
     "DatasetContract",
     "RowBinding",
     "get_composite_schemas",
-    "get_dataset_contracts",
-    "get_dataset_contracts_by_table_key",
     "get_row_bindings",
     "get_table_schemas",
 ]

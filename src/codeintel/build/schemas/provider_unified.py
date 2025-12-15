@@ -13,6 +13,7 @@ preferring dynamically inferred schemas where available.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING
@@ -21,10 +22,28 @@ from codeintel.build.schemas.provider_declared import declared_schema_provider
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from types import ModuleType
 
     from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
+
+
+@lru_cache(maxsize=2)
+def _get_module(name: str) -> ModuleType:
+    """Load a module lazily with caching.
+
+    Parameters
+    ----------
+    name
+        Fully qualified module name.
+
+    Returns
+    -------
+    ModuleType
+        The loaded module.
+    """
+    return importlib.import_module(name)
 
 
 def _get_target_graph() -> TargetGraph:
@@ -37,9 +56,8 @@ def _get_target_graph() -> TargetGraph:
     """
     # Deferred import to avoid circular dependency at module load time.
     # This module is imported by registry.py, which also imports get_target_graph.
-    from codeintel.build.registry import get_target_graph as _get_graph  # noqa: PLC0415
-
-    return _get_graph()
+    registry_mod = _get_module("codeintel.build.registry")
+    return registry_mod.get_target_graph()
 
 
 def _find_producing_target(table_key: str) -> OutputTarget | None:
@@ -130,9 +148,8 @@ class UnifiedSchemaProvider:
         if table_key in self.inferable_table_keys:
             try:
                 # Lazy import to avoid circular dependency.
-                from codeintel.build.schemas.provider_hamilton import (  # noqa: PLC0415
-                    infer_schema_for_table_key,
-                )
+                hamilton_mod = _get_module("codeintel.build.schemas.provider_hamilton")
+                infer_schema_for_table_key = hamilton_mod.infer_schema_for_table_key
 
                 inferred = infer_schema_for_table_key(
                     table_key=table_key,
@@ -241,13 +258,11 @@ def unified_schema_provider() -> UnifiedSchemaProvider:
     'analytics.function_metrics'
     """
     # Lazy import to avoid circular dependency.
-    from codeintel.build.schemas.provider_hamilton import (  # noqa: PLC0415
-        inferable_native_table_keys,
-    )
+    hamilton_mod = _get_module("codeintel.build.schemas.provider_hamilton")
 
     declared = declared_schema_provider()
     graph = _get_target_graph()
-    inferable = inferable_native_table_keys(graph=graph)
+    inferable = hamilton_mod.inferable_native_table_keys(graph=graph)
 
     return UnifiedSchemaProvider(
         declared=declared,

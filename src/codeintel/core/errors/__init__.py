@@ -51,6 +51,20 @@ from codeintel.core.errors.problem_details import (
     generate_instance_id,
 )
 
+# Schema errors
+from codeintel.core.errors.schema import (
+    SCHEMA_DIGEST_FAILED,
+    SCHEMA_LOAD_FAILED,
+    SCHEMA_NOT_FOUND,
+    SCHEMA_VALIDATION_FAILED,
+    SchemaDigestError,
+    SchemaError,
+    SchemaErrorCode,
+    SchemaLoadError,
+    SchemaNotFoundError,
+    SchemaValidationError,
+)
+
 # Storage errors
 from codeintel.core.errors.storage import (
     ColumnNotFoundError,
@@ -162,6 +176,17 @@ __all__ = [
     "RATE_LIMITED",
     "SCHEMA_MISMATCH",
     "SERVICE_UNAVAILABLE",
+    # Schema codes and errors
+    "SCHEMA_DIGEST_FAILED",
+    "SCHEMA_LOAD_FAILED",
+    "SCHEMA_NOT_FOUND",
+    "SCHEMA_VALIDATION_FAILED",
+    "SchemaDigestError",
+    "SchemaError",
+    "SchemaErrorCode",
+    "SchemaLoadError",
+    "SchemaNotFoundError",
+    "SchemaValidationError",
     # Utilities
     "STATUS_CODES",
     "TABLE_NOT_FOUND",

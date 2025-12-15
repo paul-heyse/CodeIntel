@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.build.errors import RegistryValidationError
+from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -401,24 +402,12 @@ class UnifiedRegistry:
         return errors
 
 
-# Singleton registry instance
-_UNIFIED_REGISTRY: UnifiedRegistry | None = None
+class _UnifiedRegistryHolder(SingletonHolder["UnifiedRegistry"]):
+    """Thread-safe singleton holder for UnifiedRegistry.
 
-
-def get_unified_registry() -> UnifiedRegistry:
-    """Get the singleton unified registry.
-
-    Lazily builds the registry on first access.
-
-    Returns
-    -------
-    UnifiedRegistry
-        The global registry instance.
+    Uses the SingletonHolder pattern to eliminate global statements
+    while providing lazy initialization and test reset capability.
     """
-    global _UNIFIED_REGISTRY  # noqa: PLW0603
-    if _UNIFIED_REGISTRY is None:
-        _UNIFIED_REGISTRY = _build_unified_registry()
-    return _UNIFIED_REGISTRY
 
 
 def _build_unified_registry() -> UnifiedRegistry:
@@ -432,7 +421,9 @@ def _build_unified_registry() -> UnifiedRegistry:
     UnifiedRegistry
         Populated registry.
     """
-    from codeintel.build.registrations import register_all_targets  # noqa: PLC0415
+    # Import here to break circular dependency - registrations imports targets
+    # which may import registry. This is the ONE place we do deferred import.
+    from codeintel.build.registrations import register_all_targets
 
     registry = UnifiedRegistry()
     register_all_targets(registry)
@@ -440,10 +431,30 @@ def _build_unified_registry() -> UnifiedRegistry:
     return registry
 
 
+def get_unified_registry() -> UnifiedRegistry:
+    """Get the singleton unified registry.
+
+    Lazily builds the registry on first access using thread-safe
+    SingletonHolder pattern.
+
+    Returns
+    -------
+    UnifiedRegistry
+        The global registry instance.
+
+    Examples
+    --------
+    >>> registry = get_unified_registry()
+    >>> "function_metrics" in registry
+    True
+    """
+    return _UnifiedRegistryHolder.get(_build_unified_registry)
+
+
 def reset_unified_registry() -> None:
     """Reset the singleton registry (for testing).
 
     Clears the cached registry so it will be rebuilt on next access.
+    Thread-safe via SingletonHolder.reset().
     """
-    global _UNIFIED_REGISTRY  # noqa: PLW0603
-    _UNIFIED_REGISTRY = None
+    _UnifiedRegistryHolder.reset()

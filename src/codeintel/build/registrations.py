@@ -25,10 +25,84 @@ Example
 
 from __future__ import annotations
 
+import importlib
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from types import ModuleType
+
     from codeintel.build.unified_registry import UnifiedRegistry
+
+
+# -----------------------------------------------------------------------------
+# Lazy Module Access
+#
+# These functions provide cached module access to break circular dependencies.
+# Using importlib + lru_cache avoids global statements and provides lazy loading.
+# -----------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=4)
+def _get_module(name: str) -> ModuleType:
+    """Load a module lazily with caching.
+
+    Parameters
+    ----------
+    name
+        Fully qualified module name.
+
+    Returns
+    -------
+    ModuleType
+        The loaded module.
+    """
+    return importlib.import_module(name)
+
+
+def _ingestion_plugins() -> ModuleType:
+    """Get the ingestion plugins module.
+
+    Returns
+    -------
+    ModuleType
+        The codeintel.build.plugins.ingestion module.
+    """
+    return _get_module("codeintel.build.plugins.ingestion")
+
+
+def _analytics_plugins() -> ModuleType:
+    """Get the analytics plugins module.
+
+    Returns
+    -------
+    ModuleType
+        The codeintel.build.plugins.analytics module.
+    """
+    return _get_module("codeintel.build.plugins.analytics")
+
+
+def _graphs_plugins() -> ModuleType:
+    """Get the graphs plugins module.
+
+    Returns
+    -------
+    ModuleType
+        The codeintel.build.plugins.graphs module.
+    """
+    return _get_module("codeintel.build.plugins.graphs")
+
+
+def _build_registry() -> ModuleType:
+    """Get the build registry module.
+
+    Returns
+    -------
+    ModuleType
+        The codeintel.build.registry module.
+    """
+    return _get_module("codeintel.build.registry")
+
 
 __all__ = [
     "register_all_targets",
@@ -77,50 +151,29 @@ def register_ingestion_targets(registry: UnifiedRegistry) -> None:
     registry
         The unified registry to populate.
     """
-    # Import targets (deferred to avoid circular imports)
-    # Import plugin classes (deferred to avoid circular imports)
-    from codeintel.build.plugins.ingestion import (  # noqa: PLC0415
-        AstExtractPlugin,
-        ConfigIngestPlugin,
-        CoverageIngestPlugin,
-        CstExtractPlugin,
-        DocstringsIngestPlugin,
-        RepoScanPlugin,
-        ScipIngestPlugin,
-        TestsIngestPlugin,
-        TypingIngestPlugin,
-    )
-    from codeintel.build.registry import (  # noqa: PLC0415
-        AST_TARGET,
-        CONFIG_INGEST_TARGET,
-        COVERAGE_INGEST_TARGET,
-        CST_TARGET,
-        DOCSTRINGS_TARGET,
-        MODULES_TARGET,
-        SCIP_TARGET,
-        TESTS_INGEST_TARGET,
-        TYPING_TARGET,
-    )
+    # Get modules lazily
+    plugins = _ingestion_plugins()
+    targets = _build_registry()
 
     # Plugin-based targets
-    registry.register(MODULES_TARGET, plugin=RepoScanPlugin)
-    registry.register(AST_TARGET, plugin=AstExtractPlugin)
-    registry.register(CST_TARGET, plugin=CstExtractPlugin)
-    registry.register(COVERAGE_INGEST_TARGET, plugin=CoverageIngestPlugin)
-    registry.register(TESTS_INGEST_TARGET, plugin=TestsIngestPlugin)
-    registry.register(DOCSTRINGS_TARGET, plugin=DocstringsIngestPlugin)
-    registry.register(CONFIG_INGEST_TARGET, plugin=ConfigIngestPlugin)
+    registry.register(targets.MODULES_TARGET, plugin=plugins.RepoScanPlugin)
+    registry.register(targets.AST_TARGET, plugin=plugins.AstExtractPlugin)
+    registry.register(targets.CST_TARGET, plugin=plugins.CstExtractPlugin)
+    registry.register(targets.COVERAGE_INGEST_TARGET, plugin=plugins.CoverageIngestPlugin)
+    registry.register(targets.TESTS_INGEST_TARGET, plugin=plugins.TestsIngestPlugin)
+    registry.register(targets.DOCSTRINGS_TARGET, plugin=plugins.DocstringsIngestPlugin)
+    registry.register(targets.CONFIG_INGEST_TARGET, plugin=plugins.ConfigIngestPlugin)
 
     # Native targets (migrated to Hamilton pipelines)
     # These have both plugin fallback and native implementation
     registry.register(
-        SCIP_TARGET,
-        plugin=ScipIngestPlugin,
+        targets.SCIP_TARGET,
+        plugin=plugins.ScipIngestPlugin,
         native_module="codeintel.build.hamilton.native.ingestion.scip",
     )
     registry.register(
-        TYPING_TARGET,
-        plugin=TypingIngestPlugin,
+        targets.TYPING_TARGET,
+        plugin=plugins.TypingIngestPlugin,
         native_module="codeintel.build.hamilton.native.ingestion.typing",
     )
 
@@ -135,59 +188,37 @@ def register_graph_targets(registry: UnifiedRegistry) -> None:
     registry
         The unified registry to populate.
     """
-    # Import targets (deferred to avoid circular imports)
-    # Import plugin classes (deferred to avoid circular imports)
-    from codeintel.build.plugins.analytics import (  # noqa: PLC0415
-        SymbolGraphMetricsPlugin,
-    )
-    from codeintel.build.plugins.graphs import (  # noqa: PLC0415
-        CallGraphPlugin,
-        CfgDfgPlugin,
-        CoreMetricsPlugin,
-        GoidBuilderPlugin,
-        GraphValidationPlugin,
-        ImportGraphPlugin,
-        SymbolUsesPlugin,
-    )
-    from codeintel.build.registry import (  # noqa: PLC0415
-        CALL_GRAPH_TARGET,
-        CALL_GRAPH_VIEWS_TARGET,
-        CFG_DFG_METRICS_TARGET,
-        CFG_TARGET,
-        DFG_TARGET,
-        GOIDS_TARGET,
-        GRAPH_METRICS_TARGET,
-        GRAPH_VALIDATION_TARGET,
-        IMPORT_GRAPH_TARGET,
-        SYMBOL_GRAPH_METRICS_TARGET,
-        SYMBOL_USES_TARGET,
-        TEST_GRAPH_METRICS_TARGET,
-    )
+    # Get modules lazily
+    analytics = _analytics_plugins()
+    graphs = _graphs_plugins()
+    targets = _build_registry()
 
     # Plugin-based targets
-    registry.register(GOIDS_TARGET, plugin=GoidBuilderPlugin)
-    registry.register(CALL_GRAPH_TARGET, plugin=CallGraphPlugin)
-    registry.register(IMPORT_GRAPH_TARGET, plugin=ImportGraphPlugin)
-    registry.register(CFG_TARGET, plugin=CfgDfgPlugin)
-    registry.register(DFG_TARGET, plugin=CfgDfgPlugin)
+    registry.register(targets.GOIDS_TARGET, plugin=graphs.GoidBuilderPlugin)
+    registry.register(targets.CALL_GRAPH_TARGET, plugin=graphs.CallGraphPlugin)
+    registry.register(targets.IMPORT_GRAPH_TARGET, plugin=graphs.ImportGraphPlugin)
+    registry.register(targets.CFG_TARGET, plugin=graphs.CfgDfgPlugin)
+    registry.register(targets.DFG_TARGET, plugin=graphs.CfgDfgPlugin)
     # Native target (migrated from plugin to Hamilton pipeline)
     registry.register(
-        CFG_DFG_METRICS_TARGET,
+        targets.CFG_DFG_METRICS_TARGET,
         native_module="codeintel.build.hamilton.native.analytics.cfg_dfg",
     )
-    registry.register(SYMBOL_USES_TARGET, plugin=SymbolUsesPlugin)
-    registry.register(GRAPH_VALIDATION_TARGET, plugin=GraphValidationPlugin)
-    registry.register(GRAPH_METRICS_TARGET, plugin=CoreMetricsPlugin)
-    registry.register(SYMBOL_GRAPH_METRICS_TARGET, plugin=SymbolGraphMetricsPlugin)
+    registry.register(targets.SYMBOL_USES_TARGET, plugin=graphs.SymbolUsesPlugin)
+    registry.register(targets.GRAPH_VALIDATION_TARGET, plugin=graphs.GraphValidationPlugin)
+    registry.register(targets.GRAPH_METRICS_TARGET, plugin=graphs.CoreMetricsPlugin)
+    registry.register(
+        targets.SYMBOL_GRAPH_METRICS_TARGET, plugin=analytics.SymbolGraphMetricsPlugin
+    )
     # Native target (migrated from plugin to Hamilton pipeline)
     registry.register(
-        TEST_GRAPH_METRICS_TARGET,
+        targets.TEST_GRAPH_METRICS_TARGET,
         native_module="codeintel.build.hamilton.native.analytics.test_graph_metrics",
     )
 
     # Native targets (migrated to Hamilton pipelines)
     registry.register(
-        CALL_GRAPH_VIEWS_TARGET,
+        targets.CALL_GRAPH_VIEWS_TARGET,
         native_module="codeintel.build.hamilton.native.graphs.call_graph_views",
     )
 
@@ -202,113 +233,77 @@ def register_analytics_targets(registry: UnifiedRegistry) -> None:
     registry
         The unified registry to populate.
     """
-    # Import targets (deferred to avoid circular imports)
-    # Import plugin classes (deferred to avoid circular imports)
-    from codeintel.build.plugins.analytics import (  # noqa: PLC0415
-        BehavioralCoveragePlugin,
-        ConfigDataFlowPlugin,
-        CoverageTestEdgesPlugin,
-        FunctionAstFeaturesPlugin,
-        FunctionContractsPlugin,
-        FunctionEffectsPlugin,
-        FunctionMetricsPlugin,
-        HotspotsPlugin,
-        ProfilesPlugin,
-        RiskFactorsPlugin,
-        SemanticRolesPlugin,
-        SubsystemAgreementPlugin,
-        SubsystemGraphMetricsPlugin,
-        SubsystemsPlugin,
-        TestProfilePlugin,
-    )
-    from codeintel.build.registry import (  # noqa: PLC0415
-        BEHAVIORAL_COVERAGE_TARGET,
-        CONFIG_DATA_FLOW_TARGET,
-        COVERAGE_FUNCTIONS_TARGET,
-        COVERAGE_TEST_EDGES_TARGET,
-        DATA_MODEL_USAGE_TARGET,
-        DATA_MODELS_TARGET,
-        ENTRYPOINTS_TARGET,
-        EXTERNAL_DEPS_TARGET,
-        FUNCTION_AST_FEATURES_TARGET,
-        FUNCTION_CONTRACTS_TARGET,
-        FUNCTION_EFFECTS_TARGET,
-        FUNCTION_HISTORY_TARGET,
-        FUNCTION_METRICS_TARGET,
-        HISTORY_TIMESERIES_TARGET,
-        HOTSPOTS_TARGET,
-        PROFILES_TARGET,
-        RISK_FACTORS_TARGET,
-        SEMANTIC_ROLES_TARGET,
-        SUBSYSTEM_AGREEMENT_TARGET,
-        SUBSYSTEM_GRAPH_METRICS_TARGET,
-        SUBSYSTEMS_TARGET,
-        TEST_PROFILE_TARGET,
-    )
+    # Get modules lazily
+    plugins = _analytics_plugins()
+    targets = _build_registry()
 
     # Plugin-based targets
-    registry.register(FUNCTION_METRICS_TARGET, plugin=FunctionMetricsPlugin)
-    registry.register(FUNCTION_EFFECTS_TARGET, plugin=FunctionEffectsPlugin)
-    registry.register(FUNCTION_CONTRACTS_TARGET, plugin=FunctionContractsPlugin)
+    registry.register(targets.FUNCTION_METRICS_TARGET, plugin=plugins.FunctionMetricsPlugin)
+    registry.register(targets.FUNCTION_EFFECTS_TARGET, plugin=plugins.FunctionEffectsPlugin)
+    registry.register(targets.FUNCTION_CONTRACTS_TARGET, plugin=plugins.FunctionContractsPlugin)
     # Native target (migrated from plugin to Hamilton pipeline)
     registry.register(
-        FUNCTION_HISTORY_TARGET,
+        targets.FUNCTION_HISTORY_TARGET,
         native_module="codeintel.build.hamilton.native.analytics.function_history",
     )
     # Native target (migrated from plugin to Hamilton pipeline)
     registry.register(
-        HISTORY_TIMESERIES_TARGET,
+        targets.HISTORY_TIMESERIES_TARGET,
         native_module="codeintel.build.hamilton.native.analytics.history_timeseries",
     )
-    registry.register(COVERAGE_TEST_EDGES_TARGET, plugin=CoverageTestEdgesPlugin)
+    registry.register(targets.COVERAGE_TEST_EDGES_TARGET, plugin=plugins.CoverageTestEdgesPlugin)
     # Native target (migrated from plugin to Hamilton pipeline)
     registry.register(
-        DATA_MODELS_TARGET,
+        targets.DATA_MODELS_TARGET,
         native_module="codeintel.build.hamilton.native.analytics.data_models",
     )
     # Native target (migrated from plugin to Hamilton pipeline)
     registry.register(
-        DATA_MODEL_USAGE_TARGET,
+        targets.DATA_MODEL_USAGE_TARGET,
         native_module="codeintel.build.hamilton.native.analytics.data_models",
     )
-    registry.register(CONFIG_DATA_FLOW_TARGET, plugin=ConfigDataFlowPlugin)
-    registry.register(SEMANTIC_ROLES_TARGET, plugin=SemanticRolesPlugin)
-    registry.register(SUBSYSTEM_GRAPH_METRICS_TARGET, plugin=SubsystemGraphMetricsPlugin)
-    registry.register(SUBSYSTEM_AGREEMENT_TARGET, plugin=SubsystemAgreementPlugin)
-    registry.register(TEST_PROFILE_TARGET, plugin=TestProfilePlugin)
-    registry.register(BEHAVIORAL_COVERAGE_TARGET, plugin=BehavioralCoveragePlugin)
+    registry.register(targets.CONFIG_DATA_FLOW_TARGET, plugin=plugins.ConfigDataFlowPlugin)
+    registry.register(targets.SEMANTIC_ROLES_TARGET, plugin=plugins.SemanticRolesPlugin)
+    registry.register(
+        targets.SUBSYSTEM_GRAPH_METRICS_TARGET, plugin=plugins.SubsystemGraphMetricsPlugin
+    )
+    registry.register(targets.SUBSYSTEM_AGREEMENT_TARGET, plugin=plugins.SubsystemAgreementPlugin)
+    registry.register(targets.TEST_PROFILE_TARGET, plugin=plugins.TestProfilePlugin)
+    registry.register(targets.BEHAVIORAL_COVERAGE_TARGET, plugin=plugins.BehavioralCoveragePlugin)
     # Native targets (migrated from plugin to Hamilton pipeline)
     registry.register(
-        ENTRYPOINTS_TARGET,
+        targets.ENTRYPOINTS_TARGET,
         native_module="codeintel.build.hamilton.native.analytics.entrypoints",
     )
     registry.register(
-        EXTERNAL_DEPS_TARGET,
+        targets.EXTERNAL_DEPS_TARGET,
         native_module="codeintel.build.hamilton.native.analytics.dependencies",
     )
-    registry.register(PROFILES_TARGET, plugin=ProfilesPlugin)
-    registry.register(FUNCTION_AST_FEATURES_TARGET, plugin=FunctionAstFeaturesPlugin)
+    registry.register(targets.PROFILES_TARGET, plugin=plugins.ProfilesPlugin)
+    registry.register(
+        targets.FUNCTION_AST_FEATURES_TARGET, plugin=plugins.FunctionAstFeaturesPlugin
+    )
 
     # Native targets (migrated to Hamilton pipelines)
     # These have both plugin fallback and native implementation
     registry.register(
-        RISK_FACTORS_TARGET,
-        plugin=RiskFactorsPlugin,
+        targets.RISK_FACTORS_TARGET,
+        plugin=plugins.RiskFactorsPlugin,
         native_module="codeintel.build.hamilton.native.analytics.risk_factors",
     )
     # Native target (plugin removed in Phase 3-4)
     registry.register(
-        COVERAGE_FUNCTIONS_TARGET,
+        targets.COVERAGE_FUNCTIONS_TARGET,
         native_module="codeintel.build.hamilton.native.analytics.coverage_functions",
     )
     registry.register(
-        HOTSPOTS_TARGET,
-        plugin=HotspotsPlugin,
+        targets.HOTSPOTS_TARGET,
+        plugin=plugins.HotspotsPlugin,
         native_module="codeintel.build.hamilton.native.analytics.hotspots",
     )
     registry.register(
-        SUBSYSTEMS_TARGET,
-        plugin=SubsystemsPlugin,
+        targets.SUBSYSTEMS_TARGET,
+        plugin=plugins.SubsystemsPlugin,
         native_module="codeintel.build.hamilton.native.analytics.subsystems",
     )
 
@@ -323,18 +318,15 @@ def register_export_targets(registry: UnifiedRegistry) -> None:
     registry
         The unified registry to populate.
     """
-    # Import targets (deferred to avoid circular imports)
-    from codeintel.build.registry import (  # noqa: PLC0415
-        EXPORT_JSONL_TARGET,
-        EXPORT_PARQUET_TARGET,
-    )
+    # Get modules lazily
+    targets = _build_registry()
 
     # Native targets (migrated to Hamilton pipelines)
     registry.register(
-        EXPORT_JSONL_TARGET,
+        targets.EXPORT_JSONL_TARGET,
         native_module="codeintel.build.hamilton.native.export.export_jsonl",
     )
     registry.register(
-        EXPORT_PARQUET_TARGET,
+        targets.EXPORT_PARQUET_TARGET,
         native_module="codeintel.build.hamilton.native.export.export_parquet",
     )

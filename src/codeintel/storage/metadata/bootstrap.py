@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.schemas import get_schema_provider, is_view, iter_contracts
-from codeintel.config.datasets import build_contract_dataflow_graph
+from codeintel.config.datasets.dataflow import build_contract_dataflow_graph
 from codeintel.core.schemas import schema_hash
 
 if TYPE_CHECKING:

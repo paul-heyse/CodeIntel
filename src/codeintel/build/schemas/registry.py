@@ -21,13 +21,28 @@ Examples
 
 from __future__ import annotations
 
+import importlib
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from types import ModuleType
 
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
+
+
+@lru_cache(maxsize=1)
+def _get_provider_unified_module() -> ModuleType:
+    """Load provider_unified lazily with caching to avoid circular imports.
+
+    Returns
+    -------
+    ModuleType
+        The provider_unified module.
+    """
+    return importlib.import_module("codeintel.build.schemas.provider_unified")
 
 
 def get_schema_provider() -> SchemaProvider:
@@ -52,14 +67,11 @@ def get_schema_provider() -> SchemaProvider:
     >>> schema is not None
     True
     """
-    # Lazy import to avoid circular dependency at module load time.
+    # Lazy import via cached helper to avoid circular dependency at module load time.
     # provider_unified imports provider_hamilton which triggers a long chain
     # that eventually comes back through storage.gateway.
-    from codeintel.build.schemas.provider_unified import (  # noqa: PLC0415
-        unified_schema_provider,
-    )
-
-    return unified_schema_provider()
+    provider_mod = _get_provider_unified_module()
+    return provider_mod.unified_schema_provider()
 
 
 def require_table_schema(table_key: str) -> TableSchema:
@@ -111,11 +123,8 @@ def clear_schema_provider_cache() -> None:
     Clears both the registry cache and the underlying unified provider cache.
     Useful for testing when schema definitions may change between tests.
     """
-    from codeintel.build.schemas.provider_unified import (  # noqa: PLC0415
-        clear_unified_provider_cache,
-    )
-
-    clear_unified_provider_cache()
+    provider_mod = _get_provider_unified_module()
+    provider_mod.clear_unified_provider_cache()
 
 
 __all__ = [
