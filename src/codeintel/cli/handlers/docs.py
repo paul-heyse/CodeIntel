@@ -11,14 +11,17 @@ from enum import Enum, StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.build.exports import (
+    ExportCallOptions,
+    ExportError,
+    ExportOptions,
+    run_validated_exports,
+)
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors._cli_errors import ValidationError
 from codeintel.cli.errors.results import fail_project_error
 from codeintel.cli.errors.taxonomy import ValidationErrorCode, validation_error
 from codeintel.cli.resolution.errors import ResolutionError
-from codeintel.export.errors import ExportError
-from codeintel.export.export_jsonl import ExportCallOptions
-from codeintel.export.runner import ExportOptions, run_validated_exports
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
@@ -237,7 +240,9 @@ def _build_export_options(params: DocsExportParams) -> ExportOptions:
             schemas=params.schemas,
             datasets=params.datasets,
         ),
-        validator=_validate_dataset_contract if params.require_validation else (lambda _gateway: None),
+        validator=_validate_dataset_contract
+        if params.require_validation
+        else (lambda _gateway: None),
     )
 
 

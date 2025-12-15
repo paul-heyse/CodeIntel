@@ -131,7 +131,6 @@ class CommandContext:
         """
         return self.storage.gateway
 
-
     @property
     def has_runtime(self) -> bool:
         """Check if runtime is available.
@@ -153,7 +152,6 @@ class CommandContext:
             True if storage was configured.
         """
         return self._storage is not None
-
 
     @contextmanager
     def write_gateway(self) -> Iterator[StorageGateway]:

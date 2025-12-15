@@ -11,7 +11,7 @@ import ibis
 import pandas as pd
 from ibis.common import exceptions as ibis_exceptions
 
-from codeintel.export.manifest import compute_file_hash
+from codeintel.build.exports import compute_file_hash
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:

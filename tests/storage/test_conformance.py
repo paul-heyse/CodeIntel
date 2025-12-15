@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import json
-import shutil
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.metadata import bootstrap_metadata_datasets
-from codeintel.storage.schema.json_schema import generate_export_schemas
 from codeintel.storage.validation.conformance import (
     ConformanceIssue,
     ConformanceReport,
@@ -55,107 +51,45 @@ def test_conformance_issue_allows_none_dataset() -> None:
     expect_true(issue.dataset is None, message="dataset may be None")
 
 
-def test_conformance_passes_with_empty_db(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+def test_conformance_passes_with_empty_db(fresh_gateway: StorageGateway) -> None:
     """Conformance should succeed when the catalog is freshly bootstrapped."""
     bootstrap_metadata_datasets(fresh_gateway.con)
-    registry = load_dataset_registry(fresh_gateway.con)
-    generate_export_schemas(registry, output_dir=tmp_path)
-    default_export_dir = Path("src/codeintel/config/schemas/export")
-    for schema_file in default_export_dir.glob("*.json"):
-        destination = tmp_path / schema_file.name
-        if not destination.exists():
-            shutil.copy2(schema_file, destination)
-    report = run_conformance(fresh_gateway.con, schema_base_dir=tmp_path, sample_rows=False)
+    load_dataset_registry(fresh_gateway.con)
+    report = run_conformance(fresh_gateway.con, sample_rows=False)
     expect_true(
         report.ok,
         message=f"Unexpected contract issues: {[issue.message for issue in report.issues]}",
     )
 
 
-def test_conformance_with_sample_rows_enabled(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
-    """Conformance should handle sample_rows=True."""
+def test_conformance_with_sample_rows_enabled(fresh_gateway: StorageGateway) -> None:
+    """Conformance should handle sample_rows=True with generated schemas."""
     bootstrap_metadata_datasets(fresh_gateway.con)
-    registry = load_dataset_registry(fresh_gateway.con)
-    generate_export_schemas(registry, output_dir=tmp_path)
-    default_export_dir = Path("src/codeintel/config/schemas/export")
-    for schema_file in default_export_dir.glob("*.json"):
-        destination = tmp_path / schema_file.name
-        if not destination.exists():
-            shutil.copy2(schema_file, destination)
+    load_dataset_registry(fresh_gateway.con)
 
-    report = run_conformance(
-        fresh_gateway.con, schema_base_dir=tmp_path, sample_rows=True, sample_size=SAMPLE_SIZE_10
-    )
+    report = run_conformance(fresh_gateway.con, sample_rows=True, sample_size=SAMPLE_SIZE_10)
 
     expect_is_instance(report, ConformanceReport, label="report type")
 
 
-def test_conformance_skips_missing_schema_files(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
-    """Conformance should skip datasets with missing schema files."""
+def test_conformance_skips_missing_schema(fresh_gateway: StorageGateway) -> None:
+    """Conformance should skip datasets with no available generated schema."""
     bootstrap_metadata_datasets(fresh_gateway.con)
 
-    empty_schema_dir = tmp_path / "empty_schemas"
-    empty_schema_dir.mkdir()
-
-    report = run_conformance(fresh_gateway.con, schema_base_dir=empty_schema_dir, sample_rows=True)
+    report = run_conformance(fresh_gateway.con, sample_rows=True)
 
     expect_is_instance(report, ConformanceReport, label="report type")
 
 
-def test_conformance_validates_schema_rows(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
-    """Conformance should validate rows against JSON Schema."""
+def test_conformance_validates_schema_rows(fresh_gateway: StorageGateway) -> None:
+    """Conformance should validate rows against generated JSON Schema."""
     bootstrap_metadata_datasets(fresh_gateway.con)
-    registry = load_dataset_registry(fresh_gateway.con)
-    generate_export_schemas(registry, output_dir=tmp_path)
-    default_export_dir = Path("src/codeintel/config/schemas/export")
-    for schema_file in default_export_dir.glob("*.json"):
-        destination = tmp_path / schema_file.name
-        if not destination.exists():
-            shutil.copy2(schema_file, destination)
+    load_dataset_registry(fresh_gateway.con)
 
     report = run_conformance(
         fresh_gateway.con,
-        schema_base_dir=tmp_path,
         sample_rows=True,
         sample_size=SAMPLE_SIZE_5,
-    )
-
-    expect_is_instance(report, ConformanceReport, label="report type")
-
-
-def test_conformance_reports_json_schema_errors(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
-    """Conformance should report JSON Schema validation errors."""
-    bootstrap_metadata_datasets(fresh_gateway.con)
-    registry = load_dataset_registry(fresh_gateway.con)
-    generate_export_schemas(registry, output_dir=tmp_path)
-
-    invalid_schema = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {"repo": {"type": "integer"}},
-        "required": ["repo"],
-    }
-    invalid_schema_file = tmp_path / "core.modules.schema.json"
-    invalid_schema_file.write_text(json.dumps(invalid_schema), encoding="utf-8")
-
-    fresh_gateway.con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit)
-        VALUES ('test_mod', 'test.py', 'test/repo', 'abc123')
-        """
-    )
-
-    report = run_conformance(
-        fresh_gateway.con,
-        schema_base_dir=tmp_path,
-        sample_rows=True,
-        sample_size=SAMPLE_SIZE_10,
     )
 
     expect_is_instance(report, ConformanceReport, label="report type")

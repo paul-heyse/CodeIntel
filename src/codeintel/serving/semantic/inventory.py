@@ -89,7 +89,9 @@ def _parse_indexes(items: object) -> tuple[Index, ...]:
     for idx, raw in enumerate(_expect_list(items, ctx="indexes")):
         obj = _expect_dict(raw, ctx=f"indexes[{idx}]")
         columns_value = obj.get("columns", [])
-        columns = tuple(str(item) for item in _expect_list(columns_value, ctx=f"indexes[{idx}].columns"))
+        columns = tuple(
+            str(item) for item in _expect_list(columns_value, ctx=f"indexes[{idx}].columns")
+        )
         indexes.append(
             Index(
                 name=str(obj.get("name", "")),

@@ -7,13 +7,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.core.schemas.contract_primitives import DatasetContract
-from codeintel.export.export_jsonl import (
+from codeintel.build.exports import (
     ExportCallOptions,
     export_all_jsonl,
+    export_all_parquet,
     export_dataset_to_jsonl,
+    export_dataset_to_parquet,
 )
-from codeintel.export.export_parquet import export_all_parquet, export_dataset_to_parquet
+from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.storage.datasets import DatasetRegistry
 from tests._helpers import TestContext, provision_docs_export_ready
 
@@ -89,8 +90,6 @@ def test_export_all_writes_expected_files(docs_export_gateway: TestContext, tmp_
         "test_catalog.jsonl",
         "test_coverage_edges.jsonl",
         "goid_risk_factors.jsonl",
-        "repo_map.json",
-        "index.json",
         "datasets_manifest.json",
     }
 
@@ -150,8 +149,6 @@ def test_export_subset_by_dataset_name(docs_export_gateway: TestContext, tmp_pat
         "function_metrics.jsonl.marker.json",
         "goids.jsonl.manifest.json",
         "goids.jsonl.marker.json",
-        "repo_map.json",
-        "index.json",
         "datasets_manifest.json",
     }
     if written != expected:

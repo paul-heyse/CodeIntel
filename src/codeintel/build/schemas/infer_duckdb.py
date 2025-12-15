@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
-_DECIMAL_RE = re.compile(r"^DECIMAL\\s*\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\)$")
+_DECIMAL_RE = re.compile(r"^DECIMAL\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)$")
 _DECIMAL_INT_PRECISION = 38
 _DECIMAL_INT_SCALE = 0
 _DESCRIBE_NULLABILITY_INDEX = 2
@@ -49,7 +49,7 @@ def _strip_trailing_semicolon(sql: str) -> str:
     str
         SQL query with at most one trailing semicolon removed.
     """
-    return re.sub(r";\\s*$", "", sql.strip())
+    return re.sub(r";\s*$", "", sql.strip())
 
 
 def normalize_duckdb_type(type_str: str) -> ColumnType:
@@ -176,8 +176,57 @@ def infer_table_schema_from_ibis(
     return infer_table_schema_from_sql(con=con, sql=sql, table_key=table_key)
 
 
+def infer_view_schema(
+    *,
+    con: DuckDBConnection,
+    view_key: str,
+) -> TableSchema:
+    """Infer a TableSchema for an existing DuckDB view.
+
+    Use this to infer schemas for views that have already been created in
+    the database. The function uses ``DESCRIBE schema.view_name`` to retrieve
+    column information.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection with the view defined.
+    view_key
+        Fully qualified view key (schema.view_name).
+
+    Returns
+    -------
+    TableSchema
+        Inferred schema for the view.
+
+    Examples
+    --------
+    >>> schema = infer_view_schema(con=con, view_key="docs.v_function_summary")
+    >>> schema.table_key
+    'docs.v_function_summary'
+    """
+    schema_name, view_name = split_table_key(view_key)
+    rows = con.execute(f"DESCRIBE {schema_name}.{view_name}").fetchall()
+
+    columns: list[Column] = []
+    for row in rows:
+        col_name = str(row[0])
+        col_type = normalize_duckdb_type(str(row[1]))
+        # Views typically don't have NOT NULL constraints visible via DESCRIBE,
+        # so default to nullable=True
+        nullable = True
+        if len(row) > _DESCRIBE_NULLABILITY_INDEX:
+            null_field = str(row[_DESCRIBE_NULLABILITY_INDEX]).strip().upper()
+            if null_field in {"NO", "N", "FALSE", "0"}:
+                nullable = False
+        columns.append(Column(name=col_name, type=col_type, nullable=nullable))
+
+    return TableSchema(schema=schema_name, name=view_name, columns=columns)
+
+
 __all__ = [
     "infer_table_schema_from_ibis",
     "infer_table_schema_from_sql",
+    "infer_view_schema",
     "normalize_duckdb_type",
 ]

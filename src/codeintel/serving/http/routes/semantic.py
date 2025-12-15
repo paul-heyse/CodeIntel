@@ -22,6 +22,7 @@ def get_kernel() -> SemanticQueryKernel:
     msg = "get_kernel must be overridden by app wiring"
     raise NotImplementedError(msg)
 
+
 _KERNEL_DEPENDENCY = Depends(get_kernel)
 _QUERY_BODY = Body(...)
 
@@ -39,7 +40,9 @@ async def list_views(kernel: SemanticQueryKernel = _KERNEL_DEPENDENCY) -> dict[s
 
 
 @router.get("/views/{view_id}")
-async def describe_view(view_id: str, kernel: SemanticQueryKernel = _KERNEL_DEPENDENCY) -> dict[str, object]:
+async def describe_view(
+    view_id: str, kernel: SemanticQueryKernel = _KERNEL_DEPENDENCY
+) -> dict[str, object]:
     """Describe a semantic view.
 
     Returns

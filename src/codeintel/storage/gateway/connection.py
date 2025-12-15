@@ -26,7 +26,9 @@ __all__ = [
 ]
 
 
-def connect(config: StorageConfig, *, duckdb_config: DuckDBConnectConfig | None = None) -> DuckDBConnection:
+def connect(
+    config: StorageConfig, *, duckdb_config: DuckDBConnectConfig | None = None
+) -> DuckDBConnection:
     """
     Open a DuckDB connection using the provided configuration.
 

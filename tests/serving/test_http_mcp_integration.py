@@ -102,7 +102,12 @@ def test_fastapi_app_mounts_mcp(tmp_path: Path) -> None:
     _make_db(db_path)
     _write_registry(registry_path)
     _write_schema_manifest(manifest_path)
-    _write_pointer(serve_dir / "current.json", db_path=db_path, registry_path=registry_path, manifest_path=manifest_path)
+    _write_pointer(
+        serve_dir / "current.json",
+        db_path=db_path,
+        registry_path=registry_path,
+        manifest_path=manifest_path,
+    )
 
     settings = ServingSettings(serve_dir=serve_dir, pool_size=1, poll_interval_s=0.01)
     app = create_serving_app(settings=settings, mount_mcp=True)

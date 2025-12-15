@@ -26,7 +26,9 @@ class _StubGateway:
     config: StorageConfig
     con: duckdb.DuckDBPyConnection
 
-    def execute(self, sql: str, params: Sequence[object] | None = None) -> duckdb.DuckDBPyConnection:
+    def execute(
+        self, sql: str, params: Sequence[object] | None = None
+    ) -> duckdb.DuckDBPyConnection:
         return self.con.execute(sql, params)
 
 
@@ -41,7 +43,9 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
     con.execute("CREATE TABLE t (id INTEGER)")
     con.execute("INSERT INTO t VALUES (1)")
 
-    gateway = _StubGateway(config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con)
+    gateway = _StubGateway(
+        config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
+    )
 
     semantic_registry = tmp_path / "semantic_registry.json"
     schema_manifest = tmp_path / "schema_manifest.json"
@@ -80,7 +84,9 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
     con = duckdb.connect(str(db_path))
     con.execute("CREATE TABLE t (id INTEGER)")
 
-    gateway = _StubGateway(config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con)
+    gateway = _StubGateway(
+        config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
+    )
 
     semantic_registry = tmp_path / "semantic_registry.json"
     schema_manifest = tmp_path / "schema_manifest.json"

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, cast, get_args
 
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
 from codeintel.build.schemas.diff import compute_manifest_diffs
-from codeintel.build.schemas.manifest import SchemaManifest
+from codeintel.build.schemas.manifest import ExportArtifact, ExportArtifactKind, SchemaManifest
 from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import (
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from codeintel.build.schemas.diff import ManifestDiffResult
     from codeintel.build.targets import TargetModule
     from codeintel.cli.context import CommandContext
+    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
 _VALID_MODULES: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics", "export")
@@ -41,6 +42,8 @@ class _SchemaSelection:
     only_native: bool
     infer_native: bool
     stable: bool
+    include_views: bool
+    include_artifacts: bool
 
 
 class _InvalidModuleError(ValueError):
@@ -106,6 +109,8 @@ def _parse_selection(ctx: CommandContext) -> _SchemaSelection:
         only_native=ctx.params.get_bool("only_native"),
         infer_native=ctx.params.get_bool("infer_native"),
         stable=ctx.params.get_bool("stable"),
+        include_views=ctx.params.get_bool("include_views"),
+        include_artifacts=ctx.params.get_bool("include_artifacts"),
     )
 
 
@@ -113,11 +118,26 @@ def _parse_selection(ctx: CommandContext) -> _SchemaSelection:
 class _CompiledManifest:
     payload: str
     table_count: int
+    view_count: int
+    artifact_count: int
     manifest: SchemaManifest
 
 
-def _compile_manifest(ctx: CommandContext) -> _CompiledManifest:
+class _ViewsRequireGatewayError(ValueError):
+    """Raised when --include-views is specified but gateway is unavailable."""
+
+
+def _compile_manifest(
+    ctx: CommandContext,
+    *,
+    gateway_con: DuckDBConnection | None = None,
+) -> _CompiledManifest:
     selection = _parse_selection(ctx)
+
+    # Validate that --include-views has a connection available
+    if selection.include_views and gateway_con is None:
+        raise _ViewsRequireGatewayError
+
     request = SchemaManifestRequest(
         targets=selection.targets,
         module=selection.module,
@@ -125,13 +145,23 @@ def _compile_manifest(ctx: CommandContext) -> _CompiledManifest:
         only_native=selection.only_native,
         infer_native=selection.infer_native,
         stable=selection.stable,
+        include_views=selection.include_views,
+        include_artifacts=selection.include_artifacts,
     )
+
     manifest = compile_schema_manifest(
         provider=declared_schema_provider(),
         request=request,
+        con=gateway_con,
     )
     payload = json.dumps(manifest.to_json_obj(), indent=2, sort_keys=True) + "\n"
-    return _CompiledManifest(payload=payload, table_count=len(manifest.tables), manifest=manifest)
+    return _CompiledManifest(
+        payload=payload,
+        table_count=len(manifest.tables),
+        view_count=len(manifest.views),
+        artifact_count=len(manifest.artifacts),
+        manifest=manifest,
+    )
 
 
 def _parse_column_from_json(col_obj: dict[str, object]) -> Column:
@@ -173,9 +203,7 @@ def _parse_table_from_json(table_obj: dict[str, object]) -> TableSchema:
     columns_raw = table_obj.get("columns", [])
     if isinstance(columns_raw, list):
         columns.extend(
-            _parse_column_from_json(col_obj)
-            for col_obj in columns_raw
-            if isinstance(col_obj, dict)
+            _parse_column_from_json(col_obj) for col_obj in columns_raw if isinstance(col_obj, dict)
         )
 
     primary_key_raw = table_obj.get("primary_key", [])
@@ -192,8 +220,58 @@ def _parse_table_from_json(table_obj: dict[str, object]) -> TableSchema:
     )
 
 
+def _parse_artifact_kind(kind_raw: object) -> ExportArtifactKind:
+    """Parse an ExportArtifactKind from a raw value.
+
+    Parameters
+    ----------
+    kind_raw
+        Raw kind value from JSON.
+
+    Returns
+    -------
+    ExportArtifactKind
+        Validated artifact kind, defaults to 'jsonl' if invalid.
+    """
+    if kind_raw == "parquet":
+        return "parquet"
+    if kind_raw == "json":
+        return "json"
+    if kind_raw == "csv":
+        return "csv"
+    return "jsonl"
+
+
+def _parse_artifact_from_json(artifact_obj: dict[str, object]) -> ExportArtifact:
+    """Parse an ExportArtifact from a JSON object.
+
+    Parameters
+    ----------
+    artifact_obj
+        JSON dictionary representing an export artifact.
+
+    Returns
+    -------
+    ExportArtifact
+        Parsed artifact instance.
+    """
+    kind = _parse_artifact_kind(artifact_obj.get("kind"))
+
+    table_key_raw = artifact_obj.get("table_key")
+    table_key = str(table_key_raw) if table_key_raw is not None else None
+
+    return ExportArtifact(
+        kind=kind,
+        filename=str(artifact_obj.get("filename", "")),
+        table_key=table_key,
+        description=_parse_description(artifact_obj.get("description"), ctx="artifact.description"),
+    )
+
+
 def _parse_manifest_from_json(obj: dict[str, object]) -> SchemaManifest:
     """Parse a SchemaManifest from a JSON object.
+
+    Supports both v1 (tables only) and v2 (tables, views, artifacts) formats.
 
     Parameters
     ----------
@@ -208,21 +286,44 @@ def _parse_manifest_from_json(obj: dict[str, object]) -> SchemaManifest:
     Raises
     ------
     TypeError
-        If 'tables' is not a list.
+        If 'tables' or 'views' is not a list.
     """
     version = str(obj.get("version", "v1"))
+
+    # Parse tables
     tables_raw = obj.get("tables", [])
     if not isinstance(tables_raw, list):
         msg = "Expected 'tables' to be a list"
         raise TypeError(msg)
-
     tables = [
-        _parse_table_from_json(table_obj)
-        for table_obj in tables_raw
-        if isinstance(table_obj, dict)
+        _parse_table_from_json(table_obj) for table_obj in tables_raw if isinstance(table_obj, dict)
     ]
 
-    return SchemaManifest(version=version, tables=tuple(tables))
+    # Parse views (v2 feature)
+    views_raw = obj.get("views", [])
+    if not isinstance(views_raw, list):
+        msg = "Expected 'views' to be a list"
+        raise TypeError(msg)
+    views = [
+        _parse_table_from_json(view_obj) for view_obj in views_raw if isinstance(view_obj, dict)
+    ]
+
+    # Parse artifacts (v2 feature)
+    artifacts_raw = obj.get("artifacts", [])
+    if not isinstance(artifacts_raw, list):
+        artifacts_raw = []
+    artifacts = [
+        _parse_artifact_from_json(artifact_obj)
+        for artifact_obj in artifacts_raw
+        if isinstance(artifact_obj, dict)
+    ]
+
+    return SchemaManifest(
+        version=version,
+        tables=tuple(tables),
+        views=tuple(views),
+        artifacts=tuple(artifacts),
+    )
 
 
 def build_schema_compile_handler(ctx: CommandContext) -> CliResult[str]:
@@ -248,10 +349,20 @@ def build_schema_compile_handler(ctx: CommandContext) -> CliResult[str]:
             status=400,
         )
 
+    # Get gateway connection if available (needed for --include-views)
+    gateway_con = ctx.gateway.con if ctx.has_storage else None
+
     try:
-        compiled = _compile_manifest(ctx)
+        compiled = _compile_manifest(ctx, gateway_con=gateway_con)
     except _InvalidModuleError as exc:
         return fail_invalid_module(exc.module, _VALID_MODULES)
+    except _ViewsRequireGatewayError:
+        return fail_execution_failed(
+            "build",
+            "--include-views requires a database connection. "
+            "Use --db-path or ensure a database is configured.",
+            status=400,
+        )
     except KeyError as exc:
         return fail_invalid_targets(str(exc))
     except (RuntimeError, TypeError, ValueError) as exc:
@@ -261,7 +372,13 @@ def build_schema_compile_handler(ctx: CommandContext) -> CliResult[str]:
     if output_file and output_file != "-":
         Path(output_file).write_text(payload, encoding="utf-8")
 
-    return CliResult.ok(payload, metadata={"table_count": compiled.table_count})
+    metadata: dict[str, object] = {"table_count": compiled.table_count}
+    if compiled.view_count > 0:
+        metadata["view_count"] = compiled.view_count
+    if compiled.artifact_count > 0:
+        metadata["artifact_count"] = compiled.artifact_count
+
+    return CliResult.ok(payload, metadata=metadata)
 
 
 def _load_expected_manifest(
@@ -376,13 +493,19 @@ def _format_legacy_diff(
     return fail_execution_failed("build", message, status=409)
 
 
-def _try_compile_manifest(ctx: CommandContext) -> CliResult[_CompiledManifest] | _CompiledManifest:
+def _try_compile_manifest(
+    ctx: CommandContext,
+    *,
+    gateway_con: DuckDBConnection | None = None,
+) -> CliResult[_CompiledManifest] | _CompiledManifest:
     """Compile manifest with error handling.
 
     Parameters
     ----------
     ctx
         Command context.
+    gateway_con
+        Optional DuckDB connection for view inference.
 
     Returns
     -------
@@ -390,9 +513,16 @@ def _try_compile_manifest(ctx: CommandContext) -> CliResult[_CompiledManifest] |
         Compiled manifest on success, or CliResult failure.
     """
     try:
-        return _compile_manifest(ctx)
+        return _compile_manifest(ctx, gateway_con=gateway_con)
     except _InvalidModuleError as exc:
         return fail_invalid_module(exc.module, _VALID_MODULES)
+    except _ViewsRequireGatewayError:
+        return fail_execution_failed(
+            "build",
+            "--include-views requires a database connection. "
+            "Use --db-path or ensure a database is configured.",
+            status=400,
+        )
     except KeyError as exc:
         return fail_invalid_targets(str(exc))
     except (RuntimeError, TypeError, ValueError) as exc:
@@ -480,8 +610,11 @@ def build_schema_diff_handler(ctx: CommandContext) -> CliResult[str]:
     if isinstance(load_result, CliResult):
         return cast("CliResult[str]", load_result)
 
+    # Get gateway connection if available (needed for --include-views)
+    gateway_con = ctx.gateway.con if ctx.has_storage else None
+
     # Compile current manifest
-    compile_result = _try_compile_manifest(ctx)
+    compile_result = _try_compile_manifest(ctx, gateway_con=gateway_con)
     if isinstance(compile_result, CliResult):
         return cast("CliResult[str]", compile_result)
 
@@ -574,8 +707,11 @@ def build_schema_migrate_handler(ctx: CommandContext) -> CliResult[str]:
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # Get gateway connection if available (needed for --include-views)
+    gateway_con = ctx.gateway.con if ctx.has_storage else None
+
     # Compile current manifest
-    compile_result = _try_compile_manifest(ctx)
+    compile_result = _try_compile_manifest(ctx, gateway_con=gateway_con)
     if isinstance(compile_result, CliResult):
         return cast("CliResult[str]", compile_result)
 

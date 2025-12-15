@@ -40,6 +40,7 @@ def _get_declared_schemas() -> dict[str, TableSchema]:
     """
     return {s.table_key: s for s in declared_schema_provider().iter_table_schemas()}
 
+
 # -----------------------------------------------------------------------------
 # Basic functionality tests
 # -----------------------------------------------------------------------------

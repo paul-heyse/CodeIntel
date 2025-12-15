@@ -115,10 +115,7 @@ class SchemaDiff:
             True if any changes were detected.
         """
         return bool(
-            self.added_columns
-            or self.removed_columns
-            or self.type_changes
-            or self.nullable_changes
+            self.added_columns or self.removed_columns or self.type_changes or self.nullable_changes
         )
 
     @property
@@ -144,9 +141,7 @@ class SchemaDiff:
         list[str]
             Formatted change descriptions, one per line.
         """
-        lines: list[str] = [
-            f"  [BREAKING] Column removed: {col}" for col in self.removed_columns
-        ]
+        lines: list[str] = [f"  [BREAKING] Column removed: {col}" for col in self.removed_columns]
 
         lines.extend(
             f"  [BREAKING] Type changed: {col} ({old_type} -> {new_type})"
@@ -155,9 +150,7 @@ class SchemaDiff:
 
         for col, old_nullable, new_nullable in self.nullable_changes:
             if old_nullable and not new_nullable:
-                lines.append(
-                    f"  [BREAKING] Nullable changed: {col} (true -> false)"
-                )
+                lines.append(f"  [BREAKING] Nullable changed: {col} (true -> false)")
             else:
                 lines.append(
                     f"  Nullable changed: {col} ({str(old_nullable).lower()} -> "
@@ -173,6 +166,8 @@ class SchemaDiff:
 class ManifestDiffResult:
     """Result of comparing two schema manifests.
 
+    Supports both v1 (tables only) and v2 (tables, views, artifacts) formats.
+
     Parameters
     ----------
     diffs
@@ -181,11 +176,26 @@ class ManifestDiffResult:
         Table keys that exist in actual but not expected.
     removed_tables
         Table keys that exist in expected but not actual (BREAKING).
+    view_diffs
+        Per-view schema diffs (v2, only views with changes).
+    added_views
+        View keys that exist in actual but not expected (v2).
+    removed_views
+        View keys that exist in expected but not actual (v2, BREAKING).
+    added_artifacts
+        Artifact filenames that exist in actual but not expected (v2).
+    removed_artifacts
+        Artifact filenames that exist in expected but not actual (v2, BREAKING).
     """
 
     diffs: tuple[SchemaDiff, ...]
     added_tables: tuple[str, ...]
     removed_tables: tuple[str, ...]
+    view_diffs: tuple[SchemaDiff, ...] = ()
+    added_views: tuple[str, ...] = ()
+    removed_views: tuple[str, ...] = ()
+    added_artifacts: tuple[str, ...] = ()
+    removed_artifacts: tuple[str, ...] = ()
 
     @property
     def has_breaking_changes(self) -> bool:
@@ -196,9 +206,11 @@ class ManifestDiffResult:
         bool
             True if any breaking changes were detected.
         """
-        if self.removed_tables:
+        if self.removed_tables or self.removed_views or self.removed_artifacts:
             return True
-        return any(diff.has_breaking_changes for diff in self.diffs)
+        if any(diff.has_breaking_changes for diff in self.diffs):
+            return True
+        return any(diff.has_breaking_changes for diff in self.view_diffs)
 
     @property
     def has_any_changes(self) -> bool:
@@ -210,7 +222,14 @@ class ManifestDiffResult:
             True if any changes were detected.
         """
         return bool(
-            self.diffs or self.added_tables or self.removed_tables
+            self.diffs
+            or self.added_tables
+            or self.removed_tables
+            or self.view_diffs
+            or self.added_views
+            or self.removed_views
+            or self.added_artifacts
+            or self.removed_artifacts
         )
 
     @property
@@ -222,8 +241,10 @@ class ManifestDiffResult:
         int
             Total number of breaking changes across all tables.
         """
-        count = len(self.removed_tables)
+        count = len(self.removed_tables) + len(self.removed_views) + len(self.removed_artifacts)
         for diff in self.diffs:
+            count += diff.breaking_change_count
+        for diff in self.view_diffs:
             count += diff.breaking_change_count
         return count
 
@@ -238,6 +259,103 @@ class ManifestDiffResult:
         """
         return len(self.diffs) + len(self.added_tables) + len(self.removed_tables)
 
+    @property
+    def views_with_drift(self) -> int:
+        """Count views that have drift.
+
+        Returns
+        -------
+        int
+            Number of views with any changes (v2 only).
+        """
+        return len(self.view_diffs) + len(self.added_views) + len(self.removed_views)
+
+    @property
+    def artifacts_with_drift(self) -> int:
+        """Count artifacts that have drift.
+
+        Returns
+        -------
+        int
+            Number of artifacts with any changes (v2 only).
+        """
+        return len(self.added_artifacts) + len(self.removed_artifacts)
+
+    def _format_table_changes(self) -> list[str]:
+        """Format table-related changes (removals, diffs, additions).
+
+        Returns
+        -------
+        list[str]
+            Lines describing table changes.
+        """
+        lines: list[str] = []
+        for table_key in self.removed_tables:
+            lines.extend([f"{table_key}:", "  [BREAKING] Table removed", ""])
+        for diff in self.diffs:
+            if diff.has_any_changes:
+                lines.append(f"{diff.table_key}:")
+                lines.extend(diff.format_changes())
+                lines.append("")
+        for table_key in self.added_tables:
+            lines.extend([f"{table_key}:", "  Table added", ""])
+        return lines
+
+    def _format_view_changes(self) -> list[str]:
+        """Format view-related changes (removals, diffs, additions).
+
+        Returns
+        -------
+        list[str]
+            Lines describing view changes.
+        """
+        lines: list[str] = []
+        for view_key in self.removed_views:
+            lines.extend([f"{view_key} (view):", "  [BREAKING] View removed", ""])
+        for diff in self.view_diffs:
+            if diff.has_any_changes:
+                lines.append(f"{diff.table_key} (view):")
+                lines.extend(diff.format_changes())
+                lines.append("")
+        for view_key in self.added_views:
+            lines.extend([f"{view_key} (view):", "  View added", ""])
+        return lines
+
+    def _format_artifact_changes(self) -> list[str]:
+        """Format artifact-related changes (removals, additions).
+
+        Returns
+        -------
+        list[str]
+            Lines describing artifact changes.
+        """
+        lines: list[str] = []
+        for artifact in self.removed_artifacts:
+            lines.extend([f"{artifact} (artifact):", "  [BREAKING] Artifact removed", ""])
+        for artifact in self.added_artifacts:
+            lines.extend([f"{artifact} (artifact):", "  Artifact added", ""])
+        return lines
+
+    def _format_drift_summary(self) -> str:
+        """Format the drift summary line.
+
+        Returns
+        -------
+        str
+            Summary line with drift counts.
+        """
+        summary_parts: list[str] = []
+        if self.tables_with_drift > 0:
+            summary_parts.append(f"{self.tables_with_drift} table(s)")
+        if self.views_with_drift > 0:
+            summary_parts.append(f"{self.views_with_drift} view(s)")
+        if self.artifacts_with_drift > 0:
+            summary_parts.append(f"{self.artifacts_with_drift} artifact(s)")
+        drift_summary = ", ".join(summary_parts) if summary_parts else "0 items"
+        return (
+            f"Summary: {drift_summary} with drift, {self.breaking_change_count} breaking change(s)"
+        )
+
     def format_summary(self) -> str:
         """Format a human-readable summary of all changes.
 
@@ -250,28 +368,10 @@ class ManifestDiffResult:
             return "No schema drift detected.\n"
 
         lines: list[str] = ["Schema drift detected:\n"]
-
-        for table_key in self.removed_tables:
-            lines.append(f"{table_key}:")
-            lines.append("  [BREAKING] Table removed")
-            lines.append("")
-
-        for diff in self.diffs:
-            if diff.has_any_changes:
-                lines.append(f"{diff.table_key}:")
-                lines.extend(diff.format_changes())
-                lines.append("")
-
-        for table_key in self.added_tables:
-            lines.append(f"{table_key}:")
-            lines.append("  Table added")
-            lines.append("")
-
-        lines.append(
-            f"Summary: {self.tables_with_drift} table(s) with drift, "
-            f"{self.breaking_change_count} breaking change(s)"
-        )
-
+        lines.extend(self._format_table_changes())
+        lines.extend(self._format_view_changes())
+        lines.extend(self._format_artifact_changes())
+        lines.append(self._format_drift_summary())
         return "\n".join(lines)
 
 
@@ -321,11 +421,48 @@ def compute_schema_diff(expected: TableSchema, actual: TableSchema) -> SchemaDif
     )
 
 
+def _compare_schemas(
+    expected_items: tuple[TableSchema, ...],
+    actual_items: tuple[TableSchema, ...],
+) -> tuple[tuple[SchemaDiff, ...], tuple[str, ...], tuple[str, ...]]:
+    """Compare two collections of schemas and compute diffs.
+
+    Parameters
+    ----------
+    expected_items
+        Expected schemas.
+    actual_items
+        Actual schemas.
+
+    Returns
+    -------
+    tuple[tuple[SchemaDiff, ...], tuple[str, ...], tuple[str, ...]]
+        Tuple of (diffs, added_keys, removed_keys).
+    """
+    expected_map = {item.table_key: item for item in expected_items}
+    actual_map = {item.table_key: item for item in actual_items}
+
+    expected_keys = set(expected_map.keys())
+    actual_keys = set(actual_map.keys())
+
+    diffs: list[SchemaDiff] = []
+    for key in sorted(expected_keys & actual_keys):
+        diff = compute_schema_diff(expected_map[key], actual_map[key])
+        if diff.has_any_changes:
+            diffs.append(diff)
+
+    added = tuple(sorted(actual_keys - expected_keys))
+    removed = tuple(sorted(expected_keys - actual_keys))
+    return tuple(diffs), added, removed
+
+
 def compute_manifest_diffs(
     expected: SchemaManifest,
     actual: SchemaManifest,
 ) -> ManifestDiffResult:
     """Compute diffs for all table schemas in manifests.
+
+    Supports both v1 (tables only) and v2 (tables, views, artifacts) formats.
 
     Parameters
     ----------
@@ -337,27 +474,24 @@ def compute_manifest_diffs(
     Returns
     -------
     ManifestDiffResult
-        Complete diff result including per-table diffs and table additions/removals.
+        Complete diff result including per-table diffs and table additions/removals,
+        plus view and artifact diffs for v2 manifests.
     """
-    expected_tables = {table.table_key: table for table in expected.tables}
-    actual_tables = {table.table_key: table for table in actual.tables}
+    table_diffs, added_tables, removed_tables = _compare_schemas(expected.tables, actual.tables)
+    view_diffs, added_views, removed_views = _compare_schemas(expected.views, actual.views)
 
-    expected_keys = set(expected_tables.keys())
-    actual_keys = set(actual_tables.keys())
-
-    added_tables = tuple(sorted(actual_keys - expected_keys))
-    removed_tables = tuple(sorted(expected_keys - actual_keys))
-
-    diffs: list[SchemaDiff] = []
-    for table_key in sorted(expected_keys & actual_keys):
-        diff = compute_schema_diff(expected_tables[table_key], actual_tables[table_key])
-        if diff.has_any_changes:
-            diffs.append(diff)
+    expected_artifacts = {a.filename for a in expected.artifacts}
+    actual_artifacts = {a.filename for a in actual.artifacts}
 
     return ManifestDiffResult(
-        diffs=tuple(diffs),
+        diffs=table_diffs,
         added_tables=added_tables,
         removed_tables=removed_tables,
+        view_diffs=view_diffs,
+        added_views=added_views,
+        removed_views=removed_views,
+        added_artifacts=tuple(sorted(actual_artifacts - expected_artifacts)),
+        removed_artifacts=tuple(sorted(expected_artifacts - actual_artifacts)),
     )
 
 

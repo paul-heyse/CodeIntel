@@ -7,9 +7,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.exports import export_all_jsonl, export_all_parquet
 from codeintel.config.datasets.rows.analytics import graph_validation_row_to_tuple
-from codeintel.export.export_jsonl import export_all_jsonl
-from codeintel.export.export_parquet import export_all_parquet
 from tests._helpers import provision_docs_export_ready
 
 if TYPE_CHECKING:

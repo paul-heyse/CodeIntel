@@ -7,10 +7,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.export.errors import ExportError
-from codeintel.export.export_jsonl import ExportCallOptions, export_all_jsonl
-from codeintel.export.export_parquet import export_all_parquet
-from codeintel.export.validate_exports import validate_files
+from codeintel.build.exports import (
+    ExportCallOptions,
+    ExportError,
+    export_all_jsonl,
+    export_all_parquet,
+    validate_export_files,
+)
 from tests._helpers import (
     GatewayOptions,
     ProvisioningConfig,
@@ -41,11 +44,14 @@ def test_validate_jsonl_happy_path(tmp_path: Path) -> None:
                 "caller_goid_h128": 1,
                 "callee_goid_h128": 2,
                 "callsite_path": "a.py",
+                "callsite_line": 10,
+                "callsite_col": 5,
                 "language": "python",
+                "kind": "direct",
             }
         ],
     )
-    exit_code = validate_files("call_graph_edges", [data_path])
+    exit_code = validate_export_files("call_graph_edges", [data_path])
     expect_equal(exit_code, 0)
 
 
@@ -62,7 +68,7 @@ def test_validate_jsonl_failure(tmp_path: Path) -> None:
             }
         ],
     )
-    exit_code = validate_files("call_graph_edges", [data_path])
+    exit_code = validate_export_files("call_graph_edges", [data_path])
     expect_not_equal(exit_code, 0)
 
 

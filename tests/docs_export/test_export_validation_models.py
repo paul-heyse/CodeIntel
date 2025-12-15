@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.export.validate_exports import validate_files
+from codeintel.build.exports import validate_export_files
 from tests._helpers.ingestion import write_coverage_file
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ def test_data_model_field_schema_validates_fixture(tmp_path: Path) -> None:
             '"lineno":10,"created_at":"2025-01-01T00:00:00Z"}'
         ),
     )
-    exit_code = validate_files("data_model_fields", [path])
+    exit_code = validate_export_files("data_model_fields", [path])
     if exit_code != 0:
         pytest.fail("data_model_fields schema validation failed for fixture")
 
@@ -43,6 +43,6 @@ def test_data_model_relationship_schema_validates_fixture(tmp_path: Path) -> Non
             '"created_at":"2025-01-01T00:00:00Z"}'
         ),
     )
-    exit_code = validate_files("data_model_relationships", [path])
+    exit_code = validate_export_files("data_model_relationships", [path])
     if exit_code != 0:
         pytest.fail("data_model_relationships schema validation failed for fixture")

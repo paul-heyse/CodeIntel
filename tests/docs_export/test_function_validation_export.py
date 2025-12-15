@@ -8,8 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.export.export_jsonl import export_all_jsonl
-from codeintel.export.export_parquet import export_all_parquet
+from codeintel.build.exports import export_all_jsonl, export_all_parquet
 from tests._helpers.builders import FunctionValidationRow, insert_rows
 
 if TYPE_CHECKING:

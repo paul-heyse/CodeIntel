@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.schemas import iter_contracts, iter_contracts_by_table_key
@@ -69,20 +68,6 @@ __all__ = [
     "get_binding_required_datasets",
     "validate_contract_or_raise",
 ]
-
-
-def _schema_path(schema_id: str, *, base_dir: Path | None = None) -> Path:
-    root = base_dir or Path("src/codeintel/config/schemas/export")
-    return root / f"{schema_id}.json"
-
-
-def _validate_schema_files(registry: DatasetRegistry, *, base_dir: Path | None = None) -> list[str]:
-    return [
-        f"Missing JSON Schema for dataset {name}: {_schema_path(ds.json_schema_id, base_dir=base_dir)}"
-        for name, ds in registry.by_name.items()
-        if ds.json_schema_id is not None
-        and not _schema_path(ds.json_schema_id, base_dir=base_dir).exists()
-    ]
 
 
 def _validate_row_bindings(registry: DatasetRegistry) -> list[str]:
@@ -189,10 +174,12 @@ def _validate_dependencies(registry: DatasetRegistry, *, include_views: bool) ->
 def collect_contract_issues(
     con: DuckDBPyConnection,
     *,
-    schema_base_dir: Path | None = None,
     include_views: bool = True,
 ) -> list[str]:
     """Collect contract inconsistencies for the active database.
+
+    JSON schema validation is performed using generated schemas from TableSchema
+    definitions, not file-based schemas (removed in PR-73).
 
     Returns
     -------
@@ -201,7 +188,6 @@ def collect_contract_issues(
     """
     registry = load_dataset_registry(con)
     issues: list[str] = []
-    issues.extend(_validate_schema_files(registry, base_dir=schema_base_dir))
     issues.extend(_validate_row_bindings(registry))
     issues.extend(_validate_schema_alignment(registry, include_views=include_views))
     issues.extend(_validate_schemas_match_contracts())
@@ -230,7 +216,6 @@ def collect_contract_issues(
 def validate_contract_or_raise(
     con: DuckDBPyConnection,
     *,
-    schema_base_dir: Path | None = None,
     include_views: bool = True,
 ) -> None:
     """Validate dataset contract and raise on any issues.
@@ -242,7 +227,6 @@ def validate_contract_or_raise(
     """
     issues = collect_contract_issues(
         con,
-        schema_base_dir=schema_base_dir,
         include_views=include_views,
     )
     if issues:

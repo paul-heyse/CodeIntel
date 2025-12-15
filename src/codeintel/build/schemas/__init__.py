@@ -41,10 +41,29 @@ from codeintel.build.schemas.contract_provider import (
     iter_contracts_by_table_key,
 )
 from codeintel.build.schemas.diff import (
+    ColumnDiff,
     ManifestDiffResult,
     SchemaDiff,
     compute_manifest_diffs,
     compute_schema_diff,
+)
+from codeintel.build.schemas.infer_duckdb import (
+    infer_table_schema_from_ibis,
+    infer_table_schema_from_sql,
+    infer_view_schema,
+    normalize_duckdb_type,
+)
+from codeintel.build.schemas.json_schema_registry import (
+    clear_json_schema_cache,
+    compute_json_schema_digest,
+    get_json_schema,
+    get_json_schema_for_dataset_name,
+    get_json_schema_for_table_schema,
+)
+from codeintel.build.schemas.manifest import (
+    ExportArtifact,
+    ExportArtifactKind,
+    SchemaManifest,
 )
 from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.build.schemas.registry import (
@@ -104,27 +123,40 @@ def __getattr__(name: str) -> object:
 
 
 __all__ = [
+    "ColumnDiff",
     "ContractProvider",
+    "ExportArtifact",
+    "ExportArtifactKind",
     "ManifestDiffResult",
     "SchemaDiff",
+    "SchemaManifest",
     "UnifiedSchemaProvider",
     "clear_contract_cache",
+    "clear_json_schema_cache",
     "clear_row_binding_cache",
     "clear_schema_provider_cache",
     "clear_unified_provider_cache",
+    "compute_json_schema_digest",
     "compute_manifest_diffs",
     "compute_schema_diff",
     "declared_schema_provider",
     "get_composite_schemas",
     "get_contract_for_table_key",
     "get_contract_provider",
+    "get_json_schema",
+    "get_json_schema_for_dataset_name",
+    "get_json_schema_for_table_schema",
     "get_row_binding",
     "get_schema_provider",
+    "infer_table_schema_from_ibis",
+    "infer_table_schema_from_sql",
+    "infer_view_schema",
     "is_view",
     "iter_contracts",
     "iter_contracts_by_table_key",
     "iter_row_bindings",
     "iter_table_schemas",
+    "normalize_duckdb_type",
     "require_table_schema",
     "unified_schema_provider",
 ]

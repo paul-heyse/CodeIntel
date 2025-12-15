@@ -79,7 +79,7 @@ def _write_schema_manifest(path: Path) -> None:
                     {"name": "id", "type": "INTEGER", "nullable": False},
                     {"name": "label", "type": "VARCHAR", "nullable": True},
                 ],
-            }
+            },
         ],
     }
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")

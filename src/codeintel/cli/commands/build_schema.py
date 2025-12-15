@@ -94,6 +94,22 @@ class BuildSchemaCompileCommand:
             help="Output file path (stdout if not specified).",
         ),
     ] = None
+    include_views: Annotated[
+        bool,
+        Parameter(
+            name=["--include-views"],
+            help="Include DuckDB view schemas in the manifest (v2 format).",
+            negative=(),
+        ),
+    ] = False
+    include_artifacts: Annotated[
+        bool,
+        Parameter(
+            name=["--include-artifacts"],
+            help="Include export artifact metadata in the manifest (v2 format).",
+            negative=(),
+        ),
+    ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
@@ -181,6 +197,22 @@ class BuildSchemaDiffCommand:
             negative=(),
         ),
     ] = False
+    include_views: Annotated[
+        bool,
+        Parameter(
+            name=["--include-views"],
+            help="Include DuckDB view schemas in comparison (v2 format).",
+            negative=(),
+        ),
+    ] = False
+    include_artifacts: Annotated[
+        bool,
+        Parameter(
+            name=["--include-artifacts"],
+            help="Include export artifact metadata in comparison (v2 format).",
+            negative=(),
+        ),
+    ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
@@ -252,6 +284,22 @@ class BuildSchemaMigrateCommand:
             negative=["--no-dry-run"],
         ),
     ] = True
+    include_views: Annotated[
+        bool,
+        Parameter(
+            name=["--include-views"],
+            help="Include DuckDB view schemas in migration (v2 format).",
+            negative=(),
+        ),
+    ] = False
+    include_artifacts: Annotated[
+        bool,
+        Parameter(
+            name=["--include-artifacts"],
+            help="Include export artifact metadata in migration (v2 format).",
+            negative=(),
+        ),
+    ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

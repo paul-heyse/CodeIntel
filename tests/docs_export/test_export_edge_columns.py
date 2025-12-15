@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from codeintel.build.exports import export_jsonl_for_table
 from codeintel.build.schemas import iter_contracts_by_table_key
-from codeintel.export.export_jsonl import export_jsonl_for_table
 from tests._helpers import provision_graph_ready_repo
 
 if TYPE_CHECKING:
