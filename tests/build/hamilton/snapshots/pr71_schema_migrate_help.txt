@@ -1,0 +1,56 @@
+Usage: codeintel build schema migrate EXPECTED [ARGS]
+
+Update expected manifest to match current schemas.
+
+╭─ Parameters ─────────────────────────────────────────────────────────────────╮
+│ *  EXPECTED --expected -e       Path to the expected schema manifest JSON    │
+│                                 file to update. [env var:                    │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_EXPECTED]     │
+│                                 [required]                                   │
+│    TARGETS --targets            Target names to include (defaults to all     │
+│      --empty-targets            targets). [env var:                          │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_TARGETS]      │
+│                                 [default: (none)]                            │
+│    MODULE --module -m           Compile schemas for all targets in a module. │
+│                                 [env var:                                    │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_MODULE]       │
+│                                 [default: (none)]                            │
+│    ALL --all -a                 Compile schemas for all targets across all   │
+│                                 modules. [env var:                           │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_ALL]          │
+│                                 [default: false]                             │
+│    ONLY-NATIVE --only-native    Restrict compilation to targets with native  │
+│                                 Hamilton implementations. [env var:          │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_ONLY_NATIVE]  │
+│                                 [default: false]                             │
+│    INFER-NATIVE --infer-native  Infer schemas for inferable native targets   │
+│      --infer                    (fallback to declared on errors). [env var:  │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_INFER_NATIVE] │
+│                                 [default: false]                             │
+│    STABLE --stable              Force deterministic ordering and             │
+│                                 canonicalized output. [env var:              │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_STABLE]       │
+│                                 [default: true]                              │
+│    DRY-RUN --dry-run            Show migration plan without writing changes  │
+│      --no-dry-run               (default: true). [env var:                   │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_DRY_RUN]      │
+│                                 [default: true]                              │
+│    --flags                      [env var:                                    │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_FLAGS]        │
+│                                 [default: --flags]                           │
+│    ROOT --root -r               Explicit project root directory. [env var:   │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_ROOT]         │
+│                                 [default: (none)]                            │
+│    OUTPUT-FORMAT                Output format. [choices: text, json, jsonl]  │
+│      --output-format            [env var:                                    │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_OUTPUT_FORMAT │
+│                                 ] [default: text]                            │
+│    JSON --json                  Alias for --output-format json. [env var:    │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_JSON]         │
+│                                 [default: false]                             │
+│    VERBOSE --verbose -v         Increase verbosity (0=warnings, 1=info,      │
+│                                 2=debug). [env var:                          │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_VERBOSE]      │
+│                                 [default: 0]                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
