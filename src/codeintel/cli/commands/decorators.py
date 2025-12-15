@@ -7,7 +7,7 @@ from CLI command classes.
 
 - Command extends `Command[T]` from `cli.core.command`
 - Implements `execute(self, ctx: CommandContext) -> CliResult[T]`
-- Uses `require_storage` and `require_serving` parameters
+- Uses `require_storage` parameter
 - Full end-to-end type safety
 
 Handlers also use CommandContext directly via unified services.
@@ -110,7 +110,6 @@ def cli_command[T, R](
     handler: Callable[[CommandContext], CliResult[R]] | None = None,
     config: CommandConfig | None = None,
     require_storage: bool = False,
-    require_serving: bool = False,
 ) -> Callable[[type[T]], type[T]]:
     """Decorate CLI command dataclasses with automatic execution.
 
@@ -133,8 +132,6 @@ def cli_command[T, R](
         Defaults to requiring runtime and gateway.
     require_storage
         Whether command needs storage access via ctx.storage.
-    require_serving
-        Whether command needs serving access via ctx.serving.
 
     Returns
     -------
@@ -174,7 +171,6 @@ def cli_command[T, R](
                 command_cls,
                 operation_id,
                 require_storage=require_storage,
-                require_serving=require_serving,
             )
             return cast("type[T]", decorated)
 
@@ -276,7 +272,6 @@ def _decorate_new_style(
     operation_id: str,
     *,
     require_storage: bool,
-    require_serving: bool,
 ) -> type[Command[Any]]:
     """Decorate with Command[T] pattern using CommandContext.
 
@@ -288,8 +283,6 @@ def _decorate_new_style(
         Operation identifier.
     require_storage
         Whether storage access is required.
-    require_serving
-        Whether serving access is required.
 
     Returns
     -------
@@ -300,8 +293,6 @@ def _decorate_new_style(
         cls.__operation_id__ = operation_id
     if not hasattr(cls, "__require_storage__"):
         cls.__require_storage__ = require_storage
-    if not hasattr(cls, "__require_serving__"):
-        cls.__require_serving__ = require_serving
 
     op_description = cls.__doc__ or f"Execute {operation_id}"
     op_description = op_description.strip().split("\n", maxsplit=1)[0].strip()
@@ -330,7 +321,6 @@ def _decorate_new_style(
         _execute_new_command(
             command_self,
             require_storage=require_storage,
-            require_serving=require_serving,
         )
 
     cls.__call__ = cast("Callable[..., object]", generated_call)
@@ -387,7 +377,6 @@ def _execute_new_command[T](
     command: Command[T],
     *,
     require_storage: bool,
-    require_serving: bool,
 ) -> None:
     """Execute a Command[T] using unified CommandContext.
 
@@ -397,8 +386,6 @@ def _execute_new_command[T](
         Command instance.
     require_storage
         Whether storage is required.
-    require_serving
-        Whether serving is required.
     """
     infra = _extract_infrastructure(command)
     params = _extract_params(command)
@@ -413,11 +400,8 @@ def _execute_new_command[T](
         .with_operation_id(getattr(command, "__operation_id__", "unknown"))
     )
 
-    if require_storage or require_serving:
+    if require_storage:
         builder = builder.with_storage(db_path=infra.database_path)
-
-    if require_serving:
-        builder = builder.with_serving()
 
     with builder.build() as ctx:
         result = command.execute(ctx)

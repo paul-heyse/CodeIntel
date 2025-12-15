@@ -9,8 +9,6 @@ This module provides:
 Examples
 --------
 >>> from codeintel.cli import app, main
->>> from codeintel.cli.handlers import ide_hints_handler
->>> from codeintel.cli.context import CommandContext
 """
 
 from __future__ import annotations
@@ -23,12 +21,9 @@ from codeintel.cli.commands import (
     docs_app,
     graphs_app,
     history_app,
-    ide_app,
     main,
-    op_app,
     serve_app,
     storage_app,
-    subsystem_app,
 )
 
 __all__ = [
@@ -39,10 +34,7 @@ __all__ = [
     "docs_app",
     "graphs_app",
     "history_app",
-    "ide_app",
     "main",
-    "op_app",
     "serve_app",
     "storage_app",
-    "subsystem_app",
 ]

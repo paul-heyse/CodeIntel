@@ -137,4 +137,3 @@ def pandera_to_json_schema(
 
 
 __all__ = ["pandera_to_json_schema"]
-

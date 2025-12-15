@@ -10,6 +10,8 @@ schemas through the three-tier fallback chain:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.build.schemas import (
@@ -24,12 +26,18 @@ from codeintel.build.schemas import (
 )
 from codeintel.build.schemas.provider_hamilton import inferable_native_table_keys
 
-
-from codeintel.core.schemas.primitives import TableSchema
+if TYPE_CHECKING:
+    from codeintel.core.schemas.primitives import TableSchema
 
 
 def _get_declared_schemas() -> dict[str, TableSchema]:
-    """Get declared schemas as a dict for comparison."""
+    """Get declared schemas as a dict for comparison.
+
+    Returns
+    -------
+    dict[str, TableSchema]
+        Mapping from table_key to declared schema.
+    """
     return {s.table_key: s for s in declared_schema_provider().iter_table_schemas()}
 
 # -----------------------------------------------------------------------------

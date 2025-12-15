@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeIntel schema_manifest.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "tables"],
+  "properties": {
+    "version": { "type": "string" },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schema", "name", "columns"],
+        "properties": {
+          "schema": { "type": "string" },
+          "name": { "type": "string" },
+          "table_key": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "primary_key": { "type": "array", "items": { "type": "string" }, "default": [] },
+          "indexes": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "columns"],
+              "properties": {
+                "name": { "type": "string" },
+                "columns": { "type": "array", "items": { "type": "string" } },
+                "unique": { "type": "boolean", "default": false }
+              }
+            }
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "type"],
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "nullable": { "type": "boolean", "default": true },
+                "description": { "type": ["string", "null"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

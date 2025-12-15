@@ -36,11 +36,6 @@ from tests._helpers.fakes.fake_providers import (
 from tests._helpers.fakes.fake_providers import (
     FakeToolRunner as ProtocolFakeToolRunner,
 )
-from tests._helpers.fakes.serving_backends import (
-    BackendHandle,
-    ServingBackend,
-    build_serving_backend,
-)
 from tests._helpers.fakes.tools import (
     FakeToolRunner,
     FakeToolService,
@@ -49,7 +44,6 @@ from tests._helpers.fakes.tools import (
 from tests._helpers.fakes.utilities import utcnow
 
 __all__ = [
-    "BackendHandle",
     "FakeCoverageCollector",
     "FakeGitHistoryProvider",
     "FakeTestReporter",
@@ -60,7 +54,5 @@ __all__ = [
     "ProtocolFakeProviders",
     "ProtocolFakeScipIndexer",
     "ProtocolFakeToolRunner",
-    "ServingBackend",
-    "build_serving_backend",
     "utcnow",
 ]

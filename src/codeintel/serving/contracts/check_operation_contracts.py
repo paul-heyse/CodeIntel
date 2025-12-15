@@ -1,126 +1,171 @@
-"""Validate serving operation contracts across protocols, services, and backends.
+"""Validate that the serving-layer public surfaces remain coherent.
 
-This script reflects component signatures, validates them against the
-DatasetSchema-backed contract, and checks for missing operations.
+This module is executed by `tools.quality_report` to ensure the semantic HTTP and MCP
+surfaces expose the expected operations and JSON schemas.
 """
 
 from __future__ import annotations
 
+import asyncio
 import sys
-from collections import defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.contracts.schemas.operation_contracts_dataset import TRANSPORT_KINDS
-from codeintel.serving.contracts.operation_contract_reflection import (
-    ComponentSpec,
-    build_operation_contract_dataframe,
-    validate_operation_contracts,
-)
-from codeintel.serving.mcp.backend import DuckDBBackend, HttpBackend
-from codeintel.serving.operations import iter_operations
-from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
-from codeintel.serving.types import QueryBackendProtocol, QueryServiceProtocol
+from codeintel.serving.http.routes import semantic
+from codeintel.serving.mcp.app import build_mcp_app
+from codeintel.serving.semantic.models import SemanticQueryResponse
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
+
+    from codeintel.serving.semantic.models import SemanticQueryRequest
 
 
-def _component_specs() -> list[ComponentSpec]:
-    """Return the reflected component specifications.
+EXPECTED_MCP_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "semantic_catalog",
+        "semantic_describe",
+        "semantic_query",
+        "serving_meta",
+    }
+)
 
-    Returns
-    -------
-    list[ComponentSpec]
-        Components to reflect for contract validation.
-    """
-    return [
-        ComponentSpec(component=QueryServiceProtocol, transport="protocol_service"),
-        ComponentSpec(component=QueryBackendProtocol, transport="protocol_backend"),
-        ComponentSpec(component=LocalQueryService, transport="service"),
-        ComponentSpec(component=HttpQueryService, transport="service"),
-        ComponentSpec(component=DuckDBBackend, transport="backend"),
-        ComponentSpec(component=HttpBackend, transport="backend"),
-    ]
-
-
-def _expected_methods() -> set[str]:
-    """Return the set of backend method names from the operation catalog.
-
-    Returns
-    -------
-    set[str]
-        Backend method names that should be implemented.
-    """
-    ignore = {"graph_plugin_plan", "health"}
-    return {spec.backend_method for spec in iter_operations() if spec.backend_method not in ignore}
+EXPECTED_SEMANTIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("GET", "/semantic/views"),
+        ("GET", "/semantic/views/{view_id}"),
+        ("POST", "/semantic/query"),
+    }
+)
 
 
-def _find_missing_methods(
-    df_components: Iterable[tuple[str, set[str]]],
-    expected: set[str],
-) -> dict[str, set[str]]:
-    """Return mapping from component label to missing method names.
+class OperationContractsError(RuntimeError):
+    """Raised when serving operation contracts are invalid."""
 
-    Returns
-    -------
-    dict[str, set[str]]
-        Missing methods keyed by component label.
-    """
-    missing: dict[str, set[str]] = {}
-    for component, methods in df_components:
-        missing_methods = expected - methods
-        if missing_methods:
-            missing[component] = missing_methods
-    return missing
+    def __init__(self, *, issues: Iterable[str]) -> None:
+        lines = "\n".join(f"- {issue}" for issue in issues)
+        super().__init__(f"Serving operation contracts check failed:\n{lines}")
 
 
-def _validate_missing(df_grouped: dict[str, set[str]], expected: set[str]) -> dict[str, set[str]]:
-    """Check missing methods for each component and return the diff.
+@dataclass(frozen=True, slots=True)
+class _DummyKernel:
+    @staticmethod
+    def catalog() -> dict[str, object]:
+        return {"version": "v1", "snapshot": {}, "views": []}
 
-    Returns
-    -------
-    dict[str, set[str]]
-        Missing methods keyed by component label.
-    """
-    return _find_missing_methods(df_grouped.items(), expected)
+    @staticmethod
+    def describe(view_id: str) -> dict[str, object]:
+        return {"id": view_id, "table_key": "docs.v_demo"}
+
+    @staticmethod
+    def query(request: SemanticQueryRequest) -> SemanticQueryResponse:
+        return SemanticQueryResponse(
+            view_id=request.view_id,
+            columns=[],
+            rows=[],
+            truncated=False,
+            snapshot={"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"},
+        )
+
+    @staticmethod
+    def meta() -> dict[str, object]:
+        return {"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"}
 
 
-def run() -> int:
-    """Execute the contract validation and missing-method check.
+def _check_semantic_http_routes() -> list[str]:
+    issues: list[str] = []
+    observed: set[tuple[str, str]] = set()
+    for route in semantic.router.routes:
+        methods = getattr(route, "methods", None)
+        path = getattr(route, "path", None)
+        if not isinstance(path, str) or not isinstance(methods, set):
+            continue
+        for method in methods:
+            if isinstance(method, str):
+                observed.add((method, path))
+
+    missing = EXPECTED_SEMANTIC_ROUTES - observed
+    if missing:
+        issues.append(f"Missing semantic HTTP routes: {sorted(missing)}")
+
+    extra = observed - EXPECTED_SEMANTIC_ROUTES
+    if extra:
+        issues.append(f"Unexpected semantic HTTP routes: {sorted(extra)}")
+
+    return issues
+
+
+def _get_required_fields(schema: Mapping[str, object]) -> frozenset[str]:
+    raw = schema.get("required", [])
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(item for item in raw if isinstance(item, str))
+
+
+def _check_mcp_tool_schema(tool: object, *, name: str) -> list[str]:
+    issues: list[str] = []
+    schema = getattr(tool, "inputSchema", None)
+    if not isinstance(schema, dict):
+        issues.append(f"MCP tool {name} has no inputSchema dict")
+        return issues
+
+    required = _get_required_fields(schema)
+    if name in {"semantic_describe", "semantic_query"} and "view_id" not in required:
+        issues.append(f"MCP tool {name} must require view_id")
+    if name in {"semantic_catalog", "serving_meta"} and required:
+        issues.append(f"MCP tool {name} must not require arguments, got {sorted(required)}")
+
+    if name == "semantic_query":
+        props = schema.get("properties", {})
+        if not isinstance(props, dict):
+            issues.append("MCP tool semantic_query inputSchema.properties must be a dict")
+            return issues
+        expected_props = {"view_id", "filters", "select", "order_by", "pagination"}
+        missing_props = expected_props - set(props)
+        if missing_props:
+            issues.append(f"MCP tool semantic_query missing properties: {sorted(missing_props)}")
+
+    return issues
+
+
+async def _check_mcp_tools() -> list[str]:
+    issues: list[str] = []
+    mcp = build_mcp_app(kernel=_DummyKernel())
+    tools = await mcp.list_tools()
+    tool_names = {tool.name for tool in tools}
+
+    missing = EXPECTED_MCP_TOOL_NAMES - tool_names
+    if missing:
+        issues.append(f"Missing MCP tools: {sorted(missing)}")
+
+    extra = tool_names - EXPECTED_MCP_TOOL_NAMES
+    if extra:
+        issues.append(f"Unexpected MCP tools: {sorted(extra)}")
+
+    for tool in tools:
+        if tool.name in EXPECTED_MCP_TOOL_NAMES:
+            issues.extend(_check_mcp_tool_schema(tool, name=tool.name))
+
+    return issues
+
+
+def main() -> int:
+    """Run serving operation-contract checks.
 
     Returns
     -------
     int
-        Exit code: ``0`` on success, ``1`` when validation fails.
+        Process exit code (0 = success, 1 = failure).
     """
-    components = _component_specs()
-    df = build_operation_contract_dataframe(components)
-    validated = validate_operation_contracts(df)
-
-    grouped_methods: dict[str, set[str]] = defaultdict(set)
-    for _, row in validated.iterrows():
-        component = str(row["component"])
-        grouped_methods[component].add(str(row["method"]))
-
-    expected = _expected_methods()
-    missing = _validate_missing(grouped_methods, expected)
-    if missing:
-        sys.stderr.write("Operation contract validation failed; missing methods detected:\n")
-        for component, methods in sorted(missing.items()):
-            formatted = ", ".join(sorted(methods))
-            sys.stderr.write(f"- {component}: missing [{formatted}]\n")
+    issues: list[str] = []
+    issues.extend(_check_semantic_http_routes())
+    issues.extend(asyncio.run(_check_mcp_tools()))
+    if issues:
+        error = OperationContractsError(issues=issues)
+        sys.stderr.write(f"{error}\n")
         return 1
-
-    # Ensure transports are expected
-    invalid_transports = validated[~validated["transport"].isin(TRANSPORT_KINDS)].transport.unique()
-    if len(invalid_transports) > 0:
-        sys.stderr.write(
-            f"Unexpected transport kinds found: {', '.join(sorted(map(str, invalid_transports)))}\n"
-        )
-        return 1
-
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    sys.exit(main())

@@ -65,7 +65,6 @@ __all__ = [
     "BuildErrorCollection",
     "BuildRunConfig",
     "BuildRunRecord",
-    "OperationTargets",
     "OutputContract",
     "OutputManifest",
     "OutputTarget",
@@ -83,7 +82,6 @@ __all__ = [
     "compute_input_hash",
     "compute_options_hash",
     "get_target_graph",
-    "get_targets_for_operation",
     "get_unified_registry",
 ]
 
@@ -93,7 +91,6 @@ if TYPE_CHECKING:
     from codeintel.build.errors import BuildError, BuildErrorCollection
     from codeintel.build.hashing import compute_input_hash, compute_options_hash
     from codeintel.build.manifest import BuildRunRecord, OutputManifest
-    from codeintel.build.operations import OperationTargets, get_targets_for_operation
     from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
     from codeintel.build.plugin import TargetPlugin, TargetPluginProtocol
     from codeintel.build.registry import build_target_graph, get_target_graph
@@ -117,7 +114,6 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "BuildErrorCollection": ("codeintel.build.errors", "BuildErrorCollection"),
     "BuildRunConfig": ("codeintel.build.run_config", "BuildRunConfig"),
     "BuildRunRecord": ("codeintel.build.manifest", "BuildRunRecord"),
-    "OperationTargets": ("codeintel.build.operations", "OperationTargets"),
     "OutputContract": ("codeintel.build.contracts", "OutputContract"),
     "OutputManifest": ("codeintel.build.manifest", "OutputManifest"),
     "OutputTarget": ("codeintel.build.targets", "OutputTarget"),
@@ -135,7 +131,6 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "compute_input_hash": ("codeintel.build.hashing", "compute_input_hash"),
     "compute_options_hash": ("codeintel.build.hashing", "compute_options_hash"),
     "get_target_graph": ("codeintel.build.registry", "get_target_graph"),
-    "get_targets_for_operation": ("codeintel.build.operations", "get_targets_for_operation"),
     "get_unified_registry": ("codeintel.build.unified_registry", "get_unified_registry"),
 }
 

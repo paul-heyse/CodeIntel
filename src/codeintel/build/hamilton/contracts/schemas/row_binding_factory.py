@@ -16,15 +16,18 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING
 
 from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.build.schemas.row_registry import get_row_binding
 from codeintel.config.datasets.contracts import RowBinding, get_row_bindings
 from codeintel.core.schemas.row_models import (
-    GeneratedRowBinding,
     row_model_for_table_schema,
     row_serializer_for_table_schema,
 )
+
+if TYPE_CHECKING:
+    from codeintel.core.schemas.row_models import GeneratedRowBinding
 
 __all__ = [
     "compare_row_bindings",

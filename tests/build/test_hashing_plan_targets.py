@@ -12,12 +12,10 @@ import pytest
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hashing import compute_input_hash, compute_options_hash
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
-from codeintel.build.operations import OperationTargets
 from codeintel.build.plan import BuildPlan, PlanGenerator, PlanStage, PlanStep, format_duration
 from codeintel.build.resolver import ResolutionResult
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column, TableSchema
-from codeintel.serving.operations.catalog import DataSourceType, Operation
 from tests._helpers import make_snapshot, sample_target_graph
 from tests._helpers.assertions import (
     expect_equal,
@@ -28,7 +26,6 @@ from tests._helpers.assertions import (
     expect_not_equal,
     expect_true,
 )
-from tests._helpers.operations_registry import OperationRegistryBuilder
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -221,45 +218,3 @@ def test_target_table_keys_and_execution_duration() -> None:
     expect_equal(contract_target.table_keys, ("core.t",))
     expect_equal(legacy_target.table_keys, ("core.legacy",))
     expect_true(legacy_target.estimated_duration_ms >= 0)
-
-
-def test_operations_resolve_missing_mapping() -> None:
-    """Operations resolution skips datasets/graphs without mappings."""
-    graph = sample_target_graph()
-    builder = OperationRegistryBuilder(targets=graph.all_targets)
-
-    op = Operation(
-        id="op",
-        category="tests",
-        summary="missing mappings",
-        description=None,
-        http_method=None,
-        http_path=None,
-        tool_name=None,
-        output_model_name="None",
-        backend_method="",
-        data_source=DataSourceType.TABLE,
-        source_name="core.unknown",
-        repository_method=None,
-        required_datasets=("core.unknown",),
-        required_graphs=("unknown_graph",),
-        exposed_datasets=(),
-        supports_pagination=False,
-        default_limit=None,
-        max_limit=None,
-    )
-    targets = builder.build_targets_for_operation(op)
-
-    expect_false(bool(targets.data_targets))
-    expect_false(bool(targets.graph_targets))
-
-
-def test_operations_targets_dataclass_repr() -> None:
-    """OperationTargets aggregates graph and data targets."""
-    targets = OperationTargets(
-        operation_id="op",
-        required_targets=frozenset({"a", "b"}),
-        graph_targets=frozenset({"a"}),
-        data_targets=frozenset({"b"}),
-    )
-    expect_in("op", repr(targets))

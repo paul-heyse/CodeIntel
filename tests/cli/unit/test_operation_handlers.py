@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 
 from codeintel.cli.introspection import get_registry
 from tests._helpers.assertions import (
-    expect_false,
     expect_is_not_none,
     expect_not_empty,
     expect_true,
@@ -55,27 +54,6 @@ def test_build_operations_have_required_group() -> None:
         expect_is_not_none(spec)
         if spec is not None:
             expect_is_not_none(spec.group)
-
-
-def test_op_list_returns_operations(
-    op_harness: OperationTestHarness,
-) -> None:
-    """Op list handler returns list of operations."""
-    result = op_harness.execute("op.list")
-
-    expect_true(result.success)
-
-    expect_is_not_none(result)
-
-
-def test_op_call_with_unknown_operation(
-    op_harness: OperationTestHarness,
-) -> None:
-    """Op call with unknown operation returns error."""
-    result = op_harness.execute("op.call", params={"op_id": "unknown.op"})
-
-    expect_false(result.success)
-    expect_is_not_none(result.error)
 
 
 def test_dataset_list_returns_datasets(

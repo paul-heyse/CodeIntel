@@ -43,9 +43,6 @@ if TYPE_CHECKING:
     from tests._helpers.context import TestContext
 
 
-pytest_plugins = ("tests._helpers.plugins.mcp",)
-
-
 @pytest.fixture
 def codeintel_env() -> Iterator[None]:
     """Save and restore CODEINTEL_* environment variables."""

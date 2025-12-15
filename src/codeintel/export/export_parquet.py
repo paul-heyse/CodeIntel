@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, cast
 import pandas as pd
 
 from codeintel.export import default_validation_schemas
+from codeintel.export.errors import ExportError, ProblemDetails, log_problem, problem
 from codeintel.export.export_exprs import build_export_expr, compile_export_sql
 from codeintel.export.export_jsonl import ExportCallOptions
 from codeintel.export.manifest import (
@@ -28,12 +29,11 @@ from codeintel.export.manifest import (
     write_per_dataset_manifest,
 )
 from codeintel.export.validate_exports import validate_files
-from codeintel.serving.backend.datasets import validate_dataset_registry
-from codeintel.serving.services.errors import ExportError, ProblemDetails, log_problem, problem
 from codeintel.storage.gateway import (
     DuckDBError,
 )
-from codeintel.storage.validation import _schema_path
+from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.validation import _schema_path, validate_contract_or_raise
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -84,11 +84,30 @@ def _validate_registry_or_raise(gateway: StorageGateway) -> None:
     ExportError
         If tables exist but their schemas do not match expectations.
     """
+    missing_tables: list[str] = []
+    for dataset_name, table_key in gateway.datasets.mapping.items():
+        schema_name, table_name = split_table_key(table_key)
+        exists = gateway.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = ? AND table_name = ?
+            LIMIT 1
+            """,
+            [schema_name, table_name],
+        ).fetchone()
+        if exists is None:
+            missing_tables.append(f"{dataset_name} -> {table_key}")
+
+    if missing_tables:
+        message = "Dataset registry missing tables/views: " + ", ".join(sorted(missing_tables))
+        raise ValueError(message)
+
     try:
-        validate_dataset_registry(gateway)
+        validate_contract_or_raise(gateway.con)
     except ValueError as exc:
         detail = str(exc)
-        pd = problem(
+        problem_detail = problem(
             ProblemDetails(
                 code="export.validation_failed",
                 title="Export validation failed",
@@ -96,10 +115,8 @@ def _validate_registry_or_raise(gateway: StorageGateway) -> None:
                 extras={"stage": "dataset_registry"},
             )
         )
-        log_problem(log, pd)
-        if "schema mismatches" in detail:
-            raise ExportError(pd) from exc
-        raise
+        log_problem(log, problem_detail)
+        raise ExportError(problem_detail) from exc
 
 
 def _resolve_dataset_table(dataset_name: str, dataset_mapping: Mapping[str, str]) -> str:

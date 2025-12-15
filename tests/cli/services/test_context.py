@@ -90,15 +90,6 @@ def test_has_storage_without_config() -> None:
         expect_false(ctx.has_storage)
 
 
-def test_has_serving_without_config() -> None:
-    """Has serving returns False without configuration."""
-    with (
-        patch("codeintel.cli.context.load_config", return_value=MagicMock()),
-        CommandContextBuilder().build() as ctx,
-    ):
-        expect_false(ctx.has_serving)
-
-
 def test_runtime_raises_without_config() -> None:
     """Runtime raises error without configuration."""
     with (
@@ -117,16 +108,6 @@ def test_storage_raises_without_config() -> None:
         pytest.raises(RuntimeError, match="Storage not available"),
     ):
         _ = ctx.storage
-
-
-def test_serving_raises_without_config() -> None:
-    """Serving raises error without configuration."""
-    with (
-        patch("codeintel.cli.context.load_config", return_value=MagicMock()),
-        CommandContextBuilder().build() as ctx,
-        pytest.raises(RuntimeError, match="Serving not available"),
-    ):
-        _ = ctx.serving
 
 
 def test_with_storage_enables_runtime(tmp_path: Path) -> None:

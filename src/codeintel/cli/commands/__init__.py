@@ -38,13 +38,10 @@ from codeintel.cli.commands.graphs import graphs_app
 from codeintel.cli.commands.health import health_app
 from codeintel.cli.commands.help_commands import help_commands_app
 from codeintel.cli.commands.history import history_app
-from codeintel.cli.commands.ide import ide_app
 from codeintel.cli.commands.jobs import jobs_app
-from codeintel.cli.commands.ops import op_app
 from codeintel.cli.commands.plugins import plugins_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
-from codeintel.cli.commands.subsystem import subsystem_app
 
 __all__ = [
     "OutputFormatCLI",
@@ -63,15 +60,12 @@ __all__ = [
     "help_commands_app",
     "help_utils",
     "history_app",
-    "ide_app",
     "jobs_app",
     "main",
     "make_root_app",
-    "op_app",
     "plugins_app",
     "resolve_output_format",
     "runtime_field",
     "serve_app",
     "storage_app",
-    "subsystem_app",
 ]

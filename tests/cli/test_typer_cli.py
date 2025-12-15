@@ -6,7 +6,6 @@ type adapter caching issues that cause ValidationError when tests run in paralle
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
 import pytest
@@ -21,7 +20,6 @@ from codeintel.cli.project import (
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
-    expect_is_instance,
     expect_true,
 )
 from tests._helpers.cli import run_cli
@@ -79,45 +77,6 @@ def test_load_project_config_parses_yaml(temp_project: Path) -> None:
 
 
 @pytest.mark.xdist_group("cli_shared_flags")
-def test_op_list_shows_operations() -> None:
-    """Verify op list shows available operations."""
-    result = run_cli(["op", "list"])
-
-    expect_equal(result.exit_code, 0)
-
-    expect_in("operations:", result.stdout)
-    expect_in("function.summary", result.stdout)
-
-
-@pytest.mark.xdist_group("cli_shared_flags")
-def test_op_list_json_output() -> None:
-    """Verify op list --output-format json produces valid JSON."""
-    result = run_cli(["op", "list", "--output-format", "json"])
-
-    expect_equal(result.exit_code, 0)
-    output = json.loads(result.stdout)
-
-    expect_in("data", output)
-    data = output["data"]
-    expect_in("operations", data)
-    operations = data["operations"]
-    expect_is_instance(operations, list)
-    expect_true(len(operations) > 0)
-
-    expect_in("id", operations[0])
-    expect_in("category", operations[0])
-
-
-@pytest.mark.xdist_group("cli_shared_flags")
-def test_op_list_filter_by_category() -> None:
-    """Verify op list --category filters operations."""
-    result = run_cli(["op", "list", "--category", "functions"])
-
-    expect_equal(result.exit_code, 0)
-    expect_in("function.summary", result.stdout)
-
-
-@pytest.mark.xdist_group("cli_shared_flags")
 def test_dataset_describe_known_dataset() -> None:
     """Verify dataset describe shows contract details."""
     result = run_cli(["dataset", "describe", "core.goids"])
@@ -146,7 +105,6 @@ def test_serve_http_help() -> None:
     expect_equal(result.exit_code, 0)
     expect_in("--host", result.stdout)
     expect_in("--port", result.stdout)
-    expect_in("--auto-pipeline", result.stdout)
 
 
 @pytest.mark.xdist_group("cli_shared_flags")
@@ -155,7 +113,6 @@ def test_serve_mcp_help() -> None:
     result = run_cli(["serve", "mcp", "--help"])
 
     expect_equal(result.exit_code, 0)
-    expect_in("--auto-pipeline", result.stdout)
 
 
 @pytest.mark.xdist_group("cli_shared_flags")
@@ -165,7 +122,6 @@ def test_main_help() -> None:
 
     expect_equal(result.exit_code, 0)
     expect_in("build", result.stdout)
-    expect_in("op", result.stdout)
     expect_in("dataset", result.stdout)
     expect_in("serve", result.stdout)
 
@@ -177,16 +133,6 @@ def test_pipeline_removed() -> None:
 
     expect_equal(result.exit_code, 2)
     expect_true("No such command" in result.stderr)
-
-
-@pytest.mark.xdist_group("cli_shared_flags")
-def test_op_help() -> None:
-    """Verify op group help shows subcommands."""
-    result = run_cli(["op", "--help"])
-
-    expect_equal(result.exit_code, 0)
-    expect_in("list", result.stdout)
-    expect_in("call", result.stdout)
 
 
 @pytest.mark.xdist_group("cli_shared_flags")

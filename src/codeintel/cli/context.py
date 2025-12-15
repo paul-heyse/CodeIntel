@@ -5,7 +5,7 @@ receive. It provides:
 
 The CommandContext provides:
 
-- Lazy resource access (runtime, storage, serving, jobs)
+- Lazy resource access (runtime, storage, jobs)
 - Typed parameter access via ParamService
 - Automatic resource cleanup via context manager
 - Declarative resource requirements
@@ -24,7 +24,6 @@ from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.services.jobs import JobService
 from codeintel.cli.services.params import ParamService
 from codeintel.cli.services.runtime import RuntimeService
-from codeintel.cli.services.serving import ServingService
 from codeintel.cli.services.storage import StorageService
 
 if TYPE_CHECKING:
@@ -42,7 +41,7 @@ LOG = logging.getLogger(__name__)
 class CommandContext:
     """Unified execution context for all CLI commands.
 
-    Provide lazy access to resources (runtime, storage, serving) with
+    Provide lazy access to resources (runtime, storage) with
     automatic lifecycle management. Commands declare their resource
     requirements, and the context provides them on demand.
 
@@ -80,7 +79,6 @@ class CommandContext:
 
     _runtime: RuntimeService | None = field(default=None, repr=False)
     _storage: StorageService | None = field(default=None, repr=False)
-    _serving: ServingService | None = field(default=None, repr=False)
 
     _owns_storage: bool = field(default=False, repr=False)
 
@@ -133,24 +131,6 @@ class CommandContext:
         """
         return self.storage.gateway
 
-    @property
-    def serving(self) -> ServingService:
-        """Get serving service.
-
-        Returns
-        -------
-        ServingService
-            Serving service for operation invocation.
-
-        Raises
-        ------
-        RuntimeError
-            If serving was not configured.
-        """
-        if self._serving is None:
-            msg = "Serving not available. Use CommandContextBuilder.with_serving()"
-            raise RuntimeError(msg)
-        return self._serving
 
     @property
     def has_runtime(self) -> bool:
@@ -174,16 +154,6 @@ class CommandContext:
         """
         return self._storage is not None
 
-    @property
-    def has_serving(self) -> bool:
-        """Check if serving is available.
-
-        Returns
-        -------
-        bool
-            True if serving was configured.
-        """
-        return self._serving is not None
 
     @contextmanager
     def write_gateway(self) -> Iterator[StorageGateway]:
@@ -225,7 +195,6 @@ class CommandContextBuilder:
         """Initialize builder with default settings."""
         self._require_runtime = False
         self._require_storage = False
-        self._require_serving = False
         self._project_root: Path | None = None
         self._db_path: Path | None = None
         self._params: dict[str, object] = {}
@@ -272,21 +241,6 @@ class CommandContextBuilder:
         self._require_runtime = True
         if db_path is not None:
             self._db_path = db_path
-        return self
-
-    def with_serving(self) -> Self:
-        """Enable serving access.
-
-        Implicitly enables storage and runtime.
-
-        Returns
-        -------
-        Self
-            Self for chaining.
-        """
-        self._require_serving = True
-        self._require_storage = True
-        self._require_runtime = True
         return self
 
     def with_params(self, params: dict[str, object]) -> Self:
@@ -406,7 +360,6 @@ class CommandContextBuilder:
 
         runtime_service: RuntimeService | None = None
         storage_service: StorageService | None = None
-        serving_service: ServingService | None = None
 
         try:
             if self._require_runtime:
@@ -421,13 +374,6 @@ class CommandContextBuilder:
             elif self._injected_gateway is not None:
                 storage_service = StorageService.from_gateway(self._injected_gateway)
 
-            if (
-                self._require_serving
-                and runtime_service is not None
-                and storage_service is not None
-            ):
-                serving_service = ServingService(runtime_service, storage_service)
-
             ctx = CommandContext(
                 config=config,
                 logger=logger,
@@ -438,7 +384,6 @@ class CommandContextBuilder:
                 verbosity=self._verbosity,
                 _runtime=runtime_service,
                 _storage=storage_service,
-                _serving=serving_service,
                 _owns_storage=True,
             )
 

@@ -109,7 +109,6 @@ from tests._helpers.fakes.networkx_graphs import (
     disconnected_graph,
     star_graph,
 )
-from tests._helpers.fakes.query_service import FakeQueryService, ModelLike
 from tests._helpers.gateway import GatewayFactory, analytics_gateway
 from tests._helpers.immutability import assert_all_frozen, assert_frozen
 from tests._helpers.orchestration.provisioning import (
@@ -176,12 +175,10 @@ __all__ = [
     "CallgraphFixtureOptions",
     "CliTestContext",
     "ExecutionContextBuilder",
-    "FakeQueryService",
     "GatewayFactory",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
     "ManifestParams",
-    "ModelLike",
     "ProvisionedGateway",
     "ProvisioningConfig",
     "QueryRow",

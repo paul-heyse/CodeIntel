@@ -132,7 +132,7 @@ class _TimeoutProcess(_FakeProcess):
         raise TimeoutError
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_subprocess_runner_success(tmp_path: Path) -> None:
     """SubprocessToolRunner returns decoded output on success."""
 
@@ -153,7 +153,7 @@ async def test_subprocess_runner_success(tmp_path: Path) -> None:
     expect_false(bool(result.stderr))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_subprocess_runner_timeout(tmp_path: Path) -> None:
     """Timeouts yield returncode -1 and timeout message."""
 
@@ -173,7 +173,7 @@ async def test_subprocess_runner_timeout(tmp_path: Path) -> None:
     expect_in("Timeout after", result.stderr)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_subprocess_runner_missing_binary(tmp_path: Path) -> None:
     """Missing executable returns tool-not-found error."""
 
@@ -194,7 +194,7 @@ async def test_subprocess_runner_missing_binary(tmp_path: Path) -> None:
     expect_in("Tool not found", result.stderr)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_subprocess_runner_unexpected_error(tmp_path: Path) -> None:
     """Unexpected exceptions are captured in the result."""
 
@@ -229,7 +229,7 @@ def test_subprocess_runner_is_available() -> None:
     expect_false(runner.is_available("git"))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_scip_indexer_index_success(tmp_path: Path) -> None:
     """Index reports success when output exists."""
     output_path = tmp_path / "index.scip"
@@ -255,7 +255,7 @@ async def test_scip_indexer_index_success(tmp_path: Path) -> None:
     expect_equal(call_cwd, tmp_path)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_scip_indexer_index_failure(tmp_path: Path) -> None:
     """Index returns error when tool fails."""
     output_path = tmp_path / "index.scip"
@@ -273,7 +273,7 @@ async def test_scip_indexer_index_failure(tmp_path: Path) -> None:
     expect_in("index failed", (result.error_message or ""))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_scip_parse_success(tmp_path: Path) -> None:
     """Parse extracts symbols and occurrences from JSON."""
     scip_path = tmp_path / "index.scip"
@@ -316,7 +316,7 @@ async def test_scip_parse_success(tmp_path: Path) -> None:
     expect_equal(result.occurrences[0].path, "file.py")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_scip_parse_handles_invalid_json(tmp_path: Path) -> None:
     """Invalid JSON surfaces as an error."""
     scip_path = tmp_path / "index.scip"
@@ -335,7 +335,7 @@ async def test_scip_parse_handles_invalid_json(tmp_path: Path) -> None:
     expect_in("Failed to process", (result.error_message or ""))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_scip_parse_handles_failure(tmp_path: Path) -> None:
     """Non-zero tool exit returns failure result."""
     scip_path = tmp_path / "index.scip"
@@ -353,7 +353,7 @@ async def test_scip_parse_handles_failure(tmp_path: Path) -> None:
     expect_true((result.error_message or "").startswith("parse failed"))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_type_checker_parses_diagnostics(tmp_path: Path) -> None:
     """Type checker parses diagnostics and counts warnings."""
     data = {
@@ -382,7 +382,7 @@ async def test_type_checker_parses_diagnostics(tmp_path: Path) -> None:
     expect_equal(result.error_count, 0)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_type_checker_handles_parse_failure(tmp_path: Path) -> None:
     """Invalid JSON produces a parse_error diagnostic."""
     runner = StubToolRunner(
@@ -400,7 +400,7 @@ async def test_type_checker_handles_parse_failure(tmp_path: Path) -> None:
     expect_equal(result.diagnostics[0].code, "parse_error")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_coverage_collector_parses_json(tmp_path: Path) -> None:
     """Coverage collector parses coverage json output."""
     coverage_file = tmp_path / ".coverage"
@@ -436,7 +436,7 @@ async def test_coverage_collector_parses_json(tmp_path: Path) -> None:
     expect_equal(coverage.missing_lines, frozenset({3}))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_coverage_collector_missing_file(tmp_path: Path) -> None:
     """Missing coverage json yields empty result."""
     coverage_file = tmp_path / ".coverage"
@@ -449,7 +449,7 @@ async def test_coverage_collector_missing_file(tmp_path: Path) -> None:
     expect_equal(result, {})
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_test_reporter_collects_results(tmp_path: Path) -> None:
     """Parse pytest JSON report into TestResult records."""
     report_path = tmp_path / "report.json"
@@ -475,7 +475,7 @@ async def test_test_reporter_collects_results(tmp_path: Path) -> None:
     expect_equal(test.duration_ms, 20)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_test_reporter_missing_file(tmp_path: Path) -> None:
     """Missing pytest report yields empty tuple."""
     report_path = tmp_path / "report.json"
@@ -486,7 +486,7 @@ async def test_test_reporter_missing_file(tmp_path: Path) -> None:
     expect_equal(results, ())
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_git_history_log_parses_output(tmp_path: Path) -> None:
     """Git log parsing extracts stats and metadata."""
     sha = "a" * 40
@@ -508,7 +508,7 @@ async def test_git_history_log_parses_output(tmp_path: Path) -> None:
     expect_equal(entry.deletions, 3)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_git_history_log_failure(tmp_path: Path) -> None:
     """Non-zero git log result returns empty tuple."""
     runner = StubToolRunner(
@@ -521,7 +521,7 @@ async def test_git_history_log_failure(tmp_path: Path) -> None:
     expect_equal(entries, ())
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_git_history_blame_parses_output(tmp_path: Path) -> None:
     """Git blame output is parsed into a mapping."""
     sha = "b" * 40

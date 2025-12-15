@@ -21,7 +21,6 @@ pytestmark = pytest.mark.xdist_group("cli_shared_flags")
 
 UNKNOWN_OPTION_CASES: list[tuple[list[str], str]] = [
     (["build", "run", "--bogus"], "--bogus"),
-    (["op", "list", "--bogus"], "--bogus"),
     (["dataset", "list", "--bogus"], "--bogus"),
     (["serve", "http", "--bogus"], "--bogus"),
     (["graph", "plugins", "--bogus"], "--bogus"),
@@ -29,13 +28,10 @@ UNKNOWN_OPTION_CASES: list[tuple[list[str], str]] = [
     (["storage", "validate-macros", "--bogus"], "--bogus"),
     (["history", "timeseries", "--bogus"], "--bogus"),
     (["datasets", "list", "--bogus"], "--bogus"),
-    (["ide", "hints", "--bogus"], "--bogus"),
-    (["subsystem", "list", "--bogus"], "--bogus"),
 ]
 
 UNKNOWN_COMMAND_CASES: list[tuple[list[str], str]] = [
     (["build", "nonesuch"], "nonesuch"),
-    (["op", "nonesuch"], "nonesuch"),
     (["dataset", "nonesuch"], "nonesuch"),
     (["serve", "nonesuch"], "nonesuch"),
     (["graph", "nonesuch"], "nonesuch"),
@@ -43,8 +39,6 @@ UNKNOWN_COMMAND_CASES: list[tuple[list[str], str]] = [
     (["storage", "nonesuch"], "nonesuch"),
     (["history", "nonesuch"], "nonesuch"),
     (["datasets", "nonesuch"], "nonesuch"),
-    (["ide", "nonesuch"], "nonesuch"),
-    (["subsystem", "nonesuch"], "nonesuch"),
 ]
 
 

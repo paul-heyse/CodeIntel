@@ -6,10 +6,10 @@ import difflib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, get_args
 
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
-from codeintel.build.schemas.diff import ManifestDiffResult, compute_manifest_diffs
+from codeintel.build.schemas.diff import compute_manifest_diffs
 from codeintel.build.schemas.manifest import SchemaManifest
 from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.cli.core import CliResult
@@ -20,14 +20,17 @@ from codeintel.cli.errors.results import (
     fail_invalid_targets,
     fail_missing_required,
 )
-from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 
 if TYPE_CHECKING:
+    from codeintel.build.schemas.diff import ManifestDiffResult
     from codeintel.build.targets import TargetModule
     from codeintel.cli.context import CommandContext
 
 
 _VALID_MODULES: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics", "export")
+
+_ALLOWED_COLUMN_TYPES: frozenset[str] = frozenset(get_args(ColumnType))
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,44 @@ class _InvalidModuleError(ValueError):
     def __init__(self, module: str) -> None:
         super().__init__(module)
         self.module = module
+
+
+def _parse_column_type(value: object) -> ColumnType:
+    """Parse a ColumnType from an arbitrary input value.
+
+    Parameters
+    ----------
+    value
+        Raw value to parse.
+
+    Returns
+    -------
+    ColumnType
+        Parsed column type.
+
+    Raises
+    ------
+    TypeError
+        If value is not a string.
+    ValueError
+        If value is not a supported ColumnType literal.
+    """
+    if not isinstance(value, str):
+        msg = "Expected string for column type"
+        raise TypeError(msg)
+    if value not in _ALLOWED_COLUMN_TYPES:
+        msg = f"Unsupported column type: {value}"
+        raise ValueError(msg)
+    return cast("ColumnType", value)
+
+
+def _parse_description(value: object, *, ctx: str) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    msg = f"Expected string or null for {ctx}"
+    raise TypeError(msg)
 
 
 def _parse_module(module_raw: str | None) -> TargetModule | None:
@@ -106,11 +147,12 @@ def _parse_column_from_json(col_obj: dict[str, object]) -> Column:
     Column
         Parsed column instance.
     """
+    column_type = _parse_column_type(col_obj.get("type", "VARCHAR"))
     return Column(
         name=str(col_obj.get("name", "")),
-        type=col_obj.get("type", "VARCHAR"),  # type: ignore[arg-type]
+        type=column_type,
         nullable=bool(col_obj.get("nullable", True)),
-        description=col_obj.get("description"),  # type: ignore[arg-type]
+        description=_parse_description(col_obj.get("description"), ctx="column.description"),
     )
 
 
@@ -146,7 +188,7 @@ def _parse_table_from_json(table_obj: dict[str, object]) -> TableSchema:
         name=str(table_obj.get("name", "")),
         columns=columns,
         primary_key=primary_key,
-        description=table_obj.get("description"),  # type: ignore[arg-type]
+        description=_parse_description(table_obj.get("description"), ctx="table.description"),
     )
 
 
