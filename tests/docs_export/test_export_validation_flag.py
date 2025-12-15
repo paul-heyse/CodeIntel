@@ -6,14 +6,12 @@ type adapter caching issues that cause ValidationError when tests run in paralle
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.cli.errors import CLI_EXIT_USAGE
 from tests._helpers import GatewayOptions, provision_gateway_with_repo
-from tests._helpers.builders import FunctionTypesRow, GoidRow, insert_rows
 from tests._helpers.cli import run_cli
 
 if TYPE_CHECKING:
@@ -21,6 +19,12 @@ if TYPE_CHECKING:
 
 
 def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
+    """Create a schema drift scenario for docs export validation.
+
+    The docs export validation path runs contract/schema alignment checks. To
+    exercise the failure branch deterministically, we introduce a column mismatch
+    after the schema is applied.
+    """
     ctx = provision_gateway_with_repo(
         repo_root,
         repo="demo/repo",
@@ -34,80 +38,7 @@ def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
         ),
     )
     con = ctx.gateway.con
-    con.execute("DELETE FROM analytics.function_profile")
-    con.execute("DELETE FROM core.repo_map")
-    con.execute(
-        """
-        INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
-        VALUES ('demo/repo', 'deadbeef', '{}', '{}', CURRENT_TIMESTAMP)
-        """
-    )
-    now = datetime.now(tz=UTC)
-    insert_rows(
-        ctx.gateway,
-        [
-            GoidRow(
-                goid_h128=1,
-                urn="urn:demo",
-                repo="demo/repo",
-                commit="deadbeef",
-                rel_path="src/file.py",
-                kind="function",
-                qualname="demo.fn",
-                start_line=1,
-                end_line=2,
-            )
-        ],
-    )
-    # Insert data with wrong type for function_goid_h128 (string instead of int)
-    # This should trigger validation failure since the schema expects integer
-    con.execute(
-        """
-        INSERT INTO analytics.function_profile (
-            function_goid_h128,
-            urn,
-            repo,
-            commit,
-            rel_path
-        ) VALUES
-            (1, 'urn:demo', 'demo/repo', 'deadbeef', 'src/file.py')
-        """
-    )
-    # Note: The validation now uses generated JSON Schemas which are more permissive
-    # about NULL values. To test validation failure, we rely on the contract validation
-    # catching inconsistencies in the data (e.g., missing required fields in related tables)
-    insert_rows(
-        ctx.gateway,
-        [
-            FunctionTypesRow(
-                function_goid_h128=1,
-                urn="urn:demo",
-                repo="demo/repo",
-                commit="deadbeef",
-                rel_path="src/file.py",
-                language="python",
-                kind="function",
-                qualname="demo.fn",
-                start_line=1,
-                end_line=2,
-                total_params=0,
-                annotated_params=0,
-                unannotated_params=0,
-                param_typed_ratio=0.0,
-                has_return_annotation=False,
-                return_type="",
-                return_type_source="annotation",
-                type_comment=None,
-                param_types_json="{}",
-                fully_typed=False,
-                partial_typed=False,
-                untyped=True,
-                typedness_bucket="untyped",
-                typedness_source="manual",
-                created_at=now,
-            )
-        ],
-    )
+    con.execute("ALTER TABLE analytics.function_profile ADD COLUMN schema_drift_probe INTEGER")
     ctx.close()
 
 

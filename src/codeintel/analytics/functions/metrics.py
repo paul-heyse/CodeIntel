@@ -48,7 +48,6 @@ from codeintel.analytics.utilities.datasets import (
 )
 from codeintel.build.hamilton.contracts.schemas.validation import validate_df
 from codeintel.core.parsing import SourceSpan
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -61,9 +60,9 @@ if TYPE_CHECKING:
         ParamStats,
         TypednessFlags,
     )
-    from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.parsing import ParsedModule
+    from codeintel.core.schemas.generated_types import FunctionMetricsRow, FunctionTypesRow
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -619,25 +618,21 @@ def persist_function_analytics(
 
     validated_metrics = _validated_records(metrics_contract.table_key, list(metrics_rows))
     validated_types = _validated_records(types_contract.table_key, list(types_rows))
-    backend = DuckDBPolicyBackend(gateway)
-    metrics_columns = metrics_contract.schema.column_names() if metrics_contract.schema else ()
-    types_columns = types_contract.schema.column_names() if types_contract.schema else ()
+    backend = gateway.policy
+    backend.ensure_table(metrics_contract.table_key)
     backend.delete_for_snapshot(
-        metrics_contract.table_key, repo=snapshot.repo, commit=snapshot.commit
-    )
-    backend.bulk_insert(
         metrics_contract.table_key,
-        [metrics_contract.to_tuple(row) for row in validated_metrics],
-        columns=metrics_columns,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
+    backend.bulk_insert_mappings(metrics_contract.table_key, validated_metrics)
+    backend.ensure_table(types_contract.table_key)
     backend.delete_for_snapshot(
-        types_contract.table_key, repo=snapshot.repo, commit=snapshot.commit
-    )
-    backend.bulk_insert(
         types_contract.table_key,
-        [types_contract.to_tuple(row) for row in validated_types],
-        columns=types_columns,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
+    backend.bulk_insert_mappings(types_contract.table_key, validated_types)
     validation_rows = result.reporter.to_rows()
     if validation_rows:
         backend.delete_for_snapshot(

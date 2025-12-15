@@ -153,7 +153,13 @@ class TestBuildEdgesForFile:
         expect_equal(edge["coverage_ratio"], EXPECTED_COVERAGE_RATIO_FULL)
 
     def test_handles_partial_coverage(self) -> None:
-        """Verify computes correct coverage ratio for partial coverage."""
+        """Verify computes correct coverage ratio for partial coverage.
+
+        Raises
+        ------
+        AssertionError
+            If the computed coverage ratio is missing.
+        """
         ctx = self._create_edge_context()
         func_row: FunctionRow = {
             "goid_h128": TEST_GOID,
@@ -180,7 +186,11 @@ class TestBuildEdgesForFile:
         edge = result[0]
         # 5 covered lines out of 11 total (10-20 inclusive)
         expected_ratio = 5 / 11
-        expect_true(abs(edge["coverage_ratio"] - expected_ratio) < FLOAT_COMPARISON_TOLERANCE)
+        coverage_ratio = edge["coverage_ratio"]
+        if coverage_ratio is None:
+            message = "Expected coverage_ratio to be populated"
+            raise AssertionError(message)
+        expect_true(abs(coverage_ratio - expected_ratio) < FLOAT_COMPARISON_TOLERANCE)
 
     def test_handles_none_end_line(self) -> None:
         """Verify handles function with None end_line (single line function)."""

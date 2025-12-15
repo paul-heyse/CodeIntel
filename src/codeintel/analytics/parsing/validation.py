@@ -15,12 +15,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypeVar, cast
 
-from codeintel.config.datasets import (
-    FunctionValidationRow,
-    GraphValidationRow,
-    function_validation_row_to_tuple,
-    graph_validation_row_to_tuple,
-)
+from codeintel.config.datasets.columns import serialize_row
+from codeintel.core.schemas.generated_types import FunctionValidationRow, GraphValidationRow
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -109,7 +105,7 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         tuple[tuple[object, ...], ...]
             Accumulated validation rows ready for materialization.
         """
-        return tuple(function_validation_row_to_tuple(r) for r in self.rows)
+        return tuple(serialize_row(r, FUNCTION_VALIDATION_COLS) for r in self.rows)
 
 
 @dataclass
@@ -155,7 +151,7 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         tuple[tuple[object, ...], ...]
             Accumulated validation rows ready for materialization.
         """
-        return tuple(graph_validation_row_to_tuple(r) for r in self.rows)
+        return tuple(serialize_row(r, GRAPH_VALIDATION_COLS) for r in self.rows)
 
 
 def gateway_timestamp() -> datetime:

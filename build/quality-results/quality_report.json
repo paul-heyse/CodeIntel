@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-14T13:35:06.298989+00:00",
+  "generated_at": "2025-12-15T18:17:21.021414+00:00",
   "overall_status": "passed",
-  "duration_seconds": 14.031083,
+  "duration_seconds": 13.153258,
   "results": [
     {
       "name": "guardrails",
@@ -15,9 +15,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-14T13:34:52.267733+00:00",
-      "ended_at": "2025-12-14T13:34:52.503238+00:00",
-      "duration_seconds": 0.235505,
+      "started_at": "2025-12-15T18:17:07.867994+00:00",
+      "ended_at": "2025-12-15T18:17:08.080609+00:00",
+      "duration_seconds": 0.212615,
       "stdout": [],
       "stderr": []
     },
@@ -36,9 +36,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-14T13:34:52.503262+00:00",
-      "ended_at": "2025-12-14T13:34:52.525314+00:00",
-      "duration_seconds": 0.022052,
+      "started_at": "2025-12-15T18:17:08.080630+00:00",
+      "ended_at": "2025-12-15T18:17:08.102801+00:00",
+      "duration_seconds": 0.022171,
       "stdout": [
         "All checks passed!"
       ],
@@ -55,9 +55,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-14T13:34:52.525334+00:00",
-      "ended_at": "2025-12-14T13:34:52.549041+00:00",
-      "duration_seconds": 0.023707,
+      "started_at": "2025-12-15T18:17:08.102818+00:00",
+      "ended_at": "2025-12-15T18:17:08.126895+00:00",
+      "duration_seconds": 0.024077,
       "stdout": [
         "All checks passed!"
       ],
@@ -74,38 +74,11 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-14T13:34:52.549055+00:00",
-      "ended_at": "2025-12-14T13:34:53.359355+00:00",
-      "duration_seconds": 0.8103,
+      "started_at": "2025-12-15T18:17:08.126912+00:00",
+      "ended_at": "2025-12-15T18:17:08.906009+00:00",
+      "duration_seconds": 0.779097,
       "stdout": [],
-      "stderr": [
-        "/home/paul/CodeIntel/.venv/lib/python3.13/site-packages/pandera/_pandas_deprecated.py:146: FutureWarning: Importing pandas-specific classes and functions from the",
-        "top-level pandera module will be **removed in a future version of pandera**.",
-        "If you're using pandera to validate pandas objects, we highly recommend updating",
-        "your import:",
-        "",
-        "```",
-        "# old import",
-        "import pandera as pa",
-        "",
-        "# new import",
-        "import pandera.pandas as pa",
-        "```",
-        "",
-        "If you're using pandera to validate objects from other compatible libraries",
-        "like pyspark or polars, see the supported libraries section of the documentation",
-        "for more information on how to import pandera:",
-        "",
-        "https://pandera.readthedocs.io/en/stable/supported_libraries.html",
-        "",
-        "To disable this warning, set the environment variable:",
-        "",
-        "```",
-        "export DISABLE_PANDERA_IMPORT_WARNING=True",
-        "```",
-        "",
-        "  warnings.warn(_future_warning, FutureWarning)"
-      ]
+      "stderr": []
     },
     {
       "name": "pyright",
@@ -118,9 +91,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-14T13:34:53.359373+00:00",
-      "ended_at": "2025-12-14T13:35:05.653748+00:00",
-      "duration_seconds": 12.294375,
+      "started_at": "2025-12-15T18:17:08.906027+00:00",
+      "ended_at": "2025-12-15T18:17:20.443562+00:00",
+      "duration_seconds": 11.537535,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -136,13 +109,13 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-14T13:35:05.653766+00:00",
-      "ended_at": "2025-12-14T13:35:06.298816+00:00",
-      "duration_seconds": 0.64505,
+      "started_at": "2025-12-15T18:17:20.443583+00:00",
+      "ended_at": "2025-12-15T18:17:21.021252+00:00",
+      "duration_seconds": 0.577669,
       "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",
-        " INFO 0 errors (25 suppressed)"
+        " INFO 0 errors (26 suppressed)"
       ]
     }
   ],

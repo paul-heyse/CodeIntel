@@ -18,11 +18,11 @@ from codeintel.build.schemas import (
     iter_contracts,
     iter_contracts_by_table_key,
 )
-from codeintel.config.datasets import (
-    DatasetContract,
+from codeintel.config.datasets.contracts import (
     get_dataset_contracts,
     get_dataset_contracts_by_table_key,
 )
+from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,

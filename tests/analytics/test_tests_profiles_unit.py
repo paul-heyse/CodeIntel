@@ -38,12 +38,7 @@ from codeintel.analytics.testing.profiles.types import (
     TestProfileOptions,
     TestRecord,
 )
-from codeintel.config.datasets.rows.test import (
-    BEHAVIORAL_COVERAGE_COLUMNS,
-    TEST_PROFILE_COLUMNS,
-    behavioral_coverage_row_to_tuple,
-    serialize_test_profile_row,
-)
+from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.factories import (
     blank_behavioral_coverage_row,
@@ -60,6 +55,33 @@ if TYPE_CHECKING:
         BehavioralLLMRequest,
     )
     from codeintel.storage.gateway import StorageGateway
+
+
+_COLUMNS_BY_TABLE = load_columns_by_table()
+TEST_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.test_profile"])
+BEHAVIORAL_COVERAGE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.behavioral_coverage"])
+
+
+def serialize_test_profile_row(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a test profile mapping using schema-derived column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, TEST_PROFILE_COLUMNS)
+
+
+def behavioral_coverage_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a behavioral coverage mapping using schema-derived column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, BEHAVIORAL_COVERAGE_COLUMNS)
 
 
 @contextmanager

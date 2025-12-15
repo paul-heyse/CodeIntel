@@ -5,16 +5,27 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.rows.profiles import (
-    FUNCTION_PROFILE_COLUMNS,
-    function_profile_row_to_tuple,
-)
+from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from tests._helpers.factories import blank_function_profile_row
 
 if TYPE_CHECKING:
-    from codeintel.config.datasets.rows.profiles import (
-        FunctionProfileRowModel,
-    )
+    from collections.abc import Mapping
+
+    from codeintel.core.schemas.generated_types import FunctionProfileRowModel
+
+
+FUNCTION_PROFILE_COLUMNS = tuple(load_columns_by_table()["analytics.function_profile"])
+
+
+def function_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a function profile mapping using schema-derived column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, FUNCTION_PROFILE_COLUMNS)
 
 
 def test_function_profile_tuple_length_matches_columns() -> None:

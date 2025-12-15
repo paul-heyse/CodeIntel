@@ -33,14 +33,10 @@ from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
 from codeintel.build.plugins._helpers import filter_paths, get_source_root
 from codeintel.build.plugins.graphs.builders.callgraph_options import CallGraphOptions
-from codeintel.config.datasets.rows.graph import (
-    CallGraphNodeRow,
-    call_graph_edge_to_tuple,
-    call_graph_node_to_tuple,
-)
 from codeintel.core.catalog import load_function_index
 from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
+from codeintel.core.schemas.generated_types import CallGraphNodeRow
 from codeintel.graphs.compute.callgraph import (
     EdgeResolutionContext,
     collect_aliases,
@@ -55,10 +51,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.config.datasets.rows.graph import (
-        CallGraphEdgeRow,
-    )
     from codeintel.core.catalog import FunctionSpanIndex
+    from codeintel.core.schemas.generated_types import CallGraphEdgeRow
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -372,10 +366,7 @@ def _persist_nodes(
 
     gateway.policy.ensure_table("graph.call_graph_nodes")
     gateway.policy.delete_for_snapshot("graph.call_graph_nodes", repo=repo, commit=commit)
-    gateway.policy.bulk_insert(
-        "graph.call_graph_nodes",
-        [call_graph_node_to_tuple(node) for node in nodes],
-    )
+    gateway.policy.bulk_insert_mappings("graph.call_graph_nodes", nodes)
     return len(nodes)
 
 
@@ -418,10 +409,7 @@ def _persist_edges(
 
     gateway.policy.ensure_table("graph.call_graph_edges")
     gateway.policy.delete_for_snapshot("graph.call_graph_edges", repo=repo, commit=commit)
-    gateway.policy.bulk_insert(
-        "graph.call_graph_edges",
-        [call_graph_edge_to_tuple(e) for e in serialized],
-    )
+    gateway.policy.bulk_insert_mappings("graph.call_graph_edges", serialized)
     return len(serialized)
 
 

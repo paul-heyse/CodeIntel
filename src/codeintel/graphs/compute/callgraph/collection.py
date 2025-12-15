@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, cast
 import libcst as cst
 from libcst import MetadataWrapper, metadata
 
-from codeintel.config.datasets.rows.graph import CallGraphEdgeRow
+from codeintel.core.schemas.generated_types import CallGraphEdgeRow
 from codeintel.graphs.compute.callgraph.persistence import (
     dedupe_edge_rows,
     default_edge_key,

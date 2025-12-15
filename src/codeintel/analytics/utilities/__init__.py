@@ -42,8 +42,6 @@ from codeintel.analytics.utilities.ast import (
 )
 from codeintel.analytics.utilities.dataframe import to_records
 from codeintel.analytics.utilities.datasets import (
-    AnalyticsDatasetContract,
-    build_analytics_dataset_contracts,
     get_analytics_dataset_contract,
     get_function_ast_features_contract,
     insert_analytics_rows,
@@ -58,10 +56,8 @@ from codeintel.analytics.utilities.type_coercion import (
 )
 
 __all__ = [
-    "AnalyticsDatasetContract",
     "CallTarget",
     "DeleteScope",
-    "build_analytics_dataset_contracts",
     "call_name",
     "get_analytics_dataset_contract",
     "get_function_ast_features_contract",

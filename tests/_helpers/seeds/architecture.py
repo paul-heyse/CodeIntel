@@ -11,7 +11,7 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
-from codeintel.config.datasets.rows.profiles import (
+from codeintel.core.schemas.generated_types import (
     GraphMetricsFunctionsExtRow,
     GraphMetricsFunctionsRow,
     GraphMetricsModulesExtRow,

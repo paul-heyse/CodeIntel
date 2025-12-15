@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, cast, get_args
 
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
 from codeintel.build.schemas.diff import compute_manifest_diffs
-from codeintel.build.schemas.manifest import ExportArtifact, ExportArtifactKind, SchemaManifest
+from codeintel.build.schemas.manifest import ExportArtifact, SchemaManifest
 from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import (
@@ -24,6 +24,7 @@ from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 
 if TYPE_CHECKING:
     from codeintel.build.schemas.diff import ManifestDiffResult
+    from codeintel.build.schemas.manifest import ExportArtifactKind
     from codeintel.build.targets import TargetModule
     from codeintel.cli.context import CommandContext
     from codeintel.storage.gateway.protocol import DuckDBConnection

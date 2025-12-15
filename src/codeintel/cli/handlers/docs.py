@@ -316,7 +316,7 @@ def docs_export_handler(
                     options=export_options,
                 )
             except ExportError as exc:
-                message = exc.detail.detail or exc.detail.title or "Validation failed"
+                message = str(exc) or "Validation failed"
                 return CliResult.fail(
                     validation_error(
                         ValidationErrorCode.INVALID_FORMAT,

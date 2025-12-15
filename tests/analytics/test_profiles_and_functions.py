@@ -55,20 +55,7 @@ from codeintel.analytics.profiles import (
     build_module_profile,
 )
 from codeintel.analytics.testing.profiles import rows as profile_rows
-from codeintel.config.datasets.rows.profiles import (
-    FILE_PROFILE_COLUMNS,
-    FUNCTION_PROFILE_COLUMNS,
-    MODULE_PROFILE_COLUMNS,
-    file_profile_row_to_tuple,
-    function_profile_row_to_tuple,
-    module_profile_row_to_tuple,
-)
-from codeintel.config.datasets.rows.test import (
-    BEHAVIORAL_COVERAGE_COLUMNS,
-    TEST_PROFILE_COLUMNS,
-    behavioral_coverage_row_to_tuple,
-    serialize_test_profile_row,
-)
+from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from tests._helpers import METRICS_PACK, assert_frozen
 from tests._helpers.assertions import (
     assert_coverage_lines,
@@ -106,20 +93,107 @@ from tests._helpers.seeds.core import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
     from pathlib import Path
 
-    from codeintel.config.datasets.rows.profiles import (
+    from codeintel.core.schemas.generated_types import (
+        BehavioralCoverageRowModel,
         FileProfileRowModel,
         FunctionProfileRowModel,
         ModuleProfileRowModel,
-    )
-    from codeintel.config.datasets.rows.test import (
-        BehavioralCoverageRowModel,
         ProfileRowModel,
     )
-    from codeintel.storage.gateway import DuckDBConnection
+    from codeintel.storage.gateway.protocol import DuckDBConnection
     from tests._helpers.context import TestContext
+
+
+_COLUMNS_BY_TABLE = load_columns_by_table()
+FILE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.file_profile"])
+FUNCTION_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.function_profile"])
+MODULE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.module_profile"])
+TEST_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.test_profile"])
+BEHAVIORAL_COVERAGE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.behavioral_coverage"])
+
+
+def function_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a function profile row using schema-derived column order.
+
+    Parameters
+    ----------
+    row
+        Row mapping keyed by column name.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, FUNCTION_PROFILE_COLUMNS)
+
+
+def file_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a file profile row using schema-derived column order.
+
+    Parameters
+    ----------
+    row
+        Row mapping keyed by column name.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, FILE_PROFILE_COLUMNS)
+
+
+def module_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a module profile row using schema-derived column order.
+
+    Parameters
+    ----------
+    row
+        Row mapping keyed by column name.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, MODULE_PROFILE_COLUMNS)
+
+
+def serialize_test_profile_row(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a test profile row using schema-derived column order.
+
+    Parameters
+    ----------
+    row
+        Row mapping keyed by column name.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, TEST_PROFILE_COLUMNS)
+
+
+def behavioral_coverage_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a behavioral coverage row using schema-derived column order.
+
+    Parameters
+    ----------
+    row
+        Row mapping keyed by column name.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, BEHAVIORAL_COVERAGE_COLUMNS)
+
 
 EPSILON = 1e-6
 REL_PATH = "pkg/mod.py"
@@ -304,9 +378,8 @@ def test_coverage_aggregates_and_function_metrics(coverage_ctx: TestContext) -> 
 def _function_rows(repo: str, commit: str) -> list[FunctionProfileRowModel]:
     rows: list[FunctionProfileRowModel] = []
     for base in sample_function_profile_rows(repo, commit):
-        module_name = base.get("module") or base.get("rel_path", "").replace("/", ".").removesuffix(
-            ".py"
-        )
+        rel_path = base.get("rel_path") or ""
+        module_name = (base.get("module") or str(rel_path)).replace("/", ".").removesuffix(".py")
         row = blank_function_profile_row()
         row.update(base)
         row.setdefault("module", module_name)
@@ -343,9 +416,8 @@ def _module_rows(repo: str, commit: str) -> list[ModuleProfileRowModel]:
 def _test_rows(repo: str, commit: str) -> list[ProfileRowModel]:
     rows: list[ProfileRowModel] = []
     for base in sample_test_profile_rows(repo, commit):
-        module_name = base.get("module") or base.get("rel_path", "").replace("/", ".").removesuffix(
-            ".py"
-        )
+        rel_path = base.get("rel_path") or ""
+        module_name = (base.get("module") or str(rel_path)).replace("/", ".").removesuffix(".py")
         row = blank_test_profile_row()
         row.update(base)
         row.setdefault("module", module_name)

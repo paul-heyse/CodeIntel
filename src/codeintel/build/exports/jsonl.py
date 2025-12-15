@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
-from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal
 
@@ -41,6 +40,7 @@ from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+    from pathlib import Path
 
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.gateway import StorageGateway

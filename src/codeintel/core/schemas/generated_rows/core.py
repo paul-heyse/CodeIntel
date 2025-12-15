@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TypedDict
+
+_TYPE_HINTS_DATETIME = datetime
 
 __all__ = [
     "CoreAstMetricsRow",
@@ -32,7 +35,7 @@ class CoreAstMetricsRow(TypedDict):
     avg_depth: float
     max_depth: int
     complexity: float
-    generated_at: str
+    generated_at: datetime
 
 
 class CoreAstNodesRow(TypedDict):
@@ -49,7 +52,7 @@ class CoreAstNodesRow(TypedDict):
     col_offset: int | None
     end_col_offset: int | None
     parent_qualname: str | None
-    decorators: str | None
+    decorators: object | None
     docstring: str | None
     hash: str
 
@@ -60,10 +63,10 @@ class CoreCstNodesRow(TypedDict):
     path: str
     node_id: str
     kind: str
-    span: str
+    span: object
     text_preview: str | None
-    parents: str | None
-    qnames: str | None
+    parents: object | None
+    qnames: object | None
 
 
 class CoreDocstringsRow(TypedDict):
@@ -81,11 +84,11 @@ class CoreDocstringsRow(TypedDict):
     style: str | None
     short_desc: str | None
     long_desc: str | None
-    params: str | None
-    returns: str | None
-    raises: str | None
-    examples: str | None
-    created_at: str
+    params: object | None
+    returns: object | None
+    raises: object | None
+    examples: object | None
+    created_at: datetime
 
 
 class CoreFileStateRow(TypedDict):
@@ -116,13 +119,13 @@ class CoreGoidCrosswalkRow(TypedDict):
     cst_node_id: str | None
     chunk_id: str | None
     symbol_id: str | None
-    updated_at: str
+    updated_at: datetime
 
 
 class CoreGoidsRow(TypedDict):
     """Row model for core.goids."""
 
-    goid_h128: float
+    goid_h128: int
     urn: str
     repo: str
     commit: str
@@ -132,7 +135,7 @@ class CoreGoidsRow(TypedDict):
     qualname: str
     start_line: int | None
     end_line: int | None
-    created_at: str
+    created_at: datetime
 
 
 class CoreIngestRunsRow(TypedDict):
@@ -143,15 +146,15 @@ class CoreIngestRunsRow(TypedDict):
     step: str
     run_id: str
     mode: str
-    started_at: str
-    finished_at: str | None
+    started_at: datetime
+    finished_at: datetime | None
     duration_s: float | None
     rows_inserted: int
     rows_deleted: int
     status: str
     error_kind: str | None
     error_message: str | None
-    datasets: str | None
+    datasets: object | None
     modules_total: int | None
     modules_changed: int | None
     modules_deleted: int | None
@@ -168,8 +171,8 @@ class CoreModulesRow(TypedDict):
     repo: str | None
     commit: str | None
     language: str | None
-    tags: str | None
-    owners: str | None
+    tags: object | None
+    owners: object | None
 
 
 class CoreRepoMapRow(TypedDict):
@@ -177,9 +180,9 @@ class CoreRepoMapRow(TypedDict):
 
     repo: str
     commit: str
-    modules: str | None
-    overlays: str | None
-    generated_at: str | None
+    modules: object | None
+    overlays: object | None
+    generated_at: datetime | None
 
 
 class CoreScipOccurrencesRow(TypedDict):
@@ -194,7 +197,7 @@ class CoreScipOccurrencesRow(TypedDict):
     end_line: int
     end_col: int
     roles: int
-    created_at: str
+    created_at: datetime
 
 
 class CoreScipSymbolsRow(TypedDict):
@@ -205,7 +208,7 @@ class CoreScipSymbolsRow(TypedDict):
     rel_path: str
     symbol: str
     documentation: str | None
-    created_at: str
+    created_at: datetime
 
 
 class CoreTestResultsRow(TypedDict):
@@ -218,7 +221,7 @@ class CoreTestResultsRow(TypedDict):
     outcome: str
     duration: float | None
     longrepr: str | None
-    created_at: str
+    created_at: datetime
 
 
 class CoreTestSummaryRow(TypedDict):
@@ -231,4 +234,4 @@ class CoreTestSummaryRow(TypedDict):
     skipped: int
     error: int
     duration: float | None
-    created_at: str
+    created_at: datetime

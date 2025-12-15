@@ -1,7 +1,7 @@
-"""Generate typed insert methods for table accessors from TABLE_SCHEMAS.
+"""Generate typed insert helpers from the canonical schema provider.
 
-This script reads the TABLE_SCHEMAS registry and generates typed insert method
-mixins for each accessor class (CoreTables, GraphTables, AnalyticsTables).
+This script reads the canonical schema provider and generates typed insert method
+mixins and TypedDict row model modules for each schema prefix.
 
 Usage
 -----
@@ -35,11 +35,11 @@ DUCKDB_TO_PYTHON: Final[dict[str, str]] = {
     "BIGINT": "int",
     "DOUBLE": "float",
     "DECIMAL": "float",
-    "DECIMAL(38,0)": "float",
+    "DECIMAL(38,0)": "int",
     "VARCHAR": "str",
-    "JSON": "str",
-    "TIMESTAMP": "str",
-    "TIMESTAMPTZ": "str",
+    "JSON": "object",
+    "TIMESTAMP": "datetime",
+    "TIMESTAMPTZ": "datetime",
 }
 
 
@@ -121,7 +121,7 @@ def generate_tuple_type(table_key: str) -> str:
     str
         Tuple type annotation like "tuple[int, str, str | None, ...]".
     """
-    schema = get_schema_provider().get_schema(table_key)
+    schema = get_schema_provider().get_table_schema(table_key)
     if schema is None:
         return "tuple[object, ...]"
 
@@ -146,7 +146,7 @@ def generate_docstring_params(table_key: str) -> str:
     str
         Docstring Parameters section text.
     """
-    schema = get_schema_provider().get_schema(table_key)
+    schema = get_schema_provider().get_table_schema(table_key)
     if schema is None:
         return "        rows\n            Iterable of row tuples."
 
@@ -242,7 +242,7 @@ def _build_column_specs(table_key: str) -> list[ColumnSpec]:
     list[ColumnSpec]
         Column specifications derived from the schema provider.
     """
-    schema = get_schema_provider().get_schema(table_key)
+    schema = get_schema_provider().get_table_schema(table_key)
     if schema is None:
         return []
     return [
@@ -305,6 +305,8 @@ def generate_row_models_module(schema_prefix: str, table_keys: Iterable[str]) ->
         '"""Generated row models for insert helpers."""',
         "",
         "from __future__ import annotations",
+        "",
+        "from datetime import datetime",
         "",
         "from typing import TypedDict",
         "",

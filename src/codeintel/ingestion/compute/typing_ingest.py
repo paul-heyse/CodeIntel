@@ -12,16 +12,11 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.rows.analytics import (
-    StaticDiagnosticRow,
-    TypednessRow,
-    static_diagnostic_to_tuple,
-    typedness_row_to_tuple,
-)
+from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
+from codeintel.core.schemas.generated_types import StaticDiagnosticRow, TypednessRow
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.ports.tools import ToolStatus
 
@@ -261,15 +256,11 @@ class TypingIngestStep:
         StepResult
             Execution result with row counts.
         """
-        created_at = datetime.now(UTC)
-
         diag_counts = DiagnosticCounts(pyright={}, pyrefly={}, ruff={})
         if run_diagnostics and self._tools is not None:
             diag_counts = await _collect_diagnostic_counts(Path(repo_root), self._tools)
 
-        typedness_rows, diagnostic_rows = self._process_modules(
-            modules, repo, commit, created_at, diag_counts
-        )
+        typedness_rows, diagnostic_rows = self._process_modules(modules, repo, commit, diag_counts)
 
         return self._persist_rows(typedness_rows, diagnostic_rows, repo, commit)
 
@@ -278,7 +269,6 @@ class TypingIngestStep:
         modules: Sequence[ModuleRecord],
         repo: str,
         commit: str,
-        created_at: datetime,
         diag_counts: DiagnosticCounts,
     ) -> tuple[list[list[object]], list[list[object]]]:
         """Process modules and build rows.
@@ -291,8 +281,6 @@ class TypingIngestStep:
             Repository identifier.
         commit
             Commit identifier.
-        created_at
-            Timestamp.
         diag_counts
             Diagnostic counts from tools.
 
@@ -301,6 +289,10 @@ class TypingIngestStep:
         tuple[list[list[object]], list[list[object]]]
             Typedness rows and diagnostic rows.
         """
+        columns_by_table = load_columns_by_table()
+        typedness_columns = columns_by_table["analytics.typedness"]
+        diagnostics_columns = columns_by_table["analytics.static_diagnostics"]
+
         typedness_rows: list[list[object]] = []
         diagnostic_rows: list[list[object]] = []
 
@@ -337,60 +329,27 @@ class TypingIngestStep:
                 untyped_defs=info.untyped_defs,
                 overlay_needed=overlay_needed,
             )
-            typedness_rows.append(list(typedness_row_to_tuple(row)))
+            typedness_rows.append(list(serialize_row(row, typedness_columns)))
 
-            diagnostic_rows.extend(
-                self._build_diagnostic_rows(module, repo, commit, created_at, diag_counts)
+            diagnostic_rows.append(
+                list(
+                    serialize_row(
+                        StaticDiagnosticRow(
+                            repo=repo,
+                            commit=commit,
+                            rel_path=module.rel_path,
+                            pyright_errors=pyright_errors,
+                            pyrefly_errors=pyrefly_errors,
+                            ruff_errors=ruff_errors,
+                            total_errors=type_error_count,
+                            has_errors=type_error_count > 0,
+                        ),
+                        diagnostics_columns,
+                    )
+                )
             )
 
         return typedness_rows, diagnostic_rows
-
-    @staticmethod
-    def _build_diagnostic_rows(
-        module: ModuleRecord,
-        repo: str,
-        commit: str,
-        created_at: datetime,
-        diag_counts: DiagnosticCounts,
-    ) -> list[list[object]]:
-        """Build diagnostic rows for a module.
-
-        Parameters
-        ----------
-        module
-            Module being processed.
-        repo
-            Repository identifier.
-        commit
-            Commit identifier.
-        created_at
-            Timestamp.
-        diag_counts
-            Diagnostic counts.
-
-        Returns
-        -------
-        list[list[object]]
-            Diagnostic rows.
-        """
-        rows: list[list[object]] = []
-        for tool, counts in [
-            ("pyright", diag_counts.pyright),
-            ("pyrefly", diag_counts.pyrefly),
-            ("ruff", diag_counts.ruff),
-        ]:
-            count = counts.get(module.rel_path, 0)
-            if count > 0:
-                diag_row = StaticDiagnosticRow(
-                    repo=repo,
-                    commit=commit,
-                    rel_path=module.rel_path,
-                    tool=tool,
-                    error_count=count,
-                    created_at=created_at,
-                )
-                rows.append(list(static_diagnostic_to_tuple(diag_row)))
-        return rows
 
     def _persist_rows(
         self,

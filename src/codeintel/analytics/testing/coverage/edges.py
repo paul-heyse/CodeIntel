@@ -12,13 +12,10 @@ from typing import TYPE_CHECKING, TypedDict
 from coverage import Coverage
 from coverage.exceptions import CoverageException
 
-from codeintel.config.datasets import (
-    TEST_CATALOG_UPDATE_GOIDS,
-    TestCoverageEdgeRow,
-    serialize_test_coverage_edge,
-)
+from codeintel.config.datasets.columns import TEST_CATALOG_UPDATE_GOIDS
 from codeintel.core.catalog import CatalogService
 from codeintel.core.paths import normalize_path
+from codeintel.core.schemas.generated_types import TestCoverageEdgeRow
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -524,10 +521,7 @@ def compute_test_coverage_edges(
         "analytics.test_coverage_edges", repo=snapshot.repo, commit=snapshot.commit
     )
     if insert_rows:
-        backend.bulk_insert(
-            "analytics.test_coverage_edges",
-            [serialize_test_coverage_edge(row) for row in insert_rows],
-        )
+        backend.bulk_insert_mappings("analytics.test_coverage_edges", insert_rows)
 
     log.info(
         "test_coverage_edges populated: %d rows for %s@%s",

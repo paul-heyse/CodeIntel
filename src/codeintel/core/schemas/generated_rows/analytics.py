@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TypedDict
+
+_TYPE_HINTS_DATETIME = datetime
 
 __all__ = [
     "AnalyticsBehavioralCoverageRow",
@@ -74,21 +77,21 @@ class AnalyticsBehavioralCoverageRow(TypedDict):
     repo: str
     commit: str
     test_id: str
-    test_goid_h128: float | None
+    test_goid_h128: int | None
     rel_path: str
     qualname: str | None
-    behavior_tags: str
+    behavior_tags: object
     tag_source: str
     heuristic_version: str | None
     llm_model: str | None
     llm_run_id: str | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsCfgBlockMetricsRow(TypedDict):
     """Row model for analytics.cfg_block_metrics."""
 
-    function_goid_h128: float
+    function_goid_h128: int
     repo: str
     commit: str
     block_idx: int
@@ -104,14 +107,14 @@ class AnalyticsCfgBlockMetricsRow(TypedDict):
     in_loop_scc: bool | None
     loop_header: bool | None
     loop_nesting_depth: int | None
-    created_at: str
+    created_at: datetime
     metrics_version: int | None
 
 
 class AnalyticsCfgFunctionMetricsRow(TypedDict):
     """Row model for analytics.cfg_function_metrics."""
 
-    function_goid_h128: float
+    function_goid_h128: int
     repo: str
     commit: str
     rel_path: str
@@ -135,14 +138,14 @@ class AnalyticsCfgFunctionMetricsRow(TypedDict):
     cfg_bc_betweenness_mean: float | None
     cfg_bc_closeness_mean: float | None
     cfg_bc_eigenvector_max: float | None
-    created_at: str
+    created_at: datetime
     metrics_version: int | None
 
 
 class AnalyticsCfgFunctionMetricsExtRow(TypedDict):
     """Row model for analytics.cfg_function_metrics_ext."""
 
-    function_goid_h128: float
+    function_goid_h128: int
     repo: str
     commit: str
     unreachable_block_count: int | None
@@ -154,7 +157,7 @@ class AnalyticsCfgFunctionMetricsExtRow(TypedDict):
     fallthrough_edge_count: int | None
     loop_edge_count: int | None
     entry_exit_simple_paths: int | None
-    created_at: str
+    created_at: datetime
     metrics_version: int | None
 
 
@@ -165,12 +168,12 @@ class AnalyticsConfigDataFlowRow(TypedDict):
     commit: str
     config_key: str
     config_path: str
-    function_goid_h128: float
+    function_goid_h128: int
     usage_kind: str
-    evidence_json: str | None
+    evidence_json: object | None
     call_chain_id: str
-    call_chain_json: str | None
-    created_at: str
+    call_chain_json: object | None
+    created_at: datetime
 
 
 class AnalyticsConfigGraphMetricsKeysRow(TypedDict):
@@ -184,7 +187,7 @@ class AnalyticsConfigGraphMetricsKeysRow(TypedDict):
     betweenness: float | None
     closeness: float | None
     community_id: int | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsConfigGraphMetricsModulesRow(TypedDict):
@@ -198,7 +201,7 @@ class AnalyticsConfigGraphMetricsModulesRow(TypedDict):
     betweenness: float | None
     closeness: float | None
     community_id: int | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsConfigProjectionKeyEdgesRow(TypedDict):
@@ -209,7 +212,7 @@ class AnalyticsConfigProjectionKeyEdgesRow(TypedDict):
     src_key: str
     dst_key: str
     weight: float | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsConfigProjectionModuleEdgesRow(TypedDict):
@@ -220,7 +223,7 @@ class AnalyticsConfigProjectionModuleEdgesRow(TypedDict):
     src_module: str
     dst_module: str
     weight: float | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsConfigValuesRow(TypedDict):
@@ -231,15 +234,15 @@ class AnalyticsConfigValuesRow(TypedDict):
     config_path: str
     format: str
     key: str
-    reference_paths: str | None
-    reference_modules: str | None
+    reference_paths: object | None
+    reference_modules: object | None
     reference_count: int
 
 
 class AnalyticsCoverageFunctionsRow(TypedDict):
     """Row model for analytics.coverage_functions."""
 
-    function_goid_h128: float | None
+    function_goid_h128: int | None
     urn: str | None
     repo: str | None
     commit: str | None
@@ -254,7 +257,7 @@ class AnalyticsCoverageFunctionsRow(TypedDict):
     coverage_ratio: float | None
     tested: bool | None
     untested_reason: str | None
-    created_at: str | None
+    created_at: datetime | None
 
 
 class AnalyticsCoverageLinesRow(TypedDict):
@@ -268,7 +271,7 @@ class AnalyticsCoverageLinesRow(TypedDict):
     is_covered: bool
     hits: int
     context_count: int
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsDataModelFieldsRow(TypedDict):
@@ -282,11 +285,11 @@ class AnalyticsDataModelFieldsRow(TypedDict):
     required: bool
     has_default: bool
     default_expr: str | None
-    constraints_json: str
+    constraints_json: object
     source: str
     rel_path: str
     lineno: int | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsDataModelRelationshipsRow(TypedDict):
@@ -302,10 +305,10 @@ class AnalyticsDataModelRelationshipsRow(TypedDict):
     relationship_kind: str
     multiplicity: str | None
     via: str | None
-    evidence_json: str | None
+    evidence_json: object | None
     rel_path: str
     lineno: int | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsDataModelUsageRow(TypedDict):
@@ -314,11 +317,11 @@ class AnalyticsDataModelUsageRow(TypedDict):
     repo: str
     commit: str
     model_id: str
-    function_goid_h128: float
-    usage_kinds_json: str
-    evidence_json: str | None
-    context_json: str | None
-    created_at: str
+    function_goid_h128: int
+    usage_kinds_json: object
+    evidence_json: object | None
+    context_json: object | None
+    created_at: datetime
 
 
 class AnalyticsDataModelsRow(TypedDict):
@@ -327,21 +330,21 @@ class AnalyticsDataModelsRow(TypedDict):
     repo: str
     commit: str
     model_id: str
-    goid_h128: float | None
+    goid_h128: int | None
     model_name: str
     module: str
     rel_path: str
     model_kind: str
-    base_classes_json: str | None
+    base_classes_json: object | None
     doc_short: str | None
     doc_long: str | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsDfgBlockMetricsRow(TypedDict):
     """Row model for analytics.dfg_block_metrics."""
 
-    function_goid_h128: float
+    function_goid_h128: int
     repo: str
     commit: str
     block_idx: int
@@ -354,14 +357,14 @@ class AnalyticsDfgBlockMetricsRow(TypedDict):
     dfg_bc_eigenvector: float | None
     dfg_in_chain: bool | None
     dfg_in_scc: bool | None
-    created_at: str
+    created_at: datetime
     metrics_version: int | None
 
 
 class AnalyticsDfgFunctionMetricsRow(TypedDict):
     """Row model for analytics.dfg_function_metrics."""
 
-    function_goid_h128: float
+    function_goid_h128: int
     repo: str
     commit: str
     rel_path: str
@@ -384,14 +387,14 @@ class AnalyticsDfgFunctionMetricsRow(TypedDict):
     dfg_bc_betweenness_max: float | None
     dfg_bc_betweenness_mean: float | None
     dfg_bc_eigenvector_max: float | None
-    created_at: str
+    created_at: datetime
     metrics_version: int | None
 
 
 class AnalyticsDfgFunctionMetricsExtRow(TypedDict):
     """Row model for analytics.dfg_function_metrics_ext."""
 
-    function_goid_h128: float
+    function_goid_h128: int
     repo: str
     commit: str
     data_flow_edge_count: int | None
@@ -402,7 +405,7 @@ class AnalyticsDfgFunctionMetricsExtRow(TypedDict):
     use_kind_other_count: int | None
     phi_edge_ratio: float | None
     entry_exit_simple_paths: int | None
-    created_at: str
+    created_at: datetime
     metrics_version: int | None
 
 
@@ -413,11 +416,11 @@ class AnalyticsEntrypointTestsRow(TypedDict):
     commit: str
     entrypoint_id: str
     test_id: str
-    test_goid_h128: float | None
+    test_goid_h128: int | None
     coverage_ratio: float | None
     status: str | None
     duration_ms: float | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsEntrypointsRow(TypedDict):
@@ -428,31 +431,31 @@ class AnalyticsEntrypointsRow(TypedDict):
     entrypoint_id: str
     kind: str
     framework: str | None
-    handler_goid_h128: float
+    handler_goid_h128: int
     handler_urn: str
     handler_rel_path: str
     handler_module: str
     handler_qualname: str
     http_method: str | None
     route_path: str | None
-    status_codes: str | None
+    status_codes: object | None
     auth_required: bool | None
     command_name: str | None
-    arguments_schema: str | None
+    arguments_schema: object | None
     schedule: str | None
     trigger: str | None
-    extra: str | None
+    extra: object | None
     subsystem_id: str | None
     subsystem_name: str | None
-    tags: str | None
-    owners: str | None
+    tags: object | None
+    owners: object | None
     tests_touching: int | None
     failing_tests: int | None
     slow_tests: int | None
     flaky_tests: int | None
     entrypoint_coverage_ratio: float | None
     last_test_status: str | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsExternalDependenciesRow(TypedDict):
@@ -470,11 +473,11 @@ class AnalyticsExternalDependenciesRow(TypedDict):
     risk_score: float | None
     function_count: int
     callsite_count: int
-    modules_json: str
-    usage_modes: str
-    config_keys: str | None
+    modules_json: object
+    usage_modes: object
+    config_keys: object | None
     risk_level: str | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsExternalDependencyCallsRow(TypedDict):
@@ -490,15 +493,15 @@ class AnalyticsExternalDependencyCallsRow(TypedDict):
     criticality: float | None
     risk_score: float | None
     matched_pattern: str | None
-    function_goid_h128: float
+    function_goid_h128: int
     function_urn: str
     rel_path: str
     module: str
     qualname: str
     callsite_count: int
-    modes: str
-    evidence_json: str | None
-    created_at: str
+    modes: object
+    evidence_json: object | None
+    created_at: datetime
 
 
 class AnalyticsFileProfileRow(TypedDict):
@@ -539,9 +542,9 @@ class AnalyticsFileProfileRow(TypedDict):
     tested_function_count: int | None
     untested_function_count: int | None
     tests_touching: int | None
-    tags: str | None
-    owners: str | None
-    created_at: str | None
+    tags: object | None
+    owners: object | None
+    created_at: datetime | None
 
 
 class AnalyticsFunctionAstFeaturesRow(TypedDict):
@@ -549,7 +552,7 @@ class AnalyticsFunctionAstFeaturesRow(TypedDict):
 
     repo: str
     commit: str
-    function_goid_h128: float
+    function_goid_h128: int
     rel_path: str
     qualname: str
     is_async: bool
@@ -560,15 +563,15 @@ class AnalyticsFunctionAstFeaturesRow(TypedDict):
     uses_concurrency_lib: bool
     uses_threading: bool
     uses_asyncio_lib: bool
-    http_client_libs: str
-    http_server_libs: str
-    db_libs: str
-    message_libs: str
+    http_client_libs: object
+    http_server_libs: object
+    db_libs: object
+    message_libs: object
     config_read_count: int
     feature_flag_count: int
-    decorators: str
-    libraries_used: str
-    created_at: str
+    decorators: object
+    libraries_used: object
+    created_at: datetime
 
 
 class AnalyticsFunctionContractsRow(TypedDict):
@@ -576,14 +579,14 @@ class AnalyticsFunctionContractsRow(TypedDict):
 
     repo: str
     commit: str
-    function_goid_h128: float
-    preconditions_json: str | None
-    postconditions_json: str | None
-    raises_json: str | None
-    param_nullability_json: str | None
+    function_goid_h128: int
+    preconditions_json: object | None
+    postconditions_json: object | None
+    raises_json: object | None
+    param_nullability_json: object | None
     return_nullability: str | None
     contract_confidence: float | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsFunctionEffectsRow(TypedDict):
@@ -591,7 +594,7 @@ class AnalyticsFunctionEffectsRow(TypedDict):
 
     repo: str
     commit: str
-    function_goid_h128: float
+    function_goid_h128: int
     is_pure: bool
     uses_io: bool
     touches_db: bool
@@ -602,8 +605,8 @@ class AnalyticsFunctionEffectsRow(TypedDict):
     spawns_threads_or_tasks: bool
     has_transitive_effects: bool
     purity_confidence: float | None
-    effects_json: str | None
-    created_at: str
+    effects_json: object | None
+    created_at: datetime
 
 
 class AnalyticsFunctionHistoryRow(TypedDict):
@@ -611,15 +614,15 @@ class AnalyticsFunctionHistoryRow(TypedDict):
 
     repo: str
     commit: str
-    function_goid_h128: float
+    function_goid_h128: int
     urn: str
     rel_path: str
     module: str
     qualname: str
     created_in_commit: str | None
-    created_at: str | None
+    created_at: datetime | None
     last_modified_commit: str | None
-    last_modified_at: str | None
+    last_modified_at: datetime | None
     age_days: int | None
     commit_count: int
     author_count: int
@@ -627,15 +630,15 @@ class AnalyticsFunctionHistoryRow(TypedDict):
     lines_deleted: int
     churn_score: float
     stability_bucket: str
-    history_window_start: str | None
-    history_window_end: str | None
-    created_at_row: str
+    history_window_start: datetime | None
+    history_window_end: datetime | None
+    created_at_row: datetime
 
 
 class AnalyticsFunctionMetricsRow(TypedDict):
     """Row model for analytics.function_metrics."""
 
-    function_goid_h128: float | None
+    function_goid_h128: int | None
     urn: str | None
     repo: str | None
     commit: str | None
@@ -663,13 +666,13 @@ class AnalyticsFunctionMetricsRow(TypedDict):
     decorator_count: int | None
     has_docstring: bool | None
     complexity_bucket: str | None
-    created_at: str | None
+    created_at: datetime | None
 
 
 class AnalyticsFunctionProfileRow(TypedDict):
     """Row model for analytics.function_profile."""
 
-    function_goid_h128: float | None
+    function_goid_h128: int | None
     urn: str | None
     repo: str | None
     commit: str | None
@@ -696,7 +699,7 @@ class AnalyticsFunctionProfileRow(TypedDict):
     total_params: int | None
     annotated_params: int | None
     return_type: str | None
-    param_types: str | None
+    param_types: object | None
     fully_typed: bool | None
     partial_typed: bool | None
     untyped: bool | None
@@ -718,9 +721,9 @@ class AnalyticsFunctionProfileRow(TypedDict):
     dominant_test_status: str | None
     slow_test_threshold_ms: float | None
     created_in_commit: str | None
-    created_at_history: str | None
+    created_at_history: datetime | None
     last_modified_commit: str | None
-    last_modified_at: str | None
+    last_modified_at: datetime | None
     age_days: int | None
     commit_count: int | None
     author_count: int | None
@@ -751,7 +754,7 @@ class AnalyticsFunctionProfileRow(TypedDict):
     spawns_threads_or_tasks: bool | None
     has_transitive_effects: bool | None
     purity_confidence: float | None
-    param_nullability_json: str | None
+    param_nullability_json: object | None
     return_nullability: str | None
     has_preconditions: bool | None
     has_postconditions: bool | None
@@ -760,20 +763,20 @@ class AnalyticsFunctionProfileRow(TypedDict):
     role: str | None
     framework: str | None
     role_confidence: float | None
-    role_sources_json: str | None
-    tags: str | None
-    owners: str | None
+    role_sources_json: object | None
+    tags: object | None
+    owners: object | None
     doc_short: str | None
     doc_long: str | None
-    doc_params: str | None
-    doc_returns: str | None
-    created_at: str | None
+    doc_params: object | None
+    doc_returns: object | None
+    created_at: datetime | None
 
 
 class AnalyticsFunctionTypesRow(TypedDict):
     """Row model for analytics.function_types."""
 
-    function_goid_h128: float | None
+    function_goid_h128: int | None
     urn: str | None
     repo: str | None
     commit: str | None
@@ -791,13 +794,13 @@ class AnalyticsFunctionTypesRow(TypedDict):
     return_type: str | None
     return_type_source: str | None
     type_comment: str | None
-    param_types: str | None
+    param_types: object | None
     fully_typed: bool | None
     partial_typed: bool | None
     untyped: bool | None
     typedness_bucket: str | None
     typedness_source: str | None
-    created_at: str | None
+    created_at: datetime | None
 
 
 class AnalyticsFunctionValidationRow(TypedDict):
@@ -805,18 +808,18 @@ class AnalyticsFunctionValidationRow(TypedDict):
 
     repo: str
     commit: str
-    function_goid_h128: float
+    function_goid_h128: int
     rel_path: str
     qualname: str
     issue: str
     detail: str
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsGoidRiskFactorsRow(TypedDict):
     """Row model for analytics.goid_risk_factors."""
 
-    function_goid_h128: float | None
+    function_goid_h128: int | None
     urn: str | None
     repo: str | None
     commit: str | None
@@ -843,9 +846,9 @@ class AnalyticsGoidRiskFactorsRow(TypedDict):
     last_test_status: str | None
     risk_score: float | None
     risk_level: str | None
-    tags: str | None
-    owners: str | None
-    created_at: str | None
+    tags: object | None
+    owners: object | None
+    created_at: datetime | None
 
 
 class AnalyticsGraphMetricsFunctionsRow(TypedDict):
@@ -853,7 +856,7 @@ class AnalyticsGraphMetricsFunctionsRow(TypedDict):
 
     repo: str
     commit: str
-    function_goid_h128: float
+    function_goid_h128: int
     call_fan_in: int
     call_fan_out: int
     call_in_degree: int
@@ -864,7 +867,7 @@ class AnalyticsGraphMetricsFunctionsRow(TypedDict):
     call_cycle_member: bool
     call_cycle_id: int | None
     call_layer: int | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsGraphMetricsFunctionsExtRow(TypedDict):
@@ -872,7 +875,7 @@ class AnalyticsGraphMetricsFunctionsExtRow(TypedDict):
 
     repo: str
     commit: str
-    function_goid_h128: float
+    function_goid_h128: int
     call_betweenness: float | None
     call_closeness: float | None
     call_eigenvector: float | None
@@ -890,7 +893,7 @@ class AnalyticsGraphMetricsFunctionsExtRow(TypedDict):
     call_ancestor_count: int | None
     call_descendant_count: int | None
     call_community_id: int | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsGraphMetricsModulesRow(TypedDict):
@@ -911,7 +914,7 @@ class AnalyticsGraphMetricsModulesRow(TypedDict):
     import_layer: int | None
     symbol_fan_in: int
     symbol_fan_out: int
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsGraphMetricsModulesExtRow(TypedDict):
@@ -934,7 +937,7 @@ class AnalyticsGraphMetricsModulesExtRow(TypedDict):
     import_component_size: int | None
     import_scc_id: int | None
     import_scc_size: int | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsGraphStatsRow(TypedDict):
@@ -951,7 +954,7 @@ class AnalyticsGraphStatsRow(TypedDict):
     avg_clustering: float | None
     diameter_estimate: float | None
     avg_shortest_path_estimate: float | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsGraphValidationRow(TypedDict):
@@ -965,8 +968,8 @@ class AnalyticsGraphValidationRow(TypedDict):
     severity: str | None
     rel_path: str | None
     detail: str
-    metadata: str | None
-    created_at: str
+    metadata: object | None
+    created_at: datetime
 
 
 class AnalyticsHistoryTimeseriesRow(TypedDict):
@@ -975,13 +978,13 @@ class AnalyticsHistoryTimeseriesRow(TypedDict):
     repo: str
     entity_kind: str
     entity_stable_id: str
-    function_goid_h128: float | None
+    function_goid_h128: int | None
     module: str | None
     rel_path: str
     language: str
     qualname: str | None
     commit: str
-    commit_ts: str
+    commit_ts: datetime
     loc: int | None
     cyclomatic_complexity: int | None
     coverage_ratio: float | None
@@ -990,7 +993,7 @@ class AnalyticsHistoryTimeseriesRow(TypedDict):
     risk_score: float | None
     risk_level: str | None
     bucket_label: str | None
-    created_at_row: str
+    created_at_row: datetime
 
 
 class AnalyticsHotspotsRow(TypedDict):
@@ -1034,10 +1037,10 @@ class AnalyticsModuleProfileRow(TypedDict):
     in_cycle: bool | None
     role: str | None
     role_confidence: float | None
-    role_sources_json: str | None
-    tags: str | None
-    owners: str | None
-    created_at: str | None
+    role_sources_json: object | None
+    tags: object | None
+    owners: object | None
+    created_at: datetime | None
 
 
 class AnalyticsSemanticRolesFunctionsRow(TypedDict):
@@ -1045,12 +1048,12 @@ class AnalyticsSemanticRolesFunctionsRow(TypedDict):
 
     repo: str
     commit: str
-    function_goid_h128: float
+    function_goid_h128: int
     role: str | None
     framework: str | None
     role_confidence: float | None
-    role_sources_json: str | None
-    created_at: str
+    role_sources_json: object | None
+    created_at: datetime
 
 
 class AnalyticsSemanticRolesModulesRow(TypedDict):
@@ -1061,8 +1064,8 @@ class AnalyticsSemanticRolesModulesRow(TypedDict):
     module: str
     role: str | None
     role_confidence: float | None
-    role_sources_json: str | None
-    created_at: str
+    role_sources_json: object | None
+    created_at: datetime
 
 
 class AnalyticsStaticDiagnosticsRow(TypedDict):
@@ -1087,7 +1090,7 @@ class AnalyticsSubsystemAgreementRow(TypedDict):
     subsystem_id: str | None
     import_community_id: int | None
     agrees: bool | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsSubsystemCoverageCacheRow(TypedDict):
@@ -1114,7 +1117,7 @@ class AnalyticsSubsystemCoverageCacheRow(TypedDict):
     max_functions_covered: float | None
     min_functions_covered: float | None
     function_coverage_ratio: float | None
-    created_at: str | None
+    created_at: datetime | None
 
 
 class AnalyticsSubsystemGraphMetricsRow(TypedDict):
@@ -1129,7 +1132,7 @@ class AnalyticsSubsystemGraphMetricsRow(TypedDict):
     import_betweenness: float | None
     import_closeness: float | None
     import_layer: int | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsSubsystemModulesRow(TypedDict):
@@ -1151,8 +1154,8 @@ class AnalyticsSubsystemProfileCacheRow(TypedDict):
     name: str | None
     description: str | None
     module_count: int | None
-    modules_json: str | None
-    entrypoints_json: str | None
+    modules_json: object | None
+    entrypoints_json: object | None
     internal_edge_count: int | None
     external_edge_count: int | None
     fan_in: int | None
@@ -1168,7 +1171,7 @@ class AnalyticsSubsystemProfileCacheRow(TypedDict):
     import_betweenness: float | None
     import_closeness: float | None
     import_layer: int | None
-    created_at: str | None
+    created_at: datetime | None
 
 
 class AnalyticsSubsystemsRow(TypedDict):
@@ -1180,8 +1183,8 @@ class AnalyticsSubsystemsRow(TypedDict):
     name: str
     description: str | None
     module_count: int
-    modules_json: str
-    entrypoints_json: str | None
+    modules_json: object
+    entrypoints_json: object | None
     internal_edge_count: int
     external_edge_count: int
     fan_in: int
@@ -1191,7 +1194,7 @@ class AnalyticsSubsystemsRow(TypedDict):
     max_risk_score: float | None
     high_risk_function_count: int
     risk_level: str | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsSymbolGraphMetricsFunctionsRow(TypedDict):
@@ -1199,7 +1202,7 @@ class AnalyticsSymbolGraphMetricsFunctionsRow(TypedDict):
 
     repo: str
     commit: str
-    function_goid_h128: float
+    function_goid_h128: int
     symbol_betweenness: float | None
     symbol_closeness: float | None
     symbol_eigenvector: float | None
@@ -1210,7 +1213,7 @@ class AnalyticsSymbolGraphMetricsFunctionsRow(TypedDict):
     symbol_community_id: int | None
     symbol_component_id: int | None
     symbol_component_size: int | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsSymbolGraphMetricsModulesRow(TypedDict):
@@ -1229,7 +1232,7 @@ class AnalyticsSymbolGraphMetricsModulesRow(TypedDict):
     symbol_community_id: int | None
     symbol_component_id: int | None
     symbol_component_size: int | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsTagsIndexRow(TypedDict):
@@ -1237,9 +1240,9 @@ class AnalyticsTagsIndexRow(TypedDict):
 
     tag: str
     description: str | None
-    includes: str | None
-    excludes: str | None
-    matches: str | None
+    includes: object | None
+    excludes: object | None
+    matches: object | None
 
 
 class AnalyticsTestCatalogRow(TypedDict):
@@ -1255,18 +1258,18 @@ class AnalyticsTestCatalogRow(TypedDict):
     kind: str | None
     status: str | None
     duration_ms: float | None
-    markers: str | None
+    markers: object | None
     parametrized: bool | None
     flaky: bool | None
-    created_at: str | None
+    created_at: datetime | None
 
 
 class AnalyticsTestCoverageEdgesRow(TypedDict):
     """Row model for analytics.test_coverage_edges."""
 
     test_id: str | None
-    test_goid_h128: float | None
-    function_goid_h128: float | None
+    test_goid_h128: int | None
+    function_goid_h128: int | None
     urn: str | None
     repo: str | None
     commit: str | None
@@ -1276,13 +1279,13 @@ class AnalyticsTestCoverageEdgesRow(TypedDict):
     executable_lines: int | None
     coverage_ratio: float | None
     last_status: str | None
-    created_at: str | None
+    created_at: datetime | None
 
 
 class AnalyticsTestGraphMetricsFunctionsRow(TypedDict):
     """Row model for analytics.test_graph_metrics_functions."""
 
-    function_goid_h128: float
+    function_goid_h128: int
     repo: str
     commit: str
     tests_degree: int | None
@@ -1293,7 +1296,7 @@ class AnalyticsTestGraphMetricsFunctionsRow(TypedDict):
     proj_clustering: float | None
     proj_betweenness: float | None
     tests_risk_weighted_degree: float | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsTestGraphMetricsTestsRow(TypedDict):
@@ -1310,7 +1313,7 @@ class AnalyticsTestGraphMetricsTestsRow(TypedDict):
     proj_clustering: float | None
     proj_betweenness: float | None
     risk_weighted_degree: float | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsTestProfileRow(TypedDict):
@@ -1319,7 +1322,7 @@ class AnalyticsTestProfileRow(TypedDict):
     repo: str
     commit: str
     test_id: str
-    test_goid_h128: float | None
+    test_goid_h128: int | None
     urn: str | None
     rel_path: str
     module: str | None
@@ -1328,13 +1331,13 @@ class AnalyticsTestProfileRow(TypedDict):
     kind: str | None
     status: str | None
     duration_ms: float | None
-    markers: str | None
+    markers: object | None
     flaky: bool | None
-    last_run_at: str | None
-    functions_covered: str | None
+    last_run_at: datetime | None
+    functions_covered: object | None
     functions_covered_count: int | None
-    primary_function_goids: str | None
-    subsystems_covered: str | None
+    primary_function_goids: object | None
+    subsystems_covered: object | None
     subsystems_covered_count: int | None
     primary_subsystem_id: str | None
     assert_count: int | None
@@ -1355,7 +1358,7 @@ class AnalyticsTestProfileRow(TypedDict):
     tg_proj_weight: float | None
     tg_proj_clustering: float | None
     tg_proj_betweenness: float | None
-    created_at: str
+    created_at: datetime
 
 
 class AnalyticsTypednessRow(TypedDict):
@@ -1365,6 +1368,6 @@ class AnalyticsTypednessRow(TypedDict):
     commit: str
     path: str
     type_error_count: int
-    annotation_ratio: str
+    annotation_ratio: object
     untyped_defs: int
     overlay_needed: bool

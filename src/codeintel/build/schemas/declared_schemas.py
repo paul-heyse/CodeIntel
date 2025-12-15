@@ -1,8 +1,8 @@
-"""Table and composite schema definitions for all DuckDB tables.
+"""Declared table and composite schema definitions for all DuckDB tables.
 
 This module contains:
 - TABLE_SCHEMAS: 79 table/view schema definitions
-- COMPOSITE_SCHEMAS: 4 profile composition schemas
+ - COMPOSITE_SCHEMAS: 4 profile composition schemas
 
 All schema definitions have been migrated from the legacy dataset_contract.py.
 """

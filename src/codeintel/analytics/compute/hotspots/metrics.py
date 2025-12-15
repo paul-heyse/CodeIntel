@@ -13,7 +13,7 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.rows.analytics import HotspotRow, hotspot_row_to_tuple
+from codeintel.core.schemas.generated_types import HotspotRow
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import DuckDBError
 
@@ -277,9 +277,7 @@ def build_hotspots(
 
     gateway.policy.ensure_table("analytics.hotspots")
     if rows:
-        gateway.policy.bulk_insert(
-            "analytics.hotspots", [hotspot_row_to_tuple(row) for row in rows]
-        )
+        gateway.policy.bulk_insert_mappings("analytics.hotspots", rows)
 
     log.info(
         "Hotspots build complete for repo=%s commit=%s: %d files",

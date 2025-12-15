@@ -23,7 +23,7 @@ from codeintel.build.resources import (
     TOOL_EXECUTION,
     TargetResources,
 )
-from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.schemas.declared_schemas import TABLE_SCHEMAS as _DATASET_TABLE_SCHEMAS
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.build.unified_registry import get_unified_registry
 
@@ -31,14 +31,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
 
 log = logging.getLogger(__name__)
-
-# Build schema lookup from the declared schema provider.
-# Uses declared_schema_provider() directly (not unified) because target
-# definitions happen at module import time, before the full system is
-# initialized. Runtime schema resolution uses get_schema_provider() which
-# returns the unified provider with inference capabilities.
-_provider = declared_schema_provider()
-_DATASET_TABLE_SCHEMAS = {ts.table_key: ts for ts in _provider.iter_table_schemas()}
 
 
 MODULES_TARGET = OutputTarget(

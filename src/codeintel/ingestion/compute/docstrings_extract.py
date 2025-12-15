@@ -14,7 +14,8 @@ from typing import TYPE_CHECKING, TypedDict
 
 from docstring_parser import DocstringStyle, ParseError, parse
 
-from codeintel.config.datasets import DocstringRow, docstring_row_to_tuple
+from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
+from codeintel.core.schemas.generated_types import DocstringRow
 from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
 
 if TYPE_CHECKING:
@@ -288,14 +289,17 @@ class DocstringsExtractStep(BaseExtractStep):
             created_at=datetime.now(UTC),
         )
 
-        all_rows: list[list[object]] = []
+        columns = load_columns_by_table().get("core.docstrings", [])
+        if not columns:
+            return StepResult.fail("core.docstrings missing from schema provider")
+        all_rows: list[tuple[object, ...]] = []
         errors: list[str] = []
         processed_paths: list[str] = []
 
         for module, source in self._iter_python_sources(modules):
             processed_paths.append(module.rel_path)
             docstrings = _extract_module_docstrings(module, source, ctx)
-            all_rows.extend(list(docstring_row_to_tuple(ds)) for ds in docstrings)
+            all_rows.extend(serialize_row(ds, columns) for ds in docstrings)
 
         if processed_paths:
             self._storage.delete_by_paths(

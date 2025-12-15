@@ -4,26 +4,25 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from codeintel.config.datasets.rows.profiles import (
-    FILE_PROFILE_COLUMNS,
-    FUNCTION_PROFILE_COLUMNS,
-    MODULE_PROFILE_COLUMNS,
-)
-from codeintel.config.datasets.rows.test import (
-    BEHAVIORAL_COVERAGE_COLUMNS,
-    TEST_PROFILE_COLUMNS,
-)
+from codeintel.config.datasets.columns import load_columns_by_table
 
 if TYPE_CHECKING:
-    from codeintel.config.datasets.rows.profiles import (
+    from codeintel.core.schemas.generated_types import (
+        BehavioralCoverageRowModel,
         FileProfileRowModel,
         FunctionProfileRowModel,
         ModuleProfileRowModel,
-    )
-    from codeintel.config.datasets.rows.test import (
-        BehavioralCoverageRowModel,
         ProfileRowModel,
     )
+
+_COLUMNS_BY_TABLE = load_columns_by_table()
+
+FILE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.file_profile"])
+FUNCTION_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.function_profile"])
+MODULE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.module_profile"])
+
+BEHAVIORAL_COVERAGE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.behavioral_coverage"])
+TEST_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.test_profile"])
 
 
 def blank_file_profile_row() -> FileProfileRowModel:

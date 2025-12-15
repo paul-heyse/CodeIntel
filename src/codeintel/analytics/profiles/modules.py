@@ -23,11 +23,7 @@ from codeintel.analytics.utilities.type_coercion import (
     optional_int,
     optional_str,
 )
-from codeintel.config.datasets import (
-    MODULE_PROFILE_COLUMNS,
-    ModuleProfileRowModel,
-    module_profile_row_to_tuple,
-)
+from codeintel.core.schemas.generated_types import ModuleProfileRowModel
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import (
     bool_not,
@@ -40,7 +36,7 @@ from codeintel.storage.ibis_types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Iterable
 
     import ibis.expr.types as it
     from ibis import BaseBackend
@@ -397,11 +393,6 @@ def build_module_profile(
 
     config = PolicyWriterConfig(
         table_key="analytics.module_profile",
-        columns=MODULE_PROFILE_COLUMNS,
-        serialize_row=cast(
-            "Callable[[Mapping[str, object]], tuple[object, ...]]",
-            module_profile_row_to_tuple,
-        ),
         repo=snapshot.repo,
         commit=snapshot.commit,
     )

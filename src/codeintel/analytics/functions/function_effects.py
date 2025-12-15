@@ -19,7 +19,6 @@ from codeintel.analytics.parsing.ast_cache import (
     load_function_asts,
 )
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
 from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.graphs.runtime import resolve_graph_runtime
@@ -243,15 +242,11 @@ def compute_function_effects(
     )
     rows = _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
 
-    contract = get_analytics_dataset_contract(gateway, "analytics.function_effects")
-    columns = contract.schema.column_names() if contract.schema is not None else ()
-    tuple_rows = [contract.to_tuple(row) for row in rows]
-
-    table = gateway.ibis.table(contract.table_key)
-    where = and_predicates(table.repo == snapshot.repo, table.commit == snapshot.commit)
-    gateway.ibis.delete(contract.table_key, where=where)
-    if tuple_rows:
-        gateway.ibis.insert(contract.table_key, tuple_rows, columns=columns)
+    table_key = "analytics.function_effects"
+    backend = gateway.policy
+    backend.ensure_table(table_key)
+    backend.delete_for_snapshot(table_key, repo=snapshot.repo, commit=snapshot.commit)
+    backend.bulk_insert_mappings(table_key, rows)
     log.info(
         "function_effects populated: %d rows for %s@%s", len(rows), snapshot.repo, snapshot.commit
     )
