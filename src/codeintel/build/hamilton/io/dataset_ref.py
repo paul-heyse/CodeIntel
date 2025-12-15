@@ -6,7 +6,7 @@ explicitly requested via the IO adapters.
 
 Design Principles
 -----------------
-1. DatasetRef is a frozen dataclass for immutability and hashability.
+1. DatasetRef is a NamedTuple for immutability.
 2. References carry metadata but not data - data flows through IbisGateway.
 3. Helper functions bridge target execution results to DatasetRef instances.
 4. repo/commit fields enable snapshot identity for lineage tracking.
@@ -14,15 +14,19 @@ Design Principles
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from types import MappingProxyType
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.config.primitives import SnapshotRef
 
 
-@dataclass(frozen=True)
-class DatasetRef:
+_EMPTY_METADATA: Mapping[str, object] = MappingProxyType({})
+
+
+class DatasetRef(NamedTuple):
     """Reference to a dataset in the build DAG.
 
     This is a lightweight handle that identifies a table without loading data.
@@ -66,7 +70,7 @@ class DatasetRef:
     schema_version: str | None = None
     row_count: int | None = None
     source_target: str | None = None
-    metadata: dict[str, object] = field(default_factory=dict)
+    metadata: Mapping[str, object] = _EMPTY_METADATA
 
     @property
     def schema_name(self) -> str:

@@ -5,18 +5,22 @@ ArtifactRef provides a lightweight reference to non-tabular artifacts
 
 Design Principles
 -----------------
-1. ArtifactRef is a frozen dataclass for immutability and hashability.
+1. ArtifactRef is a NamedTuple for immutability.
 2. References carry metadata but not data.
 3. Used to track file-based outputs and external artifacts.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import TYPE_CHECKING, NamedTuple
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
-@dataclass(frozen=True)
-class ArtifactRef:
+_EMPTY_METADATA: Mapping[str, object] = MappingProxyType({})
+
+class ArtifactRef(NamedTuple):
     """Reference to a non-tabular artifact in the build DAG.
 
     This is a lightweight handle for file-based outputs, indexes, models,
@@ -55,7 +59,7 @@ class ArtifactRef:
     repo: str
     commit: str
     path: str | None = None
-    metadata: dict[str, object] = field(default_factory=dict)
+    metadata: Mapping[str, object] = _EMPTY_METADATA
 
     def with_path(self, new_path: str) -> ArtifactRef:
         """Return a new ref with updated path.

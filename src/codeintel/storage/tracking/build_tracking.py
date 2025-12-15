@@ -548,7 +548,7 @@ class BuildTracking:
                 run_id,
                 r.node_name,
                 r.target,
-                r.node_kind,
+                r.node_type,
                 r.status,
                 r.started_at,
                 r.completed_at,
@@ -566,7 +566,7 @@ class BuildTracking:
                 "run_id",
                 "node_name",
                 "target",
-                "node_kind",
+                "node_type",
                 "status",
                 "started_at",
                 "completed_at",
@@ -597,7 +597,7 @@ class BuildTracking:
             List of node record dictionaries.
         """
         query = """
-            SELECT node_name, target, node_kind, status, started_at,
+            SELECT node_name, target, node_type, status, started_at,
                    completed_at, duration_ms, error, tags
             FROM build.run_nodes
             WHERE run_id = ?
@@ -616,7 +616,7 @@ class BuildTracking:
             {
                 "node_name": row[0],
                 "target": row[1],
-                "node_kind": row[2],
+                "node_type": row[2],
                 "status": row[3],
                 "started_at": row[4],
                 "completed_at": row[5],

@@ -11,10 +11,10 @@ This module implements typing checks as a native Hamilton pipeline with:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.outputs import expected_artifacts
@@ -25,10 +25,7 @@ from codeintel.build.hamilton.native.runner import (
 )
 from codeintel.build.hamilton.native.tools import ToolExecutionResult, ToolExecutionSpec
 from codeintel.build.hamilton.native.tools.executor import execute_tool
-
-if TYPE_CHECKING:
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetGraph
+from codeintel.build.targets import TargetGraph
 
 
 @dataclass(frozen=True)
@@ -40,7 +37,10 @@ class TypingParseResult:
     artifacts: dict[str, str | None]
 
 
-@tag(domain="ingestion", target="typing", node_kind="tool")
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph)
+
+
+@tag(domain="ingestion", target="typing", node_type="tool")
 def tool__typing__pyright(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -84,7 +84,7 @@ def tool__typing__pyright(
     return execute_tool(spec, env)
 
 
-@tag(domain="ingestion", target="typing", node_kind="tool")
+@tag(domain="ingestion", target="typing", node_type="tool")
 def tool__typing__pyrefly(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -130,7 +130,7 @@ def tool__typing__pyrefly(
     return execute_tool(spec, env)
 
 
-@tag(domain="ingestion", target="typing", node_kind="tool")
+@tag(domain="ingestion", target="typing", node_type="tool")
 def tool__typing__ruff(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -176,7 +176,7 @@ def tool__typing__ruff(
     return execute_tool(spec, env)
 
 
-@tag(domain="ingestion", target="typing", node_kind="parse")
+@tag(domain="ingestion", target="typing", node_type="compute")
 def parse__typing(
     tool__typing__pyright: ToolExecutionResult,
     tool__typing__pyrefly: ToolExecutionResult,
@@ -226,7 +226,7 @@ def parse__typing(
     return TypingParseResult(success=True, error=None, artifacts=artifacts)
 
 
-@tag(domain="ingestion", target="typing", node_kind="target")
+@tag(domain="ingestion", target="typing", node_type="materialize")
 def t__typing(
     env: BuildEnv,
     graph: TargetGraph,

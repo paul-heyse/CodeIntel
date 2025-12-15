@@ -14,7 +14,7 @@ Design Principles
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from hamilton import driver
 
@@ -27,6 +27,8 @@ from codeintel.build.hamilton.nodes.node_factory import (
 from codeintel.build.registry import get_target_graph
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from codeintel.build.targets import TargetGraph
 
 
@@ -193,6 +195,19 @@ def build_driver(
     )
 
 
+@runtime_checkable
+class _VariableWithName(Protocol):
+    name: str
+
+
+def _variable_to_name(variable: object) -> str:
+    if isinstance(variable, str):
+        return variable
+    if isinstance(variable, _VariableWithName):
+        return variable.name
+    return str(variable)
+
+
 def list_available_nodes(*, mode: HamiltonNodeMode = "generated") -> list[str]:
     """List all available Hamilton node names.
 
@@ -213,7 +228,8 @@ def list_available_nodes(*, mode: HamiltonNodeMode = "generated") -> list[str]:
     True
     """
     runtime = build_driver(mode=mode)
-    return sorted(runtime.dr.list_available_variables())
+    variables: Iterable[object] = runtime.dr.list_available_variables()
+    return sorted(_variable_to_name(variable) for variable in variables)
 
 
 def target_to_node_name(

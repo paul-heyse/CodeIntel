@@ -26,25 +26,22 @@ from codeintel.analytics.entrypoints.core import (
     EntrypointBuildInputs,
 )
 from codeintel.analytics.resources.features import FeaturesProvider
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import (
     MaterializationContext,
     materialize_rows,
 )
+from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.helpers.module_index import load_module_map
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
-    from codeintel.analytics.ast_features.model import FunctionAstFeatures
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-    from codeintel.build.targets import TargetGraph
-
-
 log = logging.getLogger(__name__)
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+
+if TYPE_CHECKING:
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
 
 
 def _build_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
@@ -80,7 +77,7 @@ def _build_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
     )
 
     # Load function features
-    features_map: Mapping[int, FunctionAstFeatures] = {}
+    features_map: dict[int, FunctionAstFeatures] = {}
     try:
         provider = FeaturesProvider(
             gateway=env.gateway,
@@ -168,7 +165,7 @@ def t__entrypoints(
 
     def compute() -> dict[str, int]:
         # Ensure tables exist
-        backend = DuckDBPolicyBackend(env.gateway)
+        backend = env.gateway.policy
         backend.ensure_table("analytics.entrypoints")
         backend.ensure_table("analytics.entrypoint_tests")
 

@@ -387,10 +387,8 @@ RISK_FACTORS_TARGET = OutputTarget(
     plugin="risk_factors",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.goid_risk_factors"],)),
     dependencies=(
+        "call_graph",
         "function_metrics",
-        "coverage_functions",
-        "hotspots",
-        "typing",
     ),
     description="Composite risk factors per function.",
 )

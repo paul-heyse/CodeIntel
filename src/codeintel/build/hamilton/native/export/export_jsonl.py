@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import Any, TypedDict, cast
 
+import ibis.expr.types as ir
+import pandas as pd
 from hamilton.function_modifiers import tag
 
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.artifact_materializer import (
     ArtifactMaterializationContext,
@@ -24,16 +27,11 @@ from codeintel.build.hamilton.native.runner import (
     create_run_record,
     save_manifest,
 )
+from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
 LOG = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    import ibis.expr.types as ir
-    import pandas as pd
-
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetGraph
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table, pd.DataFrame)
 
 
 class ExportJsonlComputeResult(TypedDict):
@@ -42,7 +40,7 @@ class ExportJsonlComputeResult(TypedDict):
     metadata: dict[str, Any]
 
 
-@tag(domain="export", target="export_jsonl", node_kind="compute")
+@tag(domain="export", target="export_jsonl", node_type="compute")
 def t__export_jsonl__compute(
     env: BuildEnv,
     q__core__modules: ir.Table,
@@ -123,7 +121,7 @@ def t__export_jsonl__compute(
     }
 
 
-@tag(domain="export", target="export_jsonl", node_kind="materialize")
+@tag(domain="export", target="export_jsonl", node_type="materialize")
 def t__export_jsonl(
     env: BuildEnv,
     graph: TargetGraph,

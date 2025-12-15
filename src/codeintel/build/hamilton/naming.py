@@ -96,6 +96,25 @@ def target_node(target_name: str) -> str:
     return to_node_name(target_name, prefix="t")
 
 
+def compute_node(target_name: str) -> str:
+    """Return the canonical compute node name for a target.
+
+    Native targets commonly expose a pure compute node named
+    ``t__<target>__compute`` that returns an Ibis expression.
+
+    Parameters
+    ----------
+    target_name
+        Target name (e.g., "risk_factors").
+
+    Returns
+    -------
+    str
+        Hamilton node name for the compute node.
+    """
+    return f"{target_node(target_name)}__compute"
+
+
 def dataset_node(dataset_key: str) -> str:
     """Convert a dataset key to a Hamilton node identifier.
 
@@ -225,6 +244,7 @@ def node_to_target(node_name: str) -> str | None:
 
 __all__ = [
     "artifact_node",
+    "compute_node",
     "dataframe_node",
     "dataset_node",
     "node_to_target",

@@ -15,7 +15,6 @@ import networkx as nx
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.paths import normalize_path
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -314,7 +313,7 @@ def compute_config_data_flow(
     missing_goids
         Optional set of function GOIDs that could not be parsed.
     """
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.config_data_flow")
     con = gateway.con
     backend.delete_for_snapshot(

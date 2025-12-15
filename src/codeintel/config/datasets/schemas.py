@@ -2293,7 +2293,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("node_name", "VARCHAR", nullable=False, description="Hamilton node name"),
             Column("target", "VARCHAR", description="Parent target if applicable"),
             Column(
-                "node_kind", "VARCHAR", description="Node kind: compute, materialize, tool, etc."
+                "node_type", "VARCHAR", description="Node type: compute, materialize, tool, etc."
             ),
             Column("status", "VARCHAR", nullable=False, description="succeeded, failed, skipped"),
             Column("started_at", "TIMESTAMPTZ", nullable=False),

@@ -15,7 +15,6 @@ import ibis
 from codeintel.analytics.utilities.ast import safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
@@ -195,7 +194,7 @@ def compute_semantic_roles(
     features_map
         Mapping of function GOID to feature vector.
     """
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.semantic_roles_functions")
     backend.ensure_table("analytics.semantic_roles_modules")
 

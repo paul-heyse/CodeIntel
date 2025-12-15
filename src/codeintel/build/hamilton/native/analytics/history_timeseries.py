@@ -15,7 +15,6 @@ which receives configuration through the plugin parameter mechanism.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
@@ -23,20 +22,17 @@ from codeintel.analytics.history.history_timeseries import (
     HISTORY_TIMESERIES_COLS,
     build_history_timeseries_rows,
 )
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import (
     MaterializationContext,
     materialize_rows,
 )
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-
-if TYPE_CHECKING:
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-    from codeintel.build.targets import TargetGraph
-
+from codeintel.build.targets import TargetGraph
 
 log = logging.getLogger(__name__)
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
 
 @tag(domain="analytics", target="history_timeseries", node_type="compute")
@@ -119,7 +115,7 @@ def t__history_timeseries(
 
     def compute() -> dict[str, int]:
         # Ensure table exists
-        backend = DuckDBPolicyBackend(env.gateway)
+        backend = env.gateway.policy
         backend.ensure_table("analytics.history_timeseries")
 
         ctx = MaterializationContext(

@@ -15,14 +15,19 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from codeintel.build.hamilton.introspect import target_graph_from_hamilton
+
 if TYPE_CHECKING:
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.build.hamilton.introspect import GraphSource
 
 
 def list_execution_order(
     runtime: HamiltonRuntime,
     targets: list[str],
+    *,
+    graph_source: GraphSource = "targetgraph",
 ) -> list[str]:
     """Return the execution order for targets.
 
@@ -35,6 +40,8 @@ def list_execution_order(
         Hamilton runtime with driver and graph.
     targets
         Target names to compute execution order for.
+    graph_source
+        Dependency graph source: "targetgraph" (default) or "hamilton".
 
     Returns
     -------
@@ -48,13 +55,16 @@ def list_execution_order(
     >>> "t__modules" in order
     True
     """
-    closure = runtime.graph.topological_order(targets)
+    graph = runtime.graph if graph_source == "targetgraph" else target_graph_from_hamilton(runtime)
+    closure = graph.topological_order(targets)
     return [runtime.target_to_node[t] for t in closure if t in runtime.target_to_node]
 
 
 def list_execution_targets(
     runtime: HamiltonRuntime,
     targets: list[str],
+    *,
+    graph_source: GraphSource = "targetgraph",
 ) -> list[str]:
     """Return the execution order as target names.
 
@@ -64,6 +74,8 @@ def list_execution_targets(
         Hamilton runtime with driver and graph.
     targets
         Target names to compute execution order for.
+    graph_source
+        Dependency graph source: "targetgraph" (default) or "hamilton".
 
     Returns
     -------
@@ -77,12 +89,15 @@ def list_execution_targets(
     >>> "modules" in order
     True
     """
-    return list(runtime.graph.topological_order(targets))
+    graph = runtime.graph if graph_source == "targetgraph" else target_graph_from_hamilton(runtime)
+    return list(graph.topological_order(targets))
 
 
 def get_dag_info(
     runtime: HamiltonRuntime,
     targets: list[str],
+    *,
+    graph_source: GraphSource = "targetgraph",
 ) -> dict[str, Any]:
     """Get detailed DAG information for targets.
 
@@ -92,6 +107,8 @@ def get_dag_info(
         Hamilton runtime with driver and graph.
     targets
         Target names to get DAG info for.
+    graph_source
+        Dependency graph source: "targetgraph" (default) or "hamilton".
 
     Returns
     -------
@@ -105,13 +122,14 @@ def get_dag_info(
     >>> "nodes" in info
     True
     """
-    closure = runtime.graph.topological_order(targets)
+    graph = runtime.graph if graph_source == "targetgraph" else target_graph_from_hamilton(runtime)
+    closure = graph.topological_order(targets)
 
     nodes: list[dict[str, Any]] = []
     edges: list[dict[str, str]] = []
 
     for target_name in closure:
-        target = runtime.graph.get(target_name)
+        target = graph.get(target_name)
         node_name = runtime.target_to_node.get(target_name)
 
         node_info: dict[str, Any] = {
@@ -149,6 +167,7 @@ def export_dag_json(
     targets: list[str],
     *,
     indent: int | None = 2,
+    graph_source: GraphSource = "targetgraph",
 ) -> str:
     """Export DAG information as JSON string.
 
@@ -160,6 +179,8 @@ def export_dag_json(
         Target names to export DAG for.
     indent
         JSON indentation level (None for compact).
+    graph_source
+        Dependency graph source: "targetgraph" (default) or "hamilton".
 
     Returns
     -------
@@ -175,7 +196,7 @@ def export_dag_json(
     >>> "nodes" in data
     True
     """
-    info = get_dag_info(runtime, targets)
+    info = get_dag_info(runtime, targets, graph_source=graph_source)
     return json.dumps(info, indent=indent)
 
 
@@ -184,6 +205,7 @@ def export_execution_json(
     *,
     targets: list[str],
     env: BuildEnv,
+    graph_source: GraphSource = "targetgraph",
 ) -> str:
     """Export DAG execution plan as JSON.
 
@@ -198,6 +220,8 @@ def export_execution_json(
         Target names to compute.
     env
         Build environment for input resolution.
+    graph_source
+        Dependency graph source: "targetgraph" (default) or "hamilton".
 
     Returns
     -------
@@ -213,11 +237,11 @@ def export_execution_json(
     >>> "execution_order" in data
     True
     """
-    dag_info = get_dag_info(runtime, targets)
+    dag_info = get_dag_info(runtime, targets, graph_source=graph_source)
 
     execution_info = {
         **dag_info,
-        "execution_order": list_execution_order(runtime, targets),
+        "execution_order": list_execution_order(runtime, targets, graph_source=graph_source),
         "inputs": {
             "env": {
                 "repo": env.repo,
@@ -234,6 +258,8 @@ def export_execution_json(
 def export_dag_mermaid(
     runtime: HamiltonRuntime,
     targets: list[str],
+    *,
+    graph_source: GraphSource = "targetgraph",
 ) -> str:
     """Export DAG as Mermaid graph definition.
 
@@ -246,6 +272,8 @@ def export_dag_mermaid(
         Hamilton runtime with driver and graph.
     targets
         Target names to export DAG for.
+    graph_source
+        Dependency graph source: "targetgraph" (default) or "hamilton".
 
     Returns
     -------
@@ -259,7 +287,7 @@ def export_dag_mermaid(
     >>> mermaid.startswith("graph TD")
     True
     """
-    info = get_dag_info(runtime, targets)
+    info = get_dag_info(runtime, targets, graph_source=graph_source)
     lines = ["graph TD"]
 
     for node in info["nodes"]:
@@ -280,6 +308,8 @@ def export_dag_mermaid(
 def export_dag_dot(
     runtime: HamiltonRuntime,
     targets: list[str],
+    *,
+    graph_source: GraphSource = "targetgraph",
 ) -> str:
     """Export DAG as Graphviz DOT definition.
 
@@ -292,6 +322,8 @@ def export_dag_dot(
         Hamilton runtime with driver and graph.
     targets
         Target names to export DAG for.
+    graph_source
+        Dependency graph source: "targetgraph" (default) or "hamilton".
 
     Returns
     -------
@@ -305,7 +337,7 @@ def export_dag_dot(
     >>> dot.startswith("digraph G {")
     True
     """
-    info = get_dag_info(runtime, targets)
+    info = get_dag_info(runtime, targets, graph_source=graph_source)
     lines = ["digraph G {", "  rankdir=TB;"]
 
     for node in info["nodes"]:

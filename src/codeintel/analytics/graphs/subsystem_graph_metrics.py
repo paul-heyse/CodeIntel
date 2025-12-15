@@ -19,7 +19,6 @@ from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.repositories.subsystems import SubsystemRepository
 
 if TYPE_CHECKING:
@@ -114,7 +113,7 @@ def compute_subsystem_graph_metrics(
         snapshot,
         runtime_opts,
     )
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.subsystem_graph_metrics")
     graph_ctx = resolve_graph_context(
         GraphContextSpec(

@@ -19,7 +19,6 @@ from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -28,6 +27,7 @@ if TYPE_CHECKING:
         ProjectionMetrics,
     )
     from codeintel.graphs.runtime.context import GraphContext
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
     from codeintel.storage.gateway import StorageGateway
 
 NODE_ID_INDEX = 2
@@ -171,7 +171,7 @@ def compute_config_graph_metrics(
         snapshot,
         runtime_opts,
     )
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.config_graph_metrics_keys")
     backend.ensure_table("analytics.config_graph_metrics_modules")
     backend.ensure_table("analytics.config_projection_key_edges")

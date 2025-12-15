@@ -15,6 +15,7 @@ from codeintel.build.assets.fingerprinting import (
     TableVersionInput,
     compute_table_schema_hash,
 )
+from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.storage.exceptions import StorageError
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import and_predicates
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.io.dataset_ref import DatasetRef
     from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.targets import TargetGraph
+    from codeintel.core.schemas.provider import SchemaProvider
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +63,13 @@ def _impl_kind(plugin_name: str) -> str:
     if plugin_name.startswith("native:"):
         return "native"
     return "wrapper"
+
+
+def _resolve_schema_provider(env: BuildEnv) -> SchemaProvider:
+    provider = env.gateway.policy.schema_provider
+    if provider is not None:
+        return provider
+    return declared_schema_provider()
 
 
 def _try_table_row_count_for_snapshot(
@@ -113,7 +122,8 @@ def _dataset_version_record(
     if row_count is None:
         row_count = _try_table_row_count_for_snapshot(ctx.env, table_key=dataset.table_key)
 
-    schema_hash = compute_table_schema_hash(dataset.table_key)
+    schema_provider = _resolve_schema_provider(ctx.env)
+    schema_hash = compute_table_schema_hash(dataset.table_key, schema_provider=schema_provider)
     version_input = TableVersionInput(
         table_key=dataset.table_key,
         schema_hash=schema_hash,

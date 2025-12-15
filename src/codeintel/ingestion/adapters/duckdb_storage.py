@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.config.datasets import load_columns_by_table
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.ibis_types import and_predicates, ibis_bool, isin_values
 
 if TYPE_CHECKING:
@@ -82,7 +81,7 @@ class DuckDBStorageAdapter(IngestStoragePort):
     def __init__(self, gateway: StorageGateway) -> None:
         """Initialize adapter with a storage gateway."""
         self._gateway = gateway
-        self._backend = DuckDBPolicyBackend(gateway)
+        self._backend = gateway.policy
 
     def initialize(self) -> None:
         """Initialize the adapter (no-op, gateway is passed in constructor)."""

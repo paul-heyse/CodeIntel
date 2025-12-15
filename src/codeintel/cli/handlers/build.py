@@ -16,6 +16,7 @@ from codeintel.build.assets.impact import compute_impact
 from codeintel.build.config import load_build_config
 from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
 from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.introspect import parse_graph_source
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
     export_dag_json,
@@ -782,6 +783,10 @@ def build_graph_handler(
     all_targets = ctx.params.get_bool("all_targets")
     output_file = ctx.params.get_str("output_file")
     output_format = ctx.params.get_str("output_format") or "json"
+    try:
+        graph_source = parse_graph_source(ctx.params.get_str("graph_source") or "targetgraph")
+    except ValueError as exc:
+        return fail_invalid_target_selection(str(exc))
 
     try:
         goals = _resolve_goals(
@@ -795,14 +800,14 @@ def build_graph_handler(
 
     hamilton_runtime = build_driver(mode="generated")
 
-    dag_info = get_dag_info(hamilton_runtime, goals)
+    dag_info = get_dag_info(hamilton_runtime, goals, graph_source=graph_source)
 
     if output_format == "mermaid":
-        dag_output = export_dag_mermaid(hamilton_runtime, goals)
+        dag_output = export_dag_mermaid(hamilton_runtime, goals, graph_source=graph_source)
     elif output_format == "dot":
-        dag_output = export_dag_dot(hamilton_runtime, goals)
+        dag_output = export_dag_dot(hamilton_runtime, goals, graph_source=graph_source)
     else:
-        dag_output = export_dag_json(hamilton_runtime, goals)
+        dag_output = export_dag_json(hamilton_runtime, goals, graph_source=graph_source)
 
     if output_file:
         Path(output_file).write_text(dag_output, encoding="utf-8")
@@ -844,6 +849,10 @@ def build_plan_handler(
 
     graph = get_target_graph()
     plan_args = _parse_plan_args(ctx)
+    try:
+        graph_source = parse_graph_source(ctx.params.get_str("graph_source") or "targetgraph")
+    except ValueError as exc:
+        return fail_invalid_target_selection(str(exc))
 
     try:
         goals = _resolve_goals(
@@ -890,6 +899,7 @@ def build_plan_handler(
             graph=graph,
             requested=tuple(goals),
             mode="generated",
+            graph_source=graph_source,
         )
 
     result = BuildPlanResult(
@@ -934,6 +944,10 @@ def build_explain_handler(
         return fail_project_error("build", str(e))
 
     graph = get_target_graph()
+    try:
+        graph_source = parse_graph_source(ctx.params.get_str("graph_source") or "targetgraph")
+    except ValueError as exc:
+        return fail_invalid_target_selection(str(exc))
 
     target = ctx.params.get_str("target")
     if not target:
@@ -981,6 +995,7 @@ def build_explain_handler(
             graph=graph,
             requested=(target,),
             mode="generated",
+            graph_source=graph_source,
         )
 
     entry = plan.get_entry(target)

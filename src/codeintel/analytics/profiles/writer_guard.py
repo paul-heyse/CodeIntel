@@ -14,8 +14,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
@@ -64,7 +62,7 @@ def write_rows_via_policy_backend(
     if not rows_list:
         return 0
 
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
 
     backend.delete_for_snapshot(config.table_key, repo=config.repo, commit=config.commit)
 

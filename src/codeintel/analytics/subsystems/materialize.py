@@ -24,7 +24,6 @@ from codeintel.analytics.subsystems.edge_stats import (
 )
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -106,7 +105,7 @@ def build_subsystems(
         Subsystem inference options.
     """
     opts = options or SubsystemOptions()
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.subsystems")
     backend.ensure_table("analytics.subsystem_modules")
     backend.delete_for_snapshot("analytics.subsystems", repo=snapshot.repo, commit=snapshot.commit)
@@ -228,7 +227,7 @@ def refresh_subsystem_profile_cache(gateway: StorageGateway, *, repo: str, commi
     commit:
         Commit identifier.
     """
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.subsystem_profile_cache")
     con = gateway.con
     con.execute(
@@ -260,7 +259,7 @@ def refresh_subsystem_coverage_cache(gateway: StorageGateway, *, repo: str, comm
     commit:
         Commit identifier.
     """
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.subsystem_coverage_cache")
     con = gateway.con
     con.execute(

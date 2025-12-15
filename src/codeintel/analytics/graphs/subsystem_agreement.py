@@ -6,8 +6,6 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
@@ -16,7 +14,7 @@ log = logging.getLogger(__name__)
 
 def compute_subsystem_agreement(gateway: StorageGateway, *, repo: str, commit: str) -> None:
     """Compare subsystem assignments with import community labels."""
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.subsystem_agreement")
     con = gateway.con
     rows = con.execute(

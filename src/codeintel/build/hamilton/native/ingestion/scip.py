@@ -8,10 +8,9 @@ This module implements SCIP indexing as a native Hamilton pipeline with:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from hamilton.function_modifiers import tag
 
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.outputs import expected_artifacts
@@ -22,13 +21,12 @@ from codeintel.build.hamilton.native.runner import (
 )
 from codeintel.build.hamilton.native.tools import ToolExecutionResult, ToolExecutionSpec
 from codeintel.build.hamilton.native.tools.executor import execute_tool
+from codeintel.build.targets import TargetGraph
 
-if TYPE_CHECKING:
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetGraph
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph)
 
 
-@tag(domain="ingestion", target="scip", node_kind="tool")
+@tag(domain="ingestion", target="scip", node_type="tool")
 def tool__scip(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -76,7 +74,7 @@ def tool__scip(
     return execute_tool(spec, env)
 
 
-@tag(domain="ingestion", target="scip", node_kind="parse")
+@tag(domain="ingestion", target="scip", node_type="compute")
 def parse__scip(
     env: BuildEnv,
     tool__scip: ToolExecutionResult,
@@ -113,7 +111,7 @@ def parse__scip(
     }
 
 
-@tag(domain="ingestion", target="scip", node_kind="target")
+@tag(domain="ingestion", target="scip", node_type="materialize")
 def t__scip(
     env: BuildEnv,
     graph: TargetGraph,

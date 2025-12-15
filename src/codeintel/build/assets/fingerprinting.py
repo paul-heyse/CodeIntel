@@ -17,8 +17,12 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.schemas import TABLE_SCHEMAS
+from codeintel.core.schemas.hashing import schema_hash
+
+if TYPE_CHECKING:
+    from codeintel.core.schemas.provider import SchemaProvider
 
 
 class FingerprintMode(Enum):
@@ -228,22 +232,15 @@ class FingerprintPolicy:
 DEFAULT_FINGERPRINT_POLICY = FingerprintPolicy(mode=FingerprintMode.STABLE_V1)
 
 
-def _canonical_type(type_str: str) -> str:
-    upper = type_str.upper()
-    if upper in {"TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"}:
-        return "TIMESTAMPTZ"
-    if upper.startswith("DECIMAL") or upper == "BIGINT":
-        return "BIGINT"
-    return upper
-
-
-def compute_table_schema_hash(table_key: str) -> str | None:
+def compute_table_schema_hash(table_key: str, *, schema_provider: SchemaProvider) -> str | None:
     """Return a deterministic schema hash for a known dataset table_key.
 
     Parameters
     ----------
     table_key
         Fully-qualified dataset table key (e.g., "analytics.function_metrics").
+    schema_provider
+        Schema provider used to resolve the table schema.
 
     Returns
     -------
@@ -251,14 +248,10 @@ def compute_table_schema_hash(table_key: str) -> str | None:
         SHA256 hex digest of (column_name:type) pairs, or None if table_key
         is not registered or has no schema (e.g., view).
     """
-    schema = TABLE_SCHEMAS.get(table_key)
+    schema = schema_provider.get_table_schema(table_key)
     if schema is None:
         return None
-    if schema.columns is None:
-        return None
-    parts = [f"{column.name}:{_canonical_type(column.type)}" for column in schema.columns]
-    normalized = "|".join(parts)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return schema_hash(schema)
 
 
 def compute_fast_version_hash(*parts: object) -> str:
