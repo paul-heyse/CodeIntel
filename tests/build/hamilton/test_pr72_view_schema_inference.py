@@ -6,6 +6,8 @@ view schema inference as part of the v2 manifest format.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import duckdb
 import pytest
 
@@ -22,6 +24,10 @@ from tests._helpers.assertions.expectation_assertions import (
 EXPECTED_SIMPLE_VIEW_COLUMNS = 2
 EXPECTED_MULTI_TYPE_COLUMNS = 6
 EXPECTED_EXPRESSION_VIEW_COLUMNS = 4
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class TestNormalizeDuckdbType:
@@ -216,7 +222,7 @@ class TestInferViewSchemaEdgeCases:
 
 
 @pytest.fixture
-def duckdb_con() -> duckdb.DuckDBPyConnection:
+def duckdb_con() -> Iterator[duckdb.DuckDBPyConnection]:
     """Provide an in-memory DuckDB connection for testing.
 
     Yields
@@ -224,8 +230,6 @@ def duckdb_con() -> duckdb.DuckDBPyConnection:
     duckdb.DuckDBPyConnection
         In-memory DuckDB connection.
     """
-    import duckdb  # noqa: PLC0415
-
     con = duckdb.connect(":memory:")
     yield con
     con.close()

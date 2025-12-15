@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.profiles.writer_guard import (
     PolicyWriterConfig,
@@ -26,19 +26,11 @@ from codeintel.analytics.testing.profiles.types import (
     TestProfileOptions,
 )
 from codeintel.analytics.utilities.type_coercion import optional_int
-from codeintel.config.datasets import (
-    BEHAVIORAL_COVERAGE_COLUMNS,
-    TEST_PROFILE_COLUMNS,
-    BehavioralCoverageRowModel,
-    ProfileRowModel,
-    behavioral_coverage_row_to_tuple,
-    serialize_test_profile_row,
-)
+from codeintel.core.schemas.generated_types import BehavioralCoverageRowModel, ProfileRowModel
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-    from codeintel.analytics.profiles.writer_guard import SerializeRow
     from codeintel.analytics.testing.profiles.types import (
         FunctionCoverageEntryProtocol,
         SubsystemCoverageEntryProtocol,
@@ -250,8 +242,6 @@ def write_test_profile_rows(
         return 0
     config = PolicyWriterConfig(
         table_key="analytics.test_profile",
-        columns=TEST_PROFILE_COLUMNS,
-        serialize_row=cast("SerializeRow", serialize_test_profile_row),
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
@@ -330,8 +320,6 @@ def write_behavioral_coverage_rows(
         return 0
     config = PolicyWriterConfig(
         table_key="analytics.behavioral_coverage",
-        columns=BEHAVIORAL_COVERAGE_COLUMNS,
-        serialize_row=cast("SerializeRow", behavioral_coverage_row_to_tuple),
         repo=snapshot.repo,
         commit=snapshot.commit,
     )

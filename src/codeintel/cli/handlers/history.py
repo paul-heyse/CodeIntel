@@ -22,14 +22,12 @@ from codeintel.analytics.history.history_timeseries import (
     HistoryTimeseriesOptions,
     build_history_timeseries_rows,
 )
-from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult
 from codeintel.cli.errors.results import fail_history_error
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import (
     DuckDBError,
     DuckDBInvalidInputException,
@@ -94,9 +92,9 @@ def _write_synthetic_history_rows(
     snapshot_resolver: Callable[[str], StorageGateway],
 ) -> None:
     """Backfill history_timeseries when no rows exist by projecting profiles."""
-    contract = get_analytics_dataset_contract(gateway, "analytics.history_timeseries")
-    columns = contract.schema.column_names() if contract.schema is not None else ()
-    backend = DuckDBPolicyBackend(gateway)
+    table_key = "analytics.history_timeseries"
+    backend = gateway.policy
+    backend.ensure_table(table_key)
     synthetic_rows: list[dict[str, object]] = []
 
     for commit in commits:
@@ -156,15 +154,11 @@ def _write_synthetic_history_rows(
 
     for commit in commits:
         backend.delete_for_snapshot(
-            contract.table_key,
+            table_key,
             repo=repo,
             commit=commit,
         )
-    backend.bulk_insert(
-        contract.table_key,
-        [contract.to_tuple(row) for row in synthetic_rows],
-        columns=columns,
-    )
+    backend.bulk_insert_mappings(table_key, synthetic_rows)
 
 
 def _build_db_resolver(
@@ -229,7 +223,8 @@ def _persist_history_timeseries_rows(
     if not rows:
         return
 
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
+    backend.ensure_table("analytics.history_timeseries")
     for commit in commits:
         backend.delete_for_snapshot(
             "analytics.history_timeseries",

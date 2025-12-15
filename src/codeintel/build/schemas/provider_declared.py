@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.contracts import get_table_schemas
+from codeintel.build.schemas.declared_schemas import TABLE_SCHEMAS
 from codeintel.core.schemas.provider import MappingSchemaProvider
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ def declared_schema_provider() -> SchemaProvider:
     SchemaProvider
         Schema provider exposing table schemas from declared dataset contracts.
     """
-    return MappingSchemaProvider(get_table_schemas())
+    return MappingSchemaProvider(TABLE_SCHEMAS)
 
 
 __all__ = ["declared_schema_provider"]

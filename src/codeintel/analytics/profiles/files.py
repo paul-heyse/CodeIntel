@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import ibis
 
@@ -22,11 +22,7 @@ from codeintel.analytics.utilities.type_coercion import (
     optional_int,
     optional_str,
 )
-from codeintel.config.datasets import (
-    FILE_PROFILE_COLUMNS,
-    FileProfileRowModel,
-    file_profile_row_to_tuple,
-)
+from codeintel.core.schemas.generated_types import FileProfileRowModel
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import (
     bool_not,
@@ -39,7 +35,7 @@ from codeintel.storage.ibis_types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Iterable
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
@@ -361,11 +357,6 @@ def build_file_profile(
 
     config = PolicyWriterConfig(
         table_key="analytics.file_profile",
-        columns=FILE_PROFILE_COLUMNS,
-        serialize_row=cast(
-            "Callable[[Mapping[str, object]], tuple[object, ...]]",
-            file_profile_row_to_tuple,
-        ),
         repo=snapshot.repo,
         commit=snapshot.commit,
     )

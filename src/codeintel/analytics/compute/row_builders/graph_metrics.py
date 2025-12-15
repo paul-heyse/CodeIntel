@@ -10,7 +10,7 @@ import ibis
 from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.utilities.dataframe import to_records
-from codeintel.config.datasets import (
+from codeintel.core.schemas.generated_types import (
     GraphMetricsFunctionsRow,
     GraphMetricsModulesRow,
 )

@@ -80,7 +80,7 @@ from tests._helpers.assertions import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.config.datasets.rows.graph import CallGraphEdgeRow
+    from codeintel.core.schemas.generated_types import CallGraphEdgeRow
 
 
 EXPECTED_EDGE_COUNT_ONE: Final[int] = 1

@@ -240,9 +240,18 @@ class TestSchemaManifestV2:
         expect_in("tables", json_obj)
         expect_in("views", json_obj)
         expect_in("artifacts", json_obj)
-        expect_equal(len(json_obj["tables"]), 1)
-        expect_equal(len(json_obj["views"]), 1)
-        expect_equal(len(json_obj["artifacts"]), 1)
+        tables = json_obj["tables"]
+        views = json_obj["views"]
+        artifacts = json_obj["artifacts"]
+        if not isinstance(tables, list):
+            pytest.fail("Expected tables to be a list")
+        if not isinstance(views, list):
+            pytest.fail("Expected views to be a list")
+        if not isinstance(artifacts, list):
+            pytest.fail("Expected artifacts to be a list")
+        expect_equal(len(tables), 1)
+        expect_equal(len(views), 1)
+        expect_equal(len(artifacts), 1)
 
     @staticmethod
     def test_v2_manifest_to_json_omits_empty(

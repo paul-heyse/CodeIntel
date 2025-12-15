@@ -10,7 +10,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
-from codeintel.analytics.utilities.datasets import get_analytics_dataset_contract
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.ibis_types import and_predicates
 
@@ -163,18 +162,12 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
 def _persist_contract_rows(
     gateway: StorageGateway, snapshot: SnapshotRef, rows: list[dict[str, object]]
 ) -> None:
-    """Persist contract rows using SQLGlot-backed Ibis writes."""
-    if not rows:
-        return
-
-    contract = get_analytics_dataset_contract(gateway, "analytics.function_contracts")
-    tuple_rows = [contract.to_tuple(row) for row in rows]
-    columns = contract.schema.column_names() if contract.schema is not None else ()
-
-    table = gateway.ibis.table(contract.table_key)
-    where = and_predicates(table.repo == snapshot.repo, table.commit == snapshot.commit)
-    gateway.ibis.delete(contract.table_key, where=where)
-    gateway.ibis.insert(contract.table_key, tuple_rows, columns=columns)
+    """Persist contract rows using the policy backend."""
+    table_key = "analytics.function_contracts"
+    backend = gateway.policy
+    backend.ensure_table(table_key)
+    backend.delete_for_snapshot(table_key, repo=snapshot.repo, commit=snapshot.commit)
+    backend.bulk_insert_mappings(table_key, rows)
     log.info(
         "function_contracts populated: %d rows for %s@%s", len(rows), snapshot.repo, snapshot.commit
     )

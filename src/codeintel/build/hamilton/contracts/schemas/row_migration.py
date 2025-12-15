@@ -11,19 +11,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.contracts.schemas.registry import SCHEMA_REGISTRY
-
-if TYPE_CHECKING:
-    from types import ModuleType
-
-_rows_module: ModuleType | None
-
-try:
-    from codeintel.config.datasets import rows as _rows_module
-except ImportError:
-    _rows_module = None
 
 __all__ = [
     "MigrationStatus",
@@ -100,8 +89,8 @@ def get_row_model(table_key: str) -> type:
     """Get row model for a dataset, preferring schema-generated over manual.
 
     This function provides a migration path from manual TypedDict definitions
-    to schema-generated models. Currently returns the manual model if available,
-    falling back to schema-generated when manual is not found.
+    to schema-generated models. Manual row model modules have been removed;
+    schema-generated models are the only supported row model source.
 
     Parameters
     ----------
@@ -120,9 +109,8 @@ def get_row_model(table_key: str) -> type:
 
     Notes
     -----
-    Schema-generated models can be activated as primary source once
-    validate_row_model_compatibility() confirms all datasets compatible.
-    See architecture Section 5.3.1 - Migrate row models for activation steps.
+    This remains as a compatibility layer for callers that still rely on the
+    row_migration API surface.
     """
     schema = SCHEMA_REGISTRY.get(table_key)
     if schema is not None:
@@ -131,49 +119,13 @@ def get_row_model(table_key: str) -> type:
         except (KeyError, AttributeError) as exc:
             log.debug("Could not generate row model for %s: %s", table_key, exc)
 
-    manual_model = _get_manual_row_model(table_key)
-    if manual_model is not None:
-        return manual_model
-
     msg = f"No row model available for {table_key}"
     raise KeyError(msg)
 
 
 def _get_manual_row_model(table_key: str) -> type | None:
-    """Look up manually-defined row model by table key.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table name.
-
-    Returns
-    -------
-    type | None
-        The manual TypedDict if found, None otherwise.
-    """
-    manual_models: dict[str, str] = {
-        "analytics.function_metrics": "FunctionMetricsRow",
-        "analytics.function_types": "FunctionTypesRow",
-        "analytics.coverage_lines": "CoverageLineRow",
-        "analytics.typedness": "TypednessRow",
-        "analytics.static_diagnostics": "StaticDiagnosticRow",
-        "analytics.function_validation": "FunctionValidationRow",
-        "analytics.graph_validation": "GraphValidationRow",
-        "analytics.hotspots": "HotspotRow",
-        "core.goids": "GoidRow",
-        "core.goid_crosswalk": "GoidCrosswalkRow",
-        "core.docstrings": "DocstringRow",
-    }
-
-    model_name = manual_models.get(table_key)
-    if model_name is None:
-        return None
-
-    if _rows_module is None:
-        return None
-
-    return getattr(_rows_module, model_name, None)
+    _ = table_key
+    return None
 
 
 def validate_row_model_compatibility(table_key: str) -> MigrationStatus:

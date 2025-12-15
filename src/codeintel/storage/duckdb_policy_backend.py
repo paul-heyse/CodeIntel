@@ -35,6 +35,7 @@ Direct connection usage (via MinimalStorageGateway):
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -1039,6 +1040,27 @@ class DuckDBPolicyBackend:
         self.con.executemany(sql, rows)
         return len(rows)
 
+    @staticmethod
+    def _coerce_json_value(value: object) -> object:
+        if isinstance(value, set):
+            return json.dumps(sorted(value))
+        if isinstance(value, (dict, list, tuple)):
+            return json.dumps(value)
+        return value
+
+    @classmethod
+    def _coerce_insert_value(
+        cls,
+        column: str,
+        value: object,
+        column_type_by_name: Mapping[str, str],
+    ) -> object:
+        if value is None:
+            return None
+        if column_type_by_name.get(column) != "JSON":
+            return value
+        return cls._coerce_json_value(value)
+
     def bulk_insert_mappings(
         self,
         table_key: str,
@@ -1079,18 +1101,32 @@ class DuckDBPolicyBackend:
             return 0
 
         resolved_columns: Sequence[str] | None = columns
+        table_schema: TableSchema | None = None
         if resolved_columns is None:
             if self.schema_provider is None:
                 msg = "DuckDBPolicyBackend requires schema_provider when columns are not provided"
                 raise RuntimeError(msg)
             table_schema = self.schema_provider.require_table_schema(table_key)
             resolved_columns = [col.name for col in table_schema.columns]
+        elif self.schema_provider is not None:
+            table_schema = self.schema_provider.get_table_schema(table_key)
+
+        column_type_by_name: dict[str, str] = (
+            {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
+        )
 
         try:
-            tuple_rows = [tuple(row[col] for col in resolved_columns) for row in row_list]
+            tuple_rows = [
+                tuple(
+                    self._coerce_insert_value(col, row[col], column_type_by_name)
+                    for col in resolved_columns
+                )
+                for row in row_list
+            ]
         except KeyError as exc:
             message = f"Missing column {exc.args[0]} for {table_key}"
             raise ValueError(message) from exc
+
         return self.bulk_insert(table_key, tuple_rows, columns=resolved_columns)
 
     def upsert(

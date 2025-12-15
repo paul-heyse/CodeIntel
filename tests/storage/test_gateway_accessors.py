@@ -37,14 +37,14 @@ from tests._helpers.builders import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.config.datasets.generated_rows.core import (
+    from codeintel.core.schemas.generated_rows.core import (
         CoreFileStateRow,
         CoreGoidsRow,
         CoreModulesRow,
         CoreRepoMapRow,
         CoreScipOccurrencesRow,
     )
-    from codeintel.config.datasets.generated_rows.graph import (
+    from codeintel.core.schemas.generated_rows.graph import (
         GraphCallGraphEdgesRow,
         GraphCallGraphNodesRow,
         GraphImportGraphEdgesRow,
@@ -166,7 +166,7 @@ def test_core_tables_insert_modules_adds_defaults(fresh_gateway: StorageGateway)
 def test_core_tables_insert_repo_map_inserts_rows(fresh_gateway: StorageGateway) -> None:
     """Verify insert_repo_map inserts rows."""
     core = CoreTables(fresh_gateway)
-    now = datetime.now(tz=UTC).isoformat()
+    now = datetime.now(tz=UTC)
     rows: list[CoreRepoMapRow] = [
         {
             "repo": "test/repo",
@@ -191,7 +191,7 @@ def test_core_tables_insert_repo_map_inserts_rows(fresh_gateway: StorageGateway)
 def test_core_tables_insert_goids_inserts_rows(fresh_gateway: StorageGateway) -> None:
     """Verify insert_goids inserts rows into core.goids."""
     core = CoreTables(fresh_gateway)
-    now = datetime.now(tz=UTC).isoformat()
+    now = datetime.now(tz=UTC)
     rows: list[CoreGoidsRow] = [
         {
             "goid_h128": 1001,
@@ -244,7 +244,7 @@ def test_core_tables_insert_file_state_inserts_rows(fresh_gateway: StorageGatewa
 def test_core_tables_insert_scip_occurrences_inserts_rows(fresh_gateway: StorageGateway) -> None:
     """Verify insert_scip_occurrences accepts mapping rows."""
     core = CoreTables(fresh_gateway)
-    now = datetime.now(tz=UTC).isoformat()
+    now = datetime.now(tz=UTC)
     rows: list[CoreScipOccurrencesRow] = [
         {
             "repo": "test/repo",
@@ -354,8 +354,8 @@ def test_graph_tables_insert_call_graph_edges(fresh_gateway: StorageGateway) -> 
         {
             "repo": "test/repo",
             "commit": "abc123",
-            "caller_goid_h128": 1001.0,
-            "callee_goid_h128": 1002.0,
+            "caller_goid_h128": 1001,
+            "callee_goid_h128": 1002,
             "callsite_path": "test.py",
             "callsite_line": 10,
             "callsite_col": 5,
@@ -939,7 +939,7 @@ def test_insert_and_query_full_flow(fresh_gateway: StorageGateway) -> None:
     )
 
     # Insert goids
-    now = datetime.now(tz=UTC).isoformat()
+    now = datetime.now(tz=UTC)
     fresh_gateway.core.insert_goids(
         [
             (

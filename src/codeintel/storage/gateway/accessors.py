@@ -19,7 +19,7 @@ from codeintel.storage.tracking.run_tracking import PipelineRunTracking
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from codeintel.config.datasets.generated_rows.analytics import (
+    from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsConfigValuesRow,
         AnalyticsCoverageFunctionsRow,
         AnalyticsCoverageLinesRow,
@@ -32,14 +32,14 @@ if TYPE_CHECKING:
         AnalyticsTestCoverageEdgesRow,
         AnalyticsTypednessRow,
     )
-    from codeintel.config.datasets.generated_rows.core import (
+    from codeintel.core.schemas.generated_rows.core import (
         CoreFileStateRow,
         CoreGoidsRow,
         CoreModulesRow,
         CoreRepoMapRow,
         CoreScipOccurrencesRow,
     )
-    from codeintel.config.datasets.generated_rows.graph import (
+    from codeintel.core.schemas.generated_rows.graph import (
         GraphCallGraphEdgesRow,
         GraphCallGraphNodesRow,
         GraphCfgBlocksRow,

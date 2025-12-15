@@ -1,10 +1,14 @@
-"""Analytics-facing dataset contracts and row insertion helpers."""
+"""Analytics dataset contract and persistence helpers.
+
+This module is a thin layer around the canonical build-time contract and schema
+providers, plus convenience helpers for validating and inserting rows.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeVar, cast
+from collections.abc import Mapping
+from functools import lru_cache
+from typing import TYPE_CHECKING, Protocol, cast
 
 import pandas as pd
 from sqlglot import exp
@@ -13,48 +17,13 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from codeintel.analytics.utilities.persistence import DeleteScope
-    from codeintel.config.datasets import (
-        DatasetContract,
-        TableSchema,
-    )
-    from codeintel.storage.datasets import DatasetRegistry
+    from codeintel.core.schemas.contract_primitives import DatasetContract
+    from codeintel.core.schemas.primitives import TableSchema
     from codeintel.storage.gateway import StorageGateway
 
 from codeintel.build.hamilton.contracts.schemas.validation import validate_df
-from codeintel.config.datasets import (
-    DATASET_CONTRACTS_BY_TABLE_KEY,
-    BehavioralCoverageRowModel,
-    FunctionAstFeaturesRow,
-    FunctionContractsRow,
-    FunctionEffectsRow,
-    FunctionMetricsRow,
-    FunctionProfileRowModel,
-    FunctionTypesRow,
-    GraphMetricsFunctionsExtRow,
-    GraphMetricsFunctionsRow,
-    GraphMetricsModulesExtRow,
-    GraphMetricsModulesRow,
-    ProfileRowModel,
-    behavioral_coverage_row_to_tuple,
-    function_ast_features_row_to_tuple,
-    function_contracts_row_to_tuple,
-    function_effects_row_to_tuple,
-    function_metrics_row_to_tuple,
-    function_profile_row_to_tuple,
-    function_types_row_to_tuple,
-    graph_metrics_functions_ext_row_to_tuple,
-    graph_metrics_functions_row_to_tuple,
-    graph_metrics_modules_ext_row_to_tuple,
-    graph_metrics_modules_row_to_tuple,
-    serialize_test_profile_row,
-)
-from codeintel.storage.datasets import load_dataset_registry
-
-type RowType = Mapping[str, object]
-RowT = TypeVar("RowT", bound=RowType)
-ToTuple = Callable[[RowT], tuple[object, ...]]
-
-REPO_COMMIT_ARITY = 2
+from codeintel.build.schemas import get_contract_for_table_key
+from codeintel.config.datasets.columns import load_columns_by_table
 
 
 def _table_supports_snapshot_delete(table_key: str) -> bool:
@@ -70,11 +39,10 @@ def _table_supports_snapshot_delete(table_key: str) -> bool:
     bool
         True if the table has repo and commit columns.
     """
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
-    if contract is None or contract.schema is None or contract.is_view:
+    columns = load_columns_by_table().get(table_key)
+    if columns is None:
         return False
-    col_names = contract.schema.column_names()
-    return "repo" in col_names and "commit" in col_names
+    return "repo" in columns and "commit" in columns
 
 
 def _delete_sql_for_table(table_key: str) -> str:
@@ -88,198 +56,65 @@ def _delete_sql_for_table(table_key: str) -> str:
     return statement.sql(dialect="duckdb")
 
 
-DELETE_SQL_BY_TABLE: dict[str, str] = {
-    table_key: _delete_sql_for_table(table_key)
-    for table_key in DATASET_CONTRACTS_BY_TABLE_KEY
-    if _table_supports_snapshot_delete(table_key)
-}
+@lru_cache(maxsize=1)
+def get_delete_sql_by_table() -> dict[str, str]:
+    """Return per-table DELETE statements scoped by repo+commit.
 
-
-@dataclass(frozen=True)
-class AnalyticsDatasetContract[RowT: RowType]:
-    """
-    Analytics-facing dataset contract for a DuckDB table or view.
-
-    Attributes
-    ----------
-    name
-        Logical dataset name, e.g. "analytics.function_metrics".
-    table_key
-        Fully-qualified DuckDB identifier (usually the same as name).
-    schema
-        TableSchema entry for the dataset, when available.
-    row_type
-        Typed row model (usually a TypedDict).
-    to_tuple
-        Serializer from row dict -> tuple in INSERT column order.
-    primary_key
-        Primary key columns (if known).
-    indexes
-        Index column definitions for the dataset.
-    dataset_meta
-        Dataset registry entry when present.
-    """
-
-    name: str
-    table_key: str
-    schema: TableSchema | None
-    row_type: type[RowT]
-    to_tuple: ToTuple
-    primary_key: tuple[str, ...]
-    indexes: tuple[tuple[str, ...], ...]
-    dataset_meta: DatasetContract | None = None
-
-
-def _build_registry(gateway: StorageGateway) -> DatasetRegistry:
-    return load_dataset_registry(gateway.con)
-
-
-def build_analytics_dataset_contracts(
-    gateway: StorageGateway,
-) -> dict[str, AnalyticsDatasetContract[RowType]]:
-    """
-    Build dataset contracts for analytics tables using registry metadata.
+    This is computed lazily to avoid importing the full schema provider during
+    module import (which can create circular imports when building the unified
+    registry).
 
     Returns
     -------
-    dict[str, AnalyticsDatasetContract[RowType]]
-        Contracts keyed by dataset name.
+    dict[str, str]
+        Mapping from table_key to a parametrized DELETE statement.
     """
-    registry = _build_registry(gateway)
-
-    def _contract(
-        name: str,
-        *,
-        row_type: type[RowT],
-        to_tuple: ToTuple,
-    ) -> AnalyticsDatasetContract[RowT]:
-        contract = DATASET_CONTRACTS_BY_TABLE_KEY[name]
-        schema = contract.schema
-        primary_key = schema.primary_key if schema is not None else ()
-        indexes = tuple(index.columns for index in schema.indexes) if schema else ()
-        dataset_meta = registry.by_table_key.get(contract.table_key)
-        return AnalyticsDatasetContract(
-            name=contract.table_key,
-            table_key=contract.table_key,
-            schema=schema,
-            row_type=row_type,
-            to_tuple=to_tuple,
-            primary_key=primary_key,
-            indexes=indexes,
-            dataset_meta=dataset_meta,
-        )
-
     return {
-        "analytics.function_metrics": _contract(
-            "analytics.function_metrics",
-            row_type=FunctionMetricsRow,
-            to_tuple=function_metrics_row_to_tuple,
-        ),
-        "analytics.function_types": _contract(
-            "analytics.function_types",
-            row_type=FunctionTypesRow,
-            to_tuple=function_types_row_to_tuple,
-        ),
-        "analytics.function_effects": _contract(
-            "analytics.function_effects",
-            row_type=FunctionEffectsRow,
-            to_tuple=function_effects_row_to_tuple,
-        ),
-        "analytics.function_contracts": _contract(
-            "analytics.function_contracts",
-            row_type=FunctionContractsRow,
-            to_tuple=function_contracts_row_to_tuple,
-        ),
-        "analytics.function_profile": _contract(
-            "analytics.function_profile",
-            row_type=FunctionProfileRowModel,
-            to_tuple=function_profile_row_to_tuple,
-        ),
-        "analytics.function_ast_features": _contract(
-            "analytics.function_ast_features",
-            row_type=FunctionAstFeaturesRow,
-            to_tuple=function_ast_features_row_to_tuple,
-        ),
-        "analytics.test_profile": _contract(
-            "analytics.test_profile",
-            row_type=ProfileRowModel,
-            to_tuple=serialize_test_profile_row,
-        ),
-        "analytics.behavioral_coverage": _contract(
-            "analytics.behavioral_coverage",
-            row_type=BehavioralCoverageRowModel,
-            to_tuple=behavioral_coverage_row_to_tuple,
-        ),
-        "analytics.graph_metrics_functions": _contract(
-            "analytics.graph_metrics_functions",
-            row_type=GraphMetricsFunctionsRow,
-            to_tuple=graph_metrics_functions_row_to_tuple,
-        ),
-        "analytics.graph_metrics_modules": _contract(
-            "analytics.graph_metrics_modules",
-            row_type=GraphMetricsModulesRow,
-            to_tuple=graph_metrics_modules_row_to_tuple,
-        ),
-        "analytics.graph_metrics_functions_ext": _contract(
-            "analytics.graph_metrics_functions_ext",
-            row_type=GraphMetricsFunctionsExtRow,
-            to_tuple=graph_metrics_functions_ext_row_to_tuple,
-        ),
-        "analytics.graph_metrics_modules_ext": _contract(
-            "analytics.graph_metrics_modules_ext",
-            row_type=GraphMetricsModulesExtRow,
-            to_tuple=graph_metrics_modules_ext_row_to_tuple,
-        ),
+        table_key: _delete_sql_for_table(table_key)
+        for table_key in load_columns_by_table()
+        if _table_supports_snapshot_delete(table_key)
     }
 
 
 def get_analytics_dataset_contract(
     gateway: StorageGateway,
-    name: str,
-) -> AnalyticsDatasetContract[RowType]:
+    table_key: str,
+) -> DatasetContract:
     """
-    Return the dataset contract for a named analytics dataset.
+    Return the canonical DatasetContract for a table key.
 
     Returns
     -------
-    AnalyticsDatasetContract[RowType]
-        Contract for the requested dataset.
-
-    Raises
-    ------
-    KeyError
-        If the dataset name is unknown.
+    DatasetContract
+        Contract for the requested table key.
     """
-    contracts = build_analytics_dataset_contracts(gateway)
-    if name not in contracts:
-        message = f"Unknown analytics dataset: {name}"
-        raise KeyError(message)
-    return contracts[name]
+    _ = gateway
+    return get_contract_for_table_key(table_key)
 
 
 def get_function_ast_features_contract(
     gateway: StorageGateway,
-) -> AnalyticsDatasetContract[FunctionAstFeaturesRow]:
+) -> DatasetContract:
     """
     Return the dataset contract for function AST features.
 
     Returns
     -------
-    AnalyticsDatasetContract[FunctionAstFeaturesRow]
+    DatasetContract
         Contract describing analytics.function_ast_features.
     """
-    contract = get_analytics_dataset_contract(gateway, "analytics.function_ast_features")
-    return cast("AnalyticsDatasetContract[FunctionAstFeaturesRow]", contract)
+    _ = gateway
+    return get_contract_for_table_key("analytics.function_ast_features")
 
 
 def insert_analytics_rows(
     gateway: StorageGateway,
-    contract: AnalyticsDatasetContract[RowT],
-    rows: Sequence[RowT],
+    contract: DatasetContract,
+    rows: Sequence[Mapping[str, object]],
     *,
     delete_scope: DeleteScope | None = None,
     scope: str | None = None,
-) -> None:
+) -> int:
     """Insert rows for a dataset contract using DuckDBPolicyBackend.
 
     Deletions are routed through DuckDBPolicyBackend for centralized SQL
@@ -297,6 +132,11 @@ def insert_analytics_rows(
         Optional deletion scope for clearing existing data.
     scope
         Optional scope label for logging.
+
+    Returns
+    -------
+    int
+        Number of rows inserted.
 
     Raises
     ------
@@ -318,9 +158,7 @@ def insert_analytics_rows(
             commit=delete_scope.commit,
         )
 
-    if rows:
-        tuple_rows = [contract.to_tuple(row) for row in rows]
-        backend.bulk_insert(contract.table_key, tuple_rows)
+    return backend.bulk_insert_mappings(contract.table_key, rows) if rows else 0
 
 
 def validate_contract_rows(
@@ -344,14 +182,17 @@ def validate_contract_rows(
 
 
 __all__ = [
-    "AnalyticsDatasetContract",
-    "build_analytics_dataset_contracts",
     "get_analytics_dataset_contract",
+    "get_delete_sql_by_table",
     "get_function_ast_features_contract",
     "insert_analytics_rows",
     "validate_contract_rows",
     "validate_tuple_rows",
 ]
+
+
+class _SupportsItem(Protocol):
+    def item(self) -> object: ...
 
 
 def _to_python_type(value: object) -> object:
@@ -370,7 +211,7 @@ def _to_python_type(value: object) -> object:
     if value is None:
         return None
     if hasattr(value, "item"):
-        return value.item()  # type: ignore[union-attr]
+        return cast("_SupportsItem", value).item()
     return value
 
 

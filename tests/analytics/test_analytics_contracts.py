@@ -13,21 +13,17 @@ from codeintel.analytics.utilities.datasets import (
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.build.schemas import iter_contracts_by_table_key
-from codeintel.config.datasets.rows.analytics import (
+from codeintel.core.catalog import FunctionCatalog
+from codeintel.core.schemas.generated_types import (
+    BehavioralCoverageRowModel,
     FunctionMetricsRow,
     FunctionTypesRow,
-)
-from codeintel.config.datasets.rows.profiles import (
     GraphMetricsFunctionsExtRow,
     GraphMetricsFunctionsRow,
     GraphMetricsModulesExtRow,
     GraphMetricsModulesRow,
-)
-from codeintel.config.datasets.rows.test import (
-    BehavioralCoverageRowModel,
     ProfileRowModel,
 )
-from codeintel.core.catalog import FunctionCatalog
 from tests._helpers import CORE_PACK, create_test_context
 from tests._helpers.analytics_domain import make_graph_metric_function_row
 from tests._helpers.catalogs import ensure_catalog_with_goids

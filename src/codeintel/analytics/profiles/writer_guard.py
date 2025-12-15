@@ -10,16 +10,13 @@ or ``write_rows_via_policy_backend`` via ``PolicyWriterConfig``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping
 
     from codeintel.storage.gateway.protocol import StorageGateway
-
-SerializeRow = Callable[[Mapping[str, object]], tuple[object, ...]]
 
 
 @dataclass(frozen=True)
@@ -27,8 +24,6 @@ class PolicyWriterConfig:
     """Configuration for policy-backend-based row writing."""
 
     table_key: str
-    columns: Sequence[str]
-    serialize_row: SerializeRow
     repo: str
     commit: str
 
@@ -66,5 +61,4 @@ def write_rows_via_policy_backend(
 
     backend.delete_for_snapshot(config.table_key, repo=config.repo, commit=config.commit)
 
-    tuples = [config.serialize_row(row) for row in rows_list]
-    return backend.bulk_insert(config.table_key, tuples, columns=list(config.columns))
+    return backend.bulk_insert_mappings(config.table_key, rows_list)

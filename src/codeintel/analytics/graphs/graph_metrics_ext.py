@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.graphs.orchestrator import (
         GraphViews,
     )
-    from codeintel.config.datasets import GraphMetricsFunctionsExtRow
+    from codeintel.core.schemas.generated_types import GraphMetricsFunctionsExtRow
     from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
     from codeintel.graphs.runtime.context import GraphContext
     from codeintel.storage.gateway import StorageGateway

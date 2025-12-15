@@ -37,10 +37,6 @@ from codeintel.analytics.utilities.type_coercion import (
     optional_int,
     optional_str,
 )
-from codeintel.config.datasets import (
-    FUNCTION_PROFILE_COLUMNS,
-    function_profile_row_to_tuple,
-)
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import (
     and_predicates,
@@ -54,7 +50,7 @@ from codeintel.storage.ibis_types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Iterable, Mapping
 
     import ibis.expr.types as it
     from ibis import BaseBackend
@@ -62,10 +58,8 @@ if TYPE_CHECKING:
     from codeintel.analytics.profiles.types import (
         FunctionGraphFeatures,
     )
-    from codeintel.config.datasets import (
-        FunctionProfileRowModel,
-    )
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.schemas.generated_types import FunctionProfileRowModel
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -1012,11 +1006,6 @@ def build_function_profile_recipe(
 
     config = PolicyWriterConfig(
         table_key="analytics.function_profile",
-        columns=FUNCTION_PROFILE_COLUMNS,
-        serialize_row=cast(
-            "Callable[[Mapping[str, object]], tuple[object, ...]]",
-            function_profile_row_to_tuple,
-        ),
         repo=snapshot.repo,
         commit=snapshot.commit,
     )

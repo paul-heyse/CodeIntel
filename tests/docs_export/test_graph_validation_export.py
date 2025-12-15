@@ -8,13 +8,27 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.exports import export_all_jsonl, export_all_parquet
-from codeintel.config.datasets.rows.analytics import graph_validation_row_to_tuple
+from codeintel.config.datasets.columns import serialize_row
 from tests._helpers import provision_docs_export_ready
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.config.datasets.rows.analytics import GraphValidationRow
+    from codeintel.core.schemas.generated_types import GraphValidationRow
+
+
+GRAPH_VALIDATION_COLUMNS: tuple[str, ...] = (
+    "repo",
+    "commit",
+    "graph_name",
+    "entity_id",
+    "issue",
+    "severity",
+    "rel_path",
+    "detail",
+    "metadata",
+    "created_at",
+)
 
 
 @pytest.mark.usefixtures("fresh_gateway")
@@ -54,7 +68,7 @@ def test_graph_validation_export(tmp_path: Path) -> None:
             repo, commit, graph_name, entity_id, issue, severity, rel_path, detail, metadata, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        graph_validation_row_to_tuple(row),
+        serialize_row(row, GRAPH_VALIDATION_COLUMNS),
     )
 
     doc_out = tmp_path / "Document Output"

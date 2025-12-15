@@ -45,8 +45,10 @@ def _python_type_for_column_type(col_type: ColumnType) -> type[object]:
         return float
     if col_type == "BOOLEAN":
         return bool
-    if col_type in {"VARCHAR", "JSON"}:
+    if col_type == "VARCHAR":
         return str
+    if col_type == "JSON":
+        return object
     if col_type in {"TIMESTAMP", "TIMESTAMPTZ"}:
         return dt.datetime
     msg = f"Unsupported ColumnType for row model generation: {col_type}"
@@ -66,12 +68,12 @@ def _row_model_cached(
     class_name = _row_model_class_name(schema=schema, name=name)
 
     fields: list[tuple[str, object]] = []
-    for col_name, col_type, _nullable in signature:
+    for col_name, col_type, nullable in signature:
         if not _VALID_IDENTIFIER_RE.match(col_name):
             msg = f"Column name is not a valid identifier for row model: {col_name}"
             raise ValueError(msg)
         base = _python_type_for_column_type(col_type)
-        annotated: object = base | None
+        annotated: object = base | None if nullable else base
         fields.append((col_name, annotated))
 
     return make_dataclass(class_name, fields=fields, frozen=True, slots=True)
@@ -105,7 +107,7 @@ def _row_serializer_cached(signature: tuple[tuple[str, ColumnType, bool], ...]) 
     column_names = tuple(name for name, _col_type, _nullable in signature)
 
     def _serialize(row: Mapping[str, object]) -> tuple[object, ...]:
-        return tuple(row.get(col) for col in column_names)
+        return tuple(row[col] for col in column_names)
 
     return _serialize
 

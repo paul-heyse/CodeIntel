@@ -4,33 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.utilities.datasets import DELETE_SQL_BY_TABLE
+from codeintel.analytics.utilities.datasets import get_delete_sql_by_table
 from codeintel.build.schemas import (
     get_contract_provider,
     get_schema_provider,
     iter_contracts,
     iter_contracts_by_table_key,
 )
-from codeintel.config.datasets.rows.analytics import (
-    FUNCTION_METRICS_COLUMNS,
-    FUNCTION_TYPES_COLUMNS,
-)
-from codeintel.config.datasets.rows.profiles import (
-    FILE_PROFILE_COLUMNS,
-    FUNCTION_PROFILE_COLUMNS,
-    GRAPH_METRICS_FUNCTIONS_COLUMNS,
-    GRAPH_METRICS_FUNCTIONS_EXT_COLUMNS,
-    GRAPH_METRICS_MODULES_COLUMNS,
-    GRAPH_METRICS_MODULES_EXT_COLUMNS,
-    MODULE_PROFILE_COLUMNS,
-)
-from codeintel.config.datasets.rows.test import (
-    BEHAVIORAL_COVERAGE_COLUMNS,
-    SUBSYSTEM_COVERAGE_COLUMNS,
-    SUBSYSTEM_PROFILE_COLUMNS,
-    TEST_COVERAGE_EDGE_COLUMNS,
-    TEST_PROFILE_COLUMNS,
-)
+from codeintel.config.datasets.columns import load_columns_by_table
 
 
 def _require(*, condition: bool, message: str) -> None:
@@ -125,13 +106,14 @@ def test_contract_derived_columns_match_schemas() -> None:
 
 def test_delete_sql_covers_repo_commit_tables() -> None:
     """DELETE_SQL_BY_TABLE should cover all datasets with repo+commit columns."""
+    delete_sql_by_table = get_delete_sql_by_table()
     missing: list[str] = []
     for table_key, contract in iter_contracts_by_table_key():
         if contract.schema is None or contract.is_view:
             continue
         col_names = contract.schema.column_names()
         has_repo_commit = "repo" in col_names and "commit" in col_names
-        if has_repo_commit and table_key not in DELETE_SQL_BY_TABLE:
+        if has_repo_commit and table_key not in delete_sql_by_table:
             missing.append(table_key)
     _require(
         condition=not missing,
@@ -140,22 +122,26 @@ def test_delete_sql_covers_repo_commit_tables() -> None:
 
 
 def test_row_models_column_constants_match_contracts() -> None:
-    """Column constants in dataset_contract.py should match contract-derived columns."""
+    """Column registry mapping should match contract-derived columns."""
+    column_registry = load_columns_by_table()
     column_mappings = [
-        ("analytics.function_metrics", FUNCTION_METRICS_COLUMNS),
-        ("analytics.function_types", FUNCTION_TYPES_COLUMNS),
-        ("analytics.graph_metrics_functions", GRAPH_METRICS_FUNCTIONS_COLUMNS),
-        ("analytics.graph_metrics_modules", GRAPH_METRICS_MODULES_COLUMNS),
-        ("analytics.graph_metrics_functions_ext", GRAPH_METRICS_FUNCTIONS_EXT_COLUMNS),
-        ("analytics.graph_metrics_modules_ext", GRAPH_METRICS_MODULES_EXT_COLUMNS),
-        ("analytics.test_coverage_edges", TEST_COVERAGE_EDGE_COLUMNS),
-        ("analytics.function_profile", FUNCTION_PROFILE_COLUMNS),
-        ("analytics.file_profile", FILE_PROFILE_COLUMNS),
-        ("analytics.module_profile", MODULE_PROFILE_COLUMNS),
-        ("analytics.test_profile", TEST_PROFILE_COLUMNS),
-        ("analytics.behavioral_coverage", BEHAVIORAL_COVERAGE_COLUMNS),
-        ("analytics.subsystem_profile_cache", SUBSYSTEM_PROFILE_COLUMNS),
-        ("analytics.subsystem_coverage_cache", SUBSYSTEM_COVERAGE_COLUMNS),
+        ("analytics.function_metrics", column_registry["analytics.function_metrics"]),
+        ("analytics.function_types", column_registry["analytics.function_types"]),
+        ("analytics.graph_metrics_functions", column_registry["analytics.graph_metrics_functions"]),
+        ("analytics.graph_metrics_modules", column_registry["analytics.graph_metrics_modules"]),
+        (
+            "analytics.graph_metrics_functions_ext",
+            column_registry["analytics.graph_metrics_functions_ext"],
+        ),
+        ("analytics.graph_metrics_modules_ext", column_registry["analytics.graph_metrics_modules_ext"]),
+        ("analytics.test_coverage_edges", column_registry["analytics.test_coverage_edges"]),
+        ("analytics.function_profile", column_registry["analytics.function_profile"]),
+        ("analytics.file_profile", column_registry["analytics.file_profile"]),
+        ("analytics.module_profile", column_registry["analytics.module_profile"]),
+        ("analytics.test_profile", column_registry["analytics.test_profile"]),
+        ("analytics.behavioral_coverage", column_registry["analytics.behavioral_coverage"]),
+        ("analytics.subsystem_profile_cache", column_registry["analytics.subsystem_profile_cache"]),
+        ("analytics.subsystem_coverage_cache", column_registry["analytics.subsystem_coverage_cache"]),
     ]
     contracts_by_key = dict(iter_contracts_by_table_key())
     mismatches: list[str] = []

@@ -3,25 +3,68 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.rows.profiles import (
-    FILE_PROFILE_COLUMNS,
-    MODULE_PROFILE_COLUMNS,
-    file_profile_row_to_tuple,
-    module_profile_row_to_tuple,
-)
-from codeintel.config.datasets.rows.test import (
-    BEHAVIORAL_COVERAGE_COLUMNS,
-    TEST_PROFILE_COLUMNS,
-    behavioral_coverage_row_to_tuple,
-    serialize_test_profile_row,
-)
+from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from tests._helpers.factories import (
     blank_behavioral_coverage_row,
     blank_file_profile_row,
     blank_module_profile_row,
     blank_test_profile_row,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+_COLUMNS_BY_TABLE = load_columns_by_table()
+FILE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.file_profile"])
+MODULE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.module_profile"])
+TEST_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.test_profile"])
+BEHAVIORAL_COVERAGE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.behavioral_coverage"])
+
+
+def file_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a file profile mapping using schema-derived column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, FILE_PROFILE_COLUMNS)
+
+
+def module_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a module profile mapping using schema-derived column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, MODULE_PROFILE_COLUMNS)
+
+
+def serialize_test_profile_row(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a test profile mapping using schema-derived column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, TEST_PROFILE_COLUMNS)
+
+
+def behavioral_coverage_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
+    """Serialize a behavioral coverage mapping using schema-derived column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple of values in storage column order.
+    """
+    return serialize_row(row, BEHAVIORAL_COVERAGE_COLUMNS)
 
 
 def test_file_profile_tuple_length_matches_columns() -> None:
