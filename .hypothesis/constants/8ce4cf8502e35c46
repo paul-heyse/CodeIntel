@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/coverage/compute.py
+# hypothesis_version: 6.148.7
+
+['core.goids', 'coverage_ratio', 'covered_lines', 'created_at', 'executable_lines', 'function', 'function_goid_h128', 'int64', 'ir.IntegerColumn', 'is_covered', 'is_executable', 'method', 'no_executable_code', 'no_tests', 'tested', 'untested_reason']

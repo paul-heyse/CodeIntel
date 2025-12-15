@@ -1,14 +1,14 @@
 """Contract validation utilities for the build system.
 
 This module provides validation functions to ensure that OutputContract
-definitions are complete and consistent with the dataset schema registry.
+definitions are complete and consistent with the schema provider registry.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.contracts import get_table_schemas
+from codeintel.build.schemas import get_schema_provider
 from codeintel.config.primitives import BuildPaths
 
 if TYPE_CHECKING:
@@ -40,14 +40,14 @@ def validate_contracts(graph: TargetGraph, *, repo_root: Path | None = None) -> 
     >>> assert len(errors) == 0, "Contract validation failed"
     """
     errors: list[str] = []
-    table_schemas = get_table_schemas()
+    provider = get_schema_provider()
 
     for target in graph.all_targets:
-        # Check that all contract table_keys exist in schema registry
+        # Check that all contract table_keys exist in schema provider
         errors.extend(
             f"Target '{target.name}' references unknown table_key: '{table_key}'"
             for table_key in target.contract.table_keys
-            if table_key not in table_schemas
+            if provider.get_table_schema(table_key) is None
         )
 
         # Check artifact path templates are renderable

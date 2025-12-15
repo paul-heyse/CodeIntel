@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/schemas/row_models.py
+# hypothesis_version: 6.148.7
+
+[2048, 'BIGINT', 'BOOLEAN', 'DECIMAL', 'DECIMAL(38,0)', 'DOUBLE', 'GeneratedRowBinding', 'INTEGER', 'JSON', 'RowSerializer', 'TIMESTAMP', 'TIMESTAMPTZ', 'VARCHAR']

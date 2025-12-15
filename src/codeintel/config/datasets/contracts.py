@@ -10,6 +10,7 @@ This module provides:
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Final, Literal, cast
@@ -966,6 +967,11 @@ def get_composite_schemas() -> dict[str, CompositeSchema]:
 def get_row_bindings() -> dict[str, RowBinding]:
     """Return the ROW_BINDINGS_BY_TABLE_KEY dictionary.
 
+    .. deprecated::
+        Use ``codeintel.build.schemas.get_row_binding(table_key)`` instead
+        for schema-generated bindings. This function returns legacy manual
+        bindings that may drift from schema definitions.
+
     Returns
     -------
     dict[str, RowBinding]
@@ -977,22 +983,42 @@ def get_row_bindings() -> dict[str, RowBinding]:
 def get_dataset_contracts() -> dict[str, DatasetContract]:
     """Return the DATASET_CONTRACTS dictionary.
 
+    .. deprecated::
+        Use `codeintel.build.schemas.get_contract_for_table_key()` instead.
+
     Returns
     -------
     dict[str, DatasetContract]
         All registered dataset contracts keyed by name.
     """
+    warnings.warn(
+        "get_dataset_contracts() is deprecated. "
+        "Use codeintel.build.schemas.get_contract_for_table_key() for individual lookups "
+        "or codeintel.build.schemas.iter_contracts() for iteration.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return _dataset_contracts_cache()
 
 
 def get_dataset_contracts_by_table_key() -> dict[str, DatasetContract]:
     """Return the DATASET_CONTRACTS_BY_TABLE_KEY dictionary.
 
+    .. deprecated::
+        Use `codeintel.build.schemas.get_contract_for_table_key()` instead.
+
     Returns
     -------
     dict[str, DatasetContract]
         All registered dataset contracts keyed by table_key.
     """
+    warnings.warn(
+        "get_dataset_contracts_by_table_key() is deprecated. "
+        "Use codeintel.build.schemas.get_contract_for_table_key() for individual lookups "
+        "or codeintel.build.schemas.iter_contracts_by_table_key() for iteration.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return _dataset_contracts_by_table_key_cache()
 
 

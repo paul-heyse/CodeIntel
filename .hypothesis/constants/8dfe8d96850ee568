@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/contracts/schemas/introspection.py
+# hypothesis_version: 6.148.7
+
+['## Columns', '## Data Flow', 'DatasetIntrospection', 'by_family', 'by_owner', 'column_count', 'columns', 'constraint_count', 'constraint_kinds', 'constraint_sources', 'consumers', 'description', 'downstream', 'introspect_dataset', 'name', 'owner', 'producers', 'total_columns', 'total_constraints', 'total_datasets', 'unassigned', 'unknown', 'upstream']

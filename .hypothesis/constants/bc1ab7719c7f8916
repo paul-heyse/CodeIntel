@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/tracking/build_tracking.py
+# hypothesis_version: 6.148.7
+
+[100, 1000, ' AND target = ?', ' ORDER BY started_at', 'BuildStatus', 'BuildTracking', 'build.run_nodes', 'build.run_targets', 'build.runs', 'commit', 'completed_at', 'computed_at', 'computed_targets', 'datetime', 'datetime | None', 'duration_ms', 'error', 'error_summary', 'input_hash', 'node_name', 'node_type', 'options_hash', 'output_hash', 'plugin', 'recorded_at', 'repo', 'requested_targets', 'row_count', 'row_counts', 'run_id', 'skipped_targets', 'started_at', 'status', 'str | None', 'tags', 'target']

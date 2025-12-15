@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_parquet.py
+# hypothesis_version: 6.148.7
+
+[0.0, 'bytes', 'codeintel.parquet', 'compute', 'export', 'export_parquet', 'file', 'format', 'materialize', 'parquet', 'parquet_export', 'pyarrow', 'rows', 'succeeded', 't__export_parquet']

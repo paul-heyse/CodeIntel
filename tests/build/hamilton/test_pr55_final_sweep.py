@@ -116,9 +116,7 @@ class TestSnapshotManifestTaxonomy:
 
         referenced = {case.snapshot for case in manifest.cases if case.snapshot}
         actual = {
-            p.name
-            for p in SNAPSHOTS_DIR.iterdir()
-            if p.is_file() and p.suffix in SNAPSHOT_SUFFIXES
+            p.name for p in SNAPSHOTS_DIR.iterdir() if p.is_file() and p.suffix in SNAPSHOT_SUFFIXES
         }
 
         missing = referenced - actual

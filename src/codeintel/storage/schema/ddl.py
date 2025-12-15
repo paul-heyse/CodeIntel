@@ -2,9 +2,9 @@
 
 This module provides thin wrapper functions for schema management that delegate
 to `DuckDBPolicyBackend` for all DDL generation. The policy backend generates
-DDL from dataset contracts, making Python data models the single source of truth.
+DDL from the canonical schema provider, making the DAG the single source of truth.
 
-All DDL is now generated from dataset contracts via the policy backend.
+All DDL is now generated via the schema provider and policy backend.
 Legacy string-based DDL constants have been removed.
 """
 
@@ -13,8 +13,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets import get_dataset_contracts_by_table_key
-from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.build.schemas import (
+    get_schema_provider,
+    is_view,
+    iter_contracts,
+)
 from codeintel.storage.constants import SCHEMAS
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
@@ -49,13 +52,7 @@ def _get_policy_backend(con: DuckDBPyConnection) -> DuckDBPolicyBackend:
     DuckDBPolicyBackend
         Policy backend instance wrapping the connection.
     """
-    contracts = get_dataset_contracts_by_table_key()
-    schemas = {
-        table_key: contract.schema
-        for table_key, contract in contracts.items()
-        if contract.schema is not None and not contract.is_view
-    }
-    provider = MappingSchemaProvider(schemas)
+    provider = get_schema_provider()
     return MinimalStorageGateway(con, schema_provider=provider).policy
 
 
@@ -119,7 +116,7 @@ def assert_schema_alignment(
     strict: bool = True,
     logger: logging.Logger | None = None,
 ) -> list[str]:
-    """Validate that the live DuckDB schema matches the DatasetContract definitions.
+    """Validate that the live DuckDB schema matches the schema provider definitions.
 
     Parameters
     ----------
@@ -142,13 +139,16 @@ def assert_schema_alignment(
     RuntimeError
         If strict is True and schema drift is detected.
     """
+    provider = get_schema_provider()
     issues: list[str] = []
-    for contract in get_dataset_contracts_by_table_key().values():
-        if contract.is_view and not include_views:
+
+    for contract in iter_contracts():
+        table_key = contract.table_key
+        if is_view(table_key) and not include_views:
             continue
-        if contract.schema is None:
+        table = provider.get_table_schema(table_key)
+        if table is None:
             continue
-        table = contract.schema
         rows = con.execute(
             """
             SELECT column_name

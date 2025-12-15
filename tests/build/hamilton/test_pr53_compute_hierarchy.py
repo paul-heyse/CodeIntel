@@ -135,7 +135,9 @@ class TestAnalyticsComputeDelegation:
         bad: list[tuple[str, str]] = []
         for py_file in _iter_py_files(analytics_compute):
             text = py_file.read_text(encoding="utf-8")
-            bad.extend((_relative_path(py_file), pattern) for pattern in forbidden if pattern in text)
+            bad.extend(
+                (_relative_path(py_file), pattern) for pattern in forbidden if pattern in text
+            )
 
         if bad:
             message = "Direct networkx algorithm calls found in analytics.compute:\n"

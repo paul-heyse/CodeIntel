@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/entrypoints/core.py
+# hypothesis_version: 6.148.7
+
+[':', 'all_passing', 'arguments_schema', 'ast_features', 'auth_required', 'command_name', 'commit', 'coverage_ratio', 'created_at', 'db_libs', 'duration_ms', 'entrypoint_id', 'error', 'extra', 'failed', 'failing_tests', 'flaky_tests', 'framework', 'handler_goid_h128', 'handler_module', 'handler_qualname', 'handler_rel_path', 'handler_urn', 'http_client_libs', 'http_method', 'http_server_libs', 'kind', 'last_test_status', 'message_libs', 'owners', 'passed', 'repo', 'route_path', 'schedule', 'slow_tests', 'some_failing', 'status', 'status_codes', 'subsystem_id', 'subsystem_name', 'tags', 'test_goid_h128', 'test_id', 'tests_touching', 'trigger', 'unknown', 'untested', 'uses_concurrency_lib', 'uses_db', 'uses_filesystem', 'uses_network', 'uses_subprocess', 'utf-8']

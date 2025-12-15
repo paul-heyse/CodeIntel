@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/gateway/accessors.py
+# hypothesis_version: 6.148.7
+
+['AnalyticsTables', 'AssetTracking', 'BaseTableAccessor', 'BuildTracking', 'CoreTables', 'DocsViews', 'DuckDBGateway', 'GraphTables', '[]', 'analytics.subsystems', 'analytics.typedness', 'commit', 'core.file_state', 'core.goids', 'core.modules', 'core.repo_map', 'def_goid_h128', 'def_path', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'language', 'module', 'owners', 'path', 'python', 'repo', 'same_file', 'same_module', 'symbol', 'tags', 'use_goid_h128', 'use_path']

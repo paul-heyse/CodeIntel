@@ -528,7 +528,9 @@ def _create_dataframe_node_function(
     dataframe_fn.__doc__ = f"Load {table_key} as pandas DataFrame from {target_name} target."
 
     domain = table_key.split(".", 1)[0] if "." in table_key else "main"
-    return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_LOADER_DATAFRAME)(dataframe_fn)
+    return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_LOADER_DATAFRAME)(
+        dataframe_fn
+    )
 
 
 def _create_artifact_node_function(
@@ -653,7 +655,9 @@ def _generate_nodes_for_target(
                 _attach_node(
                     module,
                     node_name=df_name,
-                    fn=_create_dataframe_node_function(table_key=table_key, target_name=target.name),
+                    fn=_create_dataframe_node_function(
+                        table_key=table_key, target_name=target.name
+                    ),
                 )
                 mappings.dataframe_to_node[table_key] = df_name
 

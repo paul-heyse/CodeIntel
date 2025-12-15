@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/contracts/schemas/registry.py
+# hypothesis_version: 6.148.7
+
+['SCHEMA_REGISTRY', 'consumes_tables', 'core_metadata', 'get_schema', 'produces_tables']

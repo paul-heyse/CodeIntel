@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/coverage_functions.py
+# hypothesis_version: 6.148.7
+
+['analytics', 'compute', 'coverage_functions', 'materialize']

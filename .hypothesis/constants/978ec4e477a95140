@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/contracts/schemas/constraints.py
+# hypothesis_version: 6.148.7
+
+['(s >= 0)', '(s >= 1)', '<= 1', '>= 0', '>= 1', 'Constraint', 'ConstraintKind', 'ConstraintSet', 'compute', 'cross', 'fk', 'manual', 'null', 'nullable', 'pandera.check.ratio', 'pandera.column.dtype', 'pattern', 'range', 'required', 'type', 'unique']

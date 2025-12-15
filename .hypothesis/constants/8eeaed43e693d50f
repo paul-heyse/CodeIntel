@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/schemas/infer_duckdb.py
+# hypothesis_version: 6.148.7
+
+['0', '1', ';\\\\s*$', 'BIGINT', 'BOOL', 'BOOLEAN', 'DECIMAL', 'DECIMAL(38,0)', 'DOUBLE', 'DOUBLE PRECISION', 'FALSE', 'INT', 'INT4', 'INT8', 'INTEGER', 'JSON', 'N', 'NO', 'TEXT', 'TIMESTAMP', 'TIMESTAMPTZ', 'TIMESTAMP_TZ', 'TRUE', 'VARCHAR', 'Y', 'YES']

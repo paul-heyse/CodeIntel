@@ -7,15 +7,12 @@ should be expressed via Ibis and/or the policy backend.
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets import (
-    DATASET_CONTRACTS,
-    DATASET_CONTRACTS_BY_TABLE_KEY,
-    build_contract_dataflow_graph,
-)
+from codeintel.build.schemas import get_schema_provider, is_view, iter_contracts
+from codeintel.config.datasets import build_contract_dataflow_graph
+from codeintel.core.schemas import schema_hash
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -23,26 +20,29 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
 
-def _canonical_type(type_str: str) -> str:
-    upper = type_str.upper()
-    if upper in {"TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"}:
-        return "TIMESTAMPTZ"
-    if upper.startswith("DECIMAL") or upper == "BIGINT":
-        return "BIGINT"
-    return upper
-
-
 def _expected_schema_hash(table_key: str) -> str:
-    schema = DATASET_CONTRACTS_BY_TABLE_KEY[table_key].schema
-    if schema is None:
+    """Compute the expected schema hash for a table using the canonical provider.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+
+    Returns
+    -------
+    str
+        The canonical schema hash.
+
+    Raises
+    ------
+    KeyError
+        If the table key is not found or has no schema.
+    """
+    table_schema = get_schema_provider().get_table_schema(table_key)
+    if table_schema is None:
         message = f"Cannot compute schema hash for view or missing schema: {table_key}"
         raise KeyError(message)
-    parts: list[str] = []
-    for column in schema.columns:
-        canonical_type = _canonical_type(column.type)
-        parts.append(f"{column.name}:{canonical_type}")
-    normalized = "|".join(parts)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return schema_hash(table_schema)
 
 
 METADATA_SCHEMA_DDL: tuple[str, ...] = (
@@ -171,10 +171,11 @@ def load_dataset_schema_registry(con: DuckDBPyConnection) -> dict[str, str]:
 
 
 def _register_dataset_schema_hashes(con: DuckDBPyConnection) -> None:
+    """Register schema hashes for all known tables in the schema provider."""
+    provider = get_schema_provider()
     entries = {
-        table_key: _expected_schema_hash(table_key)
-        for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
-        if contract.schema is not None
+        table_schema.table_key: schema_hash(table_schema)
+        for table_schema in provider.iter_table_schemas()
     }
     con.execute("DELETE FROM metadata.dataset_schema_registry")
     con.executemany(
@@ -187,18 +188,17 @@ def _register_dataset_schema_hashes(con: DuckDBPyConnection) -> None:
 
 
 def validate_dataset_schema_registry(con: DuckDBPyConnection) -> None:
-    """
-    Validate dataset_schema_registry matches DatasetContract TableSchema hashes.
+    """Validate dataset_schema_registry matches schema provider hashes.
 
     Raises
     ------
     RuntimeError
         When entries are missing or do not match expected schema hashes.
     """
+    provider = get_schema_provider()
     expected = {
-        table_key: _expected_schema_hash(table_key)
-        for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
-        if contract.schema is not None
+        table_schema.table_key: schema_hash(table_schema)
+        for table_schema in provider.iter_table_schemas()
     }
     actual = load_dataset_schema_registry(con)
 
@@ -323,11 +323,11 @@ def bootstrap_metadata_datasets(
     jsonl_mapping = dict(jsonl_filenames or {})
     parquet_mapping = dict(parquet_filenames or {})
 
-    for name, contract in sorted(DATASET_CONTRACTS.items(), key=lambda item: item[1].table_key):
-        if contract.is_view and not include_views:
+    for contract in sorted(iter_contracts(), key=lambda c: c.table_key):
+        table_key = contract.table_key
+        if is_view(table_key) and not include_views:
             continue
 
-        table_key = contract.table_key
         schema_prefix, _ = table_key.split(".", maxsplit=1)
         jsonl_filename = jsonl_mapping.get(table_key) or contract.jsonl_filename
         parquet_filename = parquet_mapping.get(table_key) or contract.parquet_filename
@@ -336,8 +336,8 @@ def bootstrap_metadata_datasets(
             con,
             _DatasetUpsert(
                 table_key=table_key,
-                name=name,
-                is_view=contract.is_view,
+                name=contract.name,
+                is_view=is_view(table_key),
                 jsonl_filename=jsonl_filename,
                 parquet_filename=parquet_filename,
                 family=contract.family or schema_prefix,
