@@ -35,7 +35,6 @@ Direct connection usage (via MinimalStorageGateway):
 
 from __future__ import annotations
 
-import importlib
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -52,7 +51,8 @@ if TYPE_CHECKING:
 
     from duckdb import DuckDBPyConnection
 
-    from codeintel.config.datasets import DatasetContract, TableSchema
+    from codeintel.core.schemas.primitives import TableSchema
+    from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.gateway.protocol import MinimalGateway
     from codeintel.storage.ibis_adapter import IbisGateway
 
@@ -65,6 +65,14 @@ log = logging.getLogger(__name__)
 
 
 _TABLE_CREATION_DENYLIST = frozenset({"docs.v_validation_summary"})
+
+
+def _duckdb_table_exists(con: DuckDBPyConnection, *, schema: str, table: str) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1",
+        [schema, table],
+    ).fetchone()
+    return row is not None
 
 
 def _infer_table_alias(where_ast: exp.Where) -> str | None:
@@ -163,19 +171,6 @@ def _build_primary_key_constraint(columns: tuple[str, ...]) -> exp.PrimaryKey:
         SQLGlot primary key expression.
     """
     return exp.PrimaryKey(expressions=[exp.to_identifier(col) for col in columns])
-
-
-def _dataset_contracts_by_table_key() -> dict[str, DatasetContract]:
-    """Return dataset contracts keyed by table key without creating import cycles.
-
-    Returns
-    -------
-    dict[str, DatasetContract]
-        Mapping of table key to dataset contract.
-    """
-    contracts_module = importlib.import_module("codeintel.config.datasets.contracts")
-    getter = contracts_module.get_dataset_contracts_by_table_key
-    return getter()
 
 
 def _build_create_table(table: TableSchema, *, if_not_exists: bool = False) -> exp.Create:
@@ -540,6 +535,7 @@ class DuckDBPolicyBackend:
     """
 
     gateway: MinimalGateway
+    schema_provider: SchemaProvider | None = None
 
     @property
     def con(self) -> DuckDBPyConnection:
@@ -854,22 +850,29 @@ class DuckDBPolicyBackend:
             CREATE TABLE IF NOT EXISTS.
         extra_ddl
             Additional DDL statements to execute after table creation.
+
+        Raises
+        ------
+        RuntimeError
+            If schema_provider is not configured for this backend.
         """
         for schema_name in SCHEMAS:
             self.create_schema_if_not_exists(schema_name)
 
-        contracts = _dataset_contracts_by_table_key()
-        for table_key, contract in contracts.items():
-            if contract.schema is None:
+        if self.schema_provider is None:
+            msg = "DuckDBPolicyBackend requires schema_provider for ensure_all_schemas()"
+            raise RuntimeError(msg)
+
+        for schema in self.schema_provider.iter_table_schemas():
+            if schema.table_key in _TABLE_CREATION_DENYLIST:
                 continue
-            if table_key in _TABLE_CREATION_DENYLIST:
-                continue
+            self.create_schema_if_not_exists(schema.schema)
             self.create_table_from_schema(
-                contract.schema,
+                schema,
                 drop_existing=drop_existing,
                 if_not_exists=not drop_existing,
             )
-            self.create_indexes_from_schema(contract.schema)
+            self.create_indexes_from_schema(schema)
 
         if extra_ddl:
             for stmt in extra_ddl:
@@ -940,23 +943,26 @@ class DuckDBPolicyBackend:
         Raises
         ------
         KeyError
-            If no dataset contract is registered for the table.
+            If no TableSchema is registered for the table.
         RuntimeError
             If the table is missing and creation is disabled.
         """
-        contract = _dataset_contracts_by_table_key().get(table_key)
-        if contract is None:
-            message = f"Unknown dataset contract for {table_key}"
-            raise KeyError(message)
+        if self.schema_provider is None:
+            msg = "DuckDBPolicyBackend requires schema_provider for ensure_table()"
+            raise RuntimeError(msg)
 
-        table_schema = contract.schema
-        if table_schema is None or contract.is_view:
+        if table_key in _TABLE_CREATION_DENYLIST:
             return
 
-        qualified_name = f"{table_schema.schema}.{table_schema.name}"
-        info = self.con.execute(f"PRAGMA table_info({qualified_name})").fetchall()
-        expected_columns = [col.name for col in table_schema.columns]
-        if not info:
+        try:
+            table_schema = self.schema_provider.require_table_schema(table_key)
+        except KeyError as exc:
+            msg = f"Unknown table schema: {table_key}"
+            raise KeyError(msg) from exc
+
+        self.create_schema_if_not_exists(table_schema.schema)
+
+        if not _duckdb_table_exists(self.con, schema=table_schema.schema, table=table_schema.name):
             if not create_if_missing:
                 message = f"Missing table {table_key}"
                 raise RuntimeError(message)
@@ -964,7 +970,10 @@ class DuckDBPolicyBackend:
             self.con.execute(create_stmt.sql(dialect=DUCKDB_DIALECT))
             return
 
+        qualified_name = f"{table_schema.schema}.{table_schema.name}"
+        info = self.con.execute(f"PRAGMA table_info({qualified_name})").fetchall()
         actual_columns = [row[1] for row in info]
+        expected_columns = [col.name for col in table_schema.columns]
         if actual_columns != expected_columns:
             message = (
                 f"Column order mismatch for {table_key}: "
@@ -1004,6 +1013,8 @@ class DuckDBPolicyBackend:
         ------
         ValueError
             If table_key is not qualified or columns cannot be determined.
+        RuntimeError
+            If schema_provider is required to derive columns but is not configured.
         """
         if not rows:
             return 0
@@ -1015,12 +1026,11 @@ class DuckDBPolicyBackend:
         schema, table = table_key.split(".", 1)
 
         if columns is None:
-            contracts = _dataset_contracts_by_table_key()
-            contract = contracts.get(table_key)
-            if contract is None or contract.schema is None:
-                message = f"No TableSchema found for {table_key}; columns must be provided"
-                raise ValueError(message)
-            columns = [col.name for col in contract.schema.columns]
+            if self.schema_provider is None:
+                msg = "DuckDBPolicyBackend requires schema_provider when columns are not provided"
+                raise RuntimeError(msg)
+            table_schema = self.schema_provider.require_table_schema(table_key)
+            columns = [col.name for col in table_schema.columns]
 
         insert_expr = _build_insert(schema, table, columns)
         sql = insert_expr.sql(dialect=DUCKDB_DIALECT)
@@ -1061,6 +1071,8 @@ class DuckDBPolicyBackend:
         ------
         ValueError
             When no columns can be derived for the provided table_key.
+        RuntimeError
+            If schema_provider is required to derive columns but is not configured.
         """
         row_list = list(rows)
         if not row_list:
@@ -1068,12 +1080,11 @@ class DuckDBPolicyBackend:
 
         resolved_columns: Sequence[str] | None = columns
         if resolved_columns is None:
-            contracts = _dataset_contracts_by_table_key()
-            contract = contracts.get(table_key)
-            if contract is None or contract.schema is None:
-                message = f"No TableSchema found for {table_key}; columns must be provided"
-                raise ValueError(message)
-            resolved_columns = [col.name for col in contract.schema.columns if col.name is not None]
+            if self.schema_provider is None:
+                msg = "DuckDBPolicyBackend requires schema_provider when columns are not provided"
+                raise RuntimeError(msg)
+            table_schema = self.schema_provider.require_table_schema(table_key)
+            resolved_columns = [col.name for col in table_schema.columns]
 
         try:
             tuple_rows = [tuple(row[col] for col in resolved_columns) for row in row_list]

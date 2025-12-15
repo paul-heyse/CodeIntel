@@ -1,0 +1,2645 @@
+{
+  "tables": [
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "block_idx",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "is_entry",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "is_exit",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "is_branch",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "is_join",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "dom_depth",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dominates_exit",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "bc_betweenness",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "bc_closeness",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "bc_eigenvector",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "in_loop_scc",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "loop_header",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "loop_nesting_depth",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "metrics_version",
+          "nullable": true,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Control-flow graph block-level metrics per function",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_analytics_cfg_block_fn",
+          "unique": false
+        }
+      ],
+      "name": "cfg_block_metrics",
+      "primary_key": [
+        "repo",
+        "commit",
+        "function_goid_h128",
+        "block_idx"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.cfg_block_metrics"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "module",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "cfg_block_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cfg_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cfg_has_cycles",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "cfg_scc_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cfg_longest_path_len",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cfg_avg_shortest_path_len",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "cfg_branching_factor_mean",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "cfg_branching_factor_max",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cfg_linear_block_fraction",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "cfg_dom_tree_height",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cfg_dominance_frontier_size_mean",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "cfg_dominance_frontier_size_max",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cfg_loop_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cfg_loop_nesting_depth_max",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cfg_bc_betweenness_max",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "cfg_bc_betweenness_mean",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "cfg_bc_closeness_mean",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "cfg_bc_eigenvector_max",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "metrics_version",
+          "nullable": true,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Control-flow graph summary metrics per function",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_analytics_cfg_fn_goid",
+          "unique": false
+        }
+      ],
+      "name": "cfg_function_metrics",
+      "primary_key": [
+        "repo",
+        "commit",
+        "function_goid_h128"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.cfg_function_metrics"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "unreachable_block_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "loop_header_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "true_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "false_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "back_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "exception_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "fallthrough_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "loop_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "entry_exit_simple_paths",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "metrics_version",
+          "nullable": true,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Extended control-flow graph metrics per function",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_analytics_cfg_fn_ext_goid",
+          "unique": false
+        }
+      ],
+      "name": "cfg_function_metrics_ext",
+      "primary_key": [
+        "repo",
+        "commit",
+        "function_goid_h128"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.cfg_function_metrics_ext"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": true,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "urn",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "language",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "kind",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "start_line",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_line",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "executable_lines",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "covered_lines",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "coverage_ratio",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "tested",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "untested_reason",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": true,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Line coverage aggregates per function",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_analytics_coverage_functions_goid",
+          "unique": false
+        }
+      ],
+      "name": "coverage_functions",
+      "primary_key": [],
+      "schema": "analytics",
+      "table_key": "analytics.coverage_functions"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "model_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "usage_kinds_json",
+          "nullable": false,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "evidence_json",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "context_json",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Per function/model usage summary and context (CRUD/validate/serialize).",
+      "indexes": [],
+      "name": "data_model_usage",
+      "primary_key": [
+        "repo",
+        "commit",
+        "model_id",
+        "function_goid_h128"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.data_model_usage"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "model_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "goid_h128",
+          "nullable": true,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "model_name",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "module",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "model_kind",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "base_classes_json",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "doc_short",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "doc_long",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Extracted data models (dataclasses, Pydantic, TypedDicts, ORMs)",
+      "indexes": [],
+      "name": "data_models",
+      "primary_key": [
+        "repo",
+        "commit",
+        "model_id"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.data_models"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "block_idx",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_in_degree",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_out_degree",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_phi_in_degree",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_phi_out_degree",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_bc_betweenness",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "dfg_bc_closeness",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "dfg_bc_eigenvector",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "dfg_in_chain",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "dfg_in_scc",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "metrics_version",
+          "nullable": true,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Data-flow graph block-level metrics per function",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_analytics_dfg_block_fn",
+          "unique": false
+        }
+      ],
+      "name": "dfg_block_metrics",
+      "primary_key": [
+        "repo",
+        "commit",
+        "function_goid_h128",
+        "block_idx"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.dfg_block_metrics"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "module",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "dfg_block_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_phi_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_symbol_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_component_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_scc_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_has_cycles",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "dfg_longest_chain_len",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_avg_shortest_path_len",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "dfg_avg_in_degree",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "dfg_avg_out_degree",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "dfg_max_in_degree",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_max_out_degree",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "dfg_branchy_block_fraction",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "dfg_bc_betweenness_max",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "dfg_bc_betweenness_mean",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "dfg_bc_eigenvector_max",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "metrics_version",
+          "nullable": true,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Data-flow graph summary metrics per function",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_analytics_dfg_fn_goid",
+          "unique": false
+        }
+      ],
+      "name": "dfg_function_metrics",
+      "primary_key": [
+        "repo",
+        "commit",
+        "function_goid_h128"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.dfg_function_metrics"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "data_flow_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "intra_block_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "use_kind_phi_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "use_kind_data_flow_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "use_kind_intra_block_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "use_kind_other_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "phi_edge_ratio",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "entry_exit_simple_paths",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "metrics_version",
+          "nullable": true,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Extended data-flow graph metrics per function",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_analytics_dfg_fn_ext_goid",
+          "unique": false
+        }
+      ],
+      "name": "dfg_function_metrics_ext",
+      "primary_key": [
+        "repo",
+        "commit",
+        "function_goid_h128"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.dfg_function_metrics_ext"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "entrypoint_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "kind",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "framework",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "handler_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "handler_urn",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "handler_rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "handler_module",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "handler_qualname",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "http_method",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "route_path",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "status_codes",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "auth_required",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "command_name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "arguments_schema",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "schedule",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "trigger",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "extra",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "subsystem_id",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "subsystem_name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "tags",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "owners",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "tests_touching",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "failing_tests",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "slow_tests",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "flaky_tests",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "entrypoint_coverage_ratio",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "last_test_status",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "External entrypoints mapped to handlers, subsystems, and tests",
+      "indexes": [],
+      "name": "entrypoints",
+      "primary_key": [
+        "repo",
+        "commit",
+        "entrypoint_id"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.entrypoints"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "dep_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "library",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "service_name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "category",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "language",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "severity",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "criticality",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "risk_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "function_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "callsite_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "modules_json",
+          "nullable": false,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "usage_modes",
+          "nullable": false,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "config_keys",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "risk_level",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Aggregated view of external libraries/services used by the repo",
+      "indexes": [],
+      "name": "external_dependencies",
+      "primary_key": [
+        "repo",
+        "commit",
+        "dep_id"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.external_dependencies"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "dep_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "library",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "service_name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "language",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "severity",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "criticality",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "risk_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "matched_pattern",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "function_urn",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "module",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "callsite_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "modes",
+          "nullable": false,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "evidence_json",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Function-level callsites into external dependencies with modes and evidence",
+      "indexes": [],
+      "name": "external_dependency_calls",
+      "primary_key": [
+        "repo",
+        "commit",
+        "dep_id",
+        "function_goid_h128"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.external_dependency_calls"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "urn",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "module",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_in_commit",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": true,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "last_modified_commit",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "last_modified_at",
+          "nullable": true,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "age_days",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "commit_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "author_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "lines_added",
+          "nullable": false,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "lines_deleted",
+          "nullable": false,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "churn_score",
+          "nullable": false,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "stability_bucket",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "history_window_start",
+          "nullable": true,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "history_window_end",
+          "nullable": true,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "created_at_row",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Per-function compressed git history & churn metrics derived from file history and GOID spans.",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_analytics_function_history_goid",
+          "unique": false
+        },
+        {
+          "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_analytics_function_history_repo_commit",
+          "unique": false
+        }
+      ],
+      "name": "function_history",
+      "primary_key": [
+        "repo",
+        "commit",
+        "function_goid_h128"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.function_history"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": true,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "urn",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "language",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "kind",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "loc",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "logical_loc",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cyclomatic_complexity",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "complexity_bucket",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "typedness_bucket",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "typedness_source",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "hotspot_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "file_typed_ratio",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "static_error_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "has_static_errors",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "executable_lines",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "covered_lines",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "coverage_ratio",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "tested",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "test_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "failing_test_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "last_test_status",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "risk_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "risk_level",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "tags",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "owners",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": true,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Composite risk factors per function",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_analytics_gorf_goid",
+          "unique": false
+        }
+      ],
+      "name": "goid_risk_factors",
+      "primary_key": [],
+      "schema": "analytics",
+      "table_key": "analytics.goid_risk_factors"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "entity_kind",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "entity_stable_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": true,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "module",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "language",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit_ts",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "loc",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "cyclomatic_complexity",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "coverage_ratio",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "static_error_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "typedness_bucket",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "risk_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "risk_level",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "bucket_label",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at_row",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Per-commit metrics for selected functions/modules for temporal analysis.",
+      "indexes": [
+        {
+          "columns": [
+            "repo",
+            "entity_kind",
+            "entity_stable_id"
+          ],
+          "name": "idx_analytics_history_timeseries_entity",
+          "unique": false
+        }
+      ],
+      "name": "history_timeseries",
+      "primary_key": [
+        "repo",
+        "entity_kind",
+        "entity_stable_id",
+        "commit"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.history_timeseries"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "author_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "lines_added",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "lines_deleted",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "complexity",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "score",
+          "nullable": true,
+          "type": "DOUBLE"
+        }
+      ],
+      "description": "File-level hotspot scores",
+      "indexes": [],
+      "name": "hotspots",
+      "primary_key": [],
+      "schema": "analytics",
+      "table_key": "analytics.hotspots"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "pyrefly_errors",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "pyright_errors",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "ruff_errors",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "total_errors",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "has_errors",
+          "nullable": false,
+          "type": "BOOLEAN"
+        }
+      ],
+      "description": "Per-file static diagnostic counts",
+      "indexes": [],
+      "name": "static_diagnostics",
+      "primary_key": [
+        "repo",
+        "commit",
+        "rel_path"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.static_diagnostics"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "subsystem_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "module",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "role",
+          "nullable": true,
+          "type": "VARCHAR"
+        }
+      ],
+      "description": "Mapping of subsystems to member modules",
+      "indexes": [
+        {
+          "columns": [
+            "module"
+          ],
+          "name": "idx_analytics_subsystem_modules_module",
+          "unique": false
+        }
+      ],
+      "name": "subsystem_modules",
+      "primary_key": [
+        "repo",
+        "commit",
+        "subsystem_id",
+        "module"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.subsystem_modules"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "subsystem_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "name",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "description",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "module_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "modules_json",
+          "nullable": false,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "entrypoints_json",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "internal_edge_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "external_edge_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "fan_in",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "fan_out",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "function_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "avg_risk_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "max_risk_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "high_risk_function_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "risk_level",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Inferred architectural subsystems with summary metrics",
+      "indexes": [
+        {
+          "columns": [
+            "repo",
+            "commit",
+            "subsystem_id"
+          ],
+          "name": "idx_analytics_subsystems_repo_commit_id",
+          "unique": false
+        }
+      ],
+      "name": "subsystems",
+      "primary_key": [
+        "repo",
+        "commit",
+        "subsystem_id"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.subsystems"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "tests_degree",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "tests_weighted_degree",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "tests_degree_centrality",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "proj_degree",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "proj_weight",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "proj_clustering",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "proj_betweenness",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "tests_risk_weighted_degree",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Function-side graph metrics from the test-function bipartite graph",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_analytics_test_graph_metrics_fn_goid",
+          "unique": false
+        }
+      ],
+      "name": "test_graph_metrics_functions",
+      "primary_key": [
+        "function_goid_h128",
+        "repo",
+        "commit"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.test_graph_metrics_functions"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "test_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "degree",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "weighted_degree",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "degree_centrality",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "proj_degree",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "proj_weight",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "proj_clustering",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "proj_betweenness",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "risk_weighted_degree",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Graph metrics for tests in the test-function bipartite graph",
+      "indexes": [],
+      "name": "test_graph_metrics_tests",
+      "primary_key": [
+        "test_id",
+        "repo",
+        "commit"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.test_graph_metrics_tests"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "type_error_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "annotation_ratio",
+          "nullable": false,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "untyped_defs",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "overlay_needed",
+          "nullable": false,
+          "type": "BOOLEAN"
+        }
+      ],
+      "description": "Per-file annotation ratios and static error counts",
+      "indexes": [],
+      "name": "typedness",
+      "primary_key": [
+        "repo",
+        "commit",
+        "path"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.typedness"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "max_call_depth",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "is_leaf",
+          "nullable": false,
+          "type": "BOOLEAN"
+        }
+      ],
+      "description": "Derived call graph depth stats per function for a snapshot",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_graph_v_call_depth_stats_goid",
+          "unique": false
+        }
+      ],
+      "name": "v_call_depth_stats",
+      "primary_key": [
+        "repo",
+        "commit",
+        "function_goid_h128"
+      ],
+      "schema": "graph",
+      "table_key": "graph.v_call_depth_stats"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "num_callees",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "num_unique_callees",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "num_callers",
+          "nullable": false,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Derived call graph aggregates: callers/callees per function for a snapshot",
+      "indexes": [
+        {
+          "columns": [
+            "function_goid_h128"
+          ],
+          "name": "idx_graph_v_function_call_counts_goid",
+          "unique": false
+        }
+      ],
+      "name": "v_function_call_counts",
+      "primary_key": [
+        "repo",
+        "commit",
+        "function_goid_h128"
+      ],
+      "schema": "graph",
+      "table_key": "graph.v_function_call_counts"
+    }
+  ],
+  "version": "v1"
+}

@@ -12,111 +12,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Final, Literal
+from typing import Final
 
-ColumnType = Literal[
-    "BOOLEAN",
-    "INTEGER",
-    "BIGINT",
-    "DOUBLE",
-    "DECIMAL",
-    "DECIMAL(38,0)",
-    "VARCHAR",
-    "JSON",
-    "TIMESTAMP",
-    "TIMESTAMPTZ",
-]
+from codeintel.core.schemas.primitives import Column, ColumnType, Index, TableSchema
+
 COLUMN_TYPE = ColumnType
-
-
-@dataclass(frozen=True)
-class Column:
-    """Definition of a single table column.
-
-    Parameters
-    ----------
-    name
-        Column name.
-    type
-        DuckDB column type.
-    nullable
-        Whether the column allows NULL values.
-    description
-        Optional column description for documentation.
-    """
-
-    name: str
-    type: ColumnType
-    nullable: bool = True
-    description: str | None = None
-
-
-@dataclass(frozen=True)
-class Index:
-    """Secondary index definition.
-
-    Parameters
-    ----------
-    name
-        Index name.
-    columns
-        Column names included in the index.
-    unique
-        Whether the index enforces uniqueness.
-    """
-
-    name: str
-    columns: tuple[str, ...]
-    unique: bool = False
-
-
-@dataclass(frozen=True)
-class TableSchema:
-    """Schema definition for a DuckDB table.
-
-    Parameters
-    ----------
-    schema
-        Database schema name (e.g., "core", "analytics").
-    name
-        Table name.
-    columns
-        List of column definitions.
-    primary_key
-        Tuple of column names forming the primary key.
-    indexes
-        Secondary index definitions.
-    description
-        Optional table description for documentation.
-    """
-
-    schema: str
-    name: str
-    columns: list[Column]
-    primary_key: tuple[str, ...] = ()
-    indexes: tuple[Index, ...] = ()
-    description: str | None = None
-
-    @property
-    def fq_name(self) -> str:
-        """Return fully qualified table name.
-
-        Returns
-        -------
-        str
-            Table name in "schema.name" format.
-        """
-        return f"{self.schema}.{self.name}"
-
-    def column_names(self) -> list[str]:
-        """Return ordered column names.
-
-        Returns
-        -------
-        list[str]
-            Column names in definition order.
-        """
-        return [col.name for col in self.columns]
 
 
 RowToTuple = Callable[[Mapping[str, object]], tuple[object, ...]]

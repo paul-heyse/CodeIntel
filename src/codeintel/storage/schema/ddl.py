@@ -14,6 +14,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.storage.constants import SCHEMAS
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
@@ -48,7 +49,14 @@ def _get_policy_backend(con: DuckDBPyConnection) -> DuckDBPolicyBackend:
     DuckDBPolicyBackend
         Policy backend instance wrapping the connection.
     """
-    return MinimalStorageGateway(con).policy
+    contracts = get_dataset_contracts_by_table_key()
+    schemas = {
+        table_key: contract.schema
+        for table_key, contract in contracts.items()
+        if contract.schema is not None and not contract.is_view
+    }
+    provider = MappingSchemaProvider(schemas)
+    return MinimalStorageGateway(con, schema_provider=provider).policy
 
 
 def create_schemas(con: DuckDBPyConnection) -> None:

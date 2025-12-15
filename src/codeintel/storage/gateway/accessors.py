@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets import get_table_columns
+from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.gateway.insert_helpers import insert_rows
@@ -569,7 +570,12 @@ class DuckDBGateway:
     def __post_init__(self) -> None:
         """Initialize table accessor instances after dataclass init."""
         self.ibis = IbisGateway(self)
-        self.policy = DuckDBPolicyBackend(self)
+        schemas = {
+            table_key: contract.schema
+            for table_key, contract in self.datasets.by_table_key.items()
+            if contract.schema is not None and not contract.is_view
+        }
+        self.policy = DuckDBPolicyBackend(self, schema_provider=MappingSchemaProvider(schemas))
         self.analytics = AnalyticsTables(self)
         self.assets = AssetTracking(self)
         self.build = BuildTracking(self)

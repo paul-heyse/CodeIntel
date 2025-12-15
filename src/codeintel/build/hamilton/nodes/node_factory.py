@@ -17,11 +17,14 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import sys
 import time
 from dataclasses import dataclass
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, cast
 
+import ibis.expr.types as ir
+import pandas as pd
 from hamilton.function_modifiers import tag
 
 from codeintel.build.context import ContextResources, TargetExecutionContext
@@ -49,6 +52,13 @@ from codeintel.build.hamilton.naming import (
     dataset_node,
     query_node,
     target_node,
+)
+from codeintel.build.hamilton.tags import (
+    NODE_TYPE_ARTIFACT,
+    NODE_TYPE_DATASET,
+    NODE_TYPE_LOADER_DATAFRAME,
+    NODE_TYPE_LOADER_QUERY,
+    NODE_TYPE_MATERIALIZE,
 )
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.registry import get_target_graph
@@ -88,7 +98,17 @@ def _set_signature[T](fn: Callable[..., T], signature: inspect.Signature) -> Cal
     Callable[..., T]
         The input function with signature metadata applied.
     """
-    cast("Any", fn).__signature__ = signature
+    fn_any = cast("Any", fn)
+    fn_any.__signature__ = signature
+
+    annotations: dict[str, object] = dict(getattr(fn, "__annotations__", {}))
+    for name, param in signature.parameters.items():
+        if param.annotation is inspect.Signature.empty:
+            continue
+        annotations[name] = param.annotation
+    if signature.return_annotation is not inspect.Signature.empty:
+        annotations["return"] = signature.return_annotation
+    fn_any.__annotations__ = annotations
     return fn
 
 
@@ -356,7 +376,7 @@ def _create_node_function(
     node_fn.__name__ = target_node(target_name)
     node_fn.__doc__ = f"Execute the {target_name} target ({domain})."
 
-    return tag(domain=domain, target=target_name)(node_fn)
+    return tag(domain=domain, target=target_name, node_type=NODE_TYPE_MATERIALIZE)(node_fn)
 
 
 def _create_dataset_node_function(
@@ -408,7 +428,7 @@ def _create_dataset_node_function(
     dataset_fn.__doc__ = f"Extract {table_key} dataset from {target_name} target."
 
     domain = table_key.split(".", 1)[0] if "." in table_key else "main"
-    return tag(domain=domain, table=table_key)(dataset_fn)
+    return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_DATASET)(dataset_fn)
 
 
 def _create_query_node_function(
@@ -453,12 +473,12 @@ def _create_query_node_function(
         ),
     ]
 
-    _set_signature(query_fn, inspect.Signature(params))
+    _set_signature(query_fn, inspect.Signature(params, return_annotation=ir.Table))
     query_fn.__name__ = q_name
     query_fn.__doc__ = f"Load {table_key} as Ibis expression from {target_name} target."
 
     domain = table_key.split(".", 1)[0] if "." in table_key else "main"
-    return tag(domain=domain, table=table_key, node_type="query")(query_fn)
+    return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_LOADER_QUERY)(query_fn)
 
 
 def _create_dataframe_node_function(
@@ -503,12 +523,12 @@ def _create_dataframe_node_function(
         ),
     ]
 
-    _set_signature(dataframe_fn, inspect.Signature(params))
+    _set_signature(dataframe_fn, inspect.Signature(params, return_annotation=pd.DataFrame))
     dataframe_fn.__name__ = df_name
     dataframe_fn.__doc__ = f"Load {table_key} as pandas DataFrame from {target_name} target."
 
     domain = table_key.split(".", 1)[0] if "." in table_key else "main"
-    return tag(domain=domain, table=table_key, node_type="dataframe")(dataframe_fn)
+    return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_LOADER_DATAFRAME)(dataframe_fn)
 
 
 def _create_artifact_node_function(
@@ -571,7 +591,7 @@ def _create_artifact_node_function(
     artifact_fn.__doc__ = f"Access {artifact_name} artifact from {target_name} target."
 
     domain = artifact_name.split(".", 1)[0] if "." in artifact_name else "main"
-    return tag(domain=domain, artifact=artifact_name, node_type="artifact")(artifact_fn)
+    return tag(domain=domain, artifact=artifact_name, node_type=NODE_TYPE_ARTIFACT)(artifact_fn)
 
 
 @dataclass(frozen=True)
@@ -581,6 +601,13 @@ class _GeneratedMappings:
     query_to_node: dict[str, str]
     dataframe_to_node: dict[str, str]
     artifact_to_node: dict[str, str]
+
+
+def _attach_node(module: ModuleType, *, node_name: str, fn: object) -> None:
+    fn_any = cast("Any", fn)
+    fn_any.__name__ = node_name
+    fn_any.__module__ = module.__name__
+    setattr(module, node_name, fn_any)
 
 
 def _generate_nodes_for_target(
@@ -599,34 +626,34 @@ def _generate_nodes_for_target(
             domain=meta_domain,
         )
         node_name = target_node(target.name)
-        setattr(module, node_name, node_fn)
+        _attach_node(module, node_name=node_name, fn=node_fn)
         mappings.target_to_node[target.name] = node_name
 
     if options.include_dataset_nodes:
         table_keys = target.contract.table_keys
         for table_key in table_keys:
             d_name = dataset_node(table_key)
-            setattr(
+            _attach_node(
                 module,
-                d_name,
-                _create_dataset_node_function(table_key=table_key, target_name=target.name),
+                node_name=d_name,
+                fn=_create_dataset_node_function(table_key=table_key, target_name=target.name),
             )
             mappings.dataset_to_node[table_key] = d_name
 
             if options.include_loader_nodes:
                 q_name = query_node(table_key)
-                setattr(
+                _attach_node(
                     module,
-                    q_name,
-                    _create_query_node_function(table_key=table_key, target_name=target.name),
+                    node_name=q_name,
+                    fn=_create_query_node_function(table_key=table_key, target_name=target.name),
                 )
                 mappings.query_to_node[table_key] = q_name
 
                 df_name = dataframe_node(table_key)
-                setattr(
+                _attach_node(
                     module,
-                    df_name,
-                    _create_dataframe_node_function(table_key=table_key, target_name=target.name),
+                    node_name=df_name,
+                    fn=_create_dataframe_node_function(table_key=table_key, target_name=target.name),
                 )
                 mappings.dataframe_to_node[table_key] = df_name
 
@@ -634,10 +661,10 @@ def _generate_nodes_for_target(
         art_names = target.contract.artifact_names if target.contract else ()
         for art_name in art_names:
             a_node_name = artifact_node(art_name)
-            setattr(
+            _attach_node(
                 module,
-                a_node_name,
-                _create_artifact_node_function(
+                node_name=a_node_name,
+                fn=_create_artifact_node_function(
                     artifact_name=art_name,
                     target_name=target.name,
                 ),
@@ -679,6 +706,7 @@ def build_target_module(
 
     module = ModuleType("codeintel.build.hamilton.nodes.generated")
     module.__doc__ = "Auto-generated Hamilton nodes from TargetGraph."
+    sys.modules[module.__name__] = module
 
     mappings = _GeneratedMappings(
         target_to_node={},
@@ -770,5 +798,7 @@ def clear_generated_module_cache() -> None:
 
     Useful for testing or when the TargetGraph has changed.
     """
+    if _MODULE_CACHE.module is not None:
+        sys.modules.pop(_MODULE_CACHE.module.__name__, None)
     _MODULE_CACHE.module = None
     _MODULE_CACHE.config_key = None

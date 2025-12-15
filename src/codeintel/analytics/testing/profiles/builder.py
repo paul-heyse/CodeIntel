@@ -38,7 +38,6 @@ from codeintel.analytics.testing.profiles.types import (
 from codeintel.analytics.utilities.ast import resolve_call_target
 from codeintel.core.paths import path_to_module
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -128,7 +127,7 @@ def build_test_profile(
         Optional test profile configuration options.
     """
     opts = options or TestProfileOptions()
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.test_profile")
     con = gateway.con
     tests: list[TestRecord] = _load_test_records(con, snapshot.repo, snapshot.commit)

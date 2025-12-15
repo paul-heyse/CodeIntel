@@ -10,22 +10,19 @@ based on file path and line ranges, then aggregates coverage metrics per functio
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
+import ibis.expr.types as ir
 from hamilton.function_modifiers import tag
 
 from codeintel.analytics.compute.coverage.compute import build_coverage_functions_expr
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
+from codeintel.build.targets import TargetGraph
 
 LOG = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    import ibis.expr.types as ir
-
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-    from codeintel.build.targets import TargetGraph
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
 @tag(domain="analytics", target="coverage_functions", node_type="compute")

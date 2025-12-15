@@ -33,22 +33,22 @@ from codeintel.analytics.dependencies.core import (
     ExternalDependencyInputs,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import (
     MaterializationContext,
     materialize_rows,
 )
+from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-    from codeintel.build.targets import TargetGraph
 
 
 log = logging.getLogger(__name__)
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
 
 def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
@@ -187,7 +187,7 @@ def t__external_deps(
 
     def compute() -> dict[str, int]:
         # Ensure tables exist
-        backend = DuckDBPolicyBackend(env.gateway)
+        backend = env.gateway.policy
         backend.ensure_table("analytics.external_dependency_calls")
         backend.ensure_table("analytics.external_dependencies")
 

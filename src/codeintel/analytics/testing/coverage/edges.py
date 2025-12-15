@@ -19,7 +19,6 @@ from codeintel.config.datasets import (
 )
 from codeintel.core.catalog import CatalogService
 from codeintel.core.paths import normalize_path
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -240,7 +239,7 @@ def _backfill_test_goids(
             updates.append((goid, urn, test_id, rel_path))
 
     if updates:
-        backend = DuckDBPolicyBackend(gateway)
+        backend = gateway.policy
         backend.ensure_table("analytics.test_catalog")
         con.executemany(
             TEST_CATALOG_UPDATE_GOIDS,
@@ -519,7 +518,7 @@ def compute_test_coverage_edges(
             )
         )
 
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.test_coverage_edges")
     backend.delete_for_snapshot(
         "analytics.test_coverage_edges", repo=snapshot.repo, commit=snapshot.commit

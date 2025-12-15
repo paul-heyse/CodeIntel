@@ -12,11 +12,14 @@ which return structured result containers. The materialize node uses
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from hamilton.function_modifiers import tag
 
-from codeintel.analytics.cfg_dfg.compute import compute_cfg_metrics_pure, compute_dfg_metrics_pure
+from codeintel.analytics.cfg_dfg.compute import (
+    CfgMetricsResult,
+    DfgMetricsResult,
+    compute_cfg_metrics_pure,
+    compute_dfg_metrics_pure,
+)
 from codeintel.analytics.cfg_dfg.materialize import (
     CFG_BLOCK_METRICS_COLS,
     CFG_FUNCTION_METRICS_COLS,
@@ -25,18 +28,16 @@ from codeintel.analytics.cfg_dfg.materialize import (
     DFG_FUNCTION_METRICS_COLS,
     DFG_FUNCTION_METRICS_EXT_COLS,
 )
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import (
     MaterializationContext,
     materialize_rows,
 )
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.build.targets import TargetGraph
 
-if TYPE_CHECKING:
-    from codeintel.analytics.cfg_dfg.compute import CfgMetricsResult, DfgMetricsResult
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-    from codeintel.build.targets import TargetGraph
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, CfgMetricsResult, DfgMetricsResult)
 
 
 @tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute")
@@ -158,7 +159,7 @@ def t__cfg_dfg_metrics(
 
     def compute() -> dict[str, int]:
         # Ensure tables exist
-        backend = DuckDBPolicyBackend(env.gateway)
+        backend = env.gateway.policy
         backend.ensure_table("analytics.cfg_function_metrics")
         backend.ensure_table("analytics.cfg_block_metrics")
         backend.ensure_table("analytics.cfg_function_metrics_ext")

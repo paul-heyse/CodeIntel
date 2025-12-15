@@ -30,6 +30,8 @@ if TYPE_CHECKING:
 
     from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
+    from codeintel.core.schemas.provider import SchemaProvider
+
 __all__ = ["MinimalStorageGateway"]
 
 
@@ -85,17 +87,25 @@ class MinimalStorageGateway:
     open_gateway : Full gateway with accessor support.
     """
 
-    def __init__(self, connection: DuckDBPyConnection) -> None:
+    def __init__(
+        self,
+        connection: DuckDBPyConnection,
+        *,
+        schema_provider: SchemaProvider | None = None,
+    ) -> None:
         """Initialize minimal gateway with a DuckDB connection.
 
         Parameters
         ----------
         connection
             Raw DuckDB connection to wrap.
+        schema_provider
+            Optional schema provider for DDL and column-order enforcement.
         """
         self._con = connection
         self._ibis: IbisGateway | None = None
         self._policy: DuckDBPolicyBackend | None = None
+        self._schema_provider = schema_provider
 
     @property
     def con(self) -> DuckDBPyConnection:
@@ -133,7 +143,7 @@ class MinimalStorageGateway:
             Policy backend for DDL and mutation operations.
         """
         if self._policy is None:
-            self._policy = DuckDBPolicyBackend(self)
+            self._policy = DuckDBPolicyBackend(self, schema_provider=self._schema_provider)
         return self._policy
 
     # -------------------------------------------------------------------------

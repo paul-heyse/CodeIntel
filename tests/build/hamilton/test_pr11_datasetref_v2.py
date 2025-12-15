@@ -6,7 +6,6 @@ Validates DatasetRef includes repo/commit fields and ArtifactRef structure.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
 
@@ -61,8 +60,9 @@ class TestDatasetRefV2Fields:
             repo="org/repo",
             commit="abc123",
         )
+        attr = "repo"
         with pytest.raises(AttributeError):
-            object.__setattr__(cast("Any", ref), "repo", "changed")  # noqa: PLC2801
+            setattr(ref, attr, "changed")
 
 
 class TestRefsFromTargetResult:
@@ -152,8 +152,9 @@ class TestArtifactRef:
             repo="org/repo",
             commit="abc123",
         )
+        attr = "name"
         with pytest.raises(AttributeError):
-            object.__setattr__(cast("Any", ref), "name", "changed")  # noqa: PLC2801
+            setattr(ref, attr, "changed")
 
 
 class TestTargetRunRecordArtifacts:

@@ -56,6 +56,7 @@ COMMAND_TAGS = {
     "promote",
     "resolve",
     "run",
+    "schema",
     "status",
 }
 DOMAIN_TAGS = {"analytics", "export", "graphs"}

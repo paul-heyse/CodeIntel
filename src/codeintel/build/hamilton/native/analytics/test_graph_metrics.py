@@ -12,32 +12,29 @@ which return structured result containers. The materialize node uses
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
-from codeintel.analytics.testing.compute import compute_test_graph_metrics_pure
+from codeintel.analytics.testing.compute import (
+    TestGraphMetricsResult,
+    compute_test_graph_metrics_pure,
+)
 from codeintel.analytics.testing.graph_metrics import (
     TEST_GRAPH_METRICS_FUNCTIONS_COLS,
     TEST_GRAPH_METRICS_TESTS_COLS,
 )
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import (
     MaterializationContext,
     materialize_rows,
 )
-from codeintel.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-
-if TYPE_CHECKING:
-    from codeintel.analytics.testing.compute import TestGraphMetricsResult
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-    from codeintel.build.targets import TargetGraph
-    from codeintel.graphs.runtime import GraphRuntime
-
+from codeintel.build.targets import TargetGraph
+from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 
 log = logging.getLogger(__name__)
+_HAMILTON_TYPE_HINTS = (BuildEnv, GraphRuntime, TargetGraph, TargetRunRecord, TestGraphMetricsResult)
 
 
 def _get_graph_runtime(env: BuildEnv) -> GraphRuntime:
@@ -126,7 +123,7 @@ def t__test_graph_metrics(
 
     def compute() -> dict[str, int]:
         # Ensure tables exist
-        backend = DuckDBPolicyBackend(env.gateway)
+        backend = env.gateway.policy
         backend.ensure_table("analytics.test_graph_metrics_tests")
         backend.ensure_table("analytics.test_graph_metrics_functions")
 

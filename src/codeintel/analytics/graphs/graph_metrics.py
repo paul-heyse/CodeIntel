@@ -41,7 +41,6 @@ from codeintel.graphs.runtime import (
     resolve_graph_runtime,
 )
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
 from codeintel.storage.repositories.subsystems import SubsystemRepository
@@ -222,7 +221,7 @@ def compute_graph_metrics(
     )
     use_gpu = resolved_runtime.backend.use_gpu
 
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table("analytics.graph_metrics_functions")
     backend.ensure_table("analytics.graph_metrics_modules")
     ctx = resolve_graph_context(

@@ -7,26 +7,23 @@ computing architectural subsystem identification from import graph and semantic 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 import ibis
+import ibis.expr.types as ir
 from hamilton.function_modifiers import tag
 
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
+from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
 LOG = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    import ibis.expr.types as ir
-
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-    from codeintel.build.targets import TargetGraph
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
-@tag(domain="analytics", target="subsystems", node_kind="compute")
+@tag(domain="analytics", target="subsystems", node_type="compute")
 def t__subsystems__compute(
     env: BuildEnv,
     q__analytics__semantic_roles_modules: ir.Table,
@@ -87,7 +84,7 @@ def t__subsystems__compute(
     return result
 
 
-@tag(domain="analytics", target="subsystems", node_kind="materialize")
+@tag(domain="analytics", target="subsystems", node_type="materialize")
 def t__subsystems(
     env: BuildEnv,
     graph: TargetGraph,

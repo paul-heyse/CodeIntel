@@ -11,28 +11,24 @@ which return structured result containers. The materialize node uses
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from hamilton.function_modifiers import tag
 
-from codeintel.analytics.data_models.compute import compute_data_models_pure
+from codeintel.analytics.data_models.compute import DataModelsResult, compute_data_models_pure
 from codeintel.analytics.data_models.core import (
     DATA_MODEL_FIELDS_COLS,
     DATA_MODEL_RELATIONSHIPS_COLS,
     DATA_MODELS_COLS,
 )
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import (
     MaterializationContext,
     materialize_rows,
 )
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.build.targets import TargetGraph
 
-if TYPE_CHECKING:
-    from codeintel.analytics.data_models.compute import DataModelsResult
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-    from codeintel.build.targets import TargetGraph
+_HAMILTON_TYPE_HINTS = (BuildEnv, DataModelsResult, TargetGraph, TargetRunRecord)
 
 
 @tag(domain="analytics", target="data_models", node_type="compute")
@@ -104,7 +100,7 @@ def t__data_models(
 
     def compute() -> dict[str, int]:
         # Ensure tables exist
-        backend = DuckDBPolicyBackend(env.gateway)
+        backend = env.gateway.policy
         backend.ensure_table("analytics.data_models")
         backend.ensure_table("analytics.data_model_fields")
         backend.ensure_table("analytics.data_model_relationships")

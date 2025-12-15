@@ -49,7 +49,6 @@ from codeintel.config.datasets import (
     serialize_test_profile_row,
 )
 from codeintel.storage.datasets import load_dataset_registry
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 type RowType = Mapping[str, object]
 RowT = TypeVar("RowT", bound=RowType)
@@ -305,7 +304,7 @@ def insert_analytics_rows(
         If delete columns cannot be determined for the requested dataset.
     """
     _ = scope
-    backend = DuckDBPolicyBackend(gateway)
+    backend = gateway.policy
     backend.ensure_table(contract.table_key)
 
     if delete_scope is not None:

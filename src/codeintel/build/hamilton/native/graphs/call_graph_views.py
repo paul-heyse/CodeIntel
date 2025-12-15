@@ -7,26 +7,24 @@ computing useful aggregate metrics and patterns from the raw call graph edges.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import ibis
+import ibis.expr.types as ir
 from hamilton.function_modifiers import tag
 
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_tables
+from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
 LOG = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    import ibis.expr.types as ir
-
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-    from codeintel.build.targets import TargetGraph
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
-@tag(domain="graphs", target="call_graph_views", node_kind="compute", view="function_call_counts")
+@tag(domain="graphs", target="call_graph_views", node_type="compute", view="function_call_counts")
 def call_graph_function_call_counts(
     env: BuildEnv,
     q__graph__call_graph_edges: ir.Table,
@@ -105,7 +103,7 @@ def call_graph_function_call_counts(
     return call_counts
 
 
-@tag(domain="graphs", target="call_graph_views", node_kind="compute", view="call_depth_stats")
+@tag(domain="graphs", target="call_graph_views", node_type="compute", view="call_depth_stats")
 def call_graph_depth_stats(
     env: BuildEnv,
     q__graph__call_graph_edges: ir.Table,
@@ -177,7 +175,7 @@ def call_graph_depth_stats(
     return depth_stats
 
 
-@tag(domain="graphs", target="call_graph_views", node_kind="materialize")
+@tag(domain="graphs", target="call_graph_views", node_type="materialize")
 def t__call_graph_views(
     env: BuildEnv,
     graph: TargetGraph,

@@ -12,6 +12,8 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
+from codeintel.build.unified_registry import get_unified_registry
+
 if TYPE_CHECKING:
     from types import ModuleType
 
@@ -32,8 +34,6 @@ def native_target_names() -> frozenset[str]:
     >>> "risk_factors" in names
     True
     """
-    from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
-
     return get_unified_registry().native_target_names()
 
 
@@ -59,19 +59,21 @@ def load_native_modules() -> tuple[ModuleType, ...]:
     >>> len(modules) > 0
     True
     """
-    from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
-
     registry = get_unified_registry()
     modules: list[ModuleType] = []
+    seen_module_paths: set[str] = set()
 
     for reg in registry.get_all_registrations():
-        if reg.native_module is not None:
-            try:
-                module = importlib.import_module(reg.native_module)
-                modules.append(module)
-            except ImportError as e:
-                msg = f"Failed to import native target module '{reg.native_module}': {e}"
-                raise ImportError(msg) from e
+        module_path = reg.native_module
+        if module_path is None or module_path in seen_module_paths:
+            continue
+        try:
+            module = importlib.import_module(module_path)
+        except ImportError as exc:
+            msg = f"Failed to import native target module '{module_path}': {exc}"
+            raise ImportError(msg) from exc
+        seen_module_paths.add(module_path)
+        modules.append(module)
 
     return tuple(modules)
 
@@ -98,8 +100,6 @@ def is_native_target(target_name: str) -> bool:
     >>> is_native_target("modules")
     False
     """
-    from codeintel.build.unified_registry import get_unified_registry  # noqa: PLC0415
-
     return get_unified_registry().is_native_target(target_name)
 
 

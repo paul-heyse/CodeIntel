@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 import pandas as pd
 
 from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
+from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.core.schemas.pandera_gen import pandera_schema_from_table_schema
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -26,6 +28,7 @@ if TYPE_CHECKING:
     import pandera as pa
 
     from codeintel.build.hamilton.io.dataset_ref import DatasetRef
+    from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
@@ -67,13 +70,19 @@ def _ensure_dataframe(result: object, table_key: str) -> pd.DataFrame:
     raise TypeError(msg)
 
 
-def get_pandera_schema(table_key: str) -> pa.DataFrameSchema | None:
+def get_pandera_schema(
+    table_key: str,
+    *,
+    schema_provider: SchemaProvider | None = None,
+) -> pa.DataFrameSchema | None:
     """Retrieve Pandera schema from registry.
 
     Parameters
     ----------
     table_key
         Fully-qualified table name.
+    schema_provider
+        Optional SchemaProvider used as a fallback when the table is not present in SCHEMA_REGISTRY.
 
     Returns
     -------
@@ -87,9 +96,14 @@ def get_pandera_schema(table_key: str) -> pa.DataFrameSchema | None:
     True
     """
     dataset_schema = SCHEMA_REGISTRY.get(table_key)
-    if dataset_schema is None:
+    if dataset_schema is not None:
+        return dataset_schema.pandera_schema
+
+    provider = schema_provider or declared_schema_provider()
+    table_schema = provider.get_table_schema(table_key)
+    if table_schema is None:
         return None
-    return dataset_schema.pandera_schema
+    return pandera_schema_from_table_schema(table_key=table_key, table_schema=table_schema)
 
 
 def validate_dataframe(df: pd.DataFrame, table_key: str) -> pd.DataFrame:

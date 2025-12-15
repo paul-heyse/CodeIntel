@@ -160,9 +160,14 @@ def build_behavior_rows(
         Rows aligned with ``analytics.behavioral_coverage`` column order.
     """
     opts = options or BehavioralCoverageOptions()
-    backend = DuckDBPolicyBackend(gateway)
-    backend.ensure_table("analytics.behavioral_coverage")
     con = gateway.con
+    backend: DuckDBPolicyBackend | None
+    try:
+        backend = gateway.policy
+    except AttributeError:
+        backend = None
+    if backend is not None:
+        backend.ensure_table("analytics.behavioral_coverage")
     load_tests_fn = hooks.load_tests if hooks is not None else None
     if load_tests_fn is None:
         load_tests_fn = _default_load_test_records
@@ -598,3 +603,8 @@ def _uses_concurrency(node: ast.Call, config: SpanConfig) -> bool:
         return False
     library_root = target.library.split(".", maxsplit=1)[0]
     return library_root in config.patterns.concurrency_libs
+
+
+__all__ = [
+    "DuckDBPolicyBackend",
+]

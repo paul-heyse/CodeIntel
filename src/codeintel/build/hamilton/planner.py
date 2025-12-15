@@ -17,6 +17,8 @@ import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.hamilton.manifest_hook import (
     compute_target_input_hash_with_deps,
     compute_target_options_hash,
@@ -30,6 +32,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
     from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.build.hamilton.introspect import GraphSource
     from codeintel.build.manifest import OutputManifest
     from codeintel.build.targets import OutputTarget, TargetGraph
 
@@ -548,6 +551,7 @@ def compute_plan(
     graph: TargetGraph | None = None,
     requested: tuple[str, ...],
     mode: HamiltonNodeMode = "generated",
+    graph_source: GraphSource = "targetgraph",
 ) -> HamiltonBuildPlan:
     """Compute build plan for requested targets.
 
@@ -564,6 +568,9 @@ def compute_plan(
         Tuple of target names requested by the user.
     mode
         Hamilton node mode (for metadata only, doesn't affect planning).
+    graph_source
+        Source of dependency edges: "targetgraph" (declarative) or "hamilton"
+        (derived from the Hamilton FunctionGraph).
 
     Returns
     -------
@@ -580,9 +587,10 @@ def compute_plan(
     >>> len(plan.to_compute)
     7
     """
-    _ = mode
-
-    if graph is None:
+    if graph_source == "hamilton":
+        runtime = build_driver(mode=mode)
+        graph = target_graph_from_hamilton(runtime, base_graph=graph)
+    elif graph is None:
         graph = get_target_graph()
 
     closure = graph.topological_order(list(requested))

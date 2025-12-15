@@ -26,8 +26,8 @@ class NodeExecutionRecord:
         Hamilton node name.
     target
         Parent target if applicable.
-    node_kind
-        Node kind: compute, materialize, tool, etc.
+    node_type
+        Node type: compute, materialize, tool, etc.
     status
         Execution status: succeeded, failed, skipped.
     started_at
@@ -45,7 +45,7 @@ class NodeExecutionRecord:
     run_id: str
     node_name: str
     target: str | None
-    node_kind: str | None
+    node_type: str | None
     status: str
     started_at: datetime
     completed_at: datetime | None
@@ -137,14 +137,14 @@ class NodeTelemetryHook:
 
         target_raw = node_tags.get("target") if node_tags else None
         target = target_raw if isinstance(target_raw, str) else None
-        node_kind_raw = node_tags.get("node_kind") if node_tags else None
-        node_kind = node_kind_raw if isinstance(node_kind_raw, str) else None
+        node_type_raw = node_tags.get("node_type") if node_tags else None
+        node_type = node_type_raw if isinstance(node_type_raw, str) else None
 
         record = NodeExecutionRecord(
             run_id=self._run_id,
             node_name=node_name,
             target=target,
-            node_kind=node_kind,
+            node_type=node_type,
             status="succeeded" if success else "failed",
             started_at=started_at,
             completed_at=completed_at,
