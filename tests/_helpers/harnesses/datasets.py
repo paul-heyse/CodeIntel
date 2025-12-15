@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.cli.handlers.datasets import DatasetDependencies
-from codeintel.config.datasets.contracts import DatasetContract
+from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.storage.validation import collect_contract_issues
 from tests._helpers.cli_context import create_cli_test_context
 from tests._helpers.seeds import CORE_PACK

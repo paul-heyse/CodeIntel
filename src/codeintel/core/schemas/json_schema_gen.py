@@ -1,5 +1,8 @@
 """Pandera to JSON Schema conversion helpers.
 
+This module provides utilities for converting Pandera DataFrameSchema
+definitions to JSON Schema (draft 2020-12) format.
+
 This module is intentionally independent of the dataset schema registry to
 avoid import cycles during bootstrap. Callers that need registry access
 should depend on ``codeintel.build.hamilton.contracts.schemas.validation`` instead.
@@ -14,6 +17,18 @@ if TYPE_CHECKING:
 
 
 def _json_type_for_dtype(dtype: object) -> tuple[str, str | None]:
+    """Map a Pandera/pandas dtype to JSON Schema type and format.
+
+    Parameters
+    ----------
+    dtype
+        Pandera column dtype to map.
+
+    Returns
+    -------
+    tuple[str, str | None]
+        JSON Schema type string and optional format string.
+    """
     dtype_str = str(dtype).lower()
     if "bool" in dtype_str:
         return "boolean", None
@@ -27,6 +42,18 @@ def _json_type_for_dtype(dtype: object) -> tuple[str, str | None]:
 
 
 def _extract_column_constraints(column: Column) -> dict[str, Any]:
+    """Extract simple numeric constraints from Pandera checks.
+
+    Parameters
+    ----------
+    column
+        Pandera Column to extract constraints from.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary of JSON Schema constraints (minimum, maximum, etc.).
+    """
     constraints: dict[str, Any] = {}
     checks = column.checks
     if checks is None:
@@ -66,6 +93,14 @@ def pandera_to_json_schema(
     -------
     dict[str, Any]
         JSON Schema dictionary compatible with draft 2020-12.
+
+    Examples
+    --------
+    >>> from pandera import DataFrameSchema, Column
+    >>> schema = DataFrameSchema({"id": Column(int), "name": Column(str, nullable=True)})
+    >>> json_schema = pandera_to_json_schema(schema)
+    >>> json_schema["$schema"]
+    'https://json-schema.org/draft/2020-12/schema'
     """
     properties: dict[str, Any] = {}
     required: list[str] = []
@@ -102,3 +137,4 @@ def pandera_to_json_schema(
 
 
 __all__ = ["pandera_to_json_schema"]
+

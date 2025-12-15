@@ -22,7 +22,7 @@ from codeintel.storage.datasets import load_dataset_registry
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from codeintel.config.datasets import DatasetContract
+    from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.serving.backend import BackendLimits
     from codeintel.serving.backend.query_api import DuckDBQueryApi
 

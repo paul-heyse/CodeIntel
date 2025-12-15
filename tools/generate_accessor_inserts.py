@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from codeintel.config.datasets import TABLE_SCHEMAS
+from codeintel.build.schemas import get_schema_provider
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -121,7 +121,7 @@ def generate_tuple_type(table_key: str) -> str:
     str
         Tuple type annotation like "tuple[int, str, str | None, ...]".
     """
-    schema = TABLE_SCHEMAS.get(table_key)
+    schema = get_schema_provider().get_schema(table_key)
     if schema is None:
         return "tuple[object, ...]"
 
@@ -146,7 +146,7 @@ def generate_docstring_params(table_key: str) -> str:
     str
         Docstring Parameters section text.
     """
-    schema = TABLE_SCHEMAS.get(table_key)
+    schema = get_schema_provider().get_schema(table_key)
     if schema is None:
         return "        rows\n            Iterable of row tuples."
 
@@ -240,9 +240,9 @@ def _build_column_specs(table_key: str) -> list[ColumnSpec]:
     Returns
     -------
     list[ColumnSpec]
-        Column specifications derived from TABLE_SCHEMAS.
+        Column specifications derived from the schema provider.
     """
-    schema = TABLE_SCHEMAS.get(table_key)
+    schema = get_schema_provider().get_schema(table_key)
     if schema is None:
         return []
     return [
@@ -278,7 +278,8 @@ def generate_registry_module() -> str:
         "TABLE_REGISTRY: Final[dict[str, TableMeta]] = {",
     ]
 
-    for table_key in sorted(TABLE_SCHEMAS):
+    table_schemas = {s.table_key: s for s in get_schema_provider().iter_table_schemas()}
+    for table_key in sorted(table_schemas):
         if table_key in SKIP_TABLES:
             continue
         specs = _build_column_specs(table_key)
@@ -374,8 +375,9 @@ def main() -> int:
     registry_code = generate_registry_module() if args.registry_output else None
     rows_by_schema: dict[str, str] = {}
     if args.rows_output_dir:
+        table_schemas = {s.table_key: s for s in get_schema_provider().iter_table_schemas()}
         tables_by_schema: dict[str, list[str]] = {"core": [], "graph": [], "analytics": []}
-        for table_key in TABLE_SCHEMAS:
+        for table_key in table_schemas:
             schema_prefix, _ = table_key.split(".", maxsplit=1)
             if schema_prefix in tables_by_schema:
                 tables_by_schema[schema_prefix].append(table_key)

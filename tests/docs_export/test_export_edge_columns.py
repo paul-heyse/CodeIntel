@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.export.export_jsonl import export_jsonl_for_table
 from tests._helpers import provision_graph_ready_repo
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 def _setup_edge_table(con: DuckDBConnection, table: str) -> None:
     con.execute("CREATE SCHEMA IF NOT EXISTS graph;")
-    contract = get_dataset_contracts_by_table_key()[table]
+    contract = dict(iter_contracts_by_table_key())[table]
     if contract.schema is None:
         message = f"No schema for {table}"
         raise ValueError(message)
@@ -55,7 +55,8 @@ def test_call_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
         message = "Expected exported rows"
         raise AssertionError(message)
     first = json.loads(content[0])
-    contract = get_dataset_contracts_by_table_key()[table]
+    contracts = dict(iter_contracts_by_table_key())
+    contract = contracts[table]
     expected_keys = contract.schema.column_names() if contract.schema else []
     if set(first) != set(expected_keys):
         unexpected = set(first)
@@ -95,7 +96,8 @@ def test_import_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
         message = "Expected exported rows"
         raise AssertionError(message)
     first = json.loads(content[0])
-    contract = get_dataset_contracts_by_table_key()[table]
+    contracts = dict(iter_contracts_by_table_key())
+    contract = contracts[table]
     expected_keys = contract.schema.column_names() if contract.schema else []
     if set(first) != set(expected_keys):
         unexpected = set(first)

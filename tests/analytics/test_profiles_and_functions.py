@@ -55,16 +55,18 @@ from codeintel.analytics.profiles import (
     build_module_profile,
 )
 from codeintel.analytics.testing.profiles import rows as profile_rows
-from codeintel.config.datasets import (
-    BEHAVIORAL_COVERAGE_COLUMNS,
+from codeintel.config.datasets.rows.profiles import (
     FILE_PROFILE_COLUMNS,
     FUNCTION_PROFILE_COLUMNS,
     MODULE_PROFILE_COLUMNS,
-    TEST_PROFILE_COLUMNS,
-    behavioral_coverage_row_to_tuple,
     file_profile_row_to_tuple,
     function_profile_row_to_tuple,
     module_profile_row_to_tuple,
+)
+from codeintel.config.datasets.rows.test import (
+    BEHAVIORAL_COVERAGE_COLUMNS,
+    TEST_PROFILE_COLUMNS,
+    behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
 from tests._helpers import METRICS_PACK, assert_frozen
@@ -107,11 +109,13 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from codeintel.config.datasets import (
-        BehavioralCoverageRowModel,
+    from codeintel.config.datasets.rows.profiles import (
         FileProfileRowModel,
         FunctionProfileRowModel,
         ModuleProfileRowModel,
+    )
+    from codeintel.config.datasets.rows.test import (
+        BehavioralCoverageRowModel,
         ProfileRowModel,
     )
     from codeintel.storage.gateway import DuckDBConnection

@@ -6,15 +6,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.datasets.contracts import (
-    DatasetContract,
-    RowBinding,
+from codeintel.build.schemas import (
     get_composite_schemas,
-    get_dataset_contracts,
-    get_dataset_contracts_by_table_key,
-    get_row_bindings,
-    get_table_schemas,
+    get_schema_provider,
+    iter_contracts,
+    iter_contracts_by_table_key,
+    iter_row_bindings,
 )
+from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -27,18 +26,18 @@ def require(*, condition: bool, message: str) -> None:
 
 
 def test_get_table_schemas_returns_dict() -> None:
-    """Verify get_table_schemas returns a dictionary."""
-    schemas = get_table_schemas()
+    """Verify get_schema_provider returns table schemas."""
+    schemas = {s.table_key: s for s in get_schema_provider().iter_table_schemas()}
     require(
         condition=isinstance(schemas, dict),
-        message="get_table_schemas should return a dictionary",
+        message="get_schema_provider should return an iterable of table schemas",
     )
     require(condition=len(schemas) > 0, message="table schemas should not be empty")
 
 
 def test_get_table_schemas_contains_expected_keys() -> None:
-    """Verify TABLE_SCHEMAS contains known table keys."""
-    schemas = get_table_schemas()
+    """Verify schema provider contains known table keys."""
+    schemas = {s.table_key: s for s in get_schema_provider().iter_table_schemas()}
 
     require(condition="core.goids" in schemas, message="core.goids table schema missing")
     require(
@@ -53,7 +52,7 @@ def test_get_table_schemas_contains_expected_keys() -> None:
 
 def test_get_table_schemas_values_are_table_schema() -> None:
     """Verify TABLE_SCHEMAS values are TableSchema instances."""
-    schemas = get_table_schemas()
+    schemas = {s.table_key: s for s in get_schema_provider().iter_table_schemas()}
     for key, value in schemas.items():
         require(
             condition=value.__class__.__name__ == "TableSchema",
@@ -88,21 +87,21 @@ def test_get_composite_schemas_returns_dict() -> None:
 
 
 def test_get_dataset_contracts_returns_dict() -> None:
-    """Verify get_dataset_contracts returns a dictionary."""
-    contracts = get_dataset_contracts()
+    """Verify iter_contracts returns an iterable of contracts."""
+    contracts = {c.name: c for c in iter_contracts()}
     require(
         condition=isinstance(contracts, dict),
-        message="get_dataset_contracts should return a dict",
+        message="iter_contracts should yield DatasetContracts",
     )
     require(condition=len(contracts) > 0, message="dataset contracts should not be empty")
 
 
 def test_get_dataset_contracts_by_table_key_returns_dict() -> None:
-    """Verify get_dataset_contracts_by_table_key returns a dictionary."""
-    contracts = get_dataset_contracts_by_table_key()
+    """Verify iter_contracts_by_table_key returns an iterable of key-contract pairs."""
+    contracts = dict(iter_contracts_by_table_key())
     require(
         condition=isinstance(contracts, dict),
-        message="get_dataset_contracts_by_table_key should return a dict",
+        message="iter_contracts_by_table_key should yield key-contract tuples",
     )
     require(
         condition=len(contracts) > 0,
@@ -111,9 +110,9 @@ def test_get_dataset_contracts_by_table_key_returns_dict() -> None:
 
 
 def test_dataset_contract_counts_match() -> None:
-    """Verify DATASET_CONTRACTS and DATASET_CONTRACTS_BY_TABLE_KEY have same count."""
-    by_name = get_dataset_contracts()
-    by_key = get_dataset_contracts_by_table_key()
+    """Verify contracts by name and by table key have same count."""
+    by_name = {c.name: c for c in iter_contracts()}
+    by_key = dict(iter_contracts_by_table_key())
     require(
         condition=len(by_name) == len(by_key),
         message="contract counts by name and by table key should match",
@@ -136,7 +135,7 @@ def test_row_binding_dataclass() -> None:
 
 def test_dataset_contract_capabilities() -> None:
     """Verify DatasetContract.capabilities method returns expected flags."""
-    contracts = get_dataset_contracts()
+    contracts = {c.name: c for c in iter_contracts()}
 
     test_contract = None
     for contract in contracts.values():
@@ -165,7 +164,7 @@ def test_dataset_contract_capabilities() -> None:
 
 def test_dataset_contract_column_names() -> None:
     """Verify DatasetContract.column_names method works."""
-    contracts = get_dataset_contracts()
+    contracts = {c.name: c for c in iter_contracts()}
 
     for contract in contracts.values():
         if contract.schema is not None:
@@ -185,8 +184,8 @@ def test_dataset_contract_column_names() -> None:
 
 def test_dataset_contract_has_row_binding() -> None:
     """Verify DatasetContract.has_row_binding method."""
-    contracts = get_dataset_contracts()
-    bindings = get_row_bindings()
+    contracts = {c.name: c for c in iter_contracts()}
+    bindings = {b.table_key: b for b in iter_row_bindings()}
 
     for contract in contracts.values():
         if contract.table_key in bindings:

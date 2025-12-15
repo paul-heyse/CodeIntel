@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets import get_table_columns
+from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.storage.gateway.insert_helpers import insert_rows
 
 if TYPE_CHECKING:
@@ -21,6 +21,22 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation, StorageGateway
 
 __all__ = ["BaseTableAccessor"]
+
+
+def get_table_columns(table_key: str) -> list[str]:
+    """Return ordered column names for a specific table.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (e.g., "core.ast_nodes").
+
+    Returns
+    -------
+    list[str]
+        Column names in storage order.
+    """
+    return list(load_columns_by_table().get(table_key, []))
 
 
 def _normalize_to_mapping(

@@ -12,13 +12,13 @@ from pandas.api.extensions import ExtensionDtype
 from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaErrors
 
-from codeintel.config.datasets.contracts import get_dataset_contracts_by_table_key
+from codeintel.build.schemas import iter_contracts_by_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.config.datasets.contracts import DatasetContract
-    from codeintel.config.datasets.primitives import ColumnType, TableSchema
+    from codeintel.core.schemas.contract_primitives import DatasetContract
+    from codeintel.core.schemas.primitives import ColumnType, TableSchema
 
 __all__ = [
     "ValidationResult",
@@ -715,7 +715,7 @@ def _build_schema(contract: DatasetContract) -> DataFrameSchema:
 def _materialize_schemas() -> dict[str, DataFrameSchema]:
     schemas: dict[str, DataFrameSchema] = {}
 
-    for contract in get_dataset_contracts_by_table_key().values():
+    for _, contract in iter_contracts_by_table_key():
         if contract.schema is None or contract.is_view:
             continue
         schemas[contract.table_key] = _build_schema(contract)

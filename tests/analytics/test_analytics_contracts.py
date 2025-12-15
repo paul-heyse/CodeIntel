@@ -12,16 +12,20 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
-from codeintel.config.datasets import (
-    BehavioralCoverageRowModel,
+from codeintel.build.schemas import iter_contracts_by_table_key
+from codeintel.config.datasets.rows.analytics import (
     FunctionMetricsRow,
     FunctionTypesRow,
+)
+from codeintel.config.datasets.rows.profiles import (
     GraphMetricsFunctionsExtRow,
     GraphMetricsFunctionsRow,
     GraphMetricsModulesExtRow,
     GraphMetricsModulesRow,
+)
+from codeintel.config.datasets.rows.test import (
+    BehavioralCoverageRowModel,
     ProfileRowModel,
-    get_dataset_contracts_by_table_key,
 )
 from codeintel.core.catalog import FunctionCatalog
 from tests._helpers import CORE_PACK, create_test_context
@@ -202,7 +206,8 @@ def test_dataset_insertion_idempotent(
 
 def _assert_row_matches_table(row_type: type[Mapping[str, object]], table_key: str) -> None:
     """Verify TypedDict annotations align with the DatasetContract schema."""
-    contract = get_dataset_contracts_by_table_key().get(table_key)
+    contracts = dict(iter_contracts_by_table_key())
+    contract = contracts.get(table_key)
     if contract is None or contract.schema is None:
         pytest.fail(f"{table_key} has no contract schema")
         return

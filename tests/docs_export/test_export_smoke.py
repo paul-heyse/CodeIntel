@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.datasets import DatasetContract
+from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.export.export_jsonl import (
     ExportCallOptions,
     export_all_jsonl,

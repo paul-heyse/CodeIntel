@@ -23,7 +23,14 @@ from codeintel.build.schemas import (
     unified_schema_provider,
 )
 from codeintel.build.schemas.provider_hamilton import inferable_native_table_keys
-from codeintel.config.datasets.schemas import TABLE_SCHEMAS
+
+
+from codeintel.core.schemas.primitives import TableSchema
+
+
+def _get_declared_schemas() -> dict[str, TableSchema]:
+    """Get declared schemas as a dict for comparison."""
+    return {s.table_key: s for s in declared_schema_provider().iter_table_schemas()}
 
 # -----------------------------------------------------------------------------
 # Basic functionality tests
@@ -35,9 +42,7 @@ def test_unified_provider_is_returned_by_get_schema_provider() -> None:
     clear_schema_provider_cache()
     provider = get_schema_provider()
     if not isinstance(provider, UnifiedSchemaProvider):
-        pytest.fail(
-            f"Expected UnifiedSchemaProvider, got {type(provider).__name__}"
-        )
+        pytest.fail(f"Expected UnifiedSchemaProvider, got {type(provider).__name__}")
 
 
 def test_unified_provider_has_schema_provider_interface() -> None:
@@ -75,16 +80,17 @@ def test_clear_unified_provider_cache_works() -> None:
 
 
 # -----------------------------------------------------------------------------
-# Parity tests with legacy TABLE_SCHEMAS
+# Parity tests with declared schemas
 # -----------------------------------------------------------------------------
 
 
-def test_unified_provider_resolves_all_legacy_table_keys() -> None:
-    """Verify all legacy TABLE_SCHEMAS keys resolve through unified provider."""
+def test_unified_provider_resolves_all_declared_table_keys() -> None:
+    """Verify all declared schema keys resolve through unified provider."""
     provider = unified_schema_provider()
+    declared_schemas = _get_declared_schemas()
     missing_keys: list[str] = []
 
-    for key in TABLE_SCHEMAS:
+    for key in declared_schemas:
         schema = provider.get_table_schema(key)
         if schema is None:
             missing_keys.append(key)
@@ -93,37 +99,37 @@ def test_unified_provider_resolves_all_legacy_table_keys() -> None:
         pytest.fail(f"Missing keys in unified provider: {missing_keys[:10]}...")
 
 
-def test_unified_provider_schemas_match_legacy_schemas() -> None:
-    """Verify unified provider returns identical schemas as legacy TABLE_SCHEMAS."""
+def test_unified_provider_schemas_match_declared_schemas() -> None:
+    """Verify unified provider returns identical schemas as declared_schema_provider."""
     provider = unified_schema_provider()
+    declared_schemas = _get_declared_schemas()
     mismatches: list[str] = []
 
-    for key, legacy_schema in TABLE_SCHEMAS.items():
+    for key, declared_schema in declared_schemas.items():
         provider_schema = provider.get_table_schema(key)
         if provider_schema is None:
             mismatches.append(f"{key}: not found in provider")
         # Note: Inferred schemas may differ from declared, so we only check
         # column count and names match as a basic sanity check
-        elif len(provider_schema.columns) != len(legacy_schema.columns):
+        elif len(provider_schema.columns) != len(declared_schema.columns):
             mismatches.append(
                 f"{key}: column count mismatch "
                 f"(provider={len(provider_schema.columns)}, "
-                f"legacy={len(legacy_schema.columns)})"
+                f"declared={len(declared_schema.columns)})"
             )
 
     if mismatches:
         pytest.fail("Schema mismatches:\n" + "\n".join(mismatches[:10]))
 
 
-def test_unified_provider_schema_count_at_least_legacy() -> None:
-    """Verify unified provider has at least as many schemas as legacy."""
+def test_unified_provider_schema_count_at_least_declared() -> None:
+    """Verify unified provider has at least as many schemas as declared."""
     provider_count = len(list(iter_table_schemas()))
-    legacy_count = len(TABLE_SCHEMAS)
-    # Unified provider may have MORE schemas from targets, never fewer
-    if provider_count < legacy_count:
+    declared_count = len(_get_declared_schemas())
+    # Unified provider may have MORE schemas from Hamilton inference, never fewer
+    if provider_count < declared_count:
         pytest.fail(
-            f"Unified provider has fewer schemas ({provider_count}) "
-            f"than legacy ({legacy_count})"
+            f"Unified provider has fewer schemas ({provider_count}) than declared ({declared_count})"
         )
 
 

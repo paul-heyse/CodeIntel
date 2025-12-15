@@ -17,14 +17,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from codeintel.config.datasets.pandera_json_schema import pandera_to_json_schema
-from codeintel.config.datasets.row_factory import typed_dict_from_pandera
+from codeintel.core.schemas.json_schema_gen import pandera_to_json_schema
+from codeintel.core.schemas.row_models import typed_dict_from_pandera
 
 if TYPE_CHECKING:
     import pandas as pd
     from pandera import DataFrameSchema
 
-    from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
+    from codeintel.config.datasets.primitives import CompositeSchema
+    from codeintel.core.schemas.primitives import TableSchema
 
 __all__ = [
     "DatasetMetadata",

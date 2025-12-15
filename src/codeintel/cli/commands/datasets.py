@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 from cyclopts import App, Parameter
 
+from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.core import CliResult
@@ -28,7 +29,6 @@ from codeintel.cli.handlers.datasets import (
     datasets_list_handler,
     datasets_snapshot_handler,
 )
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
@@ -220,8 +220,9 @@ class ScaffoldDatasetCommand(Command[dict[str, object]]):
             Result with dataset name, status, and registry check behavior.
         """
         _ = ctx
-        known_names = set(DATASET_CONTRACTS_BY_TABLE_KEY)
-        known_names.update(key.split(".", 1)[-1] for key in DATASET_CONTRACTS_BY_TABLE_KEY)
+        contracts_by_table_key = dict(iter_contracts_by_table_key())
+        known_names = set(contracts_by_table_key)
+        known_names.update(key.split(".", 1)[-1] for key in contracts_by_table_key)
         if self.registry_check == "enabled" and self.name in known_names:
             problem = ProblemBuilder.operation(
                 OperationErrorCode.ALREADY_EXISTS,

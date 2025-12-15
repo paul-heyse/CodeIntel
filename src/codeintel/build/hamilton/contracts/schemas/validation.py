@@ -10,7 +10,7 @@ import pandas as pd
 from pandera.errors import SchemaErrors
 
 from codeintel.build.hamilton.contracts.schemas.registry import SCHEMA_REGISTRY
-from codeintel.config.datasets.pandera_json_schema import pandera_to_json_schema
+from codeintel.core.schemas.json_schema_gen import pandera_to_json_schema
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

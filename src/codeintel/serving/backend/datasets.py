@@ -5,17 +5,25 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.config.datasets import get_dataset_contracts, get_dataset_contracts_by_table_key
+from codeintel.build.schemas import get_contract_for_table_key, iter_contracts
 from codeintel.serving.backend.pagination import BackendLimits
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
-DOCS_VIEWS = {
-    name: contract.table_key
-    for name, contract in get_dataset_contracts().items()
-    if contract.is_view
-}
+
+def _build_docs_views() -> dict[str, str]:
+    """Build mapping of docs view names to table keys.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of name to table_key for all view contracts.
+    """
+    return {contract.name: contract.table_key for contract in iter_contracts() if contract.is_view}
+
+
+DOCS_VIEWS = _build_docs_views()
 
 
 def _normalize_type(value: str) -> str:
@@ -33,8 +41,7 @@ PREVIEW_COLUMN_COUNT = 5
 def build_dataset_registry(
     *, include_docs_views: Literal["include", "exclude"] = "include"
 ) -> dict[str, str]:
-    """
-    Build deterministic dataset registry.
+    """Build deterministic dataset registry.
 
     Returns
     -------
@@ -42,20 +49,17 @@ def build_dataset_registry(
         Mapping of dataset name to fully qualified table/view name.
     """
     registry: OrderedDict[str, str] = OrderedDict()
-    for name, contract in sorted(
-        get_dataset_contracts().items(), key=lambda item: item[1].table_key
-    ):
+    for contract in sorted(iter_contracts(), key=lambda c: c.table_key):
         if include_docs_views == "exclude" and contract.is_view:
             continue
-        registry[name] = contract.table_key
+        registry[contract.name] = contract.table_key
     return dict(registry)
 
 
 def build_registry_and_limits(
     cfg: object, *, include_docs_views: Literal["include", "exclude"] = "include"
 ) -> tuple[dict[str, str], BackendLimits]:
-    """
-    Return a dataset registry and backend limits derived from configuration.
+    """Return a dataset registry and backend limits derived from configuration.
 
     Parameters
     ----------
@@ -75,16 +79,18 @@ def build_registry_and_limits(
 
 
 def describe_dataset(name: str, table: str) -> str:
-    """
-    Produce a human-friendly description for a dataset/table.
+    """Produce a human-friendly description for a dataset/table.
 
     Returns
     -------
     str
         Description string including a column preview when available.
     """
-    contract = get_dataset_contracts_by_table_key().get(table)
-    if contract is None or contract.schema is None:
+    try:
+        contract = get_contract_for_table_key(table)
+    except KeyError:
+        return f"{name}: {table}"
+    if contract.schema is None:
         return f"{name}: {table}"
     column_names = contract.schema.column_names()[:PREVIEW_COLUMN_COUNT]
     extra = "" if len(contract.schema.columns) <= PREVIEW_COLUMN_COUNT else "..."
@@ -115,8 +121,9 @@ def _collect_dataset_registry_issues(
             missing.append(f"{dataset_name} ({table})")
             continue
 
-        contract = get_dataset_contracts_by_table_key().get(table)
-        if contract is None:
+        try:
+            contract = get_contract_for_table_key(table)
+        except KeyError:
             missing.append(f"{dataset_name} ({table})")
             continue
 
@@ -152,8 +159,7 @@ def _collect_dataset_registry_issues(
 
 
 def validate_dataset_registry(gateway: StorageGateway) -> None:
-    """
-    Validate that registered datasets exist and match expected schemas.
+    """Validate that registered datasets exist and match expected schemas.
 
     Parameters
     ----------

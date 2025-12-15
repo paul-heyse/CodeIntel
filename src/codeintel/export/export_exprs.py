@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import ibis
 
-from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.build.schemas import get_contract_for_table_key
 
 if TYPE_CHECKING:
     import ibis.expr.types as it
@@ -64,8 +64,12 @@ def build_export_expr(
         limit_value = limit if limit is not None else 9_223_372_036_854_775_807
         expr = expr.limit(limit_value, offset=offset)
 
-    contract = get_dataset_contracts_by_table_key().get(table_key)
-    schema = contract.schema if contract is not None else None
+    try:
+        contract = get_contract_for_table_key(table_key)
+        schema = contract.schema
+    except KeyError:
+        contract = None
+        schema = None
     if schema is not None:
         column_order = [col.name for col in schema.columns]
     else:

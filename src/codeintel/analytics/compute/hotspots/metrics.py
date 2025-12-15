@@ -13,7 +13,7 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets import HotspotRow, hotspot_row_to_tuple
+from codeintel.config.datasets.rows.analytics import HotspotRow, hotspot_row_to_tuple
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import DuckDBError
 

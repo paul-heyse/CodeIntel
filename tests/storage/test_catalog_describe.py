@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.datasets import DatasetContract
+from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.storage.datasets.catalog import describe_dataset_for_catalog
 
 

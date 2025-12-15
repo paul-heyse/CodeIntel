@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, SupportsInt, cast
 
 import ibis
 
-from codeintel.config.datasets import load_columns_by_table
+from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.ports.change_detection import (
     ChangeSet,

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.config.datasets import get_dataset_contracts_by_table_key
+from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 
@@ -17,9 +17,10 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs.history_config import SnapshotSpec
 
-_FP_CONTRACT = get_dataset_contracts_by_table_key()["analytics.function_profile"]
-_MP_CONTRACT = get_dataset_contracts_by_table_key()["analytics.module_profile"]
-_FH_CONTRACT = get_dataset_contracts_by_table_key()["analytics.function_history"]
+_CONTRACTS_BY_TABLE = dict(iter_contracts_by_table_key())
+_FP_CONTRACT = _CONTRACTS_BY_TABLE["analytics.function_profile"]
+_MP_CONTRACT = _CONTRACTS_BY_TABLE["analytics.module_profile"]
+_FH_CONTRACT = _CONTRACTS_BY_TABLE["analytics.function_history"]
 
 _FP_COLUMNS = _FP_CONTRACT.schema.column_names() if _FP_CONTRACT.schema else []
 _MP_COLUMNS = _MP_CONTRACT.schema.column_names() if _MP_CONTRACT.schema else []

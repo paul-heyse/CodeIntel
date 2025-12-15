@@ -8,7 +8,7 @@ import pytest
 from fastapi.routing import APIRoute
 from mcp.server.fastmcp import FastMCP
 
-from codeintel.config.datasets import get_dataset_contracts, get_dataset_contracts_by_table_key
+from codeintel.build.schemas import iter_contracts, iter_contracts_by_table_key
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.routes.architecture import build_architecture_router
 from codeintel.serving.http.routes.datasets import build_datasets_router
@@ -118,8 +118,8 @@ def test_mcp_tool_names_match_operations() -> None:
 
 def test_required_datasets_resolve_to_dataset_contracts() -> None:
     """Every Operation.required_datasets entry must map to a DatasetContract."""
-    dataset_names = set(get_dataset_contracts().keys())
-    table_keys = set(get_dataset_contracts_by_table_key().keys())
+    dataset_names = {c.name for c in iter_contracts()}
+    table_keys = {k for k, _ in iter_contracts_by_table_key()}
 
     for op in iter_registry_operations():
         for dataset_id in op.required_datasets:
@@ -130,8 +130,8 @@ def test_required_datasets_resolve_to_dataset_contracts() -> None:
 
 def test_exposed_datasets_resolve_to_dataset_contracts() -> None:
     """Every Operation.exposed_datasets entry must map to a DatasetContract."""
-    dataset_names = set(get_dataset_contracts().keys())
-    table_keys = set(get_dataset_contracts_by_table_key().keys())
+    dataset_names = {c.name for c in iter_contracts()}
+    table_keys = {k for k, _ in iter_contracts_by_table_key()}
 
     for op in iter_registry_operations():
         for dataset_id in op.exposed_datasets:

@@ -33,13 +33,14 @@ if TYPE_CHECKING:
 
     from codeintel.build.contracts import OutputContract
     from codeintel.build.targets import OutputTarget
-    from codeintel.config.datasets.contracts import DatasetContract, RowBinding
+    from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
     from codeintel.core.schemas.primitives import TableSchema
 
 # Deferred imports to avoid circular dependencies at module load time
 _deferred_registry_module: ModuleType | None = None
 _deferred_row_registry_module: ModuleType | None = None
 _deferred_contracts_module: ModuleType | None = None
+_deferred_composites_module: ModuleType | None = None
 
 
 def _registry_module() -> ModuleType:
@@ -88,6 +89,95 @@ def _contracts_module() -> ModuleType:
 
         _deferred_contracts_module = mod
     return _deferred_contracts_module
+
+
+def _composites_module() -> ModuleType:
+    """Get composites module lazily.
+
+    Returns
+    -------
+    ModuleType
+        The codeintel.config.datasets.composites module.
+    """
+    global _deferred_composites_module  # noqa: PLW0603
+    if _deferred_composites_module is None:
+        import codeintel.config.datasets.composites as mod  # noqa: PLC0415
+
+        _deferred_composites_module = mod
+    return _deferred_composites_module
+
+
+def _get_composition_for_table_key(table_key: str) -> object | None:
+    """Get the CompositeSchema for a table key if it exists.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+
+    Returns
+    -------
+    CompositeSchema | None
+        The composition metadata if this is a profile table, None otherwise.
+    """
+    composites_mod = _composites_module()
+    composite_schemas = composites_mod.get_composite_schemas()
+    return composite_schemas.get(table_key)
+
+
+def _get_json_schema_id(table_key: str) -> str | None:
+    """Get the JSON schema ID for a table key.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+
+    Returns
+    -------
+    str | None
+        The JSON schema ID if this table has one, None otherwise.
+    """
+    contracts_mod = _contracts_module()
+    _, name = table_key.split(".", maxsplit=1)
+    json_schema_map = getattr(contracts_mod, "_JSON_SCHEMA_BY_DATASET_NAME", {})
+    return json_schema_map.get(name)
+
+
+def _get_jsonl_filename(table_key: str) -> str | None:
+    """Get the default JSONL export filename for a table key.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+
+    Returns
+    -------
+    str | None
+        The JSONL filename if this table has one, None otherwise.
+    """
+    contracts_mod = _contracts_module()
+    jsonl_filenames = getattr(contracts_mod, "_DEFAULT_JSONL_FILENAMES", {})
+    return jsonl_filenames.get(table_key)
+
+
+def _get_parquet_filename(table_key: str) -> str | None:
+    """Get the default Parquet export filename for a table key.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+
+    Returns
+    -------
+    str | None
+        The Parquet filename if this table has one, None otherwise.
+    """
+    contracts_mod = _contracts_module()
+    parquet_filenames = getattr(contracts_mod, "_DEFAULT_PARQUET_FILENAMES", {})
+    return parquet_filenames.get(table_key)
 
 
 def _get_row_binding_safe(table_key: str) -> RowBinding | None:
@@ -246,13 +336,24 @@ def _derive_contract_from_target(
 
     row_binding = _get_row_binding_safe(table_key)
 
+    # Prefer target-declared metadata, fall back to legacy mappings
     json_schema_id = _extract_indexed_metadata(contract, table_key, contract.json_schema_ids)
+    if json_schema_id is None:
+        json_schema_id = _get_json_schema_id(table_key)
+
     jsonl_filename = _extract_indexed_metadata(contract, table_key, contract.jsonl_filenames)
+    if jsonl_filename is None:
+        jsonl_filename = _get_jsonl_filename(table_key)
+
     parquet_filename = _extract_indexed_metadata(contract, table_key, contract.parquet_filenames)
+    if parquet_filename is None:
+        parquet_filename = _get_parquet_filename(table_key)
 
     description = contract.description
     if description is None and schema is not None:
         description = schema.description
+
+    composition = _get_composition_for_table_key(table_key)
 
     return contract_cls(
         table_key=table_key,
@@ -272,6 +373,7 @@ def _derive_contract_from_target(
         retention_policy=contract.retention_policy,
         upstream_dependencies=contract.upstream_dependencies,
         validation_profile=contract.validation_profile,
+        composition=composition,
     )
 
 
@@ -299,15 +401,19 @@ def _derive_contract_from_schema(
     schema_prefix, table_name = table_key.split(".", maxsplit=1)
     row_binding = _get_row_binding_safe(table_key)
     description = schema.description if schema is not None else None
+    composition = _get_composition_for_table_key(table_key)
+    json_schema_id = _get_json_schema_id(table_key)
+    jsonl_filename = _get_jsonl_filename(table_key)
+    parquet_filename = _get_parquet_filename(table_key)
 
     return contract_cls(
         table_key=table_key,
         name=table_name,
         schema=schema,
         row_binding=row_binding,
-        json_schema_id=None,
-        jsonl_filename=None,
-        parquet_filename=None,
+        json_schema_id=json_schema_id,
+        jsonl_filename=jsonl_filename,
+        parquet_filename=parquet_filename,
         is_view=False,
         owner_package=_owner_package_from_prefix(schema_prefix),
         tags=frozenset({"base_table"}),
@@ -318,6 +424,7 @@ def _derive_contract_from_schema(
         retention_policy=None,
         upstream_dependencies=(),
         validation_profile="strict",
+        composition=composition,
     )
 
 
@@ -342,15 +449,19 @@ def _derive_view_contract(view_key: str) -> DatasetContract:
     schema = provider.get_table_schema(view_key)
     row_binding = _get_row_binding_safe(view_key)
     description = schema.description if schema is not None else None
+    composition = _get_composition_for_table_key(view_key)
+    json_schema_id = _get_json_schema_id(view_key)
+    jsonl_filename = _get_jsonl_filename(view_key)
+    parquet_filename = _get_parquet_filename(view_key)
 
     return contract_cls(
         table_key=view_key,
         name=view_name,
         schema=schema,
         row_binding=row_binding,
-        json_schema_id=None,
-        jsonl_filename=None,
-        parquet_filename=None,
+        json_schema_id=json_schema_id,
+        jsonl_filename=jsonl_filename,
+        parquet_filename=parquet_filename,
         is_view=True,
         owner_package=_owner_package_from_prefix(schema_prefix),
         tags=frozenset({"docs_view", "read_only"}),
@@ -361,6 +472,7 @@ def _derive_view_contract(view_key: str) -> DatasetContract:
         retention_policy=None,
         upstream_dependencies=(),
         validation_profile="strict",
+        composition=composition,
     )
 
 
@@ -471,9 +583,78 @@ def clear_contract_cache() -> None:
     get_contract_for_table_key.cache_clear()
 
 
+class ContractProvider:
+    """Lazy provider for dataset contracts and related lookups.
+
+    This class provides convenient access to contract collections without
+    requiring module-level computation at import time.
+
+    Attributes
+    ----------
+    json_schema_by_dataset_name
+        Mapping from dataset name to JSON schema ID for datasets with schemas.
+    """
+
+    @property
+    def json_schema_by_dataset_name(self) -> dict[str, str]:
+        """Return mapping from dataset name to JSON schema ID.
+
+        Returns
+        -------
+        dict[str, str]
+            Dataset name to JSON schema ID mapping.
+        """
+        return {
+            contract.name: contract.json_schema_id
+            for contract in iter_contracts()
+            if contract.json_schema_id is not None
+        }
+
+    @staticmethod
+    def get_contract_for_table_key(table_key: str) -> DatasetContract:
+        """Get contract for a specific table key.
+
+        Parameters
+        ----------
+        table_key
+            The table key to look up.
+
+        Returns
+        -------
+        DatasetContract
+            The contract for this table key.
+        """
+        return get_contract_for_table_key(table_key)
+
+
+_contract_provider_instance: ContractProvider | None = None
+
+
+def get_contract_provider() -> ContractProvider:
+    """Get the singleton contract provider instance.
+
+    Returns
+    -------
+    ContractProvider
+        The contract provider with lazy lookups for contracts.
+
+    Examples
+    --------
+    >>> provider = get_contract_provider()
+    >>> "function_metrics" in provider.json_schema_by_dataset_name
+    True
+    """
+    global _contract_provider_instance  # noqa: PLW0603
+    if _contract_provider_instance is None:
+        _contract_provider_instance = ContractProvider()
+    return _contract_provider_instance
+
+
 __all__ = [
+    "ContractProvider",
     "clear_contract_cache",
     "get_contract_for_table_key",
+    "get_contract_provider",
     "is_view",
     "iter_contracts",
     "iter_contracts_by_table_key",

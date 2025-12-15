@@ -38,7 +38,7 @@ from codeintel.storage.validation import _schema_path
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.config.datasets import DatasetContract
+    from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.gateway import (
         DuckDBConnection,
         DuckDBRelation,

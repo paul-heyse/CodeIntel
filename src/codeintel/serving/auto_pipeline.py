@@ -24,7 +24,7 @@ from codeintel.build.operations import get_targets_for_operation
 from codeintel.build.providers import create_default_providers
 from codeintel.build.readiness import DatabaseReadinessView
 from codeintel.build.registry import get_target_graph
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.config.models import CliPathsInput, ToolsConfig
 from codeintel.config.primitives import SnapshotRef
 from codeintel.serving.operations.catalog import get_operation
@@ -34,9 +34,9 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from codeintel.build.hamilton import HamiltonBuildResult
-    from codeintel.config.datasets import DatasetContract
     from codeintel.config.primitives import BuildPaths
     from codeintel.config.serving_models import ServingConfig
+    from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.serving.mcp.backend import QueryBackend
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.tracking import PipelineRunRecord, PipelineRunTracking
@@ -256,8 +256,9 @@ def has_required_data_for_operation(
     if not expanded_tables:
         return False
 
+    contracts_by_table = dict(iter_contracts_by_table_key())
     for table_key in expanded_tables:
-        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+        contract = contracts_by_table.get(table_key)
         if contract is None:
             LOG.debug("has_required_data: unknown contract for %s", table_key)
             continue
@@ -551,8 +552,9 @@ def build_prereq_debug_info(
     expanded_tables = get_required_table_keys_for_operation(op_id)
 
     dataset_statuses: list[DatasetDebugInfo] = []
+    contracts_by_table = dict(iter_contracts_by_table_key())
     for table_key in sorted(expanded_tables):
-        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+        contract = contracts_by_table.get(table_key)
         if contract is None:
             dataset_statuses.append(
                 DatasetDebugInfo(

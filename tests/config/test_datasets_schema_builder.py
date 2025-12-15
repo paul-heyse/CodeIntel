@@ -12,9 +12,10 @@ from codeintel.build.hamilton.contracts.schemas.builder import (
     build_dataset_schema,
 )
 from codeintel.build.hamilton.contracts.schemas.schema import DatasetSchema
-from codeintel.config.datasets.contracts import DatasetContract, RowBinding
-from codeintel.config.datasets.primitives import Column as DuckDBColumn
-from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
+from codeintel.config.datasets.primitives import CompositeSchema
+from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
+from codeintel.core.schemas.primitives import Column as DuckDBColumn
+from codeintel.core.schemas.primitives import TableSchema
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

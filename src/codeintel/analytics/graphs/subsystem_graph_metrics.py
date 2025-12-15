@@ -15,7 +15,7 @@ from codeintel.analytics.compute.row_builders import (
 )
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -164,7 +164,7 @@ def compute_subsystem_graph_metrics(
         )
     )
 
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.subsystem_graph_metrics"]
+    contract = get_contract_for_table_key("analytics.subsystem_graph_metrics")
     validated_rows = validate_tuple_rows(
         contract.table_key,
         rows,

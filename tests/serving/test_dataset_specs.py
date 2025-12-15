@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.datasets import DEFAULT_JSONL_FILENAMES
+from codeintel.build.schemas import iter_contracts
 from codeintel.serving.backend import BackendLimits
 from tests._helpers.datasets_assertions import (
     expect_spec_filename,
@@ -38,7 +38,9 @@ def test_dataset_specs_include_contract_fields() -> None:
             condition=profile.has_row_binding is True,
             message="Row binding flag missing for function_profile",
         )
-        expected_filename = DEFAULT_JSONL_FILENAMES.get("analytics.function_profile")
+        contracts_by_key = {c.table_key: c for c in iter_contracts()}
+        expected_filename = contracts_by_key.get("analytics.function_profile")
+        expected_filename = expected_filename.jsonl_filename if expected_filename else None
         expect_spec_filename(profile, expected_filename)
         expect_spec_has_columns(profile)
         expect_spec_has_capabilities(profile)

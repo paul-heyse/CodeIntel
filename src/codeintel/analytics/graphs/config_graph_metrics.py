@@ -15,7 +15,7 @@ from codeintel.analytics.compute.graphs import (
 )
 from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES
 from codeintel.analytics.utilities.datasets import validate_tuple_rows
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -67,8 +67,8 @@ def _projection_rows(
     context: ProjectionContext,
     targets: ProjectionTargets,
 ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
-    node_contract = DATASET_CONTRACTS_BY_TABLE_KEY[targets.node_table_key]
-    edge_contract = DATASET_CONTRACTS_BY_TABLE_KEY[targets.edge_table_key]
+    node_contract = get_contract_for_table_key(targets.node_table_key)
+    edge_contract = get_contract_for_table_key(targets.edge_table_key)
     node_columns = node_contract.schema.column_names() if node_contract.schema else []
     edge_columns = edge_contract.schema.column_names() if edge_contract.schema else []
     node_id_col = node_columns[NODE_ID_INDEX] if len(node_columns) > NODE_ID_INDEX else "node"

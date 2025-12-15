@@ -1,7 +1,7 @@
 """Tests for PR-66: Schema provider registry migration.
 
 This module validates that the new schema provider registry correctly
-exposes all legacy TABLE_SCHEMAS through the SchemaProvider interface.
+exposes all declared schemas through the SchemaProvider interface.
 """
 
 from __future__ import annotations
@@ -10,12 +10,20 @@ import pytest
 
 from codeintel.build.schemas import (
     clear_schema_provider_cache,
+    declared_schema_provider,
     get_schema_provider,
     iter_table_schemas,
     require_table_schema,
 )
-from codeintel.config.datasets.schemas import TABLE_SCHEMAS
 from codeintel.core.schemas import schema_hash
+
+
+from codeintel.core.schemas.primitives import TableSchema
+
+
+def _get_declared_schemas() -> dict[str, TableSchema]:
+    """Get declared schemas as a dict for comparison."""
+    return {s.table_key: s for s in declared_schema_provider().iter_table_schemas()}
 
 
 def test_get_schema_provider_returns_valid_provider() -> None:
@@ -92,12 +100,13 @@ def test_iter_table_schemas_contains_expected_keys() -> None:
         pytest.fail(f"Missing expected schema keys: {missing}")
 
 
-def test_every_legacy_key_resolves_via_provider() -> None:
-    """Verify all legacy TABLE_SCHEMAS keys resolve through the provider."""
+def test_every_declared_key_resolves_via_provider() -> None:
+    """Verify all declared schema keys resolve through the provider."""
     provider = get_schema_provider()
+    declared_schemas = _get_declared_schemas()
     missing_keys: list[str] = []
 
-    for key in TABLE_SCHEMAS:
+    for key in declared_schemas:
         schema = provider.get_table_schema(key)
         if schema is None:
             missing_keys.append(key)
@@ -106,28 +115,30 @@ def test_every_legacy_key_resolves_via_provider() -> None:
         pytest.fail(f"Missing keys in provider: {missing_keys}")
 
 
-def test_provider_schemas_match_legacy_schemas() -> None:
-    """Verify provider returns identical schemas as legacy TABLE_SCHEMAS."""
+def test_provider_schemas_match_declared_schemas() -> None:
+    """Verify provider returns identical schemas as declared_schema_provider."""
     provider = get_schema_provider()
+    declared_schemas = _get_declared_schemas()
     mismatches: list[str] = []
 
-    for key, legacy_schema in TABLE_SCHEMAS.items():
+    for key, declared_schema in declared_schemas.items():
         provider_schema = provider.get_table_schema(key)
         if provider_schema is None:
             mismatches.append(f"{key}: not found in provider")
-        elif provider_schema != legacy_schema:
+        elif provider_schema != declared_schema:
             mismatches.append(f"{key}: schema mismatch")
 
     if mismatches:
         pytest.fail("Schema mismatches:\n" + "\n".join(mismatches))
 
 
-def test_provider_schema_count_matches_legacy() -> None:
-    """Verify provider has the same number of schemas as legacy."""
+def test_provider_schema_count_at_least_declared() -> None:
+    """Verify provider has at least as many schemas as declared."""
     provider_count = len(list(iter_table_schemas()))
-    legacy_count = len(TABLE_SCHEMAS)
-    if provider_count != legacy_count:
-        pytest.fail(f"Provider has {provider_count} schemas, legacy has {legacy_count}")
+    declared_count = len(_get_declared_schemas())
+    # Provider may have more schemas from Hamilton inference
+    if provider_count < declared_count:
+        pytest.fail(f"Provider has {provider_count} schemas, declared has {declared_count}")
 
 
 def test_schema_hash_is_consistent() -> None:

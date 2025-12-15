@@ -1,10 +1,15 @@
 """Modular dataset contract definitions, schemas, row models, and SQL helpers.
 
-This package is the canonical source for dataset configuration. All new code
-should import from `codeintel.config.datasets`.
+.. deprecated::
+    This package is being deprecated in favor of new APIs:
 
-Schema registry and validation have moved to the Hamilton build layer:
-`codeintel.build.hamilton.contracts.schemas`.
+    - **DatasetContract, RowBinding**: Import from ``codeintel.core.schemas.contract_primitives``
+    - **Schema lookups**: Use ``codeintel.build.schemas.get_schema_provider()``
+    - **Contract lookups**: Use ``codeintel.build.schemas.get_contract_for_table_key()``
+    - **Row bindings**: Use ``codeintel.build.schemas.get_row_binding()``
+
+    The module-level dicts (TABLE_SCHEMAS, DATASET_CONTRACTS, etc.) are kept
+    for backward compatibility but should not be used in new code.
 
 Submodules
 ----------
@@ -95,10 +100,6 @@ from codeintel.config.datasets.primitives import (
     RowDictType,
     RowToTuple,
     TableSchema,
-)
-from codeintel.config.datasets.row_factory import (
-    row_serializer_from_pandera,
-    typed_dict_from_pandera,
 )
 from codeintel.config.datasets.rows import (
     BEHAVIORAL_COVERAGE_COLUMNS,
@@ -205,6 +206,10 @@ from codeintel.config.datasets.semantic_roles import (
 )
 from codeintel.config.datasets.semantic_roles import (
     timestamp_str as semantic_role_timestamp_str,
+)
+from codeintel.core.schemas.row_models import (
+    row_serializer_from_pandera,
+    typed_dict_from_pandera,
 )
 
 

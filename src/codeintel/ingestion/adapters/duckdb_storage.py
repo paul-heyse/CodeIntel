@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, ClassVar, cast
 
-from codeintel.config.datasets import load_columns_by_table
+from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
 from codeintel.storage.ibis_types import and_predicates, ibis_bool, isin_values
 
