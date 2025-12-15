@@ -637,3 +637,338 @@ Add a CI job that runs:
 If you want, I can also turn this into a single file you can drop into the repo (e.g., `docs/build/phase5_dod_gate.md`) and a tiny “meta test” (`tests/build/hamilton/test_phase5_dod_gate.py`) that asserts these invariants programmatically (including running the CLI snapshot manifest subset).
 
 # meta test to implement #
+
+Below is a **drop‑in meta gate test** you can add as:
+
+`tests/build/hamilton/test_phase5_dod_gate.py`
+
+It asserts the Phase‑5 DoD invariants programmatically **and** runs a **small required subset** of CLI snapshot cases from `tests/build/hamilton/snapshots/manifest.yaml`.
+
+> Note: This is intentionally “gating” — it will fail until PR‑74..PR‑80 add the `build spec …` + `build validate …` commands and you add the corresponding snapshot cases to the manifest.
+
+---
+
+```python
+# tests/build/hamilton/test_phase5_dod_gate.py
+"""Phase 5 (PR-74..PR-80) Definition-of-Done gate.
+
+This meta test is designed to be the single CI choke-point proving:
+- auto mode exposes d__/q__/a__ helpers for native outputs
+- BuildSpec compile is deterministic (hash/JSON stable across two compiles)
+- validator returns 0 issues
+- CLI snapshot suite includes (and matches) spec/validate snapshots
+- graph_source default is hamilton (and help text/snapshots updated)
+
+It also executes a small, required subset of the CLI snapshot manifest
+to ensure the golden outputs are present and stable without needing
+pytest -m cli_snapshot in CI.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.naming import artifact_node, dataset_node, query_node
+from codeintel.build.hamilton.native.registry import native_target_names
+from tests._helpers.cli import run_cli
+from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest
+from tests.build.hamilton.snapshots._runner import execute_and_assert_snapshot
+
+# Run in the same xdist worker as other CLI tests to avoid cyclopts/pydantic
+# caching/validation issues when tests execute concurrently.
+pytestmark = [
+    pytest.mark.xdist_group("cli_shared_flags"),
+    pytest.mark.integration,
+]
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+
+def _set_isolated_repo_env(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path]:
+    """Create an isolated repo/build directory and export env vars.
+
+    Many build/CLI operations touch CODEINTEL_BUILD_DIR; this ensures the gate
+    stays deterministic and doesn't leak artifacts into the working tree.
+    """
+    repo_root = tmp_path / "repo"
+    build_dir = tmp_path / "build"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    build_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("CODEINTEL_REPO_ROOT", str(repo_root))
+    monkeypatch.setenv("CODEINTEL_BUILD_DIR", str(build_dir))
+    monkeypatch.setenv("CODEINTEL_LOG_LEVEL", "WARNING")
+
+    # Some commands will create relative paths; keep them inside tmp_path.
+    monkeypatch.chdir(tmp_path)
+
+    return repo_root, build_dir
+
+
+def _require_cli_ok(*, label: str, argv: list[str]) -> str:
+    """Run CLI and require exit_code==0. Return stdout."""
+    res = run_cli(argv)
+    if res.exit_code != 0:
+        pytest.fail(
+            f"{label} failed (exit={res.exit_code}).\n"
+            f"ARGV: {argv}\n"
+            f"STDOUT:\n{res.stdout}\n\n"
+            f"STDERR:\n{res.stderr}\n"
+        )
+    return res.stdout
+
+
+def _parse_json_or_fail(*, label: str, text: str) -> Any:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        snippet = text[:2000]
+        pytest.fail(f"{label} returned non-JSON output: {exc}\n--- output (first 2000 chars) ---\n{snippet}")
+
+
+def _canonical_json(obj: Any) -> str:
+    """Stable JSON encoding for determinism checks."""
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _snapshots_dir() -> Path:
+    return Path(__file__).parent / "snapshots"
+
+
+def _manifest_path(snapshots_dir: Path) -> Path:
+    yaml_path = snapshots_dir / "manifest.yaml"
+    json_path = snapshots_dir / "manifest.json"
+    if yaml_path.exists():
+        return yaml_path
+    if json_path.exists():
+        return json_path
+    pytest.fail(f"No snapshot manifest found at: {yaml_path} or {json_path}")
+
+
+def _load_manifest() -> Any:
+    sdir = _snapshots_dir()
+    mpath = _manifest_path(sdir)
+    return load_snapshot_manifest(mpath)
+
+
+# Required snapshot cases for Phase 5 DoD.
+#
+# PR-74..80 should add the pr77/pr78 cases (spec/validate). We also require
+# plan/graph/explain help to ensure PR-79's default graph_source flip is
+# reflected in goldens.
+_REQUIRED_SNAPSHOT_CASES: tuple[str, ...] = (
+    "pr09_plan_help",
+    "pr14_graph_help",
+    "pr15_explain_help",
+    "pr77_build_spec_help",
+    "pr77_build_spec_compile_help",
+    "pr77_build_spec_compile_auto",
+    "pr78_build_validate_help",
+    "pr78_build_validate_auto",
+)
+
+
+def _run_required_snapshot_subset() -> None:
+    """Execute and assert a small required subset of the snapshot manifest."""
+    snapshots_dir = _snapshots_dir()
+    manifest = _load_manifest()
+
+    cases_by_name = {c.name: c for c in manifest.cases}
+    missing = [name for name in _REQUIRED_SNAPSHOT_CASES if name not in cases_by_name]
+    if missing:
+        pytest.fail(
+            "Phase 5 DoD requires the following CLI snapshot cases to exist in "
+            f"{_manifest_path(snapshots_dir)}:\n"
+            + "\n".join(f"- {m}" for m in missing)
+        )
+
+    for name in _REQUIRED_SNAPSHOT_CASES:
+        execute_and_assert_snapshot(
+            manifest=manifest,
+            snapshots_dir=snapshots_dir,
+            case=cases_by_name[name],
+            update=False,
+        )
+
+
+def _assert_graph_source_default_is_hamilton(*, help_text: str, cmd: str) -> None:
+    """Check that help output reflects graph_source default flip."""
+    lower = help_text.lower()
+
+    # Must mention graph-source option
+    if "graph-source" not in lower and "--graph-source" not in lower:
+        pytest.fail(f"{cmd} --help does not mention --graph-source; help text changed?\n{help_text}")
+
+    # Must not claim targetgraph is default anymore
+    if "targetgraph (default)" in lower:
+        pytest.fail(f"{cmd} --help still indicates targetgraph is default.\n{help_text}")
+
+    # Must indicate hamilton is the default (allow either phrasing)
+    has_default_hamilton = ("default: hamilton" in lower) or ("hamilton (default)" in lower)
+    if not has_default_hamilton:
+        pytest.fail(f"{cmd} --help does not indicate hamilton as the default.\n{help_text}")
+
+
+# -----------------------------------------------------------------------------
+# DoD Gate Tests
+# -----------------------------------------------------------------------------
+
+
+def test_phase5_gate_native_outputs_have_helpers_in_auto_mode() -> None:
+    """Auto mode must expose d__/q__/a__ helpers for native outputs."""
+    runtime = build_driver(mode="auto")
+    node_names = set(runtime.dr.graph.nodes.keys())
+
+    native = sorted(native_target_names())
+    if not native:
+        pytest.fail("Expected at least one native target, got none.")
+
+    missing: list[str] = []
+    for target_name in native:
+        target = runtime.graph.get(target_name)
+
+        # Skip native targets that truly have no declared outputs.
+        if not target.contract.table_keys and not target.contract.artifacts:
+            continue
+
+        for table_key in target.contract.table_keys:
+            d_name = dataset_node(table_key)
+            q_name = query_node(table_key)
+
+            if d_name not in node_names:
+                missing.append(f"{target_name}: missing dataset node {d_name} for {table_key}")
+            if q_name not in node_names:
+                missing.append(f"{target_name}: missing query loader node {q_name} for {table_key}")
+
+        for artifact in target.contract.artifacts:
+            a_name = artifact_node(artifact.name)
+            if a_name not in node_names:
+                missing.append(f"{target_name}: missing artifact node {a_name} for {artifact.name}")
+
+    if missing:
+        sample = "\n".join(missing[:80])
+        more = "" if len(missing) <= 80 else f"\n... +{len(missing) - 80} more"
+        pytest.fail(
+            "Auto mode is missing required helper nodes for native outputs:\n"
+            f"{sample}{more}\n\n"
+            "Expected post PR-74 behavior: native outputs get d__/q__/a__ helpers in auto mode."
+        )
+
+
+def test_phase5_gate_buildspec_compile_is_stable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """BuildSpec compile must be deterministic (stable JSON + stable hash)."""
+    _set_isolated_repo_env(monkeypatch=monkeypatch, tmp_path=tmp_path)
+
+    out1 = _require_cli_ok(
+        label="build spec compile (run 1)",
+        argv=["build", "spec", "compile", "--format", "json"],
+    )
+    out2 = _require_cli_ok(
+        label="build spec compile (run 2)",
+        argv=["build", "spec", "compile", "--format", "json"],
+    )
+
+    spec1 = _parse_json_or_fail(label="build spec compile (run 1)", text=out1)
+    spec2 = _parse_json_or_fail(label="build spec compile (run 2)", text=out2)
+
+    canon1 = _canonical_json(spec1)
+    canon2 = _canonical_json(spec2)
+
+    if canon1 != canon2:
+        pytest.fail(
+            "BuildSpec compile output is not deterministic across two compiles.\n"
+            "This must be stable for CI gating.\n"
+            "--- run 1 (canonical) ---\n"
+            f"{canon1}\n\n"
+            "--- run 2 (canonical) ---\n"
+            f"{canon2}\n"
+        )
+
+    # Stronger check: if a hash field exists, it must match too.
+    if isinstance(spec1, dict) and isinstance(spec2, dict):
+        h1 = spec1.get("buildspec_hash")
+        h2 = spec2.get("buildspec_hash")
+        if h1 is None or h2 is None:
+            pytest.fail(
+                "BuildSpec JSON is expected to include a top-level 'buildspec_hash' field "
+                "for easy CI gating, but it was missing."
+            )
+        if h1 != h2:
+            pytest.fail(f"buildspec_hash mismatch across two compiles: {h1!r} != {h2!r}")
+
+
+def test_phase5_gate_validator_returns_zero_issues(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Graph validator must report 0 issues for the repo in auto mode."""
+    _set_isolated_repo_env(monkeypatch=monkeypatch, tmp_path=tmp_path)
+
+    out = _require_cli_ok(
+        label="build validate",
+        argv=["build", "validate", "--format", "json"],
+    )
+    payload = _parse_json_or_fail(label="build validate", text=out)
+
+    if not isinstance(payload, dict):
+        pytest.fail(f"build validate expected dict JSON payload, got {type(payload).__name__}")
+
+    issues = payload.get("issues")
+    if issues is None:
+        pytest.fail(
+            "build validate JSON payload must include an 'issues' field.\n"
+            f"Payload keys: {sorted(payload.keys())}"
+        )
+    if not isinstance(issues, list):
+        pytest.fail(f"build validate 'issues' must be a list, got {type(issues).__name__}")
+
+    if issues:
+        snippet = json.dumps(issues[:25], indent=2, ensure_ascii=False)
+        more = "" if len(issues) <= 25 else f"\n... +{len(issues) - 25} more"
+        pytest.fail(f"build validate returned issues (expected 0):\n{snippet}{more}")
+
+
+def test_phase5_gate_graph_source_default_is_hamilton(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Help output must reflect graph_source default flip to Hamilton."""
+    _set_isolated_repo_env(monkeypatch=monkeypatch, tmp_path=tmp_path)
+
+    plan_help = _require_cli_ok(label="build plan --help", argv=["build", "plan", "--help"])
+    graph_help = _require_cli_ok(label="build graph --help", argv=["build", "graph", "--help"])
+    explain_help = _require_cli_ok(label="build explain --help", argv=["build", "explain", "--help"])
+
+    _assert_graph_source_default_is_hamilton(help_text=plan_help, cmd="build plan")
+    _assert_graph_source_default_is_hamilton(help_text=graph_help, cmd="build graph")
+    _assert_graph_source_default_is_hamilton(help_text=explain_help, cmd="build explain")
+
+
+def test_phase5_gate_cli_snapshot_subset_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run required CLI snapshot subset to ensure goldens exist and match."""
+    _set_isolated_repo_env(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    _run_required_snapshot_subset()
+```
+
+---
+
+## What you’ll need to add to `tests/build/hamilton/snapshots/manifest.yaml` for this to pass
+
+This test requires these **new case names** to exist (and their snapshot files committed):
+
+* `pr77_build_spec_help` → e.g. `["build","spec","--help"]` → snapshot `pr77_build_spec_help.txt`
+* `pr77_build_spec_compile_help` → `["build","spec","compile","--help"]` → snapshot `pr77_build_spec_compile_help.txt`
+* `pr77_build_spec_compile_auto` → `["build","spec","compile","--format","json"]` → snapshot `pr77_build_spec_compile_auto.json`
+* `pr78_build_validate_help` → `["build","validate","--help"]` → snapshot `pr78_build_validate_help.txt`
+* `pr78_build_validate_auto` → `["build","validate","--format","json"]` → snapshot `pr78_build_validate_auto.json`
+
+It also runs the existing:
+
+* `pr09_plan_help`, `pr14_graph_help`, `pr15_explain_help`
+
+…to enforce the PR‑79 default flip is reflected in goldens.
+
+---
+
+
