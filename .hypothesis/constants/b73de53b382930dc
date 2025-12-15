@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/introspect.py
+# hypothesis_version: 6.148.7
+
+[', ', 'GraphSource', 'hamilton', 'parse_graph_source', 'targetgraph']

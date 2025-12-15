@@ -3,16 +3,22 @@
 Row models are a derived convenience for typed row-shaped data interchange,
 not a separate schema authority. They are generated on demand from ``TableSchema``
 and cached for reuse.
+
+This module also provides ``GeneratedRowBinding``, a schema-generated equivalent
+to the legacy ``RowBinding`` that includes provenance metadata (table_key,
+schema_hash) for cache invalidation and debugging.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import make_dataclass
+from dataclasses import dataclass, make_dataclass
 from datetime import datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING
+
+from codeintel.core.schemas.hashing import schema_hash
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
@@ -113,8 +119,118 @@ def row_serializer_for_table_schema(*, table_schema: TableSchema) -> RowSerializ
     return _row_serializer_cached(_row_model_signature(table_schema))
 
 
+@dataclass(frozen=True)
+class GeneratedRowBinding:
+    """Schema-generated row binding with provenance metadata.
+
+    This class provides a drop-in replacement for the legacy ``RowBinding``
+    dataclass while adding schema provenance for cache invalidation and
+    debugging. The ``row_type`` and ``to_tuple`` properties maintain
+    compatibility with the legacy interface.
+
+    Parameters
+    ----------
+    row_model
+        Generated frozen dataclass type with fields matching the schema.
+    serializer
+        Function that converts a row mapping to an ordered tuple.
+    table_key
+        Fully qualified table key (schema.table) for provenance.
+    schema_hash
+        SHA-256 hash of the source TableSchema for cache invalidation.
+
+    Examples
+    --------
+    >>> from codeintel.core.schemas import TableSchema, Column
+    >>> schema = TableSchema(
+    ...     schema="test",
+    ...     name="example",
+    ...     columns=[
+    ...         Column(name="id", type="INTEGER", nullable=False),
+    ...     ],
+    ... )
+    >>> binding = row_binding_for_table_schema(table_schema=schema)
+    >>> binding.table_key
+    'test.example'
+    """
+
+    row_model: type[object]
+    serializer: RowSerializer
+    table_key: str
+    schema_hash: str
+
+    @property
+    def row_type(self) -> type[object]:
+        """Return the row model type for legacy compatibility.
+
+        Returns
+        -------
+        type[object]
+            The generated dataclass row model.
+        """
+        return self.row_model
+
+    @property
+    def to_tuple(self) -> RowSerializer:
+        """Return the serializer function for legacy compatibility.
+
+        Returns
+        -------
+        RowSerializer
+            Function that serializes a row mapping to a tuple.
+        """
+        return self.serializer
+
+
+def row_binding_for_table_schema(*, table_schema: TableSchema) -> GeneratedRowBinding:
+    """Generate a complete RowBinding from a TableSchema.
+
+    This function creates a ``GeneratedRowBinding`` containing both the row
+    model (frozen dataclass) and serializer, along with provenance metadata
+    for cache management.
+
+    Parameters
+    ----------
+    table_schema
+        Source TableSchema defining the table structure.
+
+    Returns
+    -------
+    GeneratedRowBinding
+        Complete binding with row model, serializer, and provenance.
+
+    Examples
+    --------
+    >>> from codeintel.core.schemas import TableSchema, Column
+    >>> schema = TableSchema(
+    ...     schema="analytics",
+    ...     name="metrics",
+    ...     columns=[
+    ...         Column(name="repo", type="VARCHAR", nullable=False),
+    ...         Column(name="loc", type="INTEGER", nullable=True),
+    ...     ],
+    ... )
+    >>> binding = row_binding_for_table_schema(table_schema=schema)
+    >>> binding.table_key
+    'analytics.metrics'
+    >>> len(binding.schema_hash)
+    64
+    """
+    model = row_model_for_table_schema(table_schema=table_schema)
+    serializer = row_serializer_for_table_schema(table_schema=table_schema)
+
+    return GeneratedRowBinding(
+        row_model=model,
+        serializer=serializer,
+        table_key=table_schema.table_key,
+        schema_hash=schema_hash(table_schema),
+    )
+
+
 __all__ = [
+    "GeneratedRowBinding",
     "RowSerializer",
+    "row_binding_for_table_schema",
     "row_model_for_table_schema",
     "row_serializer_for_table_schema",
 ]

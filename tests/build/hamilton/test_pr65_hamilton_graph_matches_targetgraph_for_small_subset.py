@@ -18,7 +18,9 @@ def test_pr65_hamilton_graph_matches_targetgraph_for_small_subset() -> None:
     derived_order = derived.topological_order(requested)
     base_order = base.topological_order(requested)
     if derived_order != base_order:
-        pytest.fail("Hamilton-derived TargetGraph order does not match declarative TargetGraph order")
+        pytest.fail(
+            "Hamilton-derived TargetGraph order does not match declarative TargetGraph order"
+        )
 
     for target_name in base.topological_order(requested):
         derived_deps = set(derived.get(target_name).dependencies)

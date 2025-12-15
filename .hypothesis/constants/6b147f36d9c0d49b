@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/schemas/__init__.py
+# hypothesis_version: 6.148.7
+
+['Column', 'ColumnType', 'GeneratedRowBinding', 'Index', 'SchemaProvider', 'TableSchema', 'canonical_type', 'schema_hash']

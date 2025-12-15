@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/build_schema.py
+# hypothesis_version: 6.148.7
+
+['--all', '--expected', '--format', '--infer', '--infer-native', '--module', '--only-native', '--output', '--stable', '-a', '-e', '-f', '-m', '-o', 'build.schema.compile', 'build.schema.diff', 'build_schema_app', 'compile', 'diff', 'json', 'schema']

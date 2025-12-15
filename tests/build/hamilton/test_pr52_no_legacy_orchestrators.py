@@ -105,7 +105,9 @@ def test_pr52_no_deprecated_function_calls_in_cli() -> None:
     bad: list[tuple[str, str]] = []
     for path in _iter_py_files(cli_root):
         text = path.read_text(encoding="utf-8")
-        bad.extend((_relative_path(path), pattern) for pattern in deprecated_patterns if pattern in text)
+        bad.extend(
+            (_relative_path(path), pattern) for pattern in deprecated_patterns if pattern in text
+        )
     if bad:
         message = "Deprecated calls in CLI:\n" + "\n".join(f"{p}: {pat}" for p, pat in bad)
         pytest.fail(message)

@@ -18,11 +18,15 @@ def test_pr64_loader_tags_are_canonical() -> None:
 
         if node_name.startswith("q__"):
             if node_type != NODE_TYPE_LOADER_QUERY:
-                pytest.fail(f"{node_name} expected node_type={NODE_TYPE_LOADER_QUERY}, got {node_type}")
+                pytest.fail(
+                    f"{node_name} expected node_type={NODE_TYPE_LOADER_QUERY}, got {node_type}"
+                )
             if not isinstance(tags.get("table_key"), str):
                 pytest.fail(f"{node_name} missing table_key tag")
         elif node_name.startswith("df__"):
             if node_type != NODE_TYPE_LOADER_DATAFRAME:
-                pytest.fail(f"{node_name} expected node_type={NODE_TYPE_LOADER_DATAFRAME}, got {node_type}")
+                pytest.fail(
+                    f"{node_name} expected node_type={NODE_TYPE_LOADER_DATAFRAME}, got {node_type}"
+                )
             if not isinstance(tags.get("table_key"), str):
                 pytest.fail(f"{node_name} missing table_key tag")

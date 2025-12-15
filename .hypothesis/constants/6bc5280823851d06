@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/telemetry_hook.py
+# hypothesis_version: 6.148.7
+
+[1000, 'NodeExecutionRecord', 'NodeTelemetryHook', 'error', 'failed', 'node_tags', 'node_type', 'succeeded', 'success', 'target']

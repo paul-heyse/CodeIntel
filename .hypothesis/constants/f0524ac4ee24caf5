@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/dependencies.py
+# hypothesis_version: 6.148.7
+
+['.', '.py', '/', 'analytics', 'compute', 'external_deps', 'materialize', 't__external_deps']

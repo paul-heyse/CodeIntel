@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/schemas/primitives.py
+# hypothesis_version: 6.148.7
+
+['BIGINT', 'BOOLEAN', 'Column', 'ColumnType', 'DECIMAL', 'DECIMAL(38,0)', 'DOUBLE', 'INTEGER', 'Index', 'JSON', 'TIMESTAMP', 'TIMESTAMPTZ', 'TableSchema', 'VARCHAR', 'columns', 'description', 'indexes', 'name', 'nullable', 'primary_key', 'schema', 'table_key', 'type', 'unique']

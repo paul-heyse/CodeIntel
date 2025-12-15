@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/build.py
+# hypothesis_version: 6.148.7
+
+[', ', '--alias', '--all', '--asset', '--asset-key', '--asset-kind', '--depth', '--direction', '--dry-run', '--force', '--format', '--from', '--from-run-id', '--graph-source', '--hamilton-mode', '--limit', '--max-depth', '--module', '--note', '--output', '--run-id', '--show-targets', '--strict-contracts', '--target', '--to', '--type', '--validate-outputs', '--version-hash', '--versions', '--wrapper-allowlist', '-a', '-d', '-f', '-i', '-m', '-n', '-o', '-t', 'Asset key to diff.', 'assets', 'build', 'build.assets', 'build.diff', 'build.explain', 'build.graph', 'build.history', 'build.impact', 'build.lineage', 'build.plan', 'build.promote', 'build.resolve', 'build.run', 'build.status', 'build_app', 'diff', 'explain', 'generated', 'graph', 'history', 'impact', 'json', 'lineage', 'plan', 'promote', 'resolve', 'run', 'schema', 'status', 'table', 'targetgraph', 'up']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/contracts/schemas/lineage.py
+# hypothesis_version: 6.148.7
+
+['  (none)', '  (unknown)', 'ColumnLineage', 'Constraints:', 'Produced by:', 'TableLineage', 'Upstream columns:', 'nullable', 'trace_column_lineage', 'trace_table_lineage']

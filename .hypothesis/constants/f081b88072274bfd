@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/schemas/row_registry.py
+# hypothesis_version: 6.148.7
+
+[256, 'get_row_binding', 'iter_row_bindings']

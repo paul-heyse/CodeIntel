@@ -1187,8 +1187,6 @@ def _get_dataset_schemas() -> dict[str, DataFrameSchema]:
     return schemas
 
 
-
-
 @dataclass
 class ValidationResult:
     """Result of Pandera validation with detailed error information."""

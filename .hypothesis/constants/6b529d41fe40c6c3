@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/cfg_dfg.py
+# hypothesis_version: 6.148.7
+
+['analytics', 'cfg_dfg_metrics', 'compute', 'materialize', 't__cfg_dfg_metrics']

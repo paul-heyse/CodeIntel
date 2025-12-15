@@ -22,8 +22,8 @@ Example
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.config.datasets.primitives import (
     Column,
@@ -102,6 +102,28 @@ class OutputContract:
     artifacts
         Tuple of ArtifactSpec definitions for files this target produces.
         Empty for targets that only write to tables.
+    json_schema_ids
+        JSON Schema identifiers for export validation.
+    jsonl_filenames
+        Default JSONL export filenames for tables in this contract.
+    parquet_filenames
+        Default Parquet export filenames for tables in this contract.
+    owner
+        Team or individual owner of this target's outputs.
+    description
+        Human-readable description of this target's purpose.
+    family
+        Dataset family classification (e.g., "analytics", "core").
+    freshness_sla
+        Expected freshness guarantee (e.g., "daily", "hourly").
+    retention_policy
+        Data retention policy descriptor (e.g., "90d").
+    upstream_dependencies
+        Names of upstream datasets this target depends on.
+    tags
+        Classification tags for the target outputs.
+    validation_profile
+        Validation strictness level for outputs.
 
     Examples
     --------
@@ -124,6 +146,19 @@ class OutputContract:
 
     tables: tuple[TableSchema, ...] = ()
     artifacts: tuple[ArtifactSpec, ...] = ()
+
+    # Extended metadata for dataset contract derivation (PR-68)
+    json_schema_ids: tuple[str, ...] = ()
+    jsonl_filenames: tuple[str, ...] = ()
+    parquet_filenames: tuple[str, ...] = ()
+    owner: str | None = None
+    description: str | None = None
+    family: str | None = None
+    freshness_sla: str | None = None
+    retention_policy: str | None = None
+    upstream_dependencies: tuple[str, ...] = ()
+    tags: frozenset[str] = field(default_factory=frozenset)
+    validation_profile: Literal["strict", "lenient"] = "strict"
 
     @property
     def table_keys(self) -> tuple[str, ...]:

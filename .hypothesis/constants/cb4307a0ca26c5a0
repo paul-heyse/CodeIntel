@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/export/export_jsonl.py
+# hypothesis_version: 6.148.7
+
+[0.0, '_metadata', '_type', 'codeintel.jsonl', 'commit', 'compute', 'export', 'export_format', 'export_jsonl', 'file', 'format', 'function_metric', 'jsonl', 'jsonl_export', 'lines', 'list[dict[str, Any]]', 'materialize', 'metadata', 'module', 'modules_count', 'modules_data', 'pd.DataFrame', 'records', 'repo', 'succeeded', 't__export_jsonl']

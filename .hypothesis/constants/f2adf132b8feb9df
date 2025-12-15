@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/contracts/schemas/builder.py
+# hypothesis_version: 6.148.7
+
+['build_all_schemas', 'build_dataset_schema']

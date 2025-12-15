@@ -59,7 +59,9 @@ def _is_materialize_node(node: Node) -> bool:
     tags = node.tags
     if not isinstance(tags, dict):
         return False
-    return tags.get(TAG_NODE_TYPE) == NODE_TYPE_MATERIALIZE and isinstance(tags.get(TAG_TARGET), str)
+    return tags.get(TAG_NODE_TYPE) == NODE_TYPE_MATERIALIZE and isinstance(
+        tags.get(TAG_TARGET), str
+    )
 
 
 def _target_node_index(nodes: Mapping[str, Node]) -> dict[str, str]:

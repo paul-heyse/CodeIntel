@@ -217,7 +217,9 @@ def infer_schema_for_table_key(
         target_name, compute_fn = candidates[0]
         compute_name = compute_node(target_name)
 
-        qparams, requires_env = _inference_requirements(target_name=target_name, compute_fn=compute_fn)
+        qparams, requires_env = _inference_requirements(
+            target_name=target_name, compute_fn=compute_fn
+        )
         job = _ComputeInferenceJob(
             compute_name=compute_name,
             table_key=table_key,

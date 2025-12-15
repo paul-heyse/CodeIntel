@@ -34,7 +34,13 @@ from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 
 log = logging.getLogger(__name__)
-_HAMILTON_TYPE_HINTS = (BuildEnv, GraphRuntime, TargetGraph, TargetRunRecord, TestGraphMetricsResult)
+_HAMILTON_TYPE_HINTS = (
+    BuildEnv,
+    GraphRuntime,
+    TargetGraph,
+    TargetRunRecord,
+    TestGraphMetricsResult,
+)
 
 
 def _get_graph_runtime(env: BuildEnv) -> GraphRuntime:

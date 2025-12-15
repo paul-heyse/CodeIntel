@@ -4,6 +4,11 @@ This module provides utilities for creating RowBinding instances from
 schema-generated models, enabling the transition from manual TypedDict
 definitions to Pandera-based models.
 
+As of PR-67, schema-generated bindings are preferred over legacy manual
+bindings. Use ``get_or_create_row_binding()`` for the canonical way to
+obtain a row binding, or ``get_row_binding()`` from
+``codeintel.build.schemas.row_registry`` for the new preferred API.
+
 Architecture Reference: Section 5.3.2 - Update contracts
 """
 
@@ -13,14 +18,17 @@ import logging
 from collections.abc import Callable, Mapping
 
 from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.schemas.row_registry import get_row_binding
 from codeintel.config.datasets.contracts import RowBinding, get_row_bindings
 from codeintel.core.schemas.row_models import (
+    GeneratedRowBinding,
     row_model_for_table_schema,
     row_serializer_for_table_schema,
 )
 
 __all__ = [
     "compare_row_bindings",
+    "generated_to_legacy_binding",
     "get_or_create_row_binding",
     "row_binding_from_schema",
     "row_serializer_from_schema",
@@ -30,6 +38,28 @@ log = logging.getLogger(__name__)
 
 
 RowSerializer = Callable[[Mapping[str, object]], tuple[object, ...]]
+
+
+def generated_to_legacy_binding(generated: GeneratedRowBinding) -> RowBinding:
+    """Convert a GeneratedRowBinding to a legacy RowBinding.
+
+    This adapter allows schema-generated bindings to be used in places
+    that still expect the legacy RowBinding dataclass.
+
+    Parameters
+    ----------
+    generated
+        Schema-generated binding with provenance metadata.
+
+    Returns
+    -------
+    RowBinding
+        Legacy binding compatible with existing consumers.
+    """
+    return RowBinding(
+        row_type=generated.row_model,
+        to_tuple=generated.serializer,
+    )
 
 
 def row_binding_from_schema(table_key: str) -> RowBinding:
@@ -88,11 +118,11 @@ def row_serializer_from_schema(table_key: str) -> RowSerializer:
 
 
 def get_or_create_row_binding(table_key: str) -> RowBinding:
-    """Get RowBinding, preferring existing manual definition with schema fallback.
+    """Get RowBinding, preferring schema-generated with legacy fallback.
 
     This function provides a migration-friendly way to get RowBinding:
-    1. Try to get the existing manual RowBinding from contracts
-    2. Fall back to schema-generated RowBinding if not found
+    1. Try schema-generated binding via get_row_binding() (preferred)
+    2. Fall back to legacy manual RowBinding if schema not found
 
     Parameters
     ----------
@@ -107,22 +137,29 @@ def get_or_create_row_binding(table_key: str) -> RowBinding:
     Raises
     ------
     KeyError
-        If no RowBinding is available (neither manual nor schema-generated).
+        If no RowBinding is available (neither schema nor manual).
 
     Notes
     -----
-    Flip preference to schema-generated when ready for full migration.
-    See architecture Section 5.3.2 - Update contracts for activation steps.
+    As of PR-67, schema-generated bindings are preferred over legacy manual
+    bindings. This ensures bindings stay in sync with the canonical schema
+    definitions.
     """
+    # Prefer schema-generated bindings
+    try:
+        generated = get_row_binding(table_key)
+        return generated_to_legacy_binding(generated)
+    except KeyError:
+        pass
+
+    # Fall back to legacy manual bindings
     row_bindings = get_row_bindings()
     if table_key in row_bindings:
+        log.debug("Using legacy manual binding for %s", table_key)
         return row_bindings[table_key]
 
-    try:
-        return row_binding_from_schema(table_key)
-    except KeyError:
-        msg = f"No RowBinding available for {table_key}"
-        raise KeyError(msg) from None
+    msg = f"No RowBinding available for {table_key}"
+    raise KeyError(msg)
 
 
 def compare_row_bindings(table_key: str) -> dict[str, object]:

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 _EMPTY_METADATA: Mapping[str, object] = MappingProxyType({})
 
+
 class ArtifactRef(NamedTuple):
     """Reference to a non-tabular artifact in the build DAG.
 
