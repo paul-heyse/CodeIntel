@@ -2,32 +2,16 @@
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import TYPE_CHECKING, cast
 
 from codeintel.build.schemas import get_contract_for_table_key
+from codeintel.core.schemas.contract_primitives import DatasetContract
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from types import ModuleType
 
     from duckdb import DuckDBPyConnection
-
-    from codeintel.core.schemas.contract_primitives import DatasetContract
-
-
-@lru_cache(maxsize=1)
-def _contracts_module() -> ModuleType:
-    """Get the contracts module lazily.
-
-    Returns
-    -------
-    ModuleType
-        The codeintel.config.datasets.contracts module.
-    """
-    return importlib.import_module("codeintel.config.datasets.contracts")
 
 
 __all__ = [
@@ -219,10 +203,6 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
     KeyError
         If a metadata row lacks a corresponding DatasetContract.
     """
-    # Import here to avoid circular import issues
-    contracts_mod = _contracts_module()
-    dataset_contract_cls = contracts_mod.DatasetContract
-
     rows = con.execute(
         """
         SELECT
@@ -270,7 +250,7 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
         effective_jsonl = jsonl_filename or base.jsonl_filename
         effective_parquet = parquet_filename or base.parquet_filename
 
-        ds = dataset_contract_cls(
+        ds = DatasetContract(
             table_key=table_key,
             name=name,
             schema=base.schema,

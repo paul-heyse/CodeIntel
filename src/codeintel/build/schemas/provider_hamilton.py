@@ -36,8 +36,11 @@ from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.storage.gateway.ephemeral import ephemeral_gateway
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.targets import TargetGraph
+    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
 @dataclass(frozen=True)
@@ -322,6 +325,16 @@ class HamiltonSchemaProvider(SchemaProvider):
                 seen[table_key] = inferred
         return tuple(seen[key] for key in sorted(seen))
 
+    def prefill_cache(self, schemas: Mapping[str, TableSchema]) -> None:
+        """Prefill the inference cache with known schemas.
+
+        Parameters
+        ----------
+        schemas
+            Mapping of table_key to schema to seed into the cache.
+        """
+        self._cache.update(schemas)
+
 
 def inferable_native_table_keys(*, graph: TargetGraph) -> frozenset[str]:
     """Return output table keys that appear inferable from native compute nodes.
@@ -354,8 +367,116 @@ def inferable_native_table_keys(*, graph: TargetGraph) -> frozenset[str]:
     return frozenset(inferable)
 
 
+def _build_inference_jobs(
+    *,
+    runtime: HamiltonRuntime,
+    table_keys: list[str],
+) -> list[_ComputeInferenceJob]:
+    graph = runtime.graph
+    producers_by_key = _producers_by_table_key(graph)
+    jobs: list[_ComputeInferenceJob] = []
+    for table_key in table_keys:
+        producers = producers_by_key.get(table_key)
+        if not producers:
+            msg = f"Unknown table_key (no producing target): {table_key}"
+            raise KeyError(msg)
+
+        candidates = _inferable_candidates_for_table_key(table_key=table_key, producers=producers)
+        if not candidates:
+            msg = f"No inferable native compute candidates for table_key: {table_key}"
+            raise ValueError(msg)
+
+        target_name, compute_fn = candidates[0]
+        compute_name = compute_node(target_name)
+        qparams, requires_env = _inference_requirements(target_name=target_name, compute_fn=compute_fn)
+        jobs.append(
+            _ComputeInferenceJob(
+                compute_name=compute_name,
+                table_key=table_key,
+                qparams=frozenset(qparams),
+                requires_env=requires_env,
+            )
+        )
+    return jobs
+
+
+def _union_qparams(jobs: Iterable[_ComputeInferenceJob]) -> frozenset[str]:
+    return frozenset({name for job in jobs for name in job.qparams})
+
+
+def _infer_job_schema(
+    *,
+    runtime: HamiltonRuntime,
+    job: _ComputeInferenceJob,
+    base_inputs: Mapping[str, object],
+    env: SchemaInferenceEnv,
+    con: DuckDBConnection,
+) -> TableSchema:
+    inputs = dict(base_inputs)
+    if job.requires_env:
+        inputs["env"] = env
+
+    out = runtime.dr.execute([job.compute_name], inputs=inputs)
+    expr_obj = out[job.compute_name]
+    if not isinstance(expr_obj, ir.Table):
+        msg = f"{job.compute_name} returned {type(expr_obj)}; expected ibis Table"
+        raise TypeError(msg)
+
+    return infer_table_schema_from_ibis(
+        expr=expr_obj,
+        con=con,
+        table_key=job.table_key,
+    )
+
+
+def infer_table_schemas(
+    table_keys: Iterable[str],
+    *,
+    declared_provider: SchemaProvider,
+) -> dict[str, TableSchema]:
+    """Infer schemas for multiple output tables in a single ephemeral DuckDB session.
+
+    Parameters
+    ----------
+    table_keys
+        Output table keys to infer (schema.table).
+    declared_provider
+        Provider used to seed upstream input tables.
+
+    Returns
+    -------
+    dict[str, TableSchema]
+        Mapping of table_key to inferred TableSchema.
+    """
+    unique_keys = sorted(set(table_keys))
+    if not unique_keys:
+        return {}
+
+    runtime = _runtime_auto()
+    jobs = _build_inference_jobs(runtime=runtime, table_keys=unique_keys)
+    union_qparams = _union_qparams(jobs)
+
+    with ephemeral_gateway(schema_provider=declared_provider) as gateway:
+        harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
+        base_inputs: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
+        env = _inference_env(gateway=gateway)
+
+        inferred: dict[str, TableSchema] = {}
+        for job in jobs:
+            inferred[job.table_key] = _infer_job_schema(
+                runtime=runtime,
+                job=job,
+                base_inputs=base_inputs,
+                env=env,
+                con=gateway.con,
+            )
+
+    return inferred
+
+
 __all__ = [
     "HamiltonSchemaProvider",
     "infer_schema_for_table_key",
+    "infer_table_schemas",
     "inferable_native_table_keys",
 ]

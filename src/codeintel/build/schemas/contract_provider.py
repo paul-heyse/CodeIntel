@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.core.providers.base import LazyProvider
+from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
 from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
 
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.contracts import OutputContract
     from codeintel.build.targets import OutputTarget
-    from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
+    from codeintel.config.datasets.primitives import CompositeSchema
     from codeintel.core.schemas.primitives import TableSchema
 
 
@@ -75,10 +76,6 @@ _row_registry_provider: LazyProvider[ModuleType] = LazyProvider(
     lambda: _load_module("codeintel.build.schemas.row_registry"),
     name="row_registry_module",
 )
-_contracts_provider: LazyProvider[ModuleType] = LazyProvider(
-    lambda: _load_module("codeintel.config.datasets.contracts"),
-    name="contracts_module",
-)
 _composites_provider: LazyProvider[ModuleType] = LazyProvider(
     lambda: _load_module("codeintel.config.datasets.composites"),
     name="composites_module",
@@ -107,17 +104,6 @@ def _row_registry_module() -> ModuleType:
     return _row_registry_provider.get()
 
 
-def _contracts_module() -> ModuleType:
-    """Get contracts module lazily.
-
-    Returns
-    -------
-    ModuleType
-        The codeintel.config.datasets.contracts module.
-    """
-    return _contracts_provider.get()
-
-
 def _composites_module() -> ModuleType:
     """Get composites module lazily.
 
@@ -129,7 +115,7 @@ def _composites_module() -> ModuleType:
     return _composites_provider.get()
 
 
-def _get_composition_for_table_key(table_key: str) -> object | None:
+def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
     """Get the CompositeSchema for a table key if it exists.
 
     Parameters
@@ -147,8 +133,23 @@ def _get_composition_for_table_key(table_key: str) -> object | None:
     return composite_schemas.get(table_key)
 
 
-def _get_json_schema_id(table_key: str) -> str | None:
-    """Get the JSON schema ID for a table key.
+_NON_EXPORTABLE_CORE_TABLES: frozenset[str] = frozenset(
+    {
+        "file_state",
+        "ingest_runs",
+        "repo_map",
+        "scip_occurrences",
+        "scip_symbols",
+        "test_results",
+        "test_summary",
+    }
+)
+
+_NON_EXPORTABLE_ANALYTICS_TABLES: frozenset[str] = frozenset({"tags_index"})
+
+
+def _table_name_from_key(table_key: str) -> str:
+    """Return the dataset/table name part of a table key.
 
     Parameters
     ----------
@@ -157,17 +158,18 @@ def _get_json_schema_id(table_key: str) -> str | None:
 
     Returns
     -------
-    str | None
-        The JSON schema ID if this table has one, None otherwise.
+    str
+        Table name portion of the key. If no schema prefix is present, returns the full key.
     """
-    contracts_mod = _contracts_module()
-    _, name = table_key.split(".", maxsplit=1)
-    json_schema_map = getattr(contracts_mod, "_JSON_SCHEMA_BY_DATASET_NAME", {})
-    return json_schema_map.get(name)
+    return table_key.split(".", maxsplit=1)[1] if "." in table_key else table_key
 
 
-def _get_jsonl_filename(table_key: str) -> str | None:
-    """Get the default JSONL export filename for a table key.
+def _exportable_by_default(table_key: str) -> bool:
+    """Return True if a dataset should be exported by default.
+
+    This replaces legacy hand-maintained filename maps with deterministic rules. In the long-term,
+    export intent should be declared in the Hamilton graph (tags/metadata), but for now we
+    keep the default export surface aligned with the current build schema taxonomy.
 
     Parameters
     ----------
@@ -176,30 +178,122 @@ def _get_jsonl_filename(table_key: str) -> str | None:
 
     Returns
     -------
-    str | None
-        The JSONL filename if this table has one, None otherwise.
+    bool
+        True if the dataset should have default export filenames, False otherwise.
     """
-    contracts_mod = _contracts_module()
-    jsonl_filenames = getattr(contracts_mod, "DEFAULT_JSONL_FILENAMES", {})
-    return jsonl_filenames.get(table_key)
+    if "." not in table_key:
+        return False
+
+    schema_prefix, table_name = table_key.split(".", maxsplit=1)
+
+    if schema_prefix == "build":
+        return False
+
+    if schema_prefix == "core":
+        return table_name not in _NON_EXPORTABLE_CORE_TABLES
+
+    if schema_prefix == "graph":
+        return not (table_name == "import_modules" or table_name.startswith("v_"))
+
+    if schema_prefix == "analytics":
+        is_internal_metrics_ext = table_name.endswith("_metrics_ext") and table_name.startswith(
+            ("cfg_", "dfg_")
+        )
+        return (
+            table_name not in _NON_EXPORTABLE_ANALYTICS_TABLES
+            and not table_name.endswith("_cache")
+            and not is_internal_metrics_ext
+        )
+
+    return True
 
 
-def _get_parquet_filename(table_key: str) -> str | None:
-    """Get the default Parquet export filename for a table key.
+def _default_export_filename(
+    table_key: str,
+    *,
+    kind: Literal["jsonl", "parquet"],
+) -> str:
+    """Return the deterministic export filename for a table key.
 
     Parameters
     ----------
     table_key
         Fully qualified table key (schema.table).
+    kind
+        Export kind.
+
+    Returns
+    -------
+    str
+        Default export filename.
+    """
+    return f"{_table_name_from_key(table_key)}.{kind}"
+
+
+def _default_json_schema_id(*, table_key: str, schema: TableSchema | None) -> str | None:
+    """Return deterministic JSON schema id for a dataset.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    schema
+        TableSchema for the dataset when available.
 
     Returns
     -------
     str | None
-        The Parquet filename if this table has one, None otherwise.
+        JSON schema id when the dataset is exportable and has a schema, else None.
     """
-    contracts_mod = _contracts_module()
-    parquet_filenames = getattr(contracts_mod, "DEFAULT_PARQUET_FILENAMES", {})
-    return parquet_filenames.get(table_key)
+    if schema is None:
+        return None
+    if not _exportable_by_default(table_key):
+        return None
+    return _table_name_from_key(table_key)
+
+
+def _default_jsonl_filename(*, table_key: str, schema: TableSchema | None) -> str | None:
+    """Return deterministic JSONL filename for a dataset.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    schema
+        TableSchema for the dataset when available.
+
+    Returns
+    -------
+    str | None
+        Default JSONL filename when the dataset is exportable, else None.
+    """
+    if schema is None:
+        return None
+    if not _exportable_by_default(table_key):
+        return None
+    return _default_export_filename(table_key, kind="jsonl")
+
+
+def _default_parquet_filename(*, table_key: str, schema: TableSchema | None) -> str | None:
+    """Return deterministic Parquet filename for a dataset.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    schema
+        TableSchema for the dataset when available.
+
+    Returns
+    -------
+    str | None
+        Default Parquet filename when the dataset is exportable, else None.
+    """
+    if schema is None:
+        return None
+    if not _exportable_by_default(table_key):
+        return None
+    return _default_export_filename(table_key, kind="parquet")
 
 
 def _get_row_binding_safe(table_key: str) -> RowBinding | None:
@@ -216,10 +310,9 @@ def _get_row_binding_safe(table_key: str) -> RowBinding | None:
         The row binding if available, None otherwise.
     """
     row_registry = _row_registry_module()
-    contracts = _contracts_module()
     try:
         generated_binding = row_registry.get_row_binding(table_key)
-        return contracts.RowBinding(
+        return RowBinding(
             row_type=generated_binding.row_model,
             to_tuple=generated_binding.serializer,
         )
@@ -350,26 +443,23 @@ def _derive_contract_from_target(
     DatasetContract
         Derived contract combining target metadata and schema.
     """
-    contracts_mod = _contracts_module()
-    contract_cls = contracts_mod.DatasetContract
-
     schema_prefix, table_name = table_key.split(".", maxsplit=1)
     contract = target.contract
 
     row_binding = _get_row_binding_safe(table_key)
 
-    # Prefer target-declared metadata, fall back to legacy mappings
+    # Prefer target-declared metadata, fall back to deterministic defaults.
     json_schema_id = _extract_indexed_metadata(contract, table_key, contract.json_schema_ids)
     if json_schema_id is None:
-        json_schema_id = _get_json_schema_id(table_key)
+        json_schema_id = _default_json_schema_id(table_key=table_key, schema=schema)
 
     jsonl_filename = _extract_indexed_metadata(contract, table_key, contract.jsonl_filenames)
     if jsonl_filename is None:
-        jsonl_filename = _get_jsonl_filename(table_key)
+        jsonl_filename = _default_jsonl_filename(table_key=table_key, schema=schema)
 
     parquet_filename = _extract_indexed_metadata(contract, table_key, contract.parquet_filenames)
     if parquet_filename is None:
-        parquet_filename = _get_parquet_filename(table_key)
+        parquet_filename = _default_parquet_filename(table_key=table_key, schema=schema)
 
     description = contract.description
     if description is None and schema is not None:
@@ -377,7 +467,7 @@ def _derive_contract_from_target(
 
     composition = _get_composition_for_table_key(table_key)
 
-    return contract_cls(
+    return DatasetContract(
         table_key=table_key,
         name=table_name,
         schema=schema,
@@ -417,18 +507,15 @@ def _derive_contract_from_schema(
     DatasetContract
         Minimal contract derived from schema only.
     """
-    contracts_mod = _contracts_module()
-    contract_cls = contracts_mod.DatasetContract
-
     schema_prefix, table_name = table_key.split(".", maxsplit=1)
     row_binding = _get_row_binding_safe(table_key)
     description = schema.description if schema is not None else None
     composition = _get_composition_for_table_key(table_key)
-    json_schema_id = _get_json_schema_id(table_key)
-    jsonl_filename = _get_jsonl_filename(table_key)
-    parquet_filename = _get_parquet_filename(table_key)
+    json_schema_id = _default_json_schema_id(table_key=table_key, schema=schema)
+    jsonl_filename = _default_jsonl_filename(table_key=table_key, schema=schema)
+    parquet_filename = _default_parquet_filename(table_key=table_key, schema=schema)
 
-    return contract_cls(
+    return DatasetContract(
         table_key=table_key,
         name=table_name,
         schema=schema,
@@ -463,20 +550,17 @@ def _derive_view_contract(view_key: str) -> DatasetContract:
     DatasetContract
         Contract for the view with is_view=True.
     """
-    contracts_mod = _contracts_module()
-    contract_cls = contracts_mod.DatasetContract
-
     schema_prefix, view_name = view_key.split(".", maxsplit=1)
     provider = get_schema_provider()
     schema = provider.get_table_schema(view_key)
     row_binding = _get_row_binding_safe(view_key)
     description = schema.description if schema is not None else None
     composition = _get_composition_for_table_key(view_key)
-    json_schema_id = _get_json_schema_id(view_key)
-    jsonl_filename = _get_jsonl_filename(view_key)
-    parquet_filename = _get_parquet_filename(view_key)
+    json_schema_id = _default_json_schema_id(table_key=view_key, schema=schema)
+    jsonl_filename = _default_jsonl_filename(table_key=view_key, schema=schema)
+    parquet_filename = _default_parquet_filename(table_key=view_key, schema=schema)
 
-    return contract_cls(
+    return DatasetContract(
         table_key=view_key,
         name=view_name,
         schema=schema,

@@ -1,7 +1,7 @@
 """Tests for PR-67: Row binding migration to schema-generated models.
 
 This module validates that schema-generated row bindings are compatible
-with legacy manually-defined RowBindings from config/datasets/contracts.py.
+with declared TableSchema definitions and provide stable serialization order.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from codeintel.build.schemas import (
     get_schema_provider,
     iter_row_bindings,
 )
-from codeintel.config.datasets.contracts import get_row_bindings
 from codeintel.core.schemas import schema_hash
 from codeintel.core.schemas.row_models import GeneratedRowBinding
 
@@ -114,7 +113,7 @@ def test_iter_row_bindings_returns_all() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Legacy compatibility tests
+# Schema alignment tests
 # ---------------------------------------------------------------------------
 
 
@@ -140,109 +139,46 @@ def test_generated_binding_has_canonical_properties() -> None:
     )
 
 
-def test_all_legacy_bindings_have_schema_equivalent() -> None:
-    """Verify every legacy binding has a schema-generated equivalent.
-
-    Note: docs.* views may not have schema-generated bindings since they
-    are derived views, not base tables with registered schemas.
-    """
-    legacy_bindings = get_row_bindings()
-    missing: list[str] = []
-
-    # docs.* views may not have schema-generated equivalents
-    excluded_prefixes = ("docs.",)
-
-    for table_key in legacy_bindings:
-        if table_key.startswith(excluded_prefixes):
-            continue
-        try:
-            _binding = get_row_binding(table_key)
-        except KeyError:
-            missing.append(table_key)
-
-    if missing:
-        pytest.fail(f"Missing schema-generated bindings for: {missing}")
-
-
-def test_generated_binding_fields_match_legacy() -> None:
-    """Verify generated binding fields match legacy for known bindings.
-
-    Note: Some tables may have evolved their schema, causing legitimate
-    differences between legacy TypedDicts and current schema definitions.
-    These are tracked in KNOWN_SCHEMA_DRIFT.
-    """
-    legacy_bindings = get_row_bindings()
+def test_row_model_fields_match_schema_order() -> None:
+    """Verify generated row model field order matches the TableSchema column order."""
+    provider = get_schema_provider()
     mismatches: list[str] = []
 
-    # Tables with known schema drift (legacy TypedDict != current schema)
-    # These should be migrated to use generated bindings
-    known_schema_drift = {
-        "analytics.static_diagnostics",  # Schema evolved to add pyright/pyrefly/ruff columns
-    }
-
-    # Only compare bindings that exist in both systems
-    for table_key, legacy in legacy_bindings.items():
-        if table_key in known_schema_drift:
-            continue
-
+    for schema in provider.iter_table_schemas():
+        table_key = schema.table_key
         try:
-            generated = get_row_binding(table_key)
+            binding = get_row_binding(table_key)
         except KeyError:
+            mismatches.append(table_key)
             continue
 
-        legacy_fields = set(getattr(legacy.row_type, "__annotations__", {}).keys())
-        generated_fields = set(getattr(generated.row_model, "__annotations__", {}).keys())
+        schema_order = list(schema.column_names())
+        model_order = list(getattr(binding.row_model, "__annotations__", {}).keys())
 
-        # Check if field names match (ignoring type differences for now)
-        missing_in_generated = legacy_fields - generated_fields
-        extra_in_generated = generated_fields - legacy_fields
-
-        if missing_in_generated or extra_in_generated:
-            msg_parts = [f"{table_key}:"]
-            if missing_in_generated:
-                msg_parts.append(f"  missing in generated: {missing_in_generated}")
-            if extra_in_generated:
-                msg_parts.append(f"  extra in generated: {extra_in_generated}")
-            mismatches.append("\n".join(msg_parts))
+        if schema_order != model_order:
+            mismatches.append(table_key)
 
     if mismatches:
-        pytest.fail("Field mismatches:\n" + "\n".join(mismatches))
+        pytest.fail(f"Row model field order mismatched schema for: {mismatches[:10]}")
 
 
-def test_generated_serializer_column_order_matches_legacy() -> None:
-    """Verify generated serializer uses same column order as legacy.
+def test_serializer_column_order_matches_schema() -> None:
+    """Verify generated serializer follows schema column ordering."""
+    provider = get_schema_provider()
+    mismatches: list[str] = []
 
-    Note: Tables with known schema drift are excluded as they have
-    legitimately different column sets.
-    """
-    legacy_bindings = get_row_bindings()
-    order_mismatches: list[str] = []
+    for schema in provider.iter_table_schemas():
+        table_key = schema.table_key
+        binding = get_row_binding(table_key)
+        column_names = list(schema.column_names())
+        row = {name: f"value_{idx}_{name}" for idx, name in enumerate(column_names)}
+        result = binding.serializer(row)
+        expected = tuple(row[name] for name in column_names)
+        if result != expected:
+            mismatches.append(table_key)
 
-    # Tables with known schema drift (legacy TypedDict != current schema)
-    known_schema_drift = {
-        "analytics.static_diagnostics",  # Schema evolved to add pyright/pyrefly/ruff columns
-    }
-
-    for table_key, legacy in legacy_bindings.items():
-        if table_key in known_schema_drift:
-            continue
-
-        try:
-            generated = get_row_binding(table_key)
-        except KeyError:
-            continue
-
-        # Get column order from annotations (Python 3.7+ preserves insertion order)
-        legacy_order = list(getattr(legacy.row_type, "__annotations__", {}).keys())
-        generated_order = list(getattr(generated.row_model, "__annotations__", {}).keys())
-
-        if legacy_order != generated_order:
-            order_mismatches.append(
-                f"{table_key}:\n  legacy: {legacy_order}\n  generated: {generated_order}"
-            )
-
-    if order_mismatches:
-        pytest.fail("Column order mismatches:\n" + "\n".join(order_mismatches))
+    if mismatches:
+        pytest.fail(f"Row serializer order mismatched schema for: {mismatches[:10]}")
 
 
 # ---------------------------------------------------------------------------
@@ -310,11 +246,8 @@ def test_generated_serializer_produces_tuples() -> None:
 
 
 def test_generated_serializer_matches_legacy_output() -> None:
-    """Verify generated serializer produces same output as legacy."""
-    legacy_bindings = get_row_bindings()
-    mismatches: list[str] = []
-
-    # Test a subset of commonly-used bindings
+    """Verify serializer output follows schema order for a representative subset."""
+    provider = get_schema_provider()
     test_keys = [
         "analytics.function_metrics",
         "analytics.coverage_lines",
@@ -323,38 +256,13 @@ def test_generated_serializer_matches_legacy_output() -> None:
     ]
 
     for table_key in test_keys:
-        if table_key not in legacy_bindings:
+        schema = provider.get_table_schema(table_key)
+        if schema is None:
             continue
-
-        try:
-            generated = get_row_binding(table_key)
-        except KeyError:
-            continue
-
-        legacy = legacy_bindings[table_key]
+        binding = get_row_binding(table_key)
         test_row = _create_test_row(table_key)
-
-        # Both serializers should produce tuples - but may differ in output
-        # due to the legacy serializers accessing dict keys in hardcoded order
-        # while generated uses schema column order
-        try:
-            legacy_result = legacy.to_tuple(test_row)
-            generated_result = generated.serializer(test_row)
-
-            # Convert to sets for comparison (order may differ between implementations)
-            if set(legacy_result) != set(generated_result):
-                mismatches.append(
-                    f"{table_key}:\n  legacy: {legacy_result}\n  generated: {generated_result}"
-                )
-        except (KeyError, TypeError) as exc:
-            # Some legacy serializers may require specific row types
-            mismatches.append(f"{table_key}: serialization error - {exc}")
-
-    # This test is informational - differences indicate migration work needed
-    if mismatches:
-        # Log but don't fail - serializers may differ in implementation
-        # The important thing is that generated serializers work correctly
-        pass
+        expected = tuple(test_row[name] for name in schema.column_names())
+        _expect_equal(binding.serializer(test_row), expected, f"{table_key} serializer order")
 
 
 # ---------------------------------------------------------------------------

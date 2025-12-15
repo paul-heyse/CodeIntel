@@ -49,8 +49,10 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
 
     semantic_registry = tmp_path / "semantic_registry.json"
     schema_manifest = tmp_path / "schema_manifest.json"
+    buildspec = tmp_path / "buildspec.json"
     _write_text(semantic_registry, {"version": "v1", "views": []})
     _write_text(schema_manifest, {"version": "v1", "tables": []})
+    _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
 
     serve_dir = tmp_path / "serve"
     manifest = publish_serving_snapshot(
@@ -60,6 +62,7 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
             serve_dir=serve_dir,
             semantic_registry_path=semantic_registry,
             schema_manifest_path=schema_manifest,
+            buildspec_path=buildspec,
             keep_last=10,
         ),
     )
@@ -69,6 +72,7 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
     expect_true((snap_dir / "codeintel.duckdb").exists())
     expect_true((snap_dir / "semantic_registry.json").exists())
     expect_true((snap_dir / "schema_manifest.json").exists())
+    expect_true((snap_dir / "buildspec.json").exists())
     expect_true((serve_dir / "current.json").exists())
 
     pointer = ServingSnapshotPointer.load(serve_dir / "current.json")
@@ -76,6 +80,7 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
     expect_equal(pointer.repo, "demo/repo")
     expect_equal(pointer.commit, "c1")
     expect_equal(pointer.semantic_layer_version, manifest.semantic_layer_version)
+    expect_true(pointer.buildspec_path.exists())
 
 
 def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
@@ -90,8 +95,10 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
 
     semantic_registry = tmp_path / "semantic_registry.json"
     schema_manifest = tmp_path / "schema_manifest.json"
+    buildspec = tmp_path / "buildspec.json"
     _write_text(semantic_registry, {"version": "v1", "views": []})
     _write_text(schema_manifest, {"version": "v1", "tables": []})
+    _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
 
     serve_dir = tmp_path / "serve"
     publish_serving_snapshot(
@@ -101,6 +108,7 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
             serve_dir=serve_dir,
             semantic_registry_path=semantic_registry,
             schema_manifest_path=schema_manifest,
+            buildspec_path=buildspec,
             keep_last=1,
         ),
     )
@@ -111,6 +119,7 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
             serve_dir=serve_dir,
             semantic_registry_path=semantic_registry,
             schema_manifest_path=schema_manifest,
+            buildspec_path=buildspec,
             keep_last=1,
         ),
     )

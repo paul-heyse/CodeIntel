@@ -84,7 +84,18 @@ log = logging.getLogger(__name__)
 @dataclass
 class _GeneratedModuleCache:
     module: ModuleType | None = None
-    config_key: tuple[bool, bool, bool, bool, frozenset[str], frozenset[str]] | None = None
+    config_key: (
+        tuple[
+            bool,
+            bool,
+            bool,
+            bool,
+            frozenset[str],
+            frozenset[str],
+            frozenset[str],
+        ]
+        | None
+    ) = None
 
 
 _MODULE_CACHE = _GeneratedModuleCache()
@@ -120,6 +131,7 @@ class GenerationOptions:
     include_dataset_nodes: bool = True
     include_loader_nodes: bool = True
     include_artifact_nodes: bool = True
+    exclude_target_nodes_for_targets: frozenset[str] = frozenset()
     include_targets: set[str] | None = None
     exclude_targets: set[str] | None = None
 
@@ -620,7 +632,7 @@ def _generate_nodes_for_target(
     mappings: _GeneratedMappings,
 ) -> None:
     # Generate target node only if enabled
-    if options.include_target_nodes:
+    if options.include_target_nodes and target.name not in options.exclude_target_nodes_for_targets:
         dep_node_names = [target_node(dep) for dep in target.dependencies]
         node_fn = _create_node_function(
             target=target,
@@ -748,18 +760,21 @@ def build_target_module(
 
 def _cache_key(
     options: GenerationOptions,
-) -> tuple[bool, bool, bool, bool, frozenset[str], frozenset[str]]:
+) -> tuple[bool, bool, bool, bool, frozenset[str], frozenset[str], frozenset[str]]:
     return (
         options.include_target_nodes,
         options.include_dataset_nodes,
         options.include_loader_nodes,
         options.include_artifact_nodes,
+        options.exclude_target_nodes_for_targets,
         frozenset(options.include_targets or ()),
         frozenset(options.exclude_targets or ()),
     )
 
 
-def _should_use_cache(key: tuple[bool, bool, bool, bool, frozenset[str], frozenset[str]]) -> bool:
+def _should_use_cache(
+    key: tuple[bool, bool, bool, bool, frozenset[str], frozenset[str], frozenset[str]],
+) -> bool:
     return _MODULE_CACHE.module is not None and _MODULE_CACHE.config_key == key
 
 

@@ -15,7 +15,7 @@ import pytest
 
 from codeintel.build.contracts_validation import validate_contracts
 from codeintel.build.registry import get_target_graph
-from codeintel.config.datasets.contracts import get_table_schemas
+from codeintel.build.schemas import iter_table_schemas
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 def test_all_contract_tables_in_schema_registry() -> None:
     """Verify every contract table_key exists in SCHEMA_REGISTRY."""
     graph = get_target_graph()
-    table_schemas = get_table_schemas()
+    table_schemas = {schema.table_key: schema for schema in iter_table_schemas()}
 
     missing_tables: list[tuple[str, str]] = [
         (target.name, table_key)

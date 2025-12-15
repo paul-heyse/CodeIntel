@@ -38,6 +38,7 @@ from codeintel.build.serving.semantic_compile import (
     write_semantic_registry,
 )
 from codeintel.build.serving.semantic_sources import collect_semantic_view_tags
+from codeintel.build.spec import BuildSpecCompileOptions, buildspec_to_json, compile_buildspec
 from codeintel.build.state import DatabaseState, StateValidator
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
@@ -68,6 +69,8 @@ from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDif
 if TYPE_CHECKING:
     from codeintel.build.hamilton import HamiltonBuildResult
     from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
+    from codeintel.build.hamilton.introspect import GraphSource
+    from codeintel.build.hamilton.planner import HamiltonBuildPlan
     from codeintel.build.manifest import BuildRunRecord
     from codeintel.build.targets import TargetGraph, TargetModule
     from codeintel.cli.context import CommandContext
@@ -751,18 +754,22 @@ def _publish_serving_snapshot_from_build(
     )
 
     artifact_dir = runtime.paths.build_dir / "serving" / run_id
+    artifact_dir.mkdir(parents=True, exist_ok=True)
     semantic_registry_path = artifact_dir / "semantic_registry.json"
     schema_manifest_path = artifact_dir / "schema_manifest.json"
+    buildspec_path = artifact_dir / "buildspec.json"
 
     write_semantic_registry(registry=compiled_registry, out_path=semantic_registry_path)
 
     tables = sorted(schema_provider.iter_table_schemas(), key=lambda s: s.table_key)
     manifest = SchemaManifest(version="v1", tables=tuple(tables))
-    schema_manifest_path.parent.mkdir(parents=True, exist_ok=True)
     schema_manifest_path.write_text(
         _json.dumps(manifest.to_json_obj(), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+    spec = compile_buildspec(options=BuildSpecCompileOptions(include_columns=False))
+    buildspec_path.write_text(buildspec_to_json(spec, indent=2), encoding="utf-8")
 
     serve_dir_env = os.environ.get("CODEINTEL_SERVE_DIR")
     serve_dir = (
@@ -778,6 +785,7 @@ def _publish_serving_snapshot_from_build(
             serve_dir=serve_dir,
             semantic_registry_path=semantic_registry_path,
             schema_manifest_path=schema_manifest_path,
+            buildspec_path=buildspec_path,
             keep_last=10,
         ),
     )
@@ -879,8 +887,11 @@ def build_graph_handler(
     all_targets = ctx.params.get_bool("all_targets")
     output_file = ctx.params.get_str("output_file")
     output_format = ctx.params.get_str("output_format") or "json"
+    graph_source_raw = ctx.params.get_str("graph_source")
+    if not graph_source_raw:
+        return fail_execution_failed("build", "Missing graph_source parameter", status=500)
     try:
-        graph_source = parse_graph_source(ctx.params.get_str("graph_source") or "targetgraph")
+        graph_source = parse_graph_source(graph_source_raw)
     except ValueError as exc:
         return fail_invalid_target_selection(str(exc))
 
@@ -945,8 +956,11 @@ def build_plan_handler(
 
     graph = get_target_graph()
     plan_args = _parse_plan_args(ctx)
+    graph_source_raw = ctx.params.get_str("graph_source")
+    if not graph_source_raw:
+        return fail_execution_failed("build", "Missing graph_source parameter", status=500)
     try:
-        graph_source = parse_graph_source(ctx.params.get_str("graph_source") or "targetgraph")
+        graph_source = parse_graph_source(graph_source_raw)
     except ValueError as exc:
         return fail_invalid_target_selection(str(exc))
 
@@ -1017,6 +1031,84 @@ def build_plan_handler(
     return CliResult.ok(result)
 
 
+@dataclass(frozen=True)
+class _BuildExplainParams:
+    graph_source: GraphSource
+    target: str
+    force_targets: frozenset[str]
+
+
+def _resolve_build_explain_params(
+    ctx: CommandContext,
+    *,
+    graph: TargetGraph,
+) -> _BuildExplainParams | CliResult[BuildExplainResult]:
+    graph_source_raw = ctx.params.get_str("graph_source")
+    if not graph_source_raw:
+        return fail_execution_failed("build", "Missing graph_source parameter", status=500)
+
+    try:
+        graph_source = parse_graph_source(graph_source_raw)
+    except ValueError as exc:
+        return fail_invalid_target_selection(str(exc))
+
+    target = ctx.params.get_str("target")
+    if not target:
+        return fail_invalid_targets("No target specified")
+
+    force_list = ctx.params.get_list("force")
+    force_targets = frozenset(force_list or ())
+
+    try:
+        graph.get(target)
+    except KeyError:
+        return fail_invalid_targets(f"Unknown target: {target}")
+
+    return _BuildExplainParams(
+        graph_source=graph_source,
+        target=target,
+        force_targets=force_targets,
+    )
+
+
+def _compute_plan_for_explain(
+    *,
+    runtime: ResolvedRuntime,
+    graph: TargetGraph,
+    target: str,
+    graph_source: GraphSource,
+    force_targets: frozenset[str],
+) -> HamiltonBuildPlan:
+    with runtime_gateway(runtime, read_only=True) as gateway:
+        providers = create_default_providers(runtime.tools)
+        config = load_build_config(runtime.snapshot.repo_root)
+
+        manifests_list = gateway.build.list_manifests(
+            repo=runtime.snapshot.repo,
+            commit=runtime.snapshot.commit,
+        )
+        manifest_index = {m.target: m for m in manifests_list}
+
+        env = BuildEnv(
+            gateway=gateway,
+            snapshot=runtime.snapshot,
+            paths=runtime.paths,
+            providers=providers,
+            config=config,
+            profile="default",
+            force_targets=force_targets,
+            manifest_index=manifest_index,
+        )
+
+        return compute_plan(
+            env=env,
+            graph=graph,
+            requested=(target,),
+            mode="generated",
+            graph_source=graph_source,
+        )
+
+
 def build_explain_handler(
     ctx: CommandContext,
 ) -> CliResult[BuildExplainResult]:
@@ -1040,63 +1132,29 @@ def build_explain_handler(
         return fail_project_error("build", str(e))
 
     graph = get_target_graph()
-    try:
-        graph_source = parse_graph_source(ctx.params.get_str("graph_source") or "targetgraph")
-    except ValueError as exc:
-        return fail_invalid_target_selection(str(exc))
-
-    target = ctx.params.get_str("target")
-    if not target:
-        return fail_invalid_targets("No target specified")
-
-    force_list = ctx.params.get_list("force")
-    force: list[str] | None = force_list if force_list else None
-
-    try:
-        graph.get(target)
-    except KeyError:
-        return fail_invalid_targets(f"Unknown target: {target}")
+    params = _resolve_build_explain_params(ctx, graph=graph)
+    if isinstance(params, CliResult):
+        return params
 
     LOG.info(
         "build.explain repo=%s commit=%s target=%s force=%s",
         runtime.snapshot.repo,
         runtime.snapshot.commit,
-        target,
-        force,
+        params.target,
+        sorted(params.force_targets),
     )
 
-    with runtime_gateway(runtime, read_only=True) as gateway:
-        providers = create_default_providers(runtime.tools)
-        config = load_build_config(runtime.snapshot.repo_root)
+    plan = _compute_plan_for_explain(
+        runtime=runtime,
+        graph=graph,
+        target=params.target,
+        graph_source=params.graph_source,
+        force_targets=params.force_targets,
+    )
 
-        manifests_list = gateway.build.list_manifests(
-            repo=runtime.snapshot.repo,
-            commit=runtime.snapshot.commit,
-        )
-        manifest_index = {m.target: m for m in manifests_list}
-
-        env = BuildEnv(
-            gateway=gateway,
-            snapshot=runtime.snapshot,
-            paths=runtime.paths,
-            providers=providers,
-            config=config,
-            profile="default",
-            force_targets=frozenset(force or ()),
-            manifest_index=manifest_index,
-        )
-
-        plan = compute_plan(
-            env=env,
-            graph=graph,
-            requested=(target,),
-            mode="generated",
-            graph_source=graph_source,
-        )
-
-    entry = plan.get_entry(target)
+    entry = plan.get_entry(params.target)
     if entry is None:
-        return fail_invalid_targets(f"Target not found in plan: {target}")
+        return fail_invalid_targets(f"Target not found in plan: {params.target}")
 
     explanation = entry.explain_staleness()
 

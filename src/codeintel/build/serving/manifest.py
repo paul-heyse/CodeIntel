@@ -34,6 +34,8 @@ class ServingSnapshotManifest:
         Path to semantic_registry.json.
     schema_manifest_path
         Path to schema_manifest.json.
+    buildspec_path
+        Path to buildspec.json.
     semantic_layer_version
         Version hash of semantic layer.
     """
@@ -45,6 +47,7 @@ class ServingSnapshotManifest:
     db_path: str
     semantic_registry_path: str
     schema_manifest_path: str
+    buildspec_path: str
     semantic_layer_version: str
 
     def to_json(self) -> str:
@@ -64,6 +67,7 @@ class ServingSnapshotManifest:
                 "db_path": self.db_path,
                 "semantic_registry_path": self.semantic_registry_path,
                 "schema_manifest_path": self.schema_manifest_path,
+                "buildspec_path": self.buildspec_path,
                 "semantic_layer_version": self.semantic_layer_version,
             },
             indent=2,

@@ -17,6 +17,7 @@ from cyclopts import App, Parameter
 from codeintel.build.hamilton.introspect import GraphSource
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.build_schema import build_schema_app
+from codeintel.cli.commands.build_spec import build_spec_app
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.build import (
     build_assets_handler,
@@ -32,15 +33,18 @@ from codeintel.cli.handlers.build import (
     build_run_handler,
     build_status_handler,
 )
+from codeintel.cli.handlers.build_validate import build_validate_handler
 
 build_app = App(
     name="build",
     help="Build system commands for minimal-work target computation.",
 )
 build_app.command(build_schema_app, name="schema")
+build_app.command(build_spec_app, name="spec")
 
 
 _BUILD_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
+_VALIDATE_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 
 _GRAPH_SOURCE_CHOICES = frozenset(get_args(GraphSource))
 
@@ -178,6 +182,30 @@ class BuildHistoryCommand:
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
+@cli_command("build.validate", handler=build_validate_handler, config=_VALIDATE_CONFIG)
+@build_app.command(name="validate")
+@dataclass
+class BuildValidateCommand:
+    """Validate Hamilton DAG invariants for DAG-first planning."""
+
+    hamilton_mode: Annotated[
+        str,
+        Parameter(
+            name=["--hamilton-mode"],
+            help="Hamilton node mode: auto (default) or generated.",
+            show_choices=True,
+        ),
+    ] = "auto"
+    output_format: Annotated[
+        str,
+        Parameter(
+            name=["--format"],
+            help="Output format: json (default).",
+        ),
+    ] = "json"
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
 @cli_command("build.plan", handler=build_plan_handler, config=_BUILD_CONFIG)
 @build_app.command(name="plan")
 @dataclass
@@ -225,11 +253,11 @@ class BuildPlanCommand:
         GraphSource,
         Parameter(
             name=["--graph-source"],
-            help="Dependency graph source: targetgraph (default) or hamilton.",
+            help="Dependency graph source: hamilton (default) or targetgraph.",
             show_choices=True,
             validator=_graph_source_validator,
         ),
-    ] = "targetgraph"
+    ] = "hamilton"
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
@@ -257,11 +285,11 @@ class BuildExplainCommand:
         GraphSource,
         Parameter(
             name=["--graph-source"],
-            help="Dependency graph source: targetgraph (default) or hamilton.",
+            help="Dependency graph source: hamilton (default) or targetgraph.",
             show_choices=True,
             validator=_graph_source_validator,
         ),
-    ] = "targetgraph"
+    ] = "hamilton"
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
@@ -312,11 +340,11 @@ class BuildGraphCommand:
         GraphSource,
         Parameter(
             name=["--graph-source"],
-            help="Dependency graph source: targetgraph (default) or hamilton.",
+            help="Dependency graph source: hamilton (default) or targetgraph.",
             show_choices=True,
             validator=_graph_source_validator,
         ),
-    ] = "targetgraph"
+    ] = "hamilton"
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

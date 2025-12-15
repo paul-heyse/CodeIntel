@@ -7,26 +7,25 @@ view schemas and export artifact specifications.
 
 from __future__ import annotations
 
-import importlib
 import logging
 from dataclasses import dataclass
-from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.hamilton.native.registry import native_target_names
 from codeintel.build.registry import get_target_graph
+from codeintel.build.schemas.contract_provider import iter_contracts
 from codeintel.build.schemas.infer_duckdb import infer_view_schema
 from codeintel.build.schemas.manifest import ExportArtifact, SchemaManifest
 from codeintel.build.schemas.provider_hamilton import (
     HamiltonSchemaProvider,
     infer_schema_for_table_key,
+    infer_table_schemas,
     inferable_native_table_keys,
 )
 from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from types import ModuleType
 
     from codeintel.build.targets import TargetModule
     from codeintel.core.schemas.primitives import TableSchema
@@ -37,18 +36,6 @@ _logger = logging.getLogger(__name__)
 
 DEFAULT_SCHEMA_MANIFEST_VERSION = "v1"
 V2_SCHEMA_MANIFEST_VERSION = "v2"
-
-
-@lru_cache(maxsize=1)
-def _contracts_module() -> ModuleType:
-    """Get the contracts module lazily.
-
-    Returns
-    -------
-    ModuleType
-        The codeintel.config.datasets.contracts module.
-    """
-    return importlib.import_module("codeintel.config.datasets.contracts")
 
 
 @dataclass(frozen=True)
@@ -67,6 +54,8 @@ class SchemaManifestRequest:
         When True, restrict selection to targets with native implementations.
     infer_native
         When True, infer schemas for inferable native outputs (fallback to declared on error).
+    batch_infer_native
+        When True, pre-infer all selected inferable native schemas in a single ephemeral session.
     stable
         When True, produce deterministic output ordering and de-duplication.
     version
@@ -82,10 +71,24 @@ class SchemaManifestRequest:
     all_targets: bool = False
     only_native: bool = False
     infer_native: bool = False
+    batch_infer_native: bool = True
     stable: bool = True
     version: str = DEFAULT_SCHEMA_MANIFEST_VERSION
     include_views: bool = False
     include_artifacts: bool = False
+
+
+class NativeBatchInferer(Protocol):
+    """Callable protocol for batch native schema inference."""
+
+    def __call__(
+        self,
+        table_keys: Iterable[str],
+        *,
+        declared_provider: SchemaProvider,
+    ) -> dict[str, TableSchema]:
+        """Infer schemas for multiple table keys."""
+        ...
 
 
 def _table_keys_for_selection(
@@ -173,8 +176,8 @@ def _collect_view_schemas(
 def _collect_export_artifacts(*, stable: bool) -> tuple[ExportArtifact, ...]:
     """Collect export artifact specifications from contracts metadata.
 
-    Reads JSONL and Parquet filename mappings from contracts.py and creates
-    ExportArtifact instances for each.
+    Uses derived DatasetContracts (via the build-owned contract provider) to
+    collect export filenames for JSONL and Parquet artifacts.
 
     Parameters
     ----------
@@ -186,30 +189,25 @@ def _collect_export_artifacts(*, stable: bool) -> tuple[ExportArtifact, ...]:
     tuple[ExportArtifact, ...]
         Export artifact specifications.
     """
-    # Lazy import to avoid circular dependency
-    contracts_mod = _contracts_module()
-    jsonl_filenames: dict[str, str] = contracts_mod.DEFAULT_JSONL_FILENAMES
-    parquet_filenames: dict[str, str] = contracts_mod.DEFAULT_PARQUET_FILENAMES
-
     artifacts: list[ExportArtifact] = []
 
-    for table_key, filename in jsonl_filenames.items():
-        artifacts.append(
-            ExportArtifact(
-                kind="jsonl",
-                filename=filename,
-                table_key=table_key,
+    for contract in iter_contracts():
+        if contract.jsonl_filename is not None:
+            artifacts.append(
+                ExportArtifact(
+                    kind="jsonl",
+                    filename=contract.jsonl_filename,
+                    table_key=contract.table_key,
+                )
             )
-        )
-
-    for table_key, filename in parquet_filenames.items():
-        artifacts.append(
-            ExportArtifact(
-                kind="parquet",
-                filename=filename,
-                table_key=table_key,
+        if contract.parquet_filename is not None:
+            artifacts.append(
+                ExportArtifact(
+                    kind="parquet",
+                    filename=contract.parquet_filename,
+                    table_key=contract.table_key,
+                )
             )
-        )
 
     if stable:
         artifacts = sorted(artifacts, key=lambda a: (a.kind, a.table_key or ""))
@@ -277,6 +275,7 @@ def compile_schema_manifest(
     provider: SchemaProvider,
     request: SchemaManifestRequest | None = None,
     con: DuckDBConnection | None = None,
+    batch_inferer: NativeBatchInferer | None = None,
 ) -> SchemaManifest:
     """Compile a schema manifest for a build target selection.
 
@@ -289,6 +288,8 @@ def compile_schema_manifest(
     con
         Optional DuckDB connection required for view schema inference.
         Must be provided if request.include_views is True.
+    batch_inferer
+        Optional callable used to batch-infer native table schemas in a single pass.
 
     Returns
     -------
@@ -318,12 +319,23 @@ def compile_schema_manifest(
         def _infer(table_key: str) -> TableSchema:
             return infer_schema_for_table_key(table_key=table_key, declared_provider=provider)
 
-        active_provider = HamiltonSchemaProvider(
+        hamilton_provider = HamiltonSchemaProvider(
             declared=provider,
             inferer=_infer,
             inferable_table_keys=selected_inferable,
             fallback_to_declared_on_error=True,
         )
+        active_provider = hamilton_provider
+        if req.batch_infer_native and selected_inferable:
+            try:
+                batch = infer_table_schemas if batch_inferer is None else batch_inferer
+                inferred = batch(selected_inferable, declared_provider=provider)
+            except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+                _logger.warning(
+                    "Batch inference failed; falling back to per-table inference: %s", exc
+                )
+            else:
+                hamilton_provider.prefill_cache(inferred)
 
     # Collect views if requested (v2 feature)
     views: tuple[TableSchema, ...] = ()

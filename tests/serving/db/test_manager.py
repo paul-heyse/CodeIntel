@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -18,18 +19,25 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+@dataclass(frozen=True)
+class _PointerPaths:
+    semantic_registry_path: Path
+    schema_manifest_path: Path
+    buildspec_path: Path
+
+
 def _write_pointer(
     path: Path,
     *,
     db_path: Path,
     run_id: str,
-    semantic_registry_path: Path,
-    schema_manifest_path: Path,
+    paths: _PointerPaths,
 ) -> None:
     payload = {
         "db_path": str(db_path),
-        "semantic_registry_path": str(semantic_registry_path),
-        "schema_manifest_path": str(schema_manifest_path),
+        "semantic_registry_path": str(paths.semantic_registry_path),
+        "schema_manifest_path": str(paths.schema_manifest_path),
+        "buildspec_path": str(paths.buildspec_path),
         "repo": "demo/repo",
         "commit": "deadbeef",
         "run_id": run_id,
@@ -53,12 +61,16 @@ async def test_manager_initial_load_and_connect(tmp_path: Path) -> None:
     _make_db(db1, value=1)
 
     pointer_path = tmp_path / "current.json"
+    paths = _PointerPaths(
+        semantic_registry_path=tmp_path / "semantic_registry.json",
+        schema_manifest_path=tmp_path / "schema_manifest.json",
+        buildspec_path=tmp_path / "buildspec.json",
+    )
     _write_pointer(
         pointer_path,
         db_path=db1,
         run_id="run-1",
-        semantic_registry_path=tmp_path / "semantic_registry.json",
-        schema_manifest_path=tmp_path / "schema_manifest.json",
+        paths=paths,
     )
 
     manager = ServingDBManager(
@@ -85,12 +97,16 @@ async def test_manager_hot_swap_on_pointer_change(tmp_path: Path) -> None:
     _make_db(db2, value=2)
 
     pointer_path = tmp_path / "current.json"
+    paths = _PointerPaths(
+        semantic_registry_path=tmp_path / "semantic_registry.json",
+        schema_manifest_path=tmp_path / "schema_manifest.json",
+        buildspec_path=tmp_path / "buildspec.json",
+    )
     _write_pointer(
         pointer_path,
         db_path=db1,
         run_id="run-1",
-        semantic_registry_path=tmp_path / "semantic_registry.json",
-        schema_manifest_path=tmp_path / "schema_manifest.json",
+        paths=paths,
     )
 
     manager = ServingDBManager(
@@ -107,8 +123,7 @@ async def test_manager_hot_swap_on_pointer_change(tmp_path: Path) -> None:
             pointer_path,
             db_path=db2,
             run_id="run-2",
-            semantic_registry_path=tmp_path / "semantic_registry.json",
-            schema_manifest_path=tmp_path / "schema_manifest.json",
+            paths=paths,
         )
 
         await asyncio.sleep(0.05)
@@ -126,12 +141,16 @@ async def test_manager_same_path_no_swap_optimization(tmp_path: Path) -> None:
     _make_db(db1, value=1)
 
     pointer_path = tmp_path / "current.json"
+    paths = _PointerPaths(
+        semantic_registry_path=tmp_path / "semantic_registry.json",
+        schema_manifest_path=tmp_path / "schema_manifest.json",
+        buildspec_path=tmp_path / "buildspec.json",
+    )
     _write_pointer(
         pointer_path,
         db_path=db1,
         run_id="run-1",
-        semantic_registry_path=tmp_path / "semantic_registry.json",
-        schema_manifest_path=tmp_path / "schema_manifest.json",
+        paths=paths,
     )
 
     manager = ServingDBManager(
@@ -148,8 +167,7 @@ async def test_manager_same_path_no_swap_optimization(tmp_path: Path) -> None:
             pointer_path,
             db_path=db1,
             run_id="run-2",
-            semantic_registry_path=tmp_path / "semantic_registry.json",
-            schema_manifest_path=tmp_path / "schema_manifest.json",
+            paths=paths,
         )
 
         await asyncio.sleep(0.05)

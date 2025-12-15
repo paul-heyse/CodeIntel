@@ -50,6 +50,8 @@ class PublishServingSnapshotRequest:
         Path to compiled semantic registry artifact.
     schema_manifest_path
         Path to compiled schema manifest artifact.
+    buildspec_path
+        Path to compiled BuildSpec artifact.
     keep_last
         Number of old snapshots to retain.
     """
@@ -58,6 +60,7 @@ class PublishServingSnapshotRequest:
     serve_dir: Path
     semantic_registry_path: Path
     schema_manifest_path: Path
+    buildspec_path: Path
     keep_last: int = 10
 
 
@@ -75,16 +78,17 @@ def _atomic_write_text(path: Path, text: str) -> None:
 def _compute_semantic_version(
     registry_path: Path,
     manifest_path: Path,
+    buildspec_path: Path,
 ) -> str:
     """Compute semantic layer version hash.
 
     Returns
     -------
     str
-        Short stable hash derived from registry and manifest bytes.
+        Short stable hash derived from registry, manifest, and buildspec bytes.
     """
     hasher = hashlib.sha256()
-    for p in (registry_path, manifest_path):
+    for p in (registry_path, manifest_path, buildspec_path):
         if p.exists():
             hasher.update(p.read_bytes())
     return hasher.hexdigest()[:16]
@@ -134,7 +138,10 @@ def publish_serving_snapshot(
     snap_manifest = snap_dir / "schema_manifest.json"
     shutil.copy2(request.schema_manifest_path, snap_manifest)
 
-    version = _compute_semantic_version(snap_registry, snap_manifest)
+    snap_buildspec = snap_dir / "buildspec.json"
+    shutil.copy2(request.buildspec_path, snap_buildspec)
+
+    version = _compute_semantic_version(snap_registry, snap_manifest, snap_buildspec)
 
     manifest = ServingSnapshotManifest(
         run_id=request.run_id,
@@ -144,6 +151,7 @@ def publish_serving_snapshot(
         db_path=str(snap_db),
         semantic_registry_path=str(snap_registry),
         schema_manifest_path=str(snap_manifest),
+        buildspec_path=str(snap_buildspec),
         semantic_layer_version=version,
     )
 

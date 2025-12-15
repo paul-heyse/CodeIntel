@@ -1,0 +1,82 @@
+{
+  "errors": [],
+  "mode": "auto",
+  "summary": {
+    "error_count": 0,
+    "warning_count": 12
+  },
+  "warnings": [
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['ast', 'goids'], derived=[])",
+      "severity": "warning",
+      "target": "data_models"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['call_graph', 'data_models'], derived=[])",
+      "severity": "warning",
+      "target": "data_model_usage"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['call_graph'], derived=[])",
+      "severity": "warning",
+      "target": "external_deps"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['cfg', 'dfg'], derived=[])",
+      "severity": "warning",
+      "target": "cfg_dfg_metrics"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['coverage_ingest', 'goids'], derived=[])",
+      "severity": "warning",
+      "target": "coverage_functions"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['coverage_test_edges'], derived=[])",
+      "severity": "warning",
+      "target": "test_graph_metrics"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['function_history'], derived=[])",
+      "severity": "warning",
+      "target": "history_timeseries"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['goids', 'semantic_roles', 'test_profile'], derived=[])",
+      "severity": "warning",
+      "target": "entrypoints"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['goids'], derived=[])",
+      "severity": "warning",
+      "target": "function_history"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['import_graph', 'semantic_roles'], derived=['semantic_roles'])",
+      "severity": "warning",
+      "target": "subsystems"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['profiles'], derived=['function_metrics', 'modules'])",
+      "severity": "warning",
+      "target": "export_jsonl"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['profiles'], derived=['function_metrics'])",
+      "severity": "warning",
+      "target": "export_parquet"
+    }
+  ]
+}
