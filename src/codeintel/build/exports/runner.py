@@ -5,11 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
-from codeintel.export.export_jsonl import (
-    ExportCallOptions,
-    export_all_jsonl,
-)
-from codeintel.export.export_parquet import export_all_parquet
+from codeintel.build.exports.common import ExportCallOptions
+from codeintel.build.exports.jsonl import export_all_jsonl
+from codeintel.build.exports.parquet import export_all_parquet
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
@@ -20,6 +18,13 @@ if TYPE_CHECKING:
 
 
 def _validate_dataset_contract(gateway: StorageGateway) -> None:
+    """Validate dataset contract using gateway connection.
+
+    Parameters
+    ----------
+    gateway
+        StorageGateway with active connection.
+    """
     validate_contract_or_raise(gateway.con)
 
 
@@ -33,7 +38,17 @@ class Exporter(Protocol):
         *,
         options: ExportCallOptions | None = None,
     ) -> None:
-        """Execute an export call."""
+        """Execute an export call.
+
+        Parameters
+        ----------
+        gateway
+            StorageGateway for data access.
+        document_output_dir
+            Target directory for exports.
+        options
+            Export options.
+        """
         ...
 
 
@@ -47,7 +62,22 @@ class JsonlExporter(Protocol):
         *,
         options: ExportCallOptions | None = None,
     ) -> list[Path]:
-        """Execute an export call and return emitted file paths."""
+        """Execute an export call and return emitted file paths.
+
+        Parameters
+        ----------
+        gateway
+            StorageGateway for data access.
+        document_output_dir
+            Target directory for exports.
+        options
+            Export options.
+
+        Returns
+        -------
+        list[Path]
+            List of written file paths.
+        """
         ...
 
 
@@ -61,7 +91,22 @@ class ExportRunner(Protocol):
         output_dir: Path,
         options: ExportOptions | None = None,
     ) -> list[Path]:
-        """Run exports and return emitted file paths."""
+        """Run exports and return emitted file paths.
+
+        Parameters
+        ----------
+        gateway
+            StorageGateway for data access.
+        output_dir
+            Target directory for exports.
+        options
+            Export options.
+
+        Returns
+        -------
+        list[Path]
+            List of written file paths.
+        """
         ...
 
 
@@ -81,22 +126,22 @@ def run_validated_exports(
     output_dir: Path,
     options: ExportOptions | None = None,
 ) -> list[Path]:
-    """
-    Validate registry and emit Parquet/JSONL exports.
+    """Validate registry and emit Parquet/JSONL exports.
 
     Parameters
     ----------
-    gateway:
+    gateway
         StorageGateway providing datasets and connection metadata.
-    output_dir:
+    output_dir
         Document Output directory for emitted artifacts.
-    options:
+    options
         ExportOptions controlling validation, schemas, and dataset selection.
 
     Returns
     -------
     list[Path]
-        Paths written by the JSONL export (Parquet exports are written for side effects).
+        Paths written by the JSONL export (Parquet exports are written for
+        side effects).
     """
     opts = options or ExportOptions()
     opts.validator(gateway)
@@ -110,3 +155,12 @@ def run_validated_exports(
         output_dir,
         options=opts.export,
     )
+
+
+__all__ = [
+    "ExportOptions",
+    "ExportRunner",
+    "Exporter",
+    "JsonlExporter",
+    "run_validated_exports",
+]

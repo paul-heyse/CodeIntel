@@ -121,7 +121,9 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
     _make_db(db_path)
     _write_registry(registry_path)
     _write_schema_manifest(manifest_path)
-    _write_pointer(pointer_path, db_path=db_path, registry_path=registry_path, manifest_path=manifest_path)
+    _write_pointer(
+        pointer_path, db_path=db_path, registry_path=registry_path, manifest_path=manifest_path
+    )
 
     manager = ServingDBManager(
         pointer_path=pointer_path,

@@ -134,7 +134,9 @@ def _build_predicate(
     allowed_columns: frozenset[str],
     filter_spec: FilterSpec,
 ) -> it.BooleanValue:
-    _require_allowed_column(column=filter_spec.column, allowed_columns=allowed_columns, ctx="filter")
+    _require_allowed_column(
+        column=filter_spec.column, allowed_columns=allowed_columns, ctx="filter"
+    )
     col_expr = table[filter_spec.column]
     op = filter_spec.op
     value = filter_spec.value

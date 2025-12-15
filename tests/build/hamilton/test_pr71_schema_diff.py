@@ -201,9 +201,7 @@ class TestComputeManifestDiffs:
         """Detect when a table is added to the manifest."""
         expected = SchemaManifest(
             version="v1",
-            tables=(
-                _make_schema("analytics.table_a", [("col", "VARCHAR", False)]),
-            ),
+            tables=(_make_schema("analytics.table_a", [("col", "VARCHAR", False)]),),
         )
         actual = SchemaManifest(
             version="v1",
@@ -232,9 +230,7 @@ class TestComputeManifestDiffs:
         )
         actual = SchemaManifest(
             version="v1",
-            tables=(
-                _make_schema("analytics.table_a", [("col", "VARCHAR", False)]),
-            ),
+            tables=(_make_schema("analytics.table_a", [("col", "VARCHAR", False)]),),
         )
 
         result = compute_manifest_diffs(expected, actual)
@@ -249,15 +245,11 @@ class TestComputeManifestDiffs:
         """Track schema changes within individual tables."""
         expected = SchemaManifest(
             version="v1",
-            tables=(
-                _make_schema("analytics.table_a", [("col", "VARCHAR", False)]),
-            ),
+            tables=(_make_schema("analytics.table_a", [("col", "VARCHAR", False)]),),
         )
         actual = SchemaManifest(
             version="v1",
-            tables=(
-                _make_schema("analytics.table_a", [("col", "INTEGER", False)]),
-            ),
+            tables=(_make_schema("analytics.table_a", [("col", "INTEGER", False)]),),
         )
 
         result = compute_manifest_diffs(expected, actual)

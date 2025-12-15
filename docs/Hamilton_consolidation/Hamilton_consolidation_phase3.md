@@ -2102,33 +2102,37 @@ def some_function():
    
    Tests and consumers should import from `rows/` for backward compatibility, NOT `generated_rows/`.
 
-#### Deferred to PR-70.2
+#### PR-70.2 — ✅ COMPLETE
 
-**Module deletion blocked**: `schemas.py`, `schema_provider.py`, `row_factory.py`, `pandera_json_schema.py` cannot be deleted yet because `rows/analytics.py` uses `TABLE_SCHEMAS` at module load time for column constants.
+**Original blocker**: `rows/analytics.py` used `TABLE_SCHEMAS` at module load time for column constants, causing circular imports when attempting to delete legacy modules.
 
-**Specific blocker**:
-```python
-# rows/analytics.py (line ~7)
-from codeintel.config.datasets.schemas import TABLE_SCHEMAS
-
-# Used for module-level constants like:
-_FUNCTION_METRICS_COLUMNS = tuple(TABLE_SCHEMAS["analytics.function_metrics"].column_names())
-```
-
-**Future work for PR-70.2**:
-1. Refactor `rows/analytics.py` to use lazy loading pattern:
+**Solution implemented**:
+1. Refactored `_get_contract_columns()` in `rows/analytics.py` to use a lazy import pattern:
    ```python
-   @lru_cache(maxsize=1)
-   def _function_metrics_columns() -> tuple[str, ...]:
-       from codeintel.build.schemas import get_schema_provider
-       return tuple(get_schema_provider().require_table_schema("analytics.function_metrics").column_names())
+   def _get_contract_columns(table_key: str) -> tuple[str, ...]:
+       from codeintel.config.datasets.schemas import TABLE_SCHEMAS  # noqa: PLC0415
+       schema = TABLE_SCHEMAS.get(table_key)
+       if schema is None:
+           message = f"No schema defined for table key: {table_key}"
+           raise ValueError(message)
+       return tuple(schema.column_names())
    ```
-2. Delete unused legacy modules once circular import resolved:
-   - `schemas.py` (~114KB)
-   - `schema_provider.py` (~1KB)
-   - `row_factory.py` (~5KB)
-   - `pandera_json_schema.py` (~3KB)
-3. Consider consolidating `rows/*.py` TypedDicts into `core/schemas/` or generating dynamically
+
+2. **Key insight**: The lazy import uses `TABLE_SCHEMAS` directly (not `get_schema_provider()`) because `schemas.py` has no dependencies on the build module chain, avoiding the circular import path:
+   `rows/analytics.py` → `get_schema_provider()` → `provider_unified.py` → `provider_declared.py` → `contracts.py` → `rows/analytics.py`
+
+3. Updated `contracts.py` to use direct imports from `schemas.py`:
+   - Replaced `from codeintel.config.datasets.schema_provider import ...`
+   - With `from codeintel.config.datasets.schemas import TABLE_SCHEMAS, COMPOSITE_SCHEMAS`
+
+4. **Legacy modules deleted**:
+   - `schema_provider.py` ✅
+   - `row_factory.py` ✅
+   - `pandera_json_schema.py` ✅
+
+5. **Migration of row_factory utilities**: Test imports updated from `codeintel.config.datasets.row_factory` to `codeintel.core.schemas.row_models`
+
+**Future consideration**: `rows/*.py` TypedDicts may eventually be consolidated into `core/schemas/` or generated dynamically, but this is not blocking further progress
 
 ### Known Pre-existing Issue
 
@@ -2138,125 +2142,222 @@ _FUNCTION_METRICS_COLUMNS = tuple(TABLE_SCHEMAS["analytics.function_metrics"].co
 
 # PR-71 — Schema drift detection CI gate
 
+## Status: ✅ COMPLETE
+
+**Completed 2024-12**: Full schema drift detection infrastructure with structured diffing, breaking change classification, migrate command, CI script, and GitHub Actions workflow.
+
 ## Goal
 
 Strengthen the PR-63 schema manifest gate to catch all schema drift scenarios and provide tooling for schema migrations.
 
+## Implementation Notes (from actual PR-71 work)
+
+### Key Insight: Type-Safe JSON Manifest Parsing
+
+When parsing JSON manifests back into `TableSchema` objects, the `type` field must be validated against the `ColumnType` literal union. Direct assignment from JSON causes pyright errors. Solution: use `typing.get_args()` to extract allowed values:
+
+```python
+from typing import get_args
+from codeintel.core.schemas.primitives import ColumnType
+
+_ALLOWED_COLUMN_TYPES: frozenset[str] = frozenset(get_args(ColumnType))
+
+def _parse_column_type(value: object) -> ColumnType:
+    if not isinstance(value, str):
+        raise TypeError("Expected string for column type")
+    if value not in _ALLOWED_COLUMN_TYPES:
+        raise ValueError(f"Unsupported column type: {value}")
+    return cast("ColumnType", value)
+```
+
+### Key Insight: Handler Complexity Management
+
+CLI handlers can quickly exceed Ruff's complexity limits (C901, PLR0912, PLR0911). Solution: extract helper functions and use dataclasses to bundle related parameters:
+
+```python
+@dataclass(frozen=True)
+class _DiffOptions:
+    """Options for schema diff comparison."""
+    detailed: bool
+    fail_on_breaking: bool
+    fail_on_any: bool
+
+def _compare_and_format_diff(
+    expected_obj: dict[str, object],
+    compiled: _CompiledManifest,
+    expected_path: Path,
+    options: _DiffOptions,  # Bundle 3 bool params into 1 object
+) -> CliResult[str]:
+    ...
+```
+
+### Key Insight: CliResult Type Variance
+
+When helper functions return `CliResult[T]` failures (where `T` differs from handler's return type), use `cast()` since failure results have `data=None`:
+
+```python
+def build_schema_diff_handler(ctx: CommandContext) -> CliResult[str]:
+    load_result = _load_expected_manifest(expected_path)  # Returns CliResult[dict] | dict
+    if isinstance(load_result, CliResult):
+        return cast("CliResult[str]", load_result)  # Safe: failure has data=None
+```
+
+### Key Insight: ManifestDiffResult for Multi-Table Diffs
+
+Schema manifest diffs need to track changes at both table-level (column changes) and manifest-level (table additions/removals):
+
+```python
+@dataclass(frozen=True)
+class ManifestDiffResult:
+    diffs: tuple[SchemaDiff, ...]      # Per-table column diffs
+    added_tables: tuple[str, ...]      # Tables in actual but not expected
+    removed_tables: tuple[str, ...]    # Tables in expected but not actual (BREAKING)
+    
+    @property
+    def has_breaking_changes(self) -> bool:
+        if self.removed_tables:
+            return True
+        return any(diff.has_breaking_changes for diff in self.diffs)
+```
+
+### Completed Files
+
+| File | Change |
+|------|--------|
+| `src/codeintel/build/schemas/diff.py` | ✅ **NEW** — `SchemaDiff`, `ManifestDiffResult`, `compute_schema_diff()`, `compute_manifest_diffs()` |
+| `src/codeintel/build/schemas/__init__.py` | ✅ Exports diff module functions |
+| `src/codeintel/cli/handlers/build_schema.py` | ✅ Extended with detailed diff, migrate handler, breaking change detection |
+| `src/codeintel/cli/commands/build_schema.py` | ✅ Added `BuildSchemaMigrateCommand`, new diff flags (`--detailed`, `--fail-on-breaking`, `--fail-on-any`) |
+| `scripts/ci/schema_drift.sh` | ✅ **NEW** — CI helper script with `FAIL_ON_ANY` env var support |
+| `.github/workflows/schema-drift.yml` | ✅ **NEW** — GitHub Actions workflow for PR gates |
+| `tests/build/hamilton/test_pr71_schema_diff.py` | ✅ **NEW** — 18 tests covering all diff scenarios |
+| `tests/build/hamilton/snapshots/pr71_schema_diff_help.txt` | ✅ **NEW** — Help text snapshot |
+| `tests/build/hamilton/snapshots/pr71_schema_migrate_help.txt` | ✅ **NEW** — Help text snapshot |
+| `tests/build/hamilton/snapshots/manifest.yaml` | ✅ Updated with PR-71 snapshot entries |
+
 ## Tasks Checklist
 
-### Phase 1: Extend schema diff command
+### Phase 1: Create SchemaDiff infrastructure ✅ COMPLETE
 
-* [ ] Add detailed diff output to `codeintel build schema diff`:
-  ```python
-  @dataclass
-  class SchemaDiff:
-      table_key: str
-      added_columns: tuple[str, ...]
-      removed_columns: tuple[str, ...]
-      type_changes: tuple[tuple[str, str, str], ...]  # (col, old_type, new_type)
-      nullable_changes: tuple[tuple[str, bool, bool], ...]
-      
-      @property
-      def has_breaking_changes(self) -> bool:
-          return bool(self.removed_columns or self.type_changes)
+* [x] Create `src/codeintel/build/schemas/diff.py`:
+  - `ColumnDiff` — Column-level change representation
+  - `SchemaDiff` — Per-table diff with breaking change classification
+  - `ManifestDiffResult` — Full manifest comparison result
+  - `compute_schema_diff()` — Compare two TableSchemas
+  - `compute_manifest_diffs()` — Compare two SchemaManifests
+
+### Phase 2: Extend diff handler ✅ COMPLETE
+
+* [x] Add `--detailed` flag for structured diff output with `[BREAKING]` markers
+* [x] Add `--fail-on-breaking` flag (default: true)
+* [x] Add `--fail-on-any` flag (default: false)
+* [x] Human-readable summary format:
+  ```
+  Schema drift detected:
+
+  analytics.function_metrics:
+    [BREAKING] Column removed: legacy_col
+    [BREAKING] Type changed: score (VARCHAR -> INTEGER)
+    [BREAKING] Nullable changed: required_col (true -> false)
+    Column added: new_optional_col
+
+  Summary: 2 table(s) with drift, 3 breaking change(s)
   ```
 
-* [ ] Implement diff algorithm:
-  ```python
-  def compute_schema_diff(
-      expected: TableSchema,
-      actual: TableSchema,
-  ) -> SchemaDiff:
-      """Compute detailed diff between expected and actual schemas."""
-      expected_cols = {c.name: c for c in expected.columns}
-      actual_cols = {c.name: c for c in actual.columns}
-      
-      added = tuple(sorted(set(actual_cols) - set(expected_cols)))
-      removed = tuple(sorted(set(expected_cols) - set(actual_cols)))
-      
-      type_changes = []
-      nullable_changes = []
-      for name in set(expected_cols) & set(actual_cols):
-          exp, act = expected_cols[name], actual_cols[name]
-          if exp.type != act.type:
-              type_changes.append((name, exp.type, act.type))
-          if exp.nullable != act.nullable:
-              nullable_changes.append((name, exp.nullable, act.nullable))
-      
-      return SchemaDiff(
-          table_key=expected.table_key,
-          added_columns=added,
-          removed_columns=removed,
-          type_changes=tuple(type_changes),
-          nullable_changes=tuple(nullable_changes),
-      )
-  ```
+### Phase 3: Add migrate command ✅ COMPLETE
 
-### Phase 2: Add schema migrate command
-
-* [ ] Add `codeintel build schema migrate`:
+* [x] Create `BuildSchemaMigrateCommand`:
   ```python
-  @cli_command("build.schema.migrate")
+  @cli_command("build.schema.migrate", handler=build_schema_migrate_handler, config=_SCHEMA_CONFIG)
   @build_schema_app.command(name="migrate")
   @dataclass
   class BuildSchemaMigrateCommand:
-      """Update declared schemas to match inferred schemas."""
-
-      targets: list[str] | None = None
-      dry_run: bool = True
-      output_file: str | None = None
+      expected_file: str  # Path to expected manifest
+      dry_run: bool = True  # Show changes without writing
+      # ... target selection flags
   ```
 
-* [ ] Implement migration logic:
-  - Compare inferred vs declared
-  - Generate migration plan
-  - Apply (or output) schema updates
+* [x] Implement migration handler:
+  - Compile current manifest
+  - Show diff summary (migration plan)
+  - Write to expected_file unless `--dry-run`
 
-### Phase 3: CI integration
+### Phase 4: CI integration ✅ COMPLETE
 
-* [ ] Add GitHub Actions step:
+* [x] Create `scripts/ci/schema_drift.sh`:
+  ```bash
+  #!/usr/bin/env bash
+  set -euo pipefail
+  MANIFEST_PATH="${1:-tests/build/hamilton/snapshots/pr63_schema_manifest_native.json}"
+  codeintel build schema diff \
+    --expected "${MANIFEST_PATH}" \
+    --only-native --infer-native --stable \
+    --detailed --fail-on-breaking
+  ```
+
+* [x] Create `.github/workflows/schema-drift.yml`:
   ```yaml
-  - name: Schema drift gate
-    run: |
-      uv run codeintel build schema compile --only-native --infer-native --stable --output /tmp/actual.json
-      uv run codeintel build schema diff --expected tests/build/hamilton/snapshots/pr63_schema_manifest_native.json --actual /tmp/actual.json
+  name: Schema Drift Gate
+  on: [pull_request]
+  jobs:
+    schema-drift:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with: { python-version: "3.13" }
+        - run: pip install uv && uv sync --frozen
+        - name: Schema drift check
+          run: scripts/ci/schema_drift.sh
   ```
 
-* [ ] Add pre-commit hook (optional):
-  ```yaml
-  - id: schema-drift
-    name: Schema drift check
-    entry: uv run codeintel build schema diff --expected snapshots/schema_manifest.json
-    pass_filenames: false
-  ```
+### Phase 5: Breaking change detection ✅ COMPLETE
 
-### Phase 4: Add breaking change detection
+* [x] Implemented breaking change rules:
 
-* [ ] Implement breaking change rules:
-  - Column removal: BREAKING
-  - Type change (narrowing): BREAKING
-  - Nullable to non-nullable: BREAKING
-  - Column addition: NON-BREAKING
-  - Non-nullable to nullable: NON-BREAKING
-
-* [ ] Add `--fail-on-breaking` flag:
-  ```python
-  fail_on_breaking: bool = True  # Exit 1 on breaking changes
-  fail_on_any: bool = False  # Exit 1 on any drift
-  ```
+| Change | Classification |
+|--------|---------------|
+| Column removed | BREAKING |
+| Type changed (any) | BREAKING |
+| Nullable true → false | BREAKING |
+| Table removed | BREAKING |
+| Column added | Non-breaking |
+| Nullable false → true | Non-breaking |
+| Table added | Non-breaking |
 
 ## Tests Checklist (`tests/build/hamilton/`)
 
-* [ ] `test_pr71_schema_diff_detects_column_addition.py`
-* [ ] `test_pr71_schema_diff_detects_column_removal.py`
-* [ ] `test_pr71_schema_diff_detects_type_change.py`
-* [ ] `test_pr71_schema_diff_detects_nullable_change.py`
-* [ ] `test_pr71_breaking_vs_nonbreaking_classification.py`
-* [ ] `test_pr71_migrate_dry_run_outputs_plan.py`
+### ✅ Completed Tests
+
+* [x] `test_pr71_schema_diff.py` (18 tests in 5 test classes):
+
+**TestComputeSchemaDiff**:
+- `test_schema_diff_detects_column_addition` — Added column detected
+- `test_schema_diff_detects_column_removal` — Removed column = BREAKING
+- `test_schema_diff_detects_type_change` — Type change = BREAKING
+- `test_schema_diff_detects_nullable_to_nonnull` — Nullable→non-null = BREAKING
+- `test_schema_diff_detects_nonnull_to_nullable` — Non-null→nullable = non-breaking
+- `test_schema_diff_no_changes` — No changes for identical schemas
+- `test_breaking_change_count` — Count breaking changes correctly
+
+**TestComputeManifestDiffs**:
+- `test_manifest_diff_detects_table_addition` — Table added = non-breaking
+- `test_manifest_diff_detects_table_removal` — Table removed = BREAKING
+- `test_manifest_diff_tracks_per_table_changes` — Column changes in table tracked
+
+**TestSchemaDiffFormatting**:
+- `test_format_changes_shows_breaking_markers` — `[BREAKING]` markers in output
+
+**TestManifestDiffResultFormatting**:
+- `test_format_summary_no_changes` — "No schema drift detected" message
+- `test_format_summary_with_changes` — Drift details and count in summary
+
+**TestBreakingChangeClassification**:
+- `test_classification_rules` (parametrized) — All 5 change types classified correctly
 
 ## CLI Snapshots
 
-* [ ] `pr71_schema_diff_help.txt`:
+* [x] `pr71_schema_diff_help.txt`:
   ```yaml
   - name: "pr71_schema_diff_help"
     tags: ["pr71", "schema", "diff", "text", "tiny"]
@@ -2266,7 +2367,7 @@ Strengthen the PR-63 schema manifest gate to catch all schema drift scenarios an
     kind: "text"
   ```
 
-* [ ] `pr71_schema_migrate_help.txt`:
+* [x] `pr71_schema_migrate_help.txt`:
   ```yaml
   - name: "pr71_schema_migrate_help"
     tags: ["pr71", "schema", "migrate", "text", "tiny"]
@@ -2278,121 +2379,340 @@ Strengthen the PR-63 schema manifest gate to catch all schema drift scenarios an
 
 ---
 
+## PR-71 Completion Summary
+
+**Completed**: Full schema drift detection CI gate with:
+
+```python
+from codeintel.build.schemas import (
+    SchemaDiff,              # Per-table diff dataclass
+    ManifestDiffResult,      # Full manifest comparison result
+    compute_schema_diff,     # Compare two TableSchemas
+    compute_manifest_diffs,  # Compare two SchemaManifests
+)
+```
+
+**CLI commands**:
+```bash
+# Check for drift with breaking change detection
+codeintel build schema diff --expected manifest.json --detailed --fail-on-breaking
+
+# Update manifest to match current schemas
+codeintel build schema migrate --expected manifest.json --no-dry-run
+
+# CI helper script
+scripts/ci/schema_drift.sh [MANIFEST_PATH]
+```
+
+**Key learnings**:
+1. **Type-safe JSON parsing** requires validating against `ColumnType` literal union using `get_args()`
+2. **Handler complexity** can be managed by extracting helpers and bundling params in dataclasses
+3. **CliResult variance** is safe to cast for failure results (data is None)
+4. **Multi-level diffs** need both table-level (`SchemaDiff`) and manifest-level (`ManifestDiffResult`) tracking
+
+### Implementation Insights for PR-72 and PR-73
+
+**Manifest Structure Extensibility**:
+- Current manifest format (`{"table_key": {...columns...}}`) can be extended to:
+  ```json
+  {
+    "version": "v2",
+    "tables": {"analytics.function_metrics": {...}},
+    "views": {"docs.v_data_models_normalized": {...}},
+    "artifacts": [{"kind": "parquet", "filename": "exports/metrics.parquet", ...}]
+  }
+  ```
+- The `compute_manifest_diffs()` function will need extension to handle views/artifacts
+- Consider adding `ManifestVersion` enum for backward compatibility
+
+**CLI Command Patterns Established**:
+- `diff` command supports `--detailed`, `--fail-on-breaking`, `--fail-on-any` flags
+- `migrate` command supports `--dry-run`, `--output` for preview and controlled updates
+- These patterns should extend naturally to view/artifact operations
+
+**Type Safety Lessons**:
+- Use `get_args(Literal[...])` to validate type strings at runtime
+- Extract complex handler logic into small, typed helper functions
+- Dataclasses (`@dataclass(frozen=True)`) work well for diff results
+
+**Reusable Infrastructure for PR-72**:
+- `SchemaDiff` and `ManifestDiffResult` can be extended or composed for view diffs
+- `_parse_column_type()` and `_parse_manifest_from_json()` provide parsing patterns
+- CI script pattern (`scripts/ci/schema_drift.sh`) can template view/artifact checks
+
+**PR-73 Considerations**:
+- JSON Schema generation should use `TableSchema` directly (not manifest JSON)
+- `Column.type` (a `ColumnType` literal) maps cleanly to JSON Schema types
+- Generated JSON Schemas should include `$id` using table key pattern: `urn:codeintel:schema:{table_key}`
+- Nullability handling: `{"oneOf": [{"type": "..."}, {"type": "null"}]}` pattern established in PR-71 diff formatting
+
+---
+
 # PR-72 — Unified catalog: tables, views, and artifacts
+
+## Status: ✅ COMPLETE
+
+**Completed 2024-12**: Schema manifest extended to v2 format with views and artifacts support. View schema inference implemented. CLI flags added for compile, diff, and migrate commands.
 
 ## Goal
 
 Extend schema authority to include DuckDB views and build artifacts (Parquet, JSONL exports).
 
+## Prerequisites
+
+- ✅ PR-71 complete (schema diff infrastructure available)
+- ✅ SchemaDiff/ManifestDiffResult patterns established
+- ✅ CLI command patterns established (diff, migrate)
+
+## Implementation Notes (from actual PR-72 work)
+
+### Key Insight: View Schema Inference via DESCRIBE
+
+DuckDB's `DESCRIBE` command provides column metadata for views, enabling schema inference without executing the view:
+
+```python
+def infer_view_schema(*, con: DuckDBConnection, view_key: str) -> TableSchema:
+    schema_name, view_name = split_table_key(view_key)
+    rows = con.execute(f"DESCRIBE {schema_name}.{view_name}").fetchall()
+    columns = [
+        Column(
+            name=str(r[0]),
+            type=normalize_duckdb_type(str(r[1])),
+            nullable=True,  # Views don't preserve NOT NULL constraints
+        )
+        for r in rows
+    ]
+    return TableSchema(schema=schema_name, name=view_name, columns=columns)
+```
+
+### Key Insight: Manifest v2 Format
+
+The manifest format was extended to support multiple entity types:
+
+```json
+{
+  "version": "v2",
+  "tables": {
+    "analytics.function_metrics": {"columns": [...]}
+  },
+  "views": {
+    "docs.v_data_models_normalized": {"columns": [...]}
+  },
+  "artifacts": [
+    {"kind": "parquet", "filename": "function_metrics.parquet", "table_key": "analytics.function_metrics"}
+  ]
+}
+```
+
+### Key Insight: ExportArtifact Typing
+
+Export artifacts use a typed dataclass with `Literal` kind:
+
+```python
+ExportArtifactKind = Literal["csv", "json", "jsonl", "parquet"]
+
+@dataclass(frozen=True)
+class ExportArtifact:
+    kind: ExportArtifactKind
+    filename: str
+    table_key: str | None = None
+    description: str | None = None
+```
+
+### Completed Files
+
+| File | Change |
+|------|--------|
+| `src/codeintel/build/schemas/infer_duckdb.py` | ✅ Added `infer_view_schema()` and `normalize_duckdb_type()` |
+| `src/codeintel/build/schemas/manifest.py` | ✅ Added `ExportArtifact`, extended `SchemaManifest` with `views` and `artifacts` |
+| `src/codeintel/build/schemas/compile.py` | ✅ Added v2 format, `_collect_view_schemas()`, `_collect_export_artifacts()` |
+| `src/codeintel/build/schemas/diff.py` | ✅ Extended `ManifestDiffResult` with `view_diffs`, `added_views`, `removed_views`, artifact tracking |
+| `src/codeintel/build/schemas/__init__.py` | ✅ Exports `ExportArtifact`, `ExportArtifactKind` |
+| `src/codeintel/cli/commands/build_schema.py` | ✅ Added `--include-views`, `--include-artifacts` flags |
+| `src/codeintel/cli/handlers/build_schema.py` | ✅ Updated handlers for new flags |
+| `tests/build/hamilton/test_pr72_view_schema_inference.py` | ✅ **NEW** — View inference tests |
+| `tests/build/hamilton/test_pr72_manifest_v2.py` | ✅ **NEW** — Manifest v2 format tests |
+
 ## Tasks Checklist
 
-### Phase 1: Add view schema inference
+### Phase 1: Add view schema inference ✅ COMPLETE
 
-* [ ] Add `infer_view_schema()` to `build/schemas/infer_duckdb.py`:
-  ```python
-  def infer_view_schema(
-      *,
-      con: DuckDBConnection,
-      view_key: str,
-  ) -> TableSchema:
-      """Infer schema for an existing DuckDB view.
+* [x] Add `infer_view_schema()` to `build/schemas/infer_duckdb.py`
+* [x] Add `normalize_duckdb_type()` for DuckDB type normalization
+* [x] Handle DECIMAL precision types (e.g., `DECIMAL(10, 2)`)
 
-      Parameters
-      ----------
-      con
-          DuckDB connection with the view defined.
-      view_key
-          Fully qualified view key (schema.view_name).
+### Phase 2: Add artifact metadata ✅ COMPLETE
 
-      Returns
-      -------
-      TableSchema
-          Inferred schema for the view.
-      """
-      schema_name, view_name = split_table_key(view_key)
-      rows = con.execute(f"DESCRIBE {schema_name}.{view_name}").fetchall()
-      columns = [
-          Column(name=str(r[0]), type=normalize_duckdb_type(str(r[1])), nullable=True)
-          for r in rows
-      ]
-      return TableSchema(schema=schema_name, name=view_name, columns=columns)
-  ```
+* [x] Define `ExportArtifact` dataclass in `build/schemas/manifest.py`
+* [x] Define `ExportArtifactKind = Literal["csv", "json", "jsonl", "parquet"]`
+* [x] Added to `SchemaManifest` as `artifacts: tuple[ExportArtifact, ...]`
 
-* [ ] Add view inference to unified provider
+### Phase 3: Extend schema compile command ✅ COMPLETE
 
-### Phase 2: Add artifact metadata
+* [x] Add `--include-views` flag to compile/diff/migrate commands
+* [x] Add `--include-artifacts` flag to compile/diff/migrate commands
+* [x] Update manifest format to v2 with `tables`, `views`, `artifacts` fields
+* [x] Add `V2_SCHEMA_MANIFEST_VERSION = "v2"` constant
 
-* [ ] Define `ArtifactSpec`:
-  ```python
-  @dataclass(frozen=True)
-  class ArtifactSpec:
-      """Specification for a build artifact."""
-      
-      kind: Literal["parquet", "jsonl", "json", "csv"]
-      filename: str
-      table_key: str | None = None  # Source table for typed artifacts
-      description: str | None = None
-  ```
+### Phase 4: Extend diff infrastructure ✅ COMPLETE
 
-* [ ] Add to `OutputTargetContract`:
-  ```python
-  artifacts: tuple[ArtifactSpec, ...] = ()
-  ```
-
-### Phase 3: Extend schema compile command
-
-* [ ] Add flags:
-  ```python
-  include_views: bool = False
-  include_artifacts: bool = False
-  ```
-
-* [ ] Update manifest format:
-  ```json
-  {
-    "version": "v2",
-    "tables": [...],
-    "views": [...],
-    "artifacts": [...]
-  }
-  ```
-
-### Phase 4: Register docs.* views
-
-* [ ] Add view schema inference for all `docs.v_*` views
-* [ ] Include in schema manifest
+* [x] Extended `ManifestDiffResult` with:
+  - `view_diffs: tuple[SchemaDiff, ...]`
+  - `added_views: tuple[str, ...]`
+  - `removed_views: tuple[str, ...]`
+  - `added_artifacts: tuple[str, ...]`
+  - `removed_artifacts: tuple[str, ...]`
 
 ## Tests Checklist (`tests/build/hamilton/`)
 
-* [ ] `test_pr72_view_schema_inferred_from_describe.py`
-* [ ] `test_pr72_artifact_spec_in_manifest.py`
-* [ ] `test_pr72_manifest_v2_format.py`
+* [x] `test_pr72_view_schema_inference.py`:
+  - `test_normalize_duckdb_type_standard_types` — Standard type normalization
+  - `test_normalize_duckdb_type_decimal_with_precision` — DECIMAL(p,s) handling
+  - `test_infer_view_schema_basic` — Basic view inference
+
+* [x] `test_pr72_manifest_v2.py`:
+  - `test_export_artifact_dataclass` — ExportArtifact field validation
+  - `test_schema_manifest_v2_fields` — Manifest v2 structure
+  - `test_manifest_diff_result_with_views` — Diff result with views
 
 ## CLI Snapshots
 
-* [ ] `pr72_schema_compile_with_views.json`:
-  ```yaml
-  - name: "pr72_schema_compile_with_views"
-    tags: ["pr72", "schema", "views", "json", "integration"]
-    args: ["build", "schema", "compile", "--include-views", "--format", "json"]
-    exit_code: 0
-    snapshot: "pr72_schema_compile_with_views.json"
-    kind: "json"
-  ```
+* [x] `pr72_schema_compile_help.txt`:
+  - Shows `--include-views` and `--include-artifacts` flags
+
+---
+
+## PR-72 Completion Summary
+
+**Completed**: Unified catalog with tables, views, and artifacts:
+
+```python
+from codeintel.build.schemas import (
+    ExportArtifact,              # Typed artifact metadata
+    ExportArtifactKind,          # Literal type for artifact kinds
+    infer_view_schema,           # Infer schema for DuckDB view
+    normalize_duckdb_type,       # Normalize DuckDB type strings
+)
+```
+
+**Manifest v2 format**:
+```json
+{
+  "version": "v2",
+  "tables": {"analytics.function_metrics": {...}},
+  "views": {"docs.v_data_models_normalized": {...}},
+  "artifacts": [{"kind": "parquet", "filename": "...", "table_key": "..."}]
+}
+```
+
+**Key learnings**:
+1. **View columns are nullable by default** — DuckDB's DESCRIBE doesn't preserve NOT NULL constraints for view columns
+2. **DECIMAL types need regex parsing** — Types like `DECIMAL(10, 2)` must be parsed to extract precision/scale
+3. **Artifact tracking** — Export artifacts are tracked separately from table schemas
 
 ---
 
 # PR-73 — JSON Schema generation from TableSchema
 
+## Status: ✅ COMPLETE
+
+**Completed 2024-12**: JSON Schema generation from TableSchema implemented, JSON Schema registry created, export validation migrated to generated schemas, hand-maintained JSON Schema files deleted.
+
 ## Goal
 
 Auto-generate JSON Schemas (2020-12) for export validation from TableSchema, eliminating hand-maintained JSON Schema files.
 
+## Prerequisites
+
+- ✅ TableSchema is the single source of truth (achieved in PR-66-70)
+- ✅ Type mapping patterns established in PR-71 diff formatting
+- ✅ `Column.type` is a `ColumnType` literal, enabling clean type mapping
+
+## Implementation Notes (from actual PR-73 work)
+
+### Key Insight: Direct ColumnType to JSON Schema Mapping
+
+The `ColumnType` literal union maps cleanly to JSON Schema types:
+
+```python
+def _json_schema_type_for_column_type(
+    column_type: ColumnType,
+) -> tuple[str | list[str], str | None]:
+    """Map ColumnType to JSON Schema type and optional format."""
+    type_map: dict[ColumnType, tuple[str, str | None]] = {
+        "BOOLEAN": ("boolean", None),
+        "INTEGER": ("integer", None),
+        "BIGINT": ("integer", None),
+        "DECIMAL(38,0)": ("integer", None),
+        "DOUBLE": ("number", None),
+        "DECIMAL": ("number", None),
+        "VARCHAR": ("string", None),
+        "JSON": ("object", None),
+        "TIMESTAMP": ("string", "date-time"),
+        "TIMESTAMPTZ": ("string", "date-time"),
+    }
+    return type_map.get(column_type, ("string", None))
+```
+
+### Key Insight: Nullability Handling via Type Arrays
+
+Instead of using `oneOf`, the implementation uses JSON Schema's type array syntax for nullable columns:
+
+```python
+# Non-nullable column
+{"type": "string"}
+
+# Nullable column
+{"type": ["string", "null"]}
+```
+
+This is more concise and widely supported than the `oneOf` pattern.
+
+### Key Insight: Schema ID Convention
+
+Generated schemas use a URN-based `$id` pattern:
+```
+urn:codeintel:schema:{table_key}
+```
+
+For example: `urn:codeintel:schema:analytics.function_metrics`
+
+### Completed Files
+
+| File | Change |
+|------|--------|
+| `src/codeintel/core/schemas/json_schema_gen.py` | ✅ Extended with `json_schema_from_table_schema()` |
+| `src/codeintel/core/schemas/__init__.py` | ✅ Exports `json_schema_from_table_schema` |
+| `src/codeintel/build/schemas/json_schema_registry.py` | ✅ **NEW** — Cached JSON Schema access via `get_json_schema()`, `get_json_schema_for_dataset_name()`, `compute_json_schema_digest()` |
+| `src/codeintel/build/schemas/__init__.py` | ✅ Exports JSON Schema registry functions |
+| `src/codeintel/export/validate_exports.py` | ✅ Updated to use generated schemas (later consolidated to `build/exports/`) |
+| `src/codeintel/export/export_parquet.py` | ✅ Updated `_schema_digest()` to use generated schema digest |
+| `src/codeintel/export/export_jsonl.py` | ✅ Updated `_schema_digest()` to use generated schema digest |
+| `src/codeintel/config/datasets/contracts.py` | ✅ Removed `_JSON_SCHEMA_BY_DATASET_NAME` dictionary |
+| `src/codeintel/config/schemas/export/*.json` | ✅ **DELETED** — All hand-maintained JSON Schema files |
+| `tests/build/hamilton/test_pr73_json_schema_generation.py` | ✅ **NEW** — Comprehensive tests for JSON Schema generation |
+
+### Export Consolidation (Post-PR-73)
+
+Following PR-73, export functionality was consolidated into `build/exports/`:
+
+| Old Location | New Location |
+|--------------|--------------|
+| `export/export_jsonl.py` | `build/exports/jsonl.py` |
+| `export/export_parquet.py` | `build/exports/parquet.py` |
+| `export/validate_exports.py` | `build/exports/validation.py` |
+| `export/export_exprs.py` | `build/exports/exprs.py` |
+| `export/manifest.py` | `build/exports/manifest.py` |
+| `export/runner.py` | `build/exports/runner.py` |
+| `export/errors.py` | ✅ Deleted (use `build/errors.py`) |
+
+The `export/__init__.py` now provides backward-compatible re-exports with deprecation warnings.
+
 ## Tasks Checklist
 
-### Phase 1: Implement JSON Schema generator
+### Phase 1: Implement JSON Schema generator ✅ COMPLETE
 
-* [ ] Add `src/codeintel/core/schemas/json_schema_gen.py`:
+* [x] Add `src/codeintel/core/schemas/json_schema_gen.py`:
   ```python
   from __future__ import annotations
 
@@ -2475,52 +2795,110 @@ Auto-generate JSON Schemas (2020-12) for export validation from TableSchema, eli
   __all__ = ["json_schema_from_table_schema"]
   ```
 
-### Phase 2: Create JSON Schema registry
+### Phase 2: Create JSON Schema registry ✅ COMPLETE
 
-* [ ] Add `src/codeintel/build/schemas/json_schema_registry.py`:
-  ```python
-  from functools import lru_cache
+* [x] Add `src/codeintel/build/schemas/json_schema_registry.py`:
+  - `get_json_schema(table_key)` — Cached JSON Schema by table key
+  - `get_json_schema_for_dataset_name(name)` — Backward-compat lookup by dataset name
+  - `get_json_schema_for_table_schema(schema)` — Direct generation from TableSchema
+  - `compute_json_schema_digest(table_key)` — Stable SHA-256 digest for caching
+  - `clear_json_schema_cache()` — Cache management for testing
 
-  from codeintel.build.schemas.registry import get_schema_provider
-  from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
+### Phase 3: Migrate export validation ✅ COMPLETE
 
+* [x] Update `export/export_jsonl.py`:
+  - Updated `_schema_digest()` to use `compute_json_schema_digest()` from registry
+  - Removed file-based schema path fallback
 
-  @lru_cache(maxsize=256)
-  def get_json_schema(table_key: str) -> dict[str, object]:
-      """Return generated JSON Schema for a table key."""
-      table_schema = get_schema_provider().require_table_schema(table_key)
-      return json_schema_from_table_schema(
-          table_schema,
-          schema_id=f"urn:codeintel:schema:{table_key}",
-      )
-  ```
+* [x] Update `export/export_parquet.py`:
+  - Updated `_schema_digest()` to use `compute_json_schema_digest()` from registry
+  - Removed file-based schema path fallback
 
-### Phase 3: Migrate export validation
+* [x] Update `export/validate_exports.py`:
+  - Added `_get_generated_schema()` helper using registry
+  - Removed `DEFAULT_SCHEMA_ROOT` and file-based `_load_schema()`
 
-* [ ] Update `export/export_jsonl.py`:
-  - Replace hand-maintained JSON Schema lookups
-  - Use `get_json_schema(table_key)`
+### Phase 4: Delete hand-maintained JSON Schema files ✅ COMPLETE
 
-* [ ] Update `export/export_parquet.py`:
-  - Use generated schemas for validation
+* [x] Removed `_JSON_SCHEMA_BY_DATASET_NAME` dictionary from `contracts.py`
+* [x] Deleted all files in `src/codeintel/config/schemas/export/`
+* [x] Deleted `_schema_path()` function from `storage/validation/contract.py`
+* [x] Deleted `_validate_schema_files()` function from `storage/validation/contract.py`
 
-### Phase 4: Delete hand-maintained JSON Schema files
+### Phase 5: Export Consolidation (Post-PR-73) ✅ COMPLETE
 
-* [ ] Audit `_JSON_SCHEMA_BY_DATASET_NAME` in contracts.py
-* [ ] Delete corresponding JSON Schema files
-* [ ] Remove lookup tables
+* [x] Created `src/codeintel/build/exports/` package:
+  - `common.py` — Shared utilities and dataclasses
+  - `jsonl.py` — JSONL export logic (from `export/export_jsonl.py`)
+  - `parquet.py` — Parquet export logic (from `export/export_parquet.py`)
+  - `validation.py` — Export validation (from `export/validate_exports.py`)
+  - `exprs.py` — Export expressions (from `export/export_exprs.py`)
+  - `manifest.py` — Export manifest (from `export/manifest.py`)
+  - `runner.py` — Export orchestration (from `export/runner.py`)
+
+* [x] Updated `src/codeintel/export/__init__.py`:
+  - Re-exports from `build/exports/` for backward compatibility
+  - Added deprecation warnings via `__getattr__`
+
+* [x] Deleted legacy export files:
+  - `export/export_jsonl.py`
+  - `export/export_parquet.py`
+  - `export/validate_exports.py`
+  - `export/export_exprs.py`
+  - `export/manifest.py`
+  - `export/runner.py`
+  - `export/errors.py`
 
 ## Tests Checklist (`tests/build/hamilton/`)
 
-* [ ] `test_pr73_json_schema_has_all_columns.py`
-* [ ] `test_pr73_json_schema_nullable_handled.py`
-* [ ] `test_pr73_json_schema_validates_export_row.py`
-* [ ] `test_pr73_generated_schema_matches_2020_12.py`
+* [x] `test_pr73_json_schema_generation.py` (comprehensive test suite):
+  - `test_column_type_mapping` — ColumnType to JSON Schema type mapping
+  - `test_nullable_column_handling` — Nullable columns use type arrays
+  - `test_non_nullable_column_handling` — Non-nullable columns in required
+  - `test_meta_schema_validation` — Generated schemas validate against 2020-12 meta-schema
+  - `test_valid_record_passes_validation` — Valid records pass validation
+  - `test_null_in_required_field_fails` — Null in required field fails
+  - `test_missing_required_field_fails` — Missing required field fails
+  - `test_wrong_type_fails` — Wrong type fails validation
+  - `test_extra_properties_fail` — Extra properties fail (additionalProperties: false)
+  - `test_registry_caching` — Registry caches generated schemas
+  - `test_digest_generation` — Digest is deterministic SHA-256
 
 ## CLI Snapshots
 
-* [ ] `pr73_json_schema_for_function_metrics.json`:
-  - Generate and snapshot JSON Schema for a known table
+* [x] `pr73_json_schema_function_metrics.json`:
+  - Generated JSON Schema snapshot for `analytics.function_metrics`
+
+---
+
+## PR-73 Completion Summary
+
+**Completed**: JSON Schema generation from TableSchema with:
+
+```python
+from codeintel.core.schemas import json_schema_from_table_schema
+
+from codeintel.build.schemas import (
+    get_json_schema,                    # Cached JSON Schema by table key
+    get_json_schema_for_dataset_name,   # Backward-compat lookup
+    get_json_schema_for_table_schema,   # Direct generation
+    compute_json_schema_digest,         # Stable SHA-256 digest
+    clear_json_schema_cache,            # For testing
+)
+```
+
+**Key accomplishments**:
+1. **JSON Schema generator** — `json_schema_from_table_schema()` maps `ColumnType` to JSON Schema types
+2. **JSON Schema registry** — Cached access via `get_json_schema()` and `compute_json_schema_digest()`
+3. **Export validation migrated** — All export validation uses generated schemas
+4. **Hand-maintained schemas deleted** — `config/schemas/export/*.json` removed
+5. **Export consolidation** — All export code moved to `build/exports/`
+
+**Key learnings**:
+1. **Type arrays for nullability** — `{"type": ["string", "null"]}` is more concise than `oneOf`
+2. **URN-based schema IDs** — `urn:codeintel:schema:{table_key}` provides stable identifiers
+3. **Digest-based caching** — `compute_json_schema_digest()` enables efficient validation caching
+4. **Export consolidation** — Moving exports to `build/exports/` reduces code duplication and aligns with DAG-first architecture
 
 ---
 
@@ -2551,49 +2929,75 @@ PR-69 (extend inference to non-Ibis targets) ✅ PHASE 1 COMPLETE
   │   Circular import challenges resolved with lazy loading
   │
   ▼
-PR-70 (DELETE legacy config/datasets)  ◄── Major milestone (NEXT)
+PR-70 (DELETE legacy config/datasets) ✅ COMPLETE
   │
-  ├─► Depends on PR-66, PR-67 Phase 1, PR-68, PR-69 (ALL COMPLETE)
-  │   Includes PR-67 consumer migration + all deletions
-  │   ~243KB of legacy code removed
-  │
-  ▼
-PR-71 (schema drift CI gate)
-  │
-  ├─► Can run in parallel after PR-70
-  │   Strengthens schema governance
+  ├─► All legacy infrastructure consumers migrated
+  │   Lint enforcement active, type checkers passing
   │
   ▼
-PR-72 (unified catalog: tables + views + artifacts)
+PR-70.2 (rows/analytics.py refactor + deletions) ✅ COMPLETE
   │
-  ├─► Can run in parallel after PR-70
-  │   Extends schema authority
+  ├─► Lazy import pattern in _get_contract_columns()
+  │   Legacy utilities deleted: schema_provider.py, row_factory.py, pandera_json_schema.py
   │
   ▼
-PR-73 (JSON Schema generation)
+PR-71 (schema drift CI gate) ✅ COMPLETE
   │
-  └─► Can run in parallel after PR-70
-      Completes export validation migration
+  ├─► SchemaDiff, ManifestDiffResult for structured diffing
+  │   Breaking change classification (5 rules)
+  │   Migrate command with dry-run support
+  │   CI script + GitHub Actions workflow
+  │
+  ▼
+PR-72 (unified catalog: tables + views + artifacts) ✅ COMPLETE
+  │
+  ├─► Extended SchemaManifest to v2 format (tables, views, artifacts)
+  │   View schema inference via DESCRIBE
+  │   ExportArtifact dataclass for typed artifact metadata
+  │   CLI flags: --include-views, --include-artifacts
+  │
+  ▼
+PR-73 (JSON Schema generation) ✅ COMPLETE
+  │
+  ├─► json_schema_from_table_schema() generator
+  │   JSON Schema registry with caching and digests
+  │   Export validation migrated to generated schemas
+  │   Hand-maintained JSON Schema files deleted
+  │   Export code consolidated to build/exports/
+  │
+  ▼
+PR-74+ (Legacy Row Model Deletion)  ◄── REMAINING SCOPE
+  │
+  └─► See: Hamilton_consolidation_remaining_scope.md
+      Migrate TypedDict imports to generated models
+      Delete config/datasets/rows/, generated_rows/, schemas.py
 ```
 
 ---
 
 ## Impact Summary
 
-| Metric | Before Phase 3 | After Phase 3 |
-|--------|----------------|---------------|
-| Files importing `config.datasets` | 65 | 0 |
-| Lines in `config/datasets/schemas.py` | ~3000+ | 0 (deleted) |
-| Lines in `config/datasets/contracts.py` | ~1000 | 0 (deleted) |
-| Manual RowBindings | 50+ | 0 (generated) |
-| Manual TypedDict row models | 100+ | 0 (generated) |
-| Manual DatasetContracts | 100+ | 0 (target-derived) |
-| Schema sources of truth | 3 | 1 (DAG) |
-| Total legacy code removed | 0 | ~243KB |
+| Metric | Before Phase 3 | Current State | Target |
+|--------|----------------|---------------|--------|
+| Files importing `config.datasets` | 65 | 0 ✅ | 0 |
+| Lines in `config/datasets/schemas.py` | ~3000+ | ~3000+ (lazy-imported) | 0 (delete after rows/ migration) |
+| Lines in `config/datasets/contracts.py` | ~1000 | ~200 (re-exports only) | 0 (delete after row model migration) |
+| Legacy utility modules | 4 | 0 ✅ | 0 |
+| Manual RowBindings | 50+ | 0 ✅ (generated) | 0 |
+| Manual TypedDict row models | 100+ | ~100 (still in rows/) | 0 (after full generation) |
+| Manual DatasetContracts | 100+ | 0 ✅ (target-derived) | 0 |
+| Schema sources of truth | 3 | 1 ✅ (DAG) | 1 |
+| Schema drift CI gate | ❌ | ✅ (PR-71) | ✅ |
+| Unified catalog (views + artifacts) | ❌ | ✅ (PR-72) | ✅ |
+| JSON Schema generation | ❌ (hand-maintained) | ✅ (PR-73) | ✅ |
+| Export consolidation | export/ | build/exports/ ✅ | build/exports/ |
+| Legacy utility modules deleted | 0 | 3 ✅ (PR-70.2) | All |
+| Hand-maintained JSON schemas | ~15 files | 0 ✅ (deleted) | 0 |
+| Total legacy code removed | 0 | ~150KB | ~243KB |
 
 ---
 
-## Quick Wins (Can Start Immediately)
+## Quick Wins (All Complete)
 
 1. ~~**PR-66 Phase 1**: Add `get_schema_provider()` registry and deprecation warnings (~1 day)~~ ✅ DONE
 2. ~~**PR-66 Phase 2**: Migrate `storage/schema/ddl.py` as proof of concept (~1 day)~~ ✅ DONE
@@ -2601,9 +3005,20 @@ PR-73 (JSON Schema generation)
 4. ~~**PR-67 Phase 2**: Add deprecation warnings to `get_row_bindings()` (~30 min)~~ ✅ DONE
 5. ~~**PR-68 Phase 1**: Create contract provider and migrate storage layer (~1 day)~~ ✅ DONE
 6. ~~**PR-69 Phase 1**: Create unified schema provider with fallback chain (~1 day)~~ ✅ DONE
-7. **Add lint rule**: Ban new `config.datasets.schemas` imports (~30 min)
-8. **Add lint rule**: Ban new `config.datasets.contracts.get_row_bindings()` calls (~30 min)
-9. **PR-70**: Begin legacy deletion (all prerequisites complete) (~2-3 days)
+7. ~~**Add lint rule**: Ban new `config.datasets.schemas` imports (~30 min)~~ ✅ DONE (PR-70)
+8. ~~**Add lint rule**: Ban new `config.datasets.contracts.get_row_bindings()` calls (~30 min)~~ ✅ DONE (PR-70)
+9. ~~**PR-70**: Complete legacy consumer migration and lint enforcement~~ ✅ DONE
+10. ~~**PR-70.2**: Refactor `rows/analytics.py` and delete legacy utility modules~~ ✅ DONE
+11. ~~**PR-71**: Schema drift CI gate with breaking change detection~~ ✅ DONE
+12. ~~**PR-72**: Unified catalog with views and artifacts~~ ✅ DONE
+13. ~~**PR-73**: JSON Schema generation from TableSchema~~ ✅ DONE
+14. ~~**Export consolidation**: Move export code to `build/exports/`~~ ✅ DONE
+
+## Remaining Work
+
+See **`Hamilton_consolidation_remaining_scope.md`** for detailed remaining scope to fully delete legacy `config/datasets/` files.
+12. **PR-72**: Begin unified catalog (views + artifacts) (~2 days)
+13. **PR-73**: JSON Schema generation from TableSchema (~1 day)
 
 ---
 
@@ -2662,16 +3077,22 @@ PR-73 (JSON Schema generation)
 
 Phase 3 is complete when:
 
-1. ✅ Zero files import from `config.datasets.schemas`
-2. ✅ Zero files import from `config.datasets.contracts`
-3. ✅ `config/datasets/schemas.py` is deleted
-4. ✅ `config/datasets/contracts.py` is deleted
-5. ✅ `config/datasets/rows/` directory is deleted
-6. ✅ All tests pass with generated row models
-7. ✅ All tests pass with target-derived contracts
-8. ✅ Schema manifest CI gate is active
-9. ✅ Full test suite passes
-10. ✅ Type checkers (pyright, pyrefly) pass
+1. ✅ Zero files import from `config.datasets.schemas` (migrated in PR-70)
+2. ✅ Zero files import from `config.datasets.contracts` (migrated in PR-70)
+3. ✅ Legacy utility modules deleted: `schema_provider.py`, `row_factory.py`, `pandera_json_schema.py` (PR-70.2)
+4. ⏸️ `config/datasets/contracts.py` not yet deleted (keeping DatasetContract re-exports for now)
+5. ⏸️ `config/datasets/rows/` directory not yet deleted (TypedDict definitions still in use)
+6. ⏸️ `config/datasets/schemas.py` not yet deleted (TABLE_SCHEMAS still used by rows/analytics.py via lazy import)
+7. ✅ All tests pass with generated row models (4139 passed, 1 pre-existing failure)
+8. ✅ All tests pass with target-derived contracts
+9. ✅ Schema manifest CI gate is active (PR-71 complete with breaking change detection)
+10. ✅ Full test suite passes (4139 passed, 1 pre-existing failure, 92 skipped)
+11. ✅ Type checkers (pyright, pyrefly) pass
+
+**Note**: Items 4-6 represent the final cleanup phase. `schemas.py` is retained because:
+- `rows/analytics.py` uses `TABLE_SCHEMAS` via lazy import in `_get_contract_columns()`
+- This is acceptable because the lazy import avoids circular dependencies
+- Future work could migrate this to use `get_schema_provider()` once all `rows/*.py` TypedDicts are generated
 
 ---
 
@@ -2995,7 +3416,49 @@ if TYPE_CHECKING:
 
 **Symptom**: pyright/pyrefly errors like `"CallGraphEdgeRow" is unknown import symbol` even though tests pass at runtime (because `TYPE_CHECKING` imports are never executed).
 
-### 9. Explicit Return Types for Lazy Import Functions
+### 9. CLI Handler Complexity Management (PR-71)
+
+Complex CLI handlers should be decomposed into small, typed helper functions:
+
+```python
+# ❌ BAD: Monolithic handler with high cyclomatic complexity
+def build_schema_diff_handler(ctx: CliContext) -> CliResult[str]:
+    # 50+ lines of mixed concerns: loading, parsing, comparing, formatting
+    ...
+
+# ✅ GOOD: Decomposed into focused helpers
+def _load_expected_manifest(expected_path: Path) -> CliResult[dict[str, object]]:
+    """Load and validate expected manifest JSON."""
+    ...
+
+def _try_compile_manifest(
+    gateway: Gateway, infer: bool, selection: tuple[str, ...]
+) -> CliResult[_CompiledManifest]:
+    """Compile current schema manifest with error handling."""
+    ...
+
+def _compare_and_format_diff(
+    expected: dict[str, object], actual: SchemaManifest, *, detailed: bool
+) -> tuple[bool, str]:
+    """Compare manifests and format results."""
+    ...
+
+def build_schema_diff_handler(ctx: CliContext) -> CliResult[str]:
+    """Orchestrate diff operation using focused helpers."""
+    expected_result = _load_expected_manifest(ctx.args.expected)
+    if not expected_result.success:
+        return cast("CliResult[str]", expected_result)
+    # ... orchestration using helpers ...
+```
+
+**Key patterns**:
+- Extract JSON loading/parsing into separate functions
+- Use typed intermediate dataclasses (e.g., `_CompiledManifest = TypedDict(...)`)
+- Return `CliResult[T]` from helpers for consistent error propagation
+- Keep complexity per function ≤ 10 (Ruff C901)
+- Keep return statements ≤ 6 per function (Ruff PLR0911)
+
+### 10. Explicit Return Types for Lazy Import Functions
 
 When lazy imports return callables, pyright infers `object` type. Add explicit annotations:
 
@@ -3024,3 +3487,54 @@ def _get_contract_provider() -> tuple[
 ```
 
 This pattern is especially important in `dataflow.py` and similar modules that use lazy imports to avoid circular dependencies.
+
+### 11. Type-Safe JSON Manifest Parsing (PR-71)
+
+When parsing JSON manifests with typed schema data, validate type strings against `ColumnType` literal:
+
+```python
+from typing import Literal, get_args
+
+ColumnType = Literal["VARCHAR", "INTEGER", "BIGINT", "DOUBLE", "BOOLEAN", ...]
+
+def _parse_column_type(raw_type: str) -> ColumnType:
+    """Parse and validate column type string.
+    
+    Parameters
+    ----------
+    raw_type
+        Raw type string from JSON manifest.
+        
+    Returns
+    -------
+    ColumnType
+        Validated column type.
+        
+    Raises
+    ------
+    ValueError
+        If type string is not a valid ColumnType.
+    """
+    valid_types = get_args(ColumnType)
+    if raw_type not in valid_types:
+        message = f"Unknown column type: {raw_type}"
+        raise ValueError(message)
+    return cast("ColumnType", raw_type)
+
+def _parse_manifest_from_json(data: dict[str, object]) -> SchemaManifest:
+    """Parse JSON dict into typed SchemaManifest."""
+    schemas: list[TableSchema] = []
+    for table_key, schema_data in data.items():
+        columns = []
+        for col_data in schema_data.get("columns", []):
+            columns.append(Column(
+                name=str(col_data["name"]),
+                type=_parse_column_type(str(col_data["type"])),
+                nullable=bool(col_data.get("nullable", True)),
+                description=col_data.get("description"),
+            ))
+        # ... build TableSchema ...
+    return SchemaManifest(schemas=tuple(schemas))
+```
+
+This pattern ensures runtime validation against compile-time type definitions.

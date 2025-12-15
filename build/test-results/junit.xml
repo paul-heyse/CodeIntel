@@ -1,1 +1,33 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="18" time="15.387" timestamp="2025-12-15T02:48:34.002957-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestSchemaDiffFormatting" name="test_format_changes_shows_breaking_markers" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestComputeManifestDiffs" name="test_manifest_diff_detects_table_removal" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestManifestDiffResultFormatting" name="test_format_summary_no_changes" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestComputeSchemaDiff" name="test_schema_diff_detects_nonnull_to_nullable" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestComputeManifestDiffs" name="test_manifest_diff_tracks_per_table_changes" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestComputeSchemaDiff" name="test_schema_diff_detects_column_addition" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestBreakingChangeClassification" name="test_classification_rules[nullable_true_to_false-True]" time="0.002" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestComputeSchemaDiff" name="test_schema_diff_no_changes" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestComputeSchemaDiff" name="test_breaking_change_count" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestComputeManifestDiffs" name="test_manifest_diff_detects_table_addition" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestBreakingChangeClassification" name="test_classification_rules[column_added-False]" time="0.002" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestBreakingChangeClassification" name="test_classification_rules[column_removed-True]" time="0.002" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestBreakingChangeClassification" name="test_classification_rules[nullable_false_to_true-False]" time="0.002" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestComputeSchemaDiff" name="test_schema_diff_detects_nullable_to_nonnull" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestBreakingChangeClassification" name="test_classification_rules[type_changed-True]" time="0.002" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestComputeSchemaDiff" name="test_schema_diff_detects_column_removal" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestManifestDiffResultFormatting" name="test_format_summary_with_changes" time="0.001" /><testcase classname="tests.build.hamilton.test_pr71_schema_diff.TestComputeSchemaDiff" name="test_schema_diff_detects_type_change" time="0.001" /></testsuite></testsuites>
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="21.099" timestamp="2025-12-15T09:59:10.601959-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.docs_export.test_export_validation_flag" name="test_docs_export_validation_flag_triggers_schema_check@cli_shared_flags" time="7.691"><failure message="Failed: Expected validation failure exit code 1, got 0">tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-188/popen-gw1/test_docs_export_validation_fl0')
+
+    @pytest.mark.xdist_group("cli_shared_flags")
+    def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -&gt; None:
+        """Verify docs export honors validation toggle and surfaces failures."""
+        db_path = tmp_path / "db.duckdb"
+        _seed_invalid_function_profile(db_path, tmp_path)
+    
+        output_dir = tmp_path / "out_validate"
+        args_validate = [
+            "docs",
+            "export",
+            "--repo-root",
+            str(tmp_path),
+            "--repo",
+            "demo/repo",
+            "--commit",
+            "deadbeef",
+            "--db-path",
+            str(db_path),
+            "--build-dir",
+            str(tmp_path / "build"),
+            "--document-output-dir",
+            str(output_dir),
+            "--skip-prereqs",
+            "--validate",
+        ]
+        result = run_cli(args_validate)
+        if result.exit_code != 1:
+&gt;           pytest.fail(f"Expected validation failure exit code 1, got {result.exit_code}")
+E           Failed: Expected validation failure exit code 1, got 0
+
+tests/docs_export/test_export_validation_flag.py:136: Failed</failure></testcase></testsuite></testsuites>

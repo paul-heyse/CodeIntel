@@ -1,7 +1,7 @@
-"""Macro-free export expression helpers.
+"""Export expression helpers for Ibis.
 
 The export subsystem writes JSONL and Parquet files that are validated against
-the JSON Schemas in ``src/codeintel/config/schemas/export``. Those schemas are
+generated JSON Schemas from TableSchema definitions. Those schemas are
 consumer-facing and intentionally differ from the storage layer's physical
 DuckDB types (e.g., GOIDs stored as DECIMAL are exported as integers).
 

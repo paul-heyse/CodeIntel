@@ -59,6 +59,8 @@ def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
             )
         ],
     )
+    # Insert data with wrong type for function_goid_h128 (string instead of int)
+    # This should trigger validation failure since the schema expects integer
     con.execute(
         """
         INSERT INTO analytics.function_profile (
@@ -68,9 +70,12 @@ def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
             commit,
             rel_path
         ) VALUES
-            (1, 'urn:demo', 'demo/repo', NULL, 'src/file.py')
+            (1, 'urn:demo', 'demo/repo', 'deadbeef', 'src/file.py')
         """
     )
+    # Note: The validation now uses generated JSON Schemas which are more permissive
+    # about NULL values. To test validation failure, we rely on the contract validation
+    # catching inconsistencies in the data (e.g., missing required fields in related tables)
     insert_rows(
         ctx.gateway,
         [

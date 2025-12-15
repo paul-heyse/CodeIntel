@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, cast
 
-from codeintel.export.export_jsonl import ExportCallOptions
-from codeintel.export.runner import ExportOptions, run_validated_exports
+from codeintel.build.exports import ExportCallOptions, ExportOptions, run_validated_exports
 from tests._helpers import provision_docs_export_ready
 
 if TYPE_CHECKING:

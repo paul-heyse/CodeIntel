@@ -1,7 +1,10 @@
-"""Pandera to JSON Schema conversion helpers.
+"""JSON Schema generation from schema definitions.
 
-This module provides utilities for converting Pandera DataFrameSchema
-definitions to JSON Schema (draft 2020-12) format.
+This module provides utilities for converting schema definitions to JSON Schema
+(draft 2020-12) format:
+
+- ``json_schema_from_table_schema``: Convert TableSchema primitives to JSON Schema
+- ``pandera_to_json_schema``: Convert Pandera DataFrameSchema to JSON Schema
 
 This module is intentionally independent of the dataset schema registry to
 avoid import cycles during bootstrap. Callers that need registry access
@@ -14,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pandera import Column, DataFrameSchema
+
+    from codeintel.core.schemas.primitives import ColumnType, TableSchema
 
 
 def _json_type_for_dtype(dtype: object) -> tuple[str, str | None]:
@@ -136,4 +141,127 @@ def pandera_to_json_schema(
     return schema
 
 
-__all__ = ["pandera_to_json_schema"]
+# ---------------------------------------------------------------------------
+# TableSchema -> JSON Schema conversion
+# ---------------------------------------------------------------------------
+
+
+def _json_schema_type_for_column_type(col_type: ColumnType) -> dict[str, Any]:
+    """Map a ColumnType literal to JSON Schema type definition.
+
+    Parameters
+    ----------
+    col_type
+        DuckDB column type literal.
+
+    Returns
+    -------
+    dict[str, Any]
+        JSON Schema type definition with type and optional format.
+    """
+    mapping: dict[str, dict[str, Any]] = {
+        "BOOLEAN": {"type": "boolean"},
+        "INTEGER": {"type": "integer"},
+        "BIGINT": {"type": "integer"},
+        "DECIMAL(38,0)": {"type": "integer"},
+        "DOUBLE": {"type": "number"},
+        "DECIMAL": {"type": "number"},
+        "VARCHAR": {"type": "string"},
+        "JSON": {},  # Any valid JSON value
+        "TIMESTAMP": {"type": "string", "format": "date-time"},
+        "TIMESTAMPTZ": {"type": "string", "format": "date-time"},
+    }
+    return mapping.get(col_type, {"type": "string"})
+
+
+def json_schema_from_table_schema(
+    table_schema: TableSchema,
+    *,
+    schema_id: str | None = None,
+    include_description: bool = True,
+) -> dict[str, Any]:
+    """Generate JSON Schema 2020-12 from a TableSchema.
+
+    Parameters
+    ----------
+    table_schema
+        Source TableSchema to convert.
+    schema_id
+        Optional ``$id`` URI for the generated schema.
+    include_description
+        When True, include column and table descriptions in the schema.
+
+    Returns
+    -------
+    dict[str, Any]
+        JSON Schema dictionary compatible with draft 2020-12.
+
+    Examples
+    --------
+    >>> from codeintel.core.schemas.primitives import Column, TableSchema
+    >>> ts = TableSchema(
+    ...     schema="analytics",
+    ...     name="example",
+    ...     columns=[
+    ...         Column(name="id", type="INTEGER", nullable=False),
+    ...         Column(name="name", type="VARCHAR", nullable=True),
+    ...     ],
+    ... )
+    >>> js = json_schema_from_table_schema(ts)
+    >>> js["$schema"]
+    'https://json-schema.org/draft/2020-12/schema'
+    >>> js["properties"]["id"]["type"]
+    'integer'
+    >>> js["properties"]["name"]["type"]
+    ['string', 'null']
+    """
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+
+    for col in table_schema.columns:
+        base_schema = _json_schema_type_for_column_type(col.type)
+        field_schema: dict[str, Any] = {}
+
+        # Handle nullable columns using array type syntax
+        if col.nullable:
+            if "type" in base_schema:
+                field_schema["type"] = [base_schema["type"], "null"]
+            else:
+                # JSON type has no specific type (accepts any JSON value)
+                field_schema = base_schema.copy()
+        else:
+            field_schema = base_schema.copy()
+            required.append(col.name)
+
+        # Add format if present
+        if "format" in base_schema:
+            field_schema["format"] = base_schema["format"]
+
+        # Add description if enabled and present
+        if include_description and col.description:
+            field_schema["description"] = col.description
+
+        properties[col.name] = field_schema
+
+    result: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False,
+    }
+
+    if schema_id:
+        result["$id"] = schema_id
+
+    result["title"] = table_schema.table_key
+
+    if include_description and table_schema.description:
+        result["description"] = table_schema.description
+
+    if required:
+        result["required"] = required
+
+    return result
+
+
+__all__ = ["json_schema_from_table_schema", "pandera_to_json_schema"]

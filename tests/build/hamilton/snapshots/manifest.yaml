@@ -260,3 +260,14 @@ cases:
     exit_code: 0
     snapshot: "pr71_schema_migrate_help.txt"
     kind: "text"
+
+  # ========================================================================
+  # PR-72: Unified catalog - views and artifacts (help-only)
+  # ========================================================================
+
+  - name: "pr72_schema_compile_with_views_artifacts_help"
+    tags: ["pr72", "schema", "compile", "text", "tiny"]
+    args: ["build", "schema", "compile", "--help"]
+    exit_code: 0
+    snapshot: "pr72_schema_compile_help.txt"
+    kind: "text"

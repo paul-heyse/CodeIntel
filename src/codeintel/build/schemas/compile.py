@@ -1,13 +1,19 @@
-"""Schema compilation utilities for producing schema manifests."""
+"""Schema compilation utilities for producing schema manifests.
+
+This module provides functions for compiling SchemaManifest objects from
+build target selections. The v2 format extends compilation to include
+view schemas and export artifact specifications.
+"""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.native.registry import native_target_names
 from codeintel.build.registry import get_target_graph
-from codeintel.build.schemas.manifest import SchemaManifest
+from codeintel.build.schemas.manifest import ExportArtifact, SchemaManifest
 from codeintel.build.schemas.provider_hamilton import (
     HamiltonSchemaProvider,
     infer_schema_for_table_key,
@@ -20,8 +26,12 @@ if TYPE_CHECKING:
     from codeintel.build.targets import TargetModule
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
+    from codeintel.storage.gateway.protocol import DuckDBConnection
+
+_logger = logging.getLogger(__name__)
 
 DEFAULT_SCHEMA_MANIFEST_VERSION = "v1"
+V2_SCHEMA_MANIFEST_VERSION = "v2"
 
 
 @dataclass(frozen=True)
@@ -44,6 +54,10 @@ class SchemaManifestRequest:
         When True, produce deterministic output ordering and de-duplication.
     version
         Manifest version identifier.
+    include_views
+        When True, include DuckDB view schemas in the manifest (v2).
+    include_artifacts
+        When True, include export artifact specifications in the manifest (v2).
     """
 
     targets: tuple[str, ...] | None = None
@@ -53,6 +67,8 @@ class SchemaManifestRequest:
     infer_native: bool = False
     stable: bool = True
     version: str = DEFAULT_SCHEMA_MANIFEST_VERSION
+    include_views: bool = False
+    include_artifacts: bool = False
 
 
 def _table_keys_for_selection(
@@ -100,12 +116,116 @@ def _table_keys_for_selection(
     return tuple(ordered)
 
 
+def _collect_view_schemas(
+    *,
+    con: DuckDBConnection,
+    stable: bool,
+) -> tuple[TableSchema, ...]:
+    """Collect schemas for all known DuckDB views.
+
+    Iterates through DERIVED_DOCS_VIEWS and infers schemas for views that
+    exist in the database. Views that don't exist are silently skipped.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection with views created.
+    stable
+        When True, sort views deterministically by table_key.
+
+    Returns
+    -------
+    tuple[TableSchema, ...]
+        Inferred view schemas.
+    """
+    from codeintel.build.schemas.infer_duckdb import infer_view_schema  # noqa: PLC0415
+    from codeintel.storage.view_names import DERIVED_DOCS_VIEWS  # noqa: PLC0415
+
+    views: list[TableSchema] = []
+    for view_key in DERIVED_DOCS_VIEWS:
+        try:
+            view_schema = infer_view_schema(con=con, view_key=view_key)
+            views.append(view_schema)
+        except (RuntimeError, OSError, ValueError):
+            # Skip views that don't exist or can't be described
+            _logger.debug("Skipping view %s (not found or error)", view_key)
+            continue
+
+    if stable:
+        views = sorted(views, key=lambda v: v.table_key)
+    return tuple(views)
+
+
+def _collect_export_artifacts(*, stable: bool) -> tuple[ExportArtifact, ...]:
+    """Collect export artifact specifications from contracts metadata.
+
+    Reads JSONL and Parquet filename mappings from contracts.py and creates
+    ExportArtifact instances for each.
+
+    Parameters
+    ----------
+    stable
+        When True, sort artifacts deterministically.
+
+    Returns
+    -------
+    tuple[ExportArtifact, ...]
+        Export artifact specifications.
+    """
+    # Lazy import to avoid circular dependency
+    from codeintel.config.datasets.contracts import (  # noqa: PLC0415
+        _DEFAULT_JSONL_FILENAMES,
+        _DEFAULT_PARQUET_FILENAMES,
+    )
+
+    artifacts: list[ExportArtifact] = []
+
+    for table_key, filename in _DEFAULT_JSONL_FILENAMES.items():
+        artifacts.append(
+            ExportArtifact(
+                kind="jsonl",
+                filename=filename,
+                table_key=table_key,
+            )
+        )
+
+    for table_key, filename in _DEFAULT_PARQUET_FILENAMES.items():
+        artifacts.append(
+            ExportArtifact(
+                kind="parquet",
+                filename=filename,
+                table_key=table_key,
+            )
+        )
+
+    if stable:
+        artifacts = sorted(artifacts, key=lambda a: (a.kind, a.table_key or ""))
+    return tuple(artifacts)
+
+
+@dataclass(frozen=True)
+class V2Extras:
+    """Optional v2 manifest extras (views and artifacts).
+
+    Parameters
+    ----------
+    views
+        View schemas to include (v2 feature).
+    artifacts
+        Export artifacts to include (v2 feature).
+    """
+
+    views: tuple[TableSchema, ...] = ()
+    artifacts: tuple[ExportArtifact, ...] = ()
+
+
 def compile_schema_manifest_for_table_keys(
     table_keys: Iterable[str],
     *,
     provider: SchemaProvider,
     version: str = DEFAULT_SCHEMA_MANIFEST_VERSION,
     stable: bool = True,
+    extras: V2Extras | None = None,
 ) -> SchemaManifest:
     """Compile a deterministic schema manifest for specific table keys.
 
@@ -119,6 +239,8 @@ def compile_schema_manifest_for_table_keys(
         Manifest version identifier.
     stable
         When True, sort tables deterministically by table_key.
+    extras
+        Optional v2 extras (views and artifacts).
 
     Returns
     -------
@@ -128,13 +250,20 @@ def compile_schema_manifest_for_table_keys(
     schemas = [provider.require_table_schema(key) for key in table_keys]
     if stable:
         schemas = sorted(schemas, key=lambda s: s.table_key)
-    return SchemaManifest(version=version, tables=tuple(schemas))
+    v2 = extras or V2Extras()
+    return SchemaManifest(
+        version=version,
+        tables=tuple(schemas),
+        views=v2.views,
+        artifacts=v2.artifacts,
+    )
 
 
 def compile_schema_manifest(
     *,
     provider: SchemaProvider,
     request: SchemaManifestRequest | None = None,
+    con: DuckDBConnection | None = None,
 ) -> SchemaManifest:
     """Compile a schema manifest for a build target selection.
 
@@ -144,11 +273,19 @@ def compile_schema_manifest(
         Base schema provider used for declared schemas.
     request
         Selection and options for manifest compilation. When None, uses defaults.
+    con
+        Optional DuckDB connection required for view schema inference.
+        Must be provided if request.include_views is True.
 
     Returns
     -------
     SchemaManifest
         Compiled schema manifest.
+
+    Raises
+    ------
+    ValueError
+        If include_views is True but no connection is provided.
     """
     req = request or SchemaManifestRequest()
     graph = get_target_graph()
@@ -175,18 +312,41 @@ def compile_schema_manifest(
             fallback_to_declared_on_error=True,
         )
 
+    # Collect views if requested (v2 feature)
+    views: tuple[TableSchema, ...] = ()
+    if req.include_views:
+        if con is None:
+            msg = "DuckDB connection required for view schema inference"
+            raise ValueError(msg)
+        views = _collect_view_schemas(con=con, stable=req.stable)
+
+    # Collect artifacts if requested (v2 feature)
+    artifacts: tuple[ExportArtifact, ...] = ()
+    if req.include_artifacts:
+        artifacts = _collect_export_artifacts(stable=req.stable)
+
+    # Determine version: use v2 if views or artifacts are included
+    version = req.version
+    if (views or artifacts) and version == DEFAULT_SCHEMA_MANIFEST_VERSION:
+        version = V2_SCHEMA_MANIFEST_VERSION
+
+    extras = V2Extras(views=views, artifacts=artifacts) if views or artifacts else None
+
     return compile_schema_manifest_for_table_keys(
         table_keys,
         provider=active_provider,
-        version=req.version,
+        version=version,
         stable=req.stable,
+        extras=extras,
     )
 
 
 __all__ = [
     "DEFAULT_SCHEMA_MANIFEST_VERSION",
+    "V2_SCHEMA_MANIFEST_VERSION",
     "SchemaManifest",
     "SchemaManifestRequest",
+    "V2Extras",
     "compile_schema_manifest",
     "compile_schema_manifest_for_table_keys",
 ]

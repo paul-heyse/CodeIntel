@@ -21,20 +21,19 @@ def write_dataset_manifest(
     parquet_mapping: Mapping[str, str],
     selected: list[str] | None = None,
 ) -> Path:
-    """
-    Write a manifest mapping dataset names to export filenames.
+    """Write a manifest mapping dataset names to export filenames.
 
     Parameters
     ----------
-    output_dir :
+    output_dir
         Document Output directory where the manifest will be written.
-    dataset_mapping :
+    dataset_mapping
         Registry mapping dataset name -> fully qualified table/view name.
-    jsonl_mapping :
+    jsonl_mapping
         Mapping of table -> JSONL filename for datasets with JSON exports.
-    parquet_mapping :
+    parquet_mapping
         Mapping of table -> Parquet filename for datasets with Parquet exports.
-    selected :
+    selected
         Optional subset of dataset names requested for export.
 
     Returns
@@ -105,8 +104,7 @@ def write_per_dataset_manifest(
     output_path: Path,
     manifest: ExportManifestData,
 ) -> Path:
-    """
-    Write a manifest adjacent to a dataset export artifact.
+    """Write a manifest adjacent to a dataset export artifact.
 
     Parameters
     ----------
@@ -140,8 +138,7 @@ def write_per_dataset_manifest(
 
 
 def compute_file_hash(path: Path) -> str:
-    """
-    Return a sha256 hash of the file contents.
+    """Return a sha256 hash of the file contents.
 
     Parameters
     ----------
@@ -164,11 +161,17 @@ def write_incremental_marker(
     output_path: Path,
     marker: IncrementalMarker,
 ) -> Path:
-    """
-    Persist metadata to decide whether a future export can be skipped.
+    """Persist metadata to decide whether a future export can be skipped.
 
     The marker lives alongside the export artifact and records the last known
     row_count, schema_version, and validation profile used.
+
+    Parameters
+    ----------
+    output_path
+        Export artifact path.
+    marker
+        IncrementalMarker payload to persist.
 
     Returns
     -------
@@ -191,8 +194,12 @@ def write_incremental_marker(
 
 
 def read_incremental_marker(output_path: Path) -> dict[str, Any] | None:
-    """
-    Load an incremental marker if present next to the export artifact.
+    """Load an incremental marker if present next to the export artifact.
+
+    Parameters
+    ----------
+    output_path
+        Export artifact path to look for marker beside.
 
     Returns
     -------
@@ -209,8 +216,7 @@ def should_skip_export(
     marker: Mapping[str, Any] | None,
     criteria: SkipCriteria,
 ) -> bool:
-    """
-    Decide whether to reuse a prior export based on markers and inputs.
+    """Decide whether to reuse a prior export based on markers and inputs.
 
     Parameters
     ----------
@@ -232,3 +238,16 @@ def should_skip_export(
         and marker.get("validation_profile") == criteria.validation_profile
         and marker.get("schema_digest") == criteria.schema_digest
     )
+
+
+__all__ = [
+    "ExportManifestData",
+    "IncrementalMarker",
+    "SkipCriteria",
+    "compute_file_hash",
+    "read_incremental_marker",
+    "should_skip_export",
+    "write_dataset_manifest",
+    "write_incremental_marker",
+    "write_per_dataset_manifest",
+]

@@ -606,7 +606,9 @@ def _validate_build_run_params(
         )
 
     if params.publish_serving_snapshot and params.dry_run:
-        return fail_invalid_target_selection("--publish-serving-snapshot is incompatible with --dry-run.")
+        return fail_invalid_target_selection(
+            "--publish-serving-snapshot is incompatible with --dry-run."
+        )
 
     return None
 

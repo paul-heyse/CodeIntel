@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
+from codeintel.build.exports import default_validation_schemas
 from codeintel.build.schemas import get_contract_provider
-from codeintel.export import default_validation_schemas
+from codeintel.build.schemas.json_schema_registry import get_json_schema_for_dataset_name
 
 
 def _require(*, condition: bool, message: str) -> None:
@@ -26,13 +25,24 @@ def test_default_validation_schemas_match_dataset_contract() -> None:
     )
 
 
-def test_schema_files_match_contract() -> None:
-    """Ensure JSON Schema filenames align with the dataset contract."""
-    schema_dir = Path("src/codeintel/config/schemas/export")
-    stems = sorted(path.stem for path in schema_dir.glob("*.json") if path.stem != "base")
-    json_schema_mapping = get_contract_provider().json_schema_by_dataset_name
-    expected = sorted(set(json_schema_mapping.values()))
+def test_generated_schemas_available_for_contracts() -> None:
+    """Ensure generated JSON Schemas are available for all contracted non-view datasets.
+
+    Views are excluded because they don't have TableSchema definitions - their
+    schemas are derived from the underlying tables.
+    """
+    from codeintel.build.schemas import iter_contracts  # noqa: PLC0415
+
+    # Get all non-view datasets with json_schema_id
+    non_view_with_schema = [
+        c.name for c in iter_contracts() if c.json_schema_id is not None and not c.is_view
+    ]
+    missing = []
+    for dataset_name in non_view_with_schema:
+        schema = get_json_schema_for_dataset_name(dataset_name)
+        if schema is None:
+            missing.append(dataset_name)
     _require(
-        condition=stems == expected,
-        message=f"Schema files do not match contract: {stems} != {expected}",
+        condition=not missing,
+        message=f"Missing generated schemas for datasets: {missing}",
     )

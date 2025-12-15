@@ -72,7 +72,12 @@ def create_serving_app(
     @app.get("/health")
     async def health() -> dict[str, str]:
         pointer = db_manager.current_pointer()
-        return {"status": "ok", "repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id}
+        return {
+            "status": "ok",
+            "repo": pointer.repo,
+            "commit": pointer.commit,
+            "run_id": pointer.run_id,
+        }
 
     @app.get("/meta")
     async def meta() -> dict[str, object]:
