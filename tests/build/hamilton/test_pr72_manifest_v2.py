@@ -7,6 +7,7 @@ views and export artifacts alongside tables.
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -27,8 +28,11 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 
+if TYPE_CHECKING:
+    from codeintel.core.schemas.primitives import ColumnType
 
-def _make_table(table_key: str, columns: list[tuple[str, str, bool]]) -> TableSchema:
+
+def _make_table(table_key: str, columns: list[tuple[str, ColumnType, bool]]) -> TableSchema:
     """Create a TableSchema for testing.
 
     Parameters
@@ -48,7 +52,7 @@ def _make_table(table_key: str, columns: list[tuple[str, str, bool]]) -> TableSc
         schema=schema_name,
         name=table_name,
         columns=[
-            Column(name=name, type=col_type, nullable=nullable)  # type: ignore[arg-type]
+            Column(name=name, type=col_type, nullable=nullable)
             for name, col_type, nullable in columns
         ],
     )

@@ -57,7 +57,7 @@ class SerializableBase:
         return dict(result)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object]) -> Self:
+    def from_dict(cls: type[Self], data: Mapping[str, object]) -> Self:
         """Deserialize from dictionary.
 
         Parameters
@@ -100,7 +100,7 @@ class SerializableBase:
                 else:
                     kwargs[field.name] = raw_value
 
-        return cls(**kwargs)  # type: ignore[return-value]
+        return cls(**kwargs)
 
     def to_json(self, *, indent: int | None = None, omit_none: bool = False) -> str:
         """Serialize to JSON string.

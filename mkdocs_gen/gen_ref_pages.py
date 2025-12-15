@@ -11,8 +11,25 @@ mkdocs-literate-nav uses to structure the Code Reference section.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import mkdocs_gen_files
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from typing import Protocol
+
+    class _Nav(Protocol):
+        def __setitem__(self, key: tuple[str, ...], value: str) -> None: ...
+        def build_literate_nav(self) -> Iterable[str]: ...
+
+
+def _get_nav() -> _Nav:
+    nav_type = getattr(mkdocs_gen_files, "Nav", None)
+    if nav_type is None:
+        message = "mkdocs_gen_files.Nav is not available"
+        raise RuntimeError(message)
+    return cast("_Nav", nav_type())
 
 
 def generate_api_reference() -> None:
@@ -29,8 +46,7 @@ def generate_api_reference() -> None:
     root = Path(__file__).resolve().parent.parent
     src_root = root / "src"
 
-    # Nav is a public class but not exported in __all__
-    nav = mkdocs_gen_files.Nav()  # type: ignore[reportPrivateImportUsage]
+    nav = _get_nav()
 
     for path in sorted(src_root.rglob("*.py")):
         module_path = path.relative_to(src_root).with_suffix("")

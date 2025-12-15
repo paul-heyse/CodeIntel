@@ -55,6 +55,30 @@ TYPING_INGEST_METADATA = CorePluginMetadata(
 )
 
 
+def _default_typing_step_factory(
+    storage: IngestStoragePort,
+    discovery: ModuleDiscoveryPort,
+    tools: BuildToolAdapter,
+) -> TypingIngestStep:
+    """Create a TypingIngestStep with injected ports.
+
+    Parameters
+    ----------
+    storage
+        Storage port for persisting computed rows.
+    discovery
+        Discovery port for reading module sources.
+    tools
+        Tool adapter for running type checker and linter commands.
+
+    Returns
+    -------
+    TypingIngestStep
+        Configured typing ingestion step.
+    """
+    return TypingIngestStep(storage, discovery, tools)
+
+
 def _default_type_checker_factory(checker: TypeChecker | None) -> TypeChecker | None:
     """Passthrough factory for default type checker injection.
 
@@ -82,7 +106,7 @@ class TypingIngestPlugin(FactoryPlugin[TypingIngestStep]):
 
     default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
     default_discovery_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
-    default_step_factory: ClassVar[TypingStepFactory] = TypingIngestStep  # type: ignore[assignment]
+    default_step_factory: ClassVar[TypingStepFactory] = _default_typing_step_factory
 
     _type_checker_factory: TypeCheckerFactory
 
@@ -98,7 +122,7 @@ class TypingIngestPlugin(FactoryPlugin[TypingIngestStep]):
         super().__init__(
             storage_adapter_factory=storage_adapter_factory,
             discovery_adapter_factory=discovery_adapter_factory,
-            step_factory=step_factory,  # type: ignore[arg-type]
+            step_factory=step_factory,
             options_resolver=options_resolver,
         )
         self._type_checker_factory = type_checker_factory or _default_type_checker_factory

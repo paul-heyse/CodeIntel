@@ -44,6 +44,24 @@ def _get_known_functions(gateway: StorageGateway, repo: str, commit: str) -> set
     return set(function_repo.list_function_goids())
 
 
+def _parse_int_node(node: object) -> int | None:
+    parsed: int | None = None
+    if isinstance(node, bool):
+        parsed = int(node)
+    elif isinstance(node, int):
+        parsed = node
+    elif isinstance(node, float):
+        parsed = int(node) if node.is_integer() else None
+    elif isinstance(node, str):
+        value = node.strip()
+        if value:
+            try:
+                parsed = int(value)
+            except ValueError:
+                parsed = None
+    return parsed
+
+
 # Configuration for module-level metrics
 _MODULE_CONFIG: UndirectedMetricsConfig[str] = UndirectedMetricsConfig(
     table_key="analytics.symbol_graph_metrics_modules",
@@ -63,10 +81,8 @@ def _filter_function_node(node: object, known: set[int]) -> bool:
     bool
         True if the node is in the set of known functions.
     """
-    try:
-        return int(node) in known  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return False
+    parsed = _parse_int_node(node)
+    return parsed is not None and parsed in known
 
 
 # Configuration for function-level metrics

@@ -49,8 +49,9 @@ class TestDeleteScope:
         """Verify DeleteScope is frozen (immutable)."""
         scope = PersistenceDeleteScope(repo="org/repo", commit="abc123")
 
+        attribute = "repo"
         with pytest.raises(AttributeError):
-            scope.repo = "other/repo"  # type: ignore[misc]
+            setattr(scope, attribute, "other/repo")
 
     @staticmethod
     def test_equality() -> None:

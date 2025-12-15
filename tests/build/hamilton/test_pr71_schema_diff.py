@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from codeintel.build.schemas.diff import (
@@ -13,10 +15,13 @@ from codeintel.build.schemas.diff import (
 from codeintel.build.schemas.manifest import SchemaManifest
 from codeintel.core.schemas.primitives import Column, TableSchema
 
+if TYPE_CHECKING:
+    from codeintel.core.schemas.primitives import ColumnType
+
 
 def _make_schema(
     table_key: str,
-    columns: list[tuple[str, str, bool]],
+    columns: list[tuple[str, ColumnType, bool]],
 ) -> TableSchema:
     """Create a TableSchema for testing.
 
@@ -37,7 +42,7 @@ def _make_schema(
         schema=schema_name,
         name=table_name,
         columns=[
-            Column(name=name, type=col_type, nullable=nullable)  # type: ignore[arg-type]
+            Column(name=name, type=col_type, nullable=nullable)
             for name, col_type, nullable in columns
         ],
     )
@@ -348,8 +353,8 @@ class TestBreakingChangeClassification:
     )
     def test_classification_rules(change_type: str, *, expected_breaking: bool) -> None:
         """Verify each change type is classified correctly."""
-        base_cols = [("col_a", "VARCHAR", False)]
-        modified_cols = [("col_a", "VARCHAR", False)]
+        base_cols: list[tuple[str, ColumnType, bool]] = [("col_a", "VARCHAR", False)]
+        modified_cols: list[tuple[str, ColumnType, bool]] = [("col_a", "VARCHAR", False)]
 
         if change_type == "column_removed":
             base_cols.append(("removed", "INTEGER", True))

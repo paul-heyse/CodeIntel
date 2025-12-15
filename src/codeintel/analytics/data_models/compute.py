@@ -30,7 +30,7 @@ from codeintel.analytics.data_models.core import (
 from codeintel.core.paths import normalize_path
 
 if TYPE_CHECKING:
-    from codeintel.analytics.data_models.core import ModelRecord
+    from codeintel.analytics.data_models.core import ClassMeta, ModelRecord
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
@@ -228,7 +228,7 @@ def compute_data_models_pure(
             relationship_rows=(),
         )
 
-    metas_by_path: dict[str, list[object]] = {}
+    metas_by_path: dict[str, list[ClassMeta]] = {}
     for meta in class_metas:
         metas_by_path.setdefault(normalize_path(meta.rel_path), []).append(meta)
     docs = _doc_map(con, repo=snapshot.repo, commit=snapshot.commit)
@@ -243,7 +243,7 @@ def compute_data_models_pure(
             _gather_models_for_path(
                 rel_path,
                 abs_path,
-                metas,  # type: ignore[arg-type]
+                metas,
                 docs,
                 snapshot,
             )

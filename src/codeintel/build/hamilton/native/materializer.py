@@ -98,6 +98,17 @@ class MaterializationContext:
     owner_target: str | None = None
     input_hash: str | None = None
 
+    @property
+    def validate_schemas(self) -> bool:
+        """Return whether schema validation is enabled.
+
+        Returns
+        -------
+        bool
+            True when schema validation should be enforced during materialization.
+        """
+        return self.validate
+
     @classmethod
     def from_build_context(
         cls,
@@ -138,19 +149,6 @@ class MaterializationContext:
             owner_target=owner_target if owner_target is not None else ctx.owner_target,
             input_hash=input_hash if input_hash is not None else ctx.input_hash,
         )
-
-
-def _get_validate_flag(ctx: BuildContext | MaterializationContext) -> bool:
-    """Extract validate flag from either context type.
-
-    Returns
-    -------
-    bool
-        True if schema validation is enabled in the context.
-    """
-    if hasattr(ctx, "validate_schemas"):
-        return ctx.validate_schemas  # pyright: ignore[reportAttributeAccessIssue]
-    return getattr(ctx, "validate", False)
 
 
 def materialize_table(
@@ -210,7 +208,7 @@ def materialize_table(
     # Extract common fields from either context type
     gateway = ctx.gateway
     snapshot = ctx.snapshot
-    validate = _get_validate_flag(ctx)
+    validate = ctx.validate_schemas
     owner_target = ctx.owner_target
     input_hash = ctx.input_hash
 

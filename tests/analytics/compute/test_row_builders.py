@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 import pytest
 
 from codeintel.analytics.compute import row_builders as row_builders_module
+from codeintel.analytics.compute.graphs.types import ComponentBundle, NeighborStats
 from codeintel.analytics.compute.row_builders import (
     FunctionGraphMetricInputs,
     SubsystemMetricInputs,
@@ -37,27 +38,6 @@ def _require(*, condition: bool, message: str) -> None:
     """Assert a condition using pytest.fail for S101 compliance."""
     if not condition:
         pytest.fail(message)
-
-
-class FakeNeighborStats:
-    """Fake NeighborStats for testing."""
-
-    def __init__(self) -> None:
-        """Initialize with empty mappings."""
-        self.in_neighbors: dict[int, tuple[int, ...]] = {}
-        self.out_neighbors: dict[int, tuple[int, ...]] = {}
-        self.in_counts: dict[int, int] = {}
-        self.out_counts: dict[int, int] = {}
-
-
-class FakeComponentBundle:
-    """Fake ComponentBundle for testing."""
-
-    def __init__(self) -> None:
-        """Initialize with empty mappings."""
-        self.in_cycle: dict[int, bool] = {}
-        self.scc_id: dict[int, int | None] = {}
-        self.layer: dict[int, int | None] = {}
 
 
 class FakeConfig:
@@ -143,12 +123,26 @@ class TestBuildFunctionGraphMetricRows:
     @staticmethod
     def test_builds_empty_list_for_no_nodes() -> None:
         """Verify empty list returned when no graph nodes."""
+        stats = NeighborStats(
+            in_neighbors={},
+            out_neighbors={},
+            in_counts={},
+            out_counts={},
+        )
+        components = ComponentBundle(
+            component_id={},
+            component_size={},
+            scc_id={},
+            scc_size={},
+            in_cycle={},
+            layer={},
+        )
         inputs = FunctionGraphMetricInputs(
             repo="test/repo",
             commit="abc123",
-            stats=FakeNeighborStats(),  # type: ignore[arg-type]
+            stats=stats,
             centrality={"pagerank": {}, "betweenness": {}, "closeness": {}},
-            components=FakeComponentBundle(),  # type: ignore[arg-type]
+            components=components,
             graph_nodes=[],
             created_at=datetime.now(UTC),
         )
@@ -160,29 +154,33 @@ class TestBuildFunctionGraphMetricRows:
     @staticmethod
     def test_builds_rows_for_nodes() -> None:
         """Verify rows are built for each graph node."""
-        stats = FakeNeighborStats()
-        stats.in_neighbors = {1: (2, 3), 2: ()}
-        stats.out_neighbors = {1: (4,), 2: (1,)}
-        stats.in_counts = {1: 2, 2: 0}
-        stats.out_counts = {1: 1, 2: 1}
-
-        components = FakeComponentBundle()
-        components.in_cycle = {1: False, 2: True}
-        components.scc_id = {1: None, 2: 1}
-        components.layer = {1: 0, 2: 1}
+        stats = NeighborStats(
+            in_neighbors={1: {2, 3}, 2: set()},
+            out_neighbors={1: {4}, 2: {1}},
+            in_counts={1: 2, 2: 0},
+            out_counts={1: 1, 2: 1},
+        )
+        components = ComponentBundle(
+            component_id={1: 0, 2: 0},
+            component_size={1: 2, 2: 2},
+            scc_id={1: 0, 2: 1},
+            scc_size={1: 1, 2: 2},
+            in_cycle={1: False, 2: True},
+            layer={1: 0, 2: 1},
+        )
 
         created_at = datetime.now(UTC)
 
         inputs = FunctionGraphMetricInputs(
             repo="test/repo",
             commit="abc123",
-            stats=stats,  # type: ignore[arg-type]
+            stats=stats,
             centrality={
                 "pagerank": {1: 0.5, 2: 0.3},
                 "betweenness": {1: 0.1, 2: 0.2},
                 "closeness": {1: 0.8, 2: 0.6},
             },
-            components=components,  # type: ignore[arg-type]
+            components=components,
             graph_nodes=[1, 2],
             created_at=created_at,
         )

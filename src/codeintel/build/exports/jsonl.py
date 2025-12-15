@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from codeintel.build.exports.common import (
     MAX_EXPORT_LIMIT,
@@ -48,6 +48,11 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+@runtime_checkable
+class _SupportsIsoformat(Protocol):
+    def isoformat(self) -> str: ...
+
+
 def _default_serializer(obj: object) -> object:
     """Serialize objects for JSON output.
 
@@ -66,8 +71,8 @@ def _default_serializer(obj: object) -> object:
     TypeError
         If object is not serializable.
     """
-    if hasattr(obj, "isoformat"):
-        return obj.isoformat()  # type: ignore[union-attr]
+    if isinstance(obj, _SupportsIsoformat):
+        return obj.isoformat()
     message = f"Type {type(obj)} is not JSON serializable"
     raise TypeError(message)
 

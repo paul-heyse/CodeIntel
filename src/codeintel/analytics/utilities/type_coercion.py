@@ -6,6 +6,46 @@ when conversion is not possible, avoiding exceptions in data processing.
 
 from __future__ import annotations
 
+from typing import Protocol, runtime_checkable
+
+
+@runtime_checkable
+class _SupportsInt(Protocol):
+    def __int__(self) -> int: ...
+
+
+@runtime_checkable
+class _SupportsIndex(Protocol):
+    def __index__(self) -> int: ...
+
+
+@runtime_checkable
+class _SupportsFloat(Protocol):
+    def __float__(self) -> float: ...
+
+
+def _int_from_object(value: object) -> int | None:
+    if isinstance(value, _SupportsInt):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    if isinstance(value, _SupportsIndex):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _float_from_object(value: object) -> float | None:
+    if isinstance(value, _SupportsFloat):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
 
 def optional_str(value: object | None) -> str | None:
     """Return a string representation or None.
@@ -23,7 +63,7 @@ def optional_str(value: object | None) -> str | None:
     return str(value) if value is not None else None
 
 
-def optional_int(value: object | None) -> int | None:  # noqa: PLR0911
+def optional_int(value: object | None) -> int | None:
     """Return an integer or None when value is not provided.
 
     Parameters
@@ -49,11 +89,7 @@ def optional_int(value: object | None) -> int | None:  # noqa: PLR0911
             return int(value.strip()) if value.strip() else None
         except ValueError:
             return None
-    # Handle Decimal and other numeric types via try/except
-    try:
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
+    return _int_from_object(value)
 
 
 def int_or_default(value: object | None, default: int = 0) -> int:
@@ -75,7 +111,7 @@ def int_or_default(value: object | None, default: int = 0) -> int:
     return converted if converted is not None else default
 
 
-def optional_float(value: object | None) -> float | None:  # noqa: PLR0911
+def optional_float(value: object | None) -> float | None:
     """Return a float or None when value is not provided.
 
     Parameters
@@ -101,11 +137,7 @@ def optional_float(value: object | None) -> float | None:  # noqa: PLR0911
             return float(value.strip()) if value.strip() else None
         except ValueError:
             return None
-    # Handle Decimal and other numeric types via try/except
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
+    return _float_from_object(value)
 
 
 def optional_bool(value: object | None) -> bool | None:

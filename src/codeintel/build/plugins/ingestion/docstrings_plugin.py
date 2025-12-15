@@ -56,7 +56,7 @@ class DocstringsIngestPlugin(FactoryPlugin[DocstringsExtractStep]):
 
     default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
     default_discovery_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
-    default_step_factory: ClassVar[DocstringsExtractStep] = DocstringsExtractStep  # type: ignore[assignment]
+    default_step_factory: ClassVar[type[DocstringsExtractStep]] = DocstringsExtractStep
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute docstring extraction.

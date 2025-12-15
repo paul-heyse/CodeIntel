@@ -6,7 +6,7 @@ the OptionsProtocol with default behavior.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from typing import Self
 
 from codeintel.core.options.protocol import ValidationResult
@@ -66,13 +66,13 @@ class BaseOptions:
         Self
             New options with defaults filled in.
         """
-        # Base implementation - subclasses should override for type safety
-        merged_values: dict[str, object] = {}
-        for f in fields(self):
-            self_value = getattr(self, f.name)
-            default_value = getattr(defaults, f.name)
-            merged_values[f.name] = self_value if self_value is not None else default_value
-        return type(self)(**merged_values)  # type: ignore[return-value]
+        changes: dict[str, object] = {}
+        for dataclass_field in fields(self):
+            self_value = getattr(self, dataclass_field.name)
+            if self_value is not None:
+                continue
+            changes[dataclass_field.name] = getattr(defaults, dataclass_field.name)
+        return replace(self, **changes)
 
     def to_dict(self) -> dict[str, object]:
         """Serialize to dictionary for logging/debugging.

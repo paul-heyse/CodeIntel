@@ -59,7 +59,7 @@ class AstExtractPlugin(FactoryPlugin[AstExtractStep]):
 
     default_storage_factory: ClassVar[StorageFactory] = DuckDBStorageAdapter
     default_discovery_factory: ClassVar[DiscoveryFactory] = FilesystemDiscoveryAdapter
-    default_step_factory: ClassVar[AstExtractStep] = AstExtractStep  # type: ignore[assignment]
+    default_step_factory: ClassVar[type[AstExtractStep]] = AstExtractStep
 
     async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
         """Execute AST extraction.

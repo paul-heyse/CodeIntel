@@ -186,10 +186,29 @@ class ToolPluginMetadata:
         )
 
 
+@dataclass(frozen=True)
+class ToolDependencies:
+    """Declare configuration and dataset dependencies for a tool plugin.
+
+    Attributes
+    ----------
+    consumes_configs
+        ToolConfig fields this tool depends on (e.g., "pyright_bin").
+    datasets
+        Dataset table keys this tool conceptually supports.
+    """
+
+    consumes_configs: tuple[str, ...] = ()
+    datasets: tuple[str, ...] = ()
+
+
 def tool_metadata(
     name: str,
     produces_artifacts: tuple[str, ...],
-    **kwargs: object,
+    *,
+    dependencies: ToolDependencies | None = None,
+    tool_binary: str | None = None,
+    description: str | None = None,
 ) -> ToolPluginMetadata:
     """Create tool plugin metadata with sensible defaults.
 
@@ -199,12 +218,12 @@ def tool_metadata(
         Registry name for the plugin.
     produces_artifacts
         Logical artifact names exposed by this plugin.
-    **kwargs
-        Additional optional fields:
-        - consumes_configs: ToolConfig fields this plugin depends on.
-        - datasets: Datasets (table keys) that rely on this tool.
-        - tool_binary: Explicit binary name for the tool.
-        - description: Human-readable description of the plugin.
+    dependencies
+        Optional dependency metadata for tool configuration keys and datasets.
+    tool_binary
+        Optional explicit binary name for the tool.
+    description
+        Optional human-readable description of the plugin.
 
     Returns
     -------
@@ -216,39 +235,20 @@ def tool_metadata(
     >>> meta = tool_metadata(
     ...     "pyright",
     ...     ("pyright_json",),
-    ...     consumes_configs=("pyright_bin",),
+    ...     dependencies=ToolDependencies(consumes_configs=("pyright_bin",)),
     ... )
     >>> meta.name
     'pyright'
     """
-    raw_configs = kwargs.get("consumes_configs", ())
-    raw_datasets = kwargs.get("datasets", ())
-    tool_binary = kwargs.get("tool_binary")
-    description = kwargs.get("description")
-
-    consumes_configs: tuple[str, ...]
-    if isinstance(raw_configs, tuple):
-        consumes_configs = raw_configs
-    elif hasattr(raw_configs, "__iter__") and not isinstance(raw_configs, str):
-        consumes_configs = tuple(str(x) for x in raw_configs)  # type: ignore[union-attr]
-    else:
-        consumes_configs = ()
-
-    datasets: tuple[str, ...]
-    if isinstance(raw_datasets, tuple):
-        datasets = raw_datasets
-    elif hasattr(raw_datasets, "__iter__") and not isinstance(raw_datasets, str):
-        datasets = tuple(str(x) for x in raw_datasets)  # type: ignore[union-attr]
-    else:
-        datasets = ()
+    active_dependencies = dependencies or ToolDependencies()
 
     return ToolPluginMetadata(
         name=name,
         produces_artifacts=produces_artifacts,
-        consumes_configs=consumes_configs,
-        datasets=datasets,
-        tool_binary=str(tool_binary) if tool_binary else None,
-        description=str(description) if description else None,
+        consumes_configs=active_dependencies.consumes_configs,
+        datasets=active_dependencies.datasets,
+        tool_binary=tool_binary,
+        description=description,
     )
 
 

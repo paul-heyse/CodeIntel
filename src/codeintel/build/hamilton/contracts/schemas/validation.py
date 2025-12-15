@@ -86,22 +86,48 @@ def validate_rows(
     table_key: str,
     rows: Sequence[Mapping[str, object]] | Sequence[Sequence[object]],
 ) -> list[dict[str, Any]]:
-    """
-    Validate row-oriented data and return normalized dictionaries.
+    """Validate row-oriented data and return normalized dictionaries.
 
     This helper coerces ``NaN``/``NaT`` to ``None`` for safe serialization.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified dataset name.
+    rows
+        Row-oriented data (mapping rows or positional rows).
 
     Returns
     -------
     list[dict[str, Any]]
         Normalized rows validated against the registered schema.
+
+    Raises
+    ------
+    ValueError
+        Raised when positional rows are provided without a registered schema.
+    TypeError
+        Raised when a mix of mapping and positional rows is provided.
     """
     if not rows:
         return []
 
     schema = get_pandera_schema(table_key)
     if schema is None:
-        return [dict(row) for row in rows]  # type: ignore[arg-type]
+        first = rows[0]
+        if not isinstance(first, Mapping):
+            message = (
+                f"Cannot normalize sequence-style rows for {table_key}; "
+                "register a schema or provide mapping rows"
+            )
+            raise ValueError(message)
+        normalized: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, Mapping):
+                message = f"Mixed row types for {table_key}; expected mapping rows"
+                raise TypeError(message)
+            normalized.append(dict(row))
+        return normalized
 
     column_names = pd.Index(list(schema.columns.keys()))
     first = rows[0]
@@ -111,8 +137,8 @@ def validate_rows(
         df = pd.DataFrame(rows, columns=column_names)
 
     validated = validate_df(table_key, df, mode="strict")
-    normalized = validated.where(pd.notna(validated), None)
-    return normalized.to_dict(orient="records")
+    normalized_df = validated.where(pd.notna(validated), None)
+    return normalized_df.to_dict(orient="records")
 
 
 def dataset_json_schema(table_key: str) -> dict[str, Any] | None:
