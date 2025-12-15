@@ -1,0 +1,46 @@
+name: Schema Drift Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      fail_on_any:
+        description: 'Fail on any drift (not just breaking)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  schema-drift:
+    name: Schema Drift Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Schema drift check
+        env:
+          FAIL_ON_ANY: ${{ inputs.fail_on_any || 'false' }}
+        run: scripts/ci/schema_drift.sh
+
+      - name: Upload drift report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-drift-report
+          path: |
+            build/schema-drift-*.txt
+          retention-days: 7
+

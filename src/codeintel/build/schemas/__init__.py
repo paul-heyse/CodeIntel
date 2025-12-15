@@ -40,6 +40,12 @@ from codeintel.build.schemas.contract_provider import (
     iter_contracts,
     iter_contracts_by_table_key,
 )
+from codeintel.build.schemas.diff import (
+    ManifestDiffResult,
+    SchemaDiff,
+    compute_manifest_diffs,
+    compute_schema_diff,
+)
 from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.build.schemas.registry import (
     clear_schema_provider_cache,
@@ -99,11 +105,15 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "ContractProvider",
+    "ManifestDiffResult",
+    "SchemaDiff",
     "UnifiedSchemaProvider",
     "clear_contract_cache",
     "clear_row_binding_cache",
     "clear_schema_provider_cache",
     "clear_unified_provider_cache",
+    "compute_manifest_diffs",
+    "compute_schema_diff",
     "declared_schema_provider",
     "get_composite_schemas",
     "get_contract_for_table_key",

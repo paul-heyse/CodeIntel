@@ -242,3 +242,21 @@ cases:
     exit_code: 0
     snapshot: "pr63_schema_manifest_native.json"
     kind: "json"
+
+  # ========================================================================
+  # PR-71: Schema drift detection CI gate (help-only)
+  # ========================================================================
+
+  - name: "pr71_schema_diff_help"
+    tags: ["pr71", "schema", "diff", "text", "tiny"]
+    args: ["build", "schema", "diff", "--help"]
+    exit_code: 0
+    snapshot: "pr71_schema_diff_help.txt"
+    kind: "text"
+
+  - name: "pr71_schema_migrate_help"
+    tags: ["pr71", "schema", "migrate", "text", "tiny"]
+    args: ["build", "schema", "migrate", "--help"]
+    exit_code: 0
+    snapshot: "pr71_schema_migrate_help.txt"
+    kind: "text"
