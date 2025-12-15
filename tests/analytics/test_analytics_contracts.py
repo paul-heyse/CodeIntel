@@ -14,15 +14,29 @@ from codeintel.analytics.utilities.datasets import (
 from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.core.catalog import FunctionCatalog
-from codeintel.core.schemas.generated_types import (
-    BehavioralCoverageRowModel,
-    FunctionMetricsRow,
-    FunctionTypesRow,
-    GraphMetricsFunctionsExtRow,
-    GraphMetricsFunctionsRow,
-    GraphMetricsModulesExtRow,
-    GraphMetricsModulesRow,
-    ProfileRowModel,
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsFunctionMetricsRow as FunctionMetricsRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsFunctionTypesRow as FunctionTypesRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsModulesExtRow as GraphMetricsModulesExtRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsTestProfileRow as ProfileRowModel,
 )
 from tests._helpers import CORE_PACK, create_test_context
 from tests._helpers.analytics_domain import make_graph_metric_function_row

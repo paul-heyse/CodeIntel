@@ -5,12 +5,13 @@ This package provides foundational infrastructure used across the ingestion syst
 - `scanning`: File discovery with glob patterns and ignore lists
 - `cst_utils`: CST visitor helpers for LibCST-based parsing
 - `ast_utils`: AST parsing and span lookup utilities
-- `db_queries`: Safe database query helpers
 
 Path and worker utilities are now consolidated in core modules:
 
 - Path utilities: ``codeintel.core.paths``
 - Worker utilities: ``codeintel.core.concurrency``
+
+Database query helpers are available at ``codeintel.storage.queries.safe``.
 """
 
 from __future__ import annotations
@@ -58,23 +59,6 @@ from codeintel.ingestion.infrastructure.scanning import (
     default_config_profile,
     profile_from_env,
 )
-from codeintel.storage.queries.safe import (
-    DUCKDB_QUERY_ERRORS,
-    ColumnNotFoundError,
-    QueryError,
-    TableNotFoundError,
-    safe_count,
-    safe_count_duplicates,
-    safe_count_non_positive,
-    safe_count_nulls,
-    safe_count_orphan_refs,
-    safe_count_with_scope,
-    safe_get_columns,
-    safe_max_value,
-    safe_min_value,
-    safe_not_null_fraction,
-    safe_table_exists,
-)
 
 
 def normalize_rel_path(path: str | Path) -> str:
@@ -97,20 +81,16 @@ __all__ = [
     "DEFAULT_IGNORE_DIRS",
     "DEFAULT_MAX_WORKERS",
     "DEFAULT_MIN_WORKERS",
-    "DUCKDB_QUERY_ERRORS",
     "IGNORES",
     "AstSpanIndex",
-    "ColumnNotFoundError",
     "CstCaptureConfig",
     "CstCaptureVisitor",
     "LineIndexedSource",
-    "QueryError",
     "ResolvedScipConfig",
     "ScanProfile",
     "ScipPathConfig",
     "ScipResolverInput",
     "SourceScanner",
-    "TableNotFoundError",
     "WorkerConfig",
     "create_executor",
     "default_code_profile",
@@ -124,17 +104,6 @@ __all__ = [
     "repo_relpath",
     "resolve_scip_inputs",
     "resolve_worker_count",
-    "safe_count",
-    "safe_count_duplicates",
-    "safe_count_non_positive",
-    "safe_count_nulls",
-    "safe_count_orphan_refs",
-    "safe_count_with_scope",
-    "safe_get_columns",
-    "safe_max_value",
-    "safe_min_value",
-    "safe_not_null_fraction",
-    "safe_table_exists",
     "timed_parse",
     "worker_pool",
 ]

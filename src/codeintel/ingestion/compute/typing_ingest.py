@@ -16,7 +16,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
-from codeintel.core.schemas.generated_types import StaticDiagnosticRow, TypednessRow
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsStaticDiagnosticsRow as StaticDiagnosticRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsTypednessRow as TypednessRow,
+)
 from codeintel.ingestion.compute.base import StepResult
 from codeintel.ingestion.ports.tools import ToolStatus
 

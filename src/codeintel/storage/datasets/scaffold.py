@@ -76,8 +76,8 @@ def _row_binding_content(opts: ScaffoldOptions) -> str:
             "# Row binding snippet for metadata bootstrap.",
             "# Add this to ROW_BINDINGS_BY_TABLE_KEY in config.dataset_contract.",
             f'"{opts.table_key}": _row_binding(',
-            f"    row_type=row_models.{class_name},",
-            "    to_tuple=row_models.to_tuple,",
+            f"    row_model=row_models.{class_name},",
+            "    serializer=row_models.to_tuple,",
             "),",
             "",
         ]

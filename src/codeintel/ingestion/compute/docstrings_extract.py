@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, TypedDict
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
-from codeintel.core.schemas.generated_types import DocstringRow
+from codeintel.core.schemas.generated_rows.core import CoreDocstringsRow as DocstringRow
 from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
 
 if TYPE_CHECKING:

@@ -22,7 +22,9 @@ from codeintel.analytics.utilities.type_coercion import (
     optional_int,
     optional_str,
 )
-from codeintel.core.schemas.generated_types import FileProfileRowModel
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsFileProfileRow as FileProfileRowModel,
+)
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.ibis_types import (
     bool_not,

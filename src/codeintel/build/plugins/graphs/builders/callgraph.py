@@ -36,7 +36,9 @@ from codeintel.build.plugins.graphs.builders.callgraph_options import CallGraphO
 from codeintel.core.catalog import load_function_index
 from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
-from codeintel.core.schemas.generated_types import CallGraphNodeRow
+from codeintel.core.schemas.generated_rows.graph import (
+    GraphCallGraphNodesRow as CallGraphNodeRow,
+)
 from codeintel.graphs.compute.callgraph import (
     EdgeResolutionContext,
     collect_aliases,
@@ -52,7 +54,9 @@ if TYPE_CHECKING:
 
     from codeintel.build.context import TargetExecutionContext
     from codeintel.core.catalog import FunctionSpanIndex
-    from codeintel.core.schemas.generated_types import CallGraphEdgeRow
+    from codeintel.core.schemas.generated_rows.graph import (
+        GraphCallGraphEdgesRow as CallGraphEdgeRow,
+    )
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

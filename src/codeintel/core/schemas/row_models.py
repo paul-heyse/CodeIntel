@@ -168,28 +168,6 @@ class GeneratedRowBinding:
     table_key: str
     schema_hash: str
 
-    @property
-    def row_type(self) -> type[object]:
-        """Return the row model type for legacy compatibility.
-
-        Returns
-        -------
-        type[object]
-            The generated dataclass row model.
-        """
-        return self.row_model
-
-    @property
-    def to_tuple(self) -> RowSerializer:
-        """Return the serializer function for legacy compatibility.
-
-        Returns
-        -------
-        RowSerializer
-            Function that serializes a row mapping to a tuple.
-        """
-        return self.serializer
-
 
 def row_binding_for_table_schema(*, table_schema: TableSchema) -> GeneratedRowBinding:
     """Generate a complete RowBinding from a TableSchema.

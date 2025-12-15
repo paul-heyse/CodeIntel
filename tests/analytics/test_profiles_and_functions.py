@@ -96,12 +96,20 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
     from pathlib import Path
 
-    from codeintel.core.schemas.generated_types import (
-        BehavioralCoverageRowModel,
-        FileProfileRowModel,
-        FunctionProfileRowModel,
-        ModuleProfileRowModel,
-        ProfileRowModel,
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsFileProfileRow as FileProfileRowModel,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsFunctionProfileRow as FunctionProfileRowModel,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsModuleProfileRow as ModuleProfileRowModel,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsTestProfileRow as ProfileRowModel,
     )
     from codeintel.storage.gateway.protocol import DuckDBConnection
     from tests._helpers.context import TestContext

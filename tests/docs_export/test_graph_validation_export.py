@@ -14,7 +14,9 @@ from tests._helpers import provision_docs_export_ready
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.core.schemas.generated_types import GraphValidationRow
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsGraphValidationRow as GraphValidationRow,
+    )
 
 
 GRAPH_VALIDATION_COLUMNS: tuple[str, ...] = (

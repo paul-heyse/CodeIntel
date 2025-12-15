@@ -59,7 +59,9 @@ if TYPE_CHECKING:
         FunctionGraphFeatures,
     )
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.core.schemas.generated_types import FunctionProfileRowModel
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsFunctionProfileRow as FunctionProfileRowModel,
+    )
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

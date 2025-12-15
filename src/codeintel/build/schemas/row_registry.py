@@ -10,7 +10,7 @@ Examples
 >>> binding = get_row_binding("analytics.function_metrics")
 >>> binding.table_key
 'analytics.function_metrics'
->>> binding.row_type  # Generated frozen dataclass
+>>> binding.row_model  # Generated frozen dataclass
 <class 'Analytics__function_metrics__Row'>
 """
 

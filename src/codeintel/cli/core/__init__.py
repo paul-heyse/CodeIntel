@@ -25,7 +25,9 @@ from codeintel.cli.core.parsing import (
     parse_cli_value,
 )
 from codeintel.cli.core.results import CliResult, result_type
-from codeintel.cli.core.serialization import serialize_result
+from codeintel.core.serialization.converters import (
+    serialize_dataclass_to_dict as serialize_result,
+)
 
 __all__ = [
     "CliResult",

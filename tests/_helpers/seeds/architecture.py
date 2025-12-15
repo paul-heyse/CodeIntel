@@ -11,11 +11,17 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
-from codeintel.core.schemas.generated_types import (
-    GraphMetricsFunctionsExtRow,
-    GraphMetricsFunctionsRow,
-    GraphMetricsModulesExtRow,
-    GraphMetricsModulesRow,
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsModulesExtRow as GraphMetricsModulesExtRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
 )
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas

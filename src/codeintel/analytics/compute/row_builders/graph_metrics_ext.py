@@ -7,9 +7,11 @@ from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.compute.graphs import to_decimal_id
 from codeintel.analytics.utilities.type_coercion import optional_int
-from codeintel.core.schemas.generated_types import (
-    GraphMetricsFunctionsExtRow,
-    GraphMetricsModulesExtRow,
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsModulesExtRow as GraphMetricsModulesExtRow,
 )
 
 if TYPE_CHECKING:

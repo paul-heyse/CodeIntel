@@ -8,11 +8,17 @@ from typing import TYPE_CHECKING, TypedDict
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 if TYPE_CHECKING:
-    from codeintel.core.schemas.generated_types import (
-        CoverageLineRow,
-        GraphMetricsFunctionsRow,
-        GraphMetricsModulesRow,
-        ProfileRowModel,
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsCoverageLinesRow as CoverageLineRow,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsTestProfileRow as ProfileRowModel,
     )
 
 __all__ = [
