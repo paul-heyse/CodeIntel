@@ -135,27 +135,21 @@ from codeintel.core.errors.taxonomy import (
 )
 
 __all__ = [
-    # Operation codes
     "ALREADY_EXISTS",
-    # Service codes
     "AUTH_FAILED",
     "CANCELLED",
-    # Storage codes
     "COLUMN_NOT_FOUND",
-    # Config codes
     "CONFIG_FILE_NOT_FOUND",
     "CONFIG_INVALID_VALUE",
     "CONFIG_PARSE_ERROR",
     "CONFIG_SCHEMA_VIOLATION",
     "CONNECTION_FAILED",
-    # Validation codes
     "CONSTRAINT_VIOLATION",
     "CORRUPTION_DETECTED",
     "DEPENDENCY_FAILED",
     "INTERNAL_ERROR",
     "INVALID_FORMAT",
     "INVALID_TYPE",
-    # Job codes
     "JOB_ALREADY_RUNNING",
     "JOB_EXPIRED",
     "JOB_FAILED",
@@ -164,44 +158,29 @@ __all__ = [
     "NOT_FOUND",
     "OUT_OF_RANGE",
     "PERMISSION_DENIED",
-    # Problem Details
-    # Execution errors
     "PLUGIN_CATCHABLE_ERRORS",
-    # Plugin codes
     "PLUGIN_FATAL",
     "PLUGIN_SKIPPED",
     "PLUGIN_SKIP_REQUEST",
     "PLUGIN_TIMEOUT",
     "QUERY_FAILED",
     "RATE_LIMITED",
-    "SCHEMA_MISMATCH",
-    "SERVICE_UNAVAILABLE",
-    # Schema codes and errors
     "SCHEMA_DIGEST_FAILED",
     "SCHEMA_LOAD_FAILED",
+    "SCHEMA_MISMATCH",
     "SCHEMA_NOT_FOUND",
     "SCHEMA_VALIDATION_FAILED",
-    "SchemaDigestError",
-    "SchemaError",
-    "SchemaErrorCode",
-    "SchemaLoadError",
-    "SchemaNotFoundError",
-    "SchemaValidationError",
-    # Utilities
+    "SERVICE_UNAVAILABLE",
     "STATUS_CODES",
     "TABLE_NOT_FOUND",
     "TIMEOUT",
-    # Base exception classes
     "CodeIntelError",
     "CodeIntelOperationError",
     "CodeIntelStorageError",
     "CodeIntelValidationError",
     "ColumnNotFoundError",
-    # Code enums
     "ConfigErrorCode",
-    # Categories
     "ErrorCategory",
-    # ErrorCode class
     "ErrorCode",
     "ErrorContext",
     "JobErrorCode",
@@ -213,8 +192,13 @@ __all__ = [
     "PluginTimeoutError",
     "ProblemDetail",
     "ProblemDetailBuilder",
-    # Storage errors
     "QueryError",
+    "SchemaDigestError",
+    "SchemaError",
+    "SchemaErrorCode",
+    "SchemaLoadError",
+    "SchemaNotFoundError",
+    "SchemaValidationError",
     "ServiceErrorCode",
     "StorageColumnNotFoundError",
     "StorageErrorCode",

@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 from codeintel.build.errors import TargetNotFoundError
 from codeintel.build.hamilton.native.runner import (
     NativeRunInfo,
+    RunRecordInputs,
     create_run_record,
     save_manifest,
     should_skip_native_target,
@@ -167,8 +168,7 @@ class NativeTargetExecutor:
             self.target,
             "skipped",
             self.input_hash,
-            env=self.env,
-            run=run,
+            inputs=RunRecordInputs(env=self.env, run=run),
         )
 
     def execute(
@@ -223,8 +223,7 @@ class NativeTargetExecutor:
                 self.target,
                 "failed",
                 self.input_hash,
-                run=run,
-                error=exc,
+                inputs=RunRecordInputs(run=run, error=exc),
             )
         except BaseException as exc:
             # Re-raise system exceptions (KeyboardInterrupt, SystemExit, GeneratorExit)
@@ -240,8 +239,10 @@ class NativeTargetExecutor:
                 self.target,
                 "failed",
                 self.input_hash,
-                run=run,
-                error=exc if isinstance(exc, Exception) else RuntimeError(str(exc)),
+                inputs=RunRecordInputs(
+                    run=run,
+                    error=exc if isinstance(exc, Exception) else RuntimeError(str(exc)),
+                ),
             )
 
         duration_ms = (time.perf_counter() - start) * 1000
@@ -255,8 +256,7 @@ class NativeTargetExecutor:
             self.target,
             "succeeded",
             self.input_hash,
-            env=self.env,
-            run=run,
+            inputs=RunRecordInputs(env=self.env, run=run),
         )
 
         save_manifest(self.env, record)
@@ -294,8 +294,7 @@ class NativeTargetExecutor:
             self.target,
             "failed",
             self.input_hash,
-            run=run,
-            error=error,
+            inputs=RunRecordInputs(run=run, error=error),
         )
 
 

@@ -46,6 +46,25 @@ class NativeRunInfo:
     row_counts: dict[str, int] | None = None
 
 
+@dataclass(frozen=True)
+class RunRecordInputs:
+    """Inputs required to build a TargetRunRecord.
+
+    Attributes
+    ----------
+    env
+        Build environment (required for succeeded/skipped).
+    run
+        Run metadata (required for succeeded/skipped).
+    error
+        Exception that caused failure (optional for failed).
+    """
+
+    env: BuildEnv | None = None
+    run: NativeRunInfo | None = None
+    error: Exception | None = None
+
+
 def should_skip_native_target(
     env: BuildEnv,
     target: OutputTarget,
@@ -249,13 +268,23 @@ class RunRecordBuilder:
         ValueError
             If required fields for the given status are missing.
         """
+        if self.status == "failed":
+            if self._error is None:
+                msg = "error is required for status 'failed'"
+                raise ValueError(msg)
+        elif self._env is None or self._run is None:
+            msg = f"env and run are required for status '{self.status}'"
+            raise ValueError(msg)
+
         return create_run_record(
             self.target,
             self.status,
             self.input_hash,
-            env=self._env,
-            run=self._run,
-            error=self._error,
+            inputs=RunRecordInputs(
+                env=self._env,
+                run=self._run,
+                error=self._error,
+            ),
         )
 
 
@@ -264,9 +293,7 @@ def create_run_record(
     status: Literal["succeeded", "skipped", "failed"],
     input_hash: str,
     *,
-    env: BuildEnv | None = None,
-    run: NativeRunInfo | None = None,
-    error: Exception | None = None,
+    inputs: RunRecordInputs | None = None,
 ) -> TargetRunRecord:
     """Create a TargetRunRecord for any completion status.
 
@@ -282,12 +309,8 @@ def create_run_record(
         Completion status: succeeded, skipped, or failed.
     input_hash
         Input hash for this execution.
-    env
-        Build environment (required for succeeded/skipped).
-    run
-        Run metadata (required for succeeded/skipped).
-    error
-        Exception that caused failure (required for failed).
+    inputs
+        Inputs required for record construction.
 
     Returns
     -------
@@ -302,20 +325,39 @@ def create_run_record(
     Examples
     --------
     >>> # Success record
-    >>> record = create_run_record(target, "succeeded", run.input_hash, env=env, run=run)
+    >>> record = create_run_record(
+    ...     target,
+    ...     "succeeded",
+    ...     run.input_hash,
+    ...     inputs=RunRecordInputs(env=env, run=run),
+    ... )
     >>> record.status
     'succeeded'
 
     >>> # Skipped record
-    >>> record = create_run_record(target, "skipped", run.input_hash, env=env, run=run)
+    >>> record = create_run_record(
+    ...     target,
+    ...     "skipped",
+    ...     run.input_hash,
+    ...     inputs=RunRecordInputs(env=env, run=run),
+    ... )
     >>> record.status
     'skipped'
 
     >>> # Failed record
-    >>> record = create_run_record(target, "failed", input_hash, error=error)
+    >>> record = create_run_record(
+    ...     target,
+    ...     "failed",
+    ...     input_hash,
+    ...     inputs=RunRecordInputs(error=error),
+    ... )
     >>> record.status
     'failed'
     """
+    resolved_inputs = inputs or RunRecordInputs()
+    env = resolved_inputs.env
+    run = resolved_inputs.run
+    error = resolved_inputs.error
     plugin_name = f"native:{target.name}"
 
     if status == "failed":
@@ -413,6 +455,7 @@ def save_manifest(
 __all__ = [
     "NativeRunInfo",
     "RunRecordBuilder",
+    "RunRecordInputs",
     "create_run_record",
     "save_manifest",
     "should_skip_native_target",

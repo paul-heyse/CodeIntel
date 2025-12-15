@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs.provisioning_config import ProvisionedGateway
+    from tests._helpers.repo import CanonicalRepo
 
 
 @runtime_checkable
@@ -171,6 +172,7 @@ class TestContext:
     extra: dict[str, object] = field(default_factory=dict)
     coverage_file: Path | None = None
     runner: object | None = None
+    _canonical_repo: CanonicalRepo | None = field(default=None, init=False, repr=False)
 
     @property
     def repo(self) -> str:
@@ -215,6 +217,18 @@ class TestContext:
             Underlying database connection.
         """
         return self.gateway.con
+
+    def ensure_canonical_repo(self) -> CanonicalRepo:
+        """Write the canonical repo once and cache the resulting metadata.
+
+        Returns
+        -------
+        CanonicalRepo
+            Canonical repository metadata for the on-disk fixtures.
+        """
+        if self._canonical_repo is None:
+            self._canonical_repo = write_canonical_repo(self.repo_root)
+        return self._canonical_repo
 
     def to_snapshot_ref(self) -> SnapshotRef:
         """Return the snapshot reference for use with graph plugins.
@@ -478,11 +492,6 @@ def create_test_context(
     )
 
 
-def _ensure_sample_repo(repo_root: Path) -> None:
-    """Write a minimal canonical repo to the provided repo_root."""
-    write_canonical_repo(repo_root)
-
-
 def coverage_ready_context(tmp_path: Path) -> TestContext:
     """Create a TestContext seeded with core + coverage packs and sample files.
 
@@ -492,7 +501,7 @@ def coverage_ready_context(tmp_path: Path) -> TestContext:
         Context with coverage seeds and canonical sample repository.
     """
     ctx = create_test_context(tmp_path)
-    _ensure_sample_repo(ctx.repo_root)
+    ctx.ensure_canonical_repo()
     ctx.require(CORE_PACK, COVERAGE_PACK, COVERAGE_LINES_PACK)
     return ctx
 
@@ -506,7 +515,7 @@ def graph_ready_context(tmp_path: Path) -> TestContext:
         Context with graph seeds and canonical sample repository.
     """
     ctx = create_test_context(tmp_path)
-    _ensure_sample_repo(ctx.repo_root)
+    ctx.ensure_canonical_repo()
     ctx.require(CORE_PACK, GRAPH_PACK)
     return ctx
 
@@ -520,7 +529,7 @@ def coverage_and_graph_context(tmp_path: Path) -> TestContext:
         Context populated with both coverage and graph seed packs.
     """
     ctx = create_test_context(tmp_path)
-    _ensure_sample_repo(ctx.repo_root)
+    ctx.ensure_canonical_repo()
     ctx.require(CORE_PACK, COVERAGE_PACK, COVERAGE_LINES_PACK, GRAPH_PACK)
     return ctx
 

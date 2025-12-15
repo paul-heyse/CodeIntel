@@ -231,16 +231,13 @@ class SchemaDigestError(SchemaError):
 
 
 __all__ = [
-    # Error codes
     "SCHEMA_DIGEST_FAILED",
     "SCHEMA_LOAD_FAILED",
     "SCHEMA_NOT_FOUND",
     "SCHEMA_VALIDATION_FAILED",
-    # Enum
-    "SchemaErrorCode",
-    # Exception classes
     "SchemaDigestError",
     "SchemaError",
+    "SchemaErrorCode",
     "SchemaLoadError",
     "SchemaNotFoundError",
     "SchemaValidationError",

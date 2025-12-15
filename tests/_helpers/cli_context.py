@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Self
 
 from codeintel.cli.context import CommandContextBuilder
 from tests._helpers.context import create_test_context
-from tests._helpers.repo import write_canonical_repo
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -284,7 +283,7 @@ def create_cli_test_context(
     """
     test_ctx = create_test_context(tmp_path, options=options, gateway_options=gateway_options)
     if write_repo:
-        write_canonical_repo(test_ctx.repo_root)
+        test_ctx.ensure_canonical_repo()
     return CliTestContext(test_ctx=test_ctx, operation_id=operation_id)
 
 

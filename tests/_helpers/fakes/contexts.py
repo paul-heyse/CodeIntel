@@ -261,6 +261,9 @@ class ExecutionContextBuilder:
         tmp_path: Path,
         options: BuilderOptions | None = None,
         env_overrides: EnvOverrides | None = None,
+        *,
+        repo_root: Path | None = None,
+        build_dir: Path | None = None,
     ) -> Self:
         """Create a builder with a fresh gateway and snapshot.
 
@@ -272,49 +275,61 @@ class ExecutionContextBuilder:
             Builder options for repo/commit/file_backed configuration.
         env_overrides
             Optional environment overrides for gateway/snapshot.
+        repo_root
+            Optional override for the repository root; defaults to ``tmp_path / "repo"``.
+        build_dir
+            Optional override for the build directory; defaults to ``tmp_path / "build"``.
 
         Returns
         -------
         Self
             Configured builder.
-
-        Raises
-        ------
-        ValueError
-            If a snapshot cannot be determined from inputs.
         """
         opts = options or BuilderOptions()
         overrides = env_overrides or EnvOverrides()
-        base_path = overrides.tmp_path or tmp_path
-        if isinstance(overrides.snapshot, SnapshotRef):
-            repo = overrides.snapshot.repo
-            commit = overrides.snapshot.commit
+        snapshot_override = overrides.snapshot
+        if isinstance(snapshot_override, SnapshotRef):
+            repo = snapshot_override.repo
+            commit = snapshot_override.commit
         else:
-            repo, commit = overrides.snapshot or (opts.repo, opts.commit)
+            repo, commit = snapshot_override or (opts.repo, opts.commit)
+
+        effective_repo_root = repo_root or overrides.tmp_path
+        if effective_repo_root is None and isinstance(snapshot_override, SnapshotRef):
+            effective_repo_root = snapshot_override.repo_root
+        if effective_repo_root is None:
+            effective_repo_root = tmp_path / "repo"
+
+        effective_build_dir = build_dir or (tmp_path / "build")
+
+        effective_repo_root.mkdir(parents=True, exist_ok=True)
+        effective_build_dir.mkdir(parents=True, exist_ok=True)
+
         gateway = overrides.gateway
-        snapshot: SnapshotRef | None
-        build_paths: BuildPaths | None
+        snapshot: SnapshotRef
+        build_paths: BuildPaths
         if gateway is None:
             create_test_context = import_module("tests._helpers.context").create_test_context
 
             env_ctx = create_test_context(
-                base_path,
+                tmp_path,
                 options=EnvOptions(
                     repo=repo,
                     commit=commit,
                     file_backed=opts.file_backed,
-                    repo_root=base_path,
+                    repo_root=effective_repo_root,
+                    build_dir=effective_build_dir,
                 ),
             )
             gateway = env_ctx.gateway
             snapshot = env_ctx.snapshot
             build_paths = env_ctx.build_paths
         else:
-            snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=base_path)
-            build_paths = BuildPaths.from_repo_root(base_path)
-        if snapshot is None:
-            error_message = "SnapshotRef is required for TestContextBuilder"
-            raise ValueError(error_message)
+            snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=effective_repo_root)
+            build_paths = BuildPaths.from_repo_root(
+                effective_repo_root,
+                build_dir=effective_build_dir,
+            )
         return cls(
             gateway=gateway,
             snapshot=snapshot,

@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Self
 from tests._helpers.context import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.env import create_test_env
 from tests._helpers.env_options import EnvOptions
-from tests._helpers.repo import write_canonical_repo
 from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
 from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK
 from tests._helpers.seeds.config import CONFIG_PACK
@@ -248,7 +247,7 @@ class TestScenario:
         ctx.extra.update(self.config.extra)
 
         if self.config.write_files:
-            write_canonical_repo(ctx.repo_root)
+            ctx.ensure_canonical_repo()
 
         for pack in self.config.seed_packs:
             ctx.require(pack)

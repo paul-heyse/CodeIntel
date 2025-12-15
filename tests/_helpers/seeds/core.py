@@ -29,7 +29,6 @@ from tests._helpers.repo import (
     MOD_C_PATH,
     MOD_UTIL_FQN,
     MOD_UTIL_PATH,
-    write_canonical_repo,
 )
 
 if TYPE_CHECKING:
@@ -101,7 +100,7 @@ class CorePack:
             Test context to seed.
         """
         now = datetime.now(UTC)
-        canonical = write_canonical_repo(ctx.repo_root)
+        canonical = ctx.ensure_canonical_repo()
 
         # Seed repo_map
         self._seed_repo_map(ctx, now, canonical)

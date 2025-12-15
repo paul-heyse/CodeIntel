@@ -231,7 +231,7 @@ def canonical_ast_artifacts(ctx: TestContext) -> CanonicalAstArtifacts:
     CanonicalAstArtifacts
         Bundled catalog and AST map for canonical fixtures.
     """
-    canonical = write_canonical_repo(ctx.repo_root)
+    canonical = ctx.ensure_canonical_repo()
     ctx.require(CORE_PACK, AST_METRICS_PACK)
     functions = [
         function_meta(
