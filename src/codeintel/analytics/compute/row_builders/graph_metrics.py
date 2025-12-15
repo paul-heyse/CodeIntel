@@ -10,9 +10,11 @@ import ibis
 from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.utilities.dataframe import to_records
-from codeintel.core.schemas.generated_types import (
-    GraphMetricsFunctionsRow,
-    GraphMetricsModulesRow,
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
 )
 
 if TYPE_CHECKING:

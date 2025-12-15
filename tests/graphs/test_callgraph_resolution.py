@@ -9,7 +9,9 @@ from codeintel.graphs.compute.callgraph import persistence as call_persist
 from tests._helpers.assertions import expect_equal, expect_true
 
 if TYPE_CHECKING:
-    from codeintel.core.schemas.generated_types import CallGraphEdgeRow
+    from codeintel.core.schemas.generated_rows.graph import (
+        GraphCallGraphEdgesRow as CallGraphEdgeRow,
+    )
 
 ALIAS_GOID = 10
 SCIP_GOID = 1234

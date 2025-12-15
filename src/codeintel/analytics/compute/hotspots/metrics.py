@@ -13,7 +13,9 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from codeintel.core.schemas.generated_types import HotspotRow
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsHotspotsRow as HotspotRow,
+)
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import DuckDBError
 

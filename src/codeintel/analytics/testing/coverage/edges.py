@@ -15,7 +15,9 @@ from coverage.exceptions import CoverageException
 from codeintel.config.datasets.columns import TEST_CATALOG_UPDATE_GOIDS
 from codeintel.core.catalog import CatalogService
 from codeintel.core.paths import normalize_path
-from codeintel.core.schemas.generated_types import TestCoverageEdgeRow
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsTestCoverageEdgesRow as TestCoverageEdgeRow,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable

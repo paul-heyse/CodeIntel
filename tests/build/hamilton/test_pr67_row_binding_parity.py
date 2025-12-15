@@ -118,25 +118,25 @@ def test_iter_row_bindings_returns_all() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_generated_binding_has_legacy_properties() -> None:
-    """Verify GeneratedRowBinding has row_type and to_tuple properties."""
+def test_generated_binding_has_canonical_properties() -> None:
+    """Verify GeneratedRowBinding has row_model and serializer properties."""
     binding = get_row_binding("analytics.function_metrics")
 
     _require(
-        condition=hasattr(binding, "row_type"),
-        message="GeneratedRowBinding should have row_type property",
+        condition=hasattr(binding, "row_model"),
+        message="GeneratedRowBinding should have row_model property",
     )
     _require(
-        condition=hasattr(binding, "to_tuple"),
-        message="GeneratedRowBinding should have to_tuple property",
+        condition=hasattr(binding, "serializer"),
+        message="GeneratedRowBinding should have serializer property",
     )
     _require(
-        condition=callable(binding.to_tuple),
-        message="to_tuple should be callable",
+        condition=callable(binding.serializer),
+        message="serializer should be callable",
     )
     _require(
-        condition=isinstance(binding.row_type, type),
-        message="row_type should be a type",
+        condition=isinstance(binding.row_model, type),
+        message="row_model should be a type",
     )
 
 
@@ -191,7 +191,7 @@ def test_generated_binding_fields_match_legacy() -> None:
             continue
 
         legacy_fields = set(getattr(legacy.row_type, "__annotations__", {}).keys())
-        generated_fields = set(getattr(generated.row_type, "__annotations__", {}).keys())
+        generated_fields = set(getattr(generated.row_model, "__annotations__", {}).keys())
 
         # Check if field names match (ignoring type differences for now)
         missing_in_generated = legacy_fields - generated_fields
@@ -234,7 +234,7 @@ def test_generated_serializer_column_order_matches_legacy() -> None:
 
         # Get column order from annotations (Python 3.7+ preserves insertion order)
         legacy_order = list(getattr(legacy.row_type, "__annotations__", {}).keys())
-        generated_order = list(getattr(generated.row_type, "__annotations__", {}).keys())
+        generated_order = list(getattr(generated.row_model, "__annotations__", {}).keys())
 
         if legacy_order != generated_order:
             order_mismatches.append(
@@ -296,7 +296,7 @@ def test_generated_serializer_produces_tuples() -> None:
 
         binding = get_row_binding(table_key)
         test_row = _create_test_row(table_key)
-        result = binding.to_tuple(test_row)
+        result = binding.serializer(test_row)
 
         _require(
             condition=isinstance(result, tuple),
@@ -339,7 +339,7 @@ def test_generated_serializer_matches_legacy_output() -> None:
         # while generated uses schema column order
         try:
             legacy_result = legacy.to_tuple(test_row)
-            generated_result = generated.to_tuple(test_row)
+            generated_result = generated.serializer(test_row)
 
             # Convert to sets for comparison (order may differ between implementations)
             if set(legacy_result) != set(generated_result):
@@ -373,7 +373,7 @@ def test_row_binding_uses_schema_provider() -> None:
 
     # Binding should have same column count as schema
     schema_cols = len(schema.columns)
-    binding_fields = len(getattr(binding.row_type, "__annotations__", {}))
+    binding_fields = len(getattr(binding.row_model, "__annotations__", {}))
 
     _expect_equal(binding_fields, schema_cols, "field count")
 
@@ -398,7 +398,7 @@ def test_generated_binding_handles_nullable_columns() -> None:
     """Verify generated bindings handle nullable columns correctly."""
     # analytics.function_metrics has nullable columns
     binding = get_row_binding("analytics.function_metrics")
-    annotations = getattr(binding.row_type, "__annotations__", {})
+    annotations = getattr(binding.row_model, "__annotations__", {})
 
     # All generated columns should be optional (type | None)
     for field_name, field_type in annotations.items():
@@ -421,6 +421,6 @@ def test_generated_binding_handles_all_column_types() -> None:
             continue
 
         _require(
-            condition=len(getattr(binding.row_type, "__annotations__", {})) > 0,
+            condition=len(getattr(binding.row_model, "__annotations__", {})) > 0,
             message=f"{table_key}: should have annotations",
         )

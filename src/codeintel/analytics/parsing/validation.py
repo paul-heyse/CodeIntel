@@ -16,7 +16,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypeVar, cast
 
 from codeintel.config.datasets.columns import serialize_row
-from codeintel.core.schemas.generated_types import FunctionValidationRow, GraphValidationRow
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsFunctionValidationRow as FunctionValidationRow,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsGraphValidationRow as GraphValidationRow,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

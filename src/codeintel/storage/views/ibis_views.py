@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     import ibis.expr.types as it
     from ibis.backends.duckdb import Backend as DuckDBBackend
 
-    from codeintel.storage.gateway.protocol import StorageGateway
     from codeintel.storage.views.ibis_registry import IbisViewGateway
 
 
@@ -87,19 +86,6 @@ __all__ = [
     "build_goid_crosswalk_join",
     "build_goid_crosswalk_mismatches",
     "build_import_graph_degree",
-    "create_all_ibis_views",
-    "create_call_graph_enriched_view",
-    "create_callgraph_degree_view",
-    "create_docs_file_summary_view",
-    "create_docs_function_summary_view",
-    "create_docs_module_architecture_view",
-    "create_docs_subsystem_coverage_view",
-    "create_docs_subsystem_profile_view",
-    "create_docs_subsystem_summary_view",
-    "create_function_hotspots_view",
-    "create_function_summary_view",
-    "create_goid_crosswalk_views",
-    "create_import_graph_degree_view",
 ]
 
 CALLGRAPH_LOC_SMALL = 50
@@ -2463,100 +2449,3 @@ def build_docs_ide_hints(ibis_gw: IbisViewGateway) -> it.Table:
         subs.module_count.name("subsystem_module_count"),
         subs.entrypoints_json.name("subsystem_entrypoints"),
     )
-
-
-def create_function_summary_view(gateway: StorageGateway) -> None:
-    """Create or replace analytics.v_function_summary using Ibis expressions."""
-    expr = build_function_summary(gateway.ibis)
-    _create_view(gateway.ibis.con, "analytics.v_function_summary", expr)
-
-
-def create_docs_function_summary_view(gateway: StorageGateway) -> None:
-    """Create docs.v_function_summary derived from risk factors and metrics."""
-    expr = build_docs_function_summary(gateway.ibis)
-    _create_view(gateway.ibis.con, "docs.v_function_summary", expr)
-
-
-def create_callgraph_degree_view(gateway: StorageGateway) -> None:
-    """Create or replace graph.v_call_graph_degree using call graph edges."""
-    expr = build_callgraph_degree(gateway.ibis)
-    _create_view(gateway.ibis.con, "graph.v_call_graph_degree", expr)
-
-
-def create_goid_crosswalk_views(gateway: StorageGateway) -> None:
-    """Create or replace goid crosswalk QA views."""
-    join_expr = build_goid_crosswalk_join(gateway.ibis)
-    _create_view(gateway.ibis.con, "core.v_goid_crosswalk_join", join_expr)
-
-    mismatch_expr = build_goid_crosswalk_mismatches(gateway.ibis)
-    _create_view(gateway.ibis.con, "core.v_goid_crosswalk_mismatches", mismatch_expr)
-
-
-def create_function_hotspots_view(gateway: StorageGateway) -> None:
-    """Create analytics.v_function_hotspots using goid risk factors."""
-    expr = build_function_hotspots(gateway.ibis)
-    _create_view(gateway.ibis.con, "analytics.v_function_hotspots", expr)
-
-
-def create_import_graph_degree_view(gateway: StorageGateway) -> None:
-    """Create graph.v_import_graph_degree aggregating import edge degrees."""
-    expr = build_import_graph_degree(gateway.ibis)
-    _create_view(gateway.ibis.con, "graph.v_import_graph_degree", expr)
-
-
-def create_call_graph_enriched_view(gateway: StorageGateway) -> None:
-    """Create docs.v_call_graph_enriched to align with the SQL definition."""
-    expr = build_call_graph_enriched(gateway.ibis)
-    _create_view(gateway.ibis.con, "docs.v_call_graph_enriched", expr)
-
-
-def create_docs_file_summary_view(gateway: StorageGateway) -> None:
-    """Create docs.v_file_summary aggregating per-file statistics."""
-    expr = build_docs_file_summary(gateway.ibis)
-    _create_view(gateway.ibis.con, "docs.v_file_summary", expr)
-
-
-def create_docs_module_architecture_view(gateway: StorageGateway) -> None:
-    """Create docs.v_module_architecture combining module metrics with subsystem."""
-    expr = build_docs_module_architecture(gateway.ibis)
-    _create_view(gateway.ibis.con, "docs.v_module_architecture", expr)
-
-
-def create_docs_subsystem_summary_view(gateway: StorageGateway) -> None:
-    """Create docs.v_subsystem_summary combining subsystem with profile cache."""
-    expr = build_docs_subsystem_summary(gateway.ibis)
-    _create_view(gateway.ibis.con, "docs.v_subsystem_summary", expr)
-
-
-def create_docs_subsystem_profile_view(gateway: StorageGateway) -> None:
-    """Create docs.v_subsystem_profile with full profile and graph metrics."""
-    expr = build_docs_subsystem_profile(gateway.ibis)
-    _create_view(gateway.ibis.con, "docs.v_subsystem_profile", expr)
-
-
-def create_docs_subsystem_coverage_view(gateway: StorageGateway) -> None:
-    """Create docs.v_subsystem_coverage combining subsystem with coverage data."""
-    expr = build_docs_subsystem_coverage(gateway.ibis)
-    _create_view(gateway.ibis.con, "docs.v_subsystem_coverage", expr)
-
-
-def create_all_ibis_views(gateway: StorageGateway) -> None:
-    """Create supplementary analytics.* and core.* Ibis views.
-
-    This function creates views in the analytics.* and core.* namespaces that
-    provide additional computed aggregations. These supplement the docs.* views
-    which are created separately via VIEW_BUILDERS registry in views/__init__.py.
-
-    Note: All docs.* views are now created via create_all_views() using the
-    VIEW_BUILDERS registry. This function only creates the following:
-    - analytics.v_function_summary
-    - analytics.v_callgraph_degree
-    - core.v_goid_crosswalk_*
-    - analytics.v_function_hotspots
-    - analytics.v_import_degree
-    """
-    create_function_summary_view(gateway)
-    create_callgraph_degree_view(gateway)
-    create_goid_crosswalk_views(gateway)
-    create_function_hotspots_view(gateway)
-    create_import_graph_degree_view(gateway)

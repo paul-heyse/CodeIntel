@@ -23,7 +23,9 @@ from typing import (
     runtime_checkable,
 )
 
-from codeintel.cli.core.serialization import serialize_result
+from codeintel.core.serialization.converters import (
+    serialize_dataclass_to_dict as serialize_result,
+)
 
 if TYPE_CHECKING:
     from codeintel.cli.errors import ProblemDetail

@@ -26,7 +26,12 @@ from codeintel.analytics.testing.profiles.types import (
     TestProfileOptions,
 )
 from codeintel.analytics.utilities.type_coercion import optional_int
-from codeintel.core.schemas.generated_types import BehavioralCoverageRowModel, ProfileRowModel
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsTestProfileRow as ProfileRowModel,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping

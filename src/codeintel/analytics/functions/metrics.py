@@ -62,7 +62,12 @@ if TYPE_CHECKING:
     )
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.parsing import ParsedModule
-    from codeintel.core.schemas.generated_types import FunctionMetricsRow, FunctionTypesRow
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsFunctionMetricsRow as FunctionMetricsRow,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsFunctionTypesRow as FunctionTypesRow,
+    )
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

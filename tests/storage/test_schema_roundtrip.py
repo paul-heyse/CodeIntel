@@ -15,10 +15,14 @@ from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.core.data_models.rows import (
     SymbolUseRow,
 )
-from codeintel.core.schemas.generated_types import (
-    BehavioralCoverageRowModel,
-    CallGraphEdgeRow,
-    TestCoverageEdgeRow,
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsTestCoverageEdgesRow as TestCoverageEdgeRow,
+)
+from codeintel.core.schemas.generated_rows.graph import (
+    GraphCallGraphEdgesRow as CallGraphEdgeRow,
 )
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.metadata import bootstrap_metadata_datasets

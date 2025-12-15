@@ -11,7 +11,9 @@ from tests._helpers.factories import blank_function_profile_row
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.core.schemas.generated_types import FunctionProfileRowModel
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsFunctionProfileRow as FunctionProfileRowModel,
+    )
 
 
 FUNCTION_PROFILE_COLUMNS = tuple(load_columns_by_table()["analytics.function_profile"])

@@ -7,12 +7,20 @@ from typing import TYPE_CHECKING, cast
 from codeintel.config.datasets.columns import load_columns_by_table
 
 if TYPE_CHECKING:
-    from codeintel.core.schemas.generated_types import (
-        BehavioralCoverageRowModel,
-        FileProfileRowModel,
-        FunctionProfileRowModel,
-        ModuleProfileRowModel,
-        ProfileRowModel,
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsFileProfileRow as FileProfileRowModel,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsFunctionProfileRow as FunctionProfileRowModel,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsModuleProfileRow as ModuleProfileRowModel,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsTestProfileRow as ProfileRowModel,
     )
 
 _COLUMNS_BY_TABLE = load_columns_by_table()
