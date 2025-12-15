@@ -1,0 +1,7 @@
+Usage: codeintel build spec COMMAND
+
+BuildSpec product commands (compile, show, diff, etc.).
+
+╭─ Commands ───────────────────────────────────────────────────────────────────╮
+│ compile  Compile a deterministic BuildSpec from the Hamilton DAG.            │
+╰──────────────────────────────────────────────────────────────────────────────╯

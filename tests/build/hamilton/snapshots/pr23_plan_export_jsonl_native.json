@@ -17,10 +17,10 @@ Show build plan with status and reason for each target.
 │ OUTPUT --output -o           Output file path (stdout if not specified).     │
 │                              [env var: CODEINTEL_BUILD_PLAN_OUTPUT]          │
 │                              [default: (none)]                               │
-│ GRAPH-SOURCE --graph-source  Dependency graph source: targetgraph (default)  │
-│                              or hamilton. [choices: targetgraph, hamilton]   │
+│ GRAPH-SOURCE --graph-source  Dependency graph source: hamilton (default) or  │
+│                              targetgraph. [choices: targetgraph, hamilton]   │
 │                              [env var: CODEINTEL_BUILD_PLAN_GRAPH_SOURCE]    │
-│                              [default: targetgraph]                          │
+│                              [default: hamilton]                             │
 │ --flags                      [env var: CODEINTEL_BUILD_PLAN_FLAGS] [default: │
 │                              --flags]                                        │
 │ ROOT --root -r               Explicit project root directory. [env var:      │

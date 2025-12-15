@@ -85,17 +85,31 @@ def _write_schema_manifest(path: Path) -> None:
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def _write_buildspec(path: Path) -> None:
+    buildspec = {
+        "spec_version": 1,
+        "targets": [],
+        "datasets": [
+            {"table_key": "docs.demo", "schema_hash": "schema_demo"},
+            {"table_key": "docs.v_demo", "schema_hash": "schema_v_demo"},
+        ],
+    }
+    path.write_text(json.dumps(buildspec, indent=2, sort_keys=True), encoding="utf-8")
+
+
 def _write_pointer(
     path: Path,
     *,
     db_path: Path,
     registry_path: Path,
     manifest_path: Path,
+    buildspec_path: Path,
 ) -> None:
     payload = {
         "db_path": str(db_path),
         "semantic_registry_path": str(registry_path),
         "schema_manifest_path": str(manifest_path),
+        "buildspec_path": str(buildspec_path),
         "repo": "demo/repo",
         "commit": "deadbeef",
         "run_id": "run-1",
@@ -113,8 +127,10 @@ async def test_kernel_catalog_describe_query_meta(tmp_path: Path) -> None:
 
     registry_path = tmp_path / "semantic_registry.json"
     manifest_path = tmp_path / "schema_manifest.json"
+    buildspec_path = tmp_path / "buildspec.json"
     _write_registry(registry_path)
     _write_schema_manifest(manifest_path)
+    _write_buildspec(buildspec_path)
 
     pointer_path = tmp_path / "current.json"
     _write_pointer(
@@ -122,6 +138,7 @@ async def test_kernel_catalog_describe_query_meta(tmp_path: Path) -> None:
         db_path=db_path,
         registry_path=registry_path,
         manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
     )
 
     manager = ServingDBManager(

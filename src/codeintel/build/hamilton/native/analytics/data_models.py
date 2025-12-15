@@ -11,14 +11,21 @@ which return structured result containers. The materialize node uses
 
 from __future__ import annotations
 
+import logging
+
 from hamilton.function_modifiers import tag
 
+from codeintel.analytics.compute.data_models import (
+    DATA_MODEL_USAGE_COLS,
+    build_data_model_usage_rows,
+)
 from codeintel.analytics.data_models.compute import DataModelsResult, compute_data_models_pure
 from codeintel.analytics.data_models.core import (
     DATA_MODEL_FIELDS_COLS,
     DATA_MODEL_RELATIONSHIPS_COLS,
     DATA_MODELS_COLS,
 )
+from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
@@ -27,8 +34,11 @@ from codeintel.build.hamilton.native.materializer import (
     materialize_rows,
 )
 from codeintel.build.targets import TargetGraph
+from codeintel.storage.helpers.module_index import load_module_map
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DataModelsResult, TargetGraph, TargetRunRecord)
+
+LOG = logging.getLogger(__name__)
 
 
 @tag(domain="analytics", target="data_models", node_type="compute")
@@ -135,8 +145,99 @@ def t__data_models(
     return executor.execute(compute)
 
 
+@tag(domain="analytics", target="data_model_usage", node_type="compute")
+def t__data_model_usage__compute(env: BuildEnv) -> tuple[tuple[object, ...], ...]:
+    """Compute rows for analytics.data_model_usage.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot info.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...]
+        Row tuples for analytics.data_model_usage in DATA_MODEL_USAGE_COLS order.
+    """
+    module_map = load_module_map(
+        env.gateway,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        logger=LOG,
+    )
+
+    ast_by_goid, missing_goids = load_function_asts(
+        env.gateway,
+        FunctionAstLoadRequest(
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
+            repo_root=env.snapshot.repo_root,
+        ),
+    )
+
+    return build_data_model_usage_rows(
+        env.gateway,
+        env.snapshot,
+        module_map=module_map,
+        ast_by_goid=ast_by_goid,
+        missing_goids=missing_goids,
+    )
+
+
+@tag(domain="analytics", target="data_model_usage", node_type="materialize")
+def t__data_model_usage(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__data_model_usage__compute: tuple[tuple[object, ...], ...],
+) -> TargetRunRecord:
+    """Materialize analytics.data_model_usage rows to DuckDB.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot info.
+    graph
+        Target graph for metadata lookup.
+    t__data_model_usage__compute
+        Computed row tuples for analytics.data_model_usage.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record with status, datasets, and execution metadata.
+    """
+    executor = NativeTargetExecutor.for_target(env, graph, "data_model_usage")
+
+    if executor.should_skip():
+        return executor.skip()
+
+    def compute() -> dict[str, int]:
+        backend = env.gateway.policy
+        backend.ensure_table("analytics.data_model_usage")
+
+        ctx = MaterializationContext(
+            gateway=env.gateway,
+            snapshot=env.snapshot,
+            validate=env.validate_outputs,
+            owner_target="data_model_usage",
+            input_hash=executor.input_hash,
+        )
+
+        ref = materialize_rows(
+            ctx,
+            "analytics.data_model_usage",
+            t__data_model_usage__compute,
+            DATA_MODEL_USAGE_COLS,
+        )
+        return {ref.table_key: ref.row_count or 0}
+
+    return executor.execute(compute)
+
+
 # Export node names for Hamilton discovery
 __all__ = [
+    "t__data_model_usage",
+    "t__data_model_usage__compute",
     "t__data_models",
     "t__data_models__compute",
 ]

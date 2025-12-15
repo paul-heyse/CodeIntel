@@ -13,9 +13,18 @@ Design Principles
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.hamilton.tags import NODE_TYPE_MATERIALIZE, TAG_NODE_TYPE, TAG_TARGET
+from codeintel.build.hamilton.tags import (
+    NODE_TYPE_ARTIFACT,
+    NODE_TYPE_DATASET,
+    NODE_TYPE_MATERIALIZE,
+    TAG_ARTIFACT,
+    TAG_NODE_TYPE,
+    TAG_TABLE_KEY,
+    TAG_TARGET,
+)
 from codeintel.build.targets import OutputTarget, TargetGraph
 
 if TYPE_CHECKING:
@@ -178,6 +187,79 @@ def derive_target_dependencies(runtime: HamiltonRuntime) -> dict[str, tuple[str,
     return derived
 
 
+@dataclass(frozen=True)
+class DerivedTargetOutputs:
+    """Outputs derived from the Hamilton FunctionGraph."""
+
+    datasets_by_target: dict[str, tuple[str, ...]]
+    artifacts_by_target: dict[str, tuple[str, ...]]
+
+
+def _producer_target_for_node(*, node: Node, node_to_target: Mapping[str, str]) -> str:
+    targets = {node_to_target[dep.name] for dep in node.dependencies if dep.name in node_to_target}
+    if len(targets) == 1:
+        return next(iter(targets))
+    if not targets:
+        msg = f"Node {node.name} is missing a producing target dependency"
+        raise RuntimeError(msg)
+    msg = f"Node {node.name} has multiple producing targets: {sorted(targets)}"
+    raise RuntimeError(msg)
+
+
+def derive_target_outputs(runtime: HamiltonRuntime) -> DerivedTargetOutputs:
+    """Derive target outputs (datasets and artifacts) from Hamilton tags.
+
+    Parameters
+    ----------
+    runtime
+        Hamilton runtime containing a configured Driver.
+
+    Returns
+    -------
+    DerivedTargetOutputs
+        Output mappings derived from the FunctionGraph.
+
+    Raises
+    ------
+    RuntimeError
+        If required node metadata is missing or inconsistent (e.g., missing table_key tags or
+        ambiguous producing targets).
+    """
+    nodes: Mapping[str, Node] = runtime.dr.graph.nodes
+    node_to_target = _target_node_index(nodes)
+
+    datasets: dict[str, set[str]] = {}
+    artifacts: dict[str, set[str]] = {}
+
+    for node in nodes.values():
+        tags = node.tags
+        if not isinstance(tags, dict):
+            continue
+        node_type = tags.get(TAG_NODE_TYPE)
+
+        if node_type == NODE_TYPE_DATASET:
+            table_key = tags.get(TAG_TABLE_KEY)
+            if not isinstance(table_key, str) or not table_key:
+                msg = f"Dataset node {node.name} missing table_key tag"
+                raise RuntimeError(msg)
+            producer = _producer_target_for_node(node=node, node_to_target=node_to_target)
+            datasets.setdefault(producer, set()).add(table_key)
+        elif node_type == NODE_TYPE_ARTIFACT:
+            artifact_name = tags.get(TAG_ARTIFACT)
+            if not isinstance(artifact_name, str) or not artifact_name:
+                msg = f"Artifact node {node.name} missing artifact tag"
+                raise RuntimeError(msg)
+            producer = _producer_target_for_node(node=node, node_to_target=node_to_target)
+            artifacts.setdefault(producer, set()).add(artifact_name)
+
+    datasets_by_target = {k: tuple(sorted(v)) for k, v in datasets.items()}
+    artifacts_by_target = {k: tuple(sorted(v)) for k, v in artifacts.items()}
+    return DerivedTargetOutputs(
+        datasets_by_target=datasets_by_target,
+        artifacts_by_target=artifacts_by_target,
+    )
+
+
 def target_graph_from_hamilton(
     runtime: HamiltonRuntime,
     *,
@@ -242,8 +324,10 @@ def _clone_target_with_dependencies(target: OutputTarget, *, deps: Iterable[str]
 
 
 __all__ = [
+    "DerivedTargetOutputs",
     "GraphSource",
     "derive_target_dependencies",
+    "derive_target_outputs",
     "parse_graph_source",
     "target_graph_from_hamilton",
 ]

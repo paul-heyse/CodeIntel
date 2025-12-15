@@ -160,10 +160,12 @@ def build_driver(
     if mode == "auto":
         # Auto mode: compose native + generated (with exclusions)
         # Get native target names to exclude from generated module
-        native_names = set(native_target_names())
+        native_names = native_target_names()
 
-        # Build generated module excluding native targets
-        gen_options = GenerationOptions(exclude_targets=native_names)
+        # Build generated module, but skip `t__<target>` nodes for native targets
+        # to avoid collisions with the native modules while still emitting helper
+        # nodes (d__/q__/df__/a__) for native outputs.
+        gen_options = GenerationOptions(exclude_target_nodes_for_targets=native_names)
         generated_mod = get_generated_module(options=gen_options)
 
         # Load native modules

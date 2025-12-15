@@ -59,7 +59,9 @@ COMMAND_TAGS = {
     "resolve",
     "run",
     "schema",
+    "spec",
     "status",
+    "validate",
 }
 DOMAIN_TAGS = {"analytics", "export", "graphs"}
 FORMAT_TAGS = {"dot", "json", "mermaid", "text"}

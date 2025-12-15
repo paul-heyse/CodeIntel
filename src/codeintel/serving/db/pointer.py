@@ -25,6 +25,8 @@ class ServingSnapshotPointer:
         Path to semantic_registry.json.
     schema_manifest_path
         Path to schema_manifest.json.
+    buildspec_path
+        Path to buildspec.json.
     repo
         Repository identifier.
     commit
@@ -40,6 +42,7 @@ class ServingSnapshotPointer:
     db_path: Path
     semantic_registry_path: Path
     schema_manifest_path: Path
+    buildspec_path: Path
     repo: str
     commit: str
     run_id: str
@@ -71,10 +74,18 @@ class ServingSnapshotPointer:
             msg = "Pointer missing published_at/created_at"
             raise KeyError(msg)
 
+        buildspec_raw = raw.get("buildspec_path")
+        if buildspec_raw is None:
+            schema_manifest_path = Path(raw["schema_manifest_path"]).resolve()
+            buildspec_path = schema_manifest_path.parent / "buildspec.json"
+        else:
+            buildspec_path = Path(buildspec_raw).resolve()
+
         return cls(
             db_path=Path(raw["db_path"]).resolve(),
             semantic_registry_path=Path(raw["semantic_registry_path"]).resolve(),
             schema_manifest_path=Path(raw["schema_manifest_path"]).resolve(),
+            buildspec_path=buildspec_path,
             repo=raw["repo"],
             commit=raw["commit"],
             run_id=raw["run_id"],
@@ -95,6 +106,7 @@ class ServingSnapshotPointer:
                 "db_path": str(self.db_path),
                 "semantic_registry_path": str(self.semantic_registry_path),
                 "schema_manifest_path": str(self.schema_manifest_path),
+                "buildspec_path": str(self.buildspec_path),
                 "repo": self.repo,
                 "commit": self.commit,
                 "run_id": self.run_id,

@@ -271,3 +271,46 @@ cases:
     exit_code: 0
     snapshot: "pr72_schema_compile_help.txt"
     kind: "text"
+
+  # ========================================================================
+  # PR-77: BuildSpec CLI surfaces
+  # ========================================================================
+
+  - name: "pr77_build_spec_help"
+    tags: ["pr77", "spec", "text", "tiny"]
+    args: ["build", "spec", "--help"]
+    exit_code: 0
+    snapshot: "pr77_build_spec_help.txt"
+    kind: "text"
+
+  - name: "pr77_build_spec_compile_help"
+    tags: ["pr77", "spec", "compile", "text", "tiny"]
+    args: ["build", "spec", "compile", "--help"]
+    exit_code: 0
+    snapshot: "pr77_build_spec_compile_help.txt"
+    kind: "text"
+
+  - name: "pr77_build_spec_compile_auto"
+    tags: ["pr77", "spec", "compile", "json", "integration"]
+    args: ["build", "spec", "compile", "--format", "json"]
+    exit_code: 0
+    snapshot: "pr77_build_spec_compile_auto.json"
+    kind: "json"
+
+  # ========================================================================
+  # PR-78: Hamilton graph validator gate
+  # ========================================================================
+
+  - name: "pr78_build_validate_help"
+    tags: ["pr78", "validate", "text", "tiny"]
+    args: ["build", "validate", "--help"]
+    exit_code: 0
+    snapshot: "pr78_build_validate_help.txt"
+    kind: "text"
+
+  - name: "pr78_build_validate_auto"
+    tags: ["pr78", "validate", "json", "integration"]
+    args: ["build", "validate", "--format", "json"]
+    exit_code: 0
+    snapshot: "pr78_build_validate_auto.json"
+    kind: "json"
