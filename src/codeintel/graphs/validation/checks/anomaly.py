@@ -3,8 +3,7 @@
 This module contains validation checks that detect community and subsystem
 level anomalies in the codebase.
 
-Check classes implement CheckProtocol from core/validation; legacy
-function wrappers are provided for backward compatibility.
+Check classes implement CheckProtocol from core/validation.
 """
 
 from __future__ import annotations

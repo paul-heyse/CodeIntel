@@ -2,32 +2,34 @@
 
 > **Status**: Ready for Implementation  
 > **Priority**: Medium  
-> **Estimated Effort**: 2-3 days  
-> **Dependencies**: None (can proceed independently)
+> **Estimated Effort**: 1-2 days  
+> **Dependencies**: None (can proceed independently)  
+> **Last Updated**: December 2024
 
 ## Executive Summary
 
 The `serving` module has evolved to a clean semantic-first architecture, but contains redundancies with the `storage` layer that should be consolidated. This plan documents opportunities to:
 
-1. Move connection pooling to storage layer
+1. Move connection pooling to storage layer (yielding gateways, not raw connections)
 2. Eliminate duplicate Ibis connection handling
-3. Simplify gateway usage patterns
-4. Consolidate schema metadata parsing
+3. Simplify gateway usage patterns (reuse per-request, not per-call)
+4. Use existing storage utilities (`duckdb_schema_exists`)
 
-**Goal**: Reduce serving module complexity by ~30% while improving maintainability through proper layer separation.
+**Goal**: Reduce serving module complexity by ~15% while improving maintainability through proper layer separation and gateway reuse.
 
 ---
 
 ## Table of Contents
 
 1. [Current Architecture](#current-architecture)
-2. [Redundancy Analysis](#redundancy-analysis)
-3. [Proposed Architecture](#proposed-architecture)
-4. [Implementation Phases](#implementation-phases)
-5. [File-by-File Changes](#file-by-file-changes)
-6. [Migration Guide](#migration-guide)
-7. [Testing Strategy](#testing-strategy)
-8. [Rollback Plan](#rollback-plan)
+2. [Storage Module Reference](#storage-module-reference)
+3. [Redundancy Analysis](#redundancy-analysis)
+4. [Proposed Architecture](#proposed-architecture)
+5. [Implementation Phases](#implementation-phases)
+6. [File-by-File Changes](#file-by-file-changes)
+7. [Migration Guide](#migration-guide)
+8. [Testing Strategy](#testing-strategy)
+9. [Rollback Plan](#rollback-plan)
 
 ---
 
@@ -49,7 +51,7 @@ serving/
 │   ├── kernel.py                  # SemanticQueryKernel ← REDUNDANCY
 │   ├── query_builder.py           # Safe Ibis query building
 │   ├── registry.py                # SemanticRegistry
-│   ├── inventory.py               # SchemaInventory ← REDUNDANCY
+│   ├── inventory.py               # SchemaInventory (KEEP AS-IS)
 │   └── models.py                  # Pydantic models
 ├── search/
 │   ├── __init__.py
@@ -66,27 +68,71 @@ serving/
     └── server.py                  # MCP server factory
 ```
 
-### Storage Module (Reference)
+---
+
+## Storage Module Reference
+
+The storage module has evolved to provide a clean gateway architecture:
 
 ```
 storage/
 ├── gateway/
-│   ├── protocol.py                # DuckDBConnection, StorageGateway, MinimalGateway
+│   ├── protocol.py                # MinimalGateway, StorageGateway protocols
 │   ├── minimal.py                 # MinimalStorageGateway (composition root)
-│   ├── config.py                  # StorageConfig
+│   ├── config.py                  # StorageConfig with for_readonly()
 │   ├── connection.py              # connect()
-│   └── factory.py                 # open_gateway(), open_memory_gateway()
+│   ├── factory.py                 # open_gateway(), open_memory_gateway()
+│   └── ephemeral.py               # ephemeral_gateway() context manager
 ├── ibis_adapter.py                # IbisGateway
-├── duckdb_policy_backend.py       # DuckDBPolicyBackend
+├── duckdb_policy_backend.py       # DuckDBPolicyBackend + duckdb_schema_exists()
 └── serving/
     └── search_index.py            # FTS index building
 ```
+
+### Key Storage Patterns
+
+1. **MinimalStorageGateway** is the composition root:
+   ```python
+   class MinimalStorageGateway:
+       @property
+       def con(self) -> DuckDBPyConnection: ...
+       @property
+       def ibis(self) -> IbisGateway: ...      # Lazy, cached
+       @property
+       def policy(self) -> DuckDBPolicyBackend: ...  # Lazy, cached
+   ```
+
+2. **IbisGateway.table()** handles qualified names properly:
+   ```python
+   def table(self, table_name: str) -> it.Table:
+       if "." in table_name:
+           database, name = table_name.split(".", 1)
+           return self.con.table(name, database=database)
+       return self.con.table(table_name)
+   ```
+
+3. **StorageConfig.for_readonly()** is designed for serving:
+   ```python
+   @classmethod
+   def for_readonly(cls, db_path: Path) -> StorageConfig:
+       return cls(db_path=db_path, read_only=True, ...)
+   ```
+
+4. **duckdb_schema_exists()** is a standalone utility:
+   ```python
+   def duckdb_schema_exists(con: DuckDBPyConnection, *, schema: str) -> bool:
+       row = con.execute(
+           "SELECT 1 FROM information_schema.schemata WHERE schema_name = ? LIMIT 1",
+           [schema],
+       ).fetchone()
+       return row is not None
+   ```
 
 ---
 
 ## Redundancy Analysis
 
-### 1. Connection Pool Implementation
+### 1. Connection Pool Yields Raw Connections
 
 **Location**: `serving/db/pool.py`
 
@@ -94,28 +140,29 @@ storage/
 ```python
 class DuckDBReadPool:
     def __init__(self, db_path: Path, cfg: DuckDBPoolConfig) -> None:
-        self._db_path = db_path
-        self._cfg = cfg
         self._available: LifoQueue[DuckDBConnection] = LifoQueue()
-        self._in_use: set[DuckDBConnection] = set()
-        self._closing = False
-        self._init_connections()
+        # ...
 
     def _open(self) -> DuckDBConnection:
-        # Uses storage.gateway.config.StorageConfig.for_readonly()
-        # Uses storage.gateway.connection.connect()
-        return connect(StorageConfig.for_readonly(self._db_path), duckdb_config=duckdb_config)
+        return connect(StorageConfig.for_readonly(self._db_path), duckdb_config=...)
+
+    def acquire(self) -> DuckDBConnection:
+        # Returns raw connection
+        return self._available.get()
 ```
 
-**Issue**: Pool correctly uses storage primitives but lives in serving layer. This creates a layering inversion where serving owns connection lifecycle.
+**Issue**: Pool correctly uses `StorageConfig.for_readonly()` but yields raw `DuckDBConnection`. Callers must then wrap with `MinimalStorageGateway(con)` on every use, which:
+- Creates new `IbisGateway` and `DuckDBPolicyBackend` instances per call
+- Violates the composition root pattern
+- Wastes CPU/memory on redundant initialization
 
-**Recommendation**: Move `DuckDBReadPool` to `storage/gateway/pool.py` as a reusable `ReadPoolGateway`.
+**Recommendation**: Move pool to storage and yield `MinimalStorageGateway` directly.
 
 ---
 
 ### 2. Ad-hoc Ibis Connection Creation
 
-**Location**: `serving/semantic/kernel.py:245-257`
+**Location**: `serving/semantic/kernel.py:248-257`
 
 **Current Implementation**:
 ```python
@@ -125,26 +172,26 @@ def _execute_semantic_plan(
     con: DuckDBConnection,
     plan: SemanticQueryPlan,
 ) -> list[dict[str, object]]:
-    ibis_con = ibis.duckdb.from_connection(con)  # ← Creates new Ibis connection
+    ibis_con = ibis.duckdb.from_connection(con)  # ← Creates new Ibis backend!
     expr = build_query(ibis_con=ibis_con, plan=plan)
     sql = ibis_con.compile(expr)
     return self._execute_sql(con=con, sql=sql)
 ```
 
-**Issue**: Creates a new Ibis backend connection for every query instead of using `MinimalStorageGateway(con).ibis`.
+**Issue**: Creates a new Ibis backend connection for every query instead of using `MinimalStorageGateway(con).ibis.con`.
 
 **Impact**:
-- Duplicate connection lifecycle management
+- Duplicate Ibis backend lifecycle management
 - Inconsistent with storage layer patterns
 - Potential connection overhead
 
-**Recommendation**: Pass `MinimalStorageGateway` through the call chain instead of raw `DuckDBConnection`.
+**Recommendation**: Pass `MinimalStorageGateway` through the call chain, use `gw.ibis.con`.
 
 ---
 
-### 3. Gateway Creation Per Call
+### 3. Gateway Creation Per SQL Call
 
-**Location**: `serving/semantic/kernel.py:217-238`
+**Location**: `serving/semantic/kernel.py` at lines 234, 414, 489
 
 **Current Implementation**:
 ```python
@@ -161,59 +208,67 @@ def _execute_sql(
     # ...
 ```
 
+Also at line 414 (explain):
+```python
+raw_rows = MinimalStorageGateway(con).policy.execute_sql(f"EXPLAIN {compiled}").fetchall()
+```
+
+And line 489 (search):
+```python
+backend = MinimalStorageGateway(con).policy
+```
+
 **Issue**: Creates a new `MinimalStorageGateway` for every SQL execution, which:
-- Reinstantiates `IbisGateway` and `DuckDBPolicyBackend`
+- Reinstantiates `IbisGateway` and `DuckDBPolicyBackend` each time
 - Wastes memory and CPU cycles
 - Violates the composition root pattern
 
-**Recommendation**: Create gateway once per acquired connection and reuse throughout request lifecycle.
+**Recommendation**: Create gateway once per acquired connection (in pool) and reuse throughout request lifecycle.
 
 ---
 
-### 4. Schema Manifest Parsing Duplication
+### 4. Raw SQL for Schema Existence Check
 
-**Location**: `serving/semantic/inventory.py:61-128`
+**Location**: `serving/semantic/kernel.py:503-507`
 
 **Current Implementation**:
 ```python
-def _parse_columns(items: object) -> list[Column]:
-    cols: list[Column] = []
-    for idx, col_obj in enumerate(_expect_list(items, ctx="columns")):
-        col = _expect_dict(col_obj, ctx=f"columns[{idx}]")
-        col_type = _parse_column_type(col.get("type"), ctx=f"columns[{idx}].type")
-        # ... manual parsing
-        cols.append(Column(...))
-    return cols
-
-def _parse_table(obj: Mapping[str, object]) -> TableSchema:
-    # ... manual JSON -> TableSchema conversion
+row = backend.execute_sql(
+    "SELECT 1 FROM information_schema.schemata WHERE schema_name = ? LIMIT 1",
+    [_SEARCH_FTS_SCHEMA],
+).fetchone()
+fts_available = row is not None
 ```
 
-**Issue**: Re-implements JSON→`TableSchema` parsing that could use `core.schemas.primitives` directly or be generated from a shared loader.
+**Issue**: Duplicates logic that already exists in `storage/duckdb_policy_backend.py`:
+```python
+def duckdb_schema_exists(con: DuckDBPyConnection, *, schema: str) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM information_schema.schemata WHERE schema_name = ? LIMIT 1",
+        [schema],
+    ).fetchone()
+    return row is not None
+```
 
-**Recommendation**: Add `TableSchema.from_dict()` class method to `core.schemas.primitives` and use it in `SchemaInventory`.
+**Recommendation**: Import and use `duckdb_schema_exists` from storage.
 
 ---
 
-### 5. FTS Query SQL Embedded in Kernel
+### 5. SchemaInventory Parsing — No Change Needed
+
+**Location**: `serving/semantic/inventory.py`
+
+**Assessment**: The `SchemaInventory` class already imports `Column`, `Index`, `TableSchema` from `codeintel.core.schemas.primitives` and constructs them directly. The parsing logic is clean and focused on the serving manifest JSON format.
+
+**Recommendation**: Keep as-is. The ~130 lines are well-organized and serving-specific. Adding a generic `TableSchema.from_dict()` would either be too permissive or duplicate the same validation.
+
+---
+
+### 6. FTS Query SQL Embedded in Kernel — Correctly Placed
 
 **Location**: `serving/semantic/kernel.py:47-105`
 
-**Current State**:
-```python
-_SQL_SEARCH_FTS = """
-SELECT kind, name, module, rel_path, ref_goid_h128, score
-FROM (
-    SELECT ... fts_docs_search_documents.match_bm25(doc_id, ?) AS score
-    FROM docs.search_documents
-) ranked
-WHERE score IS NOT NULL
-ORDER BY score DESC
-LIMIT ? OFFSET ?
-"""
-```
-
-**Assessment**: This is **correctly placed** - storage owns index creation (`storage/serving/search_index.py`), serving owns query execution. The SQL is read-only and specific to the serving surface.
+**Assessment**: This is **correctly placed** — storage owns index creation (`storage/serving/search_index.py`), serving owns query execution. The SQL is read-only and specific to the serving surface.
 
 **Recommendation**: Keep as-is. This is proper layer separation.
 
@@ -226,13 +281,15 @@ LIMIT ? OFFSET ?
 ```
 storage/
 ├── gateway/
-│   ├── protocol.py                # Add: ReadPoolGateway protocol
+│   ├── protocol.py                # Add: ReadPoolGateway protocol (optional)
 │   ├── minimal.py                 # MinimalStorageGateway (unchanged)
 │   ├── config.py                  # Add: PoolConfig
 │   ├── connection.py              # Unchanged
 │   ├── pool.py                    # NEW: ReadPoolGateway implementation
+│   ├── ephemeral.py               # Unchanged
 │   └── factory.py                 # Unchanged
 ├── ibis_adapter.py                # Unchanged
+├── duckdb_policy_backend.py       # Unchanged (already has duckdb_schema_exists)
 └── serving/
     └── search_index.py            # Unchanged
 
@@ -243,13 +300,13 @@ serving/
 │   ├── __init__.py                # Update exports
 │   ├── manager.py                 # REFACTOR: yield MinimalStorageGateway
 │   ├── pointer.py                 # Unchanged
-│   └── pool.py                    # DELETE or thin re-export
+│   └── pool.py                    # THIN RE-EXPORT with deprecation
 ├── semantic/
 │   ├── __init__.py                # Unchanged
 │   ├── kernel.py                  # REFACTOR: use gateway pattern
 │   ├── query_builder.py           # Unchanged
 │   ├── registry.py                # Unchanged
-│   ├── inventory.py               # SIMPLIFY: delegate to primitives
+│   ├── inventory.py               # Unchanged (correct as-is)
 │   └── models.py                  # Unchanged
 ├── search/                        # Unchanged
 ├── contracts/                     # Unchanged
@@ -261,7 +318,7 @@ serving/
 
 | Layer | Responsibility | Does NOT Own |
 |-------|---------------|--------------|
-| `storage.gateway` | Connection lifecycle, pooling, Ibis/policy access | Query semantics |
+| `storage.gateway` | Connection lifecycle, pooling, gateway creation | Query semantics |
 | `storage.serving` | FTS index building | Query execution |
 | `serving.db` | Snapshot pointer, hot-swap coordination | Connection pooling |
 | `serving.semantic` | Query building, result extraction | Connection management |
@@ -271,14 +328,14 @@ serving/
 
 ## Implementation Phases
 
-### Phase 1: Move Pool to Storage (2-3 hours)
+### Phase 1: Create ReadPoolGateway in Storage (2-3 hours)
 
-**Goal**: Establish proper layering by moving connection pooling to storage.
+**Goal**: Establish proper layering by moving connection pooling to storage with gateway yielding.
 
 #### 1.1 Create `storage/gateway/pool.py`
 
 ```python
-"""Read-only connection pool with MinimalStorageGateway per connection.
+"""Read-only gateway pool for concurrent query execution.
 
 This module provides pooled read-only access for serving scenarios
 where multiple concurrent queries need separate connections.
@@ -310,7 +367,7 @@ class PoolConfig:
     Parameters
     ----------
     size
-        Number of connections in the pool.
+        Number of gateways in the pool.
     threads
         DuckDB threads per connection (None = default).
     memory_limit
@@ -445,36 +502,9 @@ Add exports for new pool module:
 "ReadPoolGateway",
 ```
 
-#### 1.3 Update `serving/db/pool.py`
-
-Convert to thin re-export with deprecation:
-
-```python
-"""Connection pool re-exports from storage layer.
-
-.. deprecated::
-    Import directly from `codeintel.storage.gateway.pool` instead.
-"""
-
-from __future__ import annotations
-
-from codeintel.storage.gateway.pool import PoolConfig, ReadPoolGateway
-
-# Backwards compatibility alias
-DuckDBPoolConfig = PoolConfig
-DuckDBReadPool = ReadPoolGateway
-
-__all__ = [
-    "DuckDBPoolConfig",
-    "DuckDBReadPool",
-    "PoolConfig",
-    "ReadPoolGateway",
-]
-```
-
 ---
 
-### Phase 2: Refactor ServingDBManager (1-2 hours)
+### Phase 2: Refactor ServingDBManager (1 hour)
 
 **Goal**: Have manager yield `MinimalStorageGateway` instead of raw connections.
 
@@ -543,7 +573,18 @@ class ServingDBManager:
             self._pool.close_gracefully()
 
     def current_pointer(self) -> ServingSnapshotPointer:
-        """Return current snapshot pointer."""
+        """Return current snapshot pointer.
+
+        Returns
+        -------
+        ServingSnapshotPointer
+            Active snapshot pointer.
+
+        Raises
+        ------
+        RuntimeError
+            If manager not started or pointer not yet available.
+        """
         if self._pointer is None:
             msg = "ServingDBManager has no active snapshot pointer"
             raise RuntimeError(msg)
@@ -595,7 +636,7 @@ class ServingDBManager:
             self._pointer = new_ptr
             return
 
-        new_pool = ReadPoolGateway(new_ptr.db_path, self._pool_cfg)
+        new_pool = ReadPoolGateway(new_ptr.db_path, self.pool_cfg)
         old_pool = self._pool
         self._pool = new_pool
         self._pointer = new_ptr
@@ -607,16 +648,52 @@ class ServingDBManager:
 __all__ = ["ServingDBManager"]
 ```
 
+#### 2.2 Update `serving/db/pool.py` to thin re-export
+
+```python
+"""Connection pool re-exports from storage layer.
+
+.. deprecated::
+    Import directly from `codeintel.storage.gateway.pool` instead.
+"""
+
+from __future__ import annotations
+
+from codeintel.storage.gateway.pool import PoolConfig, ReadPoolGateway
+
+# Backwards compatibility aliases
+DuckDBPoolConfig = PoolConfig
+DuckDBReadPool = ReadPoolGateway
+
+__all__ = [
+    "DuckDBPoolConfig",
+    "DuckDBReadPool",
+    "PoolConfig",
+    "ReadPoolGateway",
+]
+```
+
 ---
 
-### Phase 3: Refactor SemanticQueryKernel (2-3 hours)
+### Phase 3: Refactor SemanticQueryKernel (1-2 hours)
 
 **Goal**: Use gateway pattern throughout kernel, eliminating ad-hoc connections.
 
 #### 3.1 Key Changes to `serving/semantic/kernel.py`
 
-**Before**:
+**Import changes**:
 ```python
+# Add:
+from codeintel.storage.duckdb_policy_backend import duckdb_schema_exists
+
+# Remove need for:
+# import ibis  (for ibis.duckdb.from_connection)
+```
+
+**Method signature changes**:
+
+```python
+# Before:
 def _execute_sql(
     self,
     *,
@@ -624,161 +701,75 @@ def _execute_sql(
     sql: str,
     params: Sequence[object] | None = None,
 ) -> list[dict[str, object]]:
-    backend = MinimalStorageGateway(con).policy  # Creates gateway per call
+    backend = MinimalStorageGateway(con).policy
     result = backend.execute_sql(sql, params=params)
 
+# After:
+def _execute_sql(
+    self,
+    *,
+    gw: MinimalStorageGateway,
+    sql: str,
+    params: Sequence[object] | None = None,
+) -> list[dict[str, object]]:
+    result = gw.policy.execute_sql(sql, params=params)
+```
+
+```python
+# Before:
 def _execute_semantic_plan(
     self,
     *,
     con: DuckDBConnection,
     plan: SemanticQueryPlan,
 ) -> list[dict[str, object]]:
-    ibis_con = ibis.duckdb.from_connection(con)  # Creates Ibis per call
+    ibis_con = ibis.duckdb.from_connection(con)
     expr = build_query(ibis_con=ibis_con, plan=plan)
     sql = ibis_con.compile(expr)
     return self._execute_sql(con=con, sql=sql)
-```
 
-**After**:
-```python
-def _execute_sql(
-    self,
-    *,
-    gw: MinimalStorageGateway,
-    sql: str,
-    params: Sequence[object] | None = None,
-) -> list[dict[str, object]]:
-    result = gw.policy.execute_sql(sql, params=params)  # Reuse gateway
-
+# After:
 def _execute_semantic_plan(
     self,
     *,
     gw: MinimalStorageGateway,
     plan: SemanticQueryPlan,
 ) -> list[dict[str, object]]:
-    expr = build_query(ibis_con=gw.ibis.con, plan=plan)  # Use gateway's Ibis
+    expr = build_query(ibis_con=gw.ibis.con, plan=plan)
     sql = gw.ibis.con.compile(expr)
     return self._execute_sql(gw=gw, sql=sql)
 ```
 
-**Public methods update**:
+**Public method updates**:
+
 ```python
+# Before:
 def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse:
     # ... setup code ...
-    
-    with self.db.connect() as (gw, pointer):  # Now yields gateway
+    with self.db.connect() as (con, pointer):
+        rows = self._execute_semantic_plan(con=con, plan=plan)
+    # ... response building ...
+
+# After:
+def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse:
+    # ... setup code ...
+    with self.db.connect() as (gw, pointer):
         rows = self._execute_semantic_plan(gw=gw, plan=plan)
-    
     # ... response building ...
 ```
 
----
-
-### Phase 4: Simplify SchemaInventory (1 hour)
-
-**Goal**: Reduce parsing duplication by using core primitives.
-
-#### 4.1 Add `TableSchema.from_dict()` to `core/schemas/primitives.py`
+**Schema existence check**:
 
 ```python
-@classmethod
-def from_dict(cls, data: Mapping[str, object]) -> TableSchema:
-    """Load TableSchema from dictionary representation.
+# Before:
+row = backend.execute_sql(
+    "SELECT 1 FROM information_schema.schemata WHERE schema_name = ? LIMIT 1",
+    [_SEARCH_FTS_SCHEMA],
+).fetchone()
+fts_available = row is not None
 
-    Parameters
-    ----------
-    data
-        Dictionary with schema, name, columns, primary_key, indexes, description.
-
-    Returns
-    -------
-    TableSchema
-        Loaded schema instance.
-    """
-    columns = [
-        Column(
-            name=str(col.get("name", "")),
-            type=str(col.get("type", "VARCHAR")),
-            nullable=bool(col.get("nullable", True)),
-            description=col.get("description"),
-        )
-        for col in data.get("columns", [])
-    ]
-    
-    indexes = tuple(
-        Index(
-            name=str(idx.get("name", "")),
-            columns=tuple(str(c) for c in idx.get("columns", [])),
-            unique=bool(idx.get("unique", False)),
-        )
-        for idx in data.get("indexes", [])
-    )
-    
-    pk_raw = data.get("primary_key", [])
-    primary_key = tuple(str(k) for k in pk_raw) if isinstance(pk_raw, list) else ()
-    
-    return cls(
-        schema=str(data.get("schema", "")),
-        name=str(data.get("name", "")),
-        columns=columns,
-        primary_key=primary_key,
-        indexes=indexes,
-        description=data.get("description"),
-    )
-```
-
-#### 4.2 Simplify `serving/semantic/inventory.py`
-
-```python
-"""Schema inventory for serving layer introspection."""
-
-from __future__ import annotations
-
-import json
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-from codeintel.core.schemas.primitives import TableSchema
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-__all__ = ["SchemaInventory"]
-
-
-@dataclass(frozen=True)
-class SchemaInventory:
-    """Inventory of table and view schemas."""
-
-    schemas: dict[str, TableSchema]
-
-    @classmethod
-    def load(cls, path: Path) -> SchemaInventory:
-        """Load inventory from schema manifest JSON."""
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        
-        schemas: dict[str, TableSchema] = {}
-        for table_data in payload.get("tables", []):
-            schema = TableSchema.from_dict(table_data)
-            schemas[schema.table_key] = schema
-        
-        return cls(schemas=schemas)
-
-    def get(self, table_key: str) -> TableSchema | None:
-        """Look up schema by table key."""
-        return self.schemas.get(table_key)
-
-    def require(self, table_key: str) -> TableSchema:
-        """Look up schema by table key, raising if not found."""
-        schema = self.get(table_key)
-        if schema is None:
-            msg = f"Unknown table: {table_key}"
-            raise KeyError(msg)
-        return schema
-
-    def table_keys(self) -> list[str]:
-        """Return all table keys."""
-        return list(self.schemas.keys())
+# After:
+fts_available = duckdb_schema_exists(gw.con, schema=_SEARCH_FTS_SCHEMA)
 ```
 
 ---
@@ -789,19 +780,17 @@ class SchemaInventory:
 
 | File | Purpose |
 |------|---------|
-| `storage/gateway/pool.py` | `ReadPoolGateway` implementation |
+| `storage/gateway/pool.py` | `ReadPoolGateway` implementation yielding `MinimalStorageGateway` |
 
 ### Files to Modify
 
 | File | Changes |
 |------|---------|
 | `storage/gateway/__init__.py` | Export `PoolConfig`, `ReadPoolGateway` |
-| `serving/db/__init__.py` | Update exports |
-| `serving/db/pool.py` | Convert to re-export with deprecation |
-| `serving/db/manager.py` | Yield `MinimalStorageGateway` instead of raw connection |
-| `serving/semantic/kernel.py` | Use gateway pattern throughout |
-| `serving/semantic/inventory.py` | Simplify using `TableSchema.from_dict()` |
-| `core/schemas/primitives.py` | Add `TableSchema.from_dict()` |
+| `serving/db/__init__.py` | Update exports for new types |
+| `serving/db/pool.py` | Convert to thin re-export with deprecation |
+| `serving/db/manager.py` | Use `ReadPoolGateway`, yield `MinimalStorageGateway` |
+| `serving/semantic/kernel.py` | Use gateway pattern, import `duckdb_schema_exists` |
 
 ### Files Unchanged
 
@@ -809,8 +798,9 @@ class SchemaInventory:
 |------|--------|
 | `serving/settings.py` | Environment config is serving-specific |
 | `serving/db/pointer.py` | Snapshot pointer is serving-specific |
-| `serving/semantic/query_builder.py` | Filter building is serving-specific |
+| `serving/semantic/query_builder.py` | Filter building is serving-specific, correct design |
 | `serving/semantic/registry.py` | View registry is serving-specific |
+| `serving/semantic/inventory.py` | JSON parsing is serving-specific, correct design |
 | `serving/semantic/models.py` | Pydantic models are serving-specific |
 | `serving/search/models.py` | Search models are serving-specific |
 | `serving/contracts/*` | Contract validation is serving-specific |
@@ -842,22 +832,24 @@ from codeintel.storage.gateway.pool import PoolConfig, ReadPoolGateway
 pool = ReadPoolGateway(db_path, PoolConfig(size=4))
 with pool.acquire() as gw:
     result = gw.policy.execute_sql("SELECT 1").fetchone()
+pool.close_gracefully()
 ```
 
-### For Existing Code Using Raw Connections
+### For Existing Code Using `db_manager.connect()`
 
 **Before**:
 ```python
 with db_manager.connect() as (con, pointer):
     ibis_con = ibis.duckdb.from_connection(con)
     backend = MinimalStorageGateway(con).policy
+    result = backend.execute_sql("SELECT 1")
 ```
 
 **After**:
 ```python
 with db_manager.connect() as (gw, pointer):
-    # gw.ibis.con is the Ibis backend
-    # gw.policy is the DuckDBPolicyBackend
+    # gw.ibis.con is the cached Ibis backend
+    # gw.policy is the cached DuckDBPolicyBackend
     result = gw.policy.execute_sql("SELECT 1")
 ```
 
@@ -869,17 +861,19 @@ with db_manager.connect() as (gw, pointer):
 
 1. **Pool Tests** (`tests/storage/gateway/test_pool.py`)
    - Test pool initialization with various sizes
-   - Test acquire/release lifecycle
+   - Test acquire/release lifecycle via context manager
    - Test graceful shutdown
-   - Test concurrent access
+   - Test concurrent access from multiple threads
 
 2. **Manager Tests** (`tests/serving/db/test_manager.py`)
    - Update to expect `MinimalStorageGateway` from `connect()`
    - Test hot-swap with new pool type
+   - Verify gateway reuse within single request
 
 3. **Kernel Tests** (`tests/serving/semantic/test_kernel.py`)
    - Verify queries work with gateway pattern
-   - Test result extraction unchanged
+   - Test that result extraction is unchanged
+   - Verify `duckdb_schema_exists` integration
 
 ### Integration Tests
 
@@ -898,14 +892,16 @@ The thin re-export in `serving/db/pool.py` ensures existing imports continue to 
 from codeintel.serving.db.pool import DuckDBPoolConfig, DuckDBReadPool
 ```
 
+Note: The API changes from `acquire()/release()` to context manager `acquire()`. Code using the old pattern will need updates.
+
 ---
 
 ## Rollback Plan
 
 ### If Issues Arise
 
-1. **Revert Phase 1**: Restore `serving/db/pool.py` to full implementation
-2. **Revert Phase 2**: Restore `ServingDBManager` to yield raw connections
+1. **Revert Phase 1**: Delete `storage/gateway/pool.py`, revert `storage/gateway/__init__.py`
+2. **Revert Phase 2**: Restore `ServingDBManager` to yield raw connections, restore full `pool.py`
 3. **Revert Phase 3**: Restore kernel to create ad-hoc gateways
 
 ### Feature Flags (Optional)
@@ -931,14 +927,15 @@ USE_GATEWAY_PATTERN = os.environ.get("CODEINTEL_USE_GATEWAY_PATTERN", "1") == "1
 ### Performance
 
 - [ ] Query latency unchanged (±5%)
-- [ ] Memory usage unchanged (±10%)
+- [ ] Memory usage reduced (fewer gateway instantiations)
 - [ ] Pool acquisition time < 1ms
 
 ### Architecture
 
-- [ ] No `ibis.duckdb.from_connection()` calls in serving (except query_builder)
+- [ ] No `ibis.duckdb.from_connection()` calls in serving kernel
 - [ ] No `MinimalStorageGateway()` construction in kernel hot paths
 - [ ] All pool management in storage layer
+- [ ] Single gateway instance reused throughout request lifecycle
 
 ### Documentation
 
@@ -954,38 +951,44 @@ USE_GATEWAY_PATTERN = os.environ.get("CODEINTEL_USE_GATEWAY_PATTERN", "1") == "1
 
 | Module | Before | After | Delta |
 |--------|--------|-------|-------|
-| `serving/db/pool.py` | 140 | 20 | -120 |
-| `serving/db/manager.py` | 139 | 100 | -39 |
-| `serving/semantic/kernel.py` | 542 | 500 | -42 |
-| `serving/semantic/inventory.py` | 231 | 80 | -151 |
-| `storage/gateway/pool.py` | 0 | 140 | +140 |
-| `core/schemas/primitives.py` | ~200 | ~240 | +40 |
-| **Total** | **1252** | **1080** | **-172** |
+| `serving/db/pool.py` | 139 | 25 | -114 |
+| `serving/db/manager.py` | 138 | 115 | -23 |
+| `serving/semantic/kernel.py` | 546 | 520 | -26 |
+| `storage/gateway/pool.py` | 0 | 100 | +100 |
+| **Total** | **823** | **760** | **-63** |
 
 ### Dependency Graph Simplification
 
 **Before**:
 ```
 serving.semantic.kernel
-  → ibis.duckdb (direct)
-  → storage.gateway.minimal (per-call)
-  → storage.duckdb_policy_backend (per-call)
+  → ibis.duckdb (direct, creates backend per call)
+  → storage.gateway.minimal (creates per SQL call)
+  → storage.duckdb_policy_backend (creates per SQL call)
 ```
 
 **After**:
 ```
 serving.semantic.kernel
   → storage.gateway.pool (via manager)
-    → storage.gateway.minimal (pooled)
-      → storage.ibis_adapter
-      → storage.duckdb_policy_backend
+    → storage.gateway.minimal (pooled, one per connection)
+      → storage.ibis_adapter (cached on gateway)
+      → storage.duckdb_policy_backend (cached on gateway)
 ```
+
+### Gateway Instantiation Reduction
+
+| Scenario | Before | After |
+|----------|--------|-------|
+| Single semantic query | 2 gateways | 0 (reuses pooled) |
+| Search query | 2 gateways | 0 (reuses pooled) |
+| Explain query | 2 gateways | 0 (reuses pooled) |
+| Request with 3 queries | 6 gateways | 0 (reuses pooled) |
 
 ---
 
 ## Related Documents
 
 - [COMBINED_DECOMMISSIONING_PLAN.md](./COMBINED_DECOMMISSIONING_PLAN.md) - Overall decommissioning context
-- [ANALYTICS_DECOMMISSIONING_PLAN.md](./ANALYTICS_DECOMMISSIONING_PLAN.md) - Analytics layer cleanup
-- [GRAPHS_DECOMMISSIONING_PLAN.md](./GRAPHS_DECOMMISSIONING_PLAN.md) - Graph layer cleanup
+- [BUILD_CONSOLIDATION_AND_ENHANCEMENT_PLAN.md](./BUILD_CONSOLIDATION_AND_ENHANCEMENT_PLAN.md) - Build layer cleanup
 

@@ -24,6 +24,13 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from codeintel.analytics.compute.dependencies.classification import (
+    CALLSITE_MEDIUM_THRESHOLD,
+    SEVERITY_SCORES,
+    DependencyModePattern,
+    LibraryPattern,
+)
+from codeintel.analytics.compute.dependencies.detection import DependencyCall
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse, snippet_from_lines
 from codeintel.core.paths import normalize_path
@@ -75,57 +82,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import DuckDBConnection
 
 log = logging.getLogger(__name__)
-
-CALLSITE_MEDIUM_THRESHOLD = 10
-SEVERITY_SCORES = {
-    "critical": 4.0,
-    "high": 3.0,
-    "medium": 2.0,
-    "low": 1.0,
-    "info": 0.5,
-}
-
-
-@dataclass(frozen=True)
-class DependencyModePattern:
-    """Classification rule for a dependency call."""
-
-    modes: list[str]
-    method: str | None = None
-    method_prefix: str | None = None
-    match: str | None = None
-    severity: str | None = None
-    criticality: float | None = None
-    name: str | None = None
-
-
-@dataclass(frozen=True)
-class LibraryPattern:
-    """Pattern bundle for a specific library."""
-
-    library: str
-    service_name: str | None
-    category: str | None
-    matchers: list[DependencyModePattern]
-    severity: str | None = None
-    criticality: float | None = None
-    language: str = "python"
-
-
-@dataclass(frozen=True)
-class DependencyCall:
-    """A single call into an external library."""
-
-    library: str
-    target: str
-    modes: list[str]
-    severity: str | None
-    criticality: float | None
-    matched_pattern: str | None = None
-    risk_score: float | None = None
-    lineno: int | None = None
-    end_lineno: int | None = None
-    snippet: str = ""
 
 
 @dataclass

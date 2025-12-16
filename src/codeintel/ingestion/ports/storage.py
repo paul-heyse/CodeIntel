@@ -1,7 +1,7 @@
 """Storage port protocol for ingestion data persistence.
 
 This module re-exports unified storage types from ``codeintel.core.ports.storage``
-with backward-compatible aliases for the ingestion naming convention.
+to provide domain-appropriate imports for ingestion code.
 
 The protocol abstracts database-specific operations like schema management,
 batch writes, and queries.

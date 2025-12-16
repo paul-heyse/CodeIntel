@@ -79,6 +79,10 @@ class ParsedFunction:
     return_annotation: Any | None
     param_any_flags: Mapping[str, bool]
     return_is_any: bool
+    # Graph compatibility fields
+    is_async: bool = False
+    decorator_names: tuple[str, ...] = ()
+    parameters: tuple[str, ...] = ()
 
     @property
     def local_name(self) -> str:
@@ -90,6 +94,39 @@ class ParsedFunction:
             Unqualified function name.
         """
         return self.qualname.rsplit(".", maxsplit=1)[-1]
+
+    @property
+    def name(self) -> str:
+        """Extract the function name (alias for local_name).
+
+        Returns
+        -------
+        str
+            Unqualified function name.
+        """
+        return self.local_name
+
+    @property
+    def start_line(self) -> int:
+        """Get the starting line number from the span.
+
+        Returns
+        -------
+        int
+            Starting line number (1-based).
+        """
+        return self.span.start_line
+
+    @property
+    def end_line(self) -> int:
+        """Get the ending line number from the span.
+
+        Returns
+        -------
+        int
+            Ending line number (1-based).
+        """
+        return self.span.end_line
 
 
 @dataclass(frozen=True)

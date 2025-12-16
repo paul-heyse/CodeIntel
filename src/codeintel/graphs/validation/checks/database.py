@@ -3,8 +3,7 @@
 This module contains validation checks that verify data integrity
 by querying the database for inconsistencies.
 
-Check classes implement CheckProtocol from core/validation; legacy
-function wrappers are provided for backward compatibility.
+Check classes implement CheckProtocol from core/validation.
 """
 
 from __future__ import annotations

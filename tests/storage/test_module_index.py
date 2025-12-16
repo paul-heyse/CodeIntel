@@ -35,8 +35,10 @@ def test_load_module_map_returns_normalized_paths(
         fresh_gateway,
         [
             ModuleRow(module="test.module", path="src/test/module.py", repo=repo, commit=commit),
-            ModuleRow(module="another.module", path="src/another/module.py", repo=repo, commit=commit),
-        ]
+            ModuleRow(
+                module="another.module", path="src/another/module.py", repo=repo, commit=commit
+            ),
+        ],
     )
 
     result = load_module_map(fresh_gateway, repo, commit)

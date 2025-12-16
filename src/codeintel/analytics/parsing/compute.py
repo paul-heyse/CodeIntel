@@ -3,8 +3,8 @@
 This module provides pure compute functions that extract row data from validation
 reporters and materialization helpers that integrate with the Hamilton build layer.
 
-Use these functions instead of the deprecated `flush()` methods on the reporter
-classes.
+The ``to_rows()`` method on reporter instances extracts accumulated data for
+batch database insertion via Hamilton materializers.
 
 Example
 -------

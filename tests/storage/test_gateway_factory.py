@@ -209,7 +209,7 @@ def test_open_memory_gateway_supports_insert_and_query() -> None:
             gateway,
             [
                 ModuleRow(module="test_mod", path="test.py", repo="test/repo", commit="abc123"),
-            ]
+            ],
         )
         result = gateway.con.execute(
             "SELECT module FROM core.modules WHERE repo = ?", ["test/repo"]
@@ -475,7 +475,7 @@ def test_full_gateway_lifecycle(tmp_path: Path) -> None:
         [
             ModuleRow(module="mod_a", path="mod_a.py", repo="test/repo", commit="v1"),
             ModuleRow(module="mod_b", path="mod_b.py", repo="test/repo", commit="v1"),
-        ]
+        ],
     )
     gw_write.close()
 

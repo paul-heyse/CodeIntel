@@ -3,6 +3,16 @@
 This module defines data classes for representing parsed source code,
 allowing pure computation to work with parsed representations
 without coupling to specific parsing libraries.
+
+Note
+----
+This module provides graph-specific parsing types optimized for call graph
+analysis with LibCST/AST. For SCIP-based parsing with richer type annotation
+data, see ``codeintel.core.parsing.models``.
+
+The ``ParsedFunction`` here is a lightweight representation focused on
+call graph edges, while ``core.parsing.ParsedFunction`` includes full
+type annotation metadata.
 """
 
 from __future__ import annotations

@@ -1,9 +1,8 @@
 """Function GOID types and loading utilities.
 
 This module provides data types and utilities for working with function
-global object identifiers (GOIDs). These types were originally in
-analytics.adapters.functions and were extracted to support direct usage
-without the deprecated adapter layer.
+global object identifiers (GOIDs), including loading from the database
+and grouping by file path.
 
 Example
 -------
