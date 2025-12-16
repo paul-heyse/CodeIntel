@@ -27,7 +27,7 @@ def list_execution_order(
     runtime: HamiltonRuntime,
     targets: list[str],
     *,
-    graph_source: GraphSource = "targetgraph",
+    graph_source: GraphSource = "hamilton",
 ) -> list[str]:
     """Return the execution order for targets.
 
@@ -41,7 +41,7 @@ def list_execution_order(
     targets
         Target names to compute execution order for.
     graph_source
-        Dependency graph source: "targetgraph" (default) or "hamilton".
+        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -55,7 +55,8 @@ def list_execution_order(
     >>> "t__modules" in order
     True
     """
-    graph = runtime.graph if graph_source == "targetgraph" else target_graph_from_hamilton(runtime)
+    _ = graph_source
+    graph = target_graph_from_hamilton(runtime)
     closure = graph.topological_order(targets)
     return [runtime.target_to_node[t] for t in closure if t in runtime.target_to_node]
 
@@ -64,7 +65,7 @@ def list_execution_targets(
     runtime: HamiltonRuntime,
     targets: list[str],
     *,
-    graph_source: GraphSource = "targetgraph",
+    graph_source: GraphSource = "hamilton",
 ) -> list[str]:
     """Return the execution order as target names.
 
@@ -75,7 +76,7 @@ def list_execution_targets(
     targets
         Target names to compute execution order for.
     graph_source
-        Dependency graph source: "targetgraph" (default) or "hamilton".
+        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -89,7 +90,8 @@ def list_execution_targets(
     >>> "modules" in order
     True
     """
-    graph = runtime.graph if graph_source == "targetgraph" else target_graph_from_hamilton(runtime)
+    _ = graph_source
+    graph = target_graph_from_hamilton(runtime)
     return list(graph.topological_order(targets))
 
 
@@ -97,7 +99,7 @@ def get_dag_info(
     runtime: HamiltonRuntime,
     targets: list[str],
     *,
-    graph_source: GraphSource = "targetgraph",
+    graph_source: GraphSource = "hamilton",
 ) -> dict[str, Any]:
     """Get detailed DAG information for targets.
 
@@ -108,7 +110,7 @@ def get_dag_info(
     targets
         Target names to get DAG info for.
     graph_source
-        Dependency graph source: "targetgraph" (default) or "hamilton".
+        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -122,7 +124,8 @@ def get_dag_info(
     >>> "nodes" in info
     True
     """
-    graph = runtime.graph if graph_source == "targetgraph" else target_graph_from_hamilton(runtime)
+    _ = graph_source
+    graph = target_graph_from_hamilton(runtime)
     closure = graph.topological_order(targets)
 
     nodes: list[dict[str, Any]] = []
@@ -167,7 +170,7 @@ def export_dag_json(
     targets: list[str],
     *,
     indent: int | None = 2,
-    graph_source: GraphSource = "targetgraph",
+    graph_source: GraphSource = "hamilton",
 ) -> str:
     """Export DAG information as JSON string.
 
@@ -180,7 +183,7 @@ def export_dag_json(
     indent
         JSON indentation level (None for compact).
     graph_source
-        Dependency graph source: "targetgraph" (default) or "hamilton".
+        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -205,7 +208,7 @@ def export_execution_json(
     *,
     targets: list[str],
     env: BuildEnv,
-    graph_source: GraphSource = "targetgraph",
+    graph_source: GraphSource = "hamilton",
 ) -> str:
     """Export DAG execution plan as JSON.
 
@@ -221,7 +224,7 @@ def export_execution_json(
     env
         Build environment for input resolution.
     graph_source
-        Dependency graph source: "targetgraph" (default) or "hamilton".
+        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -259,7 +262,7 @@ def export_dag_mermaid(
     runtime: HamiltonRuntime,
     targets: list[str],
     *,
-    graph_source: GraphSource = "targetgraph",
+    graph_source: GraphSource = "hamilton",
 ) -> str:
     """Export DAG as Mermaid graph definition.
 
@@ -273,7 +276,7 @@ def export_dag_mermaid(
     targets
         Target names to export DAG for.
     graph_source
-        Dependency graph source: "targetgraph" (default) or "hamilton".
+        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -309,7 +312,7 @@ def export_dag_dot(
     runtime: HamiltonRuntime,
     targets: list[str],
     *,
-    graph_source: GraphSource = "targetgraph",
+    graph_source: GraphSource = "hamilton",
 ) -> str:
     """Export DAG as Graphviz DOT definition.
 
@@ -323,7 +326,7 @@ def export_dag_dot(
     targets
         Target names to export DAG for.
     graph_source
-        Dependency graph source: "targetgraph" (default) or "hamilton".
+        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------

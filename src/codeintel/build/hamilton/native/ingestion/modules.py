@@ -30,8 +30,6 @@ from codeintel.ingestion.adapters import (
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
-from codeintel.ingestion.ports.change_detection import ChangeRequest
-from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
@@ -136,28 +134,6 @@ def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
             full_rebuild=False,
         )
 
-        # Create change tracker and store in context for downstream targets
-        change_request = ChangeRequest(
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-            repo_root=env.snapshot.repo_root,
-            language="python",
-            full_rebuild=False,
-            scan_profile=profile,
-        )
-
-        tracker = ChangeTracker.create(
-            gateway=env.gateway,
-            change_request=change_request,
-            modules=modules,
-            policy=None,
-            change_detection=change_detection,
-        )
-
-        # Store tracker for downstream use (via env resources if available)
-        if hasattr(env, "resources") and env.resources is not None:
-            env.resources.change_tracker = tracker
-
         return ModuleScanResult(
             success=True,
             modules=tuple(modules),
@@ -166,7 +142,7 @@ def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
         )
 
     except Exception as exc:
-        log.exception("Module scan failed: %s", exc)
+        log.exception("Module scan failed")
         return ModuleScanResult(
             success=False,
             error=str(exc),
@@ -231,7 +207,7 @@ def t__modules__write_repo_map(
         )
 
     except Exception as exc:
-        log.exception("Repo map write failed: %s", exc)
+        log.exception("Repo map write failed")
         return RepoMapWriteResult(
             success=False,
             error=str(exc),

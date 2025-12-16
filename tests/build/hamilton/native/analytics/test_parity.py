@@ -10,382 +10,280 @@ These tests verify that:
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.hamilton.native.analytics import (
+    AstFeaturesResult,
+    BehavioralCoverageResult,
+    ConfigDataFlowResult,
+    CoverageTestEdgesResult,
+    FunctionContractsResult,
+    FunctionEffectsResult,
+    FunctionMetricsResult,
+    ProfilesResult,
+    SemanticRolesResult,
+    SubsystemAgreementResult,
+    SubsystemGraphMetricsResult,
+    SymbolGraphMetricsResult,
+    TestProfileResult,
+)
 from codeintel.build.hamilton.native.loader import NativeModuleLoader
+from codeintel.build.registrations import register_analytics_targets
+from codeintel.build.unified_registry import UnifiedRegistry
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_in,
     expect_true,
 )
 
-# ============================================================================
-# Module Discovery Tests
-# ============================================================================
+if TYPE_CHECKING:
+    from types import ModuleType
+
+_ANALYTICS_DOMAIN = "analytics"
+_MIN_ANALYTICS_MODULES = 20
+
+_REQUIRED_ANALYTICS_TARGETS: list[str] = [
+    "t__behavioral_coverage",
+    "t__cfg_dfg_metrics",
+    "t__config_data_flow",
+    "t__coverage_functions",
+    "t__coverage_test_edges",
+    "t__data_models",
+    "t__entrypoints",
+    "t__external_deps",
+    "t__function_ast_features",
+    "t__function_contracts",
+    "t__function_effects",
+    "t__function_history",
+    "t__function_metrics",
+    "t__history_timeseries",
+    "t__hotspots",
+    "t__profiles",
+    "t__risk_factors",
+    "t__semantic_roles",
+    "t__subsystem_agreement",
+    "t__subsystem_graph_metrics",
+    "t__subsystems",
+    "t__symbol_graph_metrics",
+    "t__test_graph_metrics",
+    "t__test_profile",
+]
+
+_RESULT_TYPES = [
+    AstFeaturesResult,
+    BehavioralCoverageResult,
+    ConfigDataFlowResult,
+    CoverageTestEdgesResult,
+    FunctionContractsResult,
+    FunctionEffectsResult,
+    FunctionMetricsResult,
+    ProfilesResult,
+    SemanticRolesResult,
+    SubsystemAgreementResult,
+    SubsystemGraphMetricsResult,
+    SymbolGraphMetricsResult,
+    TestProfileResult,
+]
 
 
-class TestModuleDiscovery:
-    """Tests for native module discovery."""
-
-    def test_analytics_modules_discovered(self) -> None:
-        """Verify all analytics modules are discovered by the loader."""
-        loader = NativeModuleLoader()
-        modules = loader.load_for_driver(domains={"analytics"})
-
-        # Should find a reasonable number of analytics modules
-        expect_true(
-            len(modules) >= 20, message=f"Expected >= 20 analytics modules, found {len(modules)}"
-        )
-
-    def test_analytics_domain_exists(self) -> None:
-        """Verify analytics domain is registered in loader packages."""
-        from codeintel.build.hamilton.native.loader import _NATIVE_MODULE_PACKAGES
-
-        expect_in("analytics", _NATIVE_MODULE_PACKAGES)
-        expect_true(len(_NATIVE_MODULE_PACKAGES["analytics"]) >= 20)
-
-    def test_all_module_paths_importable(self) -> None:
-        """Verify all registered module paths can be imported."""
-        from codeintel.build.hamilton.native.loader import _NATIVE_MODULE_PACKAGES
-
-        failed: list[str] = []
-        for path in _NATIVE_MODULE_PACKAGES.get("analytics", []):
-            try:
-                importlib.import_module(path)
-            except ImportError as e:
-                failed.append(f"{path}: {e}")
-
-        if failed:
-            pytest.fail("Failed to import modules:\n" + "\n".join(failed))
+def _load_domain_modules(domain: str) -> list[tuple[str, ModuleType]]:
+    modules: list[tuple[str, ModuleType]] = []
+    for path in NativeModuleLoader.list_module_paths(domain=domain):
+        try:
+            mod = importlib.import_module(path)
+        except ImportError:
+            continue
+        modules.append((path, mod))
+    return modules
 
 
-# ============================================================================
-# Module Structure Tests
-# ============================================================================
-
-
-class TestModuleStructure:
-    """Tests for module structure and exports."""
-
-    @pytest.fixture
-    def analytics_modules(self) -> list[tuple[str, Any]]:
-        """Load all analytics modules."""
-        from codeintel.build.hamilton.native.loader import _NATIVE_MODULE_PACKAGES
-
-        modules: list[tuple[str, Any]] = []
-        for path in _NATIVE_MODULE_PACKAGES.get("analytics", []):
-            try:
-                mod = importlib.import_module(path)
-                modules.append((path, mod))
-            except ImportError:
-                continue
-        return modules
-
-    def test_modules_have_all_attribute(self, analytics_modules: list[tuple[str, Any]]) -> None:
-        """Verify all modules define __all__ for explicit exports."""
-        missing: list[str] = []
-        for path, mod in analytics_modules:
-            if not hasattr(mod, "__all__"):
-                missing.append(path)
-
-        if missing:
-            pytest.fail("Modules missing __all__:\n" + "\n".join(missing))
-
-    def test_modules_export_materialize_node(
-        self, analytics_modules: list[tuple[str, Any]]
-    ) -> None:
-        """Verify each module exports at least one t__<target> materialize node."""
-        missing: list[str] = []
-        for path, mod in analytics_modules:
-            all_exports = getattr(mod, "__all__", [])
-            has_materialize = any(
-                name.startswith("t__")
-                and not name.endswith("__compute")
-                and not name.endswith("__extract")
-                for name in all_exports
-            )
-            if not has_materialize:
-                missing.append(path)
-
-        if missing:
-            pytest.fail("Modules missing materialize nodes:\n" + "\n".join(missing))
-
-    def test_compute_nodes_follow_pattern(self, analytics_modules: list[tuple[str, Any]]) -> None:
-        """Verify compute nodes follow naming pattern."""
-        compute_nodes: list[str] = []
-
-        for path, mod in analytics_modules:
-            all_exports = getattr(mod, "__all__", [])
-            for name in all_exports:
-                if name.endswith("__compute"):
-                    func = getattr(mod, name, None)
-                    if func is not None and callable(func):
-                        compute_nodes.append(f"{path}.{name}")
-
-        # Verify we found compute nodes
-        expect_true(len(compute_nodes) > 0, message="Expected to find compute nodes")
+def _collect_materialize_targets(domain: str) -> set[str]:
+    targets: set[str] = set()
+    for _, mod in _load_domain_modules(domain):
+        for name in getattr(mod, "__all__", []):
+            if name.startswith("t__") and not name.endswith("__compute") and not name.endswith("__extract"):
+                targets.add(name)
+    return targets
 
 
 # ============================================================================
-# Target Presence Tests
+# Module Discovery
 # ============================================================================
 
 
-class TestTargetPresence:
-    """Tests for required target presence."""
-
-    @pytest.fixture
-    def all_exported_names(self) -> set[str]:
-        """Collect all exported names from analytics modules."""
-        from codeintel.build.hamilton.native.loader import _NATIVE_MODULE_PACKAGES
-
-        names: set[str] = set()
-        for path in _NATIVE_MODULE_PACKAGES.get("analytics", []):
-            try:
-                mod = importlib.import_module(path)
-                names.update(getattr(mod, "__all__", []))
-            except ImportError:
-                continue
-        return names
-
-    @pytest.mark.parametrize(
-        "target_name",
-        [
-            # Phase 1.5 targets
-            "t__risk_factors",
-            "t__hotspots",
-            # Phase 3 targets
-            "t__function_history",
-            "t__history_timeseries",
-            "t__subsystems",
-            "t__entrypoints",
-            "t__external_deps",
-            "t__data_models",
-            "t__coverage_functions",
-            "t__cfg_dfg_metrics",
-            "t__test_graph_metrics",
-            # Phase 4 targets
-            "t__function_metrics",
-            "t__function_ast_features",
-            "t__function_effects",
-            "t__function_contracts",
-            "t__coverage_test_edges",
-            "t__test_profile",
-            "t__behavioral_coverage",
-            "t__semantic_roles",
-            "t__subsystem_graph_metrics",
-            "t__subsystem_agreement",
-            "t__config_data_flow",
-            "t__profiles",
-            "t__symbol_graph_metrics",
-        ],
+def test_analytics_modules_discovered() -> None:
+    """Verify all analytics modules are discovered by the loader."""
+    loader = NativeModuleLoader()
+    modules = loader.load_for_driver(domains={_ANALYTICS_DOMAIN})
+    expect_true(
+        len(modules) >= _MIN_ANALYTICS_MODULES,
+        message=f"Expected >= {_MIN_ANALYTICS_MODULES} analytics modules, found {len(modules)}",
     )
-    def test_required_target_exists(self, all_exported_names: set[str], target_name: str) -> None:
-        """Verify required target is exported from some analytics module."""
-        expect_in(target_name, all_exported_names, label="target_exports")
+
+
+def test_analytics_domain_is_registered() -> None:
+    """Verify analytics domain is registered in loader packages."""
+    expect_in(_ANALYTICS_DOMAIN, NativeModuleLoader.list_domains())
+    expect_true(
+        len(NativeModuleLoader.list_module_paths(domain=_ANALYTICS_DOMAIN)) >= _MIN_ANALYTICS_MODULES,
+    )
+
+
+def test_all_analytics_module_paths_importable() -> None:
+    """Verify all registered module paths can be imported."""
+    failed: list[str] = []
+    for path in NativeModuleLoader.list_module_paths(domain=_ANALYTICS_DOMAIN):
+        try:
+            importlib.import_module(path)
+        except ImportError as exc:
+            failed.append(f"{path}: {exc}")
+    if failed:
+        pytest.fail("Failed to import modules:\n" + "\n".join(failed))
 
 
 # ============================================================================
-# Result Type Tests
+# Module Structure
 # ============================================================================
 
 
-class TestResultTypes:
-    """Tests for result type definitions."""
+@pytest.fixture
+def analytics_modules() -> list[tuple[str, ModuleType]]:
+    """Load all analytics modules.
 
-    def test_result_types_are_dataclasses(self) -> None:
-        """Verify custom result types are dataclasses."""
-        import dataclasses
+    Returns
+    -------
+    list[tuple[str, ModuleType]]
+        Pairs of module import path and imported module object.
+    """
+    return _load_domain_modules(_ANALYTICS_DOMAIN)
 
-        from codeintel.build.hamilton.native.analytics import (
-            AstFeaturesResult,
-            BehavioralCoverageResult,
-            ConfigDataFlowResult,
-            CoverageTestEdgesResult,
-            FunctionContractsResult,
-            FunctionEffectsResult,
-            FunctionMetricsResult,
-            ProfilesResult,
-            SemanticRolesResult,
-            SubsystemAgreementResult,
-            SubsystemGraphMetricsResult,
-            SymbolGraphMetricsResult,
-            TestProfileResult,
+
+def test_analytics_modules_define_all(analytics_modules: list[tuple[str, ModuleType]]) -> None:
+    """Verify all modules define `__all__` for explicit exports."""
+    missing = [path for path, mod in analytics_modules if not hasattr(mod, "__all__")]
+    if missing:
+        pytest.fail("Modules missing __all__:\n" + "\n".join(missing))
+
+
+def test_analytics_modules_export_materialize_node(analytics_modules: list[tuple[str, ModuleType]]) -> None:
+    """Verify each module exports at least one `t__<target>` materialize node."""
+    missing: list[str] = []
+    for path, mod in analytics_modules:
+        all_exports = getattr(mod, "__all__", [])
+        has_materialize = any(
+            name.startswith("t__") and not name.endswith("__compute") and not name.endswith("__extract")
+            for name in all_exports
+        )
+        if not has_materialize:
+            missing.append(path)
+    if missing:
+        pytest.fail("Modules missing materialize nodes:\n" + "\n".join(missing))
+
+
+def test_analytics_modules_export_compute_nodes(analytics_modules: list[tuple[str, ModuleType]]) -> None:
+    """Verify analytics modules export at least one `__compute` node."""
+    compute_nodes: list[str] = []
+    for path, mod in analytics_modules:
+        compute_nodes.extend(
+            f"{path}.{name}"
+            for name in getattr(mod, "__all__", [])
+            if name.endswith("__compute") and callable(getattr(mod, name, None))
+        )
+    expect_true(len(compute_nodes) > 0, message="Expected to find compute nodes")
+
+
+# ============================================================================
+# Target Presence
+# ============================================================================
+
+
+@pytest.fixture
+def all_exported_names() -> set[str]:
+    """Collect all exported names from analytics modules.
+
+    Returns
+    -------
+    set[str]
+        Set of exported names from all analytics modules.
+    """
+    names: set[str] = set()
+    for _, mod in _load_domain_modules(_ANALYTICS_DOMAIN):
+        names.update(getattr(mod, "__all__", []))
+    return names
+
+
+@pytest.mark.parametrize("target_name", _REQUIRED_ANALYTICS_TARGETS)
+def test_required_analytics_target_exists(all_exported_names: set[str], target_name: str) -> None:
+    """Verify required target is exported from some analytics module."""
+    expect_in(target_name, all_exported_names, label="target_exports")
+
+
+# ============================================================================
+# Result Types
+# ============================================================================
+
+
+def test_analytics_result_types_are_dataclasses() -> None:
+    """Verify custom analytics result types are dataclasses."""
+    for result_type in _RESULT_TYPES:
+        expect_true(
+            dataclasses.is_dataclass(result_type),
+            message=f"{result_type.__name__} is not a dataclass",
         )
 
-        result_types = [
-            AstFeaturesResult,
-            BehavioralCoverageResult,
-            ConfigDataFlowResult,
-            CoverageTestEdgesResult,
-            FunctionContractsResult,
-            FunctionEffectsResult,
-            FunctionMetricsResult,
-            ProfilesResult,
-            SemanticRolesResult,
-            SubsystemAgreementResult,
-            SubsystemGraphMetricsResult,
-            SymbolGraphMetricsResult,
-            TestProfileResult,
-        ]
 
-        for result_type in result_types:
-            expect_true(
-                dataclasses.is_dataclass(result_type),
-                message=f"{result_type.__name__} is not a dataclass",
-            )
-
-    def test_result_types_have_success_field(self) -> None:
-        """Verify result types have a success field."""
-        import dataclasses
-
-        from codeintel.build.hamilton.native.analytics import (
-            AstFeaturesResult,
-            BehavioralCoverageResult,
-            ConfigDataFlowResult,
-            CoverageTestEdgesResult,
-            FunctionContractsResult,
-            FunctionEffectsResult,
-            FunctionMetricsResult,
-            ProfilesResult,
-            SemanticRolesResult,
-            SubsystemAgreementResult,
-            SubsystemGraphMetricsResult,
-            SymbolGraphMetricsResult,
-            TestProfileResult,
-        )
-
-        result_types = [
-            AstFeaturesResult,
-            BehavioralCoverageResult,
-            ConfigDataFlowResult,
-            CoverageTestEdgesResult,
-            FunctionContractsResult,
-            FunctionEffectsResult,
-            FunctionMetricsResult,
-            ProfilesResult,
-            SemanticRolesResult,
-            SubsystemAgreementResult,
-            SubsystemGraphMetricsResult,
-            SymbolGraphMetricsResult,
-            TestProfileResult,
-        ]
-
-        for result_type in result_types:
-            fields = {f.name for f in dataclasses.fields(result_type)}
-            expect_in("success", fields, label=result_type.__name__)
+def test_analytics_result_types_have_success_field() -> None:
+    """Verify analytics result types have a success field."""
+    for result_type in _RESULT_TYPES:
+        fields = {field.name for field in dataclasses.fields(result_type)}
+        expect_in("success", fields, label=result_type.__name__)
 
 
 # ============================================================================
-# Domain Disjointness Tests
+# Domain Disjointness
 # ============================================================================
 
 
-class TestDomainDisjointness:
-    """Tests for domain separation."""
-
-    def test_no_overlap_with_graphs_domain(self) -> None:
-        """Verify analytics and graphs domains don't export the same targets."""
-        from codeintel.build.hamilton.native.loader import _NATIVE_MODULE_PACKAGES
-
-        analytics_targets: set[str] = set()
-        graphs_targets: set[str] = set()
-
-        for path in _NATIVE_MODULE_PACKAGES.get("analytics", []):
-            try:
-                mod = importlib.import_module(path)
-                for name in getattr(mod, "__all__", []):
-                    if name.startswith("t__") and not name.endswith("__compute"):
-                        analytics_targets.add(name)
-            except ImportError:
-                continue
-
-        for path in _NATIVE_MODULE_PACKAGES.get("graphs", []):
-            try:
-                mod = importlib.import_module(path)
-                for name in getattr(mod, "__all__", []):
-                    if name.startswith("t__") and not name.endswith("__compute"):
-                        graphs_targets.add(name)
-            except ImportError:
-                continue
-
-        overlap = analytics_targets & graphs_targets
-        if overlap:
-            pytest.fail(f"Targets exported by both domains: {overlap}")
-
-    def test_no_overlap_with_ingestion_domain(self) -> None:
-        """Verify analytics and ingestion domains don't export the same targets."""
-        from codeintel.build.hamilton.native.loader import _NATIVE_MODULE_PACKAGES
-
-        analytics_targets: set[str] = set()
-        ingestion_targets: set[str] = set()
-
-        for path in _NATIVE_MODULE_PACKAGES.get("analytics", []):
-            try:
-                mod = importlib.import_module(path)
-                for name in getattr(mod, "__all__", []):
-                    if name.startswith("t__") and not name.endswith("__compute"):
-                        analytics_targets.add(name)
-            except ImportError:
-                continue
-
-        for path in _NATIVE_MODULE_PACKAGES.get("ingestion", []):
-            try:
-                mod = importlib.import_module(path)
-                for name in getattr(mod, "__all__", []):
-                    if name.startswith("t__") and not name.endswith("__compute"):
-                        ingestion_targets.add(name)
-            except ImportError:
-                continue
-
-        overlap = analytics_targets & ingestion_targets
-        if overlap:
-            pytest.fail(f"Targets exported by both domains: {overlap}")
+@pytest.mark.parametrize("other_domain", ["graphs", "ingestion"])
+def test_analytics_domain_is_disjoint(other_domain: str) -> None:
+    """Verify analytics and other domains don't export the same targets."""
+    analytics_targets = _collect_materialize_targets(_ANALYTICS_DOMAIN)
+    other_targets = _collect_materialize_targets(other_domain)
+    overlap = analytics_targets & other_targets
+    if overlap:
+        pytest.fail(f"Targets exported by both domains: {overlap}")
 
 
 # ============================================================================
-# Registration Tests
+# Registrations
 # ============================================================================
 
 
-class TestRegistrations:
-    """Tests for target registrations."""
+def test_analytics_targets_register_native_modules() -> None:
+    """Verify analytics targets are registered with native modules."""
+    registry = UnifiedRegistry()
+    register_analytics_targets(registry)
 
-    def test_analytics_targets_use_native_modules(self) -> None:
-        """Verify analytics targets are registered with native modules."""
-        from codeintel.build.registrations import register_analytics_targets
-        from codeintel.build.unified_registry import UnifiedRegistry
+    targets_without_native = [
+        name
+        for name in registry
+        if (entry := registry.get_registration(name)) is not None and entry.native_module is None
+    ]
+    expect_equal(len(targets_without_native), 0, label="targets_without_native")
 
-        registry = UnifiedRegistry()
-        register_analytics_targets(registry)
 
-        # Check that all targets have native_module set
-        targets_without_native: list[str] = []
-        for name in registry:
-            entry = registry.get_registration(name)
-            if entry and entry.native_module is None:
-                targets_without_native.append(name)
+def test_analytics_targets_do_not_register_plugins() -> None:
+    """Verify no analytics targets are registered with plugins."""
+    registry = UnifiedRegistry()
+    register_analytics_targets(registry)
 
-        # All analytics targets should now have native modules
-        expect_equal(len(targets_without_native), 0, label="targets_without_native")
-
-    def test_no_analytics_targets_use_plugins(self) -> None:
-        """Verify no analytics targets are registered with plugins."""
-        from codeintel.build.registrations import register_analytics_targets
-        from codeintel.build.unified_registry import UnifiedRegistry
-
-        registry = UnifiedRegistry()
-        register_analytics_targets(registry)
-
-        # Check that no targets have plugin set
-        targets_with_plugin: list[str] = []
-        for name in registry:
-            entry = registry.get_registration(name)
-            if entry and entry.plugin_class is not None:
-                targets_with_plugin.append(name)
-
-        # No analytics targets should have plugins now
-        expect_equal(len(targets_with_plugin), 0, label="targets_with_plugin")
+    targets_with_plugin = [
+        name
+        for name in registry
+        if (entry := registry.get_registration(name)) is not None and entry.plugin_class is not None
+    ]
+    expect_equal(len(targets_with_plugin), 0, label="targets_with_plugin")

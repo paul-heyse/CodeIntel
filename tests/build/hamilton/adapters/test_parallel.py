@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
+from typing import TYPE_CHECKING, cast
+
 import pytest
+from hamilton.lifecycle import base as lifecycle_base
 
 from codeintel.build.hamilton.adapters.parallel import (
     ExecutionBackend,
@@ -16,8 +21,28 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_in,
     expect_is_instance,
     expect_is_none,
-    expect_true,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+@contextlib.contextmanager
+def _temporary_env(values: dict[str, str | None]) -> Iterator[None]:
+    saved: dict[str, str | None] = {key: os.environ.get(key) for key in values}
+    try:
+        for key, value in values.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        yield None
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 class TestExecutionBackend:
@@ -61,32 +86,27 @@ class TestParallelConfig:
         expect_equal(config.thread_name_prefix, "custom")
 
     @staticmethod
-    def test_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_from_env() -> None:
         """Test creating config from environment."""
-        monkeypatch.setenv("HAMILTON_BACKEND", "threadpool")
-        monkeypatch.setenv("HAMILTON_MAX_WORKERS", "4")
-
-        config = ParallelConfig.from_env()
-        expect_equal(config.backend, ExecutionBackend.THREADPOOL)
-        expect_equal(config.max_workers, 4)
+        with _temporary_env({"HAMILTON_BACKEND": "threadpool", "HAMILTON_MAX_WORKERS": "4"}):
+            config = ParallelConfig.from_env()
+            expect_equal(config.backend, ExecutionBackend.THREADPOOL)
+            expect_equal(config.max_workers, 4)
 
     @staticmethod
-    def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_from_env_defaults() -> None:
         """Test defaults when env vars not set."""
-        monkeypatch.delenv("HAMILTON_BACKEND", raising=False)
-        monkeypatch.delenv("HAMILTON_MAX_WORKERS", raising=False)
-
-        config = ParallelConfig.from_env()
-        expect_equal(config.backend, ExecutionBackend.SEQUENTIAL)
-        expect_is_none(config.max_workers)
+        with _temporary_env({"HAMILTON_BACKEND": None, "HAMILTON_MAX_WORKERS": None}):
+            config = ParallelConfig.from_env()
+            expect_equal(config.backend, ExecutionBackend.SEQUENTIAL)
+            expect_is_none(config.max_workers)
 
     @staticmethod
-    def test_from_env_invalid_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_from_env_invalid_backend() -> None:
         """Test handling invalid backend in env."""
-        monkeypatch.setenv("HAMILTON_BACKEND", "invalid_backend")
-
-        config = ParallelConfig.from_env()
-        expect_equal(config.backend, ExecutionBackend.SEQUENTIAL)  # Falls back
+        with _temporary_env({"HAMILTON_BACKEND": "invalid_backend"}):
+            config = ParallelConfig.from_env()
+            expect_equal(config.backend, ExecutionBackend.SEQUENTIAL)  # Falls back
 
     @staticmethod
     def test_from_cli_args() -> None:
@@ -99,12 +119,11 @@ class TestParallelConfig:
         expect_equal(config.max_workers, 16)
 
     @staticmethod
-    def test_from_cli_args_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_from_cli_args_none() -> None:
         """Test None args fall back to env."""
-        monkeypatch.setenv("HAMILTON_BACKEND", "threadpool")
-
-        config = ParallelConfig.from_cli_args(backend=None)
-        expect_equal(config.backend, ExecutionBackend.THREADPOOL)
+        with _temporary_env({"HAMILTON_BACKEND": "threadpool"}):
+            config = ParallelConfig.from_cli_args(backend=None)
+            expect_equal(config.backend, ExecutionBackend.THREADPOOL)
 
 
 class TestGetAvailableBackends:
@@ -129,14 +148,11 @@ class TestThreadPoolAdapter:
         expect_equal(adapter.thread_name_prefix, "hamilton-build")
 
     @staticmethod
-    def test_lazy_delegate() -> None:
-        """Test delegate is created lazily."""
+    def test_implements_remote_execute_and_build_result() -> None:
+        """ThreadPoolAdapter should implement Hamilton lifecycle adapter interfaces."""
         adapter = ThreadPoolAdapter()
-        expect_is_none(adapter._delegate)
-
-        # Access delegate
-        _ = adapter._ensure_delegate()
-        expect_true(adapter._delegate is not None)
+        expect_is_instance(adapter, lifecycle_base.BaseDoRemoteExecute)
+        expect_is_instance(adapter, lifecycle_base.BaseDoBuildResult)
 
 
 class TestCreateParallelAdapter:
@@ -164,8 +180,8 @@ class TestCreateParallelAdapter:
     def test_with_max_workers() -> None:
         """Test passing max_workers."""
         adapter = create_parallel_adapter("threadpool", max_workers=8)
-        expect_true(adapter is not None)
-        expect_equal(adapter.max_workers, 8)
+        expect_is_instance(adapter, ThreadPoolAdapter)
+        expect_equal(cast("ThreadPoolAdapter", adapter).max_workers, 8)
 
     @staticmethod
     def test_invalid_backend_falls_back() -> None:

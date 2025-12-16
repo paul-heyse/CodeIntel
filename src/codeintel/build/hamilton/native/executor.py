@@ -248,8 +248,6 @@ class NativeTargetExecutor:
             return self._create_failed_record(start, exc)
         except (KeyboardInterrupt, SystemExit, GeneratorExit):
             raise
-        except Exception as exc:
-            return self._create_failed_record(start, exc)
 
         return self._create_success_record(start, row_counts)
 
@@ -302,8 +300,6 @@ class NativeTargetExecutor:
             return self._create_failed_record(start, exc)
         except (KeyboardInterrupt, SystemExit, GeneratorExit):
             raise
-        except Exception as exc:
-            return self._create_failed_record(start, exc)
 
         return self._create_success_record(start, row_counts)
 

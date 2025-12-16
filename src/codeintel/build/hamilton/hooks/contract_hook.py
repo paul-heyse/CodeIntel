@@ -16,11 +16,16 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
+from hamilton.lifecycle import base as lifecycle_base
+
+from codeintel.build.hamilton import tags as ht
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 
 if TYPE_CHECKING:
+    from hamilton.node import Node
+
     from codeintel.build.targets import TargetGraph
 
 _log = logging.getLogger(__name__)
@@ -53,7 +58,7 @@ class ValidationResult:
     passed: bool
     message: str = ""
     error: str | None = None
-    diagnostics: dict[str, Any] = field(default_factory=dict)
+    diagnostics: dict[str, object] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -95,7 +100,7 @@ class ValidationSummary:
         return self.failed_count == 0
 
 
-class ContractEnforcementHook:
+class ContractEnforcementHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePostNodeExecute):
     """Hamilton lifecycle hook that activates ContractEnforcer per node.
 
     This hook integrates with Hamilton's lifecycle adapter protocol to
@@ -145,24 +150,34 @@ class ContractEnforcementHook:
         """
         return self._validation_results
 
-    def pre_node_execute(self, *, node_name: str, **kwargs: object) -> None:
+    def pre_node_execute(
+        self,
+        *,
+        node_: Node | None = None,
+        node_tags: dict[str, str] | None = None,
+        **context: object,
+    ) -> None:
         """Activate contract enforcement based on `target` node tag.
 
         Parameters
         ----------
-        node_name
-            Name of the node being executed.
-        **kwargs
-            Additional keyword arguments from Hamilton, including node_tags.
+        node_
+            Hamilton node being executed.
+        node_tags
+            Optional node tags (used when `node_` is not provided).
+        context
+            Additional Hamilton lifecycle context (ignored).
         """
-        _ = node_name
-        node_tags_raw = kwargs.get("node_tags")
-        if isinstance(node_tags_raw, dict):
-            node_tags = cast("dict[str, object] | None", node_tags_raw)
-        else:
-            node_tags = None
-        target_raw = node_tags.get("target") if node_tags else None
-        if isinstance(target_raw, str):
+        _ = context
+
+        tags: dict[str, str] = {}
+        if node_ is not None and isinstance(node_.tags, dict):
+            tags = {k: v for k, v in node_.tags.items() if isinstance(k, str) and isinstance(v, str)}
+        elif node_tags is not None:
+            tags = dict(node_tags)
+
+        target_raw = tags.get(ht.TAG_TARGET)
+        if isinstance(target_raw, str) and target_raw:
             try:
                 target = self._graph.get(target_raw)
             except KeyError:
@@ -175,10 +190,11 @@ class ContractEnforcementHook:
     def post_node_execute(
         self,
         *,
-        node_name: str,
-        success: bool = True,
+        success: bool,
+        node_: Node | None = None,
+        node_name: str | None = None,
         error: Exception | None = None,
-        **kwargs: object,
+        **context: object,
     ) -> None:
         """Deactivate contract enforcement and capture validation results.
 
@@ -187,22 +203,28 @@ class ContractEnforcementHook:
 
         Parameters
         ----------
-        node_name
-            Name of the node that was executed.
         success
             Whether the node execution succeeded.
+        node_
+            Hamilton node that was executed.
+        node_name
+            Node name when `node_` is not provided.
         error
             Exception if the node failed.
-        **kwargs
-            Additional keyword arguments from Hamilton.
+        context
+            Additional Hamilton lifecycle context (ignored).
         """
-        _ = kwargs
+        _ = context
         ContractEnforcer.deactivate()
 
         # Capture validation result
+        resolved_node_name = node_.name if node_ is not None else node_name
+        if not resolved_node_name:
+            _log.warning("Node execution completed without a node identifier; skipping validation capture")
+            return
         if success:
-            self._validation_results[node_name] = ValidationResult(
-                node_name=node_name,
+            self._validation_results[resolved_node_name] = ValidationResult(
+                node_name=resolved_node_name,
                 passed=True,
                 message="Validation passed",
             )
@@ -213,8 +235,8 @@ class ContractEnforcementHook:
                 "validation" in error_msg.lower() or "validator" in error_msg.lower()
             )
 
-            self._validation_results[node_name] = ValidationResult(
-                node_name=node_name,
+            self._validation_results[resolved_node_name] = ValidationResult(
+                node_name=resolved_node_name,
                 passed=False,
                 message="Validation failed" if is_validation_error else "Execution failed",
                 error=error_msg,
@@ -222,7 +244,7 @@ class ContractEnforcementHook:
             )
             _log.warning(
                 "Node %s failed: %s (validation_error=%s)",
-                node_name,
+                resolved_node_name,
                 error_msg[:200],
                 is_validation_error,
             )

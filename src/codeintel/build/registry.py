@@ -29,9 +29,10 @@ from codeintel.build.resources import (
     TargetResources,
 )
 from codeintel.build.schemas.declared_schemas import TABLE_SCHEMAS as _DATASET_TABLE_SCHEMAS
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import OutputTarget
 
 if TYPE_CHECKING:
+    from codeintel.build.targets import TargetGraph
     from codeintel.core.schemas.primitives import TableSchema
 
 log = logging.getLogger(__name__)

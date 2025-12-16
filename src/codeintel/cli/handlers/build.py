@@ -13,6 +13,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
+import codeintel.storage.views.ibis_views as _ibis_views
 from codeintel.build.assets.impact import compute_impact
 from codeintel.build.config import load_build_config
 from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
@@ -36,7 +37,9 @@ from codeintel.build.serving.semantic_compile import (
     compile_semantic_registry_from_views,
     write_semantic_registry,
 )
-from codeintel.build.serving.semantic_sources import collect_semantic_view_tags
+from codeintel.build.serving.semantic_compile_hamilton import (
+    collect_semantic_view_tags_from_hamilton,
+)
 from codeintel.build.spec import BuildSpecCompileOptions, buildspec_to_json, compile_buildspec
 from codeintel.build.state import BuildState, StateValidator
 from codeintel.cli.core import CliResult
@@ -133,6 +136,8 @@ class BuildExecutionArgs:
     strict_contracts: bool
     wrapper_allowlist: list[str] | None
     publish_serving_snapshot: bool
+    parallel_backend: str
+    max_workers: int | None
 
     @property
     def is_dry_run(self) -> bool:
@@ -358,7 +363,12 @@ def _execute_build_hamilton(
         wrapper_allowlist=wrapper_allowlist_frozen,
     )
 
-    executor = HamiltonBuildExecutor(profile="default", mode=execution.node_mode)
+    executor = HamiltonBuildExecutor(
+        profile="default",
+        mode=execution.node_mode,
+        parallel_backend=execution.parallel_backend,
+        max_workers=execution.max_workers,
+    )
     hamilton_result = executor.run(env=env, targets=execution.goals)
 
     return _HamiltonResultAdapter(hamilton_result)
@@ -526,6 +536,8 @@ class _BuildRunParams:
     strict_contracts: bool
     wrapper_allowlist: list[str] | None
     publish_serving_snapshot: bool
+    parallel_backend: str
+    max_workers: int | None
 
 
 def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
@@ -558,6 +570,12 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
             else:
                 wrapper_allowlist_list.append(str(item))
 
+    parallel_backend = ctx.params.get_str("parallel_backend") or "sequential"
+    max_workers_raw = ctx.params.get_int("max_workers", 0)
+    max_workers = max_workers_raw or None
+    if max_workers is not None and parallel_backend == "sequential":
+        parallel_backend = "threadpool"
+
     return _BuildRunParams(
         targets=targets,
         module=ctx.params.get_str("module"),
@@ -569,6 +587,8 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         strict_contracts=ctx.params.get_bool("strict_contracts"),
         wrapper_allowlist=wrapper_allowlist_list,
         publish_serving_snapshot=ctx.params.get_bool("publish_serving_snapshot"),
+        parallel_backend=parallel_backend,
+        max_workers=max_workers,
     )
 
 
@@ -587,27 +607,43 @@ def _validate_build_run_params(
     CliResult[BuildRunResult] | None
         Error result if validation fails, None if valid.
     """
-    if params.module:
-        valid_modules = ("ingestion", "graphs", "analytics")
-        if params.module not in valid_modules:
-            return fail_invalid_module(params.module, valid_modules)
+    error: CliResult[BuildRunResult] | None = None
 
-    provided = [bool(params.targets), params.module is not None, params.all_targets]
-    if sum(provided) != 1:
-        return fail_invalid_target_selection("Provide exactly one of targets, --module, or --all.")
+    valid_modules = ("ingestion", "graphs", "analytics")
+    if params.module and params.module not in valid_modules:
+        error = fail_invalid_module(params.module, valid_modules)
 
-    valid_modes = ("generated", "auto", "native")
-    if params.hamilton_mode not in valid_modes:
-        return fail_invalid_target_selection(
-            f"Invalid hamilton_mode '{params.hamilton_mode}'. Valid: {', '.join(valid_modes)}"
-        )
+    if error is None:
+        provided = [bool(params.targets), params.module is not None, params.all_targets]
+        if sum(provided) != 1:
+            error = fail_invalid_target_selection(
+                "Provide exactly one of targets, --module, or --all."
+            )
 
-    if params.publish_serving_snapshot and params.dry_run:
-        return fail_invalid_target_selection(
+    if error is None:
+        valid_modes = ("generated", "auto", "native")
+        if params.hamilton_mode not in valid_modes:
+            error = fail_invalid_target_selection(
+                f"Invalid hamilton_mode '{params.hamilton_mode}'. Valid: {', '.join(valid_modes)}"
+            )
+
+    if error is None and params.publish_serving_snapshot and params.dry_run:
+        error = fail_invalid_target_selection(
             "--publish-serving-snapshot is incompatible with --dry-run."
         )
 
-    return None
+    if error is None:
+        valid_backends = ("sequential", "threadpool", "auto")
+        if params.parallel_backend not in valid_backends:
+            error = fail_invalid_target_selection(
+                f"Invalid parallel_backend '{params.parallel_backend}'. "
+                f"Valid: {', '.join(valid_backends)}"
+            )
+
+    if error is None and params.max_workers is not None and params.max_workers <= 0:
+        error = fail_invalid_target_selection("--workers/--max-workers must be a positive integer.")
+
+    return error
 
 
 def build_run_handler(
@@ -666,6 +702,8 @@ def build_run_handler(
         strict_contracts=params.strict_contracts,
         wrapper_allowlist=params.wrapper_allowlist,
         publish_serving_snapshot=params.publish_serving_snapshot,
+        parallel_backend=params.parallel_backend,
+        max_workers=params.max_workers,
     )
     return _execute_and_format_result(runtime, execution_args)
 
@@ -740,7 +778,7 @@ def _publish_serving_snapshot_from_build(
         Build run identifier used to name the published snapshot.
     """
     schema_provider = unified_schema_provider()
-    view_tags = collect_semantic_view_tags()
+    view_tags = collect_semantic_view_tags_from_hamilton(modules=(_ibis_views,))
     compiled_registry = compile_semantic_registry_from_views(
         schema_provider=schema_provider,
         view_tags=view_tags,

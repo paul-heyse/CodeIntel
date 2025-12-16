@@ -33,15 +33,33 @@ Using BuildTimingHook for performance analysis:
 
 from __future__ import annotations
 
+import importlib
 import logging
+import os
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 from hamilton.lifecycle import NodeExecutionHook
+from hamilton.lifecycle import base as lifecycle_base
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from typing import Protocol
+
+    from hamilton.node import Node
+
+    class _KwargsNodeExecutionHook(Protocol):
+        def pre_node_execute(self, *, node_: Node, **context: object) -> None: ...
+
+        def post_node_execute(
+            self,
+            *,
+            node_: Node,
+            success: bool,
+            error: Exception | None,
+            **context: object,
+        ) -> None: ...
 
 __all__ = [
     "BuildTimingHook",
@@ -76,7 +94,7 @@ class NodeTimingRecord:
     task_id: str | None = None
 
 
-class ProgressBarHook(NodeExecutionHook):
+class ProgressBarHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePostNodeExecute):
     """Progress bar hook using tqdm.
 
     Provides visual feedback during build execution by showing
@@ -103,8 +121,9 @@ class ProgressBarHook(NodeExecutionHook):
         self,
         desc: str = "Graph execution",
         max_node_name_width: int = 50,
+        *,
         disable: bool = False,
-        **tqdm_kwargs: Any,
+        **tqdm_kwargs: object,
     ) -> None:
         """Initialize the progress bar hook."""
         self.desc = desc
@@ -128,83 +147,54 @@ class ProgressBarHook(NodeExecutionHook):
             return None
 
         try:
-            from hamilton.plugins.h_tqdm import ProgressBar
-
-            self._delegate = ProgressBar(
+            progress_module = importlib.import_module("hamilton.plugins.h_tqdm")
+            progress_bar_obj = getattr(progress_module, "ProgressBar", None)
+            if not isinstance(progress_bar_obj, type):
+                return None
+            delegate = progress_bar_obj(
                 desc=self.desc,
                 max_node_name_width=self.max_node_name_width,
                 **self.tqdm_kwargs,
             )
+            if isinstance(delegate, NodeExecutionHook):
+                self._delegate = delegate
         except ImportError:
             log.warning(
                 "tqdm not available, progress bar disabled. Install with: pip install tqdm",
             )
         return self._delegate
 
-    def run_before_node_execution(
+    def pre_node_execute(
         self,
         *,
-        node_name: str,
-        node_tags: dict[str, Any],
-        node_kwargs: dict[str, Any],
-        task_id: str | None,
-        **future_kwargs: Any,
-    ) -> dict[str, Any] | None:
-        """Execute before each node runs.
-
-        Returns
-        -------
-        dict[str, Any] | None
-            Optional context forwarded to the delegate hook.
-        """
+        node_: Node,
+        **context: object,
+    ) -> None:
+        """Execute before each node runs."""
         delegate = self._ensure_delegate()
         if delegate is not None:
-            return delegate.run_before_node_execution(
-                node_name=node_name,
-                node_tags=node_tags,
-                node_kwargs=node_kwargs,
-                task_id=task_id,
-                **future_kwargs,
-            )
-        return None
+            cast("_KwargsNodeExecutionHook", delegate).pre_node_execute(node_=node_, **context)
 
-    def run_after_node_execution(
+    def post_node_execute(
         self,
         *,
-        node_name: str,
-        node_tags: dict[str, Any],
-        node_kwargs: dict[str, Any],
-        node_return_type: type,
-        result: Any,
-        error: Exception | None,
+        node_: Node,
         success: bool,
-        task_id: str | None,
-        **future_kwargs: Any,
-    ) -> dict[str, Any] | None:
-        """Execute after each node completes.
-
-        Returns
-        -------
-        dict[str, Any] | None
-            Optional context forwarded to the delegate hook.
-        """
+        error: Exception | None,
+        **context: object,
+    ) -> None:
+        """Execute after each node completes."""
         delegate = self._ensure_delegate()
         if delegate is not None:
-            return delegate.run_after_node_execution(
-                node_name=node_name,
-                node_tags=node_tags,
-                node_kwargs=node_kwargs,
-                node_return_type=node_return_type,
-                result=result,
-                error=error,
+            cast("_KwargsNodeExecutionHook", delegate).post_node_execute(
+                node_=node_,
                 success=success,
-                task_id=task_id,
-                **future_kwargs,
+                error=error,
+                **context,
             )
-        return None
 
 
-class BuildTimingHook(NodeExecutionHook):
+class BuildTimingHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePostNodeExecute):
     """Hook for collecting detailed node execution timing.
 
     Collects timing information for each node execution, useful for
@@ -225,60 +215,60 @@ class BuildTimingHook(NodeExecutionHook):
     ...     print(f"{record.node_name}: {record.duration_seconds:.3f}s")
     """
 
-    def __init__(self, min_duration_to_log: float = 1.0) -> None:
-        """Initialize the timing hook."""
+    def __init__(
+        self,
+        min_duration_to_log: float = 1.0,
+        *,
+        clock: Callable[[], float] | None = None,
+    ) -> None:
+        """Initialize the timing hook.
+
+        Parameters
+        ----------
+        min_duration_to_log
+            Minimum duration in seconds to log individual nodes.
+        clock
+            Optional monotonic clock used for timing (defaults to ``time.perf_counter``).
+        """
         self.min_duration_to_log = min_duration_to_log
+        self._clock = time.perf_counter if clock is None else clock
         self._timings: dict[tuple[str, str | None], float] = {}
         self._records: list[NodeTimingRecord] = []
 
-    def run_before_node_execution(
+    def pre_node_execute(
         self,
         *,
-        node_name: str,
-        node_tags: dict[str, Any],  # noqa: ARG002
-        node_kwargs: dict[str, Any],  # noqa: ARG002
-        task_id: str | None,
-        **future_kwargs: Any,  # noqa: ARG002
-    ) -> dict[str, Any] | None:
-        """Record start time before node execution.
+        node_: Node,
+        **context: object,
+    ) -> None:
+        """Record start time before node execution."""
+        task_id_raw = context.get("task_id")
+        task_id = task_id_raw if isinstance(task_id_raw, str) else None
+        key = (node_.name, task_id)
+        self._timings[key] = self._clock()
 
-        Returns
-        -------
-        dict[str, Any] | None
-            Optional context for downstream hooks (unused).
-        """
-        key = (node_name, task_id)
-        self._timings[key] = time.perf_counter()
-        return None
-
-    def run_after_node_execution(
+    def post_node_execute(
         self,
         *,
-        node_name: str,
-        node_tags: dict[str, Any],  # noqa: ARG002
-        node_kwargs: dict[str, Any],  # noqa: ARG002
-        node_return_type: type,  # noqa: ARG002
-        result: Any,  # noqa: ARG002
-        error: Exception | None,  # noqa: ARG002
-        success: bool,  # noqa: ARG002
-        task_id: str | None,
-        **future_kwargs: Any,  # noqa: ARG002
-    ) -> dict[str, Any] | None:
-        """Record duration after node execution.
-
-        Returns
-        -------
-        dict[str, Any] | None
-            Optional context for downstream hooks (unused).
-        """
-        key = (node_name, task_id)
+        node_: Node,
+        error: Exception | None,
+        success: bool,
+        **context: object,
+    ) -> None:
+        """Record duration after node execution."""
+        _ = error
+        _ = success
+        task_id_raw = context.get("task_id")
+        task_id = task_id_raw if isinstance(task_id_raw, str) else None
+        key = (node_.name, task_id)
         start_time = self._timings.pop(key, None)
         if start_time is None:
-            return None
+            return
 
-        duration = time.perf_counter() - start_time
+        end_time = self._clock()
+        duration = end_time - start_time
         record = NodeTimingRecord(
-            node_name=node_name,
+            node_name=node_.name,
             duration_seconds=duration,
             start_time=start_time,
             task_id=task_id,
@@ -286,9 +276,7 @@ class BuildTimingHook(NodeExecutionHook):
         self._records.append(record)
 
         if duration >= self.min_duration_to_log:
-            log.info("Node %s took %.3fs", node_name, duration)
-
-        return None
+            log.info("Node %s took %.3fs", node_.name, duration)
 
     def get_records(self) -> list[NodeTimingRecord]:
         """Get all timing records.
@@ -337,7 +325,7 @@ class BuildTimingHook(NodeExecutionHook):
 
 
 @dataclass
-class ConditionalHook:
+class ConditionalHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePostNodeExecute):
     """Wrapper to conditionally enable a hook.
 
     Enables a hook based on a predicate function, allowing dynamic
@@ -359,7 +347,7 @@ class ConditionalHook:
     ... )
     """
 
-    hook: NodeExecutionHook
+    hook: object
     condition: Callable[[], bool]
     _enabled: bool | None = field(default=None, init=False)
 
@@ -375,35 +363,32 @@ class ConditionalHook:
             self._enabled = self.condition()
         return self._enabled
 
-    def run_before_node_execution(
+    def pre_node_execute(
         self,
-        **kwargs: Any,
-    ) -> dict[str, Any] | None:
-        """Execute before hook if enabled.
-
-        Returns
-        -------
-        dict[str, Any] | None
-            Delegate result when enabled, otherwise None.
-        """
+        *,
+        node_: Node,
+        **context: object,
+    ) -> None:
+        """Execute before hook if enabled."""
         if self._is_enabled():
-            return self.hook.run_before_node_execution(**kwargs)
-        return None
+            cast("_KwargsNodeExecutionHook", self.hook).pre_node_execute(node_=node_, **context)
 
-    def run_after_node_execution(
+    def post_node_execute(
         self,
-        **kwargs: Any,
-    ) -> dict[str, Any] | None:
-        """Execute after hook if enabled.
-
-        Returns
-        -------
-        dict[str, Any] | None
-            Delegate result when enabled, otherwise None.
-        """
+        *,
+        node_: Node,
+        error: Exception | None,
+        success: bool,
+        **context: object,
+    ) -> None:
+        """Execute after hook if enabled."""
         if self._is_enabled():
-            return self.hook.run_after_node_execution(**kwargs)
-        return None
+            cast("_KwargsNodeExecutionHook", self.hook).post_node_execute(
+                node_=node_,
+                success=success,
+                error=error,
+                **context,
+            )
 
 
 def create_progress_hook(
@@ -432,8 +417,6 @@ def create_progress_hook(
     --------
     >>> hook = create_progress_hook("Building targets", disable_in_ci=True)
     """
-    import os
-
     disable = False
     if disable_in_ci and os.getenv("CI") == "true":
         disable = True

@@ -23,7 +23,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
 
 from hamilton.lifecycle import ResultBuilder
 
@@ -75,7 +74,7 @@ class NodeResult:
     """
 
     node_name: str
-    value: Any
+    value: object | None
     status: ResultStatus = ResultStatus.SUCCESS
     error_message: str | None = None
     duration_seconds: float | None = None
@@ -117,7 +116,7 @@ class BuildExecutionResult:
     total_duration_seconds: float = 0.0
     start_time: float = 0.0
     end_time: float = 0.0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, object] = field(default_factory=dict)
 
     @property
     def success_count(self) -> int:
@@ -129,7 +128,7 @@ class BuildExecutionResult:
         """Count of failed nodes."""
         return sum(1 for r in self.node_results.values() if not r.is_success)
 
-    def get_output(self, name: str) -> Any:
+    def get_output(self, name: str) -> object | None:
         """Get output value by name.
 
         Parameters
@@ -139,8 +138,8 @@ class BuildExecutionResult:
 
         Returns
         -------
-        Any
-            The output value.
+        object | None
+            The output value (or None when values are not included).
 
         Raises
         ------
@@ -152,12 +151,12 @@ class BuildExecutionResult:
             raise KeyError(msg)
         return self.node_results[name].value
 
-    def get_outputs(self) -> dict[str, Any]:
+    def get_outputs(self) -> dict[str, object | None]:
         """Get all output values as a dictionary.
 
         Returns
         -------
-        dict[str, Any]
+        dict[str, object | None]
             Mapping from node name to output value.
         """
         return {name: r.value for name, r in self.node_results.items()}
@@ -186,12 +185,12 @@ class BuildExecutionResult:
 
         return "\n".join(lines)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dictionary representation.
 
         Returns
         -------
-        dict[str, Any]
+        dict[str, object]
             Dictionary suitable for JSON serialization.
         """
         return {
@@ -240,15 +239,16 @@ class BuildResultBuilder(ResultBuilder):
 
     def __init__(
         self,
+        *,
         include_values: bool = True,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> None:
         """Initialize the result builder."""
         self.include_values = include_values
         self.metadata = metadata or {}
         self._start_time = 0.0
 
-    def build_result(self, **outputs: Any) -> BuildExecutionResult:
+    def build_result(self, **outputs: object) -> BuildExecutionResult:
         """Build the structured result from outputs.
 
         Parameters
@@ -313,9 +313,9 @@ class BuildResultBuilder(ResultBuilder):
         Returns
         -------
         list[type]
-            List of accepted types (Any).
+            List of accepted input types.
         """
-        return [Any]
+        return [object]
 
     @staticmethod
     def output_type() -> type:
@@ -352,7 +352,7 @@ class DictResultBuilder(ResultBuilder):
     """
 
     @staticmethod
-    def build_result(**outputs: Any) -> dict[str, Any]:
+    def build_result(**outputs: object) -> dict[str, object]:
         """Return outputs as a dictionary.
 
         Parameters
@@ -362,7 +362,7 @@ class DictResultBuilder(ResultBuilder):
 
         Returns
         -------
-        dict[str, Any]
+        dict[str, object]
             Dictionary of outputs.
         """
         return dict(outputs)
@@ -376,7 +376,7 @@ class DictResultBuilder(ResultBuilder):
         list[type]
             Types accepted as inputs for this result builder.
         """
-        return [Any]
+        return [object]
 
     @staticmethod
     def output_type() -> type:

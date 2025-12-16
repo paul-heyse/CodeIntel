@@ -82,6 +82,7 @@ from codeintel.core.plugins.execution.context import (
 from codeintel.core.resources import ResourceRegistry
 from tests._helpers.defaults import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
 from tests._helpers.env_options import EnvOptions
+from tests._helpers.hamilton_execution import HamiltonTestBuilder
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -626,8 +627,6 @@ class ExecutionContextBuilder:
         >>> record = builder.execute_hamilton_target("modules")
         >>> assert record.status == "succeeded"
         """
-        from tests._helpers.hamilton_execution import HamiltonTestBuilder
-
         hamilton_builder = HamiltonTestBuilder(
             gateway=cast("StorageGateway", self._gateway),
             tmp_path=self.snapshot.repo_root.parent,

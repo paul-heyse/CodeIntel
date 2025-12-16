@@ -31,8 +31,9 @@ Generate @schema.output args from registry:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 from codeintel.build.hamilton.validators.dataframe import (
     ColumnsExistValidator,
     ColumnTypesValidator,
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "MigrationReport",
+    "pandera_dtype_to_hamilton_type",
     "schema_output_from_registry",
     "validators_from_pandera_schema",
     "validators_from_schema_registry",
@@ -116,7 +118,7 @@ class MigrationReport:
         )
 
 
-def _pandera_dtype_to_hamilton_type(dtype: Any) -> str:
+def _pandera_dtype_to_hamilton_type(dtype: object) -> str:
     """Convert Pandera dtype to Hamilton type string.
 
     Parameters
@@ -141,6 +143,22 @@ def _pandera_dtype_to_hamilton_type(dtype: Any) -> str:
     if "string" in dtype_str or "object" in dtype_str:
         return "string"
     return "object"
+
+
+def pandera_dtype_to_hamilton_type(dtype: object) -> str:
+    """Convert Pandera dtype to Hamilton type string.
+
+    Parameters
+    ----------
+    dtype
+        Pandera column dtype.
+
+    Returns
+    -------
+    str
+        Hamilton type string.
+    """
+    return _pandera_dtype_to_hamilton_type(dtype)
 
 
 def validators_from_schema_registry(
@@ -173,8 +191,6 @@ def validators_from_schema_registry(
 
     Raises
     ------
-    ImportError
-        If the schema registry cannot be imported when strict=True.
     KeyError
         If the table is missing from the registry and strict=True.
 
@@ -185,36 +201,19 @@ def validators_from_schema_registry(
     >>> def t__function_metrics__compute(...) -> pd.DataFrame:
     ...     ...
     """
-    try:
-        from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
-
-        dataset_schema = SCHEMA_REGISTRY.get(table_key)
-        if dataset_schema is None:
-            if strict:
-                msg = f"Table {table_key} not found in SCHEMA_REGISTRY"
-                raise KeyError(msg)
-            log.warning("Table %s not found in SCHEMA_REGISTRY", table_key)
-            return []
-
-        return validators_from_pandera_schema(dataset_schema.pandera_schema)
-
-    except ImportError:
+    dataset_schema = SCHEMA_REGISTRY.get(table_key)
+    if dataset_schema is None:
         if strict:
-            msg = "SCHEMA_REGISTRY not available"
-            raise ImportError(msg) from None
-        log.debug("SCHEMA_REGISTRY not available")
+            msg = f"Table {table_key} not found in SCHEMA_REGISTRY"
+            raise KeyError(msg)
+        log.warning("Table %s not found in SCHEMA_REGISTRY", table_key)
         return []
-    except KeyError:
-        raise
-    except Exception as exc:
-        if strict:
-            raise
-        log.warning("Error creating validators for %s: %s", table_key, exc)
-        return []
+
+    return validators_from_pandera_schema(dataset_schema.pandera_schema)
 
 
 def validators_from_pandera_schema(
-    pandera_schema: Any,
+    pandera_schema: object,
 ) -> list[BaseDefaultValidator]:
     """Generate Hamilton validators from a Pandera DataFrameSchema.
 
@@ -242,14 +241,18 @@ def validators_from_pandera_schema(
     validators: list[BaseDefaultValidator] = []
 
     # Get column information
-    columns = list(pandera_schema.columns.keys())
+    columns_obj = getattr(pandera_schema, "columns", None)
+    if columns_obj is None or not hasattr(columns_obj, "items") or not hasattr(columns_obj, "keys"):
+        return validators
+
+    columns = list(columns_obj.keys())
     column_types: dict[str, str] = {}
     non_nullable: list[str] = []
     unique_cols: list[str] = []
 
-    for col_name, col_spec in pandera_schema.columns.items():
+    for col_name, col_spec in columns_obj.items():
         # Extract dtype
-        dtype_str = _pandera_dtype_to_hamilton_type(col_spec.dtype)
+        dtype_str = _pandera_dtype_to_hamilton_type(getattr(col_spec, "dtype", "object"))
         column_types[col_name] = dtype_str
 
         # Check nullable
@@ -302,8 +305,6 @@ def schema_output_from_registry(
 
     Raises
     ------
-    ImportError
-        If the schema registry cannot be imported when strict=True.
     KeyError
         If the table is missing from the registry and strict=True.
 
@@ -314,39 +315,24 @@ def schema_output_from_registry(
     >>> def t__function_metrics__compute(...) -> pd.DataFrame:
     ...     ...
     """
-    try:
-        from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
-
-        dataset_schema = SCHEMA_REGISTRY.get(table_key)
-        if dataset_schema is None:
-            if strict:
-                msg = f"Table {table_key} not found in SCHEMA_REGISTRY"
-                raise KeyError(msg)
-            log.warning("Table %s not found in SCHEMA_REGISTRY", table_key)
-            return ()
-
-        pandera_schema = dataset_schema.pandera_schema
-        columns: list[tuple[str, str]] = []
-
-        for col_name, col_spec in pandera_schema.columns.items():
-            dtype_str = _pandera_dtype_to_hamilton_type(col_spec.dtype)
-            columns.append((col_name, dtype_str))
-
-        return tuple(columns)
-
-    except ImportError:
+    dataset_schema = SCHEMA_REGISTRY.get(table_key)
+    if dataset_schema is None:
         if strict:
-            msg = "SCHEMA_REGISTRY not available"
-            raise ImportError(msg) from None
-        log.debug("SCHEMA_REGISTRY not available")
+            msg = f"Table {table_key} not found in SCHEMA_REGISTRY"
+            raise KeyError(msg)
+        log.warning("Table %s not found in SCHEMA_REGISTRY", table_key)
         return ()
-    except KeyError:
-        raise
-    except Exception as exc:
-        if strict:
-            raise
-        log.warning("Error getting schema for %s: %s", table_key, exc)
+
+    pandera_schema = dataset_schema.pandera_schema
+    columns_obj = getattr(pandera_schema, "columns", None)
+    if columns_obj is None or not hasattr(columns_obj, "items"):
         return ()
+
+    columns: list[tuple[str, str]] = []
+    for col_name, col_spec in columns_obj.items():
+        dtype_str = _pandera_dtype_to_hamilton_type(getattr(col_spec, "dtype", "object"))
+        columns.append((col_name, dtype_str))
+    return tuple(columns)
 
 
 def generate_migration_code(
@@ -387,7 +373,7 @@ def generate_migration_code(
     # Build decorator strings
     schema_args = ",\n    ".join(f'("{col}", "{dtype}")' for col, dtype in columns)
 
-    validator_lines = []
+    validator_lines: list[str] = []
     for v in validators:
         validator_name = type(v).__name__
         if isinstance(v, ColumnsExistValidator):
@@ -396,7 +382,7 @@ def generate_migration_code(
         elif isinstance(v, ColumnTypesValidator):
             types = v.column_types
             validator_lines.append(f"    {validator_name}({types}),")
-        elif isinstance(v, NoNullsInColumnsValidator) or isinstance(v, UniqueColumnsValidator):
+        elif isinstance(v, (NoNullsInColumnsValidator, UniqueColumnsValidator)):
             cols = v.columns
             validator_lines.append(f"    {validator_name}({cols}),")
 

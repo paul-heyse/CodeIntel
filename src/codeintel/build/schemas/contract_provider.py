@@ -243,11 +243,14 @@ def _default_json_schema_id(*, table_key: str, schema: TableSchema | None) -> st
     Returns
     -------
     str | None
-        JSON schema id when the dataset is exportable and has a schema, else None.
+        JSON schema id when the dataset has a schema and supports validation, else None.
     """
     if schema is None:
         return None
-    if not _exportable_by_default(table_key):
+    if "." not in table_key:
+        return None
+    schema_prefix = table_key.split(".", maxsplit=1)[0]
+    if schema_prefix == "build":
         return None
     return _table_name_from_key(table_key)
 

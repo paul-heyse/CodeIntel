@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from codeintel.build.hamilton.schema_docs import (
@@ -174,7 +176,9 @@ class TestTableSchema:
         expect_equal(result["table_key"], "test.table")
         expect_equal(result["description"], "Test")
         expect_equal(result["primary_key"], ["id"])
-        expect_length(result["columns"], 1)
+        columns_out = result["columns"]
+        expect_true(isinstance(columns_out, list))
+        expect_length(cast("list[object]", columns_out), 1)
 
 
 class TestSchemaHelpers:

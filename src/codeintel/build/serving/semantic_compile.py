@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton import tags as ht
 from codeintel.build.serving.semantic_tags import (
     TAG_DEFAULT_LIMIT,
     TAG_DEFAULT_ORDER,
@@ -100,7 +101,8 @@ def compile_semantic_registry_from_views(
     views: list[dict[str, object]] = []
 
     for tags in view_tags.values():
-        if tags.get(TAG_OUTPUT_KIND) != "semantic":
+        output_kind = tags.get(TAG_OUTPUT_KIND)
+        if output_kind not in {"semantic", ht.OUTPUT_KIND_SEMANTIC_VIEW}:
             continue
         if tags.get(TAG_MCP_VISIBLE, "1") != "1":
             continue
@@ -118,12 +120,15 @@ def compile_semantic_registry_from_views(
             schema = schema_provider.get_table_schema(table_key)
             cols = schema.column_names() if schema else []
 
+        entity = tags.get(TAG_SEMANTIC_ENTITY) or tags.get(ht.TAG_ENTITY) or "unknown"
+        grain = tags.get(TAG_SEMANTIC_GRAIN) or tags.get(ht.TAG_GRAIN) or "unknown"
+
         view_entry: dict[str, object] = {
             "id": semantic_id,
             "kind": tags.get(TAG_SEMANTIC_KIND, "view"),
             "table_key": table_key,
-            "entity": tags.get(TAG_SEMANTIC_ENTITY, "unknown"),
-            "grain": tags.get(TAG_SEMANTIC_GRAIN, "unknown"),
+            "entity": entity,
+            "grain": grain,
             "description": tags.get(TAG_SEMANTIC_DESC),
             "primary_key": _split_csv(tags.get(TAG_SEMANTIC_PK)),
             "columns": cols,

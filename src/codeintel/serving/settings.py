@@ -33,6 +33,10 @@ class ServingSettings:
         HTTP server port.
     auth_token
         Optional bearer token for remote serving.
+    schema_enforcement
+        Schema enforcement mode for semantic query columns: "strict", "warn", or "off".
+    result_engine
+        Result extraction engine: "polars" (preferred) or "pandas" (fallback).
     """
 
     serve_dir: Path
@@ -43,6 +47,8 @@ class ServingSettings:
     host: str = "127.0.0.1"
     port: int = 8000
     auth_token: str | None = None
+    schema_enforcement: str = "strict"
+    result_engine: str = "polars"
 
     @classmethod
     def from_env(cls) -> ServingSettings:
@@ -63,6 +69,8 @@ class ServingSettings:
             host=os.environ.get("CODEINTEL_HOST", "127.0.0.1"),
             port=int(os.environ.get("CODEINTEL_PORT", "8000")),
             auth_token=os.environ.get("CODEINTEL_AUTH_TOKEN"),
+            schema_enforcement=os.environ.get("CODEINTEL_SERVE_SCHEMA_ENFORCEMENT", "strict"),
+            result_engine=os.environ.get("CODEINTEL_SERVE_RESULT_ENGINE", "polars"),
         )
 
 

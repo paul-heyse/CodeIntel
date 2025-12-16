@@ -6,7 +6,6 @@ test repositories and storage gateway access.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -17,6 +16,8 @@ from tests.build.hamilton.native.harness import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.storage.gateway import StorageGateway
 
 

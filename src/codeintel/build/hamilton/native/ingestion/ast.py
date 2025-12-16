@@ -21,6 +21,7 @@ from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute import AstExtractStep
+from codeintel.storage.ibis_types import ibis_bool
 
 log = logging.getLogger(__name__)
 
@@ -178,8 +179,6 @@ def _get_module_paths_from_env(env: BuildEnv) -> list[str]:
     list[str]
         List of module paths.
     """
-    from codeintel.storage.ibis_types import ibis_bool
-
     try:
         table = env.gateway.ibis.table("core.modules")
         df = (

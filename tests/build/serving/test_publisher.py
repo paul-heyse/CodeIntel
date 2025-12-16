@@ -82,6 +82,20 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
     expect_equal(pointer.semantic_layer_version, manifest.semantic_layer_version)
     expect_true(pointer.buildspec_path.exists())
 
+    snap_con = duckdb.connect(pointer.db_path, read_only=True)
+    try:
+        present = snap_con.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'docs' AND table_name = 'search_documents'
+            LIMIT 1
+            """
+        ).fetchone()
+        expect_true(present is not None)
+    finally:
+        snap_con.close()
+
 
 def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
     """Retention keeps only the newest snapshots."""

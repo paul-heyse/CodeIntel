@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
@@ -22,6 +22,9 @@ from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import BuildToolAdapter, DuckDBStorageAdapter
 from codeintel.ingestion.compute import CoverageIngestStep
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 log = logging.getLogger(__name__)
 

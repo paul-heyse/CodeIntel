@@ -32,6 +32,8 @@ from codeintel.build.unified_registry import get_unified_registry
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from hamilton.lifecycle.base import LifecycleAdapter
+
 log = logging.getLogger(__name__)
 
 HamiltonNodeMode = Literal["generated", "auto", "native"]
@@ -122,6 +124,7 @@ def build_driver(
     mode: HamiltonNodeMode = "generated",
     domains: set[str] | None = None,
     strict_native: bool = False,
+    adapter: LifecycleAdapter | list[LifecycleAdapter] | None = None,
 ) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.
 
@@ -144,6 +147,8 @@ def build_driver(
     strict_native
         When True in "native" mode, raise if any requested target
         does not have a native implementation.
+    adapter
+        Optional Hamilton adapter or list of adapters to attach to the Driver.
 
     Returns
     -------
@@ -216,6 +221,7 @@ def build_driver(
         dr = driver.Driver(
             config or {},
             *native_mods,
+            adapter=adapter,
         )
 
         # Only include targets that have native implementations
@@ -251,6 +257,7 @@ def build_driver(
             config or {},
             generated_mod,
             *native_mods,
+            adapter=adapter,
         )
     else:
         # Generated mode.
@@ -258,6 +265,7 @@ def build_driver(
         dr = driver.Driver(
             config or {},
             nodes_module,
+            adapter=adapter,
         )
 
     t2n = _build_target_to_node_map(graph, mode=mode)

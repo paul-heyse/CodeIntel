@@ -2,9 +2,21 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 import time
+from typing import TYPE_CHECKING
 
 import pytest
+from hamilton.node import Node
+
+from codeintel.build.hamilton.hooks.lifecycle import (
+    BuildTimingHook,
+    ConditionalHook,
+    NodeTimingRecord,
+    ProgressBarHook,
+    create_progress_hook,
+)
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -14,13 +26,26 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 
-from codeintel.build.hamilton.hooks.lifecycle import (
-    BuildTimingHook,
-    ConditionalHook,
-    NodeTimingRecord,
-    ProgressBarHook,
-    create_progress_hook,
-)
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+@contextlib.contextmanager
+def _temporary_env(values: dict[str, str | None]) -> Iterator[None]:
+    saved: dict[str, str | None] = {key: os.environ.get(key) for key in values}
+    try:
+        for key, value in values.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        yield None
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 class TestNodeTimingRecord:
@@ -59,7 +84,6 @@ class TestProgressBarHook:
         """Test creating a disabled progress bar."""
         hook = ProgressBarHook(disable=True)
         expect_true(hook.disable)
-        expect_is_none(hook._delegate)
 
     @staticmethod
     def test_creation_with_desc() -> None:
@@ -71,28 +95,16 @@ class TestProgressBarHook:
     def test_run_before_disabled() -> None:
         """Test run_before returns None when disabled."""
         hook = ProgressBarHook(disable=True)
-        result = hook.run_before_node_execution(
-            node_name="test",
-            node_tags={},
-            node_kwargs={},
-            task_id=None,
-        )
+        node = Node(name="test", typ=str)
+        result = hook.pre_node_execute(node_=node)
         expect_is_none(result)
 
     @staticmethod
     def test_run_after_disabled() -> None:
         """Test run_after returns None when disabled."""
         hook = ProgressBarHook(disable=True)
-        result = hook.run_after_node_execution(
-            node_name="test",
-            node_tags={},
-            node_kwargs={},
-            node_return_type=str,
-            result="test",
-            error=None,
-            success=True,
-            task_id=None,
-        )
+        node = Node(name="test", typ=str)
+        result = hook.post_node_execute(node_=node, success=True, error=None)
         expect_is_none(result)
 
 
@@ -110,29 +122,16 @@ class TestBuildTimingHook:
     def test_records_timing() -> None:
         """Test that hook records node timing."""
         hook = BuildTimingHook()
+        node = Node(name="test_node", typ=str)
 
         # Simulate before execution
-        hook.run_before_node_execution(
-            node_name="test_node",
-            node_tags={},
-            node_kwargs={},
-            task_id=None,
-        )
+        hook.pre_node_execute(node_=node)
 
         # Small delay
         time.sleep(0.01)
 
         # Simulate after execution
-        hook.run_after_node_execution(
-            node_name="test_node",
-            node_tags={},
-            node_kwargs={},
-            node_return_type=str,
-            result="test",
-            error=None,
-            success=True,
-            task_id=None,
-        )
+        hook.post_node_execute(node_=node, success=True, error=None)
 
         records = hook.get_records()
         expect_length(records, 1)
@@ -142,18 +141,12 @@ class TestBuildTimingHook:
     @staticmethod
     def test_get_slowest_nodes() -> None:
         """Test getting slowest nodes."""
-        hook = BuildTimingHook()
-
-        # Create records with different durations
-        nodes = [("fast", 0.1), ("medium", 0.5), ("slow", 1.0)]
-        for name, duration in nodes:
-            hook._records.append(
-                NodeTimingRecord(
-                    node_name=name,
-                    duration_seconds=duration,
-                    start_time=0,
-                ),
-            )
+        perf_values = iter([0.0, 0.1, 1.0, 1.5, 2.0, 4.0])
+        hook = BuildTimingHook(clock=lambda: next(perf_values))
+        for node_name in ("fast", "medium", "slow"):
+            node = Node(name=node_name, typ=str)
+            hook.pre_node_execute(node_=node)
+            hook.post_node_execute(node_=node, success=True, error=None)
 
         slowest = hook.get_slowest_nodes(n=2)
         expect_length(slowest, 2)
@@ -163,14 +156,12 @@ class TestBuildTimingHook:
     @staticmethod
     def test_total_duration() -> None:
         """Test calculating total duration."""
-        hook = BuildTimingHook()
-        hook._records.extend(
-            [
-                NodeTimingRecord("a", 1.0, 0),
-                NodeTimingRecord("b", 2.0, 0),
-                NodeTimingRecord("c", 3.0, 0),
-            ]
-        )
+        perf_values = iter([0.0, 1.0, 10.0, 12.0, 20.0, 23.0])
+        hook = BuildTimingHook(clock=lambda: next(perf_values))
+        for node_name in ("a", "b", "c"):
+            node = Node(name=node_name, typ=str)
+            hook.pre_node_execute(node_=node)
+            hook.post_node_execute(node_=node, success=True, error=None)
 
         total = hook.total_duration()
         expect_equal(total, 6.0)
@@ -179,13 +170,14 @@ class TestBuildTimingHook:
     def test_reset() -> None:
         """Test resetting timing records."""
         hook = BuildTimingHook()
-        hook._records.append(NodeTimingRecord("test", 1.0, 0))
-        hook._timings["test", None] = 1234.0
-
+        node = Node(name="test", typ=str)
+        hook.pre_node_execute(node_=node)
+        hook.post_node_execute(node_=node, success=True, error=None)
         hook.reset()
 
         expect_equal(hook.get_records(), [])
-        expect_length(hook._timings, 0)
+        hook.post_node_execute(node_=node, success=True, error=None)
+        expect_equal(hook.get_records(), [])
 
 
 class TestConditionalHook:
@@ -200,15 +192,11 @@ class TestConditionalHook:
             condition=lambda: True,
         )
 
-        conditional.run_before_node_execution(
-            node_name="test",
-            node_tags={},
-            node_kwargs={},
-            task_id=None,
-        )
+        node = Node(name="test", typ=str)
+        conditional.pre_node_execute(node_=node)
+        conditional.post_node_execute(node_=node, success=True, error=None)
 
-        # Inner hook should have recorded the start time
-        expect_length(inner._timings, 1)
+        expect_length(inner.get_records(), 1)
 
     @staticmethod
     def test_disabled_condition() -> None:
@@ -219,15 +207,11 @@ class TestConditionalHook:
             condition=lambda: False,
         )
 
-        conditional.run_before_node_execution(
-            node_name="test",
-            node_tags={},
-            node_kwargs={},
-            task_id=None,
-        )
+        node = Node(name="test", typ=str)
+        conditional.pre_node_execute(node_=node)
+        conditional.post_node_execute(node_=node, success=True, error=None)
 
-        # Inner hook should not have recorded anything
-        expect_length(inner._timings, 0)
+        expect_length(inner.get_records(), 0)
 
     @staticmethod
     def test_condition_cached() -> None:
@@ -245,11 +229,10 @@ class TestConditionalHook:
             condition=counting_condition,
         )
 
-        # Call multiple times
+        node = Node(name="test", typ=str)
         for _ in range(5):
-            conditional._is_enabled()
+            conditional.pre_node_execute(node_=node)
 
-        # Condition should only be called once
         expect_equal(call_count, 1)
 
 
@@ -264,50 +247,47 @@ class TestCreateProgressHook:
         expect_equal(hook.desc, "Test")
 
     @staticmethod
-    def test_respects_ci_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_respects_ci_environment() -> None:
         """Test factory disables in CI environment."""
-        monkeypatch.setenv("CI", "true")
-        hook = create_progress_hook("Test", disable_in_ci=True)
-        expect_true(hook.disable)
+        with _temporary_env({"CI": "true"}):
+            hook = create_progress_hook("Test", disable_in_ci=True)
+            expect_true(hook.disable)
 
     @staticmethod
-    def test_enabled_when_not_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_enabled_when_not_ci() -> None:
         """Test factory enables when not in CI."""
-        monkeypatch.delenv("CI", raising=False)
-        hook = create_progress_hook("Test", disable_in_ci=True)
-        expect_false(hook.disable)
+        with _temporary_env({"CI": None}):
+            hook = create_progress_hook("Test", disable_in_ci=True)
+            expect_false(hook.disable)
 
 
 @pytest.mark.parametrize(
-    ("min_duration", "actual_duration", "should_log"),
+    ("min_duration", "actual_duration"),
     [
-        pytest.param(1.0, 0.5, False, id="below_threshold"),
-        pytest.param(1.0, 1.5, True, id="above_threshold"),
-        pytest.param(0.0, 0.001, True, id="zero_threshold"),
+        pytest.param(1.0, 0.5, id="below_threshold"),
+        pytest.param(1.0, 1.5, id="above_threshold"),
+        pytest.param(0.0, 0.001, id="zero_threshold"),
     ],
 )
 def test_timing_hook_logging_threshold(
     min_duration: float,
     actual_duration: float,
-    should_log: bool,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Parametrized test for timing hook logging threshold."""
-    hook = BuildTimingHook(min_duration_to_log=min_duration)
+    caplog.set_level("INFO", logger="codeintel.build.hamilton.hooks.lifecycle")
+    perf_values = iter([0.0, actual_duration])
+    hook = BuildTimingHook(min_duration_to_log=min_duration, clock=lambda: next(perf_values))
 
-    # Manually add a record with specific duration
-    hook._records.append(
-        NodeTimingRecord(
-            node_name="test_node",
-            duration_seconds=actual_duration,
-            start_time=0,
-        ),
-    )
+    node = Node(name="test_node", typ=str)
+    hook.pre_node_execute(node_=node)
+    hook.post_node_execute(node_=node, success=True, error=None)
 
-    # Check the record was added
     records = hook.get_records()
     expect_length(records, 1)
-
-    # Log message test would require more complex setup
-    # For now, just verify the hook was created correctly
     expect_equal(hook.min_duration_to_log, min_duration)
+    expect_true(records[0].duration_seconds >= 0)
+
+    should_log = actual_duration >= min_duration
+    logged = any("Node test_node took" in record.getMessage() for record in caplog.records)
+    expect_equal(logged, should_log)

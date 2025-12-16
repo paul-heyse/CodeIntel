@@ -10,7 +10,14 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.build.config import BuildConfig
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.native.graphs.call_graph import t__call_graph__extract
+from codeintel.build.hamilton.native.graphs.cfg_dfg import t__cfg__extract
+from codeintel.build.providers import create_default_providers
 from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from tests._helpers.builders import (
@@ -96,9 +103,9 @@ def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv
 
 
 def build_span_graph_components(env: SpanTestEnv) -> None:
-    """Run call graph, CFG/DFG, and symbol-use builders for the span test.
+    """Run call graph and CFG builders for the span test.
 
-    Executes the graph plugins to build call graph, CFG/DFG, and symbol uses.
+    Executes the native Hamilton graph compute nodes to build call graph and CFG data.
 
     Parameters
     ----------
@@ -108,58 +115,41 @@ def build_span_graph_components(env: SpanTestEnv) -> None:
     Raises
     ------
     RuntimeError
-        If any graph plugin fails execution.
+        If graph computation fails execution.
     """
+    build_dir = env.repo_root / ".build"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    paths = BuildPaths.from_explicit(build_dir=build_dir)
+
     snapshot = SnapshotRef(
         repo=REPO,
         commit=COMMIT,
         repo_root=env.repo_root,
     )
-    build_dir = env.repo_root / ".build"
-    paths = BuildPaths(
-        build_dir=build_dir,
-        db_path=build_dir / "db" / "codeintel.duckdb",
-        document_output_dir=build_dir / "output",
-        scip_dir=build_dir / "scip",
-        coverage_json=build_dir / "coverage" / "coverage.json",
-        pytest_report=build_dir / "test-results" / "pytest-report.json",
-        tool_cache=build_dir / ".tool_cache",
-        log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
-    )
-    import warnings
-
-    from codeintel.build.plugins.graphs.builders import (
-        CallGraphPlugin,
-        CfgDfgPlugin,
-        SymbolUsesPlugin,
-    )
-    from tests._helpers.fakes.contexts import ExecutionContextBuilder
-
-    builder = ExecutionContextBuilder(
+    providers = create_default_providers(ToolsConfig.default())
+    build_env = BuildEnv(
         gateway=env.gateway,
         snapshot=snapshot,
         paths=paths,
+        providers=providers,
+        config=BuildConfig.empty(),
+    )
+    goids_record = TargetRunRecord(
+        target="goids",
+        plugin_name="graphs.goids",
+        status="succeeded",
+        input_hash=None,
     )
 
-    # Execute using the legacy plugin-based execution
-    # until full Hamilton driver execution is implemented
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    call_graph_result = t__call_graph__extract(build_env, goids_record)
+    if not call_graph_result.success:
+        message = f"call_graph extraction failed: {call_graph_result.error}"
+        raise RuntimeError(message)
 
-        call_graph_result = builder.execute_plugin(CallGraphPlugin())
-        if not call_graph_result.success:
-            msg = f"CallGraphPlugin failed: {call_graph_result.error_message}"
-            raise RuntimeError(msg)
-
-        cfg_dfg_result = builder.execute_plugin(CfgDfgPlugin())
-        if not cfg_dfg_result.success:
-            msg = f"CfgDfgPlugin failed: {cfg_dfg_result.error_message}"
-            raise RuntimeError(msg)
-
-        symbol_uses_result = builder.execute_plugin(SymbolUsesPlugin())
-        if not symbol_uses_result.success:
-            msg = f"SymbolUsesPlugin failed: {symbol_uses_result.error_message}"
-            raise RuntimeError(msg)
+    cfg_result = t__cfg__extract(build_env, goids_record)
+    if not cfg_result.success:
+        message = f"cfg extraction failed: {cfg_result.error}"
+        raise RuntimeError(message)
 
 
 def generate_span_coverage(repo_root: Path) -> CoverageArtifact:

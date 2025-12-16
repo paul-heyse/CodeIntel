@@ -71,7 +71,18 @@ EXPECTED_MAX_VALUE = 20.0
 
 
 def _make_test_target(name: str = "repo_scan") -> OutputTarget:
-    """Create a minimal test target."""
+    """Create a minimal test target.
+
+    Parameters
+    ----------
+    name
+        Target name to use.
+
+    Returns
+    -------
+    OutputTarget
+        Target instance suitable for test execution.
+    """
     return OutputTarget(
         name=name,
         module="ingestion",

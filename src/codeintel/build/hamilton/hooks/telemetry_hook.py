@@ -6,11 +6,20 @@ execution telemetry to build.run_nodes for profiling and debugging.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
+
+from hamilton.lifecycle import base as lifecycle_base
+
+from codeintel.build.hamilton import tags as ht
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from hamilton.node import Node
+
     from codeintel.storage.gateway.protocol import StorageGateway
 
 
@@ -51,10 +60,10 @@ class NodeExecutionRecord:
     completed_at: datetime | None
     duration_ms: float | None
     error: str | None
-    tags: dict[str, object] | None
+    tags: Mapping[str, object] | None
 
 
-class NodeTelemetryHook:
+class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePostNodeExecute):
     """Hamilton lifecycle hook for node telemetry.
 
     Records execution timing and status for each node to enable
@@ -86,58 +95,62 @@ class NodeTelemetryHook:
         self._gateway = gateway
         self._node_starts: dict[str, datetime] = {}
         self._records: list[NodeExecutionRecord] = []
+        self._lock = threading.Lock()
 
     def pre_node_execute(
         self,
         *,
-        node_name: str,
-        **kwargs: object,
+        node_: Node,
+        **context: object,
     ) -> None:
         """Record node execution start.
 
         Parameters
         ----------
-        node_name
-            Name of the node being executed.
-        **kwargs
-            Additional keyword arguments from Hamilton.
+        node_
+            Node being executed.
+        context
+            Additional Hamilton lifecycle context (ignored).
         """
-        _ = kwargs
-        self._node_starts[node_name] = datetime.now(tz=UTC)
+        _ = context
+        started_at = datetime.now(tz=UTC)
+        with self._lock:
+            self._node_starts[node_.name] = started_at
 
     def post_node_execute(
         self,
         *,
-        node_name: str,
-        **kwargs: object,
+        node_: Node,
+        success: bool,
+        error: Exception | None,
+        **context: object,
     ) -> None:
         """Record node execution completion.
 
         Parameters
         ----------
-        node_name
-            Name of the node that was executed.
-        **kwargs
-            Additional keyword arguments from Hamilton.
+        node_
+            Node that was executed.
+        success
+            Whether the node execution succeeded.
+        error
+            Exception if the node failed.
+        context
+            Additional Hamilton lifecycle context (ignored).
         """
-        node_tags_raw = kwargs.get("node_tags")
-        node_tags = (
-            cast("dict[str, object] | None", node_tags_raw)
-            if isinstance(node_tags_raw, dict)
-            else None
-        )
-        error_raw = kwargs.get("error")
-        error = error_raw if isinstance(error_raw, Exception) else None
-        success_raw = kwargs.get("success")
-        success = success_raw if isinstance(success_raw, bool) else False
+        _ = context
+
+        node_tags = node_.tags if isinstance(node_.tags, dict) else None
 
         completed_at = datetime.now(tz=UTC)
-        started_at = self._node_starts.pop(node_name, completed_at)
+        node_name = node_.name
+        with self._lock:
+            started_at = self._node_starts.pop(node_name, completed_at)
         duration_ms = (completed_at - started_at).total_seconds() * 1000
 
-        target_raw = node_tags.get("target") if node_tags else None
+        target_raw = node_tags.get(ht.TAG_TARGET) if node_tags else None
         target = target_raw if isinstance(target_raw, str) else None
-        node_type_raw = node_tags.get("node_type") if node_tags else None
+        node_type_raw = node_tags.get(ht.TAG_NODE_TYPE) if node_tags else None
         node_type = node_type_raw if isinstance(node_type_raw, str) else None
 
         record = NodeExecutionRecord(
@@ -153,7 +166,8 @@ class NodeTelemetryHook:
             tags=node_tags if node_tags else None,
         )
 
-        self._records.append(record)
+        with self._lock:
+            self._records.append(record)
 
     def flush(self) -> int:
         """Persist all recorded telemetry and clear buffer.
@@ -163,12 +177,13 @@ class NodeTelemetryHook:
         int
             Number of records persisted.
         """
-        if not self._records:
-            return 0
+        with self._lock:
+            if not self._records:
+                return 0
+            records = list(self._records)
+            self._records.clear()
 
-        count = self._gateway.build.save_run_nodes(self._run_id, self._records)
-        self._records.clear()
-        return count
+        return self._gateway.build.save_run_nodes(self._run_id, records)
 
 
 __all__ = [

@@ -13,6 +13,7 @@ from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.db.pool import DuckDBPoolConfig
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
+from codeintel.serving.settings import ServingSettings
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 
 if TYPE_CHECKING:
@@ -149,7 +150,17 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
     )
     await manager.start()
     try:
-        kernel = SemanticQueryKernel(db=manager)
+        kernel = SemanticQueryKernel(
+            db=manager,
+            settings=ServingSettings(
+                serve_dir=tmp_path,
+                hot_swap=False,
+                pool_size=1,
+                poll_interval_s=0.01,
+                result_engine="pandas",
+                schema_enforcement="strict",
+            ),
+        )
         mcp = build_mcp_app(kernel=kernel, streamable_http_path="/mcp")
 
         catalog = _extract_payload(await mcp.call_tool("semantic_catalog", {}))

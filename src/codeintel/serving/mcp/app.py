@@ -6,12 +6,14 @@ from typing import TYPE_CHECKING, Protocol
 
 from mcp.server.fastmcp import FastMCP
 
+from codeintel.serving.search.models import SearchQueryRequest
 from codeintel.serving.semantic.models import FilterSpec, SemanticQueryRequest
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from contextlib import AbstractAsyncContextManager
 
+    from codeintel.serving.search.models import SearchQueryResponse
     from codeintel.serving.semantic.models import SemanticQueryResponse
 
 
@@ -23,6 +25,8 @@ class SemanticKernel(Protocol):
     def describe(self, view_id: str) -> dict[str, object]: ...
 
     def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse: ...
+
+    def search(self, request: SearchQueryRequest) -> SearchQueryResponse: ...
 
     def meta(self) -> dict[str, object]: ...
 
@@ -123,6 +127,29 @@ def build_mcp_app(
             Serving metadata payload.
         """
         return kernel.meta()
+
+    @mcp.tool()
+    def code_search(
+        query: str,
+        kinds: list[str] | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """Search code metadata using the serving snapshot search index.
+
+        Returns
+        -------
+        dict[str, object]
+            Search response payload.
+        """
+        request = SearchQueryRequest(
+            query=query,
+            kinds=kinds,
+            limit=limit,
+            offset=offset,
+        )
+        result = kernel.search(request)
+        return result.model_dump(mode="json")
 
     return mcp
 

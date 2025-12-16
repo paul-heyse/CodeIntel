@@ -24,7 +24,9 @@ Extract schema from a Hamilton node:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -40,6 +42,8 @@ __all__ = [
 ]
 
 log = logging.getLogger(__name__)
+
+_SCHEMA_TUPLE_MIN_LEN = 2
 
 
 class ColumnSchema:
@@ -75,6 +79,7 @@ class ColumnSchema:
         name: str,
         dtype: str,
         description: str | None = None,
+        *,
         nullable: bool = True,
         unique: bool = False,
     ) -> None:
@@ -95,15 +100,15 @@ class ColumnSchema:
         """
         return (self.name, self.dtype)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dictionary representation.
 
         Returns
         -------
-        dict[str, Any]
+        dict[str, object]
             Dictionary with all schema attributes.
         """
-        result: dict[str, Any] = {
+        result: dict[str, object] = {
             "name": self.name,
             "dtype": self.dtype,
         }
@@ -197,15 +202,15 @@ class TableSchema:
         """
         return [col.name for col in self.columns if col.unique]
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dictionary representation.
 
         Returns
         -------
-        dict[str, Any]
+        dict[str, object]
             Dictionary with all schema attributes.
         """
-        result: dict[str, Any] = {
+        result: dict[str, object] = {
             "table_key": self.table_key,
             "columns": [col.to_dict() for col in self.columns],
         }
@@ -240,33 +245,21 @@ def schema_for_table(table_key: str) -> tuple[tuple[str, str], ...]:
     >>> # @schema.output(*columns)
     >>> # def t__function_metrics__compute(...) -> pd.DataFrame:
     """
-    try:
-        # Attempt to load from SCHEMA_REGISTRY
-        from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
-
-        dataset_schema = SCHEMA_REGISTRY.get(table_key)
-        if dataset_schema is None:
-            log.warning("Table %s not found in SCHEMA_REGISTRY", table_key)
-            return ()
-
-        # Extract column information from Pandera schema
-        pandera_schema = dataset_schema.pandera_schema
-        columns: list[tuple[str, str]] = []
-        for col_name, col_spec in pandera_schema.columns.items():
-            # Map Pandera dtype to simple string
-            dtype_str = _pandera_dtype_to_string(col_spec.dtype)
-            columns.append((col_name, dtype_str))
-
-        return tuple(columns)
-    except ImportError:
-        log.debug("SCHEMA_REGISTRY not available")
-        return ()
-    except Exception as exc:
-        log.warning("Error loading schema for %s: %s", table_key, exc)
+    dataset_schema = SCHEMA_REGISTRY.get(table_key)
+    if dataset_schema is None:
+        log.warning("Table %s not found in SCHEMA_REGISTRY", table_key)
         return ()
 
+    pandera_schema = dataset_schema.pandera_schema
+    columns = pandera_schema.columns
+    if not hasattr(columns, "items"):
+        log.warning("Pandera schema for %s has unexpected columns type", table_key)
+        return ()
 
-def _pandera_dtype_to_string(dtype: Any) -> str:
+    return tuple((col_name, _pandera_dtype_to_string(col_spec.dtype)) for col_name, col_spec in columns.items())
+
+
+def _pandera_dtype_to_string(dtype: object) -> str:
     """Convert Pandera dtype to string representation.
 
     Parameters
@@ -406,9 +399,11 @@ def extract_node_schema(
     # Convert schema info to ColumnSchema objects
     columns: list[ColumnSchema] = []
     if isinstance(schema_info, (list, tuple)):
-        for item in schema_info:
-            if isinstance(item, tuple) and len(item) >= 2:
-                columns.append(ColumnSchema(name=item[0], dtype=item[1]))
+        columns.extend(
+            ColumnSchema(name=str(item[0]), dtype=str(item[1]))
+            for item in schema_info
+            if isinstance(item, tuple) and len(item) >= _SCHEMA_TUPLE_MIN_LEN
+        )
 
     if not columns:
         return None

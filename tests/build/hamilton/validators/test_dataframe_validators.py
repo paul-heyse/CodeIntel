@@ -347,6 +347,7 @@ class TestValidatorIntegration:
 )
 def test_column_types_parametrized(
     column_types: dict[str, str],
+    *,
     expected_pass: bool,
 ) -> None:
     """Parametrized test for column type validation."""

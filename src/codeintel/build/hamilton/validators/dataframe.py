@@ -19,8 +19,10 @@ Examples
 
 from __future__ import annotations
 
+import importlib
 import logging
-from typing import TYPE_CHECKING, Any
+from functools import cache
+from typing import TYPE_CHECKING, TypeGuard
 
 import pandas as pd
 from hamilton.data_quality.base import BaseDefaultValidator, ValidationResult
@@ -65,8 +67,17 @@ _IBIS_DTYPE_MAP: dict[str, tuple[str, ...]] = {
     "datetime": ("timestamp", "Timestamp"),
 }
 
+@cache
+def _get_ibis_table_type() -> type | None:
+    try:
+        module = importlib.import_module("ibis.expr.types")
+    except ImportError:
+        return None
+    table_type = getattr(module, "Table", None)
+    return table_type if isinstance(table_type, type) else None
 
-def _is_ibis_table(data: Any) -> bool:
+
+def _is_ibis_table(data: object) -> TypeGuard[ir.Table]:
     """Check if data is an Ibis table expression.
 
     Parameters
@@ -79,12 +90,8 @@ def _is_ibis_table(data: Any) -> bool:
     bool
         True if data is an Ibis table expression.
     """
-    try:
-        import ibis.expr.types as ir
-
-        return isinstance(data, ir.Table)
-    except ImportError:
-        return False
+    table_type = _get_ibis_table_type()
+    return table_type is not None and isinstance(data, table_type)
 
 
 def _get_ibis_columns(data: ir.Table) -> list[str]:
@@ -116,8 +123,7 @@ def _get_ibis_schema(data: ir.Table) -> dict[str, str]:
     dict[str, str]
         Mapping from column name to type string.
     """
-    schema = data.schema()
-    return {name: str(dtype) for name, dtype in zip(schema.names, schema.types)}
+    return {name: str(dtype) for name, dtype in data.schema().items()}
 
 
 class ColumnsExistValidator(BaseDefaultValidator):
@@ -155,6 +161,7 @@ class ColumnsExistValidator(BaseDefaultValidator):
         """
         # Always return True - we check type at runtime in validate()
         # This allows support for both pd.DataFrame and ir.Table
+        _ = datatype
         return True
 
     @classmethod
@@ -178,7 +185,7 @@ class ColumnsExistValidator(BaseDefaultValidator):
         """
         return f"Validates that columns {self.required_columns} exist"
 
-    def validate(self, data: pd.DataFrame | Any) -> ValidationResult:
+    def validate(self, data: object) -> ValidationResult:
         """Validate that all required columns exist.
 
         Parameters
@@ -256,6 +263,7 @@ class ColumnTypesValidator(BaseDefaultValidator):
         bool
             True when the validator supports the provided datatype.
         """
+        _ = datatype
         return True  # Check type at runtime
 
     @classmethod
@@ -279,7 +287,7 @@ class ColumnTypesValidator(BaseDefaultValidator):
         """
         return f"Validates column types: {self.column_types}"
 
-    def validate(self, data: pd.DataFrame | Any) -> ValidationResult:
+    def validate(self, data: object) -> ValidationResult:
         """Validate column dtypes.
 
         Parameters
@@ -292,7 +300,7 @@ class ColumnTypesValidator(BaseDefaultValidator):
         ValidationResult
             Result with details of any type mismatches.
         """
-        mismatches: dict[str, dict[str, Any]] = {}
+        mismatches: dict[str, dict[str, object]] = {}
 
         # Handle Ibis tables
         if _is_ibis_table(data):
@@ -374,6 +382,7 @@ class NoNullsInColumnsValidator(BaseDefaultValidator):
         bool
             True when the validator supports the provided datatype.
         """
+        _ = datatype
         return True  # Check type at runtime
 
     @classmethod
@@ -397,7 +406,7 @@ class NoNullsInColumnsValidator(BaseDefaultValidator):
         """
         return f"Validates no nulls in columns: {self.columns}"
 
-    def validate(self, data: pd.DataFrame | Any) -> ValidationResult:
+    def validate(self, data: object) -> ValidationResult:
         """Validate that specified columns have no nulls.
 
         Parameters
@@ -490,6 +499,7 @@ class UniqueColumnsValidator(BaseDefaultValidator):
         bool
             True when the validator supports the provided datatype.
         """
+        _ = datatype
         return True  # Check type at runtime
 
     @classmethod
@@ -513,7 +523,7 @@ class UniqueColumnsValidator(BaseDefaultValidator):
         """
         return f"Validates unique values in columns: {self.columns}"
 
-    def validate(self, data: pd.DataFrame | Any) -> ValidationResult:
+    def validate(self, data: object) -> ValidationResult:
         """Validate that specified columns have unique values.
 
         Parameters
@@ -605,6 +615,7 @@ class RowCountValidator(BaseDefaultValidator):
         bool
             True when the validator supports the provided datatype.
         """
+        _ = datatype
         return True  # Check type at runtime
 
     @classmethod
@@ -628,7 +639,7 @@ class RowCountValidator(BaseDefaultValidator):
         """
         return f"Validates minimum row count: {self.min_rows}"
 
-    def validate(self, data: pd.DataFrame | Any) -> ValidationResult:
+    def validate(self, data: object) -> ValidationResult:
         """Validate that DataFrame has minimum rows.
 
         Parameters
@@ -716,6 +727,7 @@ class RowCountRangeValidator(BaseDefaultValidator):
         bool
             True when the validator supports the provided datatype.
         """
+        _ = datatype
         return True  # Check type at runtime
 
     @classmethod
@@ -739,7 +751,7 @@ class RowCountRangeValidator(BaseDefaultValidator):
         """
         return f"Validates row count in range [{self.min_rows}, {self.max_rows}]"
 
-    def validate(self, data: pd.DataFrame | Any) -> ValidationResult:
+    def validate(self, data: object) -> ValidationResult:
         """Validate that DataFrame row count is in range.
 
         Parameters
@@ -774,7 +786,7 @@ class RowCountRangeValidator(BaseDefaultValidator):
             )
 
         actual_rows = len(data)
-        diagnostics: dict[str, Any] = {
+        diagnostics: dict[str, object] = {
             "actual_rows": actual_rows,
             "min_rows": self.min_rows,
             "max_rows": self.max_rows,
@@ -822,7 +834,7 @@ class ColumnValuesInSetValidator(BaseDefaultValidator):
     False
     """
 
-    def __init__(self, column: str, allowed_values: set[Any]) -> None:
+    def __init__(self, column: str, allowed_values: set[object]) -> None:
         """Initialize with column and allowed values."""
         self.column = column
         self.allowed_values = allowed_values
@@ -836,6 +848,7 @@ class ColumnValuesInSetValidator(BaseDefaultValidator):
         bool
             True when the validator supports the provided datatype.
         """
+        _ = datatype
         return True  # Check type at runtime
 
     @classmethod
@@ -859,7 +872,7 @@ class ColumnValuesInSetValidator(BaseDefaultValidator):
         """
         return f"Validates {self.column} values in allowed set"
 
-    def validate(self, data: pd.DataFrame | Any) -> ValidationResult:
+    def validate(self, data: object) -> ValidationResult:
         """Validate that column values are in the allowed set.
 
         Parameters

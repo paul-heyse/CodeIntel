@@ -42,7 +42,6 @@ from codeintel.core.errors.storage import (
 from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
     DuckDBCatalogException,
-    DuckDBConnection,
     DuckDBConnectionException,
     DuckDBDatabaseError,
     DuckDBError,
@@ -58,6 +57,7 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
 DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (

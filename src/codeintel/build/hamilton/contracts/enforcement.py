@@ -7,6 +7,7 @@ the target's declared OutputContract.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from codeintel.build.errors import ContractViolationError
@@ -28,8 +29,10 @@ class ContractEnforcer:
     target for a block of execution.
     """
 
-    _current_target: OutputTarget | None = None
-    _strict: bool = False
+    _current_target: ContextVar[OutputTarget | None] = ContextVar(
+        "codeintel_contract_enforcer_target", default=None
+    )
+    _strict: ContextVar[bool] = ContextVar("codeintel_contract_enforcer_strict", default=False)
 
     @classmethod
     def activate(cls, target: OutputTarget, *, strict: bool) -> None:
@@ -42,14 +45,14 @@ class ContractEnforcer:
         strict
             When True, enforce the target contract and raise on violations.
         """
-        cls._current_target = target
-        cls._strict = strict
+        cls._current_target.set(target)
+        cls._strict.set(strict)
 
     @classmethod
     def deactivate(cls) -> None:
         """Deactivate enforcement for subsequent writes."""
-        cls._current_target = None
-        cls._strict = False
+        cls._current_target.set(None)
+        cls._strict.set(False)
 
     @classmethod
     @contextmanager
@@ -77,18 +80,14 @@ class ContractEnforcer:
         ...     # All writes in this block are validated
         ...     pass
         """
-        old_target = cls._current_target
-        old_strict = cls._strict
-
-        cls.activate(target, strict=strict)
+        token_target = cls._current_target.set(target)
+        token_strict = cls._strict.set(strict)
 
         try:
             yield
         finally:
-            if old_target is None:
-                cls.deactivate()
-            else:
-                cls.activate(old_target, strict=old_strict)
+            cls._current_target.reset(token_target)
+            cls._strict.reset(token_strict)
 
     @classmethod
     def validate_table_write(cls, table_key: str) -> None:
@@ -109,13 +108,17 @@ class ContractEnforcer:
         >>> ContractEnforcer.validate_table_write("analytics.function_metrics")
         >>> # Raises ContractViolationError if strict mode and not in contract
         """
-        if not cls._strict or cls._current_target is None:
+        if not cls._strict.get():
             return
 
-        allowed_tables = set(cls._current_target.contract.table_keys)
+        current_target = cls._current_target.get()
+        if current_target is None:
+            return
+
+        allowed_tables = set(current_target.contract.table_keys)
         if table_key not in allowed_tables:
             raise ContractViolationError(
-                target=cls._current_target.name,
+                target=current_target.name,
                 table_key=table_key,
                 allowed_tables=allowed_tables,
             )
@@ -139,13 +142,17 @@ class ContractEnforcer:
         >>> ContractEnforcer.validate_artifact_write("index.scip")
         >>> # Raises ContractViolationError if strict mode and not in contract
         """
-        if not cls._strict or cls._current_target is None:
+        if not cls._strict.get():
             return
 
-        artifact_names = {artifact.name for artifact in cls._current_target.contract.artifacts}
+        current_target = cls._current_target.get()
+        if current_target is None:
+            return
+
+        artifact_names = {artifact.name for artifact in current_target.contract.artifacts}
         if artifact_name not in artifact_names:
             raise ContractViolationError(
-                target=cls._current_target.name,
+                target=current_target.name,
                 artifact_name=artifact_name,
             )
 

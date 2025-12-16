@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Literal, Required, TypedDict, TypeVar, Unpack
+from typing import Literal, Required, TypedDict, TypeVar, Unpack, cast
+
+from hamilton.function_modifiers import tag as h_tag
+
+from codeintel.build.hamilton import tags as ht
 
 SEMANTIC_VIEW_TAG_ATTR = "__codeintel_semantic_view_tags__"
 
@@ -63,6 +67,42 @@ class SemanticViewSpecError(TypeError):
 
     def __init__(self) -> None:
         super().__init__("semantic_view requires semantic_id, table_key, entity, and grain")
+
+
+def _build_semantic_tags(spec: SemanticViewTagSpec) -> dict[str, str]:
+    semantic_id = spec["semantic_id"]
+    table_key = spec["table_key"]
+    entity = spec["entity"]
+    grain = spec["grain"]
+
+    tags: dict[str, str] = {
+        TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW,
+        TAG_DEPRECATED: "1" if spec.get("deprecated", False) else "0",
+        TAG_DEFAULT_LIMIT: str(spec.get("default_limit", 200)),
+        TAG_DEFAULT_ORDER: _csv(spec.get("default_order_by", ())),
+        TAG_MCP_VISIBLE: "1" if spec.get("mcp_visible", True) else "0",
+        TAG_SEMANTIC_ENTITY: entity,
+        TAG_SEMANTIC_GRAIN: grain,
+        TAG_SEMANTIC_ID: semantic_id,
+        TAG_SEMANTIC_KIND: spec.get("kind", "view"),
+        TAG_SEMANTIC_PK: _csv(spec.get("primary_key", ())),
+        TAG_SENSITIVITY: spec.get("sensitivity", "internal"),
+        TAG_TABLE_KEY: table_key,
+    }
+    columns = spec.get("columns", ())
+    if columns:
+        tags[TAG_SEMANTIC_COLS] = _csv(columns)
+    description = spec.get("description")
+    if description is not None:
+        tags[TAG_SEMANTIC_DESC] = description
+    joins = spec.get("joins")
+    if joins is not None:
+        tags[TAG_SEMANTIC_JOINS] = json.dumps(joins, sort_keys=True)
+    replaced_by = spec.get("replaced_by")
+    if replaced_by is not None:
+        tags[TAG_REPLACED_BY] = replaced_by
+
+    return tags
 
 
 def semantic_view(
@@ -125,45 +165,36 @@ def semantic_view(
         grain = spec["grain"]
     except KeyError as exc:
         raise SemanticViewSpecError from exc
-
-    primary_key = spec.get("primary_key", ())
-    columns = spec.get("columns", ())
-    description = spec.get("description")
-    joins = spec.get("joins")
-    default_order_by = spec.get("default_order_by", ())
-    default_limit = spec.get("default_limit", 200)
-    sensitivity = spec.get("sensitivity", "internal")
-    deprecated = spec.get("deprecated", False)
-    replaced_by = spec.get("replaced_by")
-    mcp_visible = spec.get("mcp_visible", True)
-    kind = spec.get("kind", "view")
+    tags = _build_semantic_tags(spec)
 
     def decorator(func: _TFunc) -> _TFunc:
-        tags: dict[str, str] = {
-            TAG_OUTPUT_KIND: "semantic",
-            TAG_MCP_VISIBLE: "1" if mcp_visible else "0",
-            TAG_SEMANTIC_ID: semantic_id,
-            TAG_SEMANTIC_KIND: kind,
-            TAG_TABLE_KEY: table_key,
-            TAG_SEMANTIC_ENTITY: entity,
-            TAG_SEMANTIC_GRAIN: grain,
-            TAG_SEMANTIC_PK: _csv(primary_key),
-            TAG_DEFAULT_ORDER: _csv(default_order_by),
-            TAG_DEFAULT_LIMIT: str(default_limit),
-            TAG_SENSITIVITY: sensitivity,
-            TAG_DEPRECATED: "1" if deprecated else "0",
-        }
-        if columns:
-            tags[TAG_SEMANTIC_COLS] = _csv(columns)
-        if description is not None:
-            tags[TAG_SEMANTIC_DESC] = description
-        if joins is not None:
-            tags[TAG_SEMANTIC_JOINS] = json.dumps(joins, sort_keys=True)
-        if replaced_by is not None:
-            tags[TAG_REPLACED_BY] = replaced_by
-
-        setattr(func, SEMANTIC_VIEW_TAG_ATTR, tags)
-        return func
+        tagged = cast(
+            "_TFunc",
+            h_tag(
+                output_kind=ht.OUTPUT_KIND_SEMANTIC_VIEW,
+                semantic_id=semantic_id,
+                table_key=table_key,
+                entity=entity,
+                grain=grain,
+                mcp_visible=tags[TAG_MCP_VISIBLE],
+                semantic_default_limit=tags[TAG_DEFAULT_LIMIT],
+                semantic_default_order_by=tags[TAG_DEFAULT_ORDER],
+                semantic_deprecated=tags[TAG_DEPRECATED],
+                semantic_kind=tags[TAG_SEMANTIC_KIND],
+                semantic_primary_key=tags[TAG_SEMANTIC_PK],
+                semantic_sensitivity=tags[TAG_SENSITIVITY],
+            )(func),
+        )
+        if TAG_REPLACED_BY in tags:
+            tagged = cast("_TFunc", h_tag(semantic_replaced_by=tags[TAG_REPLACED_BY])(tagged))
+        if TAG_SEMANTIC_COLS in tags:
+            tagged = cast("_TFunc", h_tag(semantic_columns=tags[TAG_SEMANTIC_COLS])(tagged))
+        if TAG_SEMANTIC_DESC in tags:
+            tagged = cast("_TFunc", h_tag(semantic_description=tags[TAG_SEMANTIC_DESC])(tagged))
+        if TAG_SEMANTIC_JOINS in tags:
+            tagged = cast("_TFunc", h_tag(semantic_joins=tags[TAG_SEMANTIC_JOINS])(tagged))
+        setattr(tagged, SEMANTIC_VIEW_TAG_ATTR, tags)
+        return tagged
 
     return decorator
 

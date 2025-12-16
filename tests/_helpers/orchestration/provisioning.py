@@ -9,13 +9,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import warnings
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from coverage import Coverage
 
 from codeintel.analytics.graphs import compute_graph_metrics
+from codeintel.build.config import BuildConfig
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.native.graphs.call_graph import t__call_graph__extract
+from codeintel.build.providers import create_default_providers
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.graphs.runtime import GraphMetricsOptions
 from codeintel.ingestion import (
@@ -58,7 +62,6 @@ from tests._helpers.configs import (
 )
 from tests._helpers.context import TestContext
 from tests._helpers.fakes import utcnow
-from tests._helpers.fakes.contexts import ExecutionContextBuilder
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.orchestration.repo_writers import (
     write_callgraph_alias_repo,
@@ -950,7 +953,7 @@ def build_callgraph_fixture_repo(
     Raises
     ------
     RuntimeError
-        If the CallGraphPlugin fails execution.
+        If call graph extraction fails execution.
     """
     write_callgraph_alias_repo(repo_root)
     opts = options or CallgraphFixtureOptions()
@@ -979,6 +982,7 @@ def build_callgraph_fixture_repo(
         repo_root=repo_root,
     )
     build_dir = repo_root / ".build"
+    build_dir.mkdir(parents=True, exist_ok=True)
     paths = BuildPaths(
         build_dir=build_dir,
         db_path=build_dir / "db" / "codeintel.duckdb",
@@ -989,23 +993,24 @@ def build_callgraph_fixture_repo(
         tool_cache=build_dir / ".tool_cache",
         log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
     )
-
-    builder = ExecutionContextBuilder(
+    providers = create_default_providers(make_tools_config())
+    build_env = BuildEnv(
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
+        providers=providers,
+        config=BuildConfig.empty(),
     )
-
-    # Execute using the legacy plugin-based execution
-    # until full Hamilton driver execution is implemented
-    from codeintel.build.plugins.graphs.builders import CallGraphPlugin
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = builder.execute_plugin(CallGraphPlugin())
+    goids_record = TargetRunRecord(
+        target="goids",
+        plugin_name="graphs.goids",
+        status="succeeded",
+        input_hash=None,
+    )
+    result = t__call_graph__extract(build_env, goids_record)
     if not result.success:
-        msg = f"CallGraphPlugin failed: {result.error_message}"
-        raise RuntimeError(msg)
+        message = f"call_graph extraction failed: {result.error}"
+        raise RuntimeError(message)
 
     return ctx
 

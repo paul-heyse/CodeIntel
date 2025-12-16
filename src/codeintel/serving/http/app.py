@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.db.pool import DuckDBPoolConfig
-from codeintel.serving.http.routes import semantic
+from codeintel.serving.http.routes import search, semantic
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
@@ -44,7 +44,7 @@ def create_serving_app(
         pool_cfg=DuckDBPoolConfig(size=cfg.pool_size),
         poll_interval_s=cfg.poll_interval_s,
     )
-    kernel = SemanticQueryKernel(db=db_manager)
+    kernel = SemanticQueryKernel(db=db_manager, settings=cfg)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
@@ -67,7 +67,9 @@ def create_serving_app(
         return kernel
 
     app.dependency_overrides[semantic.get_kernel] = get_kernel
+    app.dependency_overrides[search.get_kernel] = get_kernel
     app.include_router(semantic.router)
+    app.include_router(search.router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
