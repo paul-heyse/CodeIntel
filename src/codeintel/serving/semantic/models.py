@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Op = Literal["eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith"]
 
@@ -14,8 +14,13 @@ class SemanticViewDefaults(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    limit: int = 200
+    limit: int = Field(default=200, ge=0, le=10_000)
     order_by: list[str] = Field(default_factory=list)
+
+    @field_validator("order_by")
+    @classmethod
+    def _validate_order_by(cls, value: list[str]) -> list[str]:
+        return [item for item in value if item]
 
 
 class SemanticViewSpec(BaseModel):
@@ -113,8 +118,21 @@ class SemanticQueryRequest(BaseModel):
     select: list[str] | None = None
     filters: list[FilterSpec] = Field(default_factory=list)
     order_by: list[str] = Field(default_factory=list)
-    limit: int = 200
-    offset: int = 0
+    limit: int = Field(default=200, ge=0, le=10_000)
+    offset: int = Field(default=0, ge=0)
+
+    @field_validator("order_by")
+    @classmethod
+    def _validate_request_order_by(cls, value: list[str]) -> list[str]:
+        return [item for item in value if item]
+
+    @field_validator("select")
+    @classmethod
+    def _validate_select(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        items = [item for item in value if item]
+        return items or None
 
 
 class SemanticQueryResponse(BaseModel):
@@ -154,12 +172,59 @@ class SemanticExplainResponse(BaseModel):
     snapshot: dict[str, str]
 
 
+class SemanticCatalogView(BaseModel):
+    """Catalog entry for a semantic view."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    table_key: str
+    entity: str
+    grain: str
+    description: str | None = None
+    column_count: int = Field(default=0, ge=0)
+
+
+class SemanticCatalogResponse(BaseModel):
+    """Response payload for ``GET /semantic/views``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    snapshot: dict[str, str]
+    views: list[SemanticCatalogView]
+
+
+class SemanticViewDescriptionResponse(BaseModel):
+    """Response payload for ``GET /semantic/views/{view_id}``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    table_key: str
+    kind: Literal["table", "view"] = "view"
+    entity: str
+    grain: str
+    description: str | None = None
+    primary_key: list[str] = Field(default_factory=list)
+    columns: list[str] = Field(default_factory=list)
+    column_types: dict[str, str] = Field(default_factory=dict)
+    joins: list[dict[str, object]] = Field(default_factory=list)
+    defaults: SemanticViewDefaults = Field(default_factory=SemanticViewDefaults)
+    deprecated: bool = False
+    replaced_by: str | None = None
+    snapshot: dict[str, str]
+
+
 __all__ = [
     "FilterSpec",
     "Op",
+    "SemanticCatalogResponse",
+    "SemanticCatalogView",
     "SemanticExplainResponse",
     "SemanticQueryRequest",
     "SemanticQueryResponse",
     "SemanticViewDefaults",
+    "SemanticViewDescriptionResponse",
     "SemanticViewSpec",
 ]

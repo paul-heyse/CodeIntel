@@ -11,16 +11,12 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import ibis
 import pandas as pd
 
-from codeintel.build.spec import buildspec_from_json
 from codeintel.serving.search.models import SearchQueryResponse, SearchResult
-from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryResponse
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
-from codeintel.serving.semantic.registry import SemanticRegistry
-from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.serving.search_index import fts_index_available
 
 try:
     import polars as pl
@@ -30,19 +26,19 @@ except ImportError:  # pragma: no cover
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.build.spec import BuildSpec
-    from codeintel.serving.db.manager import ServingDBManager
+    from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
+    from codeintel.serving.db.pointer import ServingSnapshotPointer
     from codeintel.serving.search.models import SearchQueryRequest
+    from codeintel.serving.semantic.inventory import SchemaInventory
     from codeintel.serving.semantic.models import SemanticQueryRequest, SemanticViewSpec
     from codeintel.serving.settings import ServingSettings
-    from codeintel.storage.gateway.protocol import DuckDBConnection
+    from codeintel.storage.warehouse import Warehouse
 
 LOG = logging.getLogger(__name__)
 
 _SEARCH_TABLE_SCHEMA = "docs"
 _SEARCH_TABLE_NAME = "search_documents"
 _SEARCH_TABLE_KEY = "docs.search_documents"
-_SEARCH_FTS_SCHEMA = "fts_docs_search_documents"
 
 _SQL_SEARCH_FTS = """
 SELECT kind, name, module, rel_path, ref_goid_h128, score
@@ -137,39 +133,20 @@ class SemanticQueryKernel:
     db: ServingDBManager
     settings: ServingSettings
 
-    def _load_registry(self) -> SemanticRegistry:
-        """Load semantic registry from current snapshot.
+    def _snapshot_context(self, pointer: ServingSnapshotPointer) -> ServingSnapshotContext:
+        """Return the cached snapshot context for a pointer.
+
+        Parameters
+        ----------
+        pointer
+            Snapshot pointer describing the active artifact paths.
 
         Returns
         -------
-        SemanticRegistry
-            Loaded semantic registry.
+        ServingSnapshotContext
+            Cached registry/inventory/buildspec for the snapshot.
         """
-        pointer = self.db.current_pointer()
-        return SemanticRegistry.load(pointer.semantic_registry_path)
-
-    def _load_inventory(self) -> SchemaInventory:
-        """Load schema inventory from current snapshot.
-
-        Returns
-        -------
-        SchemaInventory
-            Loaded schema inventory.
-        """
-        pointer = self.db.current_pointer()
-        return SchemaInventory.load(pointer.schema_manifest_path)
-
-    def _load_buildspec(self) -> BuildSpec:
-        """Load BuildSpec from current snapshot.
-
-        Returns
-        -------
-        BuildSpec
-            Loaded BuildSpec contract.
-        """
-        pointer = self.db.current_pointer()
-        payload = pointer.buildspec_path.read_text(encoding="utf-8")
-        return buildspec_from_json(payload)
+        return self.db.snapshot_context(pointer)
 
     def _resolve_allowed_columns(
         self,
@@ -226,12 +203,12 @@ class SemanticQueryKernel:
     def _execute_sql(
         self,
         *,
-        con: DuckDBConnection,
+        warehouse: Warehouse,
         sql: str,
         params: Sequence[object] | None = None,
     ) -> list[dict[str, object]]:
         engine = self.settings.result_engine.lower()
-        backend = MinimalStorageGateway(con).policy
+        backend = warehouse.gateway.policy
         result = backend.execute_sql(sql, params=params)
 
         if engine == "polars" and pl is not None:
@@ -248,13 +225,13 @@ class SemanticQueryKernel:
     def _execute_semantic_plan(
         self,
         *,
-        con: DuckDBConnection,
+        warehouse: Warehouse,
         plan: SemanticQueryPlan,
     ) -> list[dict[str, object]]:
-        ibis_con = ibis.duckdb.from_connection(con)
+        ibis_con = warehouse.gateway.ibis.con
         expr = build_query(ibis_con=ibis_con, plan=plan)
         sql = ibis_con.compile(expr)
-        return self._execute_sql(con=con, sql=sql)
+        return self._execute_sql(warehouse=warehouse, sql=sql)
 
     def catalog(self) -> dict[str, object]:
         """List all available semantic views.
@@ -264,8 +241,9 @@ class SemanticQueryKernel:
         dict[str, object]
             Catalog response with version, snapshot, and views.
         """
-        registry = self._load_registry()
         pointer = self.db.current_pointer()
+        context = self._snapshot_context(pointer)
+        registry = context.registry
 
         return {
             "version": registry.version,
@@ -297,9 +275,10 @@ class SemanticQueryKernel:
         dict[str, object]
             View description with schema details.
         """
-        registry = self._load_registry()
-        inventory = self._load_inventory()
         pointer = self.db.current_pointer()
+        context = self._snapshot_context(pointer)
+        registry = context.registry
+        inventory = context.inventory
 
         view = registry.by_id(view_id)
         table_schema = inventory.get(view.table_key)
@@ -338,29 +317,27 @@ class SemanticQueryKernel:
         SemanticQueryResponse
             Query results.
         """
-        registry = self._load_registry()
-        inventory = self._load_inventory()
-        view = registry.by_id(request.view_id)
+        with self.db.connect() as (warehouse, pointer):
+            context = self._snapshot_context(pointer)
+            view = context.registry.by_id(request.view_id)
+            allowed_columns = self._resolve_allowed_columns(view=view, inventory=context.inventory)
+            columns = request.select if request.select else allowed_columns
 
-        allowed_columns = self._resolve_allowed_columns(view=view, inventory=inventory)
-        columns = request.select if request.select else allowed_columns
+            effective_limit = request.limit if request.limit else view.defaults.limit
+            effective_order = request.order_by if request.order_by else view.defaults.order_by
 
-        effective_limit = request.limit if request.limit else view.defaults.limit
-        effective_order = request.order_by if request.order_by else view.defaults.order_by
+            query_limit = effective_limit + 1
+            plan = SemanticQueryPlan(
+                table_key=view.table_key,
+                columns=columns,
+                allowed_columns=frozenset(allowed_columns),
+                filters=request.filters,
+                order_by=effective_order,
+                limit=query_limit,
+                offset=request.offset,
+            )
 
-        query_limit = effective_limit + 1
-        plan = SemanticQueryPlan(
-            table_key=view.table_key,
-            columns=columns,
-            allowed_columns=frozenset(allowed_columns),
-            filters=request.filters,
-            order_by=effective_order,
-            limit=query_limit,
-            offset=request.offset,
-        )
-
-        with self.db.connect() as (con, pointer):
-            rows = self._execute_semantic_plan(con=con, plan=plan)
+            rows = self._execute_semantic_plan(warehouse=warehouse, plan=plan)
 
         truncated = len(rows) > effective_limit
         if truncated:
@@ -387,33 +364,30 @@ class SemanticQueryKernel:
         SemanticExplainResponse
             Explain output including compiled SQL and plan text.
         """
-        registry = self._load_registry()
-        inventory = self._load_inventory()
-        view = registry.by_id(request.view_id)
+        with self.db.connect() as (warehouse, pointer):
+            context = self._snapshot_context(pointer)
+            view = context.registry.by_id(request.view_id)
 
-        allowed_columns = self._resolve_allowed_columns(view=view, inventory=inventory)
-        columns = request.select if request.select else allowed_columns
+            allowed_columns = self._resolve_allowed_columns(view=view, inventory=context.inventory)
+            columns = request.select if request.select else allowed_columns
 
-        effective_limit = request.limit if request.limit else view.defaults.limit
-        effective_order = request.order_by if request.order_by else view.defaults.order_by
+            effective_limit = request.limit if request.limit else view.defaults.limit
+            effective_order = request.order_by if request.order_by else view.defaults.order_by
 
-        plan = SemanticQueryPlan(
-            table_key=view.table_key,
-            columns=columns,
-            allowed_columns=frozenset(allowed_columns),
-            filters=request.filters,
-            order_by=effective_order,
-            limit=effective_limit,
-            offset=request.offset,
-        )
+            plan = SemanticQueryPlan(
+                table_key=view.table_key,
+                columns=columns,
+                allowed_columns=frozenset(allowed_columns),
+                filters=request.filters,
+                order_by=effective_order,
+                limit=effective_limit,
+                offset=request.offset,
+            )
 
-        with self.db.connect() as (con, pointer):
-            ibis_con = ibis.duckdb.from_connection(con)
+            ibis_con = warehouse.gateway.ibis.con
             compiled = ibis_con.compile(build_query(ibis_con=ibis_con, plan=plan))
 
-            raw_rows = (
-                MinimalStorageGateway(con).policy.execute_sql(f"EXPLAIN {compiled}").fetchall()
-            )
+            raw_rows = warehouse.gateway.policy.execute_sql(f"EXPLAIN {compiled}").fetchall()
             plan_text = _format_explain_rows(raw_rows)
 
         return SemanticExplainResponse(
@@ -431,9 +405,10 @@ class SemanticQueryKernel:
         dict[str, object]
             Comprehensive serving metadata.
         """
-        registry = self._load_registry()
-        spec = self._load_buildspec()
         pointer = self.db.current_pointer()
+        context = self._snapshot_context(pointer)
+        registry = context.registry
+        spec = context.buildspec
 
         tables = sum(1 for d in spec.datasets if not d.table_key.startswith("docs.v_"))
         views = sum(1 for d in spec.datasets if d.table_key.startswith("docs.v_"))
@@ -487,8 +462,8 @@ class SemanticQueryKernel:
         """
         engine = self.settings.result_engine.lower()
 
-        with self.db.connect() as (con, pointer):
-            backend = MinimalStorageGateway(con).policy
+        with self.db.connect() as (warehouse, pointer):
+            backend = warehouse.gateway.policy
             if not backend.table_exists(schema=_SEARCH_TABLE_SCHEMA, table=_SEARCH_TABLE_NAME):
                 return SearchQueryResponse(
                     query=request.query,
@@ -502,11 +477,7 @@ class SemanticQueryKernel:
                     engine=engine,
                 )
 
-            row = backend.execute_sql(
-                "SELECT 1 FROM information_schema.schemata WHERE schema_name = ? LIMIT 1",
-                [_SEARCH_FTS_SCHEMA],
-            ).fetchone()
-            fts_available = row is not None
+            fts_available = fts_index_available(warehouse.gateway.con, table_key=_SEARCH_TABLE_KEY)
 
             query_limit = request.limit + 1
             if fts_available and request.kinds:
@@ -529,7 +500,7 @@ class SemanticQueryKernel:
                 sql = _SQL_SEARCH_LIKE
                 params = [request.query, request.query, request.query, query_limit, request.offset]
 
-            rows = self._execute_sql(con=con, sql=sql, params=params)
+            rows = self._execute_sql(warehouse=warehouse, sql=sql, params=params)
 
         truncated = len(rows) > request.limit
         if truncated:

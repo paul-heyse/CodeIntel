@@ -11,7 +11,7 @@ import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.serving.http.routes import semantic
+from codeintel.serving.http.routes import router as http_router
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.search.models import SearchQueryResponse
 from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryResponse
@@ -40,6 +40,12 @@ EXPECTED_SEMANTIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/semantic/views/{view_id}"),
         ("POST", "/semantic/explain"),
         ("POST", "/semantic/query"),
+        ("GET", "/v1/semantic/views"),
+        ("GET", "/v1/semantic/views/{view_id}"),
+        ("POST", "/v1/semantic/explain"),
+        ("POST", "/v1/semantic/query"),
+        ("POST", "/search"),
+        ("POST", "/v1/search"),
     }
 )
 
@@ -99,7 +105,7 @@ class _DummyKernel:
 def _check_semantic_http_routes() -> list[str]:
     issues: list[str] = []
     observed: set[tuple[str, str]] = set()
-    for route in semantic.router.routes:
+    for route in http_router.routes:
         methods = getattr(route, "methods", None)
         path = getattr(route, "path", None)
         if not isinstance(path, str) or not isinstance(methods, set):
@@ -108,11 +114,14 @@ def _check_semantic_http_routes() -> list[str]:
             if isinstance(method, str):
                 observed.add((method, path))
 
-    missing = EXPECTED_SEMANTIC_ROUTES - observed
+    prefixes = ("/semantic", "/v1/semantic", "/search", "/v1/search")
+    semantic_paths = {item for item in observed if item[1].startswith(prefixes)}
+
+    missing = EXPECTED_SEMANTIC_ROUTES - semantic_paths
     if missing:
         issues.append(f"Missing semantic HTTP routes: {sorted(missing)}")
 
-    extra = observed - EXPECTED_SEMANTIC_ROUTES
+    extra = semantic_paths - EXPECTED_SEMANTIC_ROUTES
     if extra:
         issues.append(f"Unexpected semantic HTTP routes: {sorted(extra)}")
 

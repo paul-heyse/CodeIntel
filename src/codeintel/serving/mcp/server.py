@@ -6,10 +6,10 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.serving.db.manager import ServingDBManager
-from codeintel.serving.db.pool import DuckDBPoolConfig
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
+from codeintel.storage.gateway.pool import PoolConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -33,8 +33,9 @@ def create_mcp_server(settings: ServingSettings | None = None) -> FastMCP:
     cfg = settings or ServingSettings.from_env()
     db_manager = ServingDBManager(
         pointer_path=cfg.serve_dir / "current.json",
-        pool_cfg=DuckDBPoolConfig(size=cfg.pool_size),
+        pool_cfg=PoolConfig(size=cfg.pool_size),
         poll_interval_s=cfg.poll_interval_s,
+        hot_swap=cfg.hot_swap,
     )
     kernel = SemanticQueryKernel(db=db_manager, settings=cfg)
 

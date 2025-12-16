@@ -54,6 +54,7 @@ if TYPE_CHECKING:
         open_memory_gateway,
     )
     from codeintel.storage.gateway.minimal import MinimalStorageGateway
+    from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
     from codeintel.storage.gateway.protocol import (
         DuckDBBinderException,
         DuckDBCatalogException,
@@ -94,6 +95,8 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "GraphTables": ("codeintel.storage.gateway.accessors", "GraphTables"),
     "IbisGateway": ("codeintel.storage.ibis_adapter", "IbisGateway"),
     "MinimalStorageGateway": ("codeintel.storage.gateway.minimal", "MinimalStorageGateway"),
+    "PoolConfig": ("codeintel.storage.gateway.pool", "PoolConfig"),
+    "ReadPoolWarehouse": ("codeintel.storage.gateway.pool", "ReadPoolWarehouse"),
     "SnapshotGatewayResolver": ("codeintel.storage.gateway.protocol", "SnapshotGatewayResolver"),
     "StorageConfig": ("codeintel.storage.gateway.config", "StorageConfig"),
     "StorageConnectionError": ("codeintel.storage.exceptions", "StorageConnectionError"),
@@ -146,6 +149,8 @@ __all__ = [
     "GraphTables",
     "IbisGateway",
     "MinimalStorageGateway",
+    "PoolConfig",
+    "ReadPoolWarehouse",
     "SnapshotGatewayResolver",
     "StorageConfig",
     "StorageConnectionError",
