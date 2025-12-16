@@ -16,21 +16,21 @@ if TYPE_CHECKING:
         compile_semantic_registry_from_views,
         write_semantic_registry,
     )
-    from codeintel.build.serving.semantic_tags import SEMANTIC_VIEW_TAG_ATTR, semantic_view
+    from codeintel.hamilton.semantic_tags import SEMANTIC_VIEW_TAG_ATTR, semantic_view
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "CompiledSemanticRegistry": (
         "codeintel.build.serving.semantic_compile",
         "CompiledSemanticRegistry",
     ),
-    "SEMANTIC_VIEW_TAG_ATTR": ("codeintel.build.serving.semantic_tags", "SEMANTIC_VIEW_TAG_ATTR"),
+    "SEMANTIC_VIEW_TAG_ATTR": ("codeintel.hamilton.semantic_tags", "SEMANTIC_VIEW_TAG_ATTR"),
     "ServingSnapshotManifest": ("codeintel.build.serving.manifest", "ServingSnapshotManifest"),
     "compile_semantic_registry_from_views": (
         "codeintel.build.serving.semantic_compile",
         "compile_semantic_registry_from_views",
     ),
     "publish_serving_snapshot": ("codeintel.build.serving.publisher", "publish_serving_snapshot"),
-    "semantic_view": ("codeintel.build.serving.semantic_tags", "semantic_view"),
+    "semantic_view": ("codeintel.hamilton.semantic_tags", "semantic_view"),
     "write_semantic_registry": (
         "codeintel.build.serving.semantic_compile",
         "write_semantic_registry",

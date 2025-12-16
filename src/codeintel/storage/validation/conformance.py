@@ -10,7 +10,7 @@ import duckdb
 import jsonschema
 
 from codeintel.core.errors.schema import SchemaError
-from codeintel.storage.build_bridge import get_json_schema_for_dataset_name
+from codeintel.storage.contracts.json_schema import get_json_schema_for_dataset_name
 from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.validation.contract import collect_contract_issues
 

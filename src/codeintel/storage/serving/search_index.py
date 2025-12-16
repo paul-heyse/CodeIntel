@@ -9,12 +9,8 @@ from __future__ import annotations
 import duckdb
 
 from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.storage.duckdb_policy_backend import duckdb_schema_exists
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
-from codeintel.storage.queries.execution import (
-    duckdb_schema_exists,
-    duckdb_table_exists,
-    execute_sql,
-)
 
 DuckDBConnection = duckdb.DuckDBPyConnection
 
@@ -46,9 +42,8 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
     backend.create_schema_if_not_exists("docs")
     backend.create_table_from_schema(_SEARCH_DOCUMENTS_SCHEMA, drop_existing=True)
 
-    if duckdb_table_exists(con, schema="core", table="modules"):
-        execute_sql(
-            con,
+    if backend.table_exists(schema="core", table="modules"):
+        backend.execute_sql(
             """
             INSERT INTO docs.search_documents
             SELECT
@@ -66,9 +61,8 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
             """,
         )
 
-    if duckdb_table_exists(con, schema="core", table="docstrings"):
-        execute_sql(
-            con,
+    if backend.table_exists(schema="core", table="docstrings"):
+        backend.execute_sql(
             """
             INSERT INTO docs.search_documents
             SELECT
@@ -89,9 +83,8 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
             """,
         )
 
-    if duckdb_table_exists(con, schema="analytics", table="function_metrics"):
-        execute_sql(
-            con,
+    if backend.table_exists(schema="analytics", table="function_metrics"):
+        backend.execute_sql(
             """
             INSERT INTO docs.search_documents
             SELECT
@@ -110,9 +103,8 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
             """,
         )
 
-    if duckdb_table_exists(con, schema="core", table="scip_symbols"):
-        execute_sql(
-            con,
+    if backend.table_exists(schema="core", table="scip_symbols"):
+        backend.execute_sql(
             """
             INSERT INTO docs.search_documents
             SELECT
@@ -153,7 +145,8 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
         raise ValueError(msg)
 
     schema, name = table_key.split(".", 1)
-    if not duckdb_table_exists(con, schema=schema, table=name):
+    backend = MinimalStorageGateway(con).policy
+    if not backend.table_exists(schema=schema, table=name):
         msg = f"Search documents table not found: {table_key}"
         raise ValueError(msg)
 
@@ -162,13 +155,12 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
         return fts_schema
 
     try:
-        execute_sql(con, "LOAD fts")
+        backend.execute_sql("LOAD fts")
     except duckdb.Error:
-        execute_sql(con, "INSTALL fts")
-        execute_sql(con, "LOAD fts")
+        backend.execute_sql("INSTALL fts")
+        backend.execute_sql("LOAD fts")
 
-    execute_sql(
-        con,
+    backend.execute_sql(
         f"""
         PRAGMA create_fts_index(
             '{table_key}',

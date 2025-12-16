@@ -13,7 +13,7 @@ import time
 import types
 from typing import TYPE_CHECKING
 
-from hamilton import driver
+from hamilton.driver import Driver
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton import tags as ht
@@ -22,6 +22,10 @@ from tests._helpers.assertions.expectation_assertions import expect_equal, expec
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from hamilton.driver import HamiltonNode
+
+    _FinalVar = str | HamiltonNode | Callable[..., object]
 
 
 def test_pr96_threadpool_write_lock_serializes_materialize_nodes() -> None:
@@ -59,7 +63,7 @@ def test_pr96_threadpool_write_lock_serializes_materialize_nodes() -> None:
     seed.__module__ = mod.__name__
     setattr(mod, seed.__name__, seed)
 
-    outputs: list[str | driver.HamiltonNode | Callable[..., object]] = []
+    outputs: list[_FinalVar] = []
     for i in range(4):
         fn = make_write_node(f"write_{i}")
         fn.__module__ = mod.__name__
@@ -67,7 +71,7 @@ def test_pr96_threadpool_write_lock_serializes_materialize_nodes() -> None:
         outputs.append(fn.__name__)
 
     adapter = ThreadPoolAdapter(max_workers=4)
-    dr = driver.Driver({}, mod, adapter=[adapter])
+    dr = Driver({}, mod, adapter=[adapter])
     result = dr.execute(outputs)
 
     expect_is_instance(result, dict)

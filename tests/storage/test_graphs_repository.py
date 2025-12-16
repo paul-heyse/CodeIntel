@@ -20,6 +20,12 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+from tests._helpers.builders import (
+    CallGraphEdgeRow,
+    CallGraphNodeRow,
+    GoidRow,
+    insert_rows,
+)
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -44,76 +50,78 @@ def _seed_call_graph_data(
     tuple[int, int]
         Tuple of (caller_goid, callee_goid).
     """
-    con = fresh_gateway.con
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    insert_rows(
+        fresh_gateway,
         [
-            EXPECTED_GOID_CALLER,
-            "urn:test:caller",
-            repo,
-            commit,
-            "caller.py",
-            "python",
-            "function",
-            "mod.caller",
-            1,
-            10,
-            now,
-        ],
-    )
-    con.execute(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            EXPECTED_GOID_CALLEE,
-            "urn:test:callee",
-            repo,
-            commit,
-            "callee.py",
-            "python",
-            "function",
-            "mod.callee",
-            1,
-            10,
-            now,
+            GoidRow(
+                goid_h128=EXPECTED_GOID_CALLER,
+                urn="urn:test:caller",
+                repo=repo,
+                commit=commit,
+                rel_path="caller.py",
+                kind="function",
+                qualname="mod.caller",
+                start_line=1,
+                end_line=10,
+                created_at=now,
+            ),
+            GoidRow(
+                goid_h128=EXPECTED_GOID_CALLEE,
+                urn="urn:test:callee",
+                repo=repo,
+                commit=commit,
+                rel_path="callee.py",
+                kind="function",
+                qualname="mod.callee",
+                start_line=1,
+                end_line=10,
+                created_at=now,
+            ),
         ],
     )
 
-    fresh_gateway.graph.insert_call_graph_nodes(
+    insert_rows(
+        fresh_gateway,
         [
-            (EXPECTED_GOID_CALLER, "python", "function", 0, True, "caller.py"),
-            (EXPECTED_GOID_CALLEE, "python", "function", 1, True, "callee.py"),
-        ]
+            CallGraphNodeRow(
+                goid_h128=EXPECTED_GOID_CALLER,
+                language="python",
+                kind="function",
+                arity=0,
+                is_public=True,
+                rel_path="caller.py",
+            ),
+            CallGraphNodeRow(
+                goid_h128=EXPECTED_GOID_CALLEE,
+                language="python",
+                kind="function",
+                arity=1,
+                is_public=True,
+                rel_path="callee.py",
+            ),
+        ],
     )
 
-    fresh_gateway.graph.insert_call_graph_edges(
+    insert_rows(
+        fresh_gateway,
         [
-            (
-                repo,
-                commit,
-                EXPECTED_GOID_CALLER,
-                EXPECTED_GOID_CALLEE,
-                "caller.py",
-                5,
-                10,
-                "python",
-                "direct",
-                "callee",
-                1.0,
-                "{}",
+            CallGraphEdgeRow(
+                repo=repo,
+                commit=commit,
+                caller_goid_h128=EXPECTED_GOID_CALLER,
+                callee_goid_h128=EXPECTED_GOID_CALLEE,
+                callsite_path="caller.py",
+                callsite_line=5,
+                callsite_col=10,
+                language="python",
+                kind="direct",
+                resolved_via="callee",
+                confidence=1.0,
+                evidence="{}",
             )
-        ]
+        ],
     )
 
     return EXPECTED_GOID_CALLER, EXPECTED_GOID_CALLEE
@@ -227,83 +235,76 @@ def test_get_outgoing_callgraph_neighbors_respects_limit(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify get_outgoing_callgraph_neighbors respects limit parameter."""
-    con = fresh_gateway.con
     repo_slug = "test/repo"
     commit = "abc123"
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    insert_rows(
+        fresh_gateway,
         [
-            EXPECTED_GOID_CALLER,
-            "urn:test:caller",
-            repo_slug,
-            commit,
-            "caller.py",
-            "python",
-            "function",
-            "mod.caller",
-            1,
-            10,
-            now,
+            GoidRow(
+                goid_h128=EXPECTED_GOID_CALLER,
+                urn="urn:test:caller",
+                repo=repo_slug,
+                commit=commit,
+                rel_path="caller.py",
+                kind="function",
+                qualname="mod.caller",
+                start_line=1,
+                end_line=10,
+                created_at=now,
+            ),
+            CallGraphNodeRow(
+                goid_h128=EXPECTED_GOID_CALLER,
+                language="python",
+                kind="function",
+                arity=0,
+                is_public=True,
+                rel_path="caller.py",
+            ),
         ],
-    )
-    fresh_gateway.graph.insert_call_graph_nodes(
-        [
-            (EXPECTED_GOID_CALLER, "python", "function", 0, True, "caller.py"),
-        ]
     )
 
     for i in range(5):
         callee_goid = EXPECTED_GOID_CALLEE + i
-        con.execute(
-            """
-            INSERT INTO core.goids (
-                goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-                start_line, end_line, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        insert_rows(
+            fresh_gateway,
             [
-                callee_goid,
-                f"urn:test:callee{i}",
-                repo_slug,
-                commit,
-                f"callee{i}.py",
-                "python",
-                "function",
-                f"mod.callee{i}",
-                1,
-                10,
-                now,
+                GoidRow(
+                    goid_h128=callee_goid,
+                    urn=f"urn:test:callee{i}",
+                    repo=repo_slug,
+                    commit=commit,
+                    rel_path=f"callee{i}.py",
+                    kind="function",
+                    qualname=f"mod.callee{i}",
+                    start_line=1,
+                    end_line=10,
+                    created_at=now,
+                ),
+                CallGraphNodeRow(
+                    goid_h128=callee_goid,
+                    language="python",
+                    kind="function",
+                    arity=i + 1,
+                    is_public=True,
+                    rel_path=f"callee{i}.py",
+                ),
+                CallGraphEdgeRow(
+                    repo=repo_slug,
+                    commit=commit,
+                    caller_goid_h128=EXPECTED_GOID_CALLER,
+                    callee_goid_h128=callee_goid,
+                    callsite_path="caller.py",
+                    callsite_line=5 + i,
+                    callsite_col=10,
+                    language="python",
+                    kind="direct",
+                    resolved_via=f"callee{i}",
+                    confidence=1.0,
+                    evidence="{}",
+                ),
             ],
-        )
-        fresh_gateway.graph.insert_call_graph_nodes(
-            [
-                (callee_goid, "python", "function", i + 1, True, f"callee{i}.py"),
-            ]
-        )
-        fresh_gateway.graph.insert_call_graph_edges(
-            [
-                (
-                    repo_slug,
-                    commit,
-                    EXPECTED_GOID_CALLER,
-                    callee_goid,
-                    "caller.py",
-                    5 + i,
-                    10,
-                    "python",
-                    "direct",
-                    f"callee{i}",
-                    1.0,
-                    "{}",
-                )
-            ]
         )
 
     graph_repo = GraphRepository(

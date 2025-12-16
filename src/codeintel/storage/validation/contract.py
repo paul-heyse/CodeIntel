@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.storage.build_bridge import iter_contracts, iter_contracts_by_table_key
+from codeintel.storage.contracts.provider import iter_contracts, iter_contracts_by_table_key
 from codeintel.storage.datasets.registry import (
     build_dataset_dependency_graph,
     load_dataset_registry,

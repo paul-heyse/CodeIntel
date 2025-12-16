@@ -9,9 +9,8 @@ from codeintel.build.schemas import (
     iter_contracts,
     iter_contracts_by_table_key,
 )
-from codeintel.config.datasets.dataflow import build_contract_dataflow_graph
+from codeintel.config.datasets.dataflow import alias_docs_views, build_contract_dataflow_graph
 from codeintel.storage.metadata import bootstrap_metadata_datasets
-from codeintel.storage.view_names import ALIAS_DOCS_VIEWS
 from tests._helpers.gateway import GatewayFactory
 
 
@@ -76,7 +75,8 @@ def test_alias_docs_views_have_nodes() -> None:
     """Alias docs views should produce DataflowNode entries."""
     nodes, _ = build_contract_dataflow_graph()
     node_ids = {node.id for node in nodes}
-    missing = [view for view in ALIAS_DOCS_VIEWS if view not in node_ids]
+    mapping = alias_docs_views()
+    missing = [view for view in mapping if view not in node_ids]
     _require(
         condition=not missing,
         message=f"Missing alias docs view nodes: {', '.join(missing)}",

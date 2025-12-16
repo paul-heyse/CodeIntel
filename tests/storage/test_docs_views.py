@@ -22,7 +22,7 @@ import pytest
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.repositories.datasets import DatasetReadRepository
-from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
+from codeintel.storage.views.inventory import discover_derived_docs_views
 from tests._helpers import docs_views_ready_gateway, seed_call_graph_scoping
 from tests._helpers.docs_views import list_indexes, seed_subsystem
 
@@ -67,7 +67,7 @@ def test_docs_views_registered_in_metadata(docs_views_gateway: StorageGateway) -
         "SELECT table_key, is_view FROM metadata.datasets WHERE table_key LIKE 'docs.%'"
     ).fetchall()
     table_keys = {row[0] for row in rows}
-    missing = set(DERIVED_DOCS_VIEWS) - table_keys
+    missing = set(discover_derived_docs_views()) - table_keys
     if missing:
         pytest.fail(f"Missing docs views in metadata.datasets: {sorted(missing)}")
     if not all(row[1] for row in rows):

@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema import apply_all_schemas
-from codeintel.storage.views.creation import create_all_views
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -96,7 +96,7 @@ def create_bootstrapped_docs_db(db_path: Path) -> None:
         con.execute(f"ATTACH DATABASE '{db_path}' AS test_db (STORAGE_VERSION 'v1.4.0')")
         con.execute("USE test_db")
         apply_all_schemas(con)
-        create_all_views(con)
+        MinimalStorageGateway(con).policy.ensure_all_views(overwrite=True, strict=True)
         bootstrap_metadata_datasets(con, include_views=True)
     finally:
         con.close()

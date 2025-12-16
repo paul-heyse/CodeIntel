@@ -32,11 +32,13 @@ if TYPE_CHECKING:
         FingerprintPolicy,
     )
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-    from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
-    from codeintel.build.hamilton.io.dataset_ref import DatasetRef
     from codeintel.build.targets import TargetGraph
     from codeintel.core.schemas.provider import SchemaProvider
+    from codeintel.hamilton.records import (
+        ArtifactRefProtocol,
+        DatasetRefProtocol,
+        TargetRunRecord,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +102,7 @@ def _try_table_row_count_for_snapshot(
         return None
 
 
-def _try_artifact_size_bytes(ref: ArtifactRef) -> int | None:
+def _try_artifact_size_bytes(ref: ArtifactRefProtocol) -> int | None:
     if ref.path is None:
         return None
     path = Path(ref.path)
@@ -115,7 +117,7 @@ def _try_artifact_size_bytes(ref: ArtifactRef) -> int | None:
 def _dataset_version_record(
     ctx: _VersionContext,
     record: TargetRunRecord,
-    dataset: DatasetRef,
+    dataset: DatasetRefProtocol,
     upstream_versions: Sequence[str],
 ) -> tuple[AssetVersionRecord, RunAssetVersionRecord, _AssetVersionKey]:
     row_count = dataset.row_count
@@ -180,7 +182,7 @@ def _dataset_version_record(
 def _artifact_version_record(
     ctx: _VersionContext,
     record: TargetRunRecord,
-    artifact: ArtifactRef,
+    artifact: ArtifactRefProtocol,
     upstream_versions: Sequence[str],
 ) -> tuple[AssetVersionRecord, RunAssetVersionRecord, _AssetVersionKey]:
     bytes_value = _try_artifact_size_bytes(artifact)

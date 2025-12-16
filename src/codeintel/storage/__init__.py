@@ -6,7 +6,6 @@ This module provides the primary abstractions for database access:
 - StorageConfig: Configuration for opening gateways
 - DatasetRegistry: In-memory view of registered datasets
 - DuckDBConnection: Type alias for the underlying connection
-- GatewayCache: Thread-safe gateway caching for connection reuse
 - DuckDBPolicyBackend: Centralized DDL and mutation operations
 
 Due to circular import constraints, most submodule symbols are NOT re-exported
@@ -18,7 +17,6 @@ Recommended import patterns::
     from codeintel.storage.gateway import open_gateway
     from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
     from codeintel.storage.repositories import fetch_models, DataModelRow
-    from codeintel.storage.gateway_cache import get_gateway, close_gateways
     from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 Circular Import Note

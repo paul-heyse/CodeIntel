@@ -1,14 +1,10 @@
-"""Composite schema definitions for profile table composition metadata.
-
-This module is a compatibility wrapper around the build-owned declared schema
-definitions.
-"""
+"""Composite schema definitions for profile table composition metadata."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from codeintel.build.schemas.declared_schemas import COMPOSITE_SCHEMAS as _COMPOSITE_SCHEMAS
+from codeintel.config.datasets.declared_schemas import COMPOSITE_SCHEMAS as _COMPOSITE_SCHEMAS
 
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import CompositeSchema

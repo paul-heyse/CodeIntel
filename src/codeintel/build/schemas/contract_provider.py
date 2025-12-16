@@ -7,7 +7,7 @@ contract dictionaries.
 The contract provider:
 - Derives contracts from OutputTarget metadata when a target produces the table
 - Falls back to schema-only contracts for tables without targets
-- Handles views via DERIVED_DOCS_VIEWS constant
+- Handles docs views via Hamilton tag discovery
 
 Examples
 --------
@@ -28,7 +28,7 @@ from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.core.providers.base import LazyProvider
 from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
 from codeintel.core.singleton import SingletonHolder
-from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
+from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -364,7 +364,7 @@ def is_view(table_key: str) -> bool:
     >>> is_view("analytics.function_metrics")
     False
     """
-    return table_key in DERIVED_DOCS_VIEWS or table_key.startswith("docs.v_")
+    return table_key.startswith("docs.v_")
 
 
 def _owner_package_from_prefix(
@@ -639,7 +639,7 @@ def iter_contracts() -> Iterable[DatasetContract]:
     """Iterate all known dataset contracts.
 
     Yields contracts for all tables known to the schema provider
-    and all views in DERIVED_DOCS_VIEWS.
+    and all docs views discovered from view builders.
 
     Yields
     ------
@@ -665,8 +665,8 @@ def iter_contracts() -> Iterable[DatasetContract]:
             except KeyError:
                 continue
 
-    # Yield contracts for all views
-    for view_key in DERIVED_DOCS_VIEWS:
+    # Yield contracts for all discovered docs views
+    for view_key in discover_derived_docs_views():
         if view_key not in seen:
             seen.add(view_key)
             try:

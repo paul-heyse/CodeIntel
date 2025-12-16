@@ -17,7 +17,7 @@ from codeintel.build.schemas import (
     iter_contracts_by_table_key,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
-from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
+from codeintel.storage.views.inventory import discover_derived_docs_views
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -48,7 +48,7 @@ class TestIsViewFunction:
     @staticmethod
     def test_derived_docs_views_returns_true() -> None:
         """Verify all DERIVED_DOCS_VIEWS are identified as views."""
-        for view_key in DERIVED_DOCS_VIEWS:
+        for view_key in discover_derived_docs_views():
             expect_true(is_view(view_key), message=f"{view_key} should be a view")
 
     @staticmethod
@@ -85,9 +85,9 @@ class TestGetContractForTableKey:
     @staticmethod
     def test_returns_contract_for_view() -> None:
         """Verify view keys return contracts with is_view=True."""
-        # Use a known view from DERIVED_DOCS_VIEWS
-        if DERIVED_DOCS_VIEWS:
-            view_key = DERIVED_DOCS_VIEWS[0]
+        discovered = discover_derived_docs_views()
+        if discovered:
+            view_key = discovered[0]
             contract = expect_is_not_none(get_contract_for_table_key(view_key))
             expect_equal(contract.table_key, view_key)
             expect_true(contract.is_view)
@@ -159,11 +159,12 @@ class TestViewHandling:
     @staticmethod
     def test_views_have_no_producing_target() -> None:
         """Verify views are handled even without producing targets."""
-        if not DERIVED_DOCS_VIEWS:
+        discovered = discover_derived_docs_views()
+        if not discovered:
             pytest.skip("No views defined in DERIVED_DOCS_VIEWS")
 
         # Views should return contracts even without targets
-        for view_key in list(DERIVED_DOCS_VIEWS)[:5]:  # Test first 5
+        for view_key in list(discovered)[:5]:  # Test first 5
             contract = expect_is_not_none(get_contract_for_table_key(view_key))
             expect_true(contract.is_view)
             expect_equal(contract.table_key, view_key)
@@ -171,10 +172,11 @@ class TestViewHandling:
     @staticmethod
     def test_views_have_docs_view_tag() -> None:
         """Verify view contracts have appropriate tags."""
-        if not DERIVED_DOCS_VIEWS:
+        discovered = discover_derived_docs_views()
+        if not discovered:
             pytest.skip("No views defined in DERIVED_DOCS_VIEWS")
 
-        view_key = DERIVED_DOCS_VIEWS[0]
+        view_key = discovered[0]
         contract = expect_is_not_none(get_contract_for_table_key(view_key))
         expect_true("docs_view" in contract.tags or "read_only" in contract.tags)
 

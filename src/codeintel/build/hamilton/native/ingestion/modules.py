@@ -30,7 +30,7 @@ from codeintel.ingestion.adapters import (
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -190,15 +190,19 @@ def t__modules__write_repo_map(
         modules_json = json.dumps(module_entries)
         overlays_json = json.dumps({})
 
-        # Delete existing and insert new repo_map entry
-        policy_backend = DuckDBPolicyBackend(env.gateway)
-        policy_backend.delete_for_snapshot(
+        warehouse = Warehouse(env.gateway)
+        warehouse.materialize_mappings(
             "core.repo_map",
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-        )
-        env.gateway.core.insert_repo_map(
-            [(env.snapshot.repo, env.snapshot.commit, modules_json, overlays_json, generated_at)]
+            [
+                {
+                    "repo": env.snapshot.repo,
+                    "commit": env.snapshot.commit,
+                    "modules": modules_json,
+                    "overlays": overlays_json,
+                    "generated_at": generated_at,
+                }
+            ],
+            options=MaterializeOptions(snapshot=env.snapshot, mode="replace"),
         )
 
         return RepoMapWriteResult(

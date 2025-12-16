@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from codeintel.core.schemas.contract_primitives import DatasetContract
-from codeintel.storage.build_bridge import get_contract_for_table_key
+from codeintel.storage.contracts.provider import get_contract_for_table_key
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:

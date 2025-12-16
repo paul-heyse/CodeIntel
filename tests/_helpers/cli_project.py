@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.storage import gateway as gateway_pkg
-from codeintel.storage.gateway_cache import close_gateways
 from tests.cli._harness import CliTestHarness
 
 if TYPE_CHECKING:
@@ -103,7 +102,6 @@ class CLIProjectHarness:
         if self.ctx.gateway is not None:
             self.ctx.gateway.close()
             self.ctx.gateway = None
-        close_gateways()
 
     def invoke(self, args: list[str]) -> CliInvocationResult:
         """Invoke CLI with project env and cwd configured.
@@ -159,4 +157,3 @@ def cli_project_harness(
     finally:
         if ctx.gateway is not None:
             ctx.gateway.close()
-        close_gateways()

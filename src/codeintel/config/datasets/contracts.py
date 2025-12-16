@@ -13,8 +13,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.build.schemas.declared_schemas import TABLE_SCHEMAS
 from codeintel.config.datasets.composites import get_composite_schemas
+from codeintel.config.datasets.declared_schemas import TABLE_SCHEMAS
 from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
 from codeintel.core.schemas.row_models import row_binding_for_table_schema
 

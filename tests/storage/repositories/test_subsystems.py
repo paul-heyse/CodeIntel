@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
 from codeintel.storage.repositories.subsystems import SubsystemRepository
+from codeintel.storage.warehouse import Warehouse
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -202,8 +202,8 @@ def test_list_subsystem_profiles_uses_cache_when_present(
     repo = subsystem_ctx.repo
     commit = subsystem_ctx.commit
 
-    insert_mapping_rows(
-        subsystem_ctx.gateway,
+    warehouse = Warehouse(subsystem_ctx.gateway)
+    warehouse.materialize_mappings(
         "analytics.subsystem_profile_cache",
         [
             {
@@ -249,8 +249,8 @@ def test_list_subsystem_coverage_uses_cache_when_present(
     repo = subsystem_ctx.repo
     commit = subsystem_ctx.commit
 
-    insert_mapping_rows(
-        subsystem_ctx.gateway,
+    warehouse = Warehouse(subsystem_ctx.gateway)
+    warehouse.materialize_mappings(
         "analytics.subsystem_coverage_cache",
         [
             {

@@ -25,10 +25,10 @@ from codeintel.cli.errors.results import (
     fail_missing_output_path,
 )
 from codeintel.storage.gateway import StorageConfig, StorageConnectionError, open_gateway
-from codeintel.storage.helpers.profiling import run_profile
 from codeintel.storage.metadata import (
     validate_dataset_schema_registry,
 )
+from codeintel.storage.warehouse import Warehouse
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -189,38 +189,30 @@ def profile_storage_handler(
     CliResult[ProfileStorageResult]
         Profiling result with paths and options used.
     """
-    output_dir_str = ctx.params.get_str("output_dir")
-    if output_dir_str is None:
+    output_dir = _resolve_profile_output_dir(ctx)
+    if output_dir is None:
         return fail_missing_output_path("output_dir")
-    output_dir = Path(output_dir_str)
 
-    db_path_str = ctx.params.get_str("db_path")
-    if db_path_str is not None:
-        db_path = Path(db_path_str)
-    elif ctx.has_runtime:
-        db_path = ctx.runtime.paths.db_path
-    else:
-        gateway_db_path = getattr(getattr(ctx.gateway, "config", None), "db_path", None)
-        if isinstance(gateway_db_path, (str, Path)):
-            db_path = Path(gateway_db_path)
-        else:
-            db_path = Path(":memory:")
-
+    db_path = _resolve_profile_db_path(ctx)
     include_views = ctx.params.get_bool("include_views", default=False)
+    profile_gateway = _select_profile_gateway(ctx, db_path)
 
-    profile_con = None
-    gateway_db_path = getattr(getattr(ctx.gateway, "config", None), "db_path", None)
-    if isinstance(gateway_db_path, (str, Path)):
-        if str(db_path) == ":memory:" or str(gateway_db_path) == str(db_path):
-            profile_con = ctx.gateway.con
-        else:
-            try:
-                if Path(gateway_db_path).resolve() == db_path.resolve():
-                    profile_con = ctx.gateway.con
-            except OSError:
-                profile_con = None
-
-    run_profile(db_path=db_path, output_dir=output_dir, analyze=include_views, con=profile_con)
+    views = ("docs.v_subsystem_profile", "docs.v_subsystem_coverage")
+    if profile_gateway is not None:
+        Warehouse(profile_gateway).profile_views(
+            views=views,
+            output_dir=output_dir,
+            analyze=include_views,
+            db_path=db_path,
+        )
+    else:
+        with _readonly_gateway(db_path) as gateway:
+            Warehouse(gateway).profile_views(
+                views=views,
+                output_dir=output_dir,
+                analyze=include_views,
+                db_path=db_path,
+            )
 
     return CliResult.ok(
         ProfileStorageResult(
@@ -229,6 +221,39 @@ def profile_storage_handler(
             include_views=include_views,
         )
     )
+
+
+def _resolve_profile_output_dir(ctx: CommandContext) -> Path | None:
+    output_dir_str = ctx.params.get_str("output_dir")
+    if output_dir_str is None:
+        return None
+    return Path(output_dir_str)
+
+
+def _resolve_profile_db_path(ctx: CommandContext) -> Path:
+    db_path_str = ctx.params.get_str("db_path")
+    if db_path_str is not None:
+        return Path(db_path_str)
+    if ctx.has_runtime:
+        return ctx.runtime.paths.db_path
+    gateway_db_path = getattr(getattr(ctx.gateway, "config", None), "db_path", None)
+    if isinstance(gateway_db_path, (str, Path)):
+        return Path(gateway_db_path)
+    return Path(":memory:")
+
+
+def _select_profile_gateway(ctx: CommandContext, db_path: Path) -> StorageGateway | None:
+    gateway_db_path = getattr(getattr(ctx.gateway, "config", None), "db_path", None)
+    if not isinstance(gateway_db_path, (str, Path)):
+        return None
+    if str(db_path) == ":memory:" or str(gateway_db_path) == str(db_path):
+        return ctx.gateway
+    try:
+        if Path(gateway_db_path).resolve() == db_path.resolve():
+            return ctx.gateway
+    except OSError:
+        return None
+    return None
 
 
 __all__ = [

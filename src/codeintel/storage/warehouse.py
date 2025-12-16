@@ -11,22 +11,25 @@ Implementation intentionally composes existing primitives (`StorageGateway`,
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from duckdb import ColumnExpression, ConstantExpression
+import sqlglot.expressions as exp
+from duckdb import ColumnExpression, ConstantExpression, ExplainType
 
 from codeintel.core.schemas.hashing import schema_hash
+from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.ibis_adapter import OnConflict
 from codeintel.storage.ibis_types import filter_by
 from codeintel.storage.tracking.asset_tracking import AssetRecord
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     import ibis.expr.types as ir
     import pandas as pd
@@ -36,7 +39,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
 
-from codeintel.storage.gateway.protocol import DuckDBError
+from codeintel.storage.gateway.protocol import DuckDBCatalogException, DuckDBError
 
 WriteMode = Literal["append", "replace", "upsert"]
 
@@ -477,6 +480,100 @@ class Warehouse:
             profiling_artifact=str(profiling_path) if profiling_path is not None else None,
         )
 
+    def materialize_mappings(
+        self,
+        table_key: str,
+        rows: Iterable[Mapping[str, object]],
+        *,
+        columns: Sequence[str] | None = None,
+        options: MaterializeOptions | None = None,
+    ) -> MaterializationResult:
+        """Materialize mapping-shaped rows to DuckDB.
+
+        Parameters
+        ----------
+        table_key
+            Destination table key (schema.table).
+        rows
+            Iterable of mapping rows keyed by column name (e.g., TypedDict models).
+        columns
+            Optional column order override. When omitted, columns are derived from
+            the configured schema provider.
+        options
+            Materialization options. Defaults to append semantics (no snapshot required).
+
+        Returns
+        -------
+        MaterializationResult
+            Structured result describing the write.
+
+        Raises
+        ------
+        ValueError
+            If ``mode="replace"`` is requested without a snapshot.
+        """
+        active = options or MaterializeOptions(mode="append")
+        snapshot = active.snapshot
+        if active.mode == "replace" and snapshot is None:
+            msg = "mode='replace' requires snapshot for safe snapshot-scoped semantics"
+            raise ValueError(msg)
+        if active.mode == "upsert":
+            msg = "materialize_mappings does not support mode='upsert'; use materialize_rows/dataframe"
+            raise ValueError(msg)
+
+        started_at = datetime.now(tz=UTC)
+        self.gateway.policy.ensure_table(table_key, create_if_missing=True)
+
+        contract = _dataset_contract(self.gateway, table_key=table_key)
+        schema_version = contract.schema_version if contract is not None else None
+        computed_schema_hash = None
+        if contract is not None and contract.schema is not None:
+            computed_schema_hash = schema_hash(contract.schema)
+
+        if active.mode == "replace" and snapshot is not None:
+            self.gateway.policy.delete_for_snapshot(
+                table_key, repo=snapshot.repo, commit=snapshot.commit
+            )
+
+        profiling_path = _maybe_enable_profiling(
+            con=self.gateway.con,
+            table_key=table_key,
+            snapshot=snapshot,
+            owner_target=active.owner_target,
+        )
+
+        try:
+            rows_written = self.gateway.policy.bulk_insert_mappings(
+                table_key,
+                rows,
+                columns=columns,
+            )
+        finally:
+            _disable_profiling_if_enabled(self.gateway.con, profiling_path)
+
+        completed_at = datetime.now(tz=UTC)
+        record = _asset_record_from_options(
+            table_key=table_key,
+            schema_version=schema_version,
+            rows_written=rows_written,
+            options=active,
+            profiling_path=profiling_path,
+        )
+        if record is not None:
+            self.gateway.assets.record_asset(record)
+
+        return MaterializationResult(
+            table_key=table_key,
+            repo=snapshot.repo if snapshot is not None else None,
+            commit=snapshot.commit if snapshot is not None else None,
+            rows_written=rows_written,
+            started_at=started_at,
+            completed_at=completed_at,
+            schema_hash=computed_schema_hash,
+            schema_version=schema_version,
+            profiling_artifact=str(profiling_path) if profiling_path is not None else None,
+        )
+
     def create_or_replace_view(
         self, table_key: str, expr: ir.Table, *, overwrite: bool = True
     ) -> None:
@@ -488,6 +585,112 @@ class Warehouse:
     def ensure_all_views(self, *, overwrite: bool = True, strict: bool = False) -> None:
         """Ensure all registered views are materialized."""
         self.gateway.policy.ensure_all_views(overwrite=overwrite, strict=strict)
+
+    def explain_table(
+        self,
+        table_key: str,
+        *,
+        analyze: bool = False,
+        limit: int = 50,
+    ) -> str:
+        """Return EXPLAIN (or EXPLAIN ANALYZE) output for a table/view query.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table or view key (schema.table).
+        analyze
+            When True, use ``EXPLAIN ANALYZE`` instead of ``EXPLAIN``.
+        limit
+            LIMIT applied to the SELECT being explained.
+
+        Returns
+        -------
+        str
+            Plan text emitted by DuckDB.
+
+        Raises
+        ------
+        DuckDBCatalogException
+            If the requested table/view is missing and cannot be materialized.
+        """
+        limited = max(0, limit)
+        schema, name = split_table_key(table_key)
+        select_expr = (
+            exp.select("*")
+            .from_(exp.Table(this=exp.to_identifier(name), db=exp.to_identifier(schema)))
+            .limit(limited)
+        )
+        sql = select_expr.sql(dialect=DUCKDB_DIALECT)
+        try:
+            relation = self.gateway.con.sql(sql)
+        except DuckDBCatalogException:
+            if self._maybe_materialize_view(table_key):
+                relation = self.gateway.con.sql(sql)
+            else:
+                raise
+        if not analyze:
+            return relation.explain()
+        self.gateway.policy.execute_sql("PRAGMA enable_profiling")
+        try:
+            return relation.explain(ExplainType.ANALYZE)
+        finally:
+            self.gateway.policy.execute_sql("PRAGMA disable_profiling")
+
+    def profile_views(
+        self,
+        *,
+        views: Sequence[str],
+        output_dir: Path,
+        analyze: bool = False,
+        limit: int = 50,
+        db_path: Path | None = None,
+    ) -> None:
+        """Write EXPLAIN/EXPLAIN ANALYZE artifacts for a set of views.
+
+        Parameters
+        ----------
+        views
+            Fully qualified table/view keys to profile.
+        output_dir
+            Directory to write artifacts into.
+        analyze
+            When True, run ``EXPLAIN ANALYZE`` instead of ``EXPLAIN``.
+        limit
+            LIMIT applied to the SELECT being explained.
+        db_path
+            Optional database path included in the metadata artifact.
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        if self._is_writable_gateway() and any(view.startswith("docs.") for view in views):
+            self.ensure_all_views(overwrite=True, strict=False)
+        meta = {
+            "db_path": str(db_path) if db_path is not None else None,
+            "analyze": analyze,
+            "limit": limit,
+            "views": list(views),
+        }
+        (output_dir / "profile_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+        suffix = "analyze" if analyze else "explain"
+        for view in views:
+            plan = self.explain_table(view, analyze=analyze, limit=limit)
+            artifact = output_dir / f"{view.replace('.', '_')}.{suffix}.txt"
+            artifact.write_text(plan, encoding="utf-8")
+
+    def _maybe_materialize_view(self, table_key: str) -> bool:
+        if not self._is_writable_gateway():
+            return False
+        schema, _ = split_table_key(table_key)
+        contract = self.gateway.datasets.by_table_key.get(table_key)
+        if schema == "docs" or (contract is not None and contract.is_view):
+            self.ensure_all_views(overwrite=True, strict=False)
+            return True
+        return False
+
+    def _is_writable_gateway(self) -> bool:
+        config = getattr(self.gateway, "config", None)
+        return getattr(config, "read_only", False) is False
 
     def delete_snapshot(self, snapshot: SnapshotRef, *, include_views: bool = False) -> int:
         """Delete snapshot-scoped rows for a repo/commit across all datasets.

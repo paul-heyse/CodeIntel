@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from codeintel.core.repository import PagedResult
-from codeintel.storage.build_bridge import validate_df
+from codeintel.storage.contracts.validation import validate_df
 
 if TYPE_CHECKING:
     from ibis.expr import types as it

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.storage.build_bridge import validate_df
+from codeintel.storage.contracts.validation import validate_df
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:

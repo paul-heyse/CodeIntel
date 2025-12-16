@@ -7,6 +7,7 @@ import logging.handlers
 from typing import TYPE_CHECKING
 
 from codeintel.storage.helpers.module_index import load_module_map
+from codeintel.storage.warehouse import Warehouse
 from tests._helpers.assertions.expectation_assertions import (
     expect_empty,
     expect_equal,
@@ -15,6 +16,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_length,
     expect_true,
 )
+from tests._helpers.builders import ModuleRow, insert_rows
 
 if TYPE_CHECKING:
     import pytest
@@ -29,10 +31,11 @@ def test_load_module_map_returns_normalized_paths(
     repo = "test/repo"
     commit = "abc123"
 
-    fresh_gateway.core.insert_modules(
+    insert_rows(
+        fresh_gateway,
         [
-            ("test.module", "src/test/module.py", repo, commit),
-            ("another.module", "src/another/module.py", repo, commit),
+            ModuleRow(module="test.module", path="src/test/module.py", repo=repo, commit=commit),
+            ModuleRow(module="another.module", path="src/another/module.py", repo=repo, commit=commit),
         ]
     )
 
@@ -51,15 +54,29 @@ def test_load_module_map_filters_by_language(
     repo = "test/repo"
     commit = "abc123"
 
-    con = fresh_gateway.con
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language)
-        VALUES
-            ('py.module', 'py.py', ?, ?, 'python'),
-            ('js.module', 'js.js', ?, ?, 'javascript')
-        """,
-        [repo, commit, repo, commit],
+    warehouse = Warehouse(fresh_gateway)
+    warehouse.materialize_mappings(
+        "core.modules",
+        [
+            {
+                "module": "py.module",
+                "path": "py.py",
+                "repo": repo,
+                "commit": commit,
+                "language": "python",
+                "tags": "[]",
+                "owners": "[]",
+            },
+            {
+                "module": "js.module",
+                "path": "js.js",
+                "repo": repo,
+                "commit": commit,
+                "language": "javascript",
+                "tags": "[]",
+                "owners": "[]",
+            },
+        ],
     )
 
     result = load_module_map(fresh_gateway, repo, commit, language="python")
@@ -116,13 +133,9 @@ def test_load_module_map_normalizes_path_with_leading_slash(
     repo = "test/repo"
     commit = "abc123"
 
-    con = fresh_gateway.con
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit)
-        VALUES ('mod', '/src/module.py', ?, ?)
-        """,
-        [repo, commit],
+    insert_rows(
+        fresh_gateway,
+        [ModuleRow(module="mod", path="/src/module.py", repo=repo, commit=commit)],
     )
 
     result = load_module_map(fresh_gateway, repo, commit)
@@ -140,15 +153,12 @@ def test_load_module_map_handles_multiple_modules_same_path(
     repo = "test/repo"
     commit = "abc123"
 
-    con = fresh_gateway.con
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit)
-        VALUES
-            ('mod1', 'shared.py', ?, ?),
-            ('mod2', 'shared.py', ?, ?)
-        """,
-        [repo, commit, repo, commit],
+    insert_rows(
+        fresh_gateway,
+        [
+            ModuleRow(module="mod1", path="shared.py", repo=repo, commit=commit),
+            ModuleRow(module="mod2", path="shared.py", repo=repo, commit=commit),
+        ],
     )
 
     result = load_module_map(fresh_gateway, repo, commit)
