@@ -141,9 +141,7 @@ def t__test_profile(
         return executor.skip()
 
     if not t__test_profile__compute.success:
-        return executor.fail(
-            RuntimeError(t__test_profile__compute.error or "Test profile failed")
-        )
+        return executor.fail(RuntimeError(t__test_profile__compute.error or "Test profile failed"))
 
     def compute() -> dict[str, int]:
         return {"analytics.test_profile": t__test_profile__compute.row_count}

@@ -20,6 +20,7 @@ Extract schema from a Hamilton node:
 >>> from codeintel.build.hamilton.schema_docs import extract_node_schema
 >>> schema = extract_node_schema(my_module, "t__function_metrics__compute")
 """
+
 from __future__ import annotations
 
 import logging
@@ -312,11 +313,13 @@ def schema_from_columns(
 
     Examples
     --------
-    >>> schema = schema_from_columns([
-    ...     ("id", "int"),
-    ...     ("name", "string"),
-    ...     ("value", "float"),
-    ... ])
+    >>> schema = schema_from_columns(
+    ...     [
+    ...         ("id", "int"),
+    ...         ("name", "string"),
+    ...         ("value", "float"),
+    ...     ]
+    ... )
     >>> # @schema.output(*schema)
     """
     return tuple(columns)

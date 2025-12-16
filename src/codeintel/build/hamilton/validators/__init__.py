@@ -46,6 +46,7 @@ Migrating from SCHEMA_REGISTRY:
 >>> def my_migrated_node(...) -> pd.DataFrame:
 ...     ...
 """
+
 from __future__ import annotations
 
 from codeintel.build.hamilton.validators.contracts import (

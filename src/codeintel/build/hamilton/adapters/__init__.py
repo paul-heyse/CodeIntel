@@ -20,6 +20,7 @@ Using the adapter factory:
 >>> # Or let it auto-detect:
 >>> adapter = create_parallel_adapter("auto")
 """
+
 from __future__ import annotations
 
 from codeintel.build.hamilton.adapters.parallel import (

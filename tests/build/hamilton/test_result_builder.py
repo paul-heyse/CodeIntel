@@ -1,4 +1,5 @@
 """Tests for Hamilton result builders."""
+
 from __future__ import annotations
 
 import time
@@ -259,6 +260,7 @@ class TestBuildResultBuilder:
         builder = BuildResultBuilder()
         types = builder.input_types()
         from typing import Any
+
         expect_in(Any, types)
 
     @staticmethod

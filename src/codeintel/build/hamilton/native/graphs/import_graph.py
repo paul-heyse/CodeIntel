@@ -202,9 +202,7 @@ def t__import_graph__extract(
 
         modules = set(module_by_path.values())
         result = imports_compute.analyze_imports(edges, modules)
-        log.info(
-            "import_graph: %d edges, %d SCCs", len(edges), len(set(result.scc_map.values()))
-        )
+        log.info("import_graph: %d edges, %d SCCs", len(edges), len(set(result.scc_map.values())))
 
         mc = persist_rows(
             gateway,

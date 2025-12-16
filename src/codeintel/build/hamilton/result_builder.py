@@ -13,15 +13,11 @@ Using BuildResultBuilder for structured output:
 
 >>> from codeintel.build.hamilton.result_builder import BuildResultBuilder
 >>> result_builder = BuildResultBuilder()
->>> dr = (
-...     driver.Builder()
-...     .with_modules(modules)
-...     .with_adapters(result_builder)
-...     .build()
-... )
+>>> dr = driver.Builder().with_modules(modules).with_adapters(result_builder).build()
 >>> result = dr.execute(["t__metrics__materialize"])
 >>> print(result.summary())
 """
+
 from __future__ import annotations
 
 import time

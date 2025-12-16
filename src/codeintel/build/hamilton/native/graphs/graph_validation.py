@@ -97,8 +97,7 @@ def _validate_call_graph_integrity(
             nodes, predicates=[(scoped_edges.callee_goid_h128, nodes.goid_h128)]
         )
         orphan_callees_expr = callee_join.filter(
-            ibis_bool(scoped_edges.callee_goid_h128.notnull())
-            & ibis_bool(nodes.goid_h128.isnull())
+            ibis_bool(scoped_edges.callee_goid_h128.notnull()) & ibis_bool(nodes.goid_h128.isnull())
         ).count()
         orphan_callees = int(cast("SupportsInt", orphan_callees_expr.execute()))
         if orphan_callees > 0:

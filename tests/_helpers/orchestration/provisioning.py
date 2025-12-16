@@ -989,7 +989,6 @@ def build_callgraph_fixture_repo(
         tool_cache=build_dir / ".tool_cache",
         log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
     )
-    from tests._helpers.fakes.contexts import ExecutionContextBuilder
 
     builder = ExecutionContextBuilder(
         gateway=gateway,

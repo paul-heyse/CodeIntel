@@ -27,6 +27,7 @@ Generate @schema.output args from registry:
 >>> columns = schema_output_from_registry("analytics.function_metrics")
 >>> # Use with @schema.output(*columns)
 """
+
 from __future__ import annotations
 
 import logging
@@ -230,10 +231,12 @@ def validators_from_pandera_schema(
     Examples
     --------
     >>> import pandera as pa
-    >>> schema = pa.DataFrameSchema({
-    ...     "id": pa.Column(int, nullable=False, unique=True),
-    ...     "name": pa.Column(str),
-    ... })
+    >>> schema = pa.DataFrameSchema(
+    ...     {
+    ...         "id": pa.Column(int, nullable=False, unique=True),
+    ...         "name": pa.Column(str),
+    ...     }
+    ... )
     >>> validators = validators_from_pandera_schema(schema)
     """
     validators: list[BaseDefaultValidator] = []
@@ -411,7 +414,7 @@ from codeintel.build.hamilton.validators import (
     UniqueColumnsValidator,
 )
 
-@tag(domain="{table_key.split('.', maxsplit=1)[0]}", target="{table_key.split('.')[1]}", node_type="compute")
+@tag(domain="{table_key.split(".", maxsplit=1)[0]}", target="{table_key.split(".")[1]}", node_type="compute")
 @schema.output(
     {schema_args}
 )

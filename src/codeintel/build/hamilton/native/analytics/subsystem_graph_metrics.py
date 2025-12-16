@@ -172,9 +172,7 @@ def t__subsystem_graph_metrics(
         )
 
     def compute() -> dict[str, int]:
-        return {
-            "analytics.subsystem_graph_metrics": t__subsystem_graph_metrics__compute.row_count
-        }
+        return {"analytics.subsystem_graph_metrics": t__subsystem_graph_metrics__compute.row_count}
 
     return executor.execute(compute)
 
