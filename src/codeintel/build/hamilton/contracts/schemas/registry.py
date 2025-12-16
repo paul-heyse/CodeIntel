@@ -21,7 +21,6 @@ from functools import cache
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.contracts.schemas.builder import build_all_schemas
-from codeintel.build.unified_registry import get_unified_registry
 
 if TYPE_CHECKING:
     from collections.abc import ItemsView, Iterator, ValuesView
@@ -38,27 +37,241 @@ log = logging.getLogger(__name__)
 
 
 @cache
-def _get_plugin_metadata() -> dict[str, object]:
-    """Load plugin metadata from build registry.
+def _get_hamilton_target_metadata() -> dict[str, dict[str, list[str]]]:
+    """Load target metadata from Hamilton native modules.
+
+    Extracts schema information from Hamilton decorators (`@tag`, `@schema.output`)
+    which define the authoritative source of truth for data schemas.
 
     Returns
     -------
-    dict[str, object]
-        Mapping of target names to plugin instances with core_metadata.
+    dict[str, dict[str, list[str]]]
+        Mapping of target names to dict with 'produces', 'consumes', and 'schema' info.
     """
-    registry = get_unified_registry().get_all_plugins()
-    result: dict[str, object] = {}
-    for name, cls in registry.items():
-        try:
-            plugin = cls()
-        except (TypeError, ValueError, AttributeError):
-            log.debug("Failed to instantiate plugin %s", name)
-            continue
+    from codeintel.build.hamilton.native.loader import get_loader
 
-        if hasattr(plugin, "core_metadata"):
-            result[name] = plugin
+    result: dict[str, dict[str, list[str]]] = {}
+    loader = get_loader()
+    modules = loader.discover_modules()
+
+    for module in modules:
+        # Extract target info from module functions
+        for name in dir(module):
+            func = getattr(module, name, None)
+            if func is None or not callable(func):
+                continue
+
+            # Hamilton stores decorators in decorate_nodes list
+            decorators = getattr(func, "decorate_nodes", [])
+            if not decorators:
+                continue
+
+            # Extract tags and schema from decorators
+            target: str | None = None
+            schema_str: str | None = None
+
+            for dec in decorators:
+                dec_tags = getattr(dec, "tags", {})
+
+                # Extract target from @tag decorator
+                if "target" in dec_tags:
+                    target = dec_tags["target"]
+
+                # Extract schema from @schema.output decorator
+                schema_key = "hamilton.internal.schema_output"
+                if schema_key in dec_tags:
+                    schema_str = dec_tags[schema_key]
+
+            if target is None:
+                continue
+
+            # Get consumes from function parameters (input dependencies)
+            consumes: list[str] = []
+            annotations = getattr(func, "__annotations__", {})
+            for param_name in annotations:
+                if param_name.startswith("q__"):
+                    # Query parameter indicates table consumption
+                    parts = param_name.split("__")
+                    if len(parts) >= 3:
+                        table_key = f"{parts[1]}.{parts[2]}"
+                        consumes.append(table_key)
+
+            if target not in result:
+                result[target] = {"produces": [], "consumes": [], "schemas": []}
+
+            result[target]["consumes"].extend(consumes)
+
+            # Parse schema string if present
+            if schema_str:
+                result[target]["schemas"].append(schema_str)
 
     return result
+
+
+def get_hamilton_schema_for_target(target: str) -> dict[str, str] | None:
+    """Get the schema definition for a target from Hamilton metadata.
+
+    Parameters
+    ----------
+    target
+        Target name to get schema for.
+
+    Returns
+    -------
+    dict[str, str] | None
+        Column name to type mapping, or None if not found.
+    """
+    metadata = _get_hamilton_target_metadata()
+    target_info = metadata.get(target)
+    if not target_info or not target_info.get("schemas"):
+        return None
+
+    # Parse the schema string (format: "col1=type1,col2=type2,...")
+    schema_str = target_info["schemas"][0]
+    result: dict[str, str] = {}
+    for pair in schema_str.split(","):
+        if "=" in pair:
+            col_name, col_type = pair.split("=", 1)
+            result[col_name.strip()] = col_type.strip()
+
+    return result
+
+
+@cache
+def get_hamilton_dataclass_schemas() -> dict[str, dict[str, str]]:
+    """Extract schemas from dataclass return types in Hamilton modules.
+
+    For modules that return dataclass results, the dataclass fields define
+    the schema. This function extracts those field definitions.
+
+    Looks for dataclass types in:
+    1. @check_output(data_type=...) decorators (stored in transform)
+    2. Function return type annotations
+
+    Multiple functions may have the same target (compute + materialize).
+    We only record a schema once a valid dataclass is found.
+
+    Returns
+    -------
+    dict[str, dict[str, str]]
+        Mapping of target name to field schema (field name -> type string).
+    """
+    import dataclasses
+    from typing import get_type_hints
+
+    from codeintel.build.hamilton.native.loader import get_loader
+
+    result: dict[str, dict[str, str]] = {}
+    loader = get_loader()
+    modules = loader.discover_modules()
+
+    for module in modules:
+        for name in dir(module):
+            func = getattr(module, name, None)
+            if func is None or not callable(func):
+                continue
+
+            # Get target from decorators (stored in decorate_nodes)
+            decorators = getattr(func, "decorate_nodes", [])
+            target = None
+            for dec in decorators:
+                tags = getattr(dec, "tags", {})
+                if "target" in tags:
+                    target = tags["target"]
+                    break
+
+            if target is None:
+                continue
+
+            # First, check for @check_output(data_type=...) in transform attribute
+            transforms = getattr(func, "transform", [])
+            actual_type = None
+            for transform in transforms:
+                if type(transform).__name__ == "check_output":
+                    # check_output stores the data_type in default_validator_kwargs
+                    kwargs = getattr(transform, "default_validator_kwargs", {})
+                    data_type = kwargs.get("data_type")
+                    if data_type is not None and dataclasses.is_dataclass(data_type):
+                        actual_type = data_type
+                        break
+
+            # If no @check_output data_type, try the return annotation
+            if actual_type is None:
+                try:
+                    hints = get_type_hints(func, globalns=vars(module))
+                except Exception:
+                    continue
+
+                return_type = hints.get("return")
+                if return_type is None:
+                    continue
+
+                # Handle Optional types and extract the actual type
+                actual_type = return_type
+                origin = getattr(return_type, "__origin__", None)
+                if origin is not None:
+                    args = getattr(return_type, "__args__", ())
+                    # For Union[X, None], extract X
+                    if args and type(None) in args:
+                        non_none = [a for a in args if a is not type(None)]
+                        if non_none:
+                            actual_type = non_none[0]
+
+            # Check if it's a dataclass
+            if actual_type is None or not dataclasses.is_dataclass(actual_type):
+                continue
+
+            # Extract field types
+            try:
+                # Try to get resolved type hints, but fall back to raw field types
+                try:
+                    dc_hints = get_type_hints(actual_type)
+                except Exception:
+                    dc_hints = {}
+
+                schema: dict[str, str] = {}
+                for field in dataclasses.fields(actual_type):
+                    # Use resolved hint if available, else raw annotation
+                    field_type = dc_hints.get(field.name, field.type)
+                    schema[field.name] = _type_to_string(field_type)
+                result[target] = schema
+            except Exception:
+                log.debug("Failed to extract schema from %s", actual_type)
+                continue
+
+    return result
+
+
+def _type_to_string(t: object) -> str:
+    """Convert a type annotation to a string representation.
+
+    Parameters
+    ----------
+    t
+        Type annotation to convert.
+
+    Returns
+    -------
+    str
+        Human-readable string representation of the type.
+    """
+    # Handle None type
+    if t is type(None):
+        return "None"
+    # Handle string annotations (forward references)
+    if isinstance(t, str):
+        return t
+    # Handle classes with __name__
+    if hasattr(t, "__name__"):
+        return t.__name__
+    # Handle generic types
+    origin = getattr(t, "__origin__", None)
+    if origin is not None:
+        args = getattr(t, "__args__", ())
+        args_str = ", ".join(_type_to_string(a) for a in args)
+        origin_name = getattr(origin, "__name__", str(origin))
+        return f"{origin_name}[{args_str}]"
+    return str(t)
 
 
 class DatasetSchemaRegistry:
@@ -251,7 +464,7 @@ class DatasetSchemaRegistry:
 
     @staticmethod
     def producers_of(table_key: str) -> list[str]:
-        """Find plugins that produce the given dataset.
+        """Find targets that produce the given dataset.
 
         Parameters
         ----------
@@ -261,26 +474,22 @@ class DatasetSchemaRegistry:
         Returns
         -------
         list[str]
-            Plugin names that produce this dataset.
+            Target names that produce this dataset.
 
         Notes
         -----
-        Uses the build registry as the single source of truth.
+        Uses Hamilton native module metadata as the source of truth.
         """
-        plugins = _get_plugin_metadata()
+        metadata = _get_hamilton_target_metadata()
         result: list[str] = []
-        for name, plugin in plugins.items():
-            core_meta = getattr(plugin, "core_metadata", None)
-            if core_meta is None:
-                continue
-            produces = getattr(core_meta, "produces_tables", None)
-            if produces and table_key in produces:
-                result.append(name)
+        for target, info in metadata.items():
+            if table_key in info.get("produces", []):
+                result.append(target)
         return result
 
     @staticmethod
     def consumers_of(table_key: str) -> list[str]:
-        """Find plugins that consume the given dataset.
+        """Find targets that consume the given dataset.
 
         Parameters
         ----------
@@ -290,21 +499,17 @@ class DatasetSchemaRegistry:
         Returns
         -------
         list[str]
-            Plugin names that consume this dataset.
+            Target names that consume this dataset.
 
         Notes
         -----
-        Uses the build registry as the single source of truth.
+        Uses Hamilton native module metadata as the source of truth.
         """
-        plugins = _get_plugin_metadata()
+        metadata = _get_hamilton_target_metadata()
         result: list[str] = []
-        for name, plugin in plugins.items():
-            core_meta = getattr(plugin, "core_metadata", None)
-            if core_meta is None:
-                continue
-            consumes = getattr(core_meta, "consumes_tables", None)
-            if consumes and table_key in consumes:
-                result.append(name)
+        for target, info in metadata.items():
+            if table_key in info.get("consumes", []):
+                result.append(target)
         return result
 
 

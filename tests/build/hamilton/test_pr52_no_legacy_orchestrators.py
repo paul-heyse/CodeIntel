@@ -133,18 +133,21 @@ def test_pr52_empty_plugin_directories_removed() -> None:
         pytest.fail(message)
 
 
-def test_pr52_non_migrated_plugins_still_exist() -> None:
-    """Verify plugins intentionally not migrated still exist."""
-    plugins_root = SRC_ROOT / "build" / "plugins" / "analytics"
+def test_pr52_migrated_plugins_exist_as_native_modules() -> None:
+    """Verify previously non-migrated plugins are now native Hamilton modules.
+
+    These plugins were migrated in Phase 4 of the Hamilton Native Implementation Plan.
+    """
+    native_root = SRC_ROOT / "build" / "hamilton" / "native" / "analytics"
     should_exist = (
-        ("config_data_flow", "compute.py"),
-        ("coverage", "test_edges.py"),
+        "config_data_flow.py",
+        "coverage_test_edges.py",
     )
     missing: list[str] = []
-    for dir_name, file_name in should_exist:
-        path = plugins_root / dir_name / file_name
+    for file_name in should_exist:
+        path = native_root / file_name
         if not path.exists():
             missing.append(_relative_path(path))
     if missing:
-        message = "Non-migrated plugins missing:\n" + "\n".join(sorted(missing))
+        message = "Native Hamilton modules missing:\n" + "\n".join(sorted(missing))
         pytest.fail(message)

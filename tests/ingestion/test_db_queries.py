@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.plugins.ingestion.repo_scan import RepoScanPlugin
+from codeintel.build.plugins.ingestion.stubs import RepoScanPlugin
 from codeintel.storage.queries.safe import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,

@@ -22,10 +22,11 @@ import ast
 import logging
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
+
+from codeintel.build.context import TargetResult
 from codeintel.build.plugins._helpers import filter_paths, get_source_root, persist_rows
-from codeintel.build.plugins.graphs.builders.cfg_dfg_options import CfgDfgOptions
+from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
 from codeintel.core.catalog import load_function_index
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import cfg as cfg_compute

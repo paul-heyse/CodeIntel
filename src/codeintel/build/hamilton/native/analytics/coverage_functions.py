@@ -6,8 +6,7 @@ computing per-function coverage metrics by joining GOIDs with coverage line data
 The compute node reads from core.goids and analytics.coverage_lines, joins them
 based on file path and line ranges, then aggregates coverage metrics per function.
 
-Includes Hamilton-native validation via @check_output_custom (Phase 4)
-and schema documentation via @schema.output.
+Includes Hamilton-native validation via @check_output_custom (Phase 6).
 """
 
 from __future__ import annotations
@@ -15,13 +14,14 @@ from __future__ import annotations
 import logging
 
 import ibis.expr.types as ir
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import check_output_custom, tag
 
 from codeintel.analytics.compute.coverage.compute import build_coverage_functions_expr
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
+from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 
 LOG = logging.getLogger(__name__)
@@ -29,6 +29,27 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
 @tag(domain="analytics", target="coverage_functions", node_type="compute")
+@check_output_custom(
+    *build_table_contract(
+        required_columns=[
+            "function_goid_h128",
+            "urn",
+            "repo",
+            "commit",
+            "rel_path",
+            "language",
+            "kind",
+            "qualname",
+            "start_line",
+            "end_line",
+            "executable_lines",
+            "covered_lines",
+            "coverage_ratio",
+            "tested",
+        ],
+        no_nulls=["function_goid_h128", "repo", "commit"],
+    ),
+)
 def t__coverage_functions__compute(env: BuildEnv) -> ir.Table | None:
     """Compute per-function coverage metrics from GOIDs and coverage lines.
 

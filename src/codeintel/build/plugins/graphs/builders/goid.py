@@ -21,10 +21,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
+
+from codeintel.build.context import TargetResult
 from codeintel.build.plugins._helpers import filter_paths, get_source_root, persist_rows
-from codeintel.build.plugins.graphs.builders.goid_options import GoidBuilderOptions
+from codeintel.build.hamilton.native.options.graphs import GoidBuilderOptions
 from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import goid as goid_compute

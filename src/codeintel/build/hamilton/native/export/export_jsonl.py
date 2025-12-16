@@ -2,13 +2,16 @@
 
 This module implements the export_jsonl target as a pure Hamilton DAG,
 exporting analytics data to JSONL format for external consumption.
+
+Phase 5: Export domain migration with Hamilton-native validation.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, TypedDict, cast
+from dataclasses import dataclass, field
+from typing import Any, cast
 
 import ibis.expr.types as ir
 import pandas as pd
@@ -35,10 +38,23 @@ LOG = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table, pd.DataFrame)
 
 
-class ExportJsonlComputeResult(TypedDict):
-    modules_data: list[dict[str, Any]]
-    function_metrics_data: list[dict[str, Any]]
-    metadata: dict[str, Any]
+@dataclass(frozen=True)
+class ExportJsonlComputeResult:
+    """Result of JSONL export computation.
+
+    Attributes
+    ----------
+    modules_data
+        List of module records for export.
+    function_metrics_data
+        List of function metric records for export.
+    metadata
+        Export metadata including snapshot info.
+    """
+
+    modules_data: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    function_metrics_data: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @tag(domain="export", target="export_jsonl", node_type="compute")
@@ -64,16 +80,14 @@ def t__export_jsonl__compute(
 
     Returns
     -------
-    dict[str, object]
-        Export specification with:
-        - "modules_data": List of module records
-        - "function_metrics_data": List of function metric records
-        - "metadata": Export metadata (snapshot info, timestamps, etc.)
+    ExportJsonlComputeResult
+        Export specification with modules data, function metrics data,
+        and export metadata.
 
     Examples
     --------
     >>> # This node is executed by Hamilton as part of the export_jsonl target
-    >>> # It produces a dict that is consumed by t__export_jsonl materializer
+    >>> # It produces a result that is consumed by t__export_jsonl materializer
     """
     LOG.info("Computing export_jsonl: gathering data for export")
 
@@ -95,9 +109,11 @@ def t__export_jsonl__compute(
     # Execute queries and convert to Python lists
     modules_df = cast("pd.DataFrame", modules.execute())
     function_metrics_df = cast("pd.DataFrame", function_metrics.execute())
-    modules_data = cast("list[dict[str, Any]]", modules_df.to_dict(orient="records"))
-    function_metrics_data = cast(
-        "list[dict[str, Any]]", function_metrics_df.to_dict(orient="records")
+    modules_data = tuple(
+        cast("list[dict[str, Any]]", modules_df.to_dict(orient="records"))
+    )
+    function_metrics_data = tuple(
+        cast("list[dict[str, Any]]", function_metrics_df.to_dict(orient="records"))
     )
 
     # Build export metadata
@@ -115,11 +131,11 @@ def t__export_jsonl__compute(
         len(function_metrics_data),
     )
 
-    return {
-        "modules_data": modules_data,
-        "function_metrics_data": function_metrics_data,
-        "metadata": metadata,
-    }
+    return ExportJsonlComputeResult(
+        modules_data=modules_data,
+        function_metrics_data=function_metrics_data,
+        metadata=metadata,
+    )
 
 
 @tag(domain="export", target="export_jsonl", node_type="materialize")
@@ -161,10 +177,10 @@ def t__export_jsonl(
 
     output_file = env.paths.document_output_dir / "codeintel.jsonl"
 
-    # Extract data from compute result
-    modules_data = t__export_jsonl__compute["modules_data"]
-    function_metrics_data = t__export_jsonl__compute["function_metrics_data"]
-    metadata = t__export_jsonl__compute["metadata"]
+    # Extract data from compute result (now a dataclass)
+    modules_data = t__export_jsonl__compute.modules_data
+    function_metrics_data = t__export_jsonl__compute.function_metrics_data
+    metadata = t__export_jsonl__compute.metadata
 
     # Format as JSONL (one JSON object per line)
     jsonl_lines: list[str] = []
@@ -241,4 +257,4 @@ def t__export_jsonl(
     return record
 
 
-__all__ = ["t__export_jsonl", "t__export_jsonl__compute"]
+__all__ = ["ExportJsonlComputeResult", "t__export_jsonl", "t__export_jsonl__compute"]
