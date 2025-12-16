@@ -33,7 +33,7 @@ from codeintel.build.hamilton.naming import (
     to_node_name,
 )
 from codeintel.build.hamilton.nodes.node_factory import get_generated_module
-from codeintel.build.registry import MODULES_TARGET
+from codeintel.build.registry import get_target_graph
 from tests._helpers import assert_frozen
 
 
@@ -106,21 +106,27 @@ class TestMetadataBridge:
     @staticmethod
     def test_from_target_extracts_name() -> None:
         """Verify from_target builds stable name from target."""
-        meta = from_target(MODULES_TARGET)
+        graph = get_target_graph()
+        modules_target = graph.get("modules")
+        meta = from_target(modules_target)
         if meta.name != "ingestion.modules":
             pytest.fail("Name did not match expected ingestion.modules")
 
     @staticmethod
     def test_from_target_extracts_domain() -> None:
         """Verify from_target extracts module as domain."""
-        meta = from_target(MODULES_TARGET)
+        graph = get_target_graph()
+        modules_target = graph.get("modules")
+        meta = from_target(modules_target)
         if meta.domain != "ingestion":
             pytest.fail("Domain did not match ingestion")
 
     @staticmethod
     def test_from_target_extracts_description() -> None:
         """Verify from_target includes target description."""
-        meta = from_target(MODULES_TARGET)
+        graph = get_target_graph()
+        modules_target = graph.get("modules")
+        meta = from_target(modules_target)
         description = meta.description.lower()
         if "module" not in description and "scan" not in description:
             pytest.fail("Description missing expected keywords")

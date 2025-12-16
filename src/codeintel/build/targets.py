@@ -3,7 +3,18 @@
 This module defines the core abstractions for tracking what outputs
 the build system can produce and their interdependencies.
 
-The OutputTarget is now the single source of truth for:
+Architecture Note (Hamilton-First)
+----------------------------------
+In the Hamilton-first architecture, dependencies should be derived from the
+Hamilton DAG rather than statically declared. Use `target_graph_from_hamilton()`
+from `codeintel.build.hamilton.introspect` to get a TargetGraph with
+Hamilton-derived dependencies.
+
+The static `dependencies` field on OutputTarget remains for compatibility with
+`registrations.py`, but Hamilton is the source of truth for actual execution
+dependencies.
+
+The OutputTarget is the single source of truth for:
 - What tables/artifacts a target produces (contract)
 - What resources it needs (resources)
 - How it should be executed (execution)
@@ -195,29 +206,27 @@ class TargetGraph:
     and target lookup. This is the core data structure for computing
     minimal execution plans.
 
+    How to Obtain a TargetGraph
+    ---------------------------
+    Use `get_target_graph()` from `codeintel.build.registry` to get the
+    singleton graph with Hamilton-derived dependencies:
+
+    >>> from codeintel.build.registry import get_target_graph
+    >>> graph = get_target_graph()
+    >>> "modules" in graph
+    True
+    >>> deps = graph.dependencies_of("goids")
+
+    Do not construct TargetGraph directly or use `register()` - these are
+    internal implementation details. Hamilton is the source of truth for
+    target dependencies.
+
     Attributes
     ----------
     _targets
         Internal mapping of target names to OutputTarget instances.
     _dependents
-        Internal mapping of target names to their dependents.
-
-    Examples
-    --------
-    >>> graph = TargetGraph()
-    >>> from codeintel.config.datasets.primitives import TableSchema, Column
-    >>> graph.register(
-    ...     OutputTarget(
-    ...         name="modules",
-    ...         module="ingestion",
-    ...         plugin="repo_scan",
-    ...         contract=OutputContract(
-    ...             tables=(TableSchema("core", "modules", [Column("module", "VARCHAR")]),)
-    ...         ),
-    ...     )
-    ... )
-    >>> "modules" in graph
-    True
+        Internal mapping of target names to their dependents (reverse index).
     """
 
     _targets: dict[str, OutputTarget] = field(default_factory=dict)
@@ -461,7 +470,7 @@ class TargetGraph:
         if not errors:
             try:
                 self.topological_order(self._targets.keys())
-            except ValueError as e:
+            except CycleDetectedError as e:
                 errors.append(str(e))
 
         return tuple(errors)

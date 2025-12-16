@@ -38,7 +38,9 @@ def test_build_spec_cli_compile_outputs_valid_json() -> None:
 
     targets = payload.get("targets")
     _require(condition=isinstance(targets, list), message="targets must be a list")
-    _require(condition=isinstance(targets, list) and bool(targets), message="targets must be non-empty")
+    _require(
+        condition=isinstance(targets, list) and bool(targets), message="targets must be non-empty"
+    )
 
     datasets = payload.get("datasets")
     _require(condition=isinstance(datasets, list), message="datasets must be a list")

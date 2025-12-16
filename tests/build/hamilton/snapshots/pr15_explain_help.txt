@@ -10,11 +10,6 @@ Explain why a target is stale and what dependencies changed.
 │      -f                         (repeatable). [env var:                      │
 │                                 CODEINTEL_BUILD_EXPLAIN_FORCE] [default:     │
 │                                 (none)]                                      │
-│    GRAPH-SOURCE --graph-source  Dependency graph source: hamilton (default)  │
-│                                 or targetgraph. [choices: targetgraph,       │
-│                                 hamilton] [env var:                          │
-│                                 CODEINTEL_BUILD_EXPLAIN_GRAPH_SOURCE]        │
-│                                 [default: hamilton]                          │
 │    --flags                      [env var: CODEINTEL_BUILD_EXPLAIN_FLAGS]     │
 │                                 [default: --flags]                           │
 │    ROOT --root -r               Explicit project root directory. [env var:   │

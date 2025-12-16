@@ -4,13 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.registry import (
-    ALL_TARGETS,
-    MODULES_TARGET,
-    PROFILES_TARGET,
-    build_target_graph,
-    get_target_graph,
-)
+from codeintel.build.registry import get_target_graph
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 
 MIN_INGESTION_TARGETS = 5
@@ -22,27 +16,32 @@ class TestTargetRegistry:
     """Tests for the target registry."""
 
     @staticmethod
-    def test_all_targets_not_empty() -> None:
-        """Verify ALL_TARGETS contains targets."""
-        expect_true(len(ALL_TARGETS) > 0)
+    def test_registry_not_empty() -> None:
+        """Verify the target registry contains targets."""
+        graph = get_target_graph()
+        expect_true(len(graph) > 0)
 
     @staticmethod
     def test_modules_target_has_no_dependencies() -> None:
         """Modules target is a root with no dependencies."""
-        expect_equal(MODULES_TARGET.dependencies, ())
-        expect_equal(MODULES_TARGET.module, "ingestion")
+        graph = get_target_graph()
+        modules_target = graph.get("modules")
+        expect_equal(modules_target.dependencies, ())
+        expect_equal(modules_target.module, "ingestion")
 
     @staticmethod
     def test_profiles_target_has_dependencies() -> None:
         """Profiles target depends on multiple other targets."""
-        expect_true(len(PROFILES_TARGET.dependencies) > 0)
-        expect_equal(PROFILES_TARGET.module, "analytics")
+        graph = get_target_graph()
+        profiles_target = graph.get("profiles")
+        expect_true(len(profiles_target.dependencies) > 0)
+        expect_equal(profiles_target.module, "analytics")
 
     @staticmethod
-    def test_build_target_graph_succeeds() -> None:
-        """Build target graph without validation errors."""
-        graph = build_target_graph()
-        expect_equal(len(graph), len(ALL_TARGETS))
+    def test_get_target_graph_succeeds() -> None:
+        """Get target graph succeeds with Hamilton-derived dependencies."""
+        graph = get_target_graph()
+        expect_true(len(graph) > 0)
 
     @staticmethod
     def test_get_target_graph_is_cached() -> None:
@@ -54,22 +53,28 @@ class TestTargetRegistry:
     @staticmethod
     def test_all_targets_have_valid_modules() -> None:
         """All targets have valid module assignments."""
+        graph = get_target_graph()
         valid_modules = {"ingestion", "graphs", "analytics", "export"}
-        for target in ALL_TARGETS:
+        for target in graph.all_targets:
             expect_true(target.module in valid_modules, message=f"Invalid module for {target.name}")
 
     @staticmethod
     def test_all_targets_have_tables() -> None:
         """All non-export targets specify at least one output table."""
-        for target in ALL_TARGETS:
+        graph = get_target_graph()
+        for target in graph.all_targets:
             if target.module == "export":
+                continue
+            # Skip SCIP target as it produces artifacts not tables
+            if target.name == "scip":
                 continue
             expect_true(len(target.table_keys) > 0, message=f"No tables for {target.name}")
 
     @staticmethod
     def test_target_names_are_unique() -> None:
         """All target names are unique."""
-        names = [t.name for t in ALL_TARGETS]
+        graph = get_target_graph()
+        names = [t.name for t in graph.all_targets]
         expect_equal(len(names), len(set(names)))
 
     @staticmethod
@@ -102,7 +107,7 @@ class TestTargetRegistry:
         graph = get_target_graph()
 
         order = graph.topological_order(list(graph))
-        expect_equal(len(order), len(ALL_TARGETS))
+        expect_equal(len(order), len(graph))
 
 
 class TestTargetsByModule:

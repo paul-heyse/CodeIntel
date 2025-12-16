@@ -1,10 +1,13 @@
 """Target registration and graph construction for the build system.
 
-This module defines all known output targets and their dependencies,
-enabling the build system to compute minimal execution plans.
+Hamilton-First Architecture
+---------------------------
+This module now uses Hamilton as the source of truth for target dependencies.
+Use `get_target_graph()` to get a TargetGraph with Hamilton-derived dependencies.
 
-Targets are organized by module (ingestion, graphs, analytics) and
-registered in the singleton target graph.
+The static `*_TARGET` constants remain for `registrations.py` compatibility,
+but dependencies are derived from the actual Hamilton DAG, not static
+declarations.
 
 Each OutputTarget defines its output tables via an OutputContract with
 TableSchema definitions. TABLE_SCHEMAS can be derived from target
@@ -18,6 +21,8 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.build.contracts import ArtifactSpec, OutputContract
+from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.resources import (
     CPU_INTENSIVE_EXECUTION,
     TOOL_EXECUTION,
@@ -25,7 +30,6 @@ from codeintel.build.resources import (
 )
 from codeintel.build.schemas.declared_schemas import TABLE_SCHEMAS as _DATASET_TABLE_SCHEMAS
 from codeintel.build.targets import OutputTarget, TargetGraph
-from codeintel.build.unified_registry import get_unified_registry
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
@@ -637,57 +641,29 @@ ALL_TARGETS: tuple[OutputTarget, ...] = (
 )
 
 
-def build_target_graph(targets: tuple[OutputTarget, ...] | None = None) -> TargetGraph:
-    """Construct the complete target graph from all registered targets.
-
-    Returns
-    -------
-    TargetGraph
-        Graph with all targets registered and validated.
-
-    Raises
-    ------
-    ValueError
-        If the graph has validation errors (cycles, missing deps).
-    """
-    active_targets = targets or ALL_TARGETS
-    graph = TargetGraph()
-    for target in active_targets:
-        graph.register(target)
-    errors = graph.validate()
-    if errors:
-        error_msg = "\n".join(errors)
-        msg = f"Target graph validation failed:\n{error_msg}"
-        raise ValueError(msg)
-    return graph
-
-
 @lru_cache(maxsize=1)
 def get_target_graph() -> TargetGraph:
-    """Get the singleton target graph instance.
+    """Get the singleton target graph with Hamilton-derived dependencies.
+
+    This is the canonical way to get a TargetGraph. Dependencies are derived
+    from the actual Hamilton DAG, ensuring they match execution reality.
 
     Returns
     -------
     TargetGraph
-        The singleton target graph with all registered targets.
+        The singleton target graph with Hamilton-derived dependencies.
+
+    Examples
+    --------
+    >>> graph = get_target_graph()
+    >>> "modules" in graph
+    True
+    >>> deps = graph.dependencies_of("goids")
+    >>> "scip" in deps
+    True
     """
-    return build_target_graph()
-
-
-def build_target_graph_from_unified() -> TargetGraph:
-    """Build target graph from the unified registry.
-
-    This function provides a bridge to the new unified registry system.
-    Use this to get a graph that's guaranteed to be consistent with
-    the unified target/plugin registrations.
-
-    Returns
-    -------
-    TargetGraph
-        Graph built from unified registry.
-    """
-    unified = get_unified_registry()
-    return build_target_graph(unified.get_all_targets())
+    runtime = build_driver(mode="auto")
+    return target_graph_from_hamilton(runtime)
 
 
 def derive_schemas_from_targets(
@@ -766,53 +742,6 @@ def get_target_by_table(
 
 __all__ = [
     "ALL_TARGETS",
-    "AST_TARGET",
-    "BEHAVIORAL_COVERAGE_TARGET",
-    "CALL_GRAPH_TARGET",
-    "CALL_GRAPH_VIEWS_TARGET",
-    "CFG_DFG_METRICS_TARGET",
-    "CFG_TARGET",
-    "CONFIG_DATA_FLOW_TARGET",
-    "CONFIG_INGEST_TARGET",
-    "COVERAGE_FUNCTIONS_TARGET",
-    "COVERAGE_INGEST_TARGET",
-    "COVERAGE_TEST_EDGES_TARGET",
-    "CST_TARGET",
-    "DATA_MODELS_TARGET",
-    "DATA_MODEL_USAGE_TARGET",
-    "DFG_TARGET",
-    "DOCSTRINGS_TARGET",
-    "ENTRYPOINTS_TARGET",
-    "EXPORT_JSONL_TARGET",
-    "EXPORT_PARQUET_TARGET",
-    "EXTERNAL_DEPS_TARGET",
-    "FUNCTION_AST_FEATURES_TARGET",
-    "FUNCTION_CONTRACTS_TARGET",
-    "FUNCTION_EFFECTS_TARGET",
-    "FUNCTION_HISTORY_TARGET",
-    "FUNCTION_METRICS_TARGET",
-    "GOIDS_TARGET",
-    "GRAPH_METRICS_TARGET",
-    "GRAPH_VALIDATION_TARGET",
-    "HISTORY_TIMESERIES_TARGET",
-    "HOTSPOTS_TARGET",
-    "IMPORT_GRAPH_TARGET",
-    "MODULES_TARGET",
-    "PROFILES_TARGET",
-    "RISK_FACTORS_TARGET",
-    "SCIP_TARGET",
-    "SEMANTIC_ROLES_TARGET",
-    "SUBSYSTEMS_TARGET",
-    "SUBSYSTEM_AGREEMENT_TARGET",
-    "SUBSYSTEM_GRAPH_METRICS_TARGET",
-    "SYMBOL_GRAPH_METRICS_TARGET",
-    "SYMBOL_USES_TARGET",
-    "TESTS_INGEST_TARGET",
-    "TEST_GRAPH_METRICS_TARGET",
-    "TEST_PROFILE_TARGET",
-    "TYPING_TARGET",
-    "build_target_graph",
-    "build_target_graph_from_unified",
     "derive_schemas_from_targets",
     "get_all_target_table_keys",
     "get_target_by_table",

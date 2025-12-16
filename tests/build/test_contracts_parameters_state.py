@@ -12,12 +12,7 @@ import pytest
 from codeintel.build.contracts import ArtifactSpec, OutputContract, TableSchema
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.parameters import ParameterError, TargetParameters
-from codeintel.build.state import (
-    DatabaseState,
-    StalenessReason,
-    StateValidator,
-    TargetState,
-)
+from codeintel.build.state import BuildState, StateValidator, TargetState
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from codeintel.config.datasets.primitives import Column
 from codeintel.config.primitives import SnapshotRef
@@ -163,8 +158,8 @@ def test_target_parameters_empty_singleton() -> None:
     expect_false(empty.has("anything"))
 
 
-def test_state_validator_missing_and_computed() -> None:
-    """StateValidator marks missing targets and computed when hashes match."""
+def test_state_validator_missing_and_current() -> None:
+    """StateValidator marks missing targets and current when hashes match."""
     target = _make_target("single")
     snapshot = _snapshot()
 
@@ -179,15 +174,15 @@ def test_state_validator_missing_and_computed() -> None:
     validator = StateValidator(graph, gateway, snapshot)
 
     state = validator.validate().get("single")
-    expect_equal(state.status, "computed")
+    expect_equal(state.status, "current")
     expect_true(state.manifest is manifest)
     expect_equal(state.blocking_deps, ())
-    expect_is_none(state.staleness_reason)
+    expect_is_none(state.blocking_reason)
 
     missing_validator = StateValidator(graph, _make_gateway({}), snapshot)
     missing_state = missing_validator.validate().get("single")
     expect_equal(missing_state.status, "missing")
-    expect_is_none(missing_state.staleness_reason)
+    expect_is_none(missing_state.blocking_reason)
 
 
 def test_state_validator_stale_and_blocked_propagation() -> None:
@@ -208,51 +203,41 @@ def test_state_validator_stale_and_blocked_propagation() -> None:
     leaf_state = result.get("leaf")
 
     expect_equal(root_state.status, "stale")
-    expect_is_not_none(root_state.staleness_reason)
+    expect_is_not_none(root_state.blocking_reason)
     expect_equal(leaf_state.status, "blocked")
     expect_equal(leaf_state.blocking_deps, ("root",))
-    expect_is_not_none(leaf_state.staleness_reason)
+    expect_is_not_none(leaf_state.blocking_reason)
 
 
-def test_database_state_helpers() -> None:
-    """DatabaseState helper methods filter by status and check currentness."""
+def test_build_state_helpers() -> None:
+    """BuildState helper methods filter by status and check currentness."""
     states: dict[str, TargetState] = {
         "missing": TargetState(
             name="missing",
             status="missing",
             manifest=None,
-            staleness_reason=None,
-            blocking_deps=(),
-            current_input_hash=None,
         ),
         "stale": TargetState(
             name="stale",
             status="stale",
             manifest=None,
-            staleness_reason=StalenessReason(
-                kind="input_hash_mismatch",
-                details="hash changed",
-            ),
-            blocking_deps=(),
-            current_input_hash=None,
+            blocking_reason="input_hash_mismatch",
         ),
-        "computed": TargetState(
-            name="computed",
-            status="computed",
+        "current": TargetState(
+            name="current",
+            status="current",
             manifest=None,
-            staleness_reason=None,
-            blocking_deps=(),
-            current_input_hash="hash",
+            current_hash="hash",
         ),
     }
-    db_state = DatabaseState(repo="r", commit="c", targets=states)
+    build_state = BuildState(repo="r", commit="c", targets=states)
 
-    expect_equal(db_state.missing_targets(), ("missing",))
-    expect_equal(db_state.stale_targets(), ("stale",))
-    expect_equal(db_state.computed_targets(), ("computed",))
-    expect_equal(db_state.blocked_targets(), ())
-    expect_true(db_state.is_target_current("computed"))
-    expect_false(db_state.is_target_current("absent"))
+    expect_equal(build_state.by_status("missing"), ("missing",))
+    expect_equal(build_state.by_status("stale"), ("stale",))
+    expect_equal(build_state.by_status("current"), ("current",))
+    expect_equal(build_state.by_status("blocked"), ())
+    expect_true(build_state.is_current("current"))
+    expect_false(build_state.is_current("absent"))
 
     with pytest.raises(KeyError):
-        db_state.get("absent")
+        build_state.get("absent")

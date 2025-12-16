@@ -43,6 +43,14 @@ Diff a compiled schema manifest against an expected file.
 │                                 just breaking changes. [env var:             │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_FAIL_ON_ANY]     │
 │                                 [default: false]                             │
+│    INCLUDE-VIEWS                Include DuckDB view schemas in comparison    │
+│      --include-views            (v2 format). [env var:                       │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_VIEWS]   │
+│                                 [default: false]                             │
+│    INCLUDE-ARTIFACTS            Include export artifact metadata in          │
+│      --include-artifacts        comparison (v2 format). [env var:            │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_ARTIFACT │
+│                                 S] [default: false]                          │
 │    --flags                      [env var: CODEINTEL_BUILD_SCHEMA_DIFF_FLAGS] │
 │                                 [default: --flags]                           │
 │    ROOT --root -r               Explicit project root directory. [env var:   │
@@ -60,4 +68,3 @@ Diff a compiled schema manifest against an expected file.
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_VERBOSE]         │
 │                                 [default: 0]                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-

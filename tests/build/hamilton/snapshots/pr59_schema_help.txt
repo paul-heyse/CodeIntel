@@ -1,8 +1,9 @@
 Usage: codeintel build schema COMMAND
 
-Schema product commands (compile, diff, etc.).
+Schema product commands (compile, diff, migrate, etc.).
 
 ╭─ Commands ───────────────────────────────────────────────────────────────────╮
 │ compile  Compile a deterministic schema manifest for selected targets.       │
 │ diff     Diff a compiled schema manifest against an expected file.           │
+│ migrate  Update expected manifest to match current schemas.                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
