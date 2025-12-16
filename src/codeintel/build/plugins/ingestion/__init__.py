@@ -1,50 +1,34 @@
-"""Ingestion plugins for the build system.
+"""Ingestion plugin helpers for the build system.
 
-This package provides plugin implementations for ingestion targets.
-All plugins implement the TargetPlugin protocol from codeintel.build.plugin.
+This package provides helper utilities for ingestion targets.
+The plugin implementations have been migrated to native Hamilton modules
+in Phase 2 of the Hamilton Native Implementation Plan.
 
-Class-Based Plugins
--------------------
-The following plugins are available:
+See: codeintel.build.hamilton.native.ingestion for native implementations.
 
-- RepoScanPlugin: Scan repository modules and build change-tracker state.
-- AstExtractPlugin: Parse Python AST and persist rows + metrics.
-- CstExtractPlugin: Parse CST via LibCST and write rows.
-- ScipIngestPlugin: Run scip-python and persist symbols.
-- TypingIngestPlugin: Populate typedness and static diagnostics.
-- CoverageIngestPlugin: Load coverage.py data.
-- TestsIngestPlugin: Ingest pytest JSON report.
-- DocstringsIngestPlugin: Extract docstrings and persist structured rows.
-- ConfigIngestPlugin: Flatten config files into config_values.
-
-Example
--------
->>> from codeintel.build.plugins.ingestion import AstExtractPlugin
->>> from codeintel.build.unified_registry import get_unified_registry
->>> plugin = get_unified_registry().instantiate_plugin("ast")
->>>
+Utilities
+---------
+- helpers: Shared helper functions for module paths and filtering.
+- modules_options: Options model for module ingestion.
+- scip_options: Options model for SCIP ingestion.
 """
 
 from __future__ import annotations
 
-from codeintel.build.plugins.ingestion.ast_extract import AstExtractPlugin
-from codeintel.build.plugins.ingestion.config_plugin import ConfigIngestPlugin
-from codeintel.build.plugins.ingestion.coverage_plugin import CoverageIngestPlugin
-from codeintel.build.plugins.ingestion.cst_extract import CstExtractPlugin
-from codeintel.build.plugins.ingestion.docstrings_plugin import DocstringsIngestPlugin
-from codeintel.build.plugins.ingestion.repo_scan import RepoScanPlugin
-from codeintel.build.plugins.ingestion.scip_plugin import ScipIngestPlugin
-from codeintel.build.plugins.ingestion.tests_plugin import TestsIngestPlugin
-from codeintel.build.plugins.ingestion.typing_plugin import TypingIngestPlugin
+from codeintel.build.plugins.ingestion.helpers import (
+    build_scan_profile,
+    filter_modules,
+    get_module_paths,
+    paths_to_modules,
+)
+from codeintel.build.plugins.ingestion.modules_options import ModuleIngestOptions
+from codeintel.build.plugins.ingestion.scip_options import ScipIngestOptions
 
 __all__ = [
-    "AstExtractPlugin",
-    "ConfigIngestPlugin",
-    "CoverageIngestPlugin",
-    "CstExtractPlugin",
-    "DocstringsIngestPlugin",
-    "RepoScanPlugin",
-    "ScipIngestPlugin",
-    "TestsIngestPlugin",
-    "TypingIngestPlugin",
+    "ModuleIngestOptions",
+    "ScipIngestOptions",
+    "build_scan_profile",
+    "filter_modules",
+    "get_module_paths",
+    "paths_to_modules",
 ]

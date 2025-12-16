@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.helpers.json import decode_json_dict, encode_json_compact
 from codeintel.storage.helpers.time import utc_now
 
@@ -206,7 +205,7 @@ class AssetTracking:
         """
         self._gateway = gateway
         self._con = gateway.con
-        self._backend = DuckDBPolicyBackend(gateway)
+        self._backend = gateway.policy
 
     def record_asset(self, record: AssetRecord) -> None:
         """Record or update an asset in the catalog.

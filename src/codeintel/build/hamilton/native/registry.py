@@ -98,6 +98,8 @@ def is_native_target(target_name: str) -> bool:
     >>> is_native_target("risk_factors")
     True
     >>> is_native_target("modules")
+    True
+    >>> is_native_target("goids")
     False
     """
     return get_unified_registry().is_native_target(target_name)

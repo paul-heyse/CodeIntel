@@ -45,7 +45,7 @@ from sqlglot import parse_one
 
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
+from codeintel.storage.views.ibis_registry import VIEW_BUILDERS, ensure_view_builders_registered
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -896,9 +896,11 @@ class DuckDBPolicyBackend:
             creation after logging. When False, exceptions are logged
             but execution continues.
         """
+        ensure_view_builders_registered()
         ibis_gateway = self.ibis
 
-        for view_name, builder in VIEW_BUILDERS.items():
+        for view_name in sorted(VIEW_BUILDERS):
+            builder = VIEW_BUILDERS[view_name]
             try:
                 expr = builder(ibis_gateway)
 

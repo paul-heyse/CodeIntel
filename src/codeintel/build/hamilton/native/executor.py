@@ -6,6 +6,7 @@ patterns found across native Hamilton targets:
 - Skip check logic
 - Timing and error handling
 - Record creation and manifest persistence
+- Async execution support
 
 Example
 -------
@@ -13,6 +14,13 @@ Example
 >>> if executor.should_skip():
 ...     return executor.skip()
 >>> return executor.execute(lambda: compute_and_materialize())
+
+For async targets:
+>>> async def async_example():
+...     executor = NativeTargetExecutor.for_target(env, graph, "scip")
+...     if executor.should_skip():
+...         return executor.skip()
+...     return await executor.execute_async(async_compute)
 """
 
 from __future__ import annotations
@@ -33,11 +41,22 @@ from codeintel.build.hashing import compute_input_hash
 from codeintel.core.errors import CodeIntelError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
     from codeintel.build.targets import OutputTarget, TargetGraph
+
+
+# Exceptions that should be caught and converted to failed records
+_RECOVERABLE_EXCEPTIONS = (
+    ValueError,
+    TypeError,
+    KeyError,
+    RuntimeError,
+    OSError,
+    CodeIntelError,
+)
 
 
 @dataclass
@@ -45,7 +64,8 @@ class NativeTargetExecutor:
     """Handle skip-check, timing, and record creation for native targets.
 
     This class consolidates the common patterns found across native Hamilton
-    targets, reducing boilerplate and ensuring consistent behavior.
+    targets, reducing boilerplate and ensuring consistent behavior. It supports
+    both synchronous and asynchronous execution patterns.
 
     Attributes
     ----------
@@ -60,10 +80,20 @@ class NativeTargetExecutor:
 
     Examples
     --------
+    Synchronous execution:
+
     >>> executor = NativeTargetExecutor.for_target(env, graph, "risk_factors")
     >>> if executor.should_skip():
     ...     return executor.skip()
     >>> return executor.execute(lambda: {"analytics.table": 100})
+
+    Asynchronous execution:
+
+    >>> async def run_async():
+    ...     executor = NativeTargetExecutor.for_target(env, graph, "scip")
+    ...     if executor.should_skip():
+    ...         return executor.skip()
+    ...     return await executor.execute_async(async_index_fn)
     """
 
     env: BuildEnv
@@ -201,66 +231,81 @@ class NativeTargetExecutor:
         ...     ref = materialize_table(ctx, "analytics.table", expr)
         ...     return {ref.table_key: ref.row_count}
         >>> return executor.execute(compute)
+
+        Raises
+        ------
+        KeyboardInterrupt
+            Propagated if execution is interrupted by the user.
+        SystemExit
+            Propagated if the interpreter is exiting.
+        GeneratorExit
+            Propagated if a generator close is requested.
         """
         start = time.perf_counter()
         try:
             row_counts = compute_fn()
-        except (
-            ValueError,
-            TypeError,
-            KeyError,
-            RuntimeError,
-            OSError,
-            CodeIntelError,
-        ) as exc:
-            duration_ms = (time.perf_counter() - start) * 1000
-            run = NativeRunInfo(
-                input_hash=self.input_hash,
-                options_hash=self.options_hash,
-                duration_ms=duration_ms,
-            )
-            return create_run_record(
-                self.target,
-                "failed",
-                self.input_hash,
-                inputs=RunRecordInputs(run=run, error=exc),
-            )
-        except BaseException as exc:
-            # Re-raise system exceptions (KeyboardInterrupt, SystemExit, GeneratorExit)
-            if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
-                raise
-            duration_ms = (time.perf_counter() - start) * 1000
-            run = NativeRunInfo(
-                input_hash=self.input_hash,
-                options_hash=self.options_hash,
-                duration_ms=duration_ms,
-            )
-            return create_run_record(
-                self.target,
-                "failed",
-                self.input_hash,
-                inputs=RunRecordInputs(
-                    run=run,
-                    error=exc if isinstance(exc, Exception) else RuntimeError(str(exc)),
-                ),
-            )
+        except _RECOVERABLE_EXCEPTIONS as exc:
+            return self._create_failed_record(start, exc)
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
+            raise
+        except Exception as exc:
+            return self._create_failed_record(start, exc)
 
-        duration_ms = (time.perf_counter() - start) * 1000
-        run = NativeRunInfo(
-            input_hash=self.input_hash,
-            options_hash=self.options_hash,
-            duration_ms=duration_ms,
-            row_counts=row_counts,
-        )
-        record = create_run_record(
-            self.target,
-            "succeeded",
-            self.input_hash,
-            inputs=RunRecordInputs(env=self.env, run=run),
-        )
+        return self._create_success_record(start, row_counts)
 
-        save_manifest(self.env, record)
-        return record
+    async def execute_async(
+        self,
+        compute_fn: Callable[[], Awaitable[dict[str, int]]],
+    ) -> TargetRunRecord:
+        """Execute async compute function with timing and error handling.
+
+        This method is the async equivalent of execute(). Use this for targets
+        that need to perform I/O operations that benefit from async execution,
+        such as calling external tools (SCIP, Pyright) or network operations.
+
+        Hamilton supports async execution via AsyncGraphAdapter. This method
+        allows native targets to leverage async patterns while maintaining
+        the same skip-check, timing, and manifest persistence behavior.
+
+        Parameters
+        ----------
+        compute_fn
+            Async function that performs the computation and returns row counts.
+            Should return a dict mapping table keys to row counts.
+
+        Returns
+        -------
+        TargetRunRecord
+            Record with status="succeeded" or status="failed".
+
+        Examples
+        --------
+        >>> async def async_compute() -> dict[str, int]:
+        ...     result = await scip_indexer.index(repo_root)
+        ...     ref = persist_result(result)
+        ...     return {ref.table_key: ref.row_count}
+        >>> return await executor.execute_async(async_compute)
+
+        Raises
+        ------
+        KeyboardInterrupt
+            Propagated if execution is interrupted by the user.
+        SystemExit
+            Propagated if the interpreter is exiting.
+        GeneratorExit
+            Propagated if a generator close is requested.
+        """
+        start = time.perf_counter()
+        try:
+            row_counts = await compute_fn()
+        except _RECOVERABLE_EXCEPTIONS as exc:
+            return self._create_failed_record(start, exc)
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
+            raise
+        except Exception as exc:
+            return self._create_failed_record(start, exc)
+
+        return self._create_success_record(start, row_counts)
 
     def fail(self, error: Exception) -> TargetRunRecord:
         """Create a failed record for an error that occurred before execution.
@@ -296,6 +341,74 @@ class NativeTargetExecutor:
             self.input_hash,
             inputs=RunRecordInputs(run=run, error=error),
         )
+
+    def _create_failed_record(
+        self,
+        start: float,
+        exc: Exception,
+    ) -> TargetRunRecord:
+        """Create a failed record from an exception.
+
+        Parameters
+        ----------
+        start
+            Start time from time.perf_counter().
+        exc
+            The exception that caused the failure.
+
+        Returns
+        -------
+        TargetRunRecord
+            Record with status="failed".
+        """
+        duration_ms = (time.perf_counter() - start) * 1000
+        run = NativeRunInfo(
+            input_hash=self.input_hash,
+            options_hash=self.options_hash,
+            duration_ms=duration_ms,
+        )
+        return create_run_record(
+            self.target,
+            "failed",
+            self.input_hash,
+            inputs=RunRecordInputs(run=run, error=exc),
+        )
+
+    def _create_success_record(
+        self,
+        start: float,
+        row_counts: dict[str, int],
+    ) -> TargetRunRecord:
+        """Create a success record and persist manifest.
+
+        Parameters
+        ----------
+        start
+            Start time from time.perf_counter().
+        row_counts
+            Dict mapping table keys to row counts.
+
+        Returns
+        -------
+        TargetRunRecord
+            Record with status="succeeded".
+        """
+        duration_ms = (time.perf_counter() - start) * 1000
+        run = NativeRunInfo(
+            input_hash=self.input_hash,
+            options_hash=self.options_hash,
+            duration_ms=duration_ms,
+            row_counts=row_counts,
+        )
+        record = create_run_record(
+            self.target,
+            "succeeded",
+            self.input_hash,
+            inputs=RunRecordInputs(env=self.env, run=run),
+        )
+
+        save_manifest(self.env, record)
+        return record
 
 
 __all__ = [

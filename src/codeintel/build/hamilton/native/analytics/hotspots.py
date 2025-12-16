@@ -2,6 +2,9 @@
 
 This module implements the hotspots analytics target as a pure Hamilton DAG,
 computing file hotspot metrics based on code churn and complexity analysis.
+
+Includes Hamilton-native validation via @check_output_custom (Phase 1.5 POC)
+and schema documentation via @schema.output.
 """
 
 from __future__ import annotations
@@ -11,12 +14,13 @@ from typing import Any, cast
 
 import ibis
 import ibis.expr.types as ir
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import check_output_custom, schema, tag
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
+from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
@@ -25,6 +29,29 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
 @tag(domain="analytics", target="hotspots", node_type="compute")
+@check_output_custom(
+    *build_table_contract(
+        required_columns=[
+            "rel_path",
+            "commit_count",
+            "author_count",
+            "lines_added",
+            "lines_deleted",
+            "complexity",
+            "score",
+        ],
+        no_nulls=["rel_path"],
+    )
+)
+@schema.output(
+    ("rel_path", "string"),
+    ("commit_count", "int"),
+    ("author_count", "int"),
+    ("lines_added", "int"),
+    ("lines_deleted", "int"),
+    ("complexity", "float"),
+    ("score", "float"),
+)
 def t__hotspots__compute(
     env: BuildEnv,
     q__core__modules: ir.Table,

@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "abf622f793922b2d1bc1158f7bfd2e7332d7d3fe573b09dfd2c61061a2cb4a15",
+  "buildspec_hash": "57fe0b85d39cc072ee92f861b8c59f9a631c0ac54326d1d2372f9c478cc257e9",
   "datasets": [
     {
       "schema_hash": "4fea3b6c5a5a27bc4a5461a3f75e27173887f4605159c550eac43dd3e5d0d0cb",
@@ -294,7 +294,7 @@
         "modules"
       ],
       "domain": "ingestion",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "ast",
       "outputs": [
         "core.ast_metrics",
@@ -388,11 +388,9 @@
     },
     {
       "artifacts": [],
-      "deps": [
-        "modules"
-      ],
+      "deps": [],
       "domain": "ingestion",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "config_ingest",
       "outputs": [
         "analytics.config_values"
@@ -414,7 +412,7 @@
         "modules"
       ],
       "domain": "ingestion",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "coverage_ingest",
       "outputs": [
         "analytics.coverage_lines"
@@ -439,7 +437,7 @@
         "modules"
       ],
       "domain": "ingestion",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "cst",
       "outputs": [
         "core.cst_nodes"
@@ -480,10 +478,10 @@
     {
       "artifacts": [],
       "deps": [
-        "ast"
+        "modules"
       ],
       "domain": "ingestion",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "docstrings",
       "outputs": [
         "core.docstrings"
@@ -688,7 +686,7 @@
       "artifacts": [],
       "deps": [],
       "domain": "ingestion",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "modules",
       "outputs": [
         "core.file_state",
@@ -856,7 +854,7 @@
         "modules"
       ],
       "domain": "ingestion",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "tests_ingest",
       "outputs": [
         "analytics.test_catalog"

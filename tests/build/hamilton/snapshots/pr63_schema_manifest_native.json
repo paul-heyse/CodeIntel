@@ -419,6 +419,69 @@
       "columns": [
         {
           "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "config_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "format",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "key",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "reference_paths",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "reference_modules",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "reference_count",
+          "nullable": false,
+          "type": "INTEGER"
+        }
+      ],
+      "description": "Flattened config key/value paths",
+      "indexes": [],
+      "name": "config_values",
+      "primary_key": [
+        "repo",
+        "commit",
+        "config_path",
+        "key"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.config_values"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
           "name": "function_goid_h128",
           "nullable": true,
           "type": "DECIMAL(38,0)"
@@ -528,6 +591,87 @@
       "primary_key": [],
       "schema": "analytics",
       "table_key": "analytics.coverage_functions"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "line",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "is_executable",
+          "nullable": false,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "is_covered",
+          "nullable": false,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "hits",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "context_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Line-level coverage facts",
+      "indexes": [
+        {
+          "columns": [
+            "repo",
+            "commit",
+            "rel_path"
+          ],
+          "name": "idx_analytics_cov_lines_repo_path",
+          "unique": false
+        },
+        {
+          "columns": [
+            "line"
+          ],
+          "name": "idx_analytics_cov_lines_line",
+          "unique": false
+        }
+      ],
+      "name": "coverage_lines",
+      "primary_key": [],
+      "schema": "analytics",
+      "table_key": "analytics.coverage_lines"
     },
     {
       "columns": [
@@ -2298,6 +2442,110 @@
       "columns": [
         {
           "description": null,
+          "name": "test_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "test_goid_h128",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "urn",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "kind",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "status",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "duration_ms",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "markers",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "parametrized",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "flaky",
+          "nullable": true,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": true,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Pytest test catalog",
+      "indexes": [
+        {
+          "columns": [
+            "test_id"
+          ],
+          "name": "idx_analytics_test_catalog_id",
+          "unique": true
+        }
+      ],
+      "name": "test_catalog",
+      "primary_key": [
+        "test_id"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.test_catalog"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
           "name": "function_goid_h128",
           "nullable": false,
           "type": "DECIMAL(38,0)"
@@ -2529,6 +2777,513 @@
       ],
       "schema": "analytics",
       "table_key": "analytics.typedness"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "node_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "function_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "class_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "avg_depth",
+          "nullable": false,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "max_depth",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "complexity",
+          "nullable": false,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "generated_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Per-file AST metrics",
+      "indexes": [],
+      "name": "ast_metrics",
+      "primary_key": [
+        "rel_path"
+      ],
+      "schema": "core",
+      "table_key": "core.ast_metrics"
+    },
+    {
+      "columns": [
+        {
+          "description": "Relative path to source file",
+          "name": "path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "node_type",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "lineno",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_lineno",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "decorator_start_line",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "decorator_end_line",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "col_offset",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_col_offset",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "parent_qualname",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "decorators",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "docstring",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "hash",
+          "nullable": false,
+          "type": "VARCHAR"
+        }
+      ],
+      "description": "Flattened AST nodes",
+      "indexes": [],
+      "name": "ast_nodes",
+      "primary_key": [
+        "hash"
+      ],
+      "schema": "core",
+      "table_key": "core.ast_nodes"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "node_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "kind",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "span",
+          "nullable": false,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "text_preview",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "parents",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "qnames",
+          "nullable": true,
+          "type": "JSON"
+        }
+      ],
+      "description": "Concrete syntax tree nodes",
+      "indexes": [],
+      "name": "cst_nodes",
+      "primary_key": [
+        "node_id"
+      ],
+      "schema": "core",
+      "table_key": "core.cst_nodes"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "module",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "kind",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "lineno",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_lineno",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "raw_docstring",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "style",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "short_desc",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "long_desc",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "params",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "returns",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "raises",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "examples",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Structured docstring facts extracted with griffe",
+      "indexes": [],
+      "name": "docstrings",
+      "primary_key": [],
+      "schema": "core",
+      "table_key": "core.docstrings"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "language",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "size_bytes",
+          "nullable": false,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "mtime_ns",
+          "nullable": false,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "content_hash",
+          "nullable": false,
+          "type": "VARCHAR"
+        }
+      ],
+      "description": "Per-commit file digests used for incremental ingestion",
+      "indexes": [
+        {
+          "columns": [
+            "rel_path"
+          ],
+          "name": "idx_core_file_state_path",
+          "unique": false
+        },
+        {
+          "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_core_file_state_repo_commit",
+          "unique": false
+        }
+      ],
+      "name": "file_state",
+      "primary_key": [
+        "repo",
+        "rel_path",
+        "language"
+      ],
+      "schema": "core",
+      "table_key": "core.file_state"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "module",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "language",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "tags",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "owners",
+          "nullable": true,
+          "type": "JSON"
+        }
+      ],
+      "description": "Discovered modules per repo/commit",
+      "indexes": [
+        {
+          "columns": [
+            "path"
+          ],
+          "name": "idx_core_modules_path",
+          "unique": false
+        },
+        {
+          "columns": [
+            "module"
+          ],
+          "name": "idx_core_modules_module",
+          "unique": false
+        }
+      ],
+      "name": "modules",
+      "primary_key": [
+        "module",
+        "path"
+      ],
+      "schema": "core",
+      "table_key": "core.modules"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "modules",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "overlays",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "generated_at",
+          "nullable": true,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Per-commit module manifest and overlays",
+      "indexes": [],
+      "name": "repo_map",
+      "primary_key": [
+        "repo",
+        "commit"
+      ],
+      "schema": "core",
+      "table_key": "core.repo_map"
     },
     {
       "columns": [
