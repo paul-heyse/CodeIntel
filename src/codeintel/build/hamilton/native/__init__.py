@@ -12,6 +12,11 @@ from codeintel.build.hamilton.native.ibis_helpers import (
     filter_tables_for_snapshot,
     select_snapshot_columns,
 )
+from codeintel.build.hamilton.native.loader import (
+    ModuleValidationResult,
+    NativeModuleLoader,
+    get_loader,
+)
 from codeintel.build.hamilton.native.runner import (
     NativeRunInfo,
     create_run_record,
@@ -20,11 +25,14 @@ from codeintel.build.hamilton.native.runner import (
 )
 
 __all__ = [
+    "ModuleValidationResult",
+    "NativeModuleLoader",
     "NativeRunInfo",
     "NativeTargetExecutor",
     "create_run_record",
     "filter_for_snapshot",
     "filter_tables_for_snapshot",
+    "get_loader",
     "save_manifest",
     "select_snapshot_columns",
     "should_skip_native_target",

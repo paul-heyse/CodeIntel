@@ -4,6 +4,9 @@ This module implements SCIP indexing as a native Hamilton pipeline with:
 - tool__scip: Execute scip-python to generate index
 - parse__scip: Parse SCIP index into tables
 - t__scip: Orchestrate execution and return TargetRunRecord
+
+Phase 2: Enhanced with Hamilton-native validation via @check_output_custom
+and @schema.output documentation.
 """
 
 from __future__ import annotations

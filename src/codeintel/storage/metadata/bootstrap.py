@@ -7,17 +7,39 @@ should be expressed via Ibis and/or the policy backend.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 
-from codeintel.build.schemas import get_schema_provider, is_view, iter_contracts
-from codeintel.config.datasets.dataflow import build_contract_dataflow_graph
 from codeintel.core.schemas import schema_hash
+from codeintel.storage.build_bridge import get_schema_provider, is_view, iter_contracts
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from duckdb import DuckDBPyConnection
+
+    from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
+
+
+class _DataflowGraphBuilder(Protocol):
+    def build_contract_dataflow_graph(self) -> tuple[list[DataflowNode], list[DataflowEdge]]: ...
+
+
+def _build_contract_dataflow_graph() -> tuple[list[DataflowNode], list[DataflowEdge]]:
+    """Build contract dataflow nodes/edges with imports wired to avoid cycles.
+
+    Returns
+    -------
+    tuple[list[DataflowNode], list[DataflowEdge]]
+        Nodes and edges derived from static dataset contracts.
+    """
+    get_schema_provider()
+    module = cast(
+        "_DataflowGraphBuilder",
+        importlib.import_module("codeintel.config.datasets.dataflow"),
+    )
+    return module.build_contract_dataflow_graph()
 
 
 def _expected_schema_hash(table_key: str) -> str:
@@ -269,7 +291,7 @@ def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> Non
 
 def sync_dataset_dataflow_graph(con: DuckDBPyConnection) -> None:
     """Refresh dataset-level dataflow graph metadata tables based on static contracts."""
-    nodes, edges = build_contract_dataflow_graph()
+    nodes, edges = _build_contract_dataflow_graph()
 
     con.execute("DELETE FROM metadata.dataset_dataflow_nodes")
     con.execute("DELETE FROM metadata.dataset_dataflow_edges")

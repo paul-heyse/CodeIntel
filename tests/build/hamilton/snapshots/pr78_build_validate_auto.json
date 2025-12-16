@@ -3,7 +3,7 @@
   "mode": "auto",
   "summary": {
     "error_count": 0,
-    "warning_count": 12
+    "warning_count": 14
   },
   "warnings": [
     {
@@ -11,6 +11,12 @@
       "message": "Declared deps drift from Hamilton-derived deps (declared=['ast', 'goids'], derived=[])",
       "severity": "warning",
       "target": "data_models"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['ast'], derived=['modules'])",
+      "severity": "warning",
+      "target": "docstrings"
     },
     {
       "code": "deps_mismatch",
@@ -65,6 +71,12 @@
       "message": "Declared deps drift from Hamilton-derived deps (declared=['import_graph', 'semantic_roles'], derived=['semantic_roles'])",
       "severity": "warning",
       "target": "subsystems"
+    },
+    {
+      "code": "deps_mismatch",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['modules'], derived=[])",
+      "severity": "warning",
+      "target": "config_ingest"
     },
     {
       "code": "deps_mismatch",

@@ -94,10 +94,17 @@ class BuildRunCommand:
         str,
         Parameter(
             name=["--hamilton-mode"],
-            help="Hamilton node mode: generated (default) or auto.",
+            help="Hamilton node mode: generated (default), auto, or native.",
             show_choices=True,
         ),
     ] = "generated"
+    native_domains: Annotated[
+        list[str] | None,
+        Parameter(
+            name=["--native-domains"],
+            help="For native mode, restrict to specific domains (analytics, ingestion, graphs, export).",
+        ),
+    ] = None
     validate_outputs: Annotated[
         bool,
         Parameter(
@@ -127,6 +134,29 @@ class BuildRunCommand:
             name=["--publish-serving-snapshot"],
             help="Publish an immutable serving snapshot (writes current.json and snapshot artifacts).",
             negative=(),
+        ),
+    ] = False
+    parallel_backend: Annotated[
+        str,
+        Parameter(
+            name=["--parallel-backend"],
+            help="Parallel execution backend: sequential (default), threadpool, or auto.",
+            show_choices=True,
+        ),
+    ] = "sequential"
+    max_workers: Annotated[
+        int | None,
+        Parameter(
+            name=["--max-workers"],
+            help="Maximum parallel workers for threadpool backend.",
+        ),
+    ] = None
+    enable_progress: Annotated[
+        bool,
+        Parameter(
+            name=["--progress"],
+            help="Show progress bar during execution.",
+            negative=("--no-progress",),
         ),
     ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
@@ -182,7 +212,7 @@ class BuildValidateCommand:
         str,
         Parameter(
             name=["--hamilton-mode"],
-            help="Hamilton node mode: auto (default) or generated.",
+            help="Hamilton node mode: auto (default), generated, or native.",
             show_choices=True,
         ),
     ] = "auto"

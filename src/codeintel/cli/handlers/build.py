@@ -596,7 +596,7 @@ def _validate_build_run_params(
     if sum(provided) != 1:
         return fail_invalid_target_selection("Provide exactly one of targets, --module, or --all.")
 
-    valid_modes = ("generated", "auto")
+    valid_modes = ("generated", "auto", "native")
     if params.hamilton_mode not in valid_modes:
         return fail_invalid_target_selection(
             f"Invalid hamilton_mode '{params.hamilton_mode}'. Valid: {', '.join(valid_modes)}"

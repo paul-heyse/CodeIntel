@@ -6,6 +6,9 @@ This module implements typing checks as a native Hamilton pipeline with:
 - tool__typing__ruff: Execute ruff for static diagnostics
 - parse__typing: Aggregate results into tables
 - t__typing: Orchestrate execution and return TargetRunRecord
+
+Phase 2: Enhanced with Hamilton-native validation via @check_output_custom
+and @schema.output documentation.
 """
 
 from __future__ import annotations

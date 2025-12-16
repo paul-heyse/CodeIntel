@@ -10,12 +10,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Self
 
-from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.build.hamilton.manifest_hook import (
+from codeintel.build.hamilton.hooks.manifest_hook import (
     SkipCheckRequest,
     TargetRunRecord,
     should_skip,
 )
+from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
 from codeintel.build.manifest import OutputManifest
 

@@ -60,17 +60,6 @@ def _get_module(name: str) -> ModuleType:
     return importlib.import_module(name)
 
 
-def _ingestion_plugins() -> ModuleType:
-    """Get the ingestion plugins module.
-
-    Returns
-    -------
-    ModuleType
-        The codeintel.build.plugins.ingestion module.
-    """
-    return _get_module("codeintel.build.plugins.ingestion")
-
-
 def _analytics_plugins() -> ModuleType:
     """Get the analytics plugins module.
 
@@ -146,34 +135,51 @@ def register_ingestion_targets(registry: UnifiedRegistry) -> None:
 
     Ingestion targets parse and extract data from source repositories.
 
+    Phase 2: All ingestion targets migrated to native Hamilton modules.
+
     Parameters
     ----------
     registry
         The unified registry to populate.
     """
     # Get modules lazily
-    plugins = _ingestion_plugins()
     targets = _build_registry()
 
-    # Plugin-based targets
-    registry.register(targets.MODULES_TARGET, plugin=plugins.RepoScanPlugin)
-    registry.register(targets.AST_TARGET, plugin=plugins.AstExtractPlugin)
-    registry.register(targets.CST_TARGET, plugin=plugins.CstExtractPlugin)
-    registry.register(targets.COVERAGE_INGEST_TARGET, plugin=plugins.CoverageIngestPlugin)
-    registry.register(targets.TESTS_INGEST_TARGET, plugin=plugins.TestsIngestPlugin)
-    registry.register(targets.DOCSTRINGS_TARGET, plugin=plugins.DocstringsIngestPlugin)
-    registry.register(targets.CONFIG_INGEST_TARGET, plugin=plugins.ConfigIngestPlugin)
-
-    # Native targets (migrated to Hamilton pipelines)
-    # These have both plugin fallback and native implementation
+    # Native targets (migrated to Hamilton pipelines in Phase 2)
+    registry.register(
+        targets.MODULES_TARGET,
+        native_module="codeintel.build.hamilton.native.ingestion.modules",
+    )
+    registry.register(
+        targets.AST_TARGET,
+        native_module="codeintel.build.hamilton.native.ingestion.ast",
+    )
+    registry.register(
+        targets.CST_TARGET,
+        native_module="codeintel.build.hamilton.native.ingestion.cst",
+    )
+    registry.register(
+        targets.COVERAGE_INGEST_TARGET,
+        native_module="codeintel.build.hamilton.native.ingestion.coverage",
+    )
+    registry.register(
+        targets.TESTS_INGEST_TARGET,
+        native_module="codeintel.build.hamilton.native.ingestion.tests",
+    )
+    registry.register(
+        targets.DOCSTRINGS_TARGET,
+        native_module="codeintel.build.hamilton.native.ingestion.docstrings",
+    )
+    registry.register(
+        targets.CONFIG_INGEST_TARGET,
+        native_module="codeintel.build.hamilton.native.ingestion.config",
+    )
     registry.register(
         targets.SCIP_TARGET,
-        plugin=plugins.ScipIngestPlugin,
         native_module="codeintel.build.hamilton.native.ingestion.scip",
     )
     registry.register(
         targets.TYPING_TARGET,
-        plugin=plugins.TypingIngestPlugin,
         native_module="codeintel.build.hamilton.native.ingestion.typing",
     )
 

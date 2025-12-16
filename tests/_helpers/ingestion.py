@@ -11,8 +11,7 @@ from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.plugins.ingestion.helpers import get_module_paths, paths_to_modules
-from codeintel.build.plugins.ingestion.repo_scan import RepoScanPlugin
-from codeintel.build.plugins.ingestion.tests_plugin import TestsIngestPlugin
+from codeintel.build.plugins.ingestion.stubs import RepoScanPlugin, TestsIngestPlugin
 from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget
 from codeintel.config.models import ToolsConfig

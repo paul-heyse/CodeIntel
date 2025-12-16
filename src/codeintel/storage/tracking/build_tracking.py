@@ -12,7 +12,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.helpers.json import (
     decode_json_list,
     deserialize_str_tuple,
@@ -127,7 +126,7 @@ class BuildTracking:
         """
         self._gateway = gateway
         self._con = gateway.con
-        self._backend = DuckDBPolicyBackend(gateway)
+        self._backend = gateway.policy
 
     def save_manifest(self, manifest: OutputManifest) -> None:
         """Save or update an output manifest.

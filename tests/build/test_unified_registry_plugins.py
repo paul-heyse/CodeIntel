@@ -9,5 +9,6 @@ from tests._helpers.assertions import expect_true
 def test_unified_registry_instantiates_plugins() -> None:
     """UnifiedRegistry should instantiate plugin instances for plugin targets."""
     reg = get_unified_registry()
-    plugin = reg.instantiate_plugin("modules")
+    # Use a target that still has a plugin (not migrated to native-only)
+    plugin = reg.instantiate_plugin("function_metrics")
     expect_true(hasattr(plugin, "execute"), message="Plugin should expose execute()")

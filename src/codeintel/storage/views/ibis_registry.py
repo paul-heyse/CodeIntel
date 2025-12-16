@@ -22,6 +22,8 @@ Example
 
 from __future__ import annotations
 
+import importlib
+from functools import cache
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -34,6 +36,7 @@ __all__ = [
     "VIEW_BUILDERS",
     "IbisViewGateway",
     "ViewBuilder",
+    "ensure_view_builders_registered",
     "get_registered_views",
     "register_view",
 ]
@@ -76,6 +79,15 @@ class ViewBuilder(Protocol):
 
 
 VIEW_BUILDERS: dict[str, ViewBuilder] = {}
+
+_VIEW_REGISTRATION_MODULES = ("codeintel.storage.views.ibis_views",)
+
+
+@cache
+def ensure_view_builders_registered() -> None:
+    """Ensure all modules that register views have been imported."""
+    for module_name in sorted(_VIEW_REGISTRATION_MODULES):
+        importlib.import_module(module_name)
 
 
 def register_view(table_key: str) -> Callable[[ViewBuilder], ViewBuilder]:

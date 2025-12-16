@@ -4,6 +4,8 @@ This module demonstrates Phase 3 native execution with:
 - Pure Ibis compute node (no side effects)
 - Explicit materialize node (side-effect boundary)
 - TargetRunRecord creation with proper dataset refs
+- Hamilton-native validation via @check_output_custom (Phase 1.5 POC)
+- Schema documentation via @schema.output
 """
 
 from __future__ import annotations
@@ -12,12 +14,16 @@ from typing import Any, cast
 
 import ibis
 import ibis.expr.types as ir
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import check_output_custom, schema, tag
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
+from codeintel.build.hamilton.validators import (
+    build_enum_column_contract,
+    build_table_contract,
+)
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import ge, gt
 
@@ -33,6 +39,37 @@ RISK_LEVEL_MEDIUM_THRESHOLD = 3
 
 
 @tag(domain="analytics", target="risk_factors", node_type="compute")
+@check_output_custom(
+    *build_table_contract(
+        required_columns=[
+            "function_goid_h128",
+            "repo",
+            "commit",
+            "risk_score",
+            "risk_level",
+            "cyclomatic_complexity",
+            "fan_in_count",
+            "fan_out_count",
+            "has_tests",
+        ],
+        no_nulls=["function_goid_h128", "repo", "commit"],
+    ),
+    *build_enum_column_contract(
+        column="risk_level",
+        allowed_values={"high", "medium", "low"},
+    ),
+)
+@schema.output(
+    ("function_goid_h128", "string"),
+    ("repo", "string"),
+    ("commit", "string"),
+    ("risk_score", "int"),
+    ("risk_level", "string"),
+    ("cyclomatic_complexity", "int"),
+    ("fan_in_count", "int"),
+    ("fan_out_count", "int"),
+    ("has_tests", "bool"),
+)
 def t__risk_factors__compute(
     q__analytics__function_metrics: ir.Table,
     q__graph__call_graph_edges: ir.Table,
