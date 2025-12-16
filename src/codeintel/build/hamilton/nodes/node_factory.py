@@ -29,14 +29,7 @@ from hamilton.function_modifiers import tag
 
 from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
-from codeintel.build.hamilton.io.dataset_ref import (
-    DatasetRef,
-    refs_from_target_result,
-    refs_to_tuple,
-)
-from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df, load_dataset_ibis
-from codeintel.build.hamilton.manifest_hook import (
+from codeintel.build.hamilton.hooks.manifest_hook import (
     ManifestSaveRequest,
     SkipCheckRequest,
     TargetRunRecord,
@@ -45,6 +38,13 @@ from codeintel.build.hamilton.manifest_hook import (
     save_manifest,
     should_skip,
 )
+from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
+from codeintel.build.hamilton.io.dataset_ref import (
+    DatasetRef,
+    refs_from_target_result,
+    refs_to_tuple,
+)
+from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df, load_dataset_ibis
 from codeintel.build.hamilton.metadata_bridge import from_target
 from codeintel.build.hamilton.naming import (
     artifact_node,

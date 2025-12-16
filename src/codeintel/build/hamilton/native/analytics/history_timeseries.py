@@ -23,7 +23,7 @@ from codeintel.analytics.history.history_timeseries import (
     build_history_timeseries_rows,
 )
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import (
     MaterializationContext,

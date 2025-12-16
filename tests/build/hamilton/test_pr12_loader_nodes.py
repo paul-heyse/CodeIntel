@@ -11,7 +11,7 @@ import importlib.util
 import pytest
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.naming import dataframe_node, query_node
 from codeintel.build.hamilton.nodes.node_factory import (
     GenerationOptions,

@@ -32,9 +32,9 @@ if TYPE_CHECKING:
         FingerprintPolicy,
     )
     from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
     from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
     from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.targets import TargetGraph
     from codeintel.core.schemas.provider import SchemaProvider
 

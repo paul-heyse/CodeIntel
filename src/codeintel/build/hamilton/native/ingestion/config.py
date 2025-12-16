@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter

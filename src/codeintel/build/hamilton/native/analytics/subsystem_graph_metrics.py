@@ -18,7 +18,7 @@ from codeintel.analytics.graphs.subsystem_graph_metrics import (
     compute_subsystem_graph_metrics,
 )
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime

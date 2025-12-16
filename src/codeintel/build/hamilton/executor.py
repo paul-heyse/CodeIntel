@@ -29,9 +29,9 @@ from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.contracts.enforcement_hook import ContractEnforcementHook
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.telemetry_hook import NodeTelemetryHook
 from codeintel.build.hamilton.introspect import target_graph_from_hamilton
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.telemetry_hook import NodeTelemetryHook
 from codeintel.build.manifest import BuildRunRecord
 from codeintel.build.targets import TargetGraph
 from codeintel.build.unified_registry import get_unified_registry

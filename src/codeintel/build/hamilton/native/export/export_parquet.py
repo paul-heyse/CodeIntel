@@ -15,7 +15,7 @@ import ibis.expr.types as ir
 from hamilton.function_modifiers import check_output_custom, schema, tag
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.artifact_materializer import (
     ArtifactMaterializationContext,
     ArtifactMaterializationSpec,

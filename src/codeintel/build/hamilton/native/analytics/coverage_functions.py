@@ -18,7 +18,7 @@ from hamilton.function_modifiers import check_output_custom, tag
 
 from codeintel.analytics.compute.coverage.compute import build_coverage_functions_expr
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
 from codeintel.build.hamilton.validators import build_table_contract

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import SkipCheckRequest, should_skip
+from codeintel.build.hamilton.hooks.manifest_hook import SkipCheckRequest, should_skip
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.manifest import OutputManifest

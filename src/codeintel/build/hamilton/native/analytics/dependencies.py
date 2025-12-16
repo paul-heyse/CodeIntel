@@ -34,7 +34,7 @@ from codeintel.analytics.dependencies.core import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import (
     MaterializationContext,
