@@ -28,7 +28,7 @@ import pandas as pd
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.contracts.pandera_hook import get_pandera_schema
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.storage.tracking.asset_tracking import AssetRecord
+from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -212,16 +212,13 @@ def materialize_table(
     owner_target = ctx.owner_target
     input_hash = ctx.input_hash
 
-    gateway.policy.delete_for_snapshot(
-        table_key,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
+    warehouse = Warehouse(gateway)
 
     active_schema_resolver = schema_resolver or get_pandera_schema
     schema = active_schema_resolver(table_key) if validate else None
 
     if schema is not None:
+        warehouse.delete_for_snapshot(table_key, snapshot=snapshot)
         df = pd.DataFrame(expr.execute())
         try:
             validated = schema.validate(df, lazy=False)
@@ -229,37 +226,44 @@ def materialize_table(
             msg = f"Schema validation failed for {table_key}: {exc}"
             raise ValueError(msg) from exc
 
-        gateway.ibis.write(table_key, validated)
-        row_count = len(validated)
-    else:
-        count_value = expr.count().execute()
-        if isinstance(count_value, pd.DataFrame):
-            row_count = int(count_value.iloc[0, 0])
-        elif isinstance(count_value, pd.Series):
-            row_count = int(count_value.iloc[0])
-        else:
-            row_count = int(count_value)
-        gateway.ibis.write(table_key, expr)
-
-    # Record in asset catalog if owner_target provided
-    if owner_target is not None:
-        gateway.assets.record_asset(
-            AssetRecord(
-                asset_key=table_key,
-                asset_type="table",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
+        result = warehouse.materialize_dataframe(
+            table_key,
+            validated,
+            options=MaterializeOptions(
+                snapshot=snapshot,
+                mode="append",
                 owner_target=owner_target,
-                row_count=row_count,
                 input_hash=input_hash,
-            )
+            ),
         )
+        row_count = result.rows_written or 0
+    else:
+        result = warehouse.materialize_table(
+            table_key,
+            expr,
+            options=MaterializeOptions(
+                snapshot=snapshot,
+                mode="replace",
+                owner_target=owner_target,
+                input_hash=input_hash,
+            ),
+        )
+        row_count = result.rows_written or 0
+
+    metadata: dict[str, object] = {}
+    if result.schema_hash is not None:
+        metadata["schema_hash"] = result.schema_hash
+    if result.schema_version is not None:
+        metadata["schema_version"] = result.schema_version
+    if result.profiling_artifact is not None:
+        metadata["profiling_artifact"] = result.profiling_artifact
 
     return DatasetRef(
         table_key=table_key,
         repo=snapshot.repo,
         commit=snapshot.commit,
         row_count=row_count,
+        metadata=metadata,
     )
 
 
@@ -366,37 +370,34 @@ def materialize_rows(
     owner_target = ctx.owner_target
     input_hash = ctx.input_hash
 
-    # Delete existing data for this snapshot
-    gateway.policy.delete_for_snapshot(
+    warehouse = Warehouse(gateway)
+    result = warehouse.materialize_rows(
         table_key,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
+        rows,
+        columns=columns,
+        options=MaterializeOptions(
+            snapshot=snapshot,
+            mode="replace",
+            owner_target=owner_target,
+            input_hash=input_hash,
+        ),
     )
+    row_count = result.rows_written or 0
 
-    # Write rows if any exist
-    row_count = len(rows)
-    if row_count > 0:
-        gateway.ibis.write(table_key, rows, columns=list(columns))
-
-    # Record in asset catalog if owner_target provided
-    if owner_target is not None:
-        gateway.assets.record_asset(
-            AssetRecord(
-                asset_key=table_key,
-                asset_type="table",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-                owner_target=owner_target,
-                row_count=row_count,
-                input_hash=input_hash,
-            )
-        )
+    metadata: dict[str, object] = {}
+    if result.schema_hash is not None:
+        metadata["schema_hash"] = result.schema_hash
+    if result.schema_version is not None:
+        metadata["schema_version"] = result.schema_version
+    if result.profiling_artifact is not None:
+        metadata["profiling_artifact"] = result.profiling_artifact
 
     return DatasetRef(
         table_key=table_key,
         repo=snapshot.repo,
         commit=snapshot.commit,
         row_count=row_count,
+        metadata=metadata,
     )
 
 

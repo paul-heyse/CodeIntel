@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from contextlib import AbstractAsyncContextManager
 
     from codeintel.serving.search.models import SearchQueryResponse
-    from codeintel.serving.semantic.models import SemanticQueryResponse
+    from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryResponse
 
 
 class SemanticKernel(Protocol):
@@ -25,6 +25,8 @@ class SemanticKernel(Protocol):
     def describe(self, view_id: str) -> dict[str, object]: ...
 
     def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse: ...
+
+    def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse: ...
 
     def search(self, request: SearchQueryRequest) -> SearchQueryResponse: ...
 
@@ -115,6 +117,33 @@ def build_mcp_app(
             offset=page.get("offset", 0),
         )
         result = kernel.query(request)
+        return result.model_dump(mode="json")
+
+    @mcp.tool()
+    def semantic_explain(
+        view_id: str,
+        filters: list[dict[str, object]] | None = None,
+        select: list[str] | None = None,
+        order_by: list[str] | None = None,
+        pagination: dict[str, int] | None = None,
+    ) -> dict[str, object]:
+        """Return compiled SQL and DuckDB plan for a semantic query.
+
+        Returns
+        -------
+        dict[str, object]
+            Explain response payload.
+        """
+        page = pagination or {}
+        request = SemanticQueryRequest(
+            view_id=view_id,
+            select=select,
+            filters=[FilterSpec.model_validate(f) for f in (filters or [])],
+            order_by=order_by or [],
+            limit=page.get("limit", 200),
+            offset=page.get("offset", 0),
+        )
+        result = kernel.explain(request)
         return result.model_dump(mode="json")
 
     @mcp.tool()

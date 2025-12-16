@@ -17,7 +17,7 @@ import pandas as pd
 from codeintel.build.spec import buildspec_from_json
 from codeintel.serving.search.models import SearchQueryResponse, SearchResult
 from codeintel.serving.semantic.inventory import SchemaInventory
-from codeintel.serving.semantic.models import SemanticQueryResponse
+from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryResponse
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
 from codeintel.serving.semantic.registry import SemanticRegistry
 from codeintel.storage.queries import execution as storage_execution
@@ -361,6 +361,60 @@ class SemanticQueryKernel:
             columns=columns,
             rows=rows,
             truncated=truncated,
+            snapshot={"repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id},
+        )
+
+    def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:
+        """Return compiled SQL and DuckDB EXPLAIN plan for a semantic query.
+
+        Parameters
+        ----------
+        request
+            Query request with filters, selection, and pagination.
+
+        Returns
+        -------
+        SemanticExplainResponse
+            Explain output including compiled SQL and plan text.
+        """
+        registry = self._load_registry()
+        inventory = self._load_inventory()
+        view = registry.by_id(request.view_id)
+
+        allowed_columns = self._resolve_allowed_columns(view=view, inventory=inventory)
+        columns = request.select if request.select else allowed_columns
+
+        effective_limit = request.limit if request.limit else view.defaults.limit
+        effective_order = request.order_by if request.order_by else view.defaults.order_by
+
+        plan = SemanticQueryPlan(
+            table_key=view.table_key,
+            columns=columns,
+            allowed_columns=frozenset(allowed_columns),
+            filters=request.filters,
+            order_by=effective_order,
+            limit=effective_limit,
+            offset=request.offset,
+        )
+
+        with self.db.connect() as (con, pointer):
+            ibis_con = ibis.duckdb.from_connection(con)
+            expr = build_query(ibis_con=ibis_con, plan=plan)
+            compiled = ibis_con.compile(expr)
+
+            raw_rows = storage_execution.execute_sql(con, f"EXPLAIN {compiled}").fetchall()
+            plan_lines: list[str] = []
+            for row in raw_rows:
+                cells = list(row)
+                if not cells:
+                    continue
+                plan_lines.append(str(cells[1] if len(cells) > 1 else cells[0]))
+            plan_text = "\n".join(plan_lines)
+
+        return SemanticExplainResponse(
+            view_id=request.view_id,
+            sql=compiled,
+            plan=plan_text,
             snapshot={"repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id},
         )
 

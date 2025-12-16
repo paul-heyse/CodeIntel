@@ -30,13 +30,16 @@ import logging
 import os
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from hamilton.lifecycle import base as lifecycle_base
 
 from codeintel.build.hamilton import tags as ht
+from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.storage.gateway import open_gateway
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -44,6 +47,9 @@ if TYPE_CHECKING:
     from hamilton.graph import FunctionGraph
     from hamilton.lifecycle import ResultBuilder
     from hamilton.node import Node
+
+    from codeintel.storage.gateway.config import StorageConfig
+    from codeintel.storage.gateway.protocol import StorageGateway
 
 __all__ = [
     "ExecutionBackend",
@@ -215,6 +221,9 @@ class ThreadPoolAdapter(
         self.thread_name_prefix = thread_name_prefix
         self._result_builder = result_builder
         self._write_lock = write_lock or threading.Lock()
+        self._primary_thread_id = threading.get_ident()
+        self._gateways: dict[tuple[int, bool], StorageGateway] = {}
+        self._gateway_lock = threading.Lock()
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix=thread_name_prefix,
@@ -254,15 +263,49 @@ class ThreadPoolAdapter(
             return self._executor.submit(self._execute_with_lock, execute_lifecycle_for_node, kwargs)
         return self._executor.submit(self._execute_without_lock, execute_lifecycle_for_node, kwargs)
 
-    @staticmethod
-    def _execute_without_lock(fn: Callable[..., object], kwargs: dict[str, object]) -> object:
+    def _execute_without_lock(self, fn: Callable[..., object], kwargs: dict[str, object]) -> object:
         resolved = _resolve_futures(kwargs)
+        resolved = self._maybe_inject_thread_gateway(resolved, read_only=True)
         return fn(**resolved)
 
     def _execute_with_lock(self, fn: Callable[..., object], kwargs: dict[str, object]) -> object:
         resolved = _resolve_futures(kwargs)
+        resolved = self._maybe_inject_thread_gateway(resolved, read_only=False)
         with self._write_lock:
             return fn(**resolved)
+
+    def _maybe_inject_thread_gateway(
+        self,
+        resolved: dict[str, object],
+        *,
+        read_only: bool,
+    ) -> dict[str, object]:
+        env = resolved.get("env")
+        if not isinstance(env, BuildEnv):
+            return resolved
+
+        # Main-thread execution can reuse the primary gateway safely.
+        if threading.get_ident() == self._primary_thread_id:
+            return resolved
+
+        thread_gateway = self._get_thread_gateway(env, read_only=read_only)
+        resolved["env"] = replace(env, gateway=thread_gateway)
+        return resolved
+
+    def _get_thread_gateway(self, env: BuildEnv, *, read_only: bool) -> StorageGateway:
+        key = (threading.get_ident(), read_only)
+        with self._gateway_lock:
+            existing = self._gateways.get(key)
+            if existing is not None:
+                return existing
+
+            cfg = _thread_storage_config(env.gateway.config, read_only=read_only)
+            gw = open_gateway(cfg)
+            if env.strict_contracts:
+                gw = cast("StorageGateway", ContractEnforcingStorageGateway(gw))
+
+            self._gateways[key] = gw
+            return gw
 
     def do_build_result(self, *, outputs: object) -> object:
         """Build the final execution result, resolving any futures.
@@ -333,6 +376,14 @@ class ThreadPoolAdapter(
 
         self._closed = True
         self._executor.shutdown(wait=success, cancel_futures=not success)
+        self._close_thread_gateways()
+
+    def _close_thread_gateways(self) -> None:
+        with self._gateway_lock:
+            gateways = list(self._gateways.values())
+            self._gateways.clear()
+        for gw in gateways:
+            gw.close()
 
 
 def create_parallel_adapter(
@@ -432,3 +483,13 @@ def _resolve_futures(kwargs: dict[str, object]) -> dict[str, object]:
             current = current.result()
         resolved[key] = current
     return resolved
+
+
+def _thread_storage_config(config: StorageConfig, *, read_only: bool) -> StorageConfig:
+    return replace(
+        config,
+        read_only=read_only,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+    )

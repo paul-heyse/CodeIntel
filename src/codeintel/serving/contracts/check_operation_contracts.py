@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from codeintel.serving.http.routes import semantic
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.search.models import SearchQueryResponse
-from codeintel.serving.semantic.models import SemanticQueryResponse
+from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryResponse
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -28,6 +28,7 @@ EXPECTED_MCP_TOOL_NAMES: frozenset[str] = frozenset(
         "code_search",
         "semantic_catalog",
         "semantic_describe",
+        "semantic_explain",
         "semantic_query",
         "serving_meta",
     }
@@ -37,6 +38,7 @@ EXPECTED_SEMANTIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
     {
         ("GET", "/semantic/views"),
         ("GET", "/semantic/views/{view_id}"),
+        ("POST", "/semantic/explain"),
         ("POST", "/semantic/query"),
     }
 )
@@ -67,6 +69,15 @@ class _DummyKernel:
             columns=[],
             rows=[],
             truncated=False,
+            snapshot={"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"},
+        )
+
+    @staticmethod
+    def explain(request: SemanticQueryRequest) -> SemanticExplainResponse:
+        return SemanticExplainResponse(
+            view_id=request.view_id,
+            sql="SELECT 1",
+            plan="demo plan",
             snapshot={"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"},
         )
 
@@ -123,22 +134,22 @@ def _check_mcp_tool_schema(tool: object, *, name: str) -> list[str]:
         return issues
 
     required = _get_required_fields(schema)
-    if name in {"semantic_describe", "semantic_query"} and "view_id" not in required:
+    if name in {"semantic_describe", "semantic_explain", "semantic_query"} and "view_id" not in required:
         issues.append(f"MCP tool {name} must require view_id")
     if name in {"semantic_catalog", "serving_meta"} and required:
         issues.append(f"MCP tool {name} must not require arguments, got {sorted(required)}")
     if name == "code_search" and "query" not in required:
         issues.append("MCP tool code_search must require query")
 
-    if name == "semantic_query":
+    if name in {"semantic_explain", "semantic_query"}:
         props = schema.get("properties", {})
         if not isinstance(props, dict):
-            issues.append("MCP tool semantic_query inputSchema.properties must be a dict")
+            issues.append(f"MCP tool {name} inputSchema.properties must be a dict")
             return issues
         expected_props = {"view_id", "filters", "select", "order_by", "pagination"}
         missing_props = expected_props - set(props)
         if missing_props:
-            issues.append(f"MCP tool semantic_query missing properties: {sorted(missing_props)}")
+            issues.append(f"MCP tool {name} missing properties: {sorted(missing_props)}")
 
     return issues
 

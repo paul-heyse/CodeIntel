@@ -143,9 +143,21 @@ class SemanticQueryResponse(BaseModel):
     snapshot: dict[str, str]
 
 
+class SemanticExplainResponse(BaseModel):
+    """Response payload for a semantic query EXPLAIN request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    view_id: str
+    sql: str
+    plan: str
+    snapshot: dict[str, str]
+
+
 __all__ = [
     "FilterSpec",
     "Op",
+    "SemanticExplainResponse",
     "SemanticQueryRequest",
     "SemanticQueryResponse",
     "SemanticViewDefaults",
