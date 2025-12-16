@@ -14,7 +14,7 @@ from __future__ import annotations
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.outputs import expected_artifacts
 from codeintel.build.hamilton.native.runner import (

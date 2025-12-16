@@ -17,7 +17,7 @@ from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import get_module_paths_from_env, paths_to_modules
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import BuildToolAdapter, DuckDBStorageAdapter

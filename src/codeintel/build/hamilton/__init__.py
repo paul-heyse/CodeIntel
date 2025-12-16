@@ -79,8 +79,8 @@ if TYPE_CHECKING:
     )
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
+    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
     from codeintel.build.hamilton.io import DatasetRef, IbisIOConfig, refs_from_target_result
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
     from codeintel.build.hamilton.metadata_bridge import CanonicalPluginMeta
     from codeintel.build.hamilton.naming import dataset_node, target_node, to_node_name
     from codeintel.build.hamilton.observability import (

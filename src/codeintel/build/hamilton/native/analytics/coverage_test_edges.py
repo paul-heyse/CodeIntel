@@ -16,7 +16,7 @@ from hamilton.function_modifiers import tag
 
 from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService

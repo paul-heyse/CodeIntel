@@ -24,8 +24,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
 
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
-    from codeintel.build.hamilton.telemetry_hook import NodeExecutionRecord
+    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+    from codeintel.build.hamilton.hooks.telemetry_hook import NodeExecutionRecord
     from codeintel.build.manifest import BuildStatus
     from codeintel.storage.gateway.protocol import StorageGateway
 

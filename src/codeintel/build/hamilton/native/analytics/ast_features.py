@@ -23,7 +23,7 @@ from codeintel.analytics.utilities.datasets import (
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService

@@ -20,8 +20,8 @@ from codeintel.build.hamilton.io.dataset_ref import refs_from_target_result
 from codeintel.build.hamilton.naming import dataset_node
 
 if TYPE_CHECKING:
+    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
     from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-    from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 
 __all__ = [
     "DATASET_NODES",

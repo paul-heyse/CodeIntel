@@ -31,13 +31,13 @@ from codeintel.build.hamilton.driver_factory import (
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.executor import HamiltonBuildResult
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.io.dataset_ref import (
     DatasetRef,
     refs_from_target_result,
     refs_to_tuple,
 )
 from codeintel.build.hamilton.io.ibis_adapter import IbisIOConfig
-from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.naming import dataset_node, target_node
 from codeintel.build.hamilton.nodes.node_factory import (
     GenerationOptions,
