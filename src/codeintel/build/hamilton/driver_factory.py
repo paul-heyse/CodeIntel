@@ -271,6 +271,10 @@ def target_to_node_name(
     if runtime is not None:
         return runtime.target_to_node.get(target_name)
 
+    # When runtime is None, check if target exists in unified registry
+    unified = get_unified_registry()
+    if unified.get_registration(target_name) is None:
+        return None
     return target_node(target_name)
 
 

@@ -21,8 +21,9 @@
 6. [Migration Guidance](#migration-guidance)
 7. [Risk Assessment](#risk-assessment)
 8. [Verification Checklist](#verification-checklist)
-9. [Appendix: Related Phase 5 PRs](#appendix-related-phase-5-prs)
+9. [Appendix A: Related Phase 5 PRs](#appendix-related-phase-5-prs)
 10. [Appendix B: Build Directory File Assessment](#appendix-b-build-directory-file-assessment)
+11. [Appendix C: Detailed Implementation Record](#appendix-c-detailed-implementation-record-2025-12-15)
 
 ---
 
@@ -756,7 +757,7 @@ Each wave should be:
 
 ---
 
-## Appendix: Related Phase 5 PRs
+## Appendix A: Related Phase 5 PRs
 
 | PR | Description | Enables Deprecation Of |
 |----|-------------|------------------------|
@@ -900,14 +901,12 @@ The following modules had **no imports from production code** and were only used
 ```
 Active Path (Hamilton-first):
   CLI → handlers/build.py → hamilton/planner.py → state_computer.py → session.py → hashing.py
+                          → get_target_graph() → build_driver() → target_graph_from_hamilton()
 
-Legacy Path (Still exists but deprecating):
-  CLI → handlers/build.py → state.py → state_computer.py (delegation)
-                          └→ resolver.py → plan.py (test-only)
-
-Dead End (No src imports):
-  tests/* → plan.py → resolver.py
-  tests/* → contracts_validation.py
+DELETED (Previously Legacy):
+  - plan.py, resolver.py, contracts_validation.py ✅ Deleted
+  - readiness.py ✅ Deleted
+  - build_target_graph(), build_target_graph_from_unified() ✅ Deleted
 ```
 
 ### Migration Priority Matrix
@@ -922,12 +921,380 @@ Dead End (No src imports):
 
 ---
 
-**Document Version**: 1.5
+## Appendix C: Detailed Implementation Record (2025-12-15)
+
+This appendix provides extensive documentation of the deprecation work completed on 2025-12-15, including architectural decisions, code changes, and remaining work.
+
+### C.1 Architecture Overview: Hamilton-First Graph Construction
+
+The fundamental change established in this work is making **Hamilton the single source of truth** for the `TargetGraph`. The architecture now follows this flow:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          HAMILTON-FIRST ARCHITECTURE                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   UnifiedRegistry                    Hamilton DAG                           │
+│   ┌──────────────┐                  ┌──────────────┐                       │
+│   │ Target       │                  │ Native       │                       │
+│   │ Definitions  │──────┬──────────>│ Modules +    │                       │
+│   │ (metadata)   │      │           │ Generated    │                       │
+│   └──────────────┘      │           │ Wrappers     │                       │
+│         │               │           └──────┬───────┘                       │
+│         │               │                  │                               │
+│         │               │                  │ FunctionGraph                 │
+│         │               │                  │ (actual deps)                 │
+│         │               │                  ▼                               │
+│         │               │           ┌──────────────┐                       │
+│         │               │           │ target_graph │                       │
+│         │               └──────────>│ _from_       │                       │
+│         │                           │ hamilton()   │                       │
+│         │                           └──────┬───────┘                       │
+│         │                                  │                               │
+│         │                                  │ Derived                       │
+│         │                                  │ Dependencies                  │
+│         │                                  ▼                               │
+│         │                           ┌──────────────┐                       │
+│         └──────────────────────────>│ TargetGraph  │                       │
+│           Target metadata           │ (unified)    │                       │
+│                                     └──────────────┘                       │
+│                                            │                               │
+│                                            ▼                               │
+│                                     ┌──────────────┐                       │
+│                                     │ get_target_  │                       │
+│                                     │ graph()      │◄─── SINGLE ENTRY      │
+│                                     │ [cached]     │     POINT             │
+│                                     └──────────────┘                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Design Decisions:**
+
+1. **UnifiedRegistry** = "What targets exist" (target definitions, metadata, plugin mappings)
+2. **Hamilton DAG** = "How targets connect" (actual execution dependencies)
+3. **`get_target_graph()`** = Single entry point that combines both
+
+### C.2 Code Deletions
+
+#### C.2.1 Deleted Functions from `registry.py`
+
+**`build_target_graph()` (33 lines)**
+
+```python
+# DELETED - Was at lines 643-674
+def build_target_graph(targets: tuple[OutputTarget, ...] | None = None) -> TargetGraph:
+    """Construct a target graph from static target definitions.
+    
+    .. deprecated::
+        Use `get_target_graph()` instead, which derives dependencies from
+        the Hamilton DAG for correctness.
+    """
+    active_targets = targets or ALL_TARGETS
+    graph = TargetGraph()
+    for target in active_targets:
+        graph.register(target)  # Manual registration!
+    errors = graph.validate()
+    if errors:
+        error_msg = "\n".join(errors)
+        msg = f"Target graph validation failed:\n{error_msg}"
+        raise ValueError(msg)
+    return graph
+```
+
+**Why Deleted:** This function created a TargetGraph by manually registering targets and trusting their static `dependencies` field. This duplicated what Hamilton already knows and was prone to drift.
+
+**`build_target_graph_from_unified()` (15 lines)**
+
+```python
+# DELETED - Was at lines 706-720
+def build_target_graph_from_unified() -> TargetGraph:
+    """Build target graph from the unified registry."""
+    unified = get_unified_registry()
+    return build_target_graph(unified.get_all_targets())
+```
+
+**Why Deleted:** This was a bridge function that called the now-deleted `build_target_graph()`. With `build_target_graph()` gone, this became invalid.
+
+#### C.2.2 Updated `__all__` Export List
+
+**Before:**
+```python
+__all__ = [
+    # Function-based API (preferred)
+    "build_target_graph",
+    "build_target_graph_from_unified",
+    "derive_schemas_from_targets",
+    "get_all_target_table_keys",
+    "get_target_by_table",
+    "get_target_graph",
+    # Legacy: ALL_TARGETS tuple
+    "ALL_TARGETS",
+]
+```
+
+**After:**
+```python
+__all__ = [
+    "ALL_TARGETS",
+    "derive_schemas_from_targets",
+    "get_all_target_table_keys",
+    "get_target_by_table",
+    "get_target_graph",
+]
+```
+
+#### C.2.3 Updated `__init__.py` Exports
+
+Removed `build_target_graph` from:
+- `__all__` list
+- `TYPE_CHECKING` import block
+- `_LAZY_IMPORTS` dictionary
+
+### C.3 Code Modifications
+
+#### C.3.1 `registry.py`: Moved Imports to Top-Level
+
+**Problem:** The original `get_target_graph()` used deferred imports inside the function body:
+
+```python
+@lru_cache(maxsize=1)
+def get_target_graph() -> TargetGraph:
+    # Import here to avoid circular imports at module load time
+    from codeintel.build.hamilton.driver_factory import build_driver
+    from codeintel.build.hamilton.introspect import target_graph_from_hamilton
+    
+    runtime = build_driver(mode="auto")
+    return target_graph_from_hamilton(runtime)
+```
+
+**Issue:** Ruff linter flagged this as `E402` (import not at top-level). Per AGENTS.md, we do not suppress errors.
+
+**Solution:** Verified no circular import exists and moved imports to top-level:
+
+```python
+# At top of file
+from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.introspect import target_graph_from_hamilton
+
+# ...
+
+@lru_cache(maxsize=1)
+def get_target_graph() -> TargetGraph:
+    runtime = build_driver(mode="auto")
+    return target_graph_from_hamilton(runtime)
+```
+
+**Verification:** `uv run python -c "from codeintel.build.registry import get_target_graph"` succeeded without circular import errors.
+
+#### C.3.2 `driver_factory.py`: Fixed `target_to_node_name()` for Unknown Targets
+
+**Problem:** Test `test_target_to_node_name_maps_correctly` expected `target_to_node_name("unknown")` to return `None`, but the function was returning `"t__unknown"`.
+
+**Root Cause:** When `runtime` is `None`, the function called `target_node(target_name)` which blindly creates a node name without checking if the target exists.
+
+**Before:**
+```python
+def target_to_node_name(
+    target_name: str,
+    *,
+    runtime: HamiltonRuntime | None = None,
+) -> str | None:
+    if runtime is not None:
+        return runtime.target_to_node.get(target_name)
+    
+    return target_node(target_name)  # Always returns a value!
+```
+
+**After:**
+```python
+def target_to_node_name(
+    target_name: str,
+    *,
+    runtime: HamiltonRuntime | None = None,
+) -> str | None:
+    if runtime is not None:
+        return runtime.target_to_node.get(target_name)
+    
+    # When runtime is None, check if target exists in unified registry
+    unified = get_unified_registry()
+    if unified.get_registration(target_name) is None:
+        return None
+    return target_node(target_name)
+```
+
+### C.4 Test Updates
+
+#### C.4.1 `test_registry.py`
+
+**Import Change:**
+```python
+# Before
+from codeintel.build.registry import (
+    build_target_graph,
+    get_target_graph,
+)
+
+# After
+from codeintel.build.registry import get_target_graph
+```
+
+**Test Rename:**
+```python
+# Before
+def test_build_target_graph_succeeds() -> None:
+    """Build target graph without validation errors."""
+    graph = build_target_graph()
+    expect_true(len(graph) > 0)
+
+# After
+def test_get_target_graph_succeeds() -> None:
+    """Get target graph succeeds with Hamilton-derived dependencies."""
+    graph = get_target_graph()
+    expect_true(len(graph) > 0)
+```
+
+#### C.4.2 `test_readiness_registry_resources_resolver.py`
+
+**Deleted Test:**
+```python
+# DELETED - tested the now-deleted build_target_graph() function
+def test_registry_build_target_graph_validation_error() -> None:
+    """build_target_graph raises when targets have missing deps."""
+    bad_target = OutputTarget.from_tables(
+        name="bad",
+        module="analytics",
+        plugin="p",
+        tables=("core.bad",),
+        options=TargetOptions(dependencies=("missing_dep",)),
+    )
+
+    with pytest.raises(ValueError, match="missing_dep") as excinfo:
+        build_target_graph((bad_target,))
+
+    expect_in("missing_dep", str(excinfo.value))
+```
+
+**Why Deleted:** This test validated manual dependency tracking in `build_target_graph()`. With Hamilton as the source of truth, dependency validation happens at the DAG level, not via manual `TargetGraph.register()`.
+
+**Updated Imports:**
+```python
+# Before
+from codeintel.build.registry import (
+    build_target_graph,
+    derive_schemas_from_targets,
+    get_target_by_table,
+)
+from codeintel.build.targets import OutputTarget, TargetOptions
+
+# After
+from codeintel.build.registry import (
+    derive_schemas_from_targets,
+    get_target_by_table,
+)
+from codeintel.build.targets import OutputTarget
+```
+
+### C.5 Remaining Work
+
+#### C.5.1 Pre-Existing Test Failures (Deferred)
+
+Two test failures exist that were present before this work and are unrelated to the deprecation:
+
+1. **`test_manifest_for_unknown_target_logged`** - Log message assertion issue
+2. **`test_session_caching_efficiency`** - Cache counting assertion issue
+
+These were explicitly deferred for later resolution.
+
+#### C.5.2 Remaining Legacy Code to Deprecate
+
+| Component | File | Status | Next Steps |
+|-----------|------|--------|------------|
+| `*_TARGET` constants | `registry.py` | Deprecated (not in `__all__`) | Delete when `registrations.py` updated |
+| `ALL_TARGETS` tuple | `registry.py` | Still exported | Replace with `get_target_graph().all_targets` |
+| `TargetGraph.register()` | `targets.py` | Still exists | Used only by Hamilton introspection |
+| Static `dependencies` | `OutputTarget` | Still exists | Used by `registrations.py` |
+| Contract shims | `contracts.py` | Not touched | Wave 1 of future deprecation |
+
+#### C.5.3 `registrations.py` Dependency
+
+The static `*_TARGET` constants in `registry.py` cannot be fully deleted because `registrations.py` imports them:
+
+```python
+# registrations.py
+from codeintel.build.registry import (
+    MODULES_TARGET,
+    AST_TARGET,
+    # ... all 45 constants
+)
+
+def register_all_targets(registry: UnifiedRegistry) -> None:
+    """Register all targets with their plugin implementations."""
+    registry.register(MODULES_TARGET, plugin_class=RepoScanPlugin)
+    registry.register(AST_TARGET, plugin_class=AstExtractPlugin)
+    # ...
+```
+
+**Future Work:** Refactor `registrations.py` to:
+1. Define targets inline, or
+2. Use a declarative registration format that doesn't require importing constants
+
+### C.6 Architectural Invariants Established
+
+After this work, the following invariants hold:
+
+1. **Single Entry Point:** `get_target_graph()` is the ONLY public function for obtaining a `TargetGraph`
+2. **Hamilton Source of Truth:** All dependency information comes from the Hamilton DAG via `target_graph_from_hamilton()`
+3. **Unified Registry for Metadata:** Target existence/metadata comes from `UnifiedRegistry`
+4. **No Manual Graph Construction:** There is no public API to manually construct a `TargetGraph` with arbitrary dependencies
+5. **Clean Imports:** All imports in `registry.py` are at module level (no deferred imports)
+
+### C.7 Test Results Summary
+
+After all changes:
+- **Total tests run:** 210
+- **Passed:** 208
+- **Failed:** 2 (pre-existing, unrelated to deprecation)
+- **Warnings:** 3 (Hamilton internal warnings, benign)
+
+```
+================== 2 failed, 208 passed, 3 warnings in 18.02s ==================
+```
+
+### C.8 Files Modified Summary
+
+| File | Lines Changed | Type of Change |
+|------|--------------|----------------|
+| `src/codeintel/build/registry.py` | -48 | Deleted functions, updated `__all__`, moved imports |
+| `src/codeintel/build/__init__.py` | -3 | Removed `build_target_graph` exports |
+| `src/codeintel/build/hamilton/driver_factory.py` | +4 | Fixed `target_to_node_name()` |
+| `tests/build/test_registry.py` | -3, +3 | Updated imports and test name |
+| `tests/build/test_readiness_registry_resources_resolver.py` | -17 | Deleted test and unused imports |
+
+**Total Lines Removed:** ~65 lines of production code + tests
+
+---
+
+**Document Version**: 1.7
 **Last Updated**: 2025-12-15
 **Author**: CodeIntel Build Team
 
 ### Changelog
 
+- **v1.7** (2025-12-15): Added Appendix C with extensive implementation documentation:
+  - Architecture diagram showing Hamilton-first graph construction flow
+  - Detailed code deletion records with before/after examples
+  - Explanation of all modifications and their rationale
+  - Remaining work itemization with specific next steps
+  - Architectural invariants established by this work
+  - Test results summary
+- **v1.6** (2025-12-15): Completed Wave 5 - registry.py final cleanup:
+  - Deleted `build_target_graph()` function (legacy manual graph construction)
+  - Deleted `build_target_graph_from_unified()` function (bridge function)
+  - `get_target_graph()` is now the ONLY way to get a TargetGraph
+  - Moved imports to top-level (no more deferred imports in function)
+  - Updated tests to use `get_target_graph()` exclusively
+  - Total removed: ~50 lines of legacy code + tests
 - **v1.5** (2025-12-15): Completed Wave 5 - targets.py Hamilton-first documentation:
   - Updated module docstring to explain Hamilton-first architecture
   - Added `target_graph_from_hamilton()` usage example to `TargetGraph` docstring
