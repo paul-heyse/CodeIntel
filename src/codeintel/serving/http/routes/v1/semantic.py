@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import cast
+import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 
 from codeintel.serving.http.dependencies import Kernel, require_api_key
 from codeintel.serving.http.errors import ProblemType, ServingError
+from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
+from codeintel.serving.http.middleware import get_correlation_id
 from codeintel.serving.semantic.models import (
     SemanticCatalogResponse,
     SemanticExplainResponse,
@@ -21,21 +23,54 @@ router = APIRouter(prefix="/semantic", tags=["semantic"], dependencies=[Depends(
 
 
 @router.get("/views", response_model=SemanticCatalogResponse)
-async def list_views(kernel: Kernel) -> SemanticCatalogResponse:
+async def list_views(
+    kernel: Kernel,
+    background: BackgroundTasks,
+    request: Request,
+) -> SemanticCatalogResponse:
     """List available semantic views.
+
+    Parameters
+    ----------
+    kernel
+        Semantic query kernel.
+    background
+        Background task queue.
+    request
+        Current HTTP request.
 
     Returns
     -------
     SemanticCatalogResponse
         Catalog response payload.
     """
-    kernel = cast("Kernel", kernel)
+    correlation_id = get_correlation_id(request)
+    start = time.perf_counter()
     payload = await run_in_threadpool(kernel.catalog)
-    return SemanticCatalogResponse.model_validate(payload)
+    response = SemanticCatalogResponse.model_validate(payload)
+    duration_ms = (time.perf_counter() - start) * 1000
+    background.add_task(
+        log_query_metrics,
+        QueryMetrics(
+            endpoint="/semantic/views",
+            view_id=None,
+            query=None,
+            row_count=len(response.views),
+            truncated=False,
+            duration_ms=duration_ms,
+            correlation_id=correlation_id,
+        ),
+    )
+    return response
 
 
 @router.get("/views/{view_id}", response_model=SemanticViewDescriptionResponse)
-async def describe_view(view_id: str, kernel: Kernel) -> SemanticViewDescriptionResponse:
+async def describe_view(
+    view_id: str,
+    kernel: Kernel,
+    background: BackgroundTasks,
+    request: Request,
+) -> SemanticViewDescriptionResponse:
     """Describe a semantic view.
 
     Parameters
@@ -44,6 +79,10 @@ async def describe_view(view_id: str, kernel: Kernel) -> SemanticViewDescription
         Semantic view identifier.
     kernel
         Semantic query kernel.
+    background
+        Background task queue.
+    request
+        Current HTTP request.
 
     Returns
     -------
@@ -55,10 +94,10 @@ async def describe_view(view_id: str, kernel: Kernel) -> SemanticViewDescription
     ServingError
         When the view ID does not exist.
     """
-    kernel = cast("Kernel", kernel)
+    correlation_id = get_correlation_id(request)
+    start = time.perf_counter()
     try:
         payload = await run_in_threadpool(kernel.describe, view_id)
-        return SemanticViewDescriptionResponse.model_validate(payload)
     except KeyError as exc:
         raise ServingError(
             problem_type=ProblemType.VIEW_NOT_FOUND,
@@ -66,10 +105,30 @@ async def describe_view(view_id: str, kernel: Kernel) -> SemanticViewDescription
             status=404,
             detail=str(exc),
         ) from exc
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        background.add_task(
+            log_query_metrics,
+            QueryMetrics(
+                endpoint=f"/semantic/views/{view_id}",
+                view_id=view_id,
+                query=None,
+                row_count=1,
+                truncated=False,
+                duration_ms=duration_ms,
+                correlation_id=correlation_id,
+            ),
+        )
+    return SemanticViewDescriptionResponse.model_validate(payload)
 
 
 @router.post("/query", response_model=SemanticQueryResponse)
-async def query_view(payload: SemanticQueryRequest, kernel: Kernel) -> SemanticQueryResponse:
+async def query_view(
+    payload: SemanticQueryRequest,
+    kernel: Kernel,
+    background: BackgroundTasks,
+    request: Request,
+) -> SemanticQueryResponse:
     """Execute a semantic query against a view.
 
     Parameters
@@ -78,6 +137,10 @@ async def query_view(payload: SemanticQueryRequest, kernel: Kernel) -> SemanticQ
         Semantic query request.
     kernel
         Semantic query kernel.
+    background
+        Background task queue.
+    request
+        Current HTTP request.
 
     Returns
     -------
@@ -88,13 +151,19 @@ async def query_view(payload: SemanticQueryRequest, kernel: Kernel) -> SemanticQ
     ------
     ServingError
         When the view is missing or the request is invalid.
+    TypeError
+        When FastAPI fails to inject a SemanticQueryRequest.
+    RuntimeError
+        Internal error if response is unexpectedly None (should never happen).
     """
     if not isinstance(payload, SemanticQueryRequest):
         msg = "FastAPI did not provide a SemanticQueryRequest model"
         raise TypeError(msg)
-    kernel = cast("Kernel", kernel)
+    correlation_id = get_correlation_id(request)
+    start = time.perf_counter()
+    response: SemanticQueryResponse | None = None
     try:
-        return await run_in_threadpool(kernel.query, payload)
+        response = await run_in_threadpool(kernel.query, payload)
     except KeyError as exc:
         raise ServingError(
             problem_type=ProblemType.VIEW_NOT_FOUND,
@@ -109,10 +178,34 @@ async def query_view(payload: SemanticQueryRequest, kernel: Kernel) -> SemanticQ
             status=400,
             detail=str(exc),
         ) from exc
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        background.add_task(
+            log_query_metrics,
+            QueryMetrics(
+                endpoint="/semantic/query",
+                view_id=payload.view_id,
+                query=None,
+                row_count=len(response.rows) if response else 0,
+                truncated=response.truncated if response else False,
+                duration_ms=duration_ms,
+                correlation_id=correlation_id,
+            ),
+        )
+    # Unreachable if exception was raised; type narrowing for checker
+    if response is None:  # pragma: no cover
+        msg = "Unexpected state: response not set"
+        raise RuntimeError(msg)
+    return response
 
 
 @router.post("/explain", response_model=SemanticExplainResponse)
-async def explain_view(payload: SemanticQueryRequest, kernel: Kernel) -> SemanticExplainResponse:
+async def explain_view(
+    payload: SemanticQueryRequest,
+    kernel: Kernel,
+    background: BackgroundTasks,
+    request: Request,
+) -> SemanticExplainResponse:
     """Compile a semantic query and return SQL + plan text.
 
     Parameters
@@ -121,6 +214,10 @@ async def explain_view(payload: SemanticQueryRequest, kernel: Kernel) -> Semanti
         Semantic query request.
     kernel
         Semantic query kernel.
+    background
+        Background task queue.
+    request
+        Current HTTP request.
 
     Returns
     -------
@@ -131,13 +228,16 @@ async def explain_view(payload: SemanticQueryRequest, kernel: Kernel) -> Semanti
     ------
     ServingError
         When the view is missing or the request is invalid.
+    TypeError
+        When FastAPI fails to inject a SemanticQueryRequest.
     """
     if not isinstance(payload, SemanticQueryRequest):
         msg = "FastAPI did not provide a SemanticQueryRequest model"
         raise TypeError(msg)
-    kernel = cast("Kernel", kernel)
+    correlation_id = get_correlation_id(request)
+    start = time.perf_counter()
     try:
-        return await run_in_threadpool(kernel.explain, payload)
+        response = await run_in_threadpool(kernel.explain, payload)
     except KeyError as exc:
         raise ServingError(
             problem_type=ProblemType.VIEW_NOT_FOUND,
@@ -152,6 +252,21 @@ async def explain_view(payload: SemanticQueryRequest, kernel: Kernel) -> Semanti
             status=400,
             detail=str(exc),
         ) from exc
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        background.add_task(
+            log_query_metrics,
+            QueryMetrics(
+                endpoint="/semantic/explain",
+                view_id=payload.view_id,
+                query=None,
+                row_count=0,
+                truncated=False,
+                duration_ms=duration_ms,
+                correlation_id=correlation_id,
+            ),
+        )
+    return response
 
 
 __all__ = ["router"]

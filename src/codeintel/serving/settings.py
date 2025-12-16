@@ -47,6 +47,10 @@ class ServingSettings:
         Minimum response size (bytes) to enable gzip compression.
     enable_gzip
         Whether to enable gzip compression middleware.
+    export_max_rows
+        Maximum rows allowed for export endpoints.
+    enable_export_endpoints
+        Whether to enable the /export endpoints.
     """
 
     serve_dir: Path
@@ -64,6 +68,8 @@ class ServingSettings:
     trusted_hosts: tuple[str, ...] = ()
     gzip_minimum_size: int = 500
     enable_gzip: bool = True
+    export_max_rows: int = 100_000
+    enable_export_endpoints: bool = True
 
     @classmethod
     def from_env(cls) -> ServingSettings:
@@ -93,6 +99,8 @@ class ServingSettings:
             trusted_hosts=trusted_hosts,
             gzip_minimum_size=int(os.environ.get("CODEINTEL_SERVE_GZIP_MIN_SIZE", "500")),
             enable_gzip=os.environ.get("CODEINTEL_SERVE_GZIP", "1") == "1",
+            export_max_rows=int(os.environ.get("CODEINTEL_SERVE_EXPORT_MAX_ROWS", "100000")),
+            enable_export_endpoints=os.environ.get("CODEINTEL_SERVE_ENABLE_EXPORT", "1") == "1",
         )
 
 

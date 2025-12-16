@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Op = Literal["eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith"]
+ExportFormat = Literal["json", "ndjson", "parquet", "arrow"]
 
 
 class SemanticViewDefaults(BaseModel):
@@ -216,12 +217,62 @@ class SemanticViewDescriptionResponse(BaseModel):
     snapshot: dict[str, str]
 
 
+class SemanticExportRequest(BaseModel):
+    """Request for streaming/export of semantic view data.
+
+    Supports larger result sets than the standard query endpoint,
+    with multiple output formats including NDJSON, Parquet, and Arrow.
+
+    Parameters
+    ----------
+    view_id
+        Semantic view identifier to export.
+    select
+        Optional column subset (None = all columns).
+    filters
+        Filter conditions.
+    order_by
+        Column ordering (prefix with "-" for DESC).
+    format
+        Export format: json, ndjson, parquet, or arrow.
+    limit
+        Maximum rows to export (higher default than query).
+    offset
+        Rows to skip.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    view_id: str
+    select: list[str] | None = None
+    filters: list[FilterSpec] = Field(default_factory=list)
+    order_by: list[str] = Field(default_factory=list)
+    format: ExportFormat = "ndjson"
+    limit: int = Field(default=100_000, ge=0, le=1_000_000)
+    offset: int = Field(default=0, ge=0)
+
+    @field_validator("order_by")
+    @classmethod
+    def _validate_export_order_by(cls, value: list[str]) -> list[str]:
+        return [item for item in value if item]
+
+    @field_validator("select")
+    @classmethod
+    def _validate_export_select(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        items = [item for item in value if item]
+        return items or None
+
+
 __all__ = [
+    "ExportFormat",
     "FilterSpec",
     "Op",
     "SemanticCatalogResponse",
     "SemanticCatalogView",
     "SemanticExplainResponse",
+    "SemanticExportRequest",
     "SemanticQueryRequest",
     "SemanticQueryResponse",
     "SemanticViewDefaults",

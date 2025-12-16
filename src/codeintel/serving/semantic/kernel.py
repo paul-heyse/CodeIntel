@@ -14,7 +14,10 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from codeintel.serving.search.models import SearchQueryResponse, SearchResult
-from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryResponse
+from codeintel.serving.semantic.models import (
+    SemanticExplainResponse,
+    SemanticQueryResponse,
+)
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
 from codeintel.storage.serving.search_index import fts_index_available
 
@@ -24,13 +27,17 @@ except ImportError:  # pragma: no cover
     pl = None
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
     from codeintel.serving.db.pointer import ServingSnapshotPointer
     from codeintel.serving.search.models import SearchQueryRequest
     from codeintel.serving.semantic.inventory import SchemaInventory
-    from codeintel.serving.semantic.models import SemanticQueryRequest, SemanticViewSpec
+    from codeintel.serving.semantic.models import (
+        SemanticExportRequest,
+        SemanticQueryRequest,
+        SemanticViewSpec,
+    )
     from codeintel.serving.settings import ServingSettings
     from codeintel.storage.warehouse import Warehouse
 
@@ -514,6 +521,55 @@ class SemanticQueryKernel:
             snapshot={"repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id},
             engine=engine,
         )
+
+    def export_rows(self, request: SemanticExportRequest) -> Iterator[dict[str, object]]:
+        """Yield rows for streaming export (memory-efficient).
+
+        Unlike query(), this method yields rows one at a time to support
+        large result sets without buffering everything in memory.
+
+        Parameters
+        ----------
+        request
+            Export request with filters, selection, and pagination.
+
+        Yields
+        ------
+        dict[str, object]
+            Row dictionary for each result row.
+
+        Raises
+        ------
+        KeyError
+            If the view_id does not exist.
+        ValueError
+            If the request specifies unknown columns.
+        """
+        with self.db.connect() as (warehouse, pointer):
+            context = self._snapshot_context(pointer)
+            view = context.registry.by_id(request.view_id)
+            allowed_columns = self._resolve_allowed_columns(
+                view=view, inventory=context.inventory
+            )
+            columns = request.select if request.select else allowed_columns
+
+            plan = SemanticQueryPlan(
+                table_key=view.table_key,
+                columns=columns,
+                allowed_columns=frozenset(allowed_columns),
+                filters=request.filters,
+                order_by=request.order_by,
+                limit=request.limit,
+                offset=request.offset,
+            )
+
+            ibis_con = warehouse.gateway.ibis.con
+            expr = build_query(ibis_con=ibis_con, plan=plan)
+            sql = ibis_con.compile(expr)
+
+            result = warehouse.gateway.policy.execute_sql(sql)
+            for row in result.fetchall():
+                yield dict(zip(columns, row, strict=False))
 
 
 __all__ = ["SemanticQueryKernel"]
