@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+
+from codeintel.core.hashing import file_hash
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -150,11 +151,7 @@ def compute_file_hash(path: Path) -> str:
     str
         Hex digest string.
     """
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return file_hash(path, algorithm="sha256")
 
 
 def write_incremental_marker(

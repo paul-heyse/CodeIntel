@@ -7,60 +7,18 @@ execution telemetry to build.run_nodes for profiling and debugging.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from hamilton.lifecycle import base as lifecycle_base
 
 from codeintel.build.hamilton import tags as ht
+from codeintel.hamilton.records import NodeExecutionRecord
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from hamilton.node import Node
 
     from codeintel.storage.gateway.protocol import StorageGateway
-
-
-@dataclass
-class NodeExecutionRecord:
-    """Record of a single node execution.
-
-    Attributes
-    ----------
-    run_id
-        Parent run identifier.
-    node_name
-        Hamilton node name.
-    target
-        Parent target if applicable.
-    node_type
-        Node type: compute, materialize, tool, etc.
-    status
-        Execution status: succeeded, failed, skipped.
-    started_at
-        When node execution started.
-    completed_at
-        When node execution completed.
-    duration_ms
-        Execution duration in milliseconds.
-    error
-        Error message if execution failed.
-    tags
-        Hamilton tags from node.
-    """
-
-    run_id: str
-    node_name: str
-    target: str | None
-    node_type: str | None
-    status: str
-    started_at: datetime
-    completed_at: datetime | None
-    duration_ms: float | None
-    error: str | None
-    tags: Mapping[str, object] | None
 
 
 class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePostNodeExecute):

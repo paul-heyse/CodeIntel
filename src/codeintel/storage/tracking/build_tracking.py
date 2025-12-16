@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from codeintel.build.manifest import BuildRunRecord, OutputManifest
+from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.storage.helpers.json import (
     decode_json_list,
     deserialize_str_tuple,
@@ -24,9 +24,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
 
-    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-    from codeintel.build.hamilton.hooks.telemetry_hook import NodeExecutionRecord
-    from codeintel.build.manifest import BuildStatus
+    from codeintel.core.build_manifest import BuildStatus
+    from codeintel.hamilton.records import NodeExecutionRecord, TargetRunRecord
     from codeintel.storage.gateway.protocol import StorageGateway
 
 
