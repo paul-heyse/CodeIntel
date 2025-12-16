@@ -66,6 +66,14 @@ from codeintel.core.validation.options import (
     BaseValidationOptions,
     ValidationSeverity,
 )
+from codeintel.core.validation.reporters import (
+    FUNCTION_VALIDATION_COLS,
+    GRAPH_VALIDATION_COLS,
+    BaseValidationReporter,
+    FunctionValidationReporter,
+    GraphValidationReporter,
+    gateway_timestamp,
+)
 from codeintel.core.validation.runner import (
     CheckProtocol,
     CheckResult,
@@ -74,13 +82,19 @@ from codeintel.core.validation.runner import (
 )
 
 __all__ = [
+    "FUNCTION_VALIDATION_COLS",
+    "GRAPH_VALIDATION_COLS",
     "BaseValidationOptions",
+    "BaseValidationReporter",
     "CheckProtocol",
     "CheckResult",
+    "FunctionValidationReporter",
+    "GraphValidationReporter",
     "ValidationReport",
     "ValidationRunner",
     "ValidationSeverity",
     "apply_severity_overrides",
     "cap_findings",
+    "gateway_timestamp",
     "has_error_findings",
 ]

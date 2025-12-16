@@ -11,12 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.parsing.validation import (
-    GRAPH_VALIDATION_COLS,
-    GraphValidationReporter,
-)
 from codeintel.core.validation import (
+    GRAPH_VALIDATION_COLS,
     BaseValidationOptions,
+    GraphValidationReporter,
     ValidationSeverity,
     apply_severity_overrides,
     cap_findings,

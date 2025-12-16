@@ -411,7 +411,9 @@ class SemanticQueryKernel:
             ibis_con = ibis.duckdb.from_connection(con)
             compiled = ibis_con.compile(build_query(ibis_con=ibis_con, plan=plan))
 
-            raw_rows = MinimalStorageGateway(con).policy.execute_sql(f"EXPLAIN {compiled}").fetchall()
+            raw_rows = (
+                MinimalStorageGateway(con).policy.execute_sql(f"EXPLAIN {compiled}").fetchall()
+            )
             plan_text = _format_explain_rows(raw_rows)
 
         return SemanticExplainResponse(

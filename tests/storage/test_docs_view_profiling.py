@@ -90,7 +90,9 @@ def test_profile_views_creates_artifacts(docs_profile_db: Path, tmp_path: Path) 
     expect_true(len(coverage_explain.read_text(encoding="utf-8")) > 0)
 
 
-def test_profile_views_analyze_mode_creates_artifacts(docs_profile_db: Path, tmp_path: Path) -> None:
+def test_profile_views_analyze_mode_creates_artifacts(
+    docs_profile_db: Path, tmp_path: Path
+) -> None:
     """Verify Warehouse.profile_views writes analyze artifacts when enabled."""
     output_dir = tmp_path / "profiling_output"
     gateway = open_gateway(StorageConfig.for_readonly(docs_profile_db))

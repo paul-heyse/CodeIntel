@@ -1140,7 +1140,9 @@ class DuckDBPolicyBackend:
 
         if columns is None:
             table_schema = (
-                self.schema_provider.get_table_schema(table_key) if self.schema_provider is not None else None
+                self.schema_provider.get_table_schema(table_key)
+                if self.schema_provider is not None
+                else None
             )
             if table_schema is not None:
                 columns = [col.name for col in table_schema.columns]
