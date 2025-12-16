@@ -10,6 +10,7 @@ gateways with identical configurations are reused.
 
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -18,6 +19,14 @@ from codeintel.storage.gateway import open_gateway
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageConfig, StorageGateway
+
+
+_THREAD_GUARD_ENV_VAR = "CODEINTEL_GATEWAY_CACHE_THREAD_GUARD"
+
+
+def _thread_guard_enabled() -> bool:
+    value = os.environ.get(_THREAD_GUARD_ENV_VAR, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 def _gateway_cache_key(config: StorageConfig) -> tuple[str, str, bool, bool, bool, bool, bool]:
@@ -43,6 +52,12 @@ def _gateway_cache_key(config: StorageConfig) -> tuple[str, str, bool, bool, boo
         config.validate_schema,
         config.attach_history,
     )
+
+
+@dataclass(frozen=True)
+class _CachedGateway:
+    gateway: StorageGateway
+    thread_id: int
 
 
 @dataclass
@@ -71,7 +86,7 @@ class GatewayCache:
     >>> cache.close_all()
     """
 
-    _cache: dict[tuple[str, str, bool, bool, bool, bool, bool], StorageGateway] = field(
+    _cache: dict[tuple[str, str, bool, bool, bool, bool, bool], _CachedGateway] = field(
         default_factory=dict
     )
     _stats: dict[str, int] = field(default_factory=lambda: {"opens": 0, "hits": 0})
@@ -91,14 +106,16 @@ class GatewayCache:
             Cached or newly created gateway.
         """
         key = _gateway_cache_key(config)
+        current_thread_id = threading.get_ident()
         with self._lock:
             cached = self._cache.get(key)
             if cached is not None:
+                self._assert_thread_owner(cached, current_thread_id)
                 self._stats["hits"] += 1
-                return cached
+                return cached.gateway
             gateway = open_gateway(config)
             self._stats["opens"] += 1
-            self._cache[key] = gateway
+            self._cache[key] = _CachedGateway(gateway=gateway, thread_id=current_thread_id)
             return gateway
 
     def close_all(self) -> None:
@@ -108,8 +125,8 @@ class GatewayCache:
         to release all database connections.
         """
         with self._lock:
-            for gateway in self._cache.values():
-                gateway.close()
+            for cached in self._cache.values():
+                cached.gateway.close()
             self._cache.clear()
             self._stats["opens"] = 0
             self._stats["hits"] = 0
@@ -128,6 +145,19 @@ class GatewayCache:
                 "hits": self._stats["hits"],
                 "size": len(self._cache),
             }
+
+    @staticmethod
+    def _assert_thread_owner(cached: _CachedGateway, current_thread_id: int) -> None:
+        if not _thread_guard_enabled():
+            return
+        if cached.thread_id == current_thread_id:
+            return
+        message = (
+            "Detected cross-thread reuse of a cached StorageGateway. "
+            f"Created in thread {cached.thread_id}, accessed from thread {current_thread_id}. "
+            f"Disable this check by unsetting {_THREAD_GUARD_ENV_VAR}."
+        )
+        raise RuntimeError(message)
 
 
 _cache = GatewayCache()

@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import ibis
 import pandas as pd
 from ibis.common import exceptions as ibis_exceptions
 
 from codeintel.build.exports import compute_file_hash
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -159,15 +159,8 @@ def _sample_rows(
         return []
 
     try:
-        ibis_con = ibis.duckdb.from_connection(con)
-        table_key = dataset.table_key
-        if "." in table_key:
-            database, name = table_key.split(".", 1)
-            expr = ibis_con.table(name, database=database)
-        else:
-            expr = ibis_con.table(table_key)
-
-        df = pd.DataFrame(expr.limit(limited).execute())
+        ibis_gw = MinimalStorageGateway(con).ibis
+        df = pd.DataFrame(ibis_gw.table(dataset.table_key).limit(limited).execute())
         return df.to_dict(orient="records")
     except (
         DuckDBError,

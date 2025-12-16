@@ -351,4 +351,3 @@ class TestIngestionModuleExports:
                 hasattr(ingestion, name),
                 message=f"ingestion module should have attribute {name}",
             )
-

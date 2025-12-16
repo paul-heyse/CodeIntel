@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.storage.build_bridge import get_contract_for_table_key
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -238,7 +239,7 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
             msg = f"metadata.datasets row {table_key} has no DatasetContract"
             raise KeyError(msg) from None
 
-        inferred_family = table_key.split(".", maxsplit=1)[0] if "." in table_key else None
+        inferred_family = split_table_key(table_key)[0] if "." in table_key else None
         family = (
             db_family
             if db_family is not None

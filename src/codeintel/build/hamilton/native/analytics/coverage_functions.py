@@ -5,6 +5,9 @@ computing per-function coverage metrics by joining GOIDs with coverage line data
 
 The compute node reads from core.goids and analytics.coverage_lines, joins them
 based on file path and line ranges, then aggregates coverage metrics per function.
+
+Includes Hamilton-native validation via @check_output_custom (Phase 4)
+and schema documentation via @schema.output.
 """
 
 from __future__ import annotations

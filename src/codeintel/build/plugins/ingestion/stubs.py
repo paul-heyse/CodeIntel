@@ -126,4 +126,3 @@ __all__ = [
     "RepoScanPlugin",
     "TestsIngestPlugin",
 ]
-

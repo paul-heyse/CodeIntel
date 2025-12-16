@@ -13,20 +13,33 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.contracts.schemas.validation import validate_df
-    from codeintel.build.schemas import get_schema_provider, is_view, iter_contracts
+    from codeintel.build.schemas import (
+        get_contract_for_table_key,
+        get_schema_provider,
+        is_view,
+        iter_contracts,
+        iter_contracts_by_table_key,
+    )
+    from codeintel.build.schemas.json_schema_registry import get_json_schema_for_dataset_name
 
 __all__ = [
+    "get_contract_for_table_key",
+    "get_json_schema_for_dataset_name",
     "get_schema_provider",
     "is_view",
     "iter_contracts",
+    "iter_contracts_by_table_key",
     "validate_df",
 ]
 
 _LAZY_IMPORTS: dict[str, str] = {
     "validate_df": "codeintel.build.hamilton.contracts.schemas.validation",
+    "get_contract_for_table_key": "codeintel.build.schemas",
+    "get_json_schema_for_dataset_name": "codeintel.build.schemas.json_schema_registry",
     "get_schema_provider": "codeintel.build.schemas",
     "is_view": "codeintel.build.schemas",
     "iter_contracts": "codeintel.build.schemas",
+    "iter_contracts_by_table_key": "codeintel.build.schemas",
 }
 
 

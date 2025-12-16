@@ -981,21 +981,60 @@ class RepoScanPlugin(_StubPluginBase):
     _core_metadata: ClassVar[CorePluginMetadata] = REPO_SCAN_METADATA
 ```
 
-### Learnings and Callouts for Phase 3
+### Learnings and Callouts for Subsequent Phases
 
-1. **Naming Consistency**: The `@tag(target="...")` value MUST exactly match the target name in `UnifiedRegistry`. Mismatches cause graph validation failures.
+The following learnings from Phase 1, 1.5, and 2 apply to all subsequent phases:
 
-2. **Validator Applicability**: `@check_output_custom` and `@schema.output` only work on functions returning `pd.DataFrame` or `ibis.expr.types.Table`. Functions returning custom dataclasses should NOT use these decorators.
+#### Critical Rules (Violations Cause Test Failures)
 
-3. **Helper Functions**: Private helper functions (starting with `_`) should be tagged with `@tag(node_type="helper")` to prevent Hamilton from treating them as compute nodes.
+1. **Naming Consistency**: The `@tag(target="...")` value MUST exactly match the target name in `UnifiedRegistry`. Mismatches cause graph validation failures with cryptic error messages like "Derived dependency mapping contains non-target keys".
 
-4. **Test Infrastructure**: When deleting plugins, create stub classes if test helpers need type references. This maintains backward compatibility without requiring full test rewrites.
+2. **Validator Applicability**: `@check_output_custom` and `@schema.output` ONLY work on functions returning `pd.DataFrame` or `ibis.expr.types.Table`. Functions returning custom dataclasses, dicts, or other types should NOT use these decorators—Hamilton will reject them with `InvalidDecoratorException`.
 
-5. **Parity Testing**: Create comprehensive parity tests that verify:
+3. **Consolidated Validators**: Do NOT use multiple `@check_output_custom` decorators on the same function. This causes Hamilton to create duplicate node names. Instead, consolidate with unpacking:
+   ```python
+   @check_output_custom(
+       *build_table_contract(...),
+       *build_enum_column_contract(...),
+   )
+   ```
+
+4. **Helper Function Tagging**: Private helper functions (starting with `_`) that are defined in native module files MUST be tagged with `@tag(node_type="helper")` to prevent Hamilton from treating them as compute nodes and failing `node_type` tag validation.
+
+#### Best Practices
+
+5. **Test Infrastructure**: When deleting plugins, create stub classes if test helpers need type references. This maintains backward compatibility without requiring full test rewrites. Pattern:
+   ```python
+   # plugins/<domain>/stubs.py
+   class MyDeletedPlugin(_StubPluginBase):
+       _core_metadata: ClassVar[CorePluginMetadata] = MY_PLUGIN_METADATA
+   ```
+
+6. **Parity Testing**: Create comprehensive parity tests that verify:
    - Module discovery by `NativeModuleLoader`
-   - Function naming conventions
+   - Function naming conventions (`t__<target>__<step>` for compute, `t__<target>` for materialize)
    - Target presence in Hamilton graph
-   - Domain disjointness (ingestion vs analytics vs graphs)
+   - Domain disjointness (each target belongs to exactly one domain)
+
+7. **Loader Registration**: After creating native modules, update `_NATIVE_MODULE_PACKAGES` in `src/codeintel/build/hamilton/native/loader.py` to include the new module paths.
+
+8. **Registration Updates**: Update `src/codeintel/build/registrations.py`:
+   - Remove `plugin=` argument for migrated targets
+   - Add `native_module=` with full module path
+   - Delete import of the old plugin class
+
+9. **CLI Snapshot Updates**: After migration, run `pytest --update-cli-snapshots` to update expected CLI output files.
+
+#### Common Errors and Solutions
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `ValueError: Cannot define function X more than once` | Multiple `@check_output_custom` decorators | Consolidate into single decorator with unpacking |
+| `InvalidDecoratorException: Node X has type dict which is not a registered type` | Using validators on non-DataFrame return | Remove `@check_output_custom` and `@schema.output` |
+| `Failed: Nodes missing canonical node_type tags` | Helper function not tagged | Add `@tag(node_type="helper")` |
+| `Derived dependency mapping contains non-target keys` | `@tag(target="X")` doesn't match registry | Ensure exact name match with `UnifiedRegistry` |
+| `ModuleNotFoundError: No module named 'codeintel.build.plugins...'` | Test helper imports deleted plugin | Create stub class in `stubs.py` |
+| `KeyError: "Target 'X' has no registered plugin implementation"` | Test tries to instantiate deleted plugin | Update test to use a still-existing plugin target |
 
 ---
 
@@ -2460,24 +2499,190 @@ def t__<target_name>(
 
 **Actual Effort**: ~2 days (including debugging naming conventions and test infrastructure updates)
 
-### Phase 3: Graphs Domain (PRs 117-126)
+### Phase 3: Graphs Domain (PRs 117-126) 🔜 NEXT
 
 **Goal**: Migrate all graph plugins to native Hamilton **with Hamilton-native validation**.
 
-**Validation Integration**: Same pattern as Phase 2 - each target gets validators and schema docs.
+**Status**: 🔜 Next Phase
 
-| PR | Description | Dependencies | Risk | Includes Validation |
-|----|-------------|--------------|------|---------------------|
-| PR-117 | Native `t__goids` | PR-106 | Medium | ✅ |
-| PR-118 | Native `t__call_graph` | PR-117 | Medium | ✅ |
-| PR-119 | Native `t__import_graph` | PR-105 | Medium | ✅ |
-| PR-120 | Native `t__symbol_uses` | PR-106 | Medium | ✅ |
-| PR-121 | Native `t__cfg_dfg` | PR-107, PR-117 | High | ✅ |
-| PR-122 | Native `t__call_graph_views` | PR-118 | Low | ✅ |
-| PR-123 | Native graph metrics targets | PR-118 | Low | ✅ |
-| PR-124 | Verify graphs domain parity | PR-117-123 | Low | — |
-| PR-125 | Delete graphs plugins | PR-124 | Low | — |
-| PR-126 | Delete graphs registrations | PR-125 | Low | — |
+---
+
+#### Current State Analysis
+
+**Already Native:**
+- `call_graph_views` - Exists as `native/graphs/call_graph_views.py`, registered with `native_module`
+- `cfg_dfg_metrics` - Exists as `native/analytics/cfg_dfg.py`, registered with `native_module`
+
+**Need Migration (Plugin → Native):**
+| Plugin File | Target | Tables Produced |
+|-------------|--------|-----------------|
+| `plugins/graphs/builders/goid.py` | `goids` | `core.goids`, `core.goid_crosswalk` |
+| `plugins/graphs/builders/callgraph.py` | `call_graph` | `graph.call_graph_nodes`, `graph.call_graph_edges` |
+| `plugins/graphs/builders/import_graph.py` | `import_graph` | `graph.import_graph_edges` |
+| `plugins/graphs/builders/symbol_uses.py` | `symbol_uses` | `graph.symbol_use_edges` |
+| `plugins/graphs/builders/cfg_dfg.py` | `cfg`, `dfg` | `graph.cfg_blocks`, `graph.cfg_edges`, `graph.dfg_edges` |
+
+---
+
+#### Key Differences from Phase 2
+
+> **IMPORTANT**: Phase 3 graph targets produce **DataFrames with table schemas**, unlike Phase 2 ingestion targets which returned custom dataclasses. This means:
+
+1. **Validators WILL Apply**: Graph compute nodes return DataFrames/Ibis tables that can use `@check_output_custom` and `@schema.output`
+2. **Schema-Driven Validation**: Use `build_table_contract()` with actual schema columns
+3. **Row-Level Persistence**: Most graph targets use `persist_rows()` pattern, requiring DataFrame conversion
+
+---
+
+#### Validation Integration
+
+Each graph target migration includes:
+- Apply `@check_output_custom` with table-specific validators
+- Apply `@schema.output` for documentation  
+- Validate column presence, types, and key constraints
+
+**Example Pattern for Graph Targets:**
+
+```python
+from hamilton.function_modifiers import check_output_custom, schema, tag
+from codeintel.build.hamilton.validators import build_table_contract, build_key_column_contract
+from codeintel.build.hamilton.schema_docs import schema_output_tuple
+
+@tag(domain="graphs", target="goids", node_type="compute")
+@check_output_custom(
+    *build_table_contract(
+        required_columns=["goid_h128", "repo", "commit", "kind", "qualname", "rel_path"],
+        column_types={"goid_h128": "string", "kind": "string"},
+        non_null_columns=["goid_h128", "repo", "commit", "kind"],
+    ),
+    *build_key_column_contract(key_columns=["goid_h128", "repo", "commit"]),
+)
+@schema.output(*schema_output_tuple([
+    ("goid_h128", "string", "Unique GOID hash (128-bit)"),
+    ("repo", "string", "Repository identifier"),
+    ("commit", "string", "Commit SHA"),
+    ("kind", "string", "Entity kind: module, class, function"),
+    ("qualname", "string", "Fully qualified name"),
+    ("rel_path", "string", "Relative file path"),
+]))
+def t__goids__compute(env: BuildEnv, t__modules: TargetRunRecord) -> pd.DataFrame:
+    """Compute GOIDs for all modules in the repository."""
+    ...
+```
+
+---
+
+#### PR Details
+
+| PR | Description | Dependencies | Risk | Status |
+|----|-------------|--------------|------|--------|
+| PR-117 | Native `t__goids` | `modules` (Phase 2) | Medium | Pending |
+| PR-118 | Native `t__call_graph` | `goids` | Medium | Pending |
+| PR-119 | Native `t__import_graph` | `modules` | Medium | Pending |
+| PR-120 | Native `t__symbol_uses` | `scip` | Medium | Pending |
+| PR-121 | Native `t__cfg_dfg` | `goids`, `ast` | High | Pending |
+| PR-122 | Enhance `t__call_graph_views` (already native) | `call_graph` | Low | Pending |
+| PR-123 | Native graph metrics targets | `call_graph` | Low | Pending |
+| PR-124 | Verify graphs domain parity | All above | Low | Pending |
+| PR-125 | Delete graphs plugins | PR-124 | Low | Pending |
+| PR-126 | Delete graphs registrations | PR-125 | Low | Pending |
+
+---
+
+#### Critical Implementation Notes
+
+**1. Multi-Table Outputs:**
+
+Several graph targets produce multiple tables (e.g., `goids` produces `core.goids` + `core.goid_crosswalk`). Use the same pattern as `call_graph_views`:
+
+```python
+@tag(domain="graphs", target="goids", node_type="materialize")
+def t__goids(
+    env: BuildEnv,
+    t__goids__compute_goids: pd.DataFrame,
+    t__goids__compute_crosswalk: pd.DataFrame,
+) -> TargetRunRecord:
+    """Materialize GOID tables."""
+    executor = NativeTargetExecutor.for_target(env, graph, "goids")
+    
+    def compute() -> dict[str, int]:
+        goid_count = persist_rows(env.gateway, "core.goids", goid_rows, ...)
+        crosswalk_count = persist_rows(env.gateway, "core.goid_crosswalk", crosswalk_rows, ...)
+        return {"core.goids": goid_count, "core.goid_crosswalk": crosswalk_count}
+    
+    return executor.execute(compute)
+```
+
+**2. CFG/DFG Shared Plugin:**
+
+The `cfg` and `dfg` targets share a single plugin (`CfgDfgPlugin`). In native Hamilton:
+- Create `native/graphs/cfg_dfg.py` with separate compute nodes for each
+- The CFG compute produces `cfg_blocks` and `cfg_edges`
+- The DFG compute depends on CFG output and produces `dfg_edges`
+- Consider using `@extract_fields` if returning multiple DataFrames
+
+**3. Heavy Compute Considerations:**
+
+Call graph and CFG/DFG are computationally intensive:
+- Use logging at INFO level for progress (`LOG.info("Processing file %d/%d", i, total)`)
+- Consider `@tag(resource_hints={"max_memory_mb": 1024})` for resource hints
+- The existing plugins have `resource_hints` in metadata - preserve these
+
+**4. Existing Native Module Enhancement:**
+
+`call_graph_views` is already native but may need validators added:
+- Check if `@check_output_custom` is missing
+- Add `@schema.output` documentation
+- This is PR-122 (low effort, high value)
+
+**5. Graph Validation Target:**
+
+There's a separate `graph_validation` target - consider whether to:
+- Migrate it as a native target, OR
+- Delete it if Hamilton validators make it redundant
+
+---
+
+#### File Structure After Migration
+
+```
+src/codeintel/build/hamilton/native/graphs/
+├── __init__.py                # Export all modules
+├── goids.py                   # NEW: t__goids
+├── call_graph.py              # NEW: t__call_graph  
+├── import_graph.py            # NEW: t__import_graph
+├── symbol_uses.py             # NEW: t__symbol_uses
+├── cfg_dfg.py                 # NEW: t__cfg, t__dfg
+├── call_graph_views.py        # EXISTS: enhance with validators
+└── graph_metrics.py           # NEW: t__graph_metrics (consolidate)
+```
+
+---
+
+#### Learnings from Phase 2 to Apply
+
+1. **Naming Conventions**: Use exact target names in `@tag(target="...")` - must match `UnifiedRegistry`
+2. **Stub Classes**: If test helpers import deleted plugins, create stubs in `plugins/graphs/stubs.py`
+3. **Parity Tests First**: Create `tests/build/hamilton/native/graphs/test_parity.py` early
+4. **Loader Registration**: Update `_NATIVE_MODULE_PACKAGES["graphs"]` in `loader.py`
+5. **Helper Functions**: Tag private helpers with `@tag(node_type="helper")` to exclude from node discovery
+
+---
+
+#### Estimated Effort
+
+| Task | Effort |
+|------|--------|
+| PR-117: `t__goids` (2 tables, moderate complexity) | 4 hours |
+| PR-118: `t__call_graph` (complex, LibCST parsing) | 6 hours |
+| PR-119: `t__import_graph` (moderate complexity) | 3 hours |
+| PR-120: `t__symbol_uses` (SCIP-dependent) | 3 hours |
+| PR-121: `t__cfg_dfg` (most complex, 3 tables) | 8 hours |
+| PR-122: Enhance `call_graph_views` | 1 hour |
+| PR-123: Graph metrics consolidation | 2 hours |
+| PR-124: Parity tests | 3 hours |
+| PR-125-126: Deletion & cleanup | 2 hours |
+| **Total** | **~32 hours (4 days)** |
 
 **Additional Effort for Validation**: ~4 hours (8 targets × 30 min)
 

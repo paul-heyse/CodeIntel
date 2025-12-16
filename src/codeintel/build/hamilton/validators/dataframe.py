@@ -758,7 +758,7 @@ class RowCountRangeValidator(BaseDefaultValidator):
             _log.debug("RowCountRangeValidator: Skipping for Ibis table (lazy expression)")
             return ValidationResult(
                 passes=True,
-                message=f"Row count range check skipped for Ibis table",
+                message="Row count range check skipped for Ibis table",
                 diagnostics={
                     "min_rows": self.min_rows,
                     "max_rows": self.max_rows,

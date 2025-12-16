@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from codeintel.core.schemas import schema_hash
 from codeintel.storage.build_bridge import get_schema_provider, is_view, iter_contracts
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -350,7 +351,7 @@ def bootstrap_metadata_datasets(
         if is_view(table_key) and not include_views:
             continue
 
-        schema_prefix, _ = table_key.split(".", maxsplit=1)
+        schema_prefix, _ = split_table_key(table_key)
         jsonl_filename = jsonl_mapping.get(table_key) or contract.jsonl_filename
         parquet_filename = parquet_mapping.get(table_key) or contract.parquet_filename
 

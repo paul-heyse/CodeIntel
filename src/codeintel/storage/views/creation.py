@@ -11,20 +11,18 @@ from typing import TYPE_CHECKING
 from duckdb import DuckDBPyConnection
 
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
-from codeintel.storage.views.ibis_registry import VIEW_BUILDERS
-from codeintel.storage.views.ibis_views import _create_view
 
 if TYPE_CHECKING:
+    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
     from codeintel.storage.gateway.protocol import StorageGateway
-    from codeintel.storage.views.ibis_registry import IbisViewGateway
 
 __all__ = ["create_all_views"]
 
 
-def _get_ibis_gateway(
+def _get_policy_backend(
     con_or_gateway: DuckDBPyConnection | StorageGateway,
-) -> IbisViewGateway:
-    """Extract or create IbisGateway from connection or gateway.
+) -> DuckDBPolicyBackend:
+    """Extract or create a policy backend from connection or gateway.
 
     Parameters
     ----------
@@ -33,13 +31,12 @@ def _get_ibis_gateway(
 
     Returns
     -------
-    IbisViewGateway
-        Ibis gateway-like object for building expressions.
+    DuckDBPolicyBackend
+        Policy backend for view materialization.
     """
     if isinstance(con_or_gateway, DuckDBPyConnection):
-        return MinimalStorageGateway(con_or_gateway).ibis
-
-    return con_or_gateway.ibis
+        return MinimalStorageGateway(con_or_gateway).policy
+    return con_or_gateway.policy
 
 
 def create_all_views(
@@ -56,7 +53,5 @@ def create_all_views(
         Either a DuckDB connection or a StorageGateway. For backward
         compatibility, raw connections are wrapped in an IbisGateway.
     """
-    ibis_gw = _get_ibis_gateway(con_or_gateway)
-    for view_name, builder in VIEW_BUILDERS.items():
-        expr = builder(ibis_gw)
-        _create_view(ibis_gw.con, view_name, expr)
+    policy = _get_policy_backend(con_or_gateway)
+    policy.ensure_all_views(overwrite=True, strict=True)

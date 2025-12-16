@@ -2,6 +2,9 @@
 
 This module implements derived views over the call graph as a pure Hamilton DAG,
 computing useful aggregate metrics and patterns from the raw call graph edges.
+
+Phase 3: Enhanced with Hamilton-native validation via @check_output_custom
+and schema documentation via @schema.output.
 """
 
 from __future__ import annotations
@@ -11,12 +14,13 @@ from typing import Any, cast
 
 import ibis
 import ibis.expr.types as ir
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import check_output_custom, schema, tag
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_tables
+from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
@@ -25,6 +29,27 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
 @tag(domain="graphs", target="call_graph_views", node_type="compute", view="function_call_counts")
+@check_output_custom(
+    *build_table_contract(
+        required_columns=[
+            "repo",
+            "commit",
+            "function_goid_h128",
+            "num_callees",
+            "num_unique_callees",
+            "num_callers",
+        ],
+        no_nulls=["repo", "commit"],
+    )
+)
+@schema.output(
+    ("repo", "string"),
+    ("commit", "string"),
+    ("function_goid_h128", "int64"),
+    ("num_callees", "int64"),
+    ("num_unique_callees", "int64"),
+    ("num_callers", "int64"),
+)
 def call_graph_function_call_counts(
     env: BuildEnv,
     q__graph__call_graph_edges: ir.Table,
@@ -104,6 +129,25 @@ def call_graph_function_call_counts(
 
 
 @tag(domain="graphs", target="call_graph_views", node_type="compute", view="call_depth_stats")
+@check_output_custom(
+    *build_table_contract(
+        required_columns=[
+            "repo",
+            "commit",
+            "function_goid_h128",
+            "max_call_depth",
+            "is_leaf",
+        ],
+        no_nulls=["repo", "commit"],
+    )
+)
+@schema.output(
+    ("repo", "string"),
+    ("commit", "string"),
+    ("function_goid_h128", "int64"),
+    ("max_call_depth", "int64"),
+    ("is_leaf", "boolean"),
+)
 def call_graph_depth_stats(
     env: BuildEnv,
     q__graph__call_graph_edges: ir.Table,

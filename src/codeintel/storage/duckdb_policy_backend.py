@@ -1026,7 +1026,7 @@ class DuckDBPolicyBackend:
             message = f"Table key must be qualified (schema.table): {table_key}"
             raise ValueError(message)
 
-        schema, table = table_key.split(".", 1)
+        schema, table = split_table_key(table_key)
 
         if columns is None:
             if self.schema_provider is None:
@@ -1181,7 +1181,7 @@ class DuckDBPolicyBackend:
             message = "conflict_columns cannot be empty"
             raise ValueError(message)
 
-        schema, table = table_key.split(".", 1)
+        schema, table = split_table_key(table_key)
 
         sql = _build_upsert(schema, table, columns, conflict_columns, update_columns)
 
