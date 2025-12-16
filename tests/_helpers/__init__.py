@@ -110,6 +110,12 @@ from tests._helpers.fakes.networkx_graphs import (
     star_graph,
 )
 from tests._helpers.gateway import GatewayFactory, analytics_gateway
+from tests._helpers.hamilton_execution import (
+    HamiltonTestBuilder,
+    HamiltonTestContext,
+    execute_hamilton_target,
+    execute_hamilton_target_async,
+)
 from tests._helpers.immutability import assert_all_frozen, assert_frozen
 from tests._helpers.orchestration.provisioning import (
     build_callgraph_fixture_repo,
@@ -178,6 +184,8 @@ __all__ = [
     "GatewayFactory",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
+    "HamiltonTestBuilder",
+    "HamiltonTestContext",
     "ManifestParams",
     "ProvisionedGateway",
     "ProvisioningConfig",
@@ -215,6 +223,8 @@ __all__ = [
     "disconnected_graph",
     "docs_views_ready_gateway",
     "ensure_catalog_with_goids",
+    "execute_hamilton_target",
+    "execute_hamilton_target_async",
     "full_context",
     "function_meta",
     "function_metrics_row",

@@ -28,11 +28,11 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import ibis
 import libcst as cst
-from codeintel.build.plugin import MetadataPlugin
 
 from codeintel.build.context import TargetResult
-from codeintel.build.plugins._helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
+from codeintel.build.plugin import MetadataPlugin
+from codeintel.build.plugins._helpers import filter_paths, get_source_root
 from codeintel.core.catalog import load_function_index
 from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
