@@ -16,7 +16,6 @@ from codeintel.core.paths import (
     module_to_path,
     normalize_path,
     path_to_module,
-    relpath_to_module,
     repo_relpath,
     safe_relpath,
 )
@@ -188,21 +187,6 @@ class TestPathToModule:
         expect_equal(result, "src.module.file")
 
 
-class TestRelpathToModule:
-    """Tests for relpath_to_module alias."""
-
-    @staticmethod
-    def test_is_alias() -> None:
-        """Test that relpath_to_module is an alias for path_to_module."""
-        expect_true(relpath_to_module is path_to_module)
-
-    @staticmethod
-    def test_works_correctly() -> None:
-        """Test that the alias works correctly."""
-        result = relpath_to_module("pkg/sub/module.py")
-        expect_equal(result, "pkg.sub.module")
-
-
 class TestModuleToPath:
     """Tests for module_to_path function."""
 
@@ -266,6 +250,5 @@ class TestImportsWork:
         expect_true(callable(module_to_path))
         expect_true(callable(normalize_path))
         expect_true(callable(path_to_module))
-        expect_true(callable(relpath_to_module))
         expect_true(callable(repo_relpath))
         expect_true(callable(safe_relpath))

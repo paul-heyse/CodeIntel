@@ -13,7 +13,7 @@ from typing import Any, Protocol, cast
 import ibis
 import ibis.expr.types as it
 
-from codeintel.build.serving.semantic_tags import semantic_view
+from codeintel.hamilton.semantic_tags import semantic_view
 from codeintel.storage.ibis_types import ne, or_predicates
 from codeintel.storage.views.protocol import IbisViewGateway
 from codeintel.storage.views.view_tags import ibis_view

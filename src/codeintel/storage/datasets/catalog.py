@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from ibis.common import exceptions as ibis_exceptions
 
-from codeintel.build.exports import compute_file_hash
+from codeintel.core.hashing import file_hash
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
@@ -189,7 +189,7 @@ def _schema_digest(dataset: DatasetContract) -> str | None:
     path = Path("src/codeintel/config/schemas/export") / f"{dataset.json_schema_id}.json"
     if not path.exists():
         return None
-    return compute_file_hash(path)
+    return file_hash(path, algorithm="sha256")
 
 
 def build_catalog(

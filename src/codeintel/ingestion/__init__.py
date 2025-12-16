@@ -60,9 +60,6 @@ from codeintel.core.paths import (
     ensure_repo_root,
     repo_relpath,
 )
-from codeintel.core.paths import (
-    path_to_module as relpath_to_module,
-)
 
 # Note: Plugin imports are deferred to avoid circular imports.
 # Use `from codeintel.build.plugins.ingestion import FooPlugin` directly.
@@ -160,7 +157,6 @@ __all__ = [
     "executor_factory",
     "normalize_rel_path",
     "profile_from_env",
-    "relpath_to_module",
     "repo_relpath",
     "resolve_worker_count",
     "worker_pool",

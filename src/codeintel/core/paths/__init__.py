@@ -17,7 +17,6 @@ from codeintel.core.paths.module import (
     is_package_path,
     module_to_path,
     path_to_module,
-    relpath_to_module,
 )
 from codeintel.core.paths.normalize import (
     ensure_repo_root,
@@ -32,7 +31,6 @@ __all__ = [
     "module_to_path",
     "normalize_path",
     "path_to_module",
-    "relpath_to_module",
     "repo_relpath",
     "safe_relpath",
 ]

@@ -32,9 +32,6 @@ from codeintel.core.paths import (
     ensure_repo_root,
     repo_relpath,
 )
-from codeintel.core.paths import (
-    path_to_module as relpath_to_module,
-)
 from codeintel.ingestion.engine._scip_resolver import (
     ResolvedScipConfig,
     ScipPathConfig,
@@ -100,7 +97,6 @@ __all__ = [
     "normalize_rel_path",
     "parse_python_module",
     "profile_from_env",
-    "relpath_to_module",
     "repo_relpath",
     "resolve_scip_inputs",
     "resolve_worker_count",

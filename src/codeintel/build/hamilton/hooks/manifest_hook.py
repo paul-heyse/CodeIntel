@@ -14,7 +14,7 @@ Design Principles
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -24,125 +24,16 @@ from codeintel.build.hashing import (
     compute_options_hash,
 )
 from codeintel.build.manifest import OutputManifest
+from codeintel.hamilton.records import TargetRunRecord
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
-    from codeintel.build.hamilton.io.dataset_ref import DatasetRef
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class TargetRunRecord:
-    """Record of a Hamilton node execution for a target.
-
-    This captures the execution state of a target run, including timing,
-    row counts, and error information. Used for observability and as
-    the return type from Hamilton node functions.
-
-    Attributes
-    ----------
-    target
-        Name of the target that was executed.
-    plugin_name
-        Name of the plugin that produced this target.
-    status
-        Execution status: "succeeded", "failed", or "skipped".
-    input_hash
-        Content-addressable hash of inputs (for cache validation).
-    options_hash
-        Hash of plugin configuration options, if any.
-    duration_ms
-        Execution duration in milliseconds.
-    row_counts
-        Mapping of table keys to row counts written.
-    error
-        Error message if execution failed.
-    datasets
-        Tuple of DatasetRef instances produced by this target.
-    artifacts
-        Tuple of ArtifactRef instances produced by this target (Phase 2).
-
-    Examples
-    --------
-    >>> record = TargetRunRecord(
-    ...     target="function_metrics",
-    ...     plugin_name="analytics.function_metrics",
-    ...     status="succeeded",
-    ...     input_hash="a1b2c3d4",
-    ...     duration_ms=1234.5,
-    ...     row_counts={"analytics.function_metrics": 1500},
-    ... )
-    """
-
-    target: str
-    plugin_name: str
-    status: str
-    input_hash: str | None
-    options_hash: str | None = None
-    duration_ms: float = 0.0
-    row_counts: Mapping[str, int] = field(default_factory=dict)
-    error: str | None = None
-    datasets: tuple[DatasetRef, ...] = ()
-    artifacts: tuple[ArtifactRef, ...] = ()
-
-    @property
-    def success(self) -> bool:
-        """Return True if execution succeeded.
-
-        Returns
-        -------
-        bool
-            True if status is "succeeded".
-        """
-        return self.status == "succeeded"
-
-    @property
-    def skipped(self) -> bool:
-        """Return True if execution was skipped.
-
-        Returns
-        -------
-        bool
-            True if status is "skipped".
-        """
-        return self.status == "skipped"
-
-    def get_dataset(self, table_key: str) -> DatasetRef | None:
-        """Get a specific dataset ref by table key.
-
-        Parameters
-        ----------
-        table_key
-            Fully-qualified table name to find.
-
-        Returns
-        -------
-        DatasetRef | None
-            The matching DatasetRef, or None if not found.
-
-        Examples
-        --------
-        >>> record = TargetRunRecord(
-        ...     target="test",
-        ...     plugin_name="test.plugin",
-        ...     status="succeeded",
-        ...     input_hash="abc123",
-        ...     datasets=(DatasetRef(table_key="test.table"),),
-        ... )
-        >>> ds = record.get_dataset("test.table")
-        >>> ds is not None
-        True
-        """
-        for ds in self.datasets:
-            if ds.table_key == table_key:
-                return ds
-        return None
 
 
 def compute_target_input_hash(

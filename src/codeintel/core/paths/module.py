@@ -96,18 +96,8 @@ def is_package_path(path: str | Path) -> bool:
     return path_str.endswith("/__init__.py") or path_str == "__init__.py"
 
 
-# Backward compatibility alias
-relpath_to_module = path_to_module
-"""Alias for path_to_module.
-
-.. deprecated:: 1.0
-    Use ``path_to_module`` instead.
-"""
-
-
 __all__ = [
     "is_package_path",
     "module_to_path",
     "path_to_module",
-    "relpath_to_module",
 ]
