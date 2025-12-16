@@ -48,11 +48,13 @@ import codeintel.storage.views.ibis_views as _ibis_views
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.views.dependencies import build_dependency_graph_from_sql, toposort
 from codeintel.storage.views.discovery import discover_view_builders
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
+    import ibis.expr.types as it
     from duckdb import DuckDBPyConnection
 
     from codeintel.core.schemas.primitives import TableSchema
@@ -915,11 +917,33 @@ class DuckDBPolicyBackend:
         ibis_gateway = self.ibis
         builders = discover_view_builders(modules=(_ibis_views,))
 
+        expr_by_view: dict[str, it.Table] = {}
+        sql_by_view: dict[str, str] = {}
         for spec in builders:
             view_name = spec.table_key
             builder = spec.builder
             try:
                 expr = builder(ibis_gateway)
+                expr_by_view[view_name] = expr
+                sql_by_view[view_name] = ibis_gateway.con.compile(expr)
+            except (DuckDBError, IbisError, KeyError, TypeError, ValueError):
+                log.exception("Failed to build view expression: %s", view_name)
+                if strict:
+                    raise
+
+        if not sql_by_view:
+            return
+
+        deps = build_dependency_graph_from_sql(sql_by_view)
+        order_lower = toposort(sql_by_view.keys(), deps, raise_on_cycle=strict)
+        original_by_lower = {k.lower(): k for k in sql_by_view}
+
+        for view_key_lower in order_lower:
+            view_name = original_by_lower[view_key_lower]
+            expr = expr_by_view.get(view_name)
+            if expr is None:
+                continue
+            try:
                 database, name = split_table_key(view_name)
                 ibis_gateway.con.create_view(name, expr, database=database, overwrite=overwrite)
                 log.debug("Created view: %s", view_name)

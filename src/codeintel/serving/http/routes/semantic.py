@@ -87,4 +87,30 @@ async def query_view(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/explain")
+async def explain_view(
+    payload: dict[str, object] = _QUERY_BODY,
+    kernel: SemanticQueryKernel = _KERNEL_DEPENDENCY,
+) -> dict[str, object]:
+    """Return compiled SQL and DuckDB plan for a semantic query.
+
+    Returns
+    -------
+    dict[str, object]
+        Explain response payload.
+
+    Raises
+    ------
+    HTTPException
+        If the view does not exist or the request payload is invalid.
+    """
+    try:
+        request = SemanticQueryRequest.model_validate(payload)
+        return kernel.explain(request).model_dump(mode="json")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 __all__ = ["router"]

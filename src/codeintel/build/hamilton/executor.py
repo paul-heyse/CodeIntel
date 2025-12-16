@@ -209,6 +209,8 @@ def _persist_run_targets(
             value for value in outputs.values() if isinstance(value, TargetRunRecord)
         ]
 
+        records.sort(key=lambda record: record.target)
+
         if records:
             env.gateway.build.save_run_targets(
                 run_id=run_id,
@@ -238,6 +240,7 @@ def _persist_asset_catalog(
         ]
         if not records:
             return
+        records.sort(key=lambda record: record.target)
 
         persist_asset_catalog_for_run(
             env=env,
