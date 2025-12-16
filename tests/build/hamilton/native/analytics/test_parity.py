@@ -105,7 +105,11 @@ def _collect_materialize_targets(domain: str) -> set[str]:
     targets: set[str] = set()
     for _, mod in _load_domain_modules(domain):
         for name in getattr(mod, "__all__", []):
-            if name.startswith("t__") and not name.endswith("__compute") and not name.endswith("__extract"):
+            if (
+                name.startswith("t__")
+                and not name.endswith("__compute")
+                and not name.endswith("__extract")
+            ):
                 targets.add(name)
     return targets
 
@@ -129,7 +133,8 @@ def test_analytics_domain_is_registered() -> None:
     """Verify analytics domain is registered in loader packages."""
     expect_in(_ANALYTICS_DOMAIN, NativeModuleLoader.list_domains())
     expect_true(
-        len(NativeModuleLoader.list_module_paths(domain=_ANALYTICS_DOMAIN)) >= _MIN_ANALYTICS_MODULES,
+        len(NativeModuleLoader.list_module_paths(domain=_ANALYTICS_DOMAIN))
+        >= _MIN_ANALYTICS_MODULES,
     )
 
 
@@ -169,13 +174,17 @@ def test_analytics_modules_define_all(analytics_modules: list[tuple[str, ModuleT
         pytest.fail("Modules missing __all__:\n" + "\n".join(missing))
 
 
-def test_analytics_modules_export_materialize_node(analytics_modules: list[tuple[str, ModuleType]]) -> None:
+def test_analytics_modules_export_materialize_node(
+    analytics_modules: list[tuple[str, ModuleType]],
+) -> None:
     """Verify each module exports at least one `t__<target>` materialize node."""
     missing: list[str] = []
     for path, mod in analytics_modules:
         all_exports = getattr(mod, "__all__", [])
         has_materialize = any(
-            name.startswith("t__") and not name.endswith("__compute") and not name.endswith("__extract")
+            name.startswith("t__")
+            and not name.endswith("__compute")
+            and not name.endswith("__extract")
             for name in all_exports
         )
         if not has_materialize:
@@ -184,7 +193,9 @@ def test_analytics_modules_export_materialize_node(analytics_modules: list[tuple
         pytest.fail("Modules missing materialize nodes:\n" + "\n".join(missing))
 
 
-def test_analytics_modules_export_compute_nodes(analytics_modules: list[tuple[str, ModuleType]]) -> None:
+def test_analytics_modules_export_compute_nodes(
+    analytics_modules: list[tuple[str, ModuleType]],
+) -> None:
     """Verify analytics modules export at least one `__compute` node."""
     compute_nodes: list[str] = []
     for path, mod in analytics_modules:

@@ -114,7 +114,9 @@ class Warehouse:
 
     def delete_for_snapshot(self, table_key: str, *, snapshot: SnapshotRef) -> None:
         """Delete rows for a snapshot from a specific table."""
-        self.gateway.policy.delete_for_snapshot(table_key, repo=snapshot.repo, commit=snapshot.commit)
+        self.gateway.policy.delete_for_snapshot(
+            table_key, repo=snapshot.repo, commit=snapshot.commit
+        )
 
     def read(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> ir.Table:
         """Return an Ibis table expression, optionally snapshot-filtered.
@@ -228,7 +230,9 @@ class Warehouse:
             raise ValueError(msg)
 
         if active.mode == "replace" and snapshot is not None:
-            self.gateway.policy.delete_for_snapshot(table_key, repo=snapshot.repo, commit=snapshot.commit)
+            self.gateway.policy.delete_for_snapshot(
+                table_key, repo=snapshot.repo, commit=snapshot.commit
+            )
 
         profiling_path = _maybe_enable_profiling(
             con=self.gateway.con,
@@ -320,7 +324,9 @@ class Warehouse:
             computed_schema_hash = schema_hash(contract.schema)
 
         if active.mode == "replace" and snapshot is not None:
-            self.gateway.policy.delete_for_snapshot(table_key, repo=snapshot.repo, commit=snapshot.commit)
+            self.gateway.policy.delete_for_snapshot(
+                table_key, repo=snapshot.repo, commit=snapshot.commit
+            )
 
         profiling_path = _maybe_enable_profiling(
             con=self.gateway.con,
@@ -417,7 +423,9 @@ class Warehouse:
             computed_schema_hash = schema_hash(contract.schema)
 
         if active.mode == "replace" and snapshot is not None:
-            self.gateway.policy.delete_for_snapshot(table_key, repo=snapshot.repo, commit=snapshot.commit)
+            self.gateway.policy.delete_for_snapshot(
+                table_key, repo=snapshot.repo, commit=snapshot.commit
+            )
 
         profiling_path = _maybe_enable_profiling(
             con=self.gateway.con,
@@ -469,7 +477,9 @@ class Warehouse:
             profiling_artifact=str(profiling_path) if profiling_path is not None else None,
         )
 
-    def create_or_replace_view(self, table_key: str, expr: ir.Table, *, overwrite: bool = True) -> None:
+    def create_or_replace_view(
+        self, table_key: str, expr: ir.Table, *, overwrite: bool = True
+    ) -> None:
         """Create or replace a view from an Ibis expression."""
         schema, name = split_table_key(table_key)
         self.gateway.policy.create_schema_if_not_exists(schema)
@@ -506,7 +516,9 @@ class Warehouse:
             targets.append(contract.table_key)
 
         for table_key in sorted(set(targets)):
-            self.gateway.policy.delete_for_snapshot(table_key, repo=snapshot.repo, commit=snapshot.commit)
+            self.gateway.policy.delete_for_snapshot(
+                table_key, repo=snapshot.repo, commit=snapshot.commit
+            )
 
         return len(set(targets))
 
@@ -573,7 +585,9 @@ def _maybe_enable_profiling(
     snapshot: SnapshotRef | None,
     owner_target: str | None,
 ) -> Path | None:
-    output = _profiling_output_path(table_key=table_key, snapshot=snapshot, owner_target=owner_target)
+    output = _profiling_output_path(
+        table_key=table_key, snapshot=snapshot, owner_target=owner_target
+    )
     if output is None:
         return None
 

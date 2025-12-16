@@ -134,7 +134,10 @@ def _check_mcp_tool_schema(tool: object, *, name: str) -> list[str]:
         return issues
 
     required = _get_required_fields(schema)
-    if name in {"semantic_describe", "semantic_explain", "semantic_query"} and "view_id" not in required:
+    if (
+        name in {"semantic_describe", "semantic_explain", "semantic_query"}
+        and "view_id" not in required
+    ):
         issues.append(f"MCP tool {name} must require view_id")
     if name in {"semantic_catalog", "serving_meta"} and required:
         issues.append(f"MCP tool {name} must not require arguments, got {sorted(required)}")

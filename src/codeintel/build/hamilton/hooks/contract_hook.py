@@ -100,7 +100,9 @@ class ValidationSummary:
         return self.failed_count == 0
 
 
-class ContractEnforcementHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePostNodeExecute):
+class ContractEnforcementHook(
+    lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePostNodeExecute
+):
     """Hamilton lifecycle hook that activates ContractEnforcer per node.
 
     This hook integrates with Hamilton's lifecycle adapter protocol to
@@ -172,7 +174,9 @@ class ContractEnforcementHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.
 
         tags: dict[str, str] = {}
         if node_ is not None and isinstance(node_.tags, dict):
-            tags = {k: v for k, v in node_.tags.items() if isinstance(k, str) and isinstance(v, str)}
+            tags = {
+                k: v for k, v in node_.tags.items() if isinstance(k, str) and isinstance(v, str)
+            }
         elif node_tags is not None:
             tags = dict(node_tags)
 
@@ -220,7 +224,9 @@ class ContractEnforcementHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.
         # Capture validation result
         resolved_node_name = node_.name if node_ is not None else node_name
         if not resolved_node_name:
-            _log.warning("Node execution completed without a node identifier; skipping validation capture")
+            _log.warning(
+                "Node execution completed without a node identifier; skipping validation capture"
+            )
             return
         if success:
             self._validation_results[resolved_node_name] = ValidationResult(

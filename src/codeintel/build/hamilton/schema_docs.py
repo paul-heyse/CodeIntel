@@ -256,7 +256,10 @@ def schema_for_table(table_key: str) -> tuple[tuple[str, str], ...]:
         log.warning("Pandera schema for %s has unexpected columns type", table_key)
         return ()
 
-    return tuple((col_name, _pandera_dtype_to_string(col_spec.dtype)) for col_name, col_spec in columns.items())
+    return tuple(
+        (col_name, _pandera_dtype_to_string(col_spec.dtype))
+        for col_name, col_spec in columns.items()
+    )
 
 
 def _pandera_dtype_to_string(dtype: object) -> str:
