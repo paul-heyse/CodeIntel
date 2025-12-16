@@ -490,7 +490,11 @@ class SemanticQueryKernel:
                     query=request.query,
                     results=[],
                     truncated=False,
-                    snapshot={"repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id},
+                    snapshot={
+                        "repo": pointer.repo,
+                        "commit": pointer.commit,
+                        "run_id": pointer.run_id,
+                    },
                     engine=engine,
                 )
 

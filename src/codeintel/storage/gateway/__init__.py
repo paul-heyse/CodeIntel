@@ -80,7 +80,10 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "DuckDBBinderException": ("codeintel.storage.gateway.protocol", "DuckDBBinderException"),
     "DuckDBCatalogException": ("codeintel.storage.gateway.protocol", "DuckDBCatalogException"),
     "DuckDBConnection": ("codeintel.storage.gateway.protocol", "DuckDBConnection"),
-    "DuckDBConnectionException": ("codeintel.storage.gateway.protocol", "DuckDBConnectionException"),
+    "DuckDBConnectionException": (
+        "codeintel.storage.gateway.protocol",
+        "DuckDBConnectionException",
+    ),
     "DuckDBDatabaseError": ("codeintel.storage.gateway.protocol", "DuckDBDatabaseError"),
     "DuckDBError": ("codeintel.storage.gateway.protocol", "DuckDBError"),
     "DuckDBInvalidInputException": (
@@ -125,6 +128,7 @@ def __getattr__(name: str) -> object:
 
 def __dir__() -> list[str]:
     return sorted(set(globals()) | set(_EXPORTS))
+
 
 __all__ = [
     "AnalyticsTables",

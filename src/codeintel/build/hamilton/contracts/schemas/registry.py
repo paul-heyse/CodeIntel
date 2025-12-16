@@ -123,11 +123,17 @@ def _unwrap_optional_type(type_obj: object) -> object:
     return type_obj
 
 
-def _find_dataclass_type_from_return_annotation(func: object, module: object) -> type[object] | None:
+def _find_dataclass_type_from_return_annotation(
+    func: object, module: object
+) -> type[object] | None:
     try:
         hints = get_type_hints(func, globalns=vars(module))
     except (NameError, TypeError):
-        log.debug("Failed to resolve type hints for %s", getattr(func, "__name__", "<unknown>"), exc_info=True)
+        log.debug(
+            "Failed to resolve type hints for %s",
+            getattr(func, "__name__", "<unknown>"),
+            exc_info=True,
+        )
         return None
 
     return_type = hints.get("return")

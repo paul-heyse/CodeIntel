@@ -260,7 +260,9 @@ class ThreadPoolAdapter(
             Future for the node result.
         """
         if self._is_write_node(node):
-            return self._executor.submit(self._execute_with_lock, execute_lifecycle_for_node, kwargs)
+            return self._executor.submit(
+                self._execute_with_lock, execute_lifecycle_for_node, kwargs
+            )
         return self._executor.submit(self._execute_without_lock, execute_lifecycle_for_node, kwargs)
 
     def _execute_without_lock(self, fn: Callable[..., object], kwargs: dict[str, object]) -> object:

@@ -31,7 +31,10 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     ),
     "publish_serving_snapshot": ("codeintel.build.serving.publisher", "publish_serving_snapshot"),
     "semantic_view": ("codeintel.build.serving.semantic_tags", "semantic_view"),
-    "write_semantic_registry": ("codeintel.build.serving.semantic_compile", "write_semantic_registry"),
+    "write_semantic_registry": (
+        "codeintel.build.serving.semantic_compile",
+        "write_semantic_registry",
+    ),
 }
 
 

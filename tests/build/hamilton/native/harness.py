@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     class _RunTargetFn(Protocol):
         def __call__(self, target: str, *, force: bool = False) -> TargetRunRecord: ...
 
+
 log = logging.getLogger(__name__)
 
 

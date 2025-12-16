@@ -36,6 +36,7 @@ _MIN_EXPORT_MODULES = 2
 # Module Discovery
 # ============================================================================
 
+
 def test_export_modules_discovered() -> None:
     """Verify all export modules are discovered by the loader."""
     loader = NativeModuleLoader()
@@ -50,7 +51,9 @@ def test_export_modules_discovered() -> None:
 def test_export_domain_is_registered() -> None:
     """Verify export domain is registered in the loader."""
     expect_in(_EXPORT_DOMAIN, NativeModuleLoader.list_domains())
-    expect_true(len(NativeModuleLoader.list_module_paths(domain=_EXPORT_DOMAIN)) >= _MIN_EXPORT_MODULES)
+    expect_true(
+        len(NativeModuleLoader.list_module_paths(domain=_EXPORT_DOMAIN)) >= _MIN_EXPORT_MODULES
+    )
 
 
 def test_all_export_module_paths_importable() -> None:
@@ -97,12 +100,16 @@ def test_export_modules_define_all(export_modules: list[tuple[str, ModuleType]])
         pytest.fail("Modules missing __all__:\n" + "\n".join(missing))
 
 
-def test_export_modules_export_materialize_node(export_modules: list[tuple[str, ModuleType]]) -> None:
+def test_export_modules_export_materialize_node(
+    export_modules: list[tuple[str, ModuleType]],
+) -> None:
     """Verify each module exports at least one `t__<target>` materialize node."""
     missing: list[str] = []
     for path, mod in export_modules:
         all_exports = getattr(mod, "__all__", [])
-        has_materialize = any(name.startswith("t__") and "__compute" not in name for name in all_exports)
+        has_materialize = any(
+            name.startswith("t__") and "__compute" not in name for name in all_exports
+        )
         if not has_materialize:
             missing.append(path)
     if missing:

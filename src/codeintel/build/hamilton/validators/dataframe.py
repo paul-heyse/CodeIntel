@@ -67,6 +67,7 @@ _IBIS_DTYPE_MAP: dict[str, tuple[str, ...]] = {
     "datetime": ("timestamp", "Timestamp"),
 }
 
+
 @cache
 def _get_ibis_table_type() -> type | None:
     try:
