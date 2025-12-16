@@ -26,6 +26,18 @@ class _PointerPaths:
     buildspec_path: Path
 
 
+def _write_registry(path: Path) -> None:
+    path.write_text('{"version": "v1", "views": []}\n', encoding="utf-8")
+
+
+def _write_schema_manifest(path: Path) -> None:
+    path.write_text('{"version": "v1", "tables": []}\n', encoding="utf-8")
+
+
+def _write_buildspec(path: Path) -> None:
+    path.write_text('{"spec_version": 1, "targets": [], "datasets": []}\n', encoding="utf-8")
+
+
 def _write_pointer(
     path: Path,
     *,
@@ -66,6 +78,9 @@ async def test_manager_initial_load_and_connect(tmp_path: Path) -> None:
         schema_manifest_path=tmp_path / "schema_manifest.json",
         buildspec_path=tmp_path / "buildspec.json",
     )
+    _write_registry(paths.semantic_registry_path)
+    _write_schema_manifest(paths.schema_manifest_path)
+    _write_buildspec(paths.buildspec_path)
     _write_pointer(
         pointer_path,
         db_path=db1,
@@ -81,8 +96,8 @@ async def test_manager_initial_load_and_connect(tmp_path: Path) -> None:
     await manager.start()
     try:
         expect_equal(manager.current_pointer().run_id, "run-1")
-        with manager.connect() as (con, _pointer):
-            result = con.execute("SELECT value FROM kv").fetchone()
+        with manager.connect() as (warehouse, _pointer):
+            result = warehouse.gateway.con.execute("SELECT value FROM kv").fetchone()
             expect_equal(result, (1,))
     finally:
         await manager.stop()
@@ -102,6 +117,9 @@ async def test_manager_hot_swap_on_pointer_change(tmp_path: Path) -> None:
         schema_manifest_path=tmp_path / "schema_manifest.json",
         buildspec_path=tmp_path / "buildspec.json",
     )
+    _write_registry(paths.semantic_registry_path)
+    _write_schema_manifest(paths.schema_manifest_path)
+    _write_buildspec(paths.buildspec_path)
     _write_pointer(
         pointer_path,
         db_path=db1,
@@ -116,8 +134,8 @@ async def test_manager_hot_swap_on_pointer_change(tmp_path: Path) -> None:
     )
     await manager.start()
     try:
-        with manager.connect() as (con, _pointer):
-            expect_equal(con.execute("SELECT value FROM kv").fetchone(), (1,))
+        with manager.connect() as (warehouse, _pointer):
+            expect_equal(warehouse.gateway.con.execute("SELECT value FROM kv").fetchone(), (1,))
 
         _write_pointer(
             pointer_path,
@@ -128,8 +146,8 @@ async def test_manager_hot_swap_on_pointer_change(tmp_path: Path) -> None:
 
         await asyncio.sleep(0.05)
         expect_equal(manager.current_pointer().run_id, "run-2")
-        with manager.connect() as (con, _pointer):
-            expect_equal(con.execute("SELECT value FROM kv").fetchone(), (2,))
+        with manager.connect() as (warehouse, _pointer):
+            expect_equal(warehouse.gateway.con.execute("SELECT value FROM kv").fetchone(), (2,))
     finally:
         await manager.stop()
 
@@ -146,6 +164,9 @@ async def test_manager_same_path_no_swap_optimization(tmp_path: Path) -> None:
         schema_manifest_path=tmp_path / "schema_manifest.json",
         buildspec_path=tmp_path / "buildspec.json",
     )
+    _write_registry(paths.semantic_registry_path)
+    _write_schema_manifest(paths.schema_manifest_path)
+    _write_buildspec(paths.buildspec_path)
     _write_pointer(
         pointer_path,
         db_path=db1,
@@ -160,8 +181,9 @@ async def test_manager_same_path_no_swap_optimization(tmp_path: Path) -> None:
     )
     await manager.start()
     try:
-        with manager.connect() as (first_con, _pointer):
-            expect_equal(first_con.execute("SELECT value FROM kv").fetchone(), (1,))
+        with manager.connect() as (warehouse1, _pointer):
+            con1 = warehouse1.gateway.con
+            expect_equal(con1.execute("SELECT value FROM kv").fetchone(), (1,))
 
         _write_pointer(
             pointer_path,
@@ -172,8 +194,9 @@ async def test_manager_same_path_no_swap_optimization(tmp_path: Path) -> None:
 
         await asyncio.sleep(0.05)
         expect_equal(manager.current_pointer().run_id, "run-2")
-        with manager.connect() as (second_con, _pointer):
-            expect_true(second_con is first_con)
-            expect_equal(second_con.execute("SELECT value FROM kv").fetchone(), (1,))
+        with manager.connect() as (warehouse2, _pointer):
+            con2 = warehouse2.gateway.con
+            expect_true(con2 is con1)
+            expect_equal(con2.execute("SELECT value FROM kv").fetchone(), (1,))
     finally:
         await manager.stop()

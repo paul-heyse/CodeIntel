@@ -33,6 +33,8 @@ _SEARCH_DOCUMENTS_SCHEMA = TableSchema(
 __all__ = [
     "build_search_documents_table",
     "ensure_fts_index",
+    "fts_index_available",
+    "fts_schema_for_table_key",
 ]
 
 
@@ -122,9 +124,47 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
         )
 
 
-def _fts_schema_for_table_key(table_key: str) -> str:
+def fts_schema_for_table_key(table_key: str) -> str:
+    """Return the DuckDB schema name that holds the FTS index for ``table_key``.
+
+    Parameters
+    ----------
+    table_key
+        Schema-qualified table key (e.g., ``"docs.search_documents"``).
+
+    Returns
+    -------
+    str
+        Schema name that DuckDB will use for the FTS index objects.
+
+    Raises
+    ------
+    ValueError
+        If ``table_key`` is not schema-qualified.
+    """
+    if "." not in table_key:
+        msg = f"Expected schema-qualified table_key, got: {table_key}"
+        raise ValueError(msg)
     schema, name = table_key.split(".", 1)
     return f"fts_{schema}_{name}"
+
+
+def fts_index_available(con: DuckDBConnection, *, table_key: str = "docs.search_documents") -> bool:
+    """Return True when a DuckDB FTS index exists for ``table_key``.
+
+    Parameters
+    ----------
+    con
+        Active DuckDB connection.
+    table_key
+        Schema-qualified table key to check.
+
+    Returns
+    -------
+    bool
+        True when the FTS schema exists.
+    """
+    return duckdb_schema_exists(con, schema=fts_schema_for_table_key(table_key))
 
 
 def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_documents") -> str:
@@ -150,7 +190,7 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
         msg = f"Search documents table not found: {table_key}"
         raise ValueError(msg)
 
-    fts_schema = _fts_schema_for_table_key(table_key)
+    fts_schema = fts_schema_for_table_key(table_key)
     if duckdb_schema_exists(con, schema=fts_schema):
         return fts_schema
 

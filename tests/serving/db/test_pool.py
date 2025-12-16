@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 from typing import TYPE_CHECKING
 
 import duckdb
@@ -29,12 +30,12 @@ def test_pool_creates_configured_size(tmp_path: Path) -> None:
     _make_db(db_path)
 
     pool = DuckDBReadPool(db_path, DuckDBPoolConfig(size=POOL_SIZE))
-    conns = [pool.acquire() for _ in range(POOL_SIZE)]
     try:
-        expect_equal(len({id(c) for c in conns}), POOL_SIZE)
+        with ExitStack() as stack:
+            warehouses = [stack.enter_context(pool.acquire()) for _ in range(POOL_SIZE)]
+            conn_ids = {id(warehouse.gateway.con) for warehouse in warehouses}
+            expect_equal(len(conn_ids), POOL_SIZE)
     finally:
-        for con in conns:
-            pool.release(con)
         pool.close_gracefully()
 
 
@@ -44,19 +45,15 @@ def test_pool_acquire_release_cycle(tmp_path: Path) -> None:
     _make_db(db_path)
 
     pool = DuckDBReadPool(db_path, DuckDBPoolConfig(size=1))
-    con1 = pool.acquire()
-    try:
+    with pool.acquire() as warehouse1:
+        con1 = warehouse1.gateway.con
         expect_equal(con1.execute("SELECT COUNT(*) FROM kv").fetchone(), (2,))
-    finally:
-        pool.release(con1)
 
-    con2 = pool.acquire()
-    try:
+    with pool.acquire() as warehouse2:
+        con2 = warehouse2.gateway.con
         expect_equal(con2.execute("SELECT COUNT(*) FROM kv").fetchone(), (2,))
         expect_equal(id(con1), id(con2))
-    finally:
-        pool.release(con2)
-        pool.close_gracefully()
+    pool.close_gracefully()
 
 
 def test_pool_close_gracefully_closes_available(tmp_path: Path) -> None:
@@ -67,5 +64,5 @@ def test_pool_close_gracefully_closes_available(tmp_path: Path) -> None:
     pool = DuckDBReadPool(db_path, DuckDBPoolConfig(size=1))
     pool.close_gracefully()
 
-    with pytest.raises(RuntimeError, match="Pool is closing"):
-        _ = pool.acquire()
+    with pytest.raises(RuntimeError, match="Pool is closing"), pool.acquire():
+        pass

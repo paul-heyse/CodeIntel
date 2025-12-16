@@ -12,14 +12,22 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from codeintel.build.spec import buildspec_from_json
 from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.serving.db.pool import DuckDBPoolConfig, DuckDBReadPool
+from codeintel.serving.semantic.inventory import SchemaInventory
+from codeintel.serving.semantic.registry import SemanticRegistry
+from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
     from pathlib import Path
 
-    from codeintel.storage.gateway.protocol import DuckDBConnection
+    from codeintel.build.spec import BuildSpec
+    from codeintel.storage.warehouse import Warehouse
+
+
+_POOL_CLOSING_ERROR = "Pool is closing"
+_POOL_ACQUIRE_MAX_ATTEMPTS = 3
 
 
 @dataclass
@@ -34,21 +42,26 @@ class ServingDBManager:
         Connection pool configuration.
     poll_interval_s
         Seconds between pointer file checks.
+    hot_swap
+        When True, watch the pointer file and hot-swap pools.
     """
 
     pointer_path: Path
-    pool_cfg: DuckDBPoolConfig = field(default_factory=DuckDBPoolConfig)
+    pool_cfg: PoolConfig = field(default_factory=PoolConfig)
     poll_interval_s: float = 1.0
+    hot_swap: bool = True
 
     _pointer: ServingSnapshotPointer | None = field(default=None, init=False)
-    _pool: DuckDBReadPool | None = field(default=None, init=False)
+    _pool: ReadPoolWarehouse | None = field(default=None, init=False)
+    _snapshot_cache: dict[Path, ServingSnapshotContext] = field(default_factory=dict, init=False)
     _watch_task: asyncio.Task[None] | None = field(default=None, init=False)
     _last_mtime_ns: int | None = field(default=None, init=False)
 
     async def start(self) -> None:
         """Initialize manager and start watch loop."""
         await self._reload_if_needed(force=True)
-        self._watch_task = asyncio.create_task(self._watch_loop())
+        if self.hot_swap:
+            self._watch_task = asyncio.create_task(self._watch_loop())
 
     async def stop(self) -> None:
         """Stop watch loop and close pool."""
@@ -78,30 +91,60 @@ class ServingDBManager:
         return self._pointer
 
     @contextmanager
-    def connect(self) -> Iterator[tuple[DuckDBConnection, ServingSnapshotPointer]]:
-        """Yield a database connection plus the current pointer.
+    def connect(self) -> Iterator[tuple[Warehouse, ServingSnapshotPointer]]:
+        """Yield a warehouse handle plus the current pointer.
 
         Yields
         ------
-        tuple[DuckDBConnection, ServingSnapshotPointer]
-            Connection and current pointer.
+        tuple[Warehouse, ServingSnapshotPointer]
+            Warehouse handle and current pointer.
 
         Raises
         ------
         RuntimeError
             If manager not started.
         """
-        pool = self._pool
-        pointer = self._pointer
-        if pool is None or pointer is None:
-            msg = "ServingDBManager not started"
-            raise RuntimeError(msg)
+        attempts = 0
+        while True:
+            pool = self._pool
+            pointer = self._pointer
+            if pool is None or pointer is None:
+                msg = "ServingDBManager not started"
+                raise RuntimeError(msg)
+            try:
+                with pool.acquire() as warehouse:
+                    yield warehouse, pointer
+            except RuntimeError as exc:
+                if str(exc) != _POOL_CLOSING_ERROR:
+                    raise
+                attempts += 1
+                if attempts >= _POOL_ACQUIRE_MAX_ATTEMPTS:
+                    msg = "ServingDBManager could not acquire a warehouse handle"
+                    raise RuntimeError(msg) from exc
+                continue
+            else:
+                return
 
-        con = pool.acquire()
-        try:
-            yield con, pointer
-        finally:
-            pool.release(con)
+    def snapshot_context(self, pointer: ServingSnapshotPointer) -> ServingSnapshotContext:
+        """Return cached snapshot context for the given pointer.
+
+        Parameters
+        ----------
+        pointer
+            Snapshot pointer whose artifacts should be loaded.
+
+        Returns
+        -------
+        ServingSnapshotContext
+            In-memory context containing registry/inventory/buildspec for the snapshot.
+        """
+        cached = self._snapshot_cache.get(pointer.db_path)
+        if cached is not None and cached.pointer == pointer:
+            return cached
+
+        context = _load_snapshot_context(pointer)
+        self._snapshot_cache[pointer.db_path] = context
+        return context
 
     async def _watch_loop(self) -> None:
         """Background task watching for pointer changes."""
@@ -124,15 +167,70 @@ class ServingDBManager:
         # Skip if same DB path (metadata-only update)
         if self._pointer is not None and new_ptr.db_path == self._pointer.db_path:
             self._pointer = new_ptr
+            self._snapshot_cache[new_ptr.db_path] = _load_snapshot_context(new_ptr)
             return
 
-        new_pool = DuckDBReadPool(new_ptr.db_path, self.pool_cfg)
+        new_pool = ReadPoolWarehouse(new_ptr.db_path, self.pool_cfg)
         old_pool = self._pool
         self._pool = new_pool
         self._pointer = new_ptr
+        self._snapshot_cache[new_ptr.db_path] = _load_snapshot_context(new_ptr)
 
         if old_pool is not None:
             old_pool.close_gracefully()
 
 
 __all__ = ["ServingDBManager"]
+
+
+@dataclass(frozen=True)
+class ServingSnapshotContext:
+    """Cached snapshot-scoped context used by serving operations.
+
+    Parameters
+    ----------
+    pointer
+        Snapshot pointer describing the active artifact paths.
+    registry
+        Semantic registry loaded from the snapshot artifact.
+    inventory
+        Schema inventory loaded from the snapshot artifact.
+    buildspec
+        BuildSpec contract loaded from the snapshot artifact.
+    """
+
+    pointer: ServingSnapshotPointer
+    registry: SemanticRegistry
+    inventory: SchemaInventory
+    buildspec: BuildSpec
+
+    def to_summary(self) -> Mapping[str, object]:
+        """Return a compact summary for observability endpoints.
+
+        Returns
+        -------
+        Mapping[str, object]
+            Stable snapshot metadata for health/observability surfaces.
+        """
+        return {
+            "repo": self.pointer.repo,
+            "commit": self.pointer.commit,
+            "run_id": self.pointer.run_id,
+            "semantic_layer_version": self.pointer.semantic_layer_version,
+            "semantic_registry_version": self.registry.version,
+            "schema_inventory": self.inventory.summary(),
+            "buildspec_version": self.buildspec.spec_version,
+        }
+
+
+def _load_snapshot_context(pointer: ServingSnapshotPointer) -> ServingSnapshotContext:
+    registry = SemanticRegistry.load(pointer.semantic_registry_path)
+    inventory = SchemaInventory.load(pointer.schema_manifest_path)
+    buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
+    buildspec = buildspec_from_json(buildspec_payload)
+    return ServingSnapshotContext(
+        pointer=pointer,
+        registry=registry,
+        inventory=inventory,
+        buildspec=buildspec,
+    )

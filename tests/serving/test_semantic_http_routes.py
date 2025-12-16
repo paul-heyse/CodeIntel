@@ -184,3 +184,80 @@ def test_semantic_route_invalid_filter_returns_400(tmp_path: Path) -> None:
             },
         )
         expect_equal(query.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+def test_semantic_routes_support_correlation_id_and_v1_alias(tmp_path: Path) -> None:
+    """All semantic routes include correlation IDs and support /v1 prefix."""
+    serve_dir = tmp_path / "serve"
+    serve_dir.mkdir(parents=True, exist_ok=True)
+
+    db_path = tmp_path / "codeintel.duckdb"
+    registry_path = tmp_path / "semantic_registry.json"
+    manifest_path = tmp_path / "schema_manifest.json"
+    buildspec_path = tmp_path / "buildspec.json"
+    _make_db(db_path)
+    _write_registry(registry_path)
+    _write_schema_manifest(manifest_path)
+    _write_buildspec(buildspec_path)
+    _write_pointer(
+        serve_dir / "current.json",
+        db_path=db_path,
+        registry_path=registry_path,
+        manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+    )
+
+    settings = ServingSettings(serve_dir=serve_dir, pool_size=1, poll_interval_s=0.01)
+    app = create_serving_app(settings=settings, mount_mcp=False)
+
+    with TestClient(app) as client:
+        correlation_id = "cid-test-123"
+        views = client.get("/semantic/views", headers={"X-Correlation-ID": correlation_id})
+        expect_equal(views.status_code, status.HTTP_200_OK)
+        expect_equal(views.headers.get("X-Correlation-ID"), correlation_id)
+
+        views_v1 = client.get("/v1/semantic/views", headers={"X-Correlation-ID": correlation_id})
+        expect_equal(views_v1.status_code, status.HTTP_200_OK)
+        expect_equal(views_v1.headers.get("X-Correlation-ID"), correlation_id)
+
+        missing = client.get("/semantic/views/nope.view", headers={"X-Correlation-ID": correlation_id})
+        expect_equal(missing.status_code, status.HTTP_404_NOT_FOUND)
+        payload = missing.json()
+        expect_equal(payload.get("correlation_id"), correlation_id)
+
+
+def test_semantic_routes_support_optional_api_key(tmp_path: Path) -> None:
+    """When an API key is configured, routes require it."""
+    serve_dir = tmp_path / "serve"
+    serve_dir.mkdir(parents=True, exist_ok=True)
+
+    db_path = tmp_path / "codeintel.duckdb"
+    registry_path = tmp_path / "semantic_registry.json"
+    manifest_path = tmp_path / "schema_manifest.json"
+    buildspec_path = tmp_path / "buildspec.json"
+    _make_db(db_path)
+    _write_registry(registry_path)
+    _write_schema_manifest(manifest_path)
+    _write_buildspec(buildspec_path)
+    _write_pointer(
+        serve_dir / "current.json",
+        db_path=db_path,
+        registry_path=registry_path,
+        manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+    )
+
+    settings = ServingSettings(
+        serve_dir=serve_dir,
+        pool_size=1,
+        poll_interval_s=0.01,
+        api_key="secret-key",
+    )
+    app = create_serving_app(settings=settings, mount_mcp=False)
+
+    with TestClient(app) as client:
+        denied = client.get("/semantic/views")
+        expect_equal(denied.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        ok = client.get("/semantic/views", headers={"X-API-Key": "secret-key"})
+        expect_equal(ok.status_code, status.HTTP_200_OK)

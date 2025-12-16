@@ -13,7 +13,12 @@ from __future__ import annotations
 
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.serving.db.pool import DuckDBPoolConfig, DuckDBReadPool
+from codeintel.serving.db.pool import (
+    DuckDBPoolConfig,
+    DuckDBReadPool,
+    PoolConfig,
+    ReadPoolWarehouse,
+)
 from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.mcp.server import create_mcp_server
@@ -23,6 +28,8 @@ from codeintel.serving.settings import ServingSettings
 __all__ = [
     "DuckDBPoolConfig",
     "DuckDBReadPool",
+    "PoolConfig",
+    "ReadPoolWarehouse",
     "SemanticQueryKernel",
     "ServingDBManager",
     "ServingSettings",
