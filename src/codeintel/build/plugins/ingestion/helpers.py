@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from codeintel.build.context import TargetExecutionContext
-    from codeintel.build.plugins.ingestion.modules_options import ModuleIngestOptions
+    from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
 
 __all__ = [
     "build_scan_profile",

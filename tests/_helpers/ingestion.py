@@ -10,7 +10,8 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from codeintel.build.contracts import OutputContract
-from codeintel.build.plugins.ingestion.helpers import get_module_paths, paths_to_modules
+from codeintel.build.hamilton.helpers import paths_to_modules
+from codeintel.build.plugins.ingestion.helpers import get_module_paths
 from codeintel.build.plugins.ingestion.stubs import RepoScanPlugin, TestsIngestPlugin
 from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget

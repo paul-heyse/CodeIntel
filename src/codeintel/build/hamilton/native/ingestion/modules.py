@@ -19,10 +19,10 @@ from typing import TYPE_CHECKING
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.helpers import build_scan_profile, filter_modules
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.plugins.ingestion.helpers import build_scan_profile, filter_modules
-from codeintel.build.plugins.ingestion.modules_options import ModuleIngestOptions
+from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,

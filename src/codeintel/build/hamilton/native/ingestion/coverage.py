@@ -16,10 +16,9 @@ from pathlib import Path
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.helpers import get_module_paths_from_env, paths_to_modules
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.ingestion.ast import get_module_paths_from_env
-from codeintel.build.plugins.ingestion.helpers import paths_to_modules
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import BuildToolAdapter, DuckDBStorageAdapter
 from codeintel.ingestion.compute import CoverageIngestStep

@@ -2,6 +2,8 @@
 
 This module implements the export_parquet target as a pure Hamilton DAG,
 exporting analytics data to Parquet format for efficient storage and analysis.
+
+Phase 5: Export domain migration with Hamilton-native validation.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ import io
 import logging
 
 import ibis.expr.types as ir
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import check_output_custom, schema, tag
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
@@ -26,6 +28,7 @@ from codeintel.build.hamilton.native.runner import (
     create_run_record,
     save_manifest,
 )
+from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
@@ -34,6 +37,22 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
 @tag(domain="export", target="export_parquet", node_type="compute")
+@check_output_custom(
+    *build_table_contract(
+        required_columns=["function_goid_h128", "repo", "commit"],
+        no_nulls=["function_goid_h128", "repo", "commit"],
+    ),
+)
+@schema.output(
+    ("function_goid_h128", "string"),
+    ("repo", "string"),
+    ("commit", "string"),
+    ("loc", "int"),
+    ("complexity", "int"),
+    ("parameter_count", "int"),
+    ("return_count", "int"),
+    ("has_docstring", "bool"),
+)
 def t__export_parquet__compute(
     env: BuildEnv,
     q__analytics__function_metrics: ir.Table,
@@ -41,6 +60,7 @@ def t__export_parquet__compute(
     """Compute the Parquet export table expression.
 
     This node prepares Ibis table expressions for export to Parquet format.
+    Filters the function_metrics table to the current snapshot.
 
     Parameters
     ----------
@@ -52,7 +72,7 @@ def t__export_parquet__compute(
     Returns
     -------
     ir.Table
-        Ibis table expression for export.
+        Ibis table expression for export, filtered to current snapshot.
 
     Examples
     --------

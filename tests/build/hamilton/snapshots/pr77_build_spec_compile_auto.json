@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "57fe0b85d39cc072ee92f861b8c59f9a631c0ac54326d1d2372f9c478cc257e9",
+  "buildspec_hash": "a6ad8a8abd6c3cf52b417a809d04dd8a2907d1865c92da8f6a363da3eb2d4f72",
   "datasets": [
     {
       "schema_hash": "4fea3b6c5a5a27bc4a5461a3f75e27173887f4605159c550eac43dd3e5d0d0cb",
@@ -307,7 +307,7 @@
         "test_profile"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "behavioral_coverage",
       "outputs": [
         "analytics.behavioral_coverage"
@@ -316,11 +316,10 @@
     {
       "artifacts": [],
       "deps": [
-        "goids",
-        "scip"
+        "goids"
       ],
       "domain": "graphs",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "call_graph",
       "outputs": [
         "graph.call_graph_edges",
@@ -343,11 +342,10 @@
     {
       "artifacts": [],
       "deps": [
-        "ast",
         "goids"
       ],
       "domain": "graphs",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "cfg",
       "outputs": [
         "graph.cfg_blocks",
@@ -373,10 +371,10 @@
       "artifacts": [],
       "deps": [
         "call_graph",
-        "config_ingest"
+        "goids"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "config_data_flow",
       "outputs": [
         "analytics.config_data_flow",
@@ -421,11 +419,10 @@
     {
       "artifacts": [],
       "deps": [
-        "coverage_functions",
-        "tests_ingest"
+        "goids"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "coverage_test_edges",
       "outputs": [
         "analytics.test_coverage_edges"
@@ -466,10 +463,10 @@
     {
       "artifacts": [],
       "deps": [
-        "cfg"
+        "goids"
       ],
       "domain": "graphs",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "dfg",
       "outputs": [
         "graph.dfg_edges"
@@ -543,12 +540,9 @@
     },
     {
       "artifacts": [],
-      "deps": [
-        "ast",
-        "goids"
-      ],
+      "deps": [],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "function_ast_features",
       "outputs": [
         "analytics.function_ast_features"
@@ -557,11 +551,10 @@
     {
       "artifacts": [],
       "deps": [
-        "docstrings",
-        "function_metrics"
+        "goids"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "function_contracts",
       "outputs": [
         "analytics.function_contracts"
@@ -570,10 +563,10 @@
     {
       "artifacts": [],
       "deps": [
-        "function_metrics"
+        "call_graph"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "function_effects",
       "outputs": [
         "analytics.function_effects"
@@ -591,12 +584,9 @@
     },
     {
       "artifacts": [],
-      "deps": [
-        "ast",
-        "goids"
-      ],
+      "deps": [],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "function_metrics",
       "outputs": [
         "analytics.function_metrics",
@@ -606,11 +596,10 @@
     {
       "artifacts": [],
       "deps": [
-        "ast",
-        "scip"
+        "modules"
       ],
       "domain": "graphs",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "goids",
       "outputs": [
         "core.goid_crosswalk",
@@ -620,11 +609,10 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph",
-        "import_graph"
+        "call_graph"
       ],
       "domain": "graphs",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "graph_metrics",
       "outputs": [
         "analytics.graph_metrics_functions",
@@ -641,7 +629,7 @@
         "import_graph"
       ],
       "domain": "graphs",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "graph_validation",
       "outputs": [
         "analytics.graph_validation"
@@ -675,7 +663,7 @@
         "modules"
       ],
       "domain": "graphs",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "import_graph",
       "outputs": [
         "graph.import_graph_edges",
@@ -697,14 +685,11 @@
     {
       "artifacts": [],
       "deps": [
-        "docstrings",
-        "function_history",
-        "graph_metrics",
-        "risk_factors",
-        "semantic_roles"
+        "call_graph",
+        "symbol_uses"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "profiles",
       "outputs": [
         "analytics.file_profile",
@@ -749,11 +734,11 @@
     {
       "artifacts": [],
       "deps": [
-        "call_graph",
-        "function_metrics"
+        "function_ast_features",
+        "modules"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "semantic_roles",
       "outputs": [
         "analytics.semantic_roles_functions",
@@ -763,11 +748,10 @@
     {
       "artifacts": [],
       "deps": [
-        "graph_metrics",
         "subsystems"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "subsystem_agreement",
       "outputs": [
         "analytics.subsystem_agreement"
@@ -776,11 +760,10 @@
     {
       "artifacts": [],
       "deps": [
-        "graph_metrics",
         "subsystems"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "subsystem_graph_metrics",
       "outputs": [
         "analytics.subsystem_graph_metrics"
@@ -805,7 +788,7 @@
         "symbol_uses"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "symbol_graph_metrics",
       "outputs": [
         "analytics.symbol_graph_metrics_functions",
@@ -815,10 +798,12 @@
     {
       "artifacts": [],
       "deps": [
+        "goids",
+        "modules",
         "scip"
       ],
       "domain": "graphs",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "symbol_uses",
       "outputs": [
         "graph.symbol_use_edges"
@@ -838,11 +823,10 @@
     {
       "artifacts": [],
       "deps": [
-        "coverage_test_edges",
-        "tests_ingest"
+        "coverage_test_edges"
       ],
       "domain": "analytics",
-      "impl_kind": "wrapper",
+      "impl_kind": "native",
       "name": "test_profile",
       "outputs": [
         "analytics.test_profile"

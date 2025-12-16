@@ -88,8 +88,12 @@ def test_native_analytics_marked_in_plan(tmp_path: Path) -> None:
             )
 
 
-def test_wrapper_targets_still_marked_wrapper(tmp_path: Path) -> None:
-    """Verify non-migrated analytics targets remain wrapper."""
+def test_function_metrics_now_native_after_phase4(tmp_path: Path) -> None:
+    """Verify function_metrics is now native after Phase 4 migration.
+
+    This target was migrated from wrapper to native in Phase 4 of the
+    Hamilton Native Implementation Plan.
+    """
     # Build driver in auto mode
     # Create minimal config and snapshot for planning
     config = BuildConfig()
@@ -98,28 +102,26 @@ def test_wrapper_targets_still_marked_wrapper(tmp_path: Path) -> None:
 
     graph = get_target_graph()
 
-    # Test a non-native analytics target
-    # Choose a target that's likely to remain wrapper in Wave 2
-    wrapper_targets = ["function_metrics"]  # Should still be wrapper
+    # function_metrics was migrated in Phase 4
+    target_name = "function_metrics"
 
-    for target_name in wrapper_targets:
-        # Check if target exists in graph
-        if graph.get(target_name) is None:
-            pytest.skip(f"Target '{target_name}' not in graph")
+    # Check if target exists in graph
+    if graph.get(target_name) is None:
+        pytest.skip(f"Target '{target_name}' not in graph")
 
-        plan = compute_plan(env=env, graph=graph, requested=(target_name,), mode="auto")
+    plan = compute_plan(env=env, graph=graph, requested=(target_name,), mode="auto")
 
-        # Find the entry for this target in the plan
-        target_entry = next((e for e in plan.entries if e.target == target_name), None)
+    # Find the entry for this target in the plan
+    target_entry = next((e for e in plan.entries if e.target == target_name), None)
 
-        if target_entry is None:
-            pytest.fail(f"Target '{target_name}' not found in plan")
+    if target_entry is None:
+        pytest.fail(f"Target '{target_name}' not found in plan")
 
-        # Assert impl_kind is "wrapper"
-        if target_entry.impl_kind != "wrapper":
-            pytest.fail(
-                f"Expected impl_kind='wrapper' for {target_name}, got '{target_entry.impl_kind}'"
-            )
+    # Assert impl_kind is now "native" after Phase 4 migration
+    if target_entry.impl_kind != "native":
+        pytest.fail(
+            f"Expected impl_kind='native' for {target_name}, got '{target_entry.impl_kind}'"
+        )
 
 
 def test_risk_factors_still_native_after_wave2(tmp_path: Path) -> None:

@@ -20,10 +20,10 @@ import libcst as cst
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.plugins._helpers import filter_paths, get_source_root
-from codeintel.build.plugins.graphs.builders.callgraph_options import CallGraphOptions
+from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import load_function_index
 from codeintel.core.paths import normalize_path

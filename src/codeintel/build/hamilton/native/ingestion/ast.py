@@ -15,9 +15,9 @@ from dataclasses import dataclass, field
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.helpers import paths_to_modules
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.plugins.ingestion.helpers import paths_to_modules
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute import AstExtractStep
@@ -112,7 +112,7 @@ def t__ast__extract(
             errors=list(result.errors) if result.errors else [],
         )
 
-    except Exception:
+    except Exception as exc:
         log.exception("AST extraction failed")
         return AstExtractResult(
             success=False,

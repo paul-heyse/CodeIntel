@@ -18,10 +18,11 @@ import ast
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from codeintel.build.context import TargetResult
 from codeintel.build.plugin import MetadataPlugin
+
+from codeintel.build.context import TargetResult
 from codeintel.build.plugins._helpers import filter_mapping, get_source_root, persist_rows
-from codeintel.build.plugins.graphs.builders.import_graph_options import ImportGraphOptions
+from codeintel.build.hamilton.native.options.graphs import ImportGraphOptions
 from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import imports as imports_compute

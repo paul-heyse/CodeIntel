@@ -9,20 +9,23 @@ See: codeintel.build.hamilton.native.ingestion for native implementations.
 Utilities
 ---------
 - helpers: Shared helper functions for module paths and filtering.
-- modules_options: Options model for module ingestion.
-- scip_options: Options model for SCIP ingestion.
+
+Options have been migrated to:
+    codeintel.build.hamilton.native.options.ingestion
 """
 
 from __future__ import annotations
 
+from codeintel.build.hamilton.native.options.ingestion import (
+    ModuleIngestOptions,
+    ScipIngestOptions,
+)
 from codeintel.build.plugins.ingestion.helpers import (
     build_scan_profile,
     filter_modules,
     get_module_paths,
     paths_to_modules,
 )
-from codeintel.build.plugins.ingestion.modules_options import ModuleIngestOptions
-from codeintel.build.plugins.ingestion.scip_options import ScipIngestOptions
 
 __all__ = [
     "ModuleIngestOptions",
