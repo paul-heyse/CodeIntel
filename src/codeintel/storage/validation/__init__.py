@@ -13,7 +13,7 @@ validation.conformance
     Row-level schema conformance validation. Samples rows from tables and
     validates them against JSON Schemas.
 
-validation.data_checks
+queries.safe
     Efficient data existence and row count checking. Provides functions like
     `table_has_rows_for_snapshot()` and `count_rows_for_tables()` for
     checking whether prerequisite data exists before running pipelines.
@@ -38,6 +38,12 @@ Count rows across multiple tables:
 
 from __future__ import annotations
 
+from codeintel.storage.queries.safe import (
+    count_rows_for_snapshot,
+    count_rows_for_tables,
+    safe_count_rows,
+    table_has_rows_for_snapshot,
+)
 from codeintel.storage.validation.conformance import (
     ConformanceIssue,
     ConformanceReport,
@@ -47,12 +53,6 @@ from codeintel.storage.validation.contract import (
     collect_contract_issues,
     get_binding_required_datasets,
     validate_contract_or_raise,
-)
-from codeintel.storage.validation.data_checks import (
-    count_rows_for_snapshot,
-    count_rows_for_tables,
-    safe_count_rows,
-    table_has_rows_for_snapshot,
 )
 
 __all__ = [

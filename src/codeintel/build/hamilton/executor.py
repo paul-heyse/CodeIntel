@@ -22,7 +22,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
-from hamilton import base as h_base
+import hamilton.base as h_base
 
 from codeintel.build.assets.emitter import persist_asset_catalog_for_run
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter

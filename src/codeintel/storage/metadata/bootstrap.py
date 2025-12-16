@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
 
 from codeintel.core.schemas import schema_hash
-from codeintel.storage.build_bridge import get_schema_provider, is_view, iter_contracts
+from codeintel.storage.contracts.provider import is_view, iter_contracts
+from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:

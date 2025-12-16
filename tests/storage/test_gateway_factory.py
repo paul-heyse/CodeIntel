@@ -24,6 +24,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.builders import ModuleRow, insert_rows
 
 
 def test_storage_config_creates_with_defaults() -> None:
@@ -204,9 +205,10 @@ def test_open_memory_gateway_supports_insert_and_query() -> None:
     """Verify gateway supports data operations."""
     gateway = open_memory_gateway(validate_schema=False)
     try:
-        gateway.core.insert_modules(
+        insert_rows(
+            gateway,
             [
-                ("test_mod", "test.py", "test/repo", "abc123"),
+                ModuleRow(module="test_mod", path="test.py", repo="test/repo", commit="abc123"),
             ]
         )
         result = gateway.con.execute(
@@ -280,7 +282,10 @@ def test_open_gateway_persists_data(tmp_path: Path) -> None:
     )
     gateway1 = open_gateway(cfg1)
     try:
-        gateway1.core.insert_modules([("mod", "mod.py", "repo", "commit")])
+        insert_rows(
+            gateway1,
+            [ModuleRow(module="mod", path="mod.py", repo="repo", commit="commit")],
+        )
     finally:
         gateway1.close()
 
@@ -413,7 +418,10 @@ def test_snapshot_resolver_opens_different_commits(tmp_path: Path) -> None:
         )
         gw = open_gateway(cfg)
 
-        gw.core.insert_modules([(f"mod_{commit}", "mod.py", "repo", commit)])
+        insert_rows(
+            gw,
+            [ModuleRow(module=f"mod_{commit}", path="mod.py", repo="repo", commit=commit)],
+        )
         gw.close()
 
     resolver = build_snapshot_gateway_resolver(db_dir=tmp_path)
@@ -462,10 +470,11 @@ def test_full_gateway_lifecycle(tmp_path: Path) -> None:
         validate_schema=False,
     )
     gw_write = open_gateway(cfg_write)
-    gw_write.core.insert_modules(
+    insert_rows(
+        gw_write,
         [
-            ("mod_a", "mod_a.py", "test/repo", "v1"),
-            ("mod_b", "mod_b.py", "test/repo", "v1"),
+            ModuleRow(module="mod_a", path="mod_a.py", repo="test/repo", commit="v1"),
+            ModuleRow(module="mod_b", path="mod_b.py", repo="test/repo", commit="v1"),
         ]
     )
     gw_write.close()
@@ -491,7 +500,7 @@ def test_multiple_memory_gateways_are_independent() -> None:
     gw2 = open_memory_gateway(validate_schema=False)
 
     try:
-        gw1.core.insert_modules([("mod1", "m1.py", "repo1", "c1")])
+        insert_rows(gw1, [ModuleRow(module="mod1", path="m1.py", repo="repo1", commit="c1")])
 
         r2 = gw2.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         if r2 is None:

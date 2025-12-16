@@ -10,7 +10,7 @@ from typing import get_args, get_origin
 
 import jsonschema
 
-from codeintel.storage.build_bridge import iter_contracts
+from codeintel.storage.contracts.provider import iter_contracts
 
 if typing.TYPE_CHECKING:
     from pathlib import Path

@@ -11,38 +11,21 @@ how data flows from source tables through profile compositions to views.
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.config.datasets.composites import get_composite_schemas
-from codeintel.storage.view_names import ALIAS_DOCS_VIEWS
+from codeintel.storage.contracts.provider import get_contract_for_table_key, iter_contracts
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator
-    from types import ModuleType
+    from collections.abc import Iterable, Iterator
 
     from codeintel.core.schemas.contract_primitives import DatasetContract
-
-    GetContractFunc = Callable[[str], DatasetContract]
-    IterContractsFunc = Callable[[], Iterable[DatasetContract]]
 
 
 NodeKind = Literal["table", "view", "operation", "graph"]
 EdgeType = Literal["builds", "reads", "exposes", "depends_on"]
-
-
-@lru_cache(maxsize=1)
-def _schemas_module() -> ModuleType:
-    """Get the build schemas module lazily.
-
-    Returns
-    -------
-    ModuleType
-        The codeintel.build.schemas module.
-    """
-    return importlib.import_module("codeintel.build.schemas")
 
 
 @dataclass(frozen=True)
@@ -89,18 +72,6 @@ class DataflowEdge:
     edge_type: EdgeType
 
 
-def _get_contract_provider() -> tuple[GetContractFunc, IterContractsFunc]:
-    """Get contract provider functions lazily to avoid circular imports.
-
-    Returns
-    -------
-    tuple[GetContractFunc, IterContractsFunc]
-        (get_contract_for_table_key, iter_contracts) functions.
-    """
-    mod = _schemas_module()
-    return mod.get_contract_for_table_key, mod.iter_contracts
-
-
 def iter_dataset_nodes() -> Iterator[DataflowNode]:
     """Iterate over dataset contracts and emit DataflowNodes.
 
@@ -109,7 +80,6 @@ def iter_dataset_nodes() -> Iterator[DataflowNode]:
     DataflowNode
         Node keyed by DatasetContract.table_key for tables and views.
     """
-    _, iter_contracts = _get_contract_provider()
     for contract in iter_contracts():
         kind: NodeKind = "view" if contract.is_view else "table"
         yield DataflowNode(
@@ -129,7 +99,6 @@ def iter_composite_edges() -> Iterator[DataflowEdge]:
     DataflowEdge
         Edge from each composed_of source table to the profile table.
     """
-    get_contract_for_table_key, _ = _get_contract_provider()
     composite_schemas = get_composite_schemas()
 
     for table_key, composition in composite_schemas.items():
@@ -159,8 +128,6 @@ def iter_dependency_edges() -> Iterator[DataflowEdge]:
     DataflowEdge
         Edge from each declared upstream dependency to the dataset table_key.
     """
-    _, iter_contracts = _get_contract_provider()
-
     # Build a name-to-contract mapping for upstream resolution
     contracts_by_name: dict[str, DatasetContract] = {}
     for contract in iter_contracts():
@@ -183,6 +150,50 @@ def iter_dependency_edges() -> Iterator[DataflowEdge]:
             )
 
 
+@lru_cache(maxsize=1)
+def _alias_docs_views() -> dict[str, str]:
+    """Derive docs alias views for select analytics tables.
+
+    Alias views are created for a narrow set of analytics tables (e.g. profile/config surfaces)
+    to provide stable docs-facing names without duplicating view builder logic.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping from docs view key -> underlying analytics table key.
+    """
+    derived_views = {c.table_key for c in iter_contracts() if c.is_view}
+    mapping: dict[str, str] = {}
+
+    for contract in iter_contracts():
+        if contract.is_view:
+            continue
+        if not contract.table_key.startswith("analytics."):
+            continue
+        name = contract.name
+        if name.endswith("_cache"):
+            continue
+        if not (name.startswith("config_") or name.endswith("_profile")):
+            continue
+        view_key = f"docs.v_{name}"
+        if view_key in derived_views:
+            continue
+        mapping[view_key] = contract.table_key
+
+    return mapping
+
+
+def alias_docs_views() -> dict[str, str]:
+    """Return the derived docs alias view mapping.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping from docs view key -> underlying analytics table key.
+    """
+    return dict(_alias_docs_views())
+
+
 def iter_docs_view_alias_edges() -> Iterator[DataflowEdge]:
     """Yield builds edges for docs views that are pure aliases.
 
@@ -191,7 +202,7 @@ def iter_docs_view_alias_edges() -> Iterator[DataflowEdge]:
     DataflowEdge
         Edge from the analytics table to its docs alias view.
     """
-    for view_key, table_key in ALIAS_DOCS_VIEWS.items():
+    for view_key, table_key in _alias_docs_views().items():
         yield DataflowEdge(src=table_key, dst=view_key, edge_type="builds")
 
 
@@ -203,7 +214,7 @@ def iter_docs_view_alias_nodes() -> Iterator[DataflowNode]:
     DataflowNode
         Node keyed by the docs view alias.
     """
-    for view_key in ALIAS_DOCS_VIEWS:
+    for view_key in _alias_docs_views():
         yield DataflowNode(
             id=view_key,
             kind="view",
@@ -247,6 +258,7 @@ __all__ = [
     "DataflowNode",
     "EdgeType",
     "NodeKind",
+    "alias_docs_views",
     "build_contract_dataflow_graph",
     "iter_composite_edges",
     "iter_dataset_nodes",

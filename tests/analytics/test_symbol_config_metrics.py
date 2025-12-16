@@ -12,7 +12,6 @@ from codeintel.analytics.graphs import (
     compute_subsystem_agreement,
     compute_symbol_graph_metrics_modules,
 )
-from codeintel.storage.views.creation import create_all_views
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -164,7 +163,7 @@ def test_symbol_and_config_metrics_populate_and_views_create(
         repo=test_ctx.repo,
         commit=test_ctx.commit,
     )
-    create_all_views(test_ctx.con)
+    test_ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
 
     sym_rows = test_ctx.con.execute(
         "SELECT module, symbol_community_id FROM analytics.symbol_graph_metrics_modules"
@@ -202,7 +201,7 @@ def test_subsystem_agreement_exposed_in_views(
         repo=test_ctx.repo,
         commit=test_ctx.commit,
     )
-    create_all_views(test_ctx.con)
+    test_ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
 
     agree_rows = test_ctx.con.execute(
         "SELECT module, agrees FROM docs.v_subsystem_agreement"

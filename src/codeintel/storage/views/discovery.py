@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from hamilton import driver
+from hamilton.driver import Driver
 
 from codeintel.hamilton import tags as ht
 
@@ -40,7 +40,7 @@ def _find_callable(modules: tuple[ModuleType, ...], name: str) -> ViewBuilder | 
 
 
 def _discover_by_output_kind(
-    dr: driver.Driver,
+    dr: Driver,
     *,
     modules: tuple[ModuleType, ...],
     output_kind: str,
@@ -92,7 +92,7 @@ def discover_view_builders(
     tuple[DiscoveredViewBuilder, ...]
         Discovered builders, sorted deterministically by table_key.
     """
-    dr = driver.Driver(config or {}, *modules)
+    dr = Driver(config or {}, *modules)
     discovered = _discover_by_output_kind(
         dr,
         modules=modules,

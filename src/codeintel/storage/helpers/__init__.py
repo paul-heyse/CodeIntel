@@ -8,10 +8,6 @@ helpers.json
     JSON encode/decode helpers for DuckDB column values. Handles the various
     forms DuckDB returns JSON data (string, dict, list, None).
 
-helpers.profiling
-    Docs view profiling utilities. Imports from gateway, so must be imported
-    directly from the submodule.
-
 helpers.module_index
     Module metadata helpers. Imports from ingestion, so must be imported
     directly from the submodule.
@@ -19,12 +15,13 @@ helpers.module_index
 Note
 ----
 Only json helpers are re-exported here to avoid circular imports.
-Import profiling and module_index directly from their submodules:
+Import module_index directly from its submodule:
 
-    from codeintel.storage.helpers.profiling import run_profile
     from codeintel.storage.helpers.module_index import load_module_map
 
-For row count operations, use `codeintel.storage.validation.data_checks`.
+For row count operations, use `codeintel.storage.queries.safe`.
+
+For profiling view plans, use `codeintel.storage.warehouse.Warehouse.profile_views`.
 """
 
 from __future__ import annotations

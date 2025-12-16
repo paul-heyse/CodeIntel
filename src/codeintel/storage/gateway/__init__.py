@@ -7,9 +7,9 @@ Architecture
 ------------
 The gateway module uses a layered accessor pattern:
 
-- **BaseTableAccessor**: Base class providing `_table()` and `_insert_rows()` methods
+- **BaseTableAccessor**: Base class providing `_table()` and `con` access
 - **CoreTables**, **GraphTables**, **AnalyticsTables**: Schema-specific accessor classes
-  that inherit from BaseTableAccessor and provide typed methods for each table
+  that inherit from BaseTableAccessor and provide typed methods for each table/view
 - **DocsViews**: Read-only accessor for docs.* views
 - **DuckDBGateway**: Concrete implementation combining all accessors
 
@@ -24,12 +24,11 @@ Open a gateway and access tables through typed accessors:
 
         modules = gw.core.modules().fetchall()
 
-
-        gw.core.insert_goids([(hash, urn, repo, commit, ...)])
+Writes are routed through `codeintel.storage.warehouse.Warehouse` to keep a single
+I/O boundary.
 
 The accessor classes provide:
 - **Relation methods**: Return DuckDBRelation for query building
-- **Insert methods**: Typed bulk insertion with schema validation
 """
 
 from __future__ import annotations

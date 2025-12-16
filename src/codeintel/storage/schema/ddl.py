@@ -13,8 +13,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from codeintel.storage.build_bridge import get_schema_provider, is_view, iter_contracts
 from codeintel.storage.constants import SCHEMAS
+from codeintel.storage.contracts.provider import is_view, iter_contracts
+from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
 if TYPE_CHECKING:

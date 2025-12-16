@@ -7,25 +7,46 @@ must be importable without creating a storage→build dependency.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-else:
-    from collections.abc import Mapping
+    from datetime import datetime
 
 
 class DatasetRefProtocol(Protocol):
     """Minimal protocol for dataset references used in telemetry records."""
 
-    table_key: str
+    @property
+    def table_key(self) -> str: ...
+
+    @property
+    def repo(self) -> str: ...
+
+    @property
+    def commit(self) -> str: ...
+
+    @property
+    def row_count(self) -> int | None: ...
 
 
 class ArtifactRefProtocol(Protocol):
     """Minimal protocol for artifact references used in telemetry records."""
 
-    name: str
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def artifact_type(self) -> str: ...
+
+    @property
+    def repo(self) -> str: ...
+
+    @property
+    def commit(self) -> str: ...
+
+    @property
+    def path(self) -> str | None: ...
 
 
 @dataclass(frozen=True)
@@ -54,7 +75,18 @@ class TargetRunRecord:
         return self.status == "skipped"
 
     def get_dataset(self, table_key: str) -> DatasetRefProtocol | None:
-        """Return the dataset ref for table_key when present."""
+        """Return the dataset ref for a given table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully-qualified dataset table key.
+
+        Returns
+        -------
+        DatasetRefProtocol | None
+            Dataset reference when present, otherwise None.
+        """
         for ds in self.datasets:
             if ds.table_key == table_key:
                 return ds

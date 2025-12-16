@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.storage.gateway import insert_helpers
+from codeintel.storage.warehouse import Warehouse
 from tests._helpers.assertions import expect_equal
 
 if TYPE_CHECKING:
@@ -25,11 +25,8 @@ def test_insert_rows_normalizes_mapping(fresh_gateway: StorageGateway) -> None:
         "generated_at": now,
     }
 
-    insert_helpers.insert_rows(
-        fresh_gateway,
-        "core.repo_map",
-        [row],
-    )
+    warehouse = Warehouse(fresh_gateway)
+    warehouse.materialize_mappings("core.repo_map", [row])
 
     result = fresh_gateway.con.execute(
         (
@@ -46,9 +43,9 @@ def test_insert_rows_normalizes_mapping(fresh_gateway: StorageGateway) -> None:
 
 def test_insert_rows_raises_on_missing_column(fresh_gateway: StorageGateway) -> None:
     """Validate missing required columns raise before insert."""
+    warehouse = Warehouse(fresh_gateway)
     with pytest.raises(ValueError, match="Missing column generated_at"):
-        insert_helpers.insert_rows(
-            fresh_gateway,
+        warehouse.materialize_mappings(
             "core.repo_map",
             [
                 {

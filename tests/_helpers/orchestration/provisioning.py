@@ -867,6 +867,7 @@ def docs_views_ready_gateway(
     )
     seed_docs_export_minimal(ctx.gateway, repo=repo, commit=commit)
     _seed_minimal_subsystems(ctx.gateway, repo=repo, commit=commit)
+    ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
     return ctx
 
 

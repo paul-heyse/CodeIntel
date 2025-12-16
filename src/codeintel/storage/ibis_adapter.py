@@ -271,27 +271,6 @@ class IbisGateway:
         """
         return self.table(view_name)
 
-    def sql(self, raw_sql: str) -> it.Table:
-        """
-        Execute raw SQL through Ibis and return the resulting table expression.
-
-        Parameters
-        ----------
-        raw_sql
-            SQL string to execute via Ibis.
-
-        Returns
-        -------
-        it.Table
-            Table expression backed by the SQL statement.
-
-        Note
-        ----
-        Prefer using `table()` and Ibis expressions over raw SQL.
-        This method exists for compatibility and edge cases.
-        """
-        return self.con.sql(raw_sql)
-
     @staticmethod
     def execute_scalar(expr: it.Scalar | it.Table) -> object:
         """

@@ -65,6 +65,7 @@ if TYPE_CHECKING:
 __all__ = [
     "DUCKDB_DIALECT",
     "DuckDBPolicyBackend",
+    "duckdb_schema_exists",
 ]
 
 log = logging.getLogger(__name__)
@@ -77,6 +78,28 @@ def _duckdb_table_exists(con: DuckDBPyConnection, *, schema: str, table: str) ->
     row = con.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1",
         [schema, table],
+    ).fetchone()
+    return row is not None
+
+
+def duckdb_schema_exists(con: DuckDBPyConnection, *, schema: str) -> bool:
+    """Return True when a DuckDB schema exists.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection to query.
+    schema
+        Schema name to check.
+
+    Returns
+    -------
+    bool
+        True when the schema exists.
+    """
+    row = con.execute(
+        "SELECT 1 FROM information_schema.schemata WHERE schema_name = ? LIMIT 1",
+        [schema],
     ).fetchone()
     return row is not None
 
@@ -592,6 +615,51 @@ class DuckDBPolicyBackend:
         else:
             self.con.execute(sql)
 
+    def execute_sql(
+        self,
+        sql: str,
+        params: Sequence[object] | None = None,
+    ) -> DuckDBPyConnection:
+        """Execute parameterized SQL and return the connection.
+
+        This is an approved escape hatch for layers that need to execute SQL
+        directly (e.g., serving query kernels). Prefer Ibis expressions and
+        SQLGlot-generated DDL wherever possible.
+
+        Parameters
+        ----------
+        sql
+            DuckDB SQL string, optionally containing positional parameters (``?``).
+        params
+            Optional parameter values bound to positional markers in ``sql``.
+
+        Returns
+        -------
+        DuckDBPyConnection
+            The same connection, enabling chained ``fetchone``/``df``/``pl`` calls.
+        """
+        log.debug("Executing SQL: %s", sql)
+        if params is None:
+            return self.con.execute(sql)
+        return self.con.execute(sql, params)
+
+    def table_exists(self, *, schema: str, table: str) -> bool:
+        """Return True when a DuckDB table exists.
+
+        Parameters
+        ----------
+        schema
+            Schema name to check.
+        table
+            Table name to check.
+
+        Returns
+        -------
+        bool
+            True when the table exists.
+        """
+        return _duckdb_table_exists(self.con, schema=schema, table=table)
+
     def insert_select(
         self,
         table_key: str,
@@ -994,11 +1062,16 @@ class DuckDBPolicyBackend:
         if table_key in _TABLE_CREATION_DENYLIST:
             return
 
-        try:
-            table_schema = self.schema_provider.require_table_schema(table_key)
-        except KeyError as exc:
+        table_schema = self.schema_provider.get_table_schema(table_key)
+        if table_schema is None:
+            schema, table = split_table_key(table_key)
+            if _duckdb_table_exists(self.con, schema=schema, table=table):
+                return
+            if not create_if_missing:
+                message = f"Missing table {table_key}"
+                raise RuntimeError(message)
             msg = f"Unknown table schema: {table_key}"
-            raise KeyError(msg) from exc
+            raise KeyError(msg)
 
         self.create_schema_if_not_exists(table_schema.schema)
 
@@ -1066,11 +1139,18 @@ class DuckDBPolicyBackend:
         schema, table = split_table_key(table_key)
 
         if columns is None:
-            if self.schema_provider is None:
-                msg = "DuckDBPolicyBackend requires schema_provider when columns are not provided"
-                raise RuntimeError(msg)
-            table_schema = self.schema_provider.require_table_schema(table_key)
-            columns = [col.name for col in table_schema.columns]
+            table_schema = (
+                self.schema_provider.get_table_schema(table_key) if self.schema_provider is not None else None
+            )
+            if table_schema is not None:
+                columns = [col.name for col in table_schema.columns]
+            elif _duckdb_table_exists(self.con, schema=schema, table=table):
+                qualified_name = f"{schema}.{table}"
+                info = self.con.execute(f"PRAGMA table_info({qualified_name})").fetchall()
+                columns = [row[1] for row in info]
+            else:
+                message = f"Missing table {table_key}"
+                raise RuntimeError(message)
 
         insert_expr = _build_insert(schema, table, columns)
         sql = insert_expr.sql(dialect=DUCKDB_DIALECT)

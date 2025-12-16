@@ -25,12 +25,21 @@ from codeintel.core.schemas.generated_rows.analytics import (
 )
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
+from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.orchestration import seed_coverage_rows
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
+
+
+def _table_columns(gateway: StorageGateway, table_key: str) -> tuple[str, ...]:
+    schema_provider = gateway.policy.schema_provider
+    if schema_provider is None:
+        msg = "StorageGateway.policy requires schema_provider for test seeding"
+        raise RuntimeError(msg)
+    return tuple(col.name for col in schema_provider.require_table_schema(table_key).columns)
 
 
 def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str) -> None:
@@ -167,23 +176,49 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
     _clear_architecture_seed(gateway=gateway, repo=repo, commit=commit)
     now = datetime.now(UTC)
     now_iso = now.isoformat()
+    warehouse = Warehouse(gateway)
+    append = MaterializeOptions(mode="append")
     seed = CoverageSeedConfig(test_goid=10)
     rel_path = Path(seed.module_import.replace(".", "/")).with_suffix(".py").as_posix()
 
-    gateway.core.insert_repo_map([(repo, commit, "{}", "{}", now_iso)])
+    warehouse.materialize_rows(
+        "core.repo_map",
+        [(repo, commit, "{}", "{}", now_iso)],
+        columns=_table_columns(gateway, "core.repo_map"),
+        options=append,
+    )
     seed_coverage_rows(
         gateway=gateway,
         rel_path=rel_path,
         seed=seed,
         include_test_catalog=False,
     )
-    gateway.core.insert_modules(
+    warehouse.materialize_mappings(
+        "core.modules",
         [
-            ("pkg.alpha", "pkg/alpha.py", repo, commit),
-            ("pkg.beta", "pkg/beta.py", repo, commit),
-        ]
+            {
+                "module": "pkg.alpha",
+                "path": "pkg/alpha.py",
+                "repo": repo,
+                "commit": commit,
+                "language": "python",
+                "tags": "[]",
+                "owners": "[]",
+            },
+            {
+                "module": "pkg.beta",
+                "path": "pkg/beta.py",
+                "repo": repo,
+                "commit": commit,
+                "language": "python",
+                "tags": "[]",
+                "owners": "[]",
+            },
+        ],
+        options=append,
     )
-    gateway.analytics.insert_function_metrics(
+    warehouse.materialize_rows(
+        "analytics.function_metrics",
         [
             (
                 1,
@@ -216,9 +251,12 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
                 "low",
                 now_iso,
             )
-        ]
+        ],
+        columns=_table_columns(gateway, "analytics.function_metrics"),
+        options=append,
     )
-    gateway.analytics.insert_goid_risk_factors(
+    warehouse.materialize_rows(
+        "analytics.goid_risk_factors",
         [
             (
                 1,
@@ -252,9 +290,12 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
                 "[]",
                 now_iso,
             )
-        ]
+        ],
+        columns=_table_columns(gateway, "analytics.goid_risk_factors"),
+        options=append,
     )
-    gateway.graph.insert_call_graph_edges(
+    warehouse.materialize_rows(
+        "graph.call_graph_edges",
         [
             (
                 repo,
@@ -270,7 +311,9 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
                 0.9,
                 "{}",
             )
-        ]
+        ],
+        columns=_table_columns(gateway, "graph.call_graph_edges"),
+        options=append,
     )
     function_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
     module_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules")
@@ -471,17 +514,23 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
             now_iso,
         ],
     )
-    gateway.graph.insert_import_graph_edges(
+    warehouse.materialize_rows(
+        "graph.import_graph_edges",
         [
-            (repo, commit, "pkg.alpha", "pkg.beta", 1, 1, 0),
-            (repo, commit, "pkg.beta", "pkg.alpha", 1, 1, 0),
-        ]
+            (repo, commit, "pkg.alpha", "pkg.beta", 1, 1, 0, None),
+            (repo, commit, "pkg.beta", "pkg.alpha", 1, 1, 0, None),
+        ],
+        columns=_table_columns(gateway, "graph.import_graph_edges"),
+        options=append,
     )
-    gateway.analytics.insert_subsystem_modules(
+    warehouse.materialize_rows(
+        "analytics.subsystem_modules",
         [
             (repo, commit, "sub1", "pkg.alpha", "core"),
             (repo, commit, "sub2", "pkg.beta", "core"),
-        ]
+        ],
+        columns=_table_columns(gateway, "analytics.subsystem_modules"),
+        options=append,
     )
     gateway.con.execute(
         """
@@ -493,7 +542,8 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
         """,
         [repo, commit, "pkg.mod", now_iso],
     )
-    gateway.analytics.insert_subsystems(
+    warehouse.materialize_rows(
+        "analytics.subsystems",
         [
             (
                 repo,
@@ -515,10 +565,18 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
                 "low",
                 now_iso,
             )
-        ]
+        ],
+        columns=_table_columns(gateway, "analytics.subsystems"),
+        options=append,
     )
-    gateway.analytics.insert_subsystem_modules([(repo, commit, "subsysdemo", "pkg.mod", "api")])
-    gateway.analytics.insert_test_catalog(
+    warehouse.materialize_rows(
+        "analytics.subsystem_modules",
+        [(repo, commit, "subsysdemo", "pkg.mod", "api")],
+        columns=_table_columns(gateway, "analytics.subsystem_modules"),
+        options=append,
+    )
+    warehouse.materialize_rows(
+        "analytics.test_catalog",
         [
             (
                 "pkg/mod.py::test_func",
@@ -536,9 +594,12 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
                 False,
                 now_iso,
             )
-        ]
+        ],
+        columns=_table_columns(gateway, "analytics.test_catalog"),
+        options=append,
     )
-    gateway.analytics.insert_test_coverage_edges(
+    warehouse.materialize_rows(
+        "analytics.test_coverage_edges",
         [
             (
                 "pkg/mod.py::test_func",
@@ -555,12 +616,22 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
                 "passed",
                 now_iso,
             )
-        ]
+        ],
+        columns=_table_columns(gateway, "analytics.test_coverage_edges"),
+        options=append,
     )
-    gateway.analytics.insert_typedness(
-        [(repo, commit, "pkg/mod.py", 0, '{"params":1.0}', 0, False)]
+    warehouse.materialize_rows(
+        "analytics.typedness",
+        [(repo, commit, "pkg/mod.py", 0, '{"params":1.0}', 0, False)],
+        columns=_table_columns(gateway, "analytics.typedness"),
+        options=append,
     )
-    gateway.analytics.insert_static_diagnostics([(repo, commit, "pkg/mod.py", 0, 0, 0, 0, False)])
+    warehouse.materialize_rows(
+        "analytics.static_diagnostics",
+        [(repo, commit, "pkg/mod.py", 0, 0, 0, 0, False)],
+        columns=_table_columns(gateway, "analytics.static_diagnostics"),
+        options=append,
+    )
     gateway.con.execute(
         """
         INSERT INTO analytics.hotspots VALUES (?, ?, ?, ?, ?, ?, ?)

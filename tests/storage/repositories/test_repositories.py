@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.schemas import get_schema_provider
-from codeintel.storage.gateway.insert_helpers import insert_rows as insert_mapping_rows
 from codeintel.storage.repositories import (
     DatasetReadRepository,
     FunctionRepository,
@@ -18,6 +17,7 @@ from codeintel.storage.repositories import (
     TestRepository,
     fetch_models_normalized,
 )
+from codeintel.storage.warehouse import Warehouse
 from tests._helpers.rows import (
     DataModelFieldSeed,
     DataModelRelationshipSeed,
@@ -214,6 +214,7 @@ def test_data_model_accessors(docs_export_gateway: TestContext) -> None:
     """Data model accessors should surface normalized rows directly."""
     ctx = docs_export_gateway
     gateway = ctx.gateway
+    warehouse = Warehouse(gateway)
     repo = ctx.repo
     commit = ctx.commit
     now = datetime.now().astimezone()
@@ -264,18 +265,13 @@ def test_data_model_accessors(docs_export_gateway: TestContext) -> None:
         )
     )
 
-    insert_mapping_rows(
-        gateway,
-        "analytics.data_models",
-        [_as_mapping(model_row, "analytics.data_models")],
+    warehouse.materialize_mappings(
+        "analytics.data_models", [_as_mapping(model_row, "analytics.data_models")]
     )
-    insert_mapping_rows(
-        gateway,
-        "analytics.data_model_fields",
-        [_as_mapping(field_row, "analytics.data_model_fields")],
+    warehouse.materialize_mappings(
+        "analytics.data_model_fields", [_as_mapping(field_row, "analytics.data_model_fields")]
     )
-    insert_mapping_rows(
-        gateway,
+    warehouse.materialize_mappings(
         "analytics.data_model_relationships",
         [_as_mapping(relationship_row, "analytics.data_model_relationships")],
     )

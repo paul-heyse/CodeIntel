@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
+from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.sql import validate_identifier
 
 if TYPE_CHECKING:
@@ -83,8 +84,8 @@ def insert_rows(
     gateway
         Storage gateway providing database connection.
     rows
-        Iterable of InsertableRow instances to insert. All rows must be
-        of the same concrete type.
+        Iterable of InsertableRow instances to insert. Rows may target different
+        tables; inserts are grouped by the row class metadata.
 
     Returns
     -------
@@ -104,22 +105,28 @@ def insert_rows(
     if not row_list:
         return 0
 
-    sample = row_list[0]
-    row_type = type(sample)
+    warehouse = Warehouse(gateway)
 
-    table: str = row_type.__table__
-    columns: tuple[str, ...] = row_type.__columns__
+    grouped: dict[tuple[str, tuple[str, ...]], list[InsertableRow]] = {}
+    for row in row_list:
+        row_type = type(row)
+        table = row_type.__table__
+        columns = row_type.__columns__
+        grouped.setdefault((table, columns), []).append(row)
 
-    validate_identifier(table, kind="table")
-    for col in columns:
-        validate_identifier(col, kind="column")
-
-    gateway.policy.ensure_schemas_preserve()
-    return gateway.policy.bulk_insert(
-        table,
-        [r.to_tuple() for r in row_list],
-        columns=columns,
-    )
+    inserted = 0
+    for (table, columns), group_rows in sorted(grouped.items(), key=lambda item: item[0][0]):
+        validate_identifier(table, kind="table")
+        for col in columns:
+            validate_identifier(col, kind="column")
+        result = warehouse.materialize_rows(
+            table,
+            [r.to_tuple() for r in group_rows],
+            columns=columns,
+            options=MaterializeOptions(mode="append"),
+        )
+        inserted += result.rows_written or 0
+    return inserted
 
 
 __all__ = ["InsertableRow", "insert_rows"]

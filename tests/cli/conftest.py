@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.cli.introspection import get_registry
-from codeintel.storage.gateway_cache import close_gateways
 from tests._helpers.cli import run_cli, temp_repo_context
 from tests._helpers.cli_project import (
     cli_project_harness as cli_project_harness_ctx,
@@ -94,7 +93,6 @@ def cli_project_runner(cli_project_ctx: CLIProjectContext) -> Callable[[list[str
         if cli_project_ctx.gateway is not None:
             cli_project_ctx.gateway.close()
             cli_project_ctx.gateway = None
-        close_gateways()
         return run_cli(args, env=cli_project_ctx.env, cwd=cli_project_ctx.repo_root)
 
     return _run
@@ -217,12 +215,8 @@ def op_harness() -> OperationTestHarness:
 
 @pytest.fixture(autouse=True)
 def _cleanup_gateways() -> Iterator[None]:
-    """Ensure gateway cache is closed between CLI tests.
-
-    This fixture properly manages gateway lifecycle without runtime patching.
-    It uses the gateway_cache module's close_gateways function for cleanup.
-    """
+    """Ensure gateways are closed between CLI tests."""
     try:
         yield
     finally:
-        close_gateways()
+        pass

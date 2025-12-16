@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from hamilton import driver
+from hamilton.driver import Driver
 
 from codeintel.build.hamilton import tags as ht
 
@@ -58,7 +58,7 @@ def discover_semantic_nodes(
     tuple[DiscoveredSemanticNode, ...]
         Discovered semantic nodes, sorted deterministically by semantic_id then table_key.
     """
-    dr = driver.Driver(config or {}, *modules)
+    dr = Driver(config or {}, *modules)
     variables = dr.list_available_variables(
         tag_filter={ht.TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW},
     )

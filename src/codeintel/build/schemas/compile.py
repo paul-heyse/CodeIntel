@@ -22,7 +22,7 @@ from codeintel.build.schemas.provider_hamilton import (
     infer_table_schemas,
     inferable_native_table_keys,
 )
-from codeintel.storage.view_names import DERIVED_DOCS_VIEWS
+from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -143,7 +143,7 @@ def _collect_view_schemas(
 ) -> tuple[TableSchema, ...]:
     """Collect schemas for all known DuckDB views.
 
-    Iterates through DERIVED_DOCS_VIEWS and infers schemas for views that
+    Iterates through discovered docs views and infers schemas for views that
     exist in the database. Views that don't exist are silently skipped.
 
     Parameters
@@ -159,7 +159,7 @@ def _collect_view_schemas(
         Inferred view schemas.
     """
     views: list[TableSchema] = []
-    for view_key in DERIVED_DOCS_VIEWS:
+    for view_key in discover_derived_docs_views():
         try:
             view_schema = infer_view_schema(con=con, view_key=view_key)
             views.append(view_schema)

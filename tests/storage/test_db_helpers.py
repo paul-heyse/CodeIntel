@@ -17,6 +17,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_length,
 )
+from tests._helpers.builders import ModuleRow, RepoMapRow, insert_rows
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -31,10 +32,14 @@ def test_count_rows_for_tables_returns_dict(
     commit = "abc123"
 
     now = datetime.now(tz=UTC)
-    now_str = now.isoformat()
 
-    fresh_gateway.core.insert_modules([("test_mod", "test.py", repo, commit)])
-    fresh_gateway.core.insert_repo_map([(repo, commit, "{}", "{}", now_str)])
+    insert_rows(
+        fresh_gateway,
+        [
+            ModuleRow(module="test_mod", path="test.py", repo=repo, commit=commit),
+            RepoMapRow(repo=repo, commit=commit, modules={}, overlays={}, generated_at=now),
+        ],
+    )
 
     tables = ["core.modules", "core.repo_map"]
     result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
@@ -55,8 +60,13 @@ def test_count_rows_for_tables_filters_by_repo_commit(
     other_repo = "other/repo"
     other_commit = "def456"
 
-    fresh_gateway.core.insert_modules([("test_mod", "test.py", repo, commit)])
-    fresh_gateway.core.insert_modules([("other_mod", "other.py", other_repo, other_commit)])
+    insert_rows(
+        fresh_gateway,
+        [
+            ModuleRow(module="test_mod", path="test.py", repo=repo, commit=commit),
+            ModuleRow(module="other_mod", path="other.py", repo=other_repo, commit=other_commit),
+        ],
+    )
 
     tables = ["core.modules"]
     result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
@@ -89,7 +99,10 @@ def test_count_rows_for_tables_handles_special_chars_in_repo(
     repo = "test/repo's-name"
     commit = "abc123"
 
-    fresh_gateway.core.insert_modules([("test_mod", "test.py", repo, commit)])
+    insert_rows(
+        fresh_gateway,
+        [ModuleRow(module="test_mod", path="test.py", repo=repo, commit=commit)],
+    )
 
     tables = ["core.modules"]
     result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
@@ -132,7 +145,10 @@ def test_safe_count_rows_returns_counts_with_valid_connection(
     repo = "test/repo"
     commit = "abc123"
 
-    fresh_gateway.core.insert_modules([("test_mod", "test.py", repo, commit)])
+    insert_rows(
+        fresh_gateway,
+        [ModuleRow(module="test_mod", path="test.py", repo=repo, commit=commit)],
+    )
 
     result = safe_count_rows(con, repo=repo, commit=commit, tables=["core.modules"])
 
@@ -148,7 +164,10 @@ def test_safe_count_rows_accepts_iterable_tables(
     repo = "test/repo"
     commit = "abc123"
 
-    fresh_gateway.core.insert_modules([("test_mod", "test.py", repo, commit)])
+    insert_rows(
+        fresh_gateway,
+        [ModuleRow(module="test_mod", path="test.py", repo=repo, commit=commit)],
+    )
 
     tables_set = {"core.modules", "core.repo_map"}
     result = safe_count_rows(con, repo=repo, commit=commit, tables=tables_set)

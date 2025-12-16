@@ -421,6 +421,9 @@ def _create_dataset_node_function(
         if ds is None:
             msg = f"Missing DatasetRef for {table_key} from {target_name}"
             raise ValueError(msg)
+        if not isinstance(ds, DatasetRef):
+            msg = f"Expected DatasetRef for {table_key}, got {type(ds)}"
+            raise TypeError(msg)
         return ds
 
     params = [
@@ -577,7 +580,15 @@ def _create_artifact_node_function(
 
         for art in run_record.artifacts:
             if art.name == artifact_name:
-                return art
+                if isinstance(art, ArtifactRef):
+                    return art
+                return ArtifactRef(
+                    name=art.name,
+                    artifact_type=art.artifact_type,
+                    repo=art.repo,
+                    commit=art.commit,
+                    path=art.path,
+                )
 
         return ArtifactRef(
             name=artifact_name,

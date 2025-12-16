@@ -13,7 +13,6 @@ from codeintel.analytics.graphs import (
 )
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
-from codeintel.storage.views.creation import create_all_views
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -168,7 +167,7 @@ def test_subsystem_agreement_summary_aggregates(graph_ctx: TestContext) -> None:
         repo=graph_ctx.repo,
         commit=graph_ctx.commit,
     )
-    create_all_views(graph_ctx.con)
+    graph_ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
 
     disagree_row = graph_ctx.con.execute(
         """

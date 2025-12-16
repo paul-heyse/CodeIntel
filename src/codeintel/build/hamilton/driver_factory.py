@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
-from hamilton import driver
+from hamilton.driver import Driver
 
 from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hamilton.native.loader import NativeModuleLoader
@@ -79,7 +79,7 @@ class HamiltonRuntime:
     ... )
     """
 
-    dr: driver.Driver
+    dr: Driver
     graph: TargetGraph
     mode: HamiltonNodeMode = "generated"
     target_to_node: dict[str, str] = field(default_factory=dict)
@@ -218,7 +218,7 @@ def build_driver(
                 msg = f"Targets without native implementation: {sorted(missing)}"
                 raise NativeModeError(msg)
 
-        dr = driver.Driver(
+        dr = Driver(
             config or {},
             *native_mods,
             adapter=adapter,
@@ -253,7 +253,7 @@ def build_driver(
         native_mods = load_native_modules()
 
         # Compose: generated module + native modules
-        dr = driver.Driver(
+        dr = Driver(
             config or {},
             generated_mod,
             *native_mods,
@@ -262,7 +262,7 @@ def build_driver(
     else:
         # Generated mode.
         nodes_module = get_generated_module()
-        dr = driver.Driver(
+        dr = Driver(
             config or {},
             nodes_module,
             adapter=adapter,

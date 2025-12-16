@@ -20,7 +20,7 @@ from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryResponse
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
 from codeintel.serving.semantic.registry import SemanticRegistry
-from codeintel.storage.queries import execution as storage_execution
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
 try:
     import polars as pl
@@ -113,6 +113,15 @@ def _sanitize_float_nan(value: object) -> object:
 
 def _sanitize_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     return [{k: _sanitize_float_nan(v) for k, v in row.items()} for row in rows]
+
+
+def _format_explain_rows(rows: Sequence[Sequence[object]]) -> str:
+    plan_lines: list[str] = []
+    for row in rows:
+        if not row:
+            continue
+        plan_lines.append(str(row[1] if len(row) > 1 else row[0]))
+    return "\n".join(plan_lines)
 
 
 @dataclass
@@ -222,7 +231,8 @@ class SemanticQueryKernel:
         params: Sequence[object] | None = None,
     ) -> list[dict[str, object]]:
         engine = self.settings.result_engine.lower()
-        result = storage_execution.execute_sql(con, sql, params)
+        backend = MinimalStorageGateway(con).policy
+        result = backend.execute_sql(sql, params=params)
 
         if engine == "polars" and pl is not None:
             df_pl = result.pl()
@@ -399,17 +409,10 @@ class SemanticQueryKernel:
 
         with self.db.connect() as (con, pointer):
             ibis_con = ibis.duckdb.from_connection(con)
-            expr = build_query(ibis_con=ibis_con, plan=plan)
-            compiled = ibis_con.compile(expr)
+            compiled = ibis_con.compile(build_query(ibis_con=ibis_con, plan=plan))
 
-            raw_rows = storage_execution.execute_sql(con, f"EXPLAIN {compiled}").fetchall()
-            plan_lines: list[str] = []
-            for row in raw_rows:
-                cells = list(row)
-                if not cells:
-                    continue
-                plan_lines.append(str(cells[1] if len(cells) > 1 else cells[0]))
-            plan_text = "\n".join(plan_lines)
+            raw_rows = MinimalStorageGateway(con).policy.execute_sql(f"EXPLAIN {compiled}").fetchall()
+            plan_text = _format_explain_rows(raw_rows)
 
         return SemanticExplainResponse(
             view_id=request.view_id,
@@ -483,9 +486,8 @@ class SemanticQueryKernel:
         engine = self.settings.result_engine.lower()
 
         with self.db.connect() as (con, pointer):
-            if not storage_execution.duckdb_table_exists(
-                con, schema=_SEARCH_TABLE_SCHEMA, table=_SEARCH_TABLE_NAME
-            ):
+            backend = MinimalStorageGateway(con).policy
+            if not backend.table_exists(schema=_SEARCH_TABLE_SCHEMA, table=_SEARCH_TABLE_NAME):
                 return SearchQueryResponse(
                     query=request.query,
                     results=[],
@@ -498,7 +500,11 @@ class SemanticQueryKernel:
                     engine=engine,
                 )
 
-            fts_available = storage_execution.duckdb_schema_exists(con, schema=_SEARCH_FTS_SCHEMA)
+            row = backend.execute_sql(
+                "SELECT 1 FROM information_schema.schemata WHERE schema_name = ? LIMIT 1",
+                [_SEARCH_FTS_SCHEMA],
+            ).fetchone()
+            fts_available = row is not None
 
             query_limit = request.limit + 1
             if fts_available and request.kinds:

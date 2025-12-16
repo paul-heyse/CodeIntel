@@ -661,9 +661,6 @@ def insert_symbol_use_edges(
         return 0
 
     normalized_rows = [_coerce_symbol_use_edge_row(row) for row in row_list]
-    if coerce_to_full:
-        gateway.graph.insert_symbol_use_edges([edge.to_full_tuple() for edge in normalized_rows])
-        return len(normalized_rows)
-
+    _ = coerce_to_full
     insert_rows(gateway, normalized_rows)
     return len(normalized_rows)
