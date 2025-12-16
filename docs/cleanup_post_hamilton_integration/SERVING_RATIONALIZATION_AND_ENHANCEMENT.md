@@ -4,14 +4,14 @@
 > **Priority**: High  
 > **Estimated Effort**: 3-5 days  
 > **Dependencies**: None (can proceed independently)  
-> **Last Updated**: December 2024
+> **Last Updated**: December 2025
 
 ## Executive Summary
 
 This plan consolidates two complementary improvement tracks for the `serving` module:
 
-1. **Rationalization** (from storage layer alignment): Move connection pooling to storage, eliminate duplicate gateway creation, use existing utilities
-2. **Enhancement** (from FastAPI advanced features): Implement typed dependencies, RFC 9457 errors, lifespan state, and other advanced patterns
+1. **Rationalization** (from storage layer alignment): Make `Warehouse` the serving I/O boundary, move pooling to storage, and eliminate per-call gateway creation.
+2. **Enhancement** (from FastAPI advanced features): Implement typed dependencies, RFC 9457 errors, typed lifespan state, correlation ID middleware, and safe concurrency guardrails.
 
 **Combined Goals**:
 - Reduce serving module complexity by ~20%
@@ -19,6 +19,7 @@ This plan consolidates two complementary improvement tracks for the `serving` mo
 - Improve type safety and IDE support
 - Standardize error handling across HTTP/MCP surfaces
 - Enable future API versioning
+- Preserve strict DuckDB boundary discipline (no `duckdb` imports outside `codeintel.storage`)
 
 ---
 
@@ -38,11 +39,16 @@ This plan consolidates two complementary improvement tracks for the `serving` mo
    - [E3: Response Model Configuration](#e3-response-model-configuration)
    - [E4: Pydantic v2 Validation Features](#e4-pydantic-v2-validation-features)
    - [E5: Typed Lifespan State](#e5-typed-lifespan-state)
+   - [E10: Correlation ID + Logging Context Middleware](#e10-correlation-id--logging-context-middleware)
+   - [E12: Concurrency Guardrails + Timeouts](#e12-concurrency-guardrails--timeouts)
 7. [Medium Impact Enhancements](#medium-impact-enhancements)
    - [E6: Custom Exception Handlers](#e6-custom-exception-handlers)
    - [E7: Background Tasks for Metrics/Logging](#e7-background-tasks-for-metricslogging)
    - [E8: API Versioning Strategy](#e8-api-versioning-strategy)
    - [E9: OpenAPI Schema Customization](#e9-openapi-schema-customization)
+   - [E11: Middleware Hardening (GZip/CORS/TrustedHost/Timing)](#e11-middleware-hardening-gzipcorstrustedhosttiming)
+   - [E13: Optional Streaming/Export Endpoints (NDJSON/Arrow/Parquet)](#e13-optional-streamingexport-endpoints-ndjsonarrowparquet)
+   - [E14: Optional API-Key Security Dependency](#e14-optional-api-key-security-dependency)
 
 ### Part III: Implementation
 8. [Implementation Phases](#implementation-phases)
@@ -106,15 +112,25 @@ storage/
 │   ├── connection.py              # connect()
 │   ├── factory.py                 # open_gateway(), open_memory_gateway()
 │   └── ephemeral.py               # ephemeral_gateway() context manager
+├── warehouse.py                   # Warehouse I/O boundary (read/write/explain)
 ├── ibis_adapter.py                # IbisGateway
-├── duckdb_policy_backend.py       # DuckDBPolicyBackend + duckdb_schema_exists()
+├── duckdb_policy_backend.py       # DuckDBPolicyBackend (execute_sql escape hatch)
 └── serving/
     └── search_index.py            # FTS index building
 ```
 
 ### Key Storage Patterns
 
-1. **MinimalStorageGateway** is the composition root:
+1. **Warehouse** is the serving-facing I/O boundary:
+   ```python
+   from codeintel.storage.warehouse import Warehouse
+
+   warehouse = Warehouse(gateway)
+   expr = warehouse.read("docs.v_function_summary", snapshot=snapshot)
+   plan = warehouse.explain_table("docs.v_function_summary", limit=50)
+   ```
+
+2. **MinimalStorageGateway** is the composition root (for raw connections):
    ```python
    class MinimalStorageGateway:
        @property
@@ -125,7 +141,7 @@ storage/
        def policy(self) -> DuckDBPolicyBackend: ...  # Lazy, cached
    ```
 
-2. **IbisGateway.table()** handles qualified names properly:
+3. **IbisGateway.table()** handles qualified names properly:
    ```python
    def table(self, table_name: str) -> it.Table:
        if "." in table_name:
@@ -134,22 +150,23 @@ storage/
        return self.con.table(table_name)
    ```
 
-3. **StorageConfig.for_readonly()** is designed for serving:
+4. **StorageConfig.for_readonly()** is designed for serving:
    ```python
    @classmethod
    def for_readonly(cls, db_path: Path) -> StorageConfig:
        return cls(db_path=db_path, read_only=True, ...)
    ```
 
-4. **duckdb_schema_exists()** is a standalone utility:
+5. **Catalog/introspection checks should be parameterized via the policy backend**:
    ```python
-   def duckdb_schema_exists(con: DuckDBPyConnection, *, schema: str) -> bool:
-       row = con.execute(
-           "SELECT 1 FROM information_schema.schemata WHERE schema_name = ? LIMIT 1",
-           [schema],
-       ).fetchone()
-       return row is not None
+   row = warehouse.gateway.policy.execute_sql(
+       "SELECT 1 FROM information_schema.schemata WHERE schema_name = ? LIMIT 1",
+       [schema],
+   ).fetchone()
+   exists = row is not None
    ```
+   Note: repository DuckDB-boundary tests are substring-based; avoid importing symbols whose
+   import lines contain `"import duckdb"` outside `codeintel.storage`.
 
 ---
 
@@ -159,33 +176,55 @@ storage/
 
 **Location**: `serving/db/pool.py`
 
-**Issue**: Pool correctly uses `StorageConfig.for_readonly()` but yields raw `DuckDBConnection`. Callers must wrap with `MinimalStorageGateway(con)` on every use, creating new `IbisGateway` and `DuckDBPolicyBackend` instances per call.
+**Issue**: Pool yields raw `DuckDBConnection`. Callers must then wrap it repeatedly, recreating gateway/ibis/policy objects and blurring the “Warehouse is the I/O boundary” principle.
 
-**Recommendation**: Move pool to storage and yield `MinimalStorageGateway` directly.
+**Recommendation**: Move pool to storage and yield a request-scoped `Warehouse` (or a context containing `Warehouse` + snapshot metadata) directly.
 
 ### R2. Ad-hoc Ibis Connection Creation
 
 **Location**: `serving/semantic/kernel.py:248-257`
 
-**Issue**: Creates a new Ibis backend connection for every query instead of using `MinimalStorageGateway(con).ibis.con`.
+**Issue**: Creates a new Ibis backend connection for every query instead of using a request-scoped cached `IbisGateway` from the warehouse/gateway.
 
-**Recommendation**: Pass `MinimalStorageGateway` through the call chain, use `gw.ibis.con`.
+**Recommendation**: Pass `Warehouse` (or `StorageGateway`) through the call chain and use `warehouse.gateway.ibis.con`.
 
 ### R3. Gateway Creation Per SQL Call
 
 **Location**: `serving/semantic/kernel.py` at lines 234, 414, 489
 
-**Issue**: Creates a new `MinimalStorageGateway` for every SQL execution.
+**Issue**: Creates a new gateway wrapper for every SQL execution.
 
-**Recommendation**: Create gateway once per acquired connection (in pool) and reuse throughout request lifecycle.
+**Recommendation**: Create `Warehouse` once per acquired pool handle and reuse throughout the request lifecycle.
 
 ### R4. Raw SQL for Schema Existence Check
 
 **Location**: `serving/semantic/kernel.py:503-507`
 
-**Issue**: Duplicates logic that exists in `storage/duckdb_policy_backend.py:duckdb_schema_exists()`.
+**Issue**: Duplicates schema existence logic.
 
-**Recommendation**: Import and use `duckdb_schema_exists` from storage.
+**Recommendation**: Keep the check parameterized via the policy backend (`warehouse.gateway.policy.execute_sql(...)`) and/or add a storage-owned helper with a non-`duckdb_*` name (e.g., `codeintel.storage.introspection.schema_exists`) to avoid tripping the repository’s DuckDB boundary tests.
+
+### R5. Repeated JSON Artifact Loads Per Request
+
+**Location**: `serving/semantic/kernel.py` (`_load_registry`, `_load_inventory`, `_load_buildspec`)
+
+**Issue**: Registry/inventory/buildspec are read from disk on every request even though they are snapshot-scoped and already hot-swapped by `ServingDBManager`.
+
+**Recommendation**: Introduce a `ServingSnapshotContext` cached in memory and refreshed when the pointer changes:
+- `pointer: ServingSnapshotPointer`
+- `registry: SemanticRegistry`
+- `inventory: SchemaInventory`
+- `buildspec: BuildSpec`
+
+`SemanticQueryKernel` should read from context instead of rereading JSON.
+
+### R6. FTS Read Logic Split Across Serving/Storage
+
+**Location**: `serving/semantic/kernel.py` and `storage/serving/search_index.py`
+
+**Issue**: Storage owns FTS “build/ensure”, but serving owns “detect/dispatch”, so DuckDB/FTS details leak into serving.
+
+**Recommendation**: Move FTS schema naming + availability helpers into `codeintel.storage.serving.search_index` and have serving call that storage-owned API.
 
 ---
 
@@ -196,25 +235,28 @@ storage/
 ```
 storage/
 ├── gateway/
-│   ├── protocol.py                # Add: ReadPoolGateway protocol (optional)
+│   ├── protocol.py                # Add: ReadPoolWarehouse protocol (optional)
 │   ├── minimal.py                 # MinimalStorageGateway (unchanged)
 │   ├── config.py                  # Add: PoolConfig
 │   ├── connection.py              # Unchanged
-│   ├── pool.py                    # NEW: ReadPoolGateway implementation
+│   ├── pool.py                    # NEW: ReadPoolWarehouse implementation (yields Warehouse)
 │   ├── ephemeral.py               # Unchanged
 │   └── factory.py                 # Unchanged
+├── warehouse.py                   # Warehouse I/O boundary (read/exists/count/materialize/explain)
+└── serving/
+    └── search_index.py            # FTS index helpers
 
 serving/
 ├── __init__.py                    # Update exports
 ├── settings.py                    # Unchanged
 ├── db/
 │   ├── __init__.py                # Update exports
-│   ├── manager.py                 # REFACTOR: yield MinimalStorageGateway
+│   ├── manager.py                 # REFACTOR: yield Warehouse (+ snapshot context)
 │   ├── pointer.py                 # Unchanged
 │   └── pool.py                    # THIN RE-EXPORT with deprecation
 ├── semantic/
 │   ├── __init__.py                # Unchanged
-│   ├── kernel.py                  # REFACTOR: use gateway pattern
+│   ├── kernel.py                  # REFACTOR: use Warehouse/context pattern
 │   ├── query_builder.py           # Unchanged
 │   ├── registry.py                # Unchanged
 │   ├── inventory.py               # Unchanged
@@ -227,6 +269,7 @@ serving/
 │   ├── app.py                     # ENHANCE: Typed lifespan, exception handlers
 │   ├── errors.py                  # NEW: RFC 9457 Problem Details
 │   ├── dependencies.py            # NEW: Annotated dependency definitions
+│   ├── middleware.py              # NEW: Correlation ID + timing middleware
 │   └── routes/
 │       ├── v1/                    # NEW: Versioned routes
 │       │   ├── __init__.py
@@ -241,8 +284,9 @@ serving/
 | Layer | Responsibility | Does NOT Own |
 |-------|---------------|--------------|
 | `storage.gateway` | Connection lifecycle, pooling, gateway creation | Query semantics |
+| `storage.warehouse` | Single I/O boundary for storage ops (read/exists/count/materialize/explain) | HTTP concerns |
 | `storage.serving` | FTS index building | Query execution |
-| `serving.db` | Snapshot pointer, hot-swap coordination | Connection pooling |
+| `serving.db` | Snapshot pointer, hot-swap coordination, snapshot context cache | Connection pooling primitives |
 | `serving.semantic` | Query building, result extraction | Connection management |
 | `serving.http` | HTTP surfaces, error handling, API versioning | Business logic |
 | `serving.mcp` | MCP tool surfaces | HTTP concerns |
@@ -266,6 +310,11 @@ The following enhancements integrate advanced FastAPI features to achieve best-i
 | E7 | Background Tasks for Metrics/Logging | Medium | Low | None |
 | E8 | API Versioning Strategy | Medium | Medium | E1 |
 | E9 | OpenAPI Schema Customization | Medium | Low | E4 |
+| E10 | Correlation ID + Logging Context Middleware | High | Low | E2 |
+| E11 | Middleware Hardening (GZip/CORS/TrustedHost/Timing) | Medium | Low | None |
+| E12 | Concurrency Guardrails + Timeouts | High | Medium | E1 |
+| E13 | Optional Streaming/Export Endpoints (NDJSON/Arrow/Parquet) | Medium | Medium | E3 |
+| E14 | Optional API-Key Security Dependency | Medium | Low | E1 |
 
 ---
 
@@ -366,7 +415,7 @@ async def describe_view(view_id: str, kernel: Kernel) -> dict[str, object]:
 - Non-standard error format
 - No machine-readable error types
 - Inconsistent across endpoints
-- No correlation IDs
+- No stable correlation IDs (per-request)
 
 **Enhanced State** (`serving/http/errors.py`):
 ```python
@@ -378,7 +427,6 @@ enabling machine-readable error handling for API clients.
 
 from __future__ import annotations
 
-import uuid
 from enum import StrEnum
 from typing import Any
 
@@ -413,7 +461,7 @@ class ProblemDetail(BaseModel):
     instance
         URI reference identifying this specific occurrence.
     correlation_id
-        Unique identifier for request tracing.
+        Request correlation ID for tracing.
     """
     
     type: str = Field(
@@ -430,10 +478,7 @@ class ProblemDetail(BaseModel):
         default=None,
         description="URI reference identifying this specific occurrence",
     )
-    correlation_id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()),
-        description="Unique identifier for request tracing",
-    )
+    correlation_id: str = Field(description="Request correlation ID for tracing")
     
     # Extension fields
     errors: list[dict[str, Any]] | None = Field(
@@ -517,6 +562,8 @@ class SearchUnavailableError(ServingError):
 def problem_response(
     request: Request,
     error: ServingError,
+    *,
+    correlation_id: str,
 ) -> JSONResponse:
     """Create a Problem Details JSON response.
     
@@ -538,6 +585,7 @@ def problem_response(
         status=error.status,
         detail=error.detail,
         instance=str(request.url),
+        correlation_id=correlation_id,
         errors=error.errors,
     )
     return JSONResponse(
@@ -562,7 +610,7 @@ async def describe_view(view_id: str, kernel: Kernel) -> dict[str, object]:
 
 **Benefits**:
 - Machine-readable error types
-- Correlation IDs for debugging
+- Correlation IDs for debugging (provided by middleware; stable per request)
 - Standard `application/problem+json` content type
 - Extensible error model
 
@@ -1000,15 +1048,92 @@ Kernel = Annotated[SemanticQueryKernel, Depends(_get_kernel)]
 
 ---
 
+### E10: Correlation ID + Logging Context Middleware
+
+Add a small middleware that:
+- Accepts an inbound `X-Correlation-Id` header (or generates one).
+- Stores it on request state (and optionally a `contextvars.ContextVar`) so handlers, exception
+  handlers, and background tasks can reuse the same ID.
+- Echoes the correlation ID back in the response headers, and optionally sets a process-time header.
+
+This enables:
+- Stable correlation IDs in RFC 9457 error responses (E2).
+- Structured logging with per-request context (use `extra={"correlation_id": ...}` at minimum).
+
+**Sketch** (`serving/http/middleware.py`):
+```python
+from __future__ import annotations
+
+import contextvars
+import time
+import uuid
+from collections.abc import Awaitable, Callable
+from typing import Final
+
+from fastapi import FastAPI, Request, Response
+
+CORRELATION_ID_HEADER: Final[str] = "X-Correlation-Id"
+correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "codeintel_serving_correlation_id",
+    default="",
+)
+
+
+def get_correlation_id(request: Request) -> str:
+    value = getattr(request.state, "correlation_id", "")
+    if isinstance(value, str) and value:
+        return value
+    return correlation_id_var.get() or "unknown"
+
+
+def install_serving_middlewares(app: FastAPI) -> None:
+    @app.middleware("http")
+    async def correlation_id_and_timing(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        correlation_id = request.headers.get(CORRELATION_ID_HEADER) or str(uuid.uuid4())
+        token = correlation_id_var.set(correlation_id)
+        request.state.correlation_id = correlation_id
+        start = time.perf_counter()
+        try:
+            response: Response = await call_next(request)
+        finally:
+            correlation_id_var.reset(token)
+        response.headers.setdefault(CORRELATION_ID_HEADER, correlation_id)
+        response.headers["X-Process-Time"] = f"{(time.perf_counter() - start):0.4f}"
+        return response
+```
+
+---
+
+### E12: Concurrency Guardrails + Timeouts
+
+Serving uses a read-only DuckDB pool and executes blocking I/O (DuckDB + Ibis). To keep FastAPI
+responsive under concurrency:
+
+- Ensure blocking kernel calls run off the event loop:
+  - Prefer `def` endpoints (FastAPI runs them in a threadpool), or
+  - In `async def` endpoints, wrap heavy calls with `starlette.concurrency.run_in_threadpool`.
+- Add a per-process limiter (semaphore) sized to the pool to avoid overcommitting threads/handles.
+- Optional: add a soft timeout; on timeout, close (not release) the underlying DB handle so it
+  doesn’t return to the pool in an unknown state.
+
+This can be implemented as a dependency providing a shared semaphore and a helper like
+`run_bounded(...)` that acquires the semaphore and executes the blocking callable in the threadpool.
+
+---
 ## Medium Impact Enhancements
 
 ### E6: Custom Exception Handlers
 
 **Implementation** (`serving/http/app.py`):
 ```python
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
+from fastapi.responses import JSONResponse
 
 from codeintel.serving.http.errors import (
     ProblemDetail,
@@ -1016,6 +1141,7 @@ from codeintel.serving.http.errors import (
     ServingError,
     problem_response,
 )
+from codeintel.serving.http.middleware import get_correlation_id
 
 
 def configure_exception_handlers(app: FastAPI) -> None:
@@ -1026,6 +1152,8 @@ def configure_exception_handlers(app: FastAPI) -> None:
     app
         FastAPI application to configure.
     """
+
+    logger = logging.getLogger(__name__)
     
     @app.exception_handler(ServingError)
     async def serving_error_handler(
@@ -1033,7 +1161,7 @@ def configure_exception_handlers(app: FastAPI) -> None:
         exc: ServingError,
     ) -> JSONResponse:
         """Handle serving-specific errors with Problem Details."""
-        return problem_response(request, exc)
+        return problem_response(request, exc, correlation_id=get_correlation_id(request))
     
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(
@@ -1055,6 +1183,7 @@ def configure_exception_handlers(app: FastAPI) -> None:
             status=422,
             detail="Request validation failed",
             instance=str(request.url),
+            correlation_id=get_correlation_id(request),
             errors=errors,
         )
         return JSONResponse(
@@ -1069,9 +1198,6 @@ def configure_exception_handlers(app: FastAPI) -> None:
         exc: Exception,
     ) -> JSONResponse:
         """Handle unexpected errors with Problem Details."""
-        # Log the actual error for debugging
-        import logging
-        logger = logging.getLogger(__name__)
         logger.exception("Unhandled error", extra={"path": str(request.url)})
         
         problem = ProblemDetail(
@@ -1080,6 +1206,7 @@ def configure_exception_handlers(app: FastAPI) -> None:
             status=500,
             detail="An unexpected error occurred",
             instance=str(request.url),
+            correlation_id=get_correlation_id(request),
         )
         return JSONResponse(
             status_code=500,
@@ -1100,10 +1227,16 @@ def configure_exception_handlers(app: FastAPI) -> None:
 
 **Implementation** (`serving/http/routes/v1/semantic.py`):
 ```python
-from fastapi import BackgroundTasks
+import logging
+import time
+
+from fastapi import BackgroundTasks, Request
+from starlette.concurrency import run_in_threadpool
 
 from codeintel.serving.http.dependencies import Kernel
+from codeintel.serving.http.middleware import get_correlation_id
 
+logger = logging.getLogger("codeintel.serving.metrics")
 
 async def _log_query_metrics(
     view_id: str,
@@ -1124,8 +1257,6 @@ async def _log_query_metrics(
     correlation_id
         Request correlation ID.
     """
-    import logging
-    logger = logging.getLogger("codeintel.serving.metrics")
     logger.info(
         "query_executed",
         extra={
@@ -1142,25 +1273,24 @@ async def _log_query_metrics(
     response_model=SemanticQueryResponse,
 )
 async def query_view(
-    request: SemanticQueryRequest,
+    query: SemanticQueryRequest,
     kernel: Kernel,
     background: BackgroundTasks,
+    request: Request,
 ) -> SemanticQueryResponse:
     """Execute a semantic view query."""
-    import time
-    import uuid
-    
-    correlation_id = str(uuid.uuid4())
+    correlation_id = get_correlation_id(request)
     start = time.perf_counter()
-    
+
+    response: SemanticQueryResponse | None = None
     try:
-        response = kernel.query(request)
+        response = await run_in_threadpool(kernel.query, query)
         return response
     finally:
         duration_ms = (time.perf_counter() - start) * 1000
         background.add_task(
             _log_query_metrics,
-            view_id=request.view_id,
+            view_id=query.view_id,
             row_count=len(response.rows) if response else 0,
             duration_ms=duration_ms,
             correlation_id=correlation_id,
@@ -1330,7 +1460,6 @@ All errors are returned as RFC 9457 Problem Details with content type `applicati
             },
             "correlation_id": {
                 "type": "string",
-                "format": "uuid",
                 "description": "Request correlation ID for tracing",
             },
         },
@@ -1398,6 +1527,39 @@ def create_serving_app(...) -> FastAPI:
 
 ---
 
+### E11: Middleware Hardening (GZip/CORS/TrustedHost/Timing)
+
+Add a small, explicit middleware stack for “default safe” serving behavior:
+
+- `GZipMiddleware` for large JSON responses (tunable minimum size).
+- Optional `CORSMiddleware` (only if this API is called from browsers).
+- `TrustedHostMiddleware` to reject invalid `Host` headers in production deployments.
+- Request timing headers (already covered in E10; keep those in one place).
+
+Wire this in the app factory so behavior is consistent for HTTP and does not leak into the
+kernel/business logic.
+
+---
+
+### E13: Optional Streaming/Export Endpoints (NDJSON/Arrow/Parquet)
+
+If clients need large resultsets (beyond “interactive JSON”), add opt-in endpoints that stream:
+
+- NDJSON (`application/x-ndjson`) for row streams.
+- Arrow IPC / Parquet downloads for analytical clients.
+
+This aligns well with DuckDB/Arrow strengths and avoids buffering huge payloads in memory. When
+streaming, be mindful of dependency teardown semantics (see `FastAPI_advanced.md`): don’t stream
+while holding resources that will be cleaned up immediately after the response is returned.
+
+---
+
+### E14: Optional API-Key Security Dependency
+
+Even for “internal-only” deployments, add an optional API-key dependency so operators can lock down
+the HTTP surface without rewriting routes later. Apply it as a router-level dependency and integrate
+it with RFC 9457 errors (E2) for consistent responses.
+
 # Part III: Implementation
 
 ## Implementation Phases
@@ -1406,9 +1568,9 @@ def create_serving_app(...) -> FastAPI:
 
 **Goal**: Establish core infrastructure for both rationalization and enhancement.
 
-#### 1.1 Create ReadPoolGateway in Storage (2-3 hours)
+#### 1.1 Create ReadPoolWarehouse in Storage (2-3 hours)
 
-Create `storage/gateway/pool.py` with `PoolConfig` and `ReadPoolGateway` yielding `MinimalStorageGateway`.
+Create `storage/gateway/pool.py` with `PoolConfig` and `ReadPoolWarehouse` yielding a request-scoped `Warehouse`.
 
 ```python
 # See full implementation in Rationalization section above
@@ -1420,19 +1582,23 @@ Create new files:
 - `serving/http/state.py` - Typed state container
 - `serving/http/errors.py` - RFC 9457 Problem Details
 - `serving/http/dependencies.py` - Typed dependencies
+- `serving/http/middleware.py` - Correlation ID + timing middleware (E10)
 
 ### Phase 2: Refactor Core Components (Day 1-2)
 
 #### 2.1 Refactor ServingDBManager (1 hour)
 
-Update `serving/db/manager.py` to yield `MinimalStorageGateway` instead of raw connections.
+Update `serving/db/manager.py` to yield `Warehouse` (and optionally a cached `ServingSnapshotContext`) instead of raw connections.
 
 #### 2.2 Refactor SemanticQueryKernel (1-2 hours)
 
 Update `serving/semantic/kernel.py`:
-- Use gateway pattern throughout
-- Import `duckdb_schema_exists` from storage
-- Update method signatures to accept `gw: MinimalStorageGateway`
+- Use Warehouse/context pattern throughout
+- Avoid importing `duckdb_schema_exists` into serving (DuckDB boundary tests are substring-based)
+- Update method signatures to accept `warehouse: Warehouse` (or context containing it)
+- Use `warehouse.gateway.policy.execute_sql(...)` for parameterized execution
+- Move snapshot-scoped JSON artifact loads behind `ServingSnapshotContext` caching (R5)
+- Move FTS schema naming/availability helpers behind `codeintel.storage.serving.search_index` (R6)
 
 #### 2.3 Enhance Pydantic Models (1 hour)
 
@@ -1449,6 +1615,9 @@ Update `serving/http/app.py`:
 - Implement typed lifespan state (E5)
 - Configure exception handlers (E6)
 - Add OpenAPI customization (E9)
+- Install correlation ID + timing middleware (E10)
+- Add middleware hardening (GZip/CORS/TrustedHost) when configured (E11)
+- Add concurrency guardrails + threadpool offload for blocking calls (E12)
 
 #### 3.2 Implement API Versioning (1 hour)
 
@@ -1465,6 +1634,8 @@ Update all routes with:
 - Response models (E3)
 - Background tasks (E7)
 - Serving error types (E2)
+- Optional API-key security dependency (E14)
+- Optional streaming/export endpoints if needed (E13)
 
 ### Phase 4: Deprecation and Cleanup (Day 3-4)
 
@@ -1502,10 +1673,11 @@ uv run pytest -q
 
 | File | Purpose |
 |------|---------|
-| `storage/gateway/pool.py` | `ReadPoolGateway` implementation |
+| `storage/gateway/pool.py` | `ReadPoolWarehouse` implementation (yields Warehouse) |
 | `serving/http/state.py` | Typed state container |
 | `serving/http/errors.py` | RFC 9457 Problem Details |
 | `serving/http/dependencies.py` | Typed dependency definitions |
+| `serving/http/middleware.py` | Correlation ID + timing middleware |
 | `serving/http/routes/v1/__init__.py` | V1 router aggregation |
 | `serving/http/routes/v1/semantic.py` | V1 semantic routes |
 | `serving/http/routes/v1/search.py` | V1 search routes |
@@ -1514,14 +1686,14 @@ uv run pytest -q
 
 | File | Changes |
 |------|---------|
-| `storage/gateway/__init__.py` | Export `PoolConfig`, `ReadPoolGateway` |
+| `storage/gateway/__init__.py` | Export `PoolConfig`, `ReadPoolWarehouse` |
 | `serving/db/__init__.py` | Update exports |
 | `serving/db/pool.py` | Convert to thin re-export |
-| `serving/db/manager.py` | Use `ReadPoolGateway`, yield `MinimalStorageGateway` |
-| `serving/semantic/kernel.py` | Use gateway pattern, `duckdb_schema_exists` |
+| `serving/db/manager.py` | Use `ReadPoolWarehouse`, yield `Warehouse` (+ snapshot context cache) |
+| `serving/semantic/kernel.py` | Use Warehouse/context pattern; avoid `duckdb_schema_exists` imports; push FTS helpers into storage |
 | `serving/semantic/models.py` | Pydantic v2 features, validators |
 | `serving/search/models.py` | Pydantic v2 features |
-| `serving/http/app.py` | Typed lifespan, exception handlers, OpenAPI |
+| `serving/http/app.py` | Typed lifespan, exception handlers, OpenAPI, middleware, concurrency guardrails |
 | `serving/http/routes/__init__.py` | Router aggregation with versioning |
 
 ### Files Unchanged
@@ -1556,11 +1728,11 @@ finally:
 
 **After**:
 ```python
-from codeintel.storage.gateway.pool import PoolConfig, ReadPoolGateway
+from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
-pool = ReadPoolGateway(db_path, PoolConfig(size=4))
-with pool.acquire() as gw:
-    result = gw.policy.execute_sql("SELECT 1").fetchone()
+pool = ReadPoolWarehouse(db_path, PoolConfig(size=4))
+with pool.acquire() as warehouse:
+    result = warehouse.gateway.policy.execute_sql("SELECT 1").fetchone()
 pool.close_gracefully()
 ```
 
@@ -1576,8 +1748,8 @@ with db_manager.connect() as (con, pointer):
 
 **After**:
 ```python
-with db_manager.connect() as (gw, pointer):
-    result = gw.policy.execute_sql("SELECT 1")
+with db_manager.connect() as (warehouse, pointer):
+    result = warehouse.gateway.policy.execute_sql("SELECT 1")
 ```
 
 ### For Existing HTTP Route Handlers
@@ -1671,7 +1843,7 @@ async def describe_view(view_id: str, kernel: Kernel) -> SemanticViewDetail:
 ### If Enhancement Issues Arise
 
 1. **Revert HTTP changes**: Restore original routes
-2. **Keep rationalization**: Gateway pattern is independent
+2. **Keep rationalization**: Warehouse/pool refactor is independent
 3. **Remove versioning**: Flatten routes back to root
 
 ### Feature Flags
@@ -1679,7 +1851,7 @@ async def describe_view(view_id: str, kernel: Kernel) -> SemanticViewDetail:
 ```python
 import os
 
-USE_GATEWAY_PATTERN = os.environ.get("CODEINTEL_USE_GATEWAY_PATTERN", "1") == "1"
+USE_WAREHOUSE_PATTERN = os.environ.get("CODEINTEL_USE_WAREHOUSE_PATTERN", "1") == "1"
 USE_PROBLEM_DETAILS = os.environ.get("CODEINTEL_USE_PROBLEM_DETAILS", "1") == "1"
 ```
 
@@ -1703,11 +1875,14 @@ USE_PROBLEM_DETAILS = os.environ.get("CODEINTEL_USE_PROBLEM_DETAILS", "1") == "1
 
 ### Architecture
 
-- [ ] No `ibis.duckdb.from_connection()` in kernel
-- [ ] No `MinimalStorageGateway()` in hot paths
+- [ ] No direct `ibis.duckdb.from_connection()` calls in serving hot paths (use gateway/warehouse caching)
+- [ ] No per-call `MinimalStorageGateway()` in hot paths (request-scoped Warehouse only)
 - [ ] All pool management in storage
+- [ ] Serving does not introduce `duckdb` imports outside `codeintel.storage`
+- [ ] Blocking kernel calls do not run on the event loop (sync endpoints or threadpool offload)
 - [ ] Typed dependencies throughout
 - [ ] RFC 9457 errors on all paths
+- [ ] Correlation ID available in error payloads, logs, and response headers
 
 ### Documentation
 
@@ -1769,4 +1944,3 @@ This is expected and represents investment in type safety, error handling, and d
 - [COMBINED_DECOMMISSIONING_PLAN.md](./COMBINED_DECOMMISSIONING_PLAN.md) - Overall decommissioning context
 - [BUILD_CONSOLIDATION_AND_ENHANCEMENT_PLAN.md](./BUILD_CONSOLIDATION_AND_ENHANCEMENT_PLAN.md) - Build layer cleanup
 - [FastAPI_advanced.md](../python_library_reference/FastAPI_advanced.md) - FastAPI advanced features reference
-
