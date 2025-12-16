@@ -409,8 +409,12 @@ def validate_nodes(
     """
     provider = get_schema_provider() if schema_provider is None else schema_provider
 
-    node_to_target, materialize_nodes_by_target, materialize_issues = _collect_materialize_index(nodes)
-    produced_table_to_target, dataset_issues = _collect_produced_tables(nodes, node_to_target=node_to_target)
+    node_to_target, materialize_nodes_by_target, materialize_issues = _collect_materialize_index(
+        nodes
+    )
+    produced_table_to_target, dataset_issues = _collect_produced_tables(
+        nodes, node_to_target=node_to_target
+    )
 
     errors: list[GraphValidationIssue] = [
         *materialize_issues,
@@ -418,7 +422,9 @@ def validate_nodes(
         *_artifact_tag_issues(nodes),
     ]
     errors.extend(_duplicate_materialize_issues(materialize_nodes_by_target))
-    errors.extend(_unknown_schema_issues(provider=provider, produced_table_to_target=produced_table_to_target))
+    errors.extend(
+        _unknown_schema_issues(provider=provider, produced_table_to_target=produced_table_to_target)
+    )
 
     warnings: list[GraphValidationIssue] = []
 

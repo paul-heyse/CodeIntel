@@ -10,11 +10,10 @@ the handler pattern for now.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Annotated, Any, get_args
+from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.build.hamilton.introspect import GraphSource
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.build_schema import build_schema_app
 from codeintel.cli.commands.build_spec import build_spec_app
@@ -45,15 +44,6 @@ build_app.command(build_spec_app, name="spec")
 
 _BUILD_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 _VALIDATE_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
-
-_GRAPH_SOURCE_CHOICES = frozenset(get_args(GraphSource))
-
-
-def _graph_source_validator(_type: type[Any], value: str) -> None:
-    if value not in _GRAPH_SOURCE_CHOICES:
-        choices = ", ".join(sorted(_GRAPH_SOURCE_CHOICES))
-        msg = f"Unknown graph source: {value}. Expected one of: {choices}"
-        raise ValueError(msg)
 
 
 @cli_command("build.run", handler=build_run_handler, config=_BUILD_CONFIG)
@@ -249,15 +239,6 @@ class BuildPlanCommand:
             help="Output file path (stdout if not specified).",
         ),
     ] = None
-    graph_source: Annotated[
-        GraphSource,
-        Parameter(
-            name=["--graph-source"],
-            help="Dependency graph source: hamilton (default) or targetgraph.",
-            show_choices=True,
-            validator=_graph_source_validator,
-        ),
-    ] = "hamilton"
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
@@ -281,15 +262,6 @@ class BuildExplainCommand:
             help="Mark specific targets as forced (repeatable).",
         ),
     ] = None
-    graph_source: Annotated[
-        GraphSource,
-        Parameter(
-            name=["--graph-source"],
-            help="Dependency graph source: hamilton (default) or targetgraph.",
-            show_choices=True,
-            validator=_graph_source_validator,
-        ),
-    ] = "hamilton"
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
@@ -336,15 +308,6 @@ class BuildGraphCommand:
             help="Output file path (stdout if not specified).",
         ),
     ] = None
-    graph_source: Annotated[
-        GraphSource,
-        Parameter(
-            name=["--graph-source"],
-            help="Dependency graph source: hamilton (default) or targetgraph.",
-            show_choices=True,
-            validator=_graph_source_validator,
-        ),
-    ] = "hamilton"
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

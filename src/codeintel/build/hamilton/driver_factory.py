@@ -24,12 +24,11 @@ from codeintel.build.hamilton.nodes.node_factory import (
     GenerationOptions,
     get_generated_module,
 )
-from codeintel.build.registry import get_target_graph
+from codeintel.build.targets import TargetGraph
+from codeintel.build.unified_registry import get_unified_registry
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-
-    from codeintel.build.targets import TargetGraph
 
 
 HamiltonNodeMode = Literal["generated", "auto"]
@@ -155,7 +154,12 @@ def build_driver(
     >>> runtime = build_driver(mode="auto")
     >>> # Loads native modules + generated wrappers
     """
-    graph = get_target_graph()
+    # Build TargetGraph from unified registry to avoid circular dependency
+    # with get_target_graph() which calls build_driver() for Hamilton deps
+    unified = get_unified_registry()
+    graph = TargetGraph()
+    for target in unified.get_all_targets():
+        graph.register(target)
 
     if mode == "auto":
         # Auto mode: compose native + generated (with exclusions)

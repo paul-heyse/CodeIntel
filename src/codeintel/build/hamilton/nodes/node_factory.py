@@ -61,7 +61,6 @@ from codeintel.build.hamilton.tags import (
     NODE_TYPE_MATERIALIZE,
 )
 from codeintel.build.parameters import EMPTY_PARAMETERS
-from codeintel.build.registry import get_target_graph
 from codeintel.build.targets import TargetGraph
 from codeintel.build.unified_registry import get_unified_registry
 
@@ -715,7 +714,12 @@ def build_target_module(
         Module populated with Hamilton node functions and mapping dictionaries.
     """
     resolved = options or GenerationOptions()
-    graph = get_target_graph()
+    # Use unified registry directly to avoid circular dependency with get_target_graph()
+    # which calls build_driver() which calls get_generated_module()
+    unified = get_unified_registry()
+    graph = TargetGraph()
+    for target in unified.get_all_targets():
+        graph.register(target)
     all_target_names = {t.name for t in graph.all_targets}
     include = resolved.include_targets or all_target_names
     exclude = resolved.exclude_targets or set()

@@ -17,7 +17,6 @@ from codeintel.build.assets.impact import compute_impact
 from codeintel.build.config import load_build_config
 from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
 from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.build.hamilton.introspect import parse_graph_source
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
     export_dag_json,
@@ -39,7 +38,7 @@ from codeintel.build.serving.semantic_compile import (
 )
 from codeintel.build.serving.semantic_sources import collect_semantic_view_tags
 from codeintel.build.spec import BuildSpecCompileOptions, buildspec_to_json, compile_buildspec
-from codeintel.build.state import DatabaseState, StateValidator
+from codeintel.build.state import BuildState, StateValidator
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     BuildAssetsResult,
@@ -69,7 +68,6 @@ from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDif
 if TYPE_CHECKING:
     from codeintel.build.hamilton import HamiltonBuildResult
     from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
-    from codeintel.build.hamilton.introspect import GraphSource
     from codeintel.build.hamilton.planner import HamiltonBuildPlan
     from codeintel.build.manifest import BuildRunRecord
     from codeintel.build.targets import TargetGraph, TargetModule
@@ -232,55 +230,51 @@ def _resolve_goals(
 
 
 def _group_targets_by_status(
-    state: DatabaseState,
+    state: BuildState,
 ) -> tuple[list[str], list[str], list[str], list[str]]:
     """Group targets by their status.
 
     Parameters
     ----------
     state
-        Database state from StateValidator.
+        Build state from StateValidator (unified types).
 
     Returns
     -------
     tuple[list[str], list[str], list[str], list[str]]
-        (computed, stale, missing, blocked) lists.
+        (current, stale, missing, blocked) lists.
     """
-    computed: list[str] = []
+    current: list[str] = []
     stale: list[str] = []
     missing: list[str] = []
     blocked: list[str] = []
 
     for target_name, target_state in state.targets.items():
-        if target_state.status == "computed":
-            computed.append(target_name)
+        if target_state.status == "current":
+            current.append(target_name)
         elif target_state.status == "stale":
-            reason = (
-                f" ({target_state.staleness_reason.details})"
-                if target_state.staleness_reason
-                else ""
-            )
+            reason = ""
+            if target_state.blocking_reason:
+                reason = f" ({target_state.blocking_reason})"
             stale.append(f"{target_name}{reason}")
         elif target_state.status == "missing":
             missing.append(target_name)
         elif target_state.status == "blocked":
-            reason = (
-                f" ({target_state.staleness_reason.details})"
-                if target_state.staleness_reason
-                else ""
-            )
+            reason = ""
+            if target_state.blocking_deps:
+                reason = f" (blocked by: {', '.join(target_state.blocking_deps)})"
             blocked.append(f"{target_name}{reason}")
 
-    return computed, stale, missing, blocked
+    return current, stale, missing, blocked
 
 
-def _build_status_result(state: DatabaseState) -> BuildStatusResult:
-    """Build status result from database state.
+def _build_status_result(state: BuildState) -> BuildStatusResult:
+    """Build status result from build state.
 
     Parameters
     ----------
     state
-        Database state from validator.
+        Build state from validator (unified types).
 
     Returns
     -------
@@ -289,9 +283,9 @@ def _build_status_result(state: DatabaseState) -> BuildStatusResult:
     """
     targets: list[dict[str, object]] = []
 
-    computed, stale_list, missing_list, blocked_list = _group_targets_by_status(state)
+    current_list, stale_list, missing_list, blocked_list = _group_targets_by_status(state)
 
-    targets.extend({"name": name, "status": "fresh"} for name in computed)
+    targets.extend({"name": name, "status": "fresh"} for name in current_list)
     targets.extend({"name": name, "status": "stale"} for name in stale_list)
     targets.extend({"name": name, "status": "missing"} for name in missing_list)
     targets.extend({"name": name, "status": "blocked"} for name in blocked_list)
@@ -301,7 +295,7 @@ def _build_status_result(state: DatabaseState) -> BuildStatusResult:
     return BuildStatusResult(
         targets=targets,
         stale_count=stale_count,
-        fresh_count=len(computed),
+        fresh_count=len(current_list),
     )
 
 
@@ -505,7 +499,7 @@ def build_status_handler(
 
         module_targets = graph.targets_for_module(cast("TargetModule", module))
         module_names = {t.name for t in module_targets}
-        state = DatabaseState(
+        state = BuildState(
             repo=state.repo,
             commit=state.commit,
             targets={
@@ -887,13 +881,6 @@ def build_graph_handler(
     all_targets = ctx.params.get_bool("all_targets")
     output_file = ctx.params.get_str("output_file")
     output_format = ctx.params.get_str("output_format") or "json"
-    graph_source_raw = ctx.params.get_str("graph_source")
-    if not graph_source_raw:
-        return fail_execution_failed("build", "Missing graph_source parameter", status=500)
-    try:
-        graph_source = parse_graph_source(graph_source_raw)
-    except ValueError as exc:
-        return fail_invalid_target_selection(str(exc))
 
     try:
         goals = _resolve_goals(
@@ -907,14 +894,14 @@ def build_graph_handler(
 
     hamilton_runtime = build_driver(mode="generated")
 
-    dag_info = get_dag_info(hamilton_runtime, goals, graph_source=graph_source)
+    dag_info = get_dag_info(hamilton_runtime, goals, graph_source="hamilton")
 
     if output_format == "mermaid":
-        dag_output = export_dag_mermaid(hamilton_runtime, goals, graph_source=graph_source)
+        dag_output = export_dag_mermaid(hamilton_runtime, goals, graph_source="hamilton")
     elif output_format == "dot":
-        dag_output = export_dag_dot(hamilton_runtime, goals, graph_source=graph_source)
+        dag_output = export_dag_dot(hamilton_runtime, goals, graph_source="hamilton")
     else:
-        dag_output = export_dag_json(hamilton_runtime, goals, graph_source=graph_source)
+        dag_output = export_dag_json(hamilton_runtime, goals, graph_source="hamilton")
 
     if output_file:
         Path(output_file).write_text(dag_output, encoding="utf-8")
@@ -956,13 +943,6 @@ def build_plan_handler(
 
     graph = get_target_graph()
     plan_args = _parse_plan_args(ctx)
-    graph_source_raw = ctx.params.get_str("graph_source")
-    if not graph_source_raw:
-        return fail_execution_failed("build", "Missing graph_source parameter", status=500)
-    try:
-        graph_source = parse_graph_source(graph_source_raw)
-    except ValueError as exc:
-        return fail_invalid_target_selection(str(exc))
 
     try:
         goals = _resolve_goals(
@@ -1009,7 +989,7 @@ def build_plan_handler(
             graph=graph,
             requested=tuple(goals),
             mode="generated",
-            graph_source=graph_source,
+            graph_source="hamilton",
         )
 
     result = BuildPlanResult(
@@ -1033,7 +1013,6 @@ def build_plan_handler(
 
 @dataclass(frozen=True)
 class _BuildExplainParams:
-    graph_source: GraphSource
     target: str
     force_targets: frozenset[str]
 
@@ -1043,15 +1022,6 @@ def _resolve_build_explain_params(
     *,
     graph: TargetGraph,
 ) -> _BuildExplainParams | CliResult[BuildExplainResult]:
-    graph_source_raw = ctx.params.get_str("graph_source")
-    if not graph_source_raw:
-        return fail_execution_failed("build", "Missing graph_source parameter", status=500)
-
-    try:
-        graph_source = parse_graph_source(graph_source_raw)
-    except ValueError as exc:
-        return fail_invalid_target_selection(str(exc))
-
     target = ctx.params.get_str("target")
     if not target:
         return fail_invalid_targets("No target specified")
@@ -1065,7 +1035,6 @@ def _resolve_build_explain_params(
         return fail_invalid_targets(f"Unknown target: {target}")
 
     return _BuildExplainParams(
-        graph_source=graph_source,
         target=target,
         force_targets=force_targets,
     )
@@ -1076,7 +1045,6 @@ def _compute_plan_for_explain(
     runtime: ResolvedRuntime,
     graph: TargetGraph,
     target: str,
-    graph_source: GraphSource,
     force_targets: frozenset[str],
 ) -> HamiltonBuildPlan:
     with runtime_gateway(runtime, read_only=True) as gateway:
@@ -1105,7 +1073,7 @@ def _compute_plan_for_explain(
             graph=graph,
             requested=(target,),
             mode="generated",
-            graph_source=graph_source,
+            graph_source="hamilton",
         )
 
 
@@ -1148,7 +1116,6 @@ def build_explain_handler(
         runtime=runtime,
         graph=graph,
         target=params.target,
-        graph_source=params.graph_source,
         force_targets=params.force_targets,
     )
 

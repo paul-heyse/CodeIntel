@@ -34,6 +34,14 @@ Compile a deterministic schema manifest for selected targets.
 │                              [env var:                                       │
 │                              CODEINTEL_BUILD_SCHEMA_COMPILE_OUTPUT]          │
 │                              [default: (none)]                               │
+│ INCLUDE-VIEWS                Include DuckDB view schemas in the manifest (v2 │
+│   --include-views            format). [env var:                              │
+│                              CODEINTEL_BUILD_SCHEMA_COMPILE_INCLUDE_VIEWS]   │
+│                              [default: false]                                │
+│ INCLUDE-ARTIFACTS            Include export artifact metadata in the         │
+│   --include-artifacts        manifest (v2 format). [env var:                 │
+│                              CODEINTEL_BUILD_SCHEMA_COMPILE_INCLUDE_ARTIFACT │
+│                              S] [default: false]                             │
 │ --flags                      [env var: CODEINTEL_BUILD_SCHEMA_COMPILE_FLAGS] │
 │                              [default: --flags]                              │
 │ ROOT --root -r               Explicit project root directory. [env var:      │

@@ -6,7 +6,7 @@ of truth for target state computation. Tests verify:
 1. Correct status computation (current, stale, missing, blocked)
 2. Proper blocking propagation through dependencies
 3. Session caching efficiency
-4. Equivalence with legacy StateValidator results
+4. Equivalence with StateValidator results (both now use unified types)
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ class TestStateComputer:
 
     @staticmethod
     def test_missing_status_when_no_manifest(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """Target without manifest has missing status."""
@@ -93,7 +93,7 @@ class TestStateComputer:
         graph.register(target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
         computer = StateComputer(graph=graph, session=session)
 
         state = computer.compute_all()
@@ -104,7 +104,7 @@ class TestStateComputer:
 
     @staticmethod
     def test_current_status_when_hash_matches(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """Target with matching hash has current status."""
@@ -120,7 +120,7 @@ class TestStateComputer:
         graph.register(target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
         computer = StateComputer(graph=graph, session=session)
 
         # Compute the actual input hash
@@ -128,7 +128,7 @@ class TestStateComputer:
 
         # Create manifest with matching hash
         manifest = make_manifest("test_target", input_hash=actual_hash)
-        analytics_gateway.build.save_manifest(manifest)
+        fresh_gateway.build.save_manifest(manifest)
 
         state = computer.compute_all()
 
@@ -138,7 +138,7 @@ class TestStateComputer:
 
     @staticmethod
     def test_stale_status_when_hash_differs(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """Target with different hash has stale status."""
@@ -157,9 +157,9 @@ class TestStateComputer:
 
         # Create manifest with different hash
         manifest = make_manifest("test_target", input_hash="old_hash_123")
-        analytics_gateway.build.save_manifest(manifest)
+        fresh_gateway.build.save_manifest(manifest)
 
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
         computer = StateComputer(graph=graph, session=session)
 
         state = computer.compute_all()
@@ -169,7 +169,7 @@ class TestStateComputer:
 
     @staticmethod
     def test_blocked_when_dependency_missing(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """Target blocked when dependency is missing."""
@@ -193,12 +193,12 @@ class TestStateComputer:
         graph.register(main_target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
 
         # Save manifest only for main, not for dependency
         main_hash = session.get_input_hash(main_target)
         manifest = make_manifest("main", input_hash=main_hash)
-        analytics_gateway.build.save_manifest(manifest)
+        fresh_gateway.build.save_manifest(manifest)
 
         computer = StateComputer(graph=graph, session=session)
         state = computer.compute_all()
@@ -210,7 +210,7 @@ class TestStateComputer:
 
     @staticmethod
     def test_blocked_when_dependency_stale(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """Target blocked when dependency is stale."""
@@ -234,16 +234,16 @@ class TestStateComputer:
         graph.register(main_target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
 
         # Save manifest for dependency with wrong hash (stale)
         dep_manifest = make_manifest("dependency", input_hash="stale_hash")
-        analytics_gateway.build.save_manifest(dep_manifest)
+        fresh_gateway.build.save_manifest(dep_manifest)
 
         # Save manifest for main with correct hash
         main_hash = session.get_input_hash(main_target)
         main_manifest = make_manifest("main", input_hash=main_hash)
-        analytics_gateway.build.save_manifest(main_manifest)
+        fresh_gateway.build.save_manifest(main_manifest)
 
         computer = StateComputer(graph=graph, session=session)
         state = computer.compute_all()
@@ -254,7 +254,7 @@ class TestStateComputer:
 
     @staticmethod
     def test_build_state_query_methods(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """BuildState query methods return correct results."""
@@ -286,11 +286,11 @@ class TestStateComputer:
         graph.register(t3)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
 
         # Mark t1 as current via a matching manifest.
         t1_hash = session.get_input_hash(t1)
-        analytics_gateway.build.save_manifest(make_manifest("t1", input_hash=t1_hash))
+        fresh_gateway.build.save_manifest(make_manifest("t1", input_hash=t1_hash))
 
         # Leave t2 and t3 without manifests (missing).
 
@@ -304,7 +304,7 @@ class TestStateComputer:
 
     @staticmethod
     def test_compute_single_target(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """compute_single returns correct state for individual target."""
@@ -320,7 +320,7 @@ class TestStateComputer:
         graph.register(target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
         computer = StateComputer(graph=graph, session=session)
 
         state = computer.compute_single("single")
@@ -330,7 +330,7 @@ class TestStateComputer:
 
     @staticmethod
     def test_session_caching_efficiency(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """Session caches hashes to avoid redundant computation."""
@@ -346,7 +346,7 @@ class TestStateComputer:
         graph.register(target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
         computer = StateComputer(graph=graph, session=session)
 
         # Compute multiple times
@@ -359,11 +359,14 @@ class TestStateComputer:
 
 
 class TestStateValidatorEquivalence:
-    """Tests ensuring StateValidator produces equivalent results to StateComputer."""
+    """Tests ensuring StateValidator produces equivalent results to StateComputer.
+
+    Note: Both now use unified types (BuildState, TargetState).
+    """
 
     @staticmethod
     def test_validator_and_computer_agree_on_missing(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """StateValidator and StateComputer agree on missing targets."""
@@ -380,21 +383,21 @@ class TestStateValidatorEquivalence:
 
         snapshot = make_snapshot(tmp_path)
 
-        # Use StateValidator (legacy)
-        validator = StateValidator(graph=graph, gateway=analytics_gateway, snapshot=snapshot)
-        legacy_state = validator.validate()
+        # Use StateValidator
+        validator = StateValidator(graph=graph, gateway=fresh_gateway, snapshot=snapshot)
+        validator_state = validator.validate()
 
-        # Use StateComputer (new)
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        # Use StateComputer
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
         computer = StateComputer(graph=graph, session=session)
-        new_state = computer.compute_all()
+        computer_state = computer.compute_all()
 
-        # Results should be equivalent
-        expect_equal(legacy_state.missing_targets(), new_state.missing_targets())
+        # Results should be equivalent (both use by_status now)
+        expect_equal(validator_state.by_status("missing"), computer_state.by_status("missing"))
 
     @staticmethod
     def test_validator_and_computer_agree_on_current(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """StateValidator and StateComputer agree on current targets."""
@@ -410,28 +413,28 @@ class TestStateValidatorEquivalence:
         graph.register(target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
 
         # Save manifest with correct hash
         hash_val = session.get_input_hash(target)
         manifest = make_manifest("equiv_current", input_hash=hash_val)
-        analytics_gateway.build.save_manifest(manifest)
+        fresh_gateway.build.save_manifest(manifest)
 
         # Use StateValidator
-        validator = StateValidator(graph=graph, gateway=analytics_gateway, snapshot=snapshot)
-        legacy_state = validator.validate()
+        validator = StateValidator(graph=graph, gateway=fresh_gateway, snapshot=snapshot)
+        validator_state = validator.validate()
 
         # Use StateComputer
-        session2 = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session2 = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
         computer = StateComputer(graph=graph, session=session2)
-        new_state = computer.compute_all()
+        computer_state = computer.compute_all()
 
-        # "computed" in legacy = "current" in new
-        expect_equal(legacy_state.computed_targets(), new_state.current_targets())
+        # Both use "current" status now
+        expect_equal(validator_state.by_status("current"), computer_state.by_status("current"))
 
     @staticmethod
     def test_validator_and_computer_agree_on_blocked(
-        analytics_gateway: StorageGateway,
+        fresh_gateway: StorageGateway,
         tmp_path: Path,
     ) -> None:
         """StateValidator and StateComputer agree on blocked targets."""
@@ -455,20 +458,20 @@ class TestStateValidatorEquivalence:
         graph.register(main)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
 
         # Save manifest for main with correct hash (but dep is missing)
         main_hash = session.get_input_hash(main)
         manifest = make_manifest("main", input_hash=main_hash)
-        analytics_gateway.build.save_manifest(manifest)
+        fresh_gateway.build.save_manifest(manifest)
 
         # Use StateValidator
-        validator = StateValidator(graph=graph, gateway=analytics_gateway, snapshot=snapshot)
-        legacy_state = validator.validate()
+        validator = StateValidator(graph=graph, gateway=fresh_gateway, snapshot=snapshot)
+        validator_state = validator.validate()
 
         # Use StateComputer
-        session2 = BuildSession(snapshot=snapshot, gateway=analytics_gateway)
+        session2 = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
         computer = StateComputer(graph=graph, session=session2)
-        new_state = computer.compute_all()
+        computer_state = computer.compute_all()
 
-        expect_equal(legacy_state.blocked_targets(), new_state.blocked_targets())
+        expect_equal(validator_state.by_status("blocked"), computer_state.by_status("blocked"))

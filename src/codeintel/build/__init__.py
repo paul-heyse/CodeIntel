@@ -36,7 +36,6 @@ Import patterns::
 
     from codeintel.build.hamilton import HamiltonBuildExecutor, HamiltonBuildResult
     from codeintel.build.state import StateValidator
-    from codeintel.build.readiness import DatabaseReadinessView
 
 
     from codeintel.build.config import load_build_config, BuildConfig
@@ -78,7 +77,6 @@ __all__ = [
     "TargetResources",
     "TargetResult",
     "UnifiedRegistry",
-    "build_target_graph",
     "compute_input_hash",
     "compute_options_hash",
     "get_target_graph",
@@ -93,7 +91,7 @@ if TYPE_CHECKING:
     from codeintel.build.manifest import BuildRunRecord, OutputManifest
     from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
     from codeintel.build.plugin import TargetPlugin, TargetPluginProtocol
-    from codeintel.build.registry import build_target_graph, get_target_graph
+    from codeintel.build.registry import get_target_graph
     from codeintel.build.resources import (
         DEFAULT_EXECUTION,
         DEFAULT_RESOURCES,
@@ -127,7 +125,6 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "TargetResources": ("codeintel.build.resources", "TargetResources"),
     "TargetResult": ("codeintel.build.context", "TargetResult"),
     "UnifiedRegistry": ("codeintel.build.unified_registry", "UnifiedRegistry"),
-    "build_target_graph": ("codeintel.build.registry", "build_target_graph"),
     "compute_input_hash": ("codeintel.build.hashing", "compute_input_hash"),
     "compute_options_hash": ("codeintel.build.hashing", "compute_options_hash"),
     "get_target_graph": ("codeintel.build.registry", "get_target_graph"),

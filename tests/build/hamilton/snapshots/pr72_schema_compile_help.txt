@@ -59,4 +59,3 @@ Compile a deterministic schema manifest for selected targets.
 │                              CODEINTEL_BUILD_SCHEMA_COMPILE_VERBOSE]         │
 │                              [default: 0]                                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-

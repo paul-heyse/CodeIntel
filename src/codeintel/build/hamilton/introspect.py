@@ -35,7 +35,8 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
 
 
-GraphSource = Literal["targetgraph", "hamilton"]
+GraphSource = Literal["hamilton"]
+"""Graph source type. Only 'hamilton' is supported; targetgraph has been removed."""
 
 
 def parse_graph_source(value: str) -> GraphSource:
@@ -55,12 +56,15 @@ def parse_graph_source(value: str) -> GraphSource:
     ------
     ValueError
         If value is not a supported graph source identifier.
+
+    Notes
+    -----
+    Only 'hamilton' is supported. The 'targetgraph' option has been removed
+    as part of the Hamilton consolidation (Phase 5).
     """
-    if value == "targetgraph":
-        return "targetgraph"
     if value == "hamilton":
         return "hamilton"
-    msg = f"Unknown graph source: {value}"
+    msg = f"Unknown graph source: {value}. Only 'hamilton' is supported."
     raise ValueError(msg)
 
 

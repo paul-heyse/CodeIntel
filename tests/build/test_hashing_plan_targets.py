@@ -1,4 +1,4 @@
-"""Tests for hashing, manifest models, plans, and target graph behaviors."""
+"""Tests for hashing, manifest models, and target graph behaviors."""
 
 from __future__ import annotations
 
@@ -10,16 +10,14 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 
 from codeintel.build.contracts import OutputContract
+from codeintel.build.errors import CycleDetectedError
 from codeintel.build.hashing import compute_input_hash, compute_options_hash
 from codeintel.build.manifest import BuildRunRecord, OutputManifest
-from codeintel.build.plan import BuildPlan, PlanGenerator, PlanStage, PlanStep, format_duration
-from codeintel.build.resolver import ResolutionResult
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column, TableSchema
-from tests._helpers import make_snapshot, sample_target_graph
+from tests._helpers import make_snapshot
 from tests._helpers.assertions import (
     expect_equal,
-    expect_false,
     expect_in,
     expect_is_none,
     expect_is_not_none,
@@ -112,53 +110,6 @@ def test_build_run_record_to_dict_handles_none_fields() -> None:
     expect_is_none(payload["error_summary"])
 
 
-def test_build_plan_summary_and_formatting() -> None:
-    """Plan summary includes stages, skipped, and blocked targets."""
-    stage = PlanStage(
-        module="ingestion",
-        steps=(
-            PlanStep(
-                target="modules",
-                module="ingestion",
-                plugin="repo_scan",
-                estimated_duration_ms=None,
-                dependencies=(),
-                reason="fresh start",
-            ),
-        ),
-    )
-    plan = BuildPlan(
-        requested_targets=("modules",),
-        stages=(stage,),
-        skipped_targets=("ast",),
-        blocked_targets=("graphs",),
-    )
-    summary = plan.format_summary()
-    expect_in("Build Plan for: modules", summary)
-    expect_in("Skipped: 1 targets", summary)
-    expect_in("Blocked: 1 targets", summary)
-
-    expect_equal(format_duration(500), ", ~500ms")
-    expect_equal(format_duration(2000), ", ~2s")
-    expect_false(bool(format_duration(None)))
-
-
-def test_plan_generator_warns_on_missing_reason(caplog: pytest.LogCaptureFixture) -> None:
-    """PlanGenerator logs when a resolution reason is missing."""
-    graph = sample_target_graph()
-    resolution = ResolutionResult(
-        requested=("modules",),
-        to_compute=("modules",),
-        to_skip=(),
-        blocked=(),
-        reasons={},
-    )
-    caplog.set_level("WARNING")
-    plan = PlanGenerator(graph).generate(resolution)
-    expect_equal(plan.total_steps, 1)
-    expect_true(any("has no resolution reason" in rec.message for rec in caplog.records))
-
-
 def test_target_graph_validation_and_topology() -> None:
     """TargetGraph validates missing deps, cycles, and ordering."""
     graph = TargetGraph()
@@ -188,8 +139,8 @@ def test_target_graph_validation_and_topology() -> None:
         OutputTarget(name="cycle2", module="export", plugin="p", dependencies=("cycle1",))
     )
     errors_cycle = cyclic_graph.validate()
-    expect_true(any("Cycle detected" in err for err in errors_cycle))
-    with pytest.raises(ValueError, match="Cycle detected"):
+    expect_true(any("Dependency cycle detected" in err for err in errors_cycle))
+    with pytest.raises(CycleDetectedError, match="cycle"):
         cyclic_graph.topological_order(("cycle1",))
 
 
