@@ -59,45 +59,36 @@ from codeintel.build.hamilton.native.ingestion.typing import (
 )
 
 __all__: list[str] = [
-    # ast target
     "AstExtractResult",
-    "t__ast",
-    "t__ast__extract",
-    # config target
     "ConfigIngestResult",
     "ConfigScanResult",
+    "CoverageIngestResult",
+    "CstExtractResult",
+    "DocstringsExtractResult",
+    "ModuleScanResult",
+    "RepoMapWriteResult",
+    "TestsIngestResult",
+    "parse__scip",
+    "parse__typing",
+    "t__ast",
+    "t__ast__extract",
     "t__config_ingest",
     "t__config_ingest__ingest",
     "t__config_ingest__scan",
-    # coverage target
-    "CoverageIngestResult",
     "t__coverage_ingest",
     "t__coverage_ingest__ingest",
-    # cst target
-    "CstExtractResult",
     "t__cst",
     "t__cst__extract",
-    # docstrings target
-    "DocstringsExtractResult",
     "t__docstrings",
     "t__docstrings__extract",
-    # modules target
-    "ModuleScanResult",
-    "RepoMapWriteResult",
     "t__modules",
     "t__modules__scan",
     "t__modules__write_repo_map",
-    # scip target
-    "parse__scip",
     "t__scip",
-    "tool__scip",
-    # tests target
-    "TestsIngestResult",
     "t__tests_ingest",
     "t__tests_ingest__ingest",
-    # typing target
-    "parse__typing",
     "t__typing",
+    "tool__scip",
     "tool__typing__pyrefly",
     "tool__typing__pyright",
     "tool__typing__ruff",

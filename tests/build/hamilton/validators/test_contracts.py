@@ -46,8 +46,7 @@ class TestBuildTableContract:
             column_types={"id": "int", "value": "float"},
             no_nulls=["id", "name"],
             unique=["id"],
-            min_rows=1,
-            max_rows=1000,
+            row_count_range=(1, 1000),
         )
 
         # Should have 5 validators
@@ -95,8 +94,7 @@ class TestBuildTableContract:
         """Test that no row count validator is added with default min=0."""
         validators = build_table_contract(
             required_columns=["id"],
-            min_rows=0,
-            max_rows=None,
+            row_count_range=(0, None),
         )
         validator_types = [type(v).__name__ for v in validators]
         expect_not_in("RowCountRangeValidator", validator_types)
@@ -259,13 +257,13 @@ def test_table_contract_row_count_parametrized(
     min_rows: int,
     max_rows: int | None,
     row_count: int,
+    *,
     expected_pass: bool,
 ) -> None:
     """Parametrized test for row count validation in table contracts."""
     validators = build_table_contract(
         required_columns=["id"],
-        min_rows=min_rows,
-        max_rows=max_rows,
+        row_count_range=(min_rows, max_rows),
     )
 
     df = pd.DataFrame({"id": range(row_count)})

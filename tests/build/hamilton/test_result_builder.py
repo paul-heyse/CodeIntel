@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import cast
 
 import pytest
 
@@ -187,7 +188,9 @@ class TestBuildExecutionResult:
         expect_equal(d["failure_count"], 0)
         expect_equal(d["total_duration_seconds"], 1.0)
         expect_equal(d["metadata"], {"key": "value"})
-        expect_in("output", d["node_results"])
+        node_results = d["node_results"]
+        expect_true(isinstance(node_results, dict))
+        expect_in("output", cast("dict[str, object]", node_results))
 
 
 class TestBuildResultBuilder:
@@ -236,7 +239,7 @@ class TestBuildResultBuilder:
     @staticmethod
     def test_metadata() -> None:
         """Test including metadata."""
-        metadata = {"run_id": "123", "version": "1.0"}
+        metadata: dict[str, object] = {"run_id": "123", "version": "1.0"}
         builder = BuildResultBuilder(metadata=metadata)
         result = builder.build_result(output="value")
 
@@ -259,9 +262,7 @@ class TestBuildResultBuilder:
         """Test input_types method."""
         builder = BuildResultBuilder()
         types = builder.input_types()
-        from typing import Any
-
-        expect_in(Any, types)
+        expect_in(object, types)
 
     @staticmethod
     def test_output_type() -> None:

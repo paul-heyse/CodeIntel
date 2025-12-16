@@ -46,9 +46,6 @@ Additional Utilities
 
 from __future__ import annotations
 
-from importlib import import_module
-from typing import TYPE_CHECKING, Any, cast
-
 from tests._helpers.build import (
     ManifestParams,
     RecordingPlugin,
@@ -258,23 +255,3 @@ __all__ = [
     "star_graph",
     "write_build_config",
 ]
-
-
-if TYPE_CHECKING:
-    from tests._helpers.context import TestContext
-    from tests._helpers.plugin_harness import PluginHarnessFactory
-else:
-    PluginHarnessFactory = cast("Any", None)
-
-_LAZY_HELPERS: dict[str, str] = {
-    "PluginHarnessFactory": "tests._helpers.plugin_harness",
-}
-
-
-def __getattr__(name: str) -> object:
-    if name in _LAZY_HELPERS:
-        module_name = _LAZY_HELPERS[name]
-        module = import_module(module_name)
-        return getattr(module, name)
-    msg = f"module {__name__} has no attribute {name}"
-    raise AttributeError(msg)

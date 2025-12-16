@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -271,8 +272,6 @@ def build_target_context_for_plugin(
     TargetExecutionContext
         Context with gateway, resources, and target metadata.
     """
-    import warnings
-
     warnings.warn(
         "build_target_context_for_plugin() is deprecated. "
         "Use build_target_context_for_target() with an explicit OutputTarget instead.",

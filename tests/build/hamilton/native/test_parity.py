@@ -21,6 +21,8 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 
+MIN_EXPECTED_EXPORT_MODULES = 2
+
 
 class TestNativeModuleLoader:
     """Test NativeModuleLoader discovery and validation."""
@@ -80,7 +82,7 @@ class TestNativeModuleLoader:
         modules = loader.discover_modules(domain="export")
 
         expect_true(
-            len(modules) >= 2,
+            len(modules) >= MIN_EXPECTED_EXPORT_MODULES,
             message="Expected at least export_jsonl and export_parquet modules",
         )
         expect_true(

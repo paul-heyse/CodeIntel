@@ -601,7 +601,7 @@ def t__call_graph__extract(
         )
 
     except Exception as exc:
-        log.exception("Call graph extraction failed: %s", exc)
+        log.exception("Call graph extraction failed")
         return CallGraphExtractResult(
             success=False,
             error=str(exc),

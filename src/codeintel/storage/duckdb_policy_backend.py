@@ -41,11 +41,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
+from ibis.common.exceptions import IbisError
 from sqlglot import parse_one
 
+import codeintel.storage.views.ibis_views as _ibis_views
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
+from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.views.ibis_registry import VIEW_BUILDERS, ensure_view_builders_registered
+from codeintel.storage.views.discovery import discover_view_builders
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -895,22 +898,32 @@ class DuckDBPolicyBackend:
             When True, re-raises any exception that occurs during view
             creation after logging. When False, exceptions are logged
             but execution continues.
-        """
-        ensure_view_builders_registered()
-        ibis_gateway = self.ibis
 
-        for view_name in sorted(VIEW_BUILDERS):
-            builder = VIEW_BUILDERS[view_name]
+        Raises
+        ------
+        DuckDBError
+            Propagated when strict=True and DuckDB raises during view creation.
+        IbisError
+            Propagated when strict=True and Ibis raises during view creation.
+        KeyError
+            Propagated when strict=True and required view metadata is missing.
+        TypeError
+            Propagated when strict=True and a view builder returns an invalid type.
+        ValueError
+            Propagated when strict=True and inputs fail validation.
+        """
+        ibis_gateway = self.ibis
+        builders = discover_view_builders(modules=(_ibis_views,))
+
+        for spec in builders:
+            view_name = spec.table_key
+            builder = spec.builder
             try:
                 expr = builder(ibis_gateway)
-
-                if "." in view_name:
-                    database, name = view_name.split(".", 1)
-                    ibis_gateway.con.create_view(name, expr, database=database, overwrite=overwrite)
-                else:
-                    ibis_gateway.con.create_view(view_name, expr, overwrite=overwrite)
+                database, name = split_table_key(view_name)
+                ibis_gateway.con.create_view(name, expr, database=database, overwrite=overwrite)
                 log.debug("Created view: %s", view_name)
-            except Exception:
+            except (DuckDBError, IbisError, KeyError, TypeError, ValueError):
                 log.exception("Failed to create view: %s", view_name)
                 if strict:
                     raise

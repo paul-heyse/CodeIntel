@@ -1,0 +1,1 @@
+"""Storage view tests."""

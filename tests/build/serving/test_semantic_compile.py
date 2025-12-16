@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from codeintel.build.hamilton import tags as ht
 from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
 from codeintel.build.serving.semantic_tags import (
     TAG_MCP_VISIBLE,
@@ -30,7 +31,7 @@ def test_compile_registry_uses_explicit_columns_when_present() -> None:
     )
     tags = {
         "docs.v_demo": {
-            TAG_OUTPUT_KIND: "semantic",
+            TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW,
             TAG_MCP_VISIBLE: "1",
             TAG_SEMANTIC_ID: "demo.view",
             TAG_TABLE_KEY: "docs.v_demo",
@@ -48,7 +49,7 @@ def test_compile_registry_filters_non_semantic_and_hidden() -> None:
     """Non-semantic or mcp_visible=0 views are excluded."""
     provider = MappingSchemaProvider(schemas={})
     tags = {
-        "one": {TAG_OUTPUT_KIND: "semantic", TAG_MCP_VISIBLE: "0"},
+        "one": {TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW, TAG_MCP_VISIBLE: "0"},
         "two": {TAG_OUTPUT_KIND: "other", TAG_MCP_VISIBLE: "1"},
     }
 

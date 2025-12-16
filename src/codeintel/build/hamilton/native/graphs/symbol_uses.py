@@ -295,7 +295,7 @@ def t__symbol_uses__extract(
         )
 
     except Exception as exc:
-        log.exception("Symbol uses extraction failed: %s", exc)
+        log.exception("Symbol uses extraction failed")
         return SymbolUsesExtractResult(
             success=False,
             error=str(exc),

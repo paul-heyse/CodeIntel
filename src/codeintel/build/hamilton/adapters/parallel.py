@@ -25,14 +25,25 @@ Check available backends:
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from hamilton.lifecycle import base as lifecycle_base
+
+from codeintel.build.hamilton import tags as ht
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from hamilton.graph import FunctionGraph
     from hamilton.lifecycle import ResultBuilder
+    from hamilton.node import Node
 
 __all__ = [
     "ExecutionBackend",
@@ -157,86 +168,171 @@ def get_available_backends() -> list[str]:
     available = ["sequential", "threadpool"]  # Always available
 
     # Check for optional backends (future support)
-    try:
-        import ray  # noqa: F401
-
+    if importlib.util.find_spec("ray") is not None:
         available.append("ray")
-    except ImportError:
-        pass
 
-    try:
-        import dask  # noqa: F401
-
+    if importlib.util.find_spec("dask") is not None:
         available.append("dask")
-    except ImportError:
-        pass
 
     return available
 
 
-class ThreadPoolAdapter:
-    """Wrapper for Hamilton's FutureAdapter with build-specific defaults.
+class ThreadPoolAdapter(
+    lifecycle_base.BaseDoRemoteExecute,
+    lifecycle_base.BaseDoBuildResult,
+    lifecycle_base.BasePostGraphExecute,
+):
+    """ThreadPool execution adapter with a global write lock for materialize nodes.
 
-    Provides a ThreadPool execution adapter with sensible defaults
-    for build workloads.
+    This adapter executes nodes in a ThreadPoolExecutor. Nodes tagged as
+    `node_type=materialize` or `node_type=artifact` are executed under a global
+    lock to prevent concurrent DuckDB writes.
 
     Parameters
     ----------
     max_workers
-        Maximum number of threads. Defaults to min(32, cpu_count + 4).
+        Maximum number of parallel workers (threads). Defaults to
+        ``min(32, os.cpu_count() + 4)`` in the standard library.
     thread_name_prefix
         Prefix for thread names.
     result_builder
-        Optional ResultBuilder for output aggregation.
-
-    Examples
-    --------
-    >>> adapter = ThreadPoolAdapter(max_workers=8)
-    >>> dr = driver.Builder().with_adapters(adapter).build()
+        Optional Hamilton ResultBuilder for output aggregation. When omitted,
+        the adapter returns a plain ``dict[str, object]`` of computed outputs.
+    write_lock
+        Optional lock to use for write nodes. When omitted, a new lock is
+        created.
     """
 
     def __init__(
         self,
+        *,
         max_workers: int | None = None,
         thread_name_prefix: str = "hamilton-build",
         result_builder: ResultBuilder | None = None,
+        write_lock: threading.Lock | None = None,
     ) -> None:
-        """Initialize the threadpool adapter."""
         self.max_workers = max_workers
         self.thread_name_prefix = thread_name_prefix
-        self.result_builder = result_builder
-        self._delegate: Any = None
-
-    def _ensure_delegate(self) -> Any:
-        """Lazily create the delegate adapter.
-
-        Returns
-        -------
-        Any
-            Underlying Hamilton adapter instance.
-        """
-        if self._delegate is not None:
-            return self._delegate
-
-        from hamilton.plugins.h_threadpool import FutureAdapter
-
-        self._delegate = FutureAdapter(
-            max_workers=self.max_workers,
-            thread_name_prefix=self.thread_name_prefix,
-            result_builder=self.result_builder,
+        self._result_builder = result_builder
+        self._write_lock = write_lock or threading.Lock()
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix=thread_name_prefix,
         )
-        return self._delegate
+        self._closed = False
 
-    def __getattr__(self, name: str) -> Any:
-        """Delegate attribute access to the underlying adapter.
+    @staticmethod
+    def _is_write_node(node: Node) -> bool:
+        tags = node.tags if isinstance(node.tags, dict) else {}
+        node_type = tags.get(ht.TAG_NODE_TYPE)
+        return node_type in {ht.NODE_TYPE_MATERIALIZE, ht.NODE_TYPE_ARTIFACT}
+
+    def do_remote_execute(
+        self,
+        *,
+        node: Node,
+        kwargs: dict[str, object],
+        execute_lifecycle_for_node: Callable[..., object],
+    ) -> Future[object]:
+        """Execute a node in the threadpool.
+
+        Parameters
+        ----------
+        node
+            Node to execute.
+        kwargs
+            Keyword arguments for the node (may contain Future values).
+        execute_lifecycle_for_node
+            Hamilton-provided callable that runs lifecycle hooks and executes the node.
 
         Returns
         -------
-        Any
-            Attribute value resolved from the delegate adapter.
+        Future[object]
+            Future for the node result.
         """
-        delegate = self._ensure_delegate()
-        return getattr(delegate, name)
+        if self._is_write_node(node):
+            return self._executor.submit(self._execute_with_lock, execute_lifecycle_for_node, kwargs)
+        return self._executor.submit(self._execute_without_lock, execute_lifecycle_for_node, kwargs)
+
+    @staticmethod
+    def _execute_without_lock(fn: Callable[..., object], kwargs: dict[str, object]) -> object:
+        resolved = _resolve_futures(kwargs)
+        return fn(**resolved)
+
+    def _execute_with_lock(self, fn: Callable[..., object], kwargs: dict[str, object]) -> object:
+        resolved = _resolve_futures(kwargs)
+        with self._write_lock:
+            return fn(**resolved)
+
+    def do_build_result(self, *, outputs: object) -> object:
+        """Build the final execution result, resolving any futures.
+
+        Parameters
+        ----------
+        outputs
+            Outputs dictionary from Hamilton execution.
+
+        Returns
+        -------
+        object
+            Resolved result object. Defaults to a ``dict[str, object]`` when no
+            result_builder is configured.
+
+        Raises
+        ------
+        TypeError
+            If ``outputs`` is not a ``dict[str, object]`` or contains non-string keys.
+        """
+        if not isinstance(outputs, dict):
+            msg = f"Expected outputs to be a dict, got {type(outputs)}"
+            raise TypeError(msg)
+
+        outputs_by_name: dict[str, object] = {}
+        for key, value in outputs.items():
+            if not isinstance(key, str):
+                msg = f"Expected output key to be a str, got {type(key)}"
+                raise TypeError(msg)
+            outputs_by_name[key] = value
+
+        resolved = _resolve_futures(outputs_by_name)
+        if self._result_builder is not None:
+            return self._result_builder.build_result(**resolved)
+        return resolved
+
+    def post_graph_execute(
+        self,
+        *,
+        run_id: str,
+        graph: FunctionGraph,
+        success: bool,
+        error: Exception | None,
+        results: object | None,
+    ) -> None:
+        """Shutdown threadpool resources after execution.
+
+        Parameters
+        ----------
+        run_id
+            Hamilton run identifier (unused).
+        graph
+            Hamilton function graph (unused).
+        success
+            Whether the graph execution was successful.
+        error
+            Exception raised during execution, if any (unused).
+        results
+            Execution results, if available (unused).
+        """
+        _ = run_id
+        _ = graph
+        _ = error
+        _ = results
+
+        if self._closed:
+            return
+
+        self._closed = True
+        self._executor.shutdown(wait=success, cancel_futures=not success)
 
 
 def create_parallel_adapter(
@@ -245,7 +341,7 @@ def create_parallel_adapter(
     max_workers: int | None = None,
     thread_name_prefix: str = "hamilton-build",
     result_builder: ResultBuilder | None = None,
-) -> Any | None:
+) -> ThreadPoolAdapter | None:
     """Create a parallel execution adapter.
 
     Factory function for creating execution adapters based on the
@@ -264,7 +360,7 @@ def create_parallel_adapter(
 
     Returns
     -------
-    Any | None
+    ThreadPoolAdapter | None
         Adapter instance, or None for sequential execution.
 
     Examples
@@ -308,7 +404,7 @@ def create_parallel_adapter(
     return None
 
 
-def create_adapter_from_config(config: ParallelConfig) -> Any | None:
+def create_adapter_from_config(config: ParallelConfig) -> ThreadPoolAdapter | None:
     """Create adapter from ParallelConfig.
 
     Parameters
@@ -318,7 +414,7 @@ def create_adapter_from_config(config: ParallelConfig) -> Any | None:
 
     Returns
     -------
-    Any | None
+    ThreadPoolAdapter | None
         Adapter instance, or None for sequential execution.
     """
     return create_parallel_adapter(
@@ -326,3 +422,13 @@ def create_adapter_from_config(config: ParallelConfig) -> Any | None:
         max_workers=config.max_workers,
         thread_name_prefix=config.thread_name_prefix,
     )
+
+
+def _resolve_futures(kwargs: dict[str, object]) -> dict[str, object]:
+    resolved: dict[str, object] = {}
+    for key, value in kwargs.items():
+        current = value
+        while isinstance(current, Future):
+            current = current.result()
+        resolved[key] = current
+    return resolved

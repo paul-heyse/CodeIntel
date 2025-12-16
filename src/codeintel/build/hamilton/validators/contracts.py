@@ -21,7 +21,7 @@ Examples
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.validators.dataframe import (
     ColumnsExistValidator,
@@ -49,8 +49,7 @@ def build_table_contract(
     column_types: dict[str, str] | None = None,
     no_nulls: Sequence[str] | None = None,
     unique: Sequence[str] | None = None,
-    min_rows: int = 0,
-    max_rows: int | None = None,
+    row_count_range: tuple[int, int | None] | None = None,
 ) -> list[BaseDefaultValidator]:
     """Build a set of validators for a table contract.
 
@@ -69,10 +68,9 @@ def build_table_contract(
         Optional list of columns that must not contain null values.
     unique
         Optional list of columns that must have unique values.
-    min_rows
-        Minimum number of rows (default 0).
-    max_rows
-        Maximum number of rows (None for unlimited).
+    row_count_range
+        Optional (min_rows, max_rows) tuple for row count validation.
+        Use None for an unbounded max.
 
     Returns
     -------
@@ -86,7 +84,7 @@ def build_table_contract(
     ...     column_types={"loc": "int", "repo": "string"},
     ...     no_nulls=["function_goid_h128", "repo", "commit"],
     ...     unique=["function_goid_h128"],
-    ...     min_rows=1,
+    ...     row_count_range=(1, None),
     ... )
     >>> len(validators)
     5
@@ -108,9 +106,11 @@ def build_table_contract(
     if unique:
         validators.append(UniqueColumnsValidator(unique))
 
-    # Row count range check (always add if min_rows > 0 or max_rows specified)
-    if min_rows > 0 or max_rows is not None:
-        validators.append(RowCountRangeValidator(min_rows=min_rows, max_rows=max_rows))
+    if row_count_range is not None:
+        min_rows, max_rows = row_count_range
+        # Row count range check (always add if min_rows > 0 or max_rows specified)
+        if min_rows > 0 or max_rows is not None:
+            validators.append(RowCountRangeValidator(min_rows=min_rows, max_rows=max_rows))
 
     return validators
 
@@ -212,7 +212,8 @@ def build_metrics_contract(
 
 def build_enum_column_contract(
     column: str,
-    allowed_values: set[Any],
+    allowed_values: set[object],
+    *,
     allow_nulls: bool = False,
 ) -> list[BaseDefaultValidator]:
     """Build validators for a column with enumerated values.

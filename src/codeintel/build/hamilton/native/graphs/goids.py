@@ -414,7 +414,7 @@ def t__goids__extract(
         )
 
     except Exception as exc:
-        log.exception("GOID extraction failed: %s", exc)
+        log.exception("GOID extraction failed")
         return GoidExtractResult(
             success=False,
             error=str(exc),

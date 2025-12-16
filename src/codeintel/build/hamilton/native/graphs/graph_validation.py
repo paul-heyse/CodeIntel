@@ -279,7 +279,7 @@ def t__graph_validation__check(
         )
 
     except Exception as exc:
-        log.exception("Graph validation failed: %s", exc)
+        log.exception("Graph validation failed")
         return GraphValidationResult(
             success=False,
             error=str(exc),

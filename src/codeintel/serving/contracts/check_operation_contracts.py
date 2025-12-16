@@ -13,16 +13,19 @@ from typing import TYPE_CHECKING
 
 from codeintel.serving.http.routes import semantic
 from codeintel.serving.mcp.app import build_mcp_app
+from codeintel.serving.search.models import SearchQueryResponse
 from codeintel.serving.semantic.models import SemanticQueryResponse
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
+    from codeintel.serving.search.models import SearchQueryRequest
     from codeintel.serving.semantic.models import SemanticQueryRequest
 
 
 EXPECTED_MCP_TOOL_NAMES: frozenset[str] = frozenset(
     {
+        "code_search",
         "semantic_catalog",
         "semantic_describe",
         "semantic_query",
@@ -65,6 +68,16 @@ class _DummyKernel:
             rows=[],
             truncated=False,
             snapshot={"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"},
+        )
+
+    @staticmethod
+    def search(request: SearchQueryRequest) -> SearchQueryResponse:
+        return SearchQueryResponse(
+            query=request.query,
+            results=[],
+            truncated=False,
+            snapshot={"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"},
+            engine="pandas",
         )
 
     @staticmethod
@@ -114,6 +127,8 @@ def _check_mcp_tool_schema(tool: object, *, name: str) -> list[str]:
         issues.append(f"MCP tool {name} must require view_id")
     if name in {"semantic_catalog", "serving_meta"} and required:
         issues.append(f"MCP tool {name} must not require arguments, got {sorted(required)}")
+    if name == "code_search" and "query" not in required:
+        issues.append("MCP tool code_search must require query")
 
     if name == "semantic_query":
         props = schema.get("properties", {})

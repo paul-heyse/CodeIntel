@@ -1,4 +1,4 @@
-"""View creation helpers using the Ibis-based VIEW_BUILDERS registry.
+"""View creation helpers using deterministic Hamilton tag discovery.
 
 This module is separate from __init__.py to avoid circular imports when
 config.datasets imports from storage.view_names.
@@ -42,10 +42,7 @@ def _get_policy_backend(
 def create_all_views(
     con_or_gateway: DuckDBPyConnection | StorageGateway,
 ) -> None:
-    """Create or replace all docs.* views using Ibis expressions.
-
-    This function iterates through all registered view builders in VIEW_BUILDERS
-    and creates each view using the Ibis gateway.
+    """Create or replace all views using Ibis expressions.
 
     Parameters
     ----------

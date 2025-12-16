@@ -36,7 +36,7 @@ def create_mcp_server(settings: ServingSettings | None = None) -> FastMCP:
         pool_cfg=DuckDBPoolConfig(size=cfg.pool_size),
         poll_interval_s=cfg.poll_interval_s,
     )
-    kernel = SemanticQueryKernel(db=db_manager)
+    kernel = SemanticQueryKernel(db=db_manager, settings=cfg)
 
     @asynccontextmanager
     async def lifespan(_mcp: FastMCP) -> AsyncGenerator[object]:

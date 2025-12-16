@@ -11,7 +11,7 @@ Hooks are composable via Hamilton's Builder.with_adapters() pattern.
 Example
 -------
 >>> from codeintel.build.hamilton.hooks import build_hooks
->>> hooks = build_hooks(run_id, gateway, graph, enable_validation=True)
+>>> hooks = build_hooks(run_id, gateway, graph)
 >>> driver = Builder().with_modules(modules).with_adapters(*hooks).build()
 >>> # After execution, get validation summary
 >>> contract_hook = next(h for h in hooks if isinstance(h, ContractEnforcementHook))
@@ -26,6 +26,7 @@ Using progress bars:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 # Re-export from contract hook
@@ -67,17 +68,24 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
+@dataclass(frozen=True, slots=True)
+class HookOptions:
+    """Configuration options for `build_hooks`."""
+
+    strict_contracts: bool = False
+    enable_validation: bool = True
+    enable_telemetry: bool = True
+    enable_progress: bool = False
+    enable_timing: bool = False
+    progress_desc: str = "Building targets"
+
+
 def build_hooks(
     run_id: str,
     gateway: StorageGateway,
     graph: TargetGraph,
     *,
-    strict_contracts: bool = False,
-    enable_validation: bool = True,
-    enable_telemetry: bool = True,
-    enable_progress: bool = False,
-    enable_timing: bool = False,
-    progress_desc: str = "Building targets",
+    options: HookOptions | None = None,
 ) -> list[object]:
     """Build the standard hook set for build execution.
 
@@ -92,19 +100,8 @@ def build_hooks(
         Storage gateway for persistence operations.
     graph
         Target graph for contract enforcement lookups.
-    strict_contracts
-        When True, enable strict schema validation on writes (Pandera-style).
-    enable_validation
-        When True, enable Hamilton-native validation via @check_output_custom.
-        Validation results are captured for reporting. Default True.
-    enable_telemetry
-        When True, enable node-level telemetry recording.
-    enable_progress
-        When True, enable tqdm progress bar display.
-    enable_timing
-        When True, enable detailed node timing collection.
-    progress_desc
-        Description for the progress bar.
+    options
+        Hook options. When omitted, uses the defaults from `HookOptions`.
 
     Returns
     -------
@@ -123,28 +120,30 @@ def build_hooks(
     >>> len(hooks)
     2  # telemetry + validation
 
-    >>> hooks = build_hooks("run-123", gateway, graph, strict_contracts=True)
+    >>> hooks = build_hooks("run-123", gateway, graph, options=HookOptions(strict_contracts=True))
     >>> len(hooks)
     2  # telemetry + strict validation
 
-    >>> hooks = build_hooks("run-123", gateway, graph, enable_progress=True)
+    >>> hooks = build_hooks("run-123", gateway, graph, options=HookOptions(enable_progress=True))
     >>> len(hooks)
     3  # telemetry + validation + progress
     """
+    if options is None:
+        options = HookOptions()
     hooks: list[object] = []
 
-    if enable_telemetry:
+    if options.enable_telemetry:
         hooks.append(NodeTelemetryHook(run_id, gateway))
 
     # Enable validation by default (captures @check_output_custom results)
     # Use strict mode if strict_contracts is True
-    if enable_validation or strict_contracts:
-        hooks.append(ContractEnforcementHook(graph, strict=strict_contracts))
+    if options.enable_validation or options.strict_contracts:
+        hooks.append(ContractEnforcementHook(graph, strict=options.strict_contracts))
 
-    if enable_progress:
-        hooks.append(create_progress_hook(progress_desc))
+    if options.enable_progress:
+        hooks.append(create_progress_hook(options.progress_desc))
 
-    if enable_timing:
+    if options.enable_timing:
         hooks.append(BuildTimingHook())
 
     return hooks
@@ -154,6 +153,7 @@ __all__ = [
     "BuildTimingHook",
     "ConditionalHook",
     "ContractEnforcementHook",
+    "HookOptions",
     "ManifestSaveRequest",
     "NodeExecutionRecord",
     "NodeTelemetryHook",

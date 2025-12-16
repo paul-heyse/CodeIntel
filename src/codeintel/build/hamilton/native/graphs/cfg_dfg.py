@@ -15,7 +15,6 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from hamilton.function_modifiers import tag
@@ -32,6 +31,8 @@ from codeintel.graphs.compute import dfg as dfg_compute
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
     from codeintel.storage.gateway import StorageGateway
 
@@ -277,9 +278,7 @@ def _process_all_files(
         file_path = source_root / rel_path
         parsed_functions = _parse_file_functions(file_path)
 
-        func_by_suffix: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
-        for suffix, func_node in parsed_functions:
-            func_by_suffix[suffix] = func_node
+        func_by_suffix = dict(parsed_functions)
 
         for func_info in path_functions:
             suffix = func_info.qualname.split(".", 1)[-1] if "." in func_info.qualname else ""
@@ -405,7 +404,7 @@ def t__cfg__extract(
         )
 
     except Exception as exc:
-        log.exception("CFG extraction failed: %s", exc)
+        log.exception("CFG extraction failed")
         return CFGExtractResult(
             success=False,
             error=str(exc),
@@ -527,7 +526,7 @@ def t__dfg__extract(
         )
 
     except Exception as exc:
-        log.exception("DFG extraction failed: %s", exc)
+        log.exception("DFG extraction failed")
         return DFGExtractResult(
             success=False,
             error=str(exc),

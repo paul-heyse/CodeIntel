@@ -6,6 +6,8 @@ and correctly recompute when forced or when inputs change.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from codeintel.build.hamilton.hooks.manifest_hook import (
@@ -13,6 +15,7 @@ from codeintel.build.hamilton.hooks.manifest_hook import (
     TargetRunRecord,
     should_skip,
 )
+from codeintel.build.manifest import OutputManifest
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -47,9 +50,6 @@ class TestSkipCheckRequest:
     @staticmethod
     def test_skip_check_with_manifest_index() -> None:
         """Verify manifest_index is used when provided."""
-        from datetime import UTC, datetime
-
-        from codeintel.build.manifest import OutputManifest
 
         class MockGateway:
             def __getattr__(self, name: str) -> object:
@@ -84,7 +84,7 @@ class TestSkipCheckRequest:
 
         class MockBuild:
             @staticmethod
-            def load_manifest(**kwargs: object) -> None:
+            def load_manifest(**_kwargs: object) -> None:
                 return None
 
         class MockGateway:

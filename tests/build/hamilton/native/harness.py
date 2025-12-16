@@ -14,14 +14,18 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
+    from typing import Protocol
 
     from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
     from codeintel.storage.gateway import StorageGateway
+
+    class _RunTargetFn(Protocol):
+        def __call__(self, target: str, *, force: bool = False) -> TargetRunRecord: ...
 
 log = logging.getLogger(__name__)
 
@@ -291,7 +295,7 @@ class MigrationTestHarness:
     @staticmethod
     def _compare_table_contents(
         table_key: str,
-        differences: list[str],
+        _differences: list[str],
     ) -> bool:
         """Compare table contents between implementations.
 
@@ -302,7 +306,7 @@ class MigrationTestHarness:
         ----------
         table_key
             Fully-qualified table name.
-        differences
+        _differences
             List to append difference descriptions to.
 
         Returns
@@ -318,7 +322,7 @@ class MigrationTestHarness:
     @staticmethod
     def _compare_table_schema(
         table_key: str,
-        differences: list[str],
+        _differences: list[str],
     ) -> bool:
         """Compare table schemas between implementations.
 
@@ -326,7 +330,7 @@ class MigrationTestHarness:
         ----------
         table_key
             Fully-qualified table name.
-        differences
+        _differences
             List to append difference descriptions to.
 
         Returns
@@ -342,7 +346,7 @@ class MigrationTestHarness:
     def test_skip_logic(
         target: str,
         *,
-        run_target_fn: callable,
+        run_target_fn: _RunTargetFn,
     ) -> SkipTestResult:
         """Test skip logic for a target.
 

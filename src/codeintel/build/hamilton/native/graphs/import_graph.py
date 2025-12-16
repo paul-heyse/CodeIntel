@@ -12,7 +12,6 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from hamilton.function_modifiers import tag
@@ -28,6 +27,8 @@ from codeintel.graphs.compute import imports as imports_compute
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -232,7 +233,7 @@ def t__import_graph__extract(
         )
 
     except Exception as exc:
-        log.exception("Import graph extraction failed: %s", exc)
+        log.exception("Import graph extraction failed")
         return ImportGraphExtractResult(
             success=False,
             error=str(exc),

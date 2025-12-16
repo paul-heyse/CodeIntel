@@ -298,7 +298,7 @@ class HamiltonTestBuilder:
         self.force_targets = frozenset(targets)
         return self
 
-    def with_validation(self, enabled: bool = True) -> HamiltonTestBuilder:
+    def with_validation(self, *, enabled: bool = True) -> HamiltonTestBuilder:
         """Enable or disable output validation.
 
         Parameters
@@ -575,7 +575,7 @@ async def execute_hamilton_target_async(
         # This is a simplified version for testing
         return {}
 
-    return executor.execute(compute)
+    return await asyncio.to_thread(executor.execute, compute)
 
 
 __all__ = [

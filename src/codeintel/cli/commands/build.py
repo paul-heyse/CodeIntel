@@ -147,7 +147,7 @@ class BuildRunCommand:
     max_workers: Annotated[
         int | None,
         Parameter(
-            name=["--max-workers"],
+            name=["--max-workers", "--workers"],
             help="Maximum parallel workers for threadpool backend.",
         ),
     ] = None

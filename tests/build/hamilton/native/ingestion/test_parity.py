@@ -11,6 +11,28 @@ from __future__ import annotations
 import pytest
 
 from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.native import ingestion as ingestion_pkg
+from codeintel.build.hamilton.native.ingestion import (
+    ast as ingestion_ast,
+)
+from codeintel.build.hamilton.native.ingestion import (
+    config as ingestion_config,
+)
+from codeintel.build.hamilton.native.ingestion import (
+    coverage as ingestion_coverage,
+)
+from codeintel.build.hamilton.native.ingestion import (
+    cst as ingestion_cst,
+)
+from codeintel.build.hamilton.native.ingestion import (
+    docstrings as ingestion_docstrings,
+)
+from codeintel.build.hamilton.native.ingestion import (
+    modules as ingestion_modules,
+)
+from codeintel.build.hamilton.native.ingestion import (
+    tests as ingestion_tests,
+)
 from codeintel.build.hamilton.native.loader import NativeModuleLoader
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -19,6 +41,8 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_not_empty,
     expect_true,
 )
+
+_MIN_INGESTION_MODULES = 9
 
 
 class TestIngestionModuleLoader:
@@ -36,8 +60,11 @@ class TestIngestionModuleLoader:
         # plus new modules: ast, cst, tests, docstrings, coverage, config
         module_names = [m.__name__ for m in modules]
         expect_true(
-            len(modules) >= 9,
-            message=f"Expected at least 9 ingestion modules, got {len(modules)}: {module_names}",
+            len(modules) >= _MIN_INGESTION_MODULES,
+            message=(
+                f"Expected at least {_MIN_INGESTION_MODULES} ingestion modules, "
+                f"got {len(modules)}: {module_names}"
+            ),
         )
 
     @staticmethod
@@ -97,85 +124,69 @@ class TestIngestionModuleStructure:
     @staticmethod
     def test_modules_module_has_functions() -> None:
         """Verify modules module has expected functions."""
-        from codeintel.build.hamilton.native.ingestion import modules
-
-        scan_fn = getattr(modules, "t__modules__scan", None)
+        scan_fn = getattr(ingestion_modules, "t__modules__scan", None)
         expect_true(scan_fn is not None)
 
-        materialize_fn = getattr(modules, "t__modules", None)
+        materialize_fn = getattr(ingestion_modules, "t__modules", None)
         expect_true(materialize_fn is not None)
 
     @staticmethod
     def test_modules_module_has_result_types() -> None:
         """Verify modules module exports result types."""
-        from codeintel.build.hamilton.native.ingestion import modules
-
-        expect_true(hasattr(modules, "ModuleScanResult"))
-        expect_true(hasattr(modules, "RepoMapWriteResult"))
+        expect_true(hasattr(ingestion_modules, "ModuleScanResult"))
+        expect_true(hasattr(ingestion_modules, "RepoMapWriteResult"))
 
     @staticmethod
     def test_ast_module_has_functions() -> None:
         """Verify ast module has expected functions."""
-        from codeintel.build.hamilton.native.ingestion import ast
-
-        extract_fn = getattr(ast, "t__ast__extract", None)
+        extract_fn = getattr(ingestion_ast, "t__ast__extract", None)
         expect_true(extract_fn is not None)
 
-        materialize_fn = getattr(ast, "t__ast", None)
+        materialize_fn = getattr(ingestion_ast, "t__ast", None)
         expect_true(materialize_fn is not None)
 
     @staticmethod
     def test_cst_module_has_functions() -> None:
         """Verify cst module has expected functions."""
-        from codeintel.build.hamilton.native.ingestion import cst
-
-        extract_fn = getattr(cst, "t__cst__extract", None)
+        extract_fn = getattr(ingestion_cst, "t__cst__extract", None)
         expect_true(extract_fn is not None)
 
-        materialize_fn = getattr(cst, "t__cst", None)
+        materialize_fn = getattr(ingestion_cst, "t__cst", None)
         expect_true(materialize_fn is not None)
 
     @staticmethod
     def test_tests_module_has_functions() -> None:
         """Verify tests module has expected functions."""
-        from codeintel.build.hamilton.native.ingestion import tests
-
-        ingest_fn = getattr(tests, "t__tests_ingest__ingest", None)
+        ingest_fn = getattr(ingestion_tests, "t__tests_ingest__ingest", None)
         expect_true(ingest_fn is not None)
 
-        materialize_fn = getattr(tests, "t__tests_ingest", None)
+        materialize_fn = getattr(ingestion_tests, "t__tests_ingest", None)
         expect_true(materialize_fn is not None)
 
     @staticmethod
     def test_docstrings_module_has_functions() -> None:
         """Verify docstrings module has expected functions."""
-        from codeintel.build.hamilton.native.ingestion import docstrings
-
-        extract_fn = getattr(docstrings, "t__docstrings__extract", None)
+        extract_fn = getattr(ingestion_docstrings, "t__docstrings__extract", None)
         expect_true(extract_fn is not None)
 
-        materialize_fn = getattr(docstrings, "t__docstrings", None)
+        materialize_fn = getattr(ingestion_docstrings, "t__docstrings", None)
         expect_true(materialize_fn is not None)
 
     @staticmethod
     def test_coverage_module_has_functions() -> None:
         """Verify coverage module has expected functions."""
-        from codeintel.build.hamilton.native.ingestion import coverage
-
-        ingest_fn = getattr(coverage, "t__coverage_ingest__ingest", None)
+        ingest_fn = getattr(ingestion_coverage, "t__coverage_ingest__ingest", None)
         expect_true(ingest_fn is not None)
 
-        materialize_fn = getattr(coverage, "t__coverage_ingest", None)
+        materialize_fn = getattr(ingestion_coverage, "t__coverage_ingest", None)
         expect_true(materialize_fn is not None)
 
     @staticmethod
     def test_config_module_has_functions() -> None:
         """Verify config module has expected functions."""
-        from codeintel.build.hamilton.native.ingestion import config
-
-        scan_fn = getattr(config, "t__config_ingest__scan", None)
-        ingest_fn = getattr(config, "t__config_ingest__ingest", None)
-        materialize_fn = getattr(config, "t__config_ingest", None)
+        scan_fn = getattr(ingestion_config, "t__config_ingest__scan", None)
+        ingest_fn = getattr(ingestion_config, "t__config_ingest__ingest", None)
+        materialize_fn = getattr(ingestion_config, "t__config_ingest", None)
         expect_true(scan_fn is not None)
         expect_true(ingest_fn is not None)
         expect_true(materialize_fn is not None)
@@ -187,9 +198,7 @@ class TestIngestionResultTypes:
     @staticmethod
     def test_module_scan_result() -> None:
         """Verify ModuleScanResult dataclass."""
-        from codeintel.build.hamilton.native.ingestion.modules import ModuleScanResult
-
-        result = ModuleScanResult(success=True)
+        result = ingestion_modules.ModuleScanResult(success=True)
         expect_true(result.success)
         expect_equal(result.table_counts, {})
         expect_true(result.error is None)
@@ -197,9 +206,7 @@ class TestIngestionResultTypes:
     @staticmethod
     def test_ast_extract_result() -> None:
         """Verify AstExtractResult dataclass."""
-        from codeintel.build.hamilton.native.ingestion.ast import AstExtractResult
-
-        result = AstExtractResult(
+        result = ingestion_ast.AstExtractResult(
             success=True,
             table_counts={"core.ast_nodes": 100},
         )
@@ -209,9 +216,7 @@ class TestIngestionResultTypes:
     @staticmethod
     def test_cst_extract_result() -> None:
         """Verify CstExtractResult dataclass."""
-        from codeintel.build.hamilton.native.ingestion.cst import CstExtractResult
-
-        result = CstExtractResult(
+        result = ingestion_cst.CstExtractResult(
             success=True,
             table_counts={"core.cst_nodes": 50},
         )
@@ -221,37 +226,27 @@ class TestIngestionResultTypes:
     @staticmethod
     def test_tests_ingest_result() -> None:
         """Verify TestsIngestResult dataclass."""
-        from codeintel.build.hamilton.native.ingestion.tests import TestsIngestResult
-
-        result = TestsIngestResult(success=True, skipped=True)
+        result = ingestion_tests.TestsIngestResult(success=True, skipped=True)
         expect_true(result.success)
         expect_true(result.skipped)
 
     @staticmethod
     def test_docstrings_extract_result() -> None:
         """Verify DocstringsExtractResult dataclass."""
-        from codeintel.build.hamilton.native.ingestion.docstrings import (
-            DocstringsExtractResult,
-        )
-
-        result = DocstringsExtractResult(success=True)
+        result = ingestion_docstrings.DocstringsExtractResult(success=True)
         expect_true(result.success)
 
     @staticmethod
     def test_coverage_ingest_result() -> None:
         """Verify CoverageIngestResult dataclass."""
-        from codeintel.build.hamilton.native.ingestion.coverage import CoverageIngestResult
-
-        result = CoverageIngestResult(success=True, skipped=True)
+        result = ingestion_coverage.CoverageIngestResult(success=True, skipped=True)
         expect_true(result.success)
         expect_true(result.skipped)
 
     @staticmethod
     def test_config_ingest_result() -> None:
         """Verify ConfigIngestResult dataclass."""
-        from codeintel.build.hamilton.native.ingestion.config import ConfigIngestResult
-
-        result = ConfigIngestResult(
+        result = ingestion_config.ConfigIngestResult(
             success=True,
             table_counts={"core.config_values": 10},
         )
@@ -298,8 +293,6 @@ class TestIngestionModuleExports:
     @staticmethod
     def test_ingestion_init_exports() -> None:
         """Verify ingestion __init__ exports all modules."""
-        from codeintel.build.hamilton.native import ingestion
-
         expected_exports = [
             # ast
             "AstExtractResult",
@@ -346,8 +339,8 @@ class TestIngestionModuleExports:
         ]
 
         for name in expected_exports:
-            expect_in(name, ingestion.__all__)
+            expect_in(name, ingestion_pkg.__all__)
             expect_true(
-                hasattr(ingestion, name),
+                hasattr(ingestion_pkg, name),
                 message=f"ingestion module should have attribute {name}",
             )

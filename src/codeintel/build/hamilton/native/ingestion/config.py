@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
@@ -22,7 +23,9 @@ from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute import ConfigIngestStep
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
-from codeintel.ingestion.ports.discovery import ModuleRecord
+
+if TYPE_CHECKING:
+    from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
 
@@ -200,7 +203,7 @@ def t__config_ingest(
         Build environment with gateway and snapshot.
     graph
         Target graph for metadata lookup.
-    t__config__ingest
+    t__config_ingest__ingest
         Ingestion result from upstream compute node.
 
     Returns

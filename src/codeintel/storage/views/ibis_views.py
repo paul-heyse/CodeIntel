@@ -8,25 +8,31 @@ The legacy create_* functions are maintained for backward compatibility.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, Protocol, cast
 
 import ibis
+import ibis.expr.types as it
 
 from codeintel.build.serving.semantic_tags import semantic_view
 from codeintel.storage.ibis_types import ne, or_predicates
-from codeintel.storage.views.ibis_registry import register_view
+from codeintel.storage.views.protocol import IbisViewGateway
+from codeintel.storage.views.view_tags import ibis_view
 
-if TYPE_CHECKING:
-    import ibis.expr.types as it
-    from ibis.backends.duckdb import Backend as DuckDBBackend
-
-    from codeintel.storage.views.ibis_registry import IbisViewGateway
+_HAMILTON_TYPE_HINTS = (IbisViewGateway, it.Table)
 
 
-_ = Any
+class _IbisCreateViewConnection(Protocol):
+    def create_view(
+        self,
+        name: str,
+        expr: it.Table,
+        *,
+        database: str | None = None,
+        overwrite: bool = True,
+    ) -> None: ...
 
 
-def _create_view(con: DuckDBBackend, qualified_name: str, expr: it.Table) -> None:
+def _create_view(con: _IbisCreateViewConnection, qualified_name: str, expr: it.Table) -> None:
     """Create view using database qualifier when provided.
 
     Ibis 11+ requires the `database` parameter for schema-qualified names.
@@ -94,7 +100,7 @@ COMPLEXITY_LOW_MAX = 5
 COMPLEXITY_MEDIUM_MAX = 10
 
 
-@register_view("analytics.v_function_summary")
+@ibis_view("analytics.v_function_summary")
 def build_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
     """Build the function summary view expression.
 
@@ -187,7 +193,6 @@ def build_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_function_summary")
 @semantic_view(
     semantic_id="function.summary",
     table_key="docs.v_function_summary",
@@ -282,7 +287,6 @@ def build_docs_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("graph.v_call_graph_degree")
 @semantic_view(
     semantic_id="call_graph.degree",
     table_key="graph.v_call_graph_degree",
@@ -339,7 +343,7 @@ def build_callgraph_degree(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("core.v_goid_crosswalk_join")
+@ibis_view("core.v_goid_crosswalk_join")
 def build_goid_crosswalk_join(ibis_gw: IbisViewGateway) -> it.Table:
     """Build the goid crosswalk join view.
 
@@ -385,7 +389,7 @@ def build_goid_crosswalk_join(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("core.v_goid_crosswalk_mismatches")
+@ibis_view("core.v_goid_crosswalk_mismatches")
 def build_goid_crosswalk_mismatches(ibis_gw: IbisViewGateway) -> it.Table:
     """Build the goid crosswalk mismatches view.
 
@@ -433,7 +437,6 @@ def build_goid_crosswalk_mismatches(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("analytics.v_function_hotspots")
 @semantic_view(
     semantic_id="function.hotspots",
     table_key="analytics.v_function_hotspots",
@@ -490,7 +493,6 @@ def build_function_hotspots(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("graph.v_import_graph_degree")
 @semantic_view(
     semantic_id="import_graph.degree",
     table_key="graph.v_import_graph_degree",
@@ -540,7 +542,6 @@ def build_import_graph_degree(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_call_graph_enriched")
 @semantic_view(
     semantic_id="call_graph.enriched",
     table_key="docs.v_call_graph_enriched",
@@ -634,7 +635,6 @@ def build_call_graph_enriched(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_file_summary")
 @semantic_view(
     semantic_id="file.summary",
     table_key="docs.v_file_summary",
@@ -716,7 +716,6 @@ def build_docs_file_summary(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.con.sql(sql_expr)
 
 
-@register_view("docs.v_module_architecture")
 @semantic_view(
     semantic_id="module.architecture",
     table_key="docs.v_module_architecture",
@@ -789,7 +788,6 @@ def build_docs_module_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_subsystem_summary")
 @semantic_view(
     semantic_id="subsystem.summary",
     table_key="docs.v_subsystem_summary",
@@ -864,7 +862,6 @@ def build_docs_subsystem_summary(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.con.sql(sql_expr)
 
 
-@register_view("docs.v_subsystem_profile")
 @semantic_view(
     semantic_id="subsystem.profile",
     table_key="docs.v_subsystem_profile",
@@ -936,7 +933,6 @@ def build_docs_subsystem_profile(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.con.sql(sql_expr)
 
 
-@register_view("docs.v_subsystem_coverage")
 @semantic_view(
     semantic_id="subsystem.coverage",
     table_key="docs.v_subsystem_coverage",
@@ -1028,7 +1024,6 @@ def build_docs_subsystem_coverage(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.con.sql(sql_expr)
 
 
-@register_view("docs.v_function_architecture")
 @semantic_view(
     semantic_id="function.architecture",
     table_key="docs.v_function_architecture",
@@ -1264,7 +1259,7 @@ def build_docs_function_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_function_history")
+@ibis_view("docs.v_function_history")
 def build_docs_function_history(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_function_history joining profile with history.
 
@@ -1312,7 +1307,7 @@ def build_docs_function_history(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_function_history_timeseries")
+@ibis_view("docs.v_function_history_timeseries")
 def build_docs_function_history_timeseries(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_function_history_timeseries by filtering history.
 
@@ -1347,7 +1342,7 @@ def build_docs_function_history_timeseries(ibis_gw: IbisViewGateway) -> it.Table
     )
 
 
-@register_view("docs.v_cfg_block_architecture")
+@ibis_view("docs.v_cfg_block_architecture")
 def build_docs_cfg_block_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_cfg_block_architecture with 4-table join.
 
@@ -1422,7 +1417,7 @@ def build_docs_cfg_block_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_dfg_block_architecture")
+@ibis_view("docs.v_dfg_block_architecture")
 def build_docs_dfg_block_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_dfg_block_architecture with 4-table join.
 
@@ -1492,7 +1487,7 @@ def build_docs_dfg_block_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_module_history_timeseries")
+@ibis_view("docs.v_module_history_timeseries")
 def build_docs_module_history_timeseries(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_module_history_timeseries by filtering history.
 
@@ -1522,7 +1517,6 @@ def build_docs_module_history_timeseries(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_module_architecture_full")
 @semantic_view(
     semantic_id="module.architecture_full",
     table_key="docs.v_module_architecture_full",
@@ -1680,7 +1674,7 @@ def build_docs_module_architecture_full(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_entrypoints")
+@ibis_view("docs.v_entrypoints")
 def build_docs_entrypoints(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_entrypoints (simple passthrough).
 
@@ -1697,7 +1691,7 @@ def build_docs_entrypoints(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.table("analytics.entrypoints")
 
 
-@register_view("docs.v_external_dependencies")
+@ibis_view("docs.v_external_dependencies")
 def build_docs_external_dependencies(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_external_dependencies (simple passthrough).
 
@@ -1714,7 +1708,7 @@ def build_docs_external_dependencies(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.table("analytics.external_dependencies")
 
 
-@register_view("docs.v_external_dependency_calls")
+@ibis_view("docs.v_external_dependency_calls")
 def build_docs_external_dependency_calls(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_external_dependency_calls (simple passthrough).
 
@@ -1731,7 +1725,7 @@ def build_docs_external_dependency_calls(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.table("analytics.external_dependency_calls")
 
 
-@register_view("docs.v_data_models")
+@ibis_view("docs.v_data_models")
 def build_docs_data_models(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_data_models with nested fields and relationships JSON.
 
@@ -1816,7 +1810,7 @@ def build_docs_data_models(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.con.sql(sql_expr)
 
 
-@register_view("docs.v_data_models_normalized")
+@ibis_view("docs.v_data_models_normalized")
 def build_docs_data_models_normalized(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_data_models_normalized with nested struct arrays.
 
@@ -1894,7 +1888,7 @@ def build_docs_data_models_normalized(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.con.sql(sql_expr)
 
 
-@register_view("docs.v_data_model_fields")
+@ibis_view("docs.v_data_model_fields")
 def build_docs_data_model_fields(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_data_model_fields (simple passthrough).
 
@@ -1911,7 +1905,7 @@ def build_docs_data_model_fields(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.table("analytics.data_model_fields")
 
 
-@register_view("docs.v_data_model_relationships")
+@ibis_view("docs.v_data_model_relationships")
 def build_docs_data_model_relationships(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_data_model_relationships (simple passthrough).
 
@@ -1928,7 +1922,7 @@ def build_docs_data_model_relationships(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.table("analytics.data_model_relationships")
 
 
-@register_view("docs.v_data_model_usage")
+@ibis_view("docs.v_data_model_usage")
 def build_docs_data_model_usage(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_data_model_usage joining usage with models and profiles.
 
@@ -1980,7 +1974,7 @@ def build_docs_data_model_usage(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_config_data_flow")
+@ibis_view("docs.v_config_data_flow")
 def build_docs_config_data_flow(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_config_data_flow joining config flow with profiles.
 
@@ -2024,7 +2018,7 @@ def build_docs_config_data_flow(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_module_with_subsystem")
+@ibis_view("docs.v_module_with_subsystem")
 def build_docs_module_with_subsystem(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_module_with_subsystem joining modules with subsystems.
 
@@ -2090,7 +2084,7 @@ def build_docs_module_with_subsystem(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_subsystem_agreement")
+@ibis_view("docs.v_subsystem_agreement")
 def build_docs_subsystem_agreement(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_subsystem_agreement (simple passthrough).
 
@@ -2107,7 +2101,6 @@ def build_docs_subsystem_agreement(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.table("analytics.subsystem_agreement")
 
 
-@register_view("docs.v_test_to_function")
 @semantic_view(
     semantic_id="test.to_function",
     table_key="docs.v_test_to_function",
@@ -2179,7 +2172,6 @@ def build_docs_test_to_function(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_test_architecture")
 @semantic_view(
     semantic_id="test.architecture",
     table_key="docs.v_test_architecture",
@@ -2260,7 +2252,7 @@ def build_docs_test_architecture(ibis_gw: IbisViewGateway) -> it.Table:
     )
 
 
-@register_view("docs.v_behavioral_classification_input")
+@ibis_view("docs.v_behavioral_classification_input")
 def build_docs_behavioral_classification_input(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_behavioral_classification_input for LLM classification.
 
@@ -2306,7 +2298,7 @@ def build_docs_behavioral_classification_input(ibis_gw: IbisViewGateway) -> it.T
     )
 
 
-@register_view("docs.v_symbol_module_graph")
+@ibis_view("docs.v_symbol_module_graph")
 def build_docs_symbol_module_graph(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_symbol_module_graph (simple passthrough).
 
@@ -2323,7 +2315,7 @@ def build_docs_symbol_module_graph(ibis_gw: IbisViewGateway) -> it.Table:
     return ibis_gw.table("analytics.symbol_graph_metrics_modules")
 
 
-@register_view("docs.v_validation_summary")
+@ibis_view("docs.v_validation_summary")
 def build_docs_validation_summary(ibis_gw: IbisViewGateway) -> it.Table:
     """Build docs.v_validation_summary as union of function and graph validation.
 
@@ -2361,7 +2353,6 @@ def build_docs_validation_summary(ibis_gw: IbisViewGateway) -> it.Table:
     return func_part.union(graph_part)
 
 
-@register_view("docs.v_ide_hints")
 @semantic_view(
     semantic_id="ide.hints",
     table_key="docs.v_ide_hints",

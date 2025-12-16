@@ -8,6 +8,15 @@ TAG_TABLE_KEY = "table_key"
 TAG_ARTIFACT = "artifact"
 TAG_NODE_TYPE = "node_type"
 
+TAG_OUTPUT_KIND = "output_kind"
+TAG_SEMANTIC_ID = "semantic_id"
+TAG_ENTITY = "entity"
+TAG_GRAIN = "grain"
+TAG_MCP_VISIBLE = "mcp_visible"
+
+OUTPUT_KIND_VIEW = "view"
+OUTPUT_KIND_SEMANTIC_VIEW = "semantic_view"
+
 NODE_TYPE_LOADER_QUERY = "loader.query"
 NODE_TYPE_LOADER_DATAFRAME = "loader.dataframe"
 NODE_TYPE_DATASET = "dataset"
@@ -24,9 +33,16 @@ __all__ = [
     "NODE_TYPE_LOADER_QUERY",
     "NODE_TYPE_MATERIALIZE",
     "NODE_TYPE_TOOL",
+    "OUTPUT_KIND_SEMANTIC_VIEW",
+    "OUTPUT_KIND_VIEW",
     "TAG_ARTIFACT",
     "TAG_DOMAIN",
+    "TAG_ENTITY",
+    "TAG_GRAIN",
+    "TAG_MCP_VISIBLE",
     "TAG_NODE_TYPE",
+    "TAG_OUTPUT_KIND",
+    "TAG_SEMANTIC_ID",
     "TAG_TABLE_KEY",
     "TAG_TARGET",
 ]

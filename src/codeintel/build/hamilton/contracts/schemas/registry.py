@@ -16,11 +16,13 @@ True
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from functools import cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args, get_origin, get_type_hints
 
 from codeintel.build.hamilton.contracts.schemas.builder import build_all_schemas
+from codeintel.build.hamilton.native.loader import get_loader
 
 if TYPE_CHECKING:
     from collections.abc import ItemsView, Iterator, ValuesView
@@ -35,6 +37,132 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
+_QUERY_PARAM_PREFIX = "q__"
+_QUERY_PARAM_MIN_PARTS = 3
+_SCHEMA_OUTPUT_TAG_KEY = "hamilton.internal.schema_output"
+_TARGET_TAG_KEY = "target"
+
+
+def _iter_module_callables(module: object) -> Iterator[object]:
+    for attr_name in dir(module):
+        value = getattr(module, attr_name, None)
+        if value is None:
+            continue
+        if callable(value):
+            yield value
+
+
+def _get_decorators(func: object) -> list[object]:
+    decorators = getattr(func, "decorate_nodes", None)
+    if isinstance(decorators, list):
+        return decorators
+    if isinstance(decorators, tuple):
+        return list(decorators)
+    return []
+
+
+def _extract_target_and_schema(decorators: list[object]) -> tuple[str | None, str | None]:
+    target: str | None = None
+    schema_str: str | None = None
+    for decorator in decorators:
+        tags = getattr(decorator, "tags", None)
+        if not isinstance(tags, dict):
+            continue
+        target_raw = tags.get(_TARGET_TAG_KEY)
+        if isinstance(target_raw, str) and target_raw:
+            target = target_raw
+        schema_raw = tags.get(_SCHEMA_OUTPUT_TAG_KEY)
+        if isinstance(schema_raw, str) and schema_raw:
+            schema_str = schema_raw
+    return target, schema_str
+
+
+def _extract_consumed_table_keys(func: object) -> list[str]:
+    annotations = getattr(func, "__annotations__", None)
+    if not isinstance(annotations, dict):
+        return []
+
+    consumes: list[str] = []
+    for param_name in annotations:
+        if not isinstance(param_name, str) or param_name == "return":
+            continue
+        if not param_name.startswith(_QUERY_PARAM_PREFIX):
+            continue
+        parts = param_name.split("__")
+        if len(parts) < _QUERY_PARAM_MIN_PARTS:
+            continue
+        consumes.append(f"{parts[1]}.{parts[2]}")
+    return consumes
+
+
+def _find_dataclass_type_from_check_output(func: object) -> type[object] | None:
+    transforms = getattr(func, "transform", None)
+    if not isinstance(transforms, (list, tuple)):
+        return None
+
+    for transform in transforms:
+        if type(transform).__name__ != "check_output":
+            continue
+        kwargs = getattr(transform, "default_validator_kwargs", None)
+        if not isinstance(kwargs, dict):
+            continue
+        data_type = kwargs.get("data_type")
+        if isinstance(data_type, type) and dataclasses.is_dataclass(data_type):
+            return data_type
+    return None
+
+
+def _unwrap_optional_type(type_obj: object) -> object:
+    origin = get_origin(type_obj)
+    if origin is None:
+        return type_obj
+
+    args = [arg for arg in get_args(type_obj) if arg is not type(None)]
+    if len(args) == 1:
+        return args[0]
+    return type_obj
+
+
+def _find_dataclass_type_from_return_annotation(func: object, module: object) -> type[object] | None:
+    try:
+        hints = get_type_hints(func, globalns=vars(module))
+    except (NameError, TypeError):
+        log.debug("Failed to resolve type hints for %s", getattr(func, "__name__", "<unknown>"), exc_info=True)
+        return None
+
+    return_type = hints.get("return")
+    if return_type is None:
+        return None
+
+    actual_type = _unwrap_optional_type(return_type)
+    if isinstance(actual_type, type) and dataclasses.is_dataclass(actual_type):
+        return actual_type
+    return None
+
+
+def _schema_from_dataclass(dataclass_type: type[object]) -> dict[str, str] | None:
+    try:
+        try:
+            hints = get_type_hints(dataclass_type)
+        except (NameError, TypeError):
+            hints = {}
+
+        fields_raw = getattr(dataclass_type, "__dataclass_fields__", None)
+        if not isinstance(fields_raw, dict):
+            return None
+
+        schema: dict[str, str] = {}
+        for field_name, field_obj in fields_raw.items():
+            if not isinstance(field_name, str):
+                continue
+            default_type = getattr(field_obj, "type", object)
+            schema[field_name] = _type_to_string(hints.get(field_name, default_type))
+    except TypeError:
+        log.debug("Failed to extract schema from %s", dataclass_type, exc_info=True)
+        return None
+    else:
+        return schema
+
 
 @cache
 def _get_hamilton_target_metadata() -> dict[str, dict[str, list[str]]]:
@@ -48,62 +176,24 @@ def _get_hamilton_target_metadata() -> dict[str, dict[str, list[str]]]:
     dict[str, dict[str, list[str]]]
         Mapping of target names to dict with 'produces', 'consumes', and 'schema' info.
     """
-    from codeintel.build.hamilton.native.loader import get_loader
-
     result: dict[str, dict[str, list[str]]] = {}
     loader = get_loader()
     modules = loader.discover_modules()
 
     for module in modules:
-        # Extract target info from module functions
-        for name in dir(module):
-            func = getattr(module, name, None)
-            if func is None or not callable(func):
-                continue
-
-            # Hamilton stores decorators in decorate_nodes list
-            decorators = getattr(func, "decorate_nodes", [])
+        for func in _iter_module_callables(module):
+            decorators = _get_decorators(func)
             if not decorators:
                 continue
 
-            # Extract tags and schema from decorators
-            target: str | None = None
-            schema_str: str | None = None
-
-            for dec in decorators:
-                dec_tags = getattr(dec, "tags", {})
-
-                # Extract target from @tag decorator
-                if "target" in dec_tags:
-                    target = dec_tags["target"]
-
-                # Extract schema from @schema.output decorator
-                schema_key = "hamilton.internal.schema_output"
-                if schema_key in dec_tags:
-                    schema_str = dec_tags[schema_key]
-
+            target, schema_str = _extract_target_and_schema(decorators)
             if target is None:
                 continue
 
-            # Get consumes from function parameters (input dependencies)
-            consumes: list[str] = []
-            annotations = getattr(func, "__annotations__", {})
-            for param_name in annotations:
-                if param_name.startswith("q__"):
-                    # Query parameter indicates table consumption
-                    parts = param_name.split("__")
-                    if len(parts) >= 3:
-                        table_key = f"{parts[1]}.{parts[2]}"
-                        consumes.append(table_key)
-
-            if target not in result:
-                result[target] = {"produces": [], "consumes": [], "schemas": []}
-
-            result[target]["consumes"].extend(consumes)
-
-            # Parse schema string if present
-            if schema_str:
-                result[target]["schemas"].append(schema_str)
+            entry = result.setdefault(target, {"produces": [], "consumes": [], "schemas": []})
+            entry["consumes"].extend(_extract_consumed_table_keys(func))
+            if schema_str is not None:
+                entry["schemas"].append(schema_str)
 
     return result
 
@@ -156,88 +246,27 @@ def get_hamilton_dataclass_schemas() -> dict[str, dict[str, str]]:
     dict[str, dict[str, str]]
         Mapping of target name to field schema (field name -> type string).
     """
-    import dataclasses
-    from typing import get_type_hints
-
-    from codeintel.build.hamilton.native.loader import get_loader
-
     result: dict[str, dict[str, str]] = {}
     loader = get_loader()
     modules = loader.discover_modules()
 
     for module in modules:
-        for name in dir(module):
-            func = getattr(module, name, None)
-            if func is None or not callable(func):
+        for func in _iter_module_callables(module):
+            decorators = _get_decorators(func)
+            target, _ = _extract_target_and_schema(decorators)
+            if target is None or target in result:
                 continue
 
-            # Get target from decorators (stored in decorate_nodes)
-            decorators = getattr(func, "decorate_nodes", [])
-            target = None
-            for dec in decorators:
-                tags = getattr(dec, "tags", {})
-                if "target" in tags:
-                    target = tags["target"]
-                    break
-
-            if target is None:
+            dataclass_type = _find_dataclass_type_from_check_output(func)
+            if dataclass_type is None:
+                dataclass_type = _find_dataclass_type_from_return_annotation(func, module)
+            if dataclass_type is None:
                 continue
 
-            # First, check for @check_output(data_type=...) in transform attribute
-            transforms = getattr(func, "transform", [])
-            actual_type = None
-            for transform in transforms:
-                if type(transform).__name__ == "check_output":
-                    # check_output stores the data_type in default_validator_kwargs
-                    kwargs = getattr(transform, "default_validator_kwargs", {})
-                    data_type = kwargs.get("data_type")
-                    if data_type is not None and dataclasses.is_dataclass(data_type):
-                        actual_type = data_type
-                        break
-
-            # If no @check_output data_type, try the return annotation
-            if actual_type is None:
-                try:
-                    hints = get_type_hints(func, globalns=vars(module))
-                except Exception:
-                    continue
-
-                return_type = hints.get("return")
-                if return_type is None:
-                    continue
-
-                # Handle Optional types and extract the actual type
-                actual_type = return_type
-                origin = getattr(return_type, "__origin__", None)
-                if origin is not None:
-                    args = getattr(return_type, "__args__", ())
-                    # For Union[X, None], extract X
-                    if args and type(None) in args:
-                        non_none = [a for a in args if a is not type(None)]
-                        if non_none:
-                            actual_type = non_none[0]
-
-            # Check if it's a dataclass
-            if actual_type is None or not dataclasses.is_dataclass(actual_type):
+            schema = _schema_from_dataclass(dataclass_type)
+            if schema is None:
                 continue
-
-            # Extract field types
-            try:
-                # Try to get resolved type hints, but fall back to raw field types
-                try:
-                    dc_hints = get_type_hints(actual_type)
-                except Exception:
-                    dc_hints = {}
-
-                schema: dict[str, str] = {}
-                for field in dataclasses.fields(actual_type):
-                    # Use resolved hint if available, else raw annotation
-                    field_type = dc_hints.get(field.name, field.type)
-                    schema[field.name] = _type_to_string(field_type)
-                result[target] = schema
-            except Exception:
-                log.debug("Failed to extract schema from %s", actual_type)
-                continue
+            result[target] = schema
 
     return result
 
@@ -262,8 +291,9 @@ def _type_to_string(t: object) -> str:
     if isinstance(t, str):
         return t
     # Handle classes with __name__
-    if hasattr(t, "__name__"):
-        return t.__name__
+    name = getattr(t, "__name__", None)
+    if isinstance(name, str):
+        return name
     # Handle generic types
     origin = getattr(t, "__origin__", None)
     if origin is not None:

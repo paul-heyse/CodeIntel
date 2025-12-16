@@ -22,17 +22,24 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
+from hamilton import base as h_base
+
 from codeintel.build.assets.emitter import persist_asset_catalog_for_run
+from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.contracts.enforcement_hook import ContractEnforcementHook
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
+from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.telemetry_hook import NodeTelemetryHook
 from codeintel.build.manifest import BuildRunRecord
-from codeintel.build.registry import get_target_graph
+from codeintel.build.targets import TargetGraph
+from codeintel.build.unified_registry import get_unified_registry
 from codeintel.storage.exceptions import StorageError
 
 if TYPE_CHECKING:
+    from hamilton.lifecycle.base import LifecycleAdapter
+
     from codeintel.build.hamilton.driver_factory import HamiltonNodeMode, HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.storage.gateway import StorageGateway
@@ -222,6 +229,7 @@ def _persist_asset_catalog(
     env: BuildEnv,
     run_id: str,
     outputs: dict[str, Any],
+    graph: TargetGraph,
 ) -> None:
     """Persist Phase 4 asset catalog records (versions + lineage + run mapping)."""
     try:
@@ -234,7 +242,7 @@ def _persist_asset_catalog(
         persist_asset_catalog_for_run(
             env=env,
             run_id=run_id,
-            graph=get_target_graph(),
+            graph=graph,
             records=records,
         )
     except StorageError as exc:
@@ -314,10 +322,14 @@ class HamiltonBuildExecutor:
         *,
         profile: str | None = None,
         mode: HamiltonNodeMode = "generated",
+        parallel_backend: str = "sequential",
+        max_workers: int | None = None,
     ) -> None:
         """Initialize the Hamilton executor."""
         self._profile = profile
         self._mode: HamiltonNodeMode = mode
+        self._parallel_backend = parallel_backend
+        self._max_workers = max_workers
 
     @property
     def profile(self) -> str | None:
@@ -342,11 +354,19 @@ class HamiltonBuildExecutor:
         HamiltonBuildResult
             Structured result containing outputs and status details.
         """
+        run_id = _generate_run_id()
+        telemetry_hook = NodeTelemetryHook(run_id, env.gateway)
+        runtime = self._build_runtime(
+            env=env,
+            telemetry_hook=telemetry_hook,
+        )
+        graph = target_graph_from_hamilton(runtime)
+
         context = _RunContext(
             env=env,
             targets=tuple(targets),
-            runtime=self._build_runtime(),
-            run_id=_generate_run_id(),
+            runtime=runtime,
+            run_id=run_id,
             start_time=time.perf_counter(),
             started_at=datetime.now(tz=UTC),
         )
@@ -357,7 +377,7 @@ class HamiltonBuildExecutor:
             self._mode,
         )
 
-        closure = self._compute_closure(context.runtime, targets, context.run_id)
+        closure = self._compute_closure(graph, targets, context.run_id)
         if closure is None:
             return self._make_error_result(context, "Failed to compute closure")
 
@@ -367,14 +387,12 @@ class HamiltonBuildExecutor:
 
         _start_build_run(context.env, context.run_id, targets, context.started_at)
 
-        telemetry_hook = NodeTelemetryHook(context.run_id, context.env.gateway)
-
         outputs, error = self._execute_dag(
             context.runtime,
             final_vars,
             context.env,
             context.run_id,
-            telemetry_hook=telemetry_hook,
+            graph=graph,
         )
 
         # Flush telemetry after execution
@@ -386,18 +404,18 @@ class HamiltonBuildExecutor:
         success = not failed and error is None
 
         _persist_run_targets(context.env, context.run_id, outputs)
-        _persist_asset_catalog(context.env, context.run_id, outputs)
+        _persist_asset_catalog(context.env, context.run_id, outputs, graph)
 
-        error_summary = error or (f"{len(failed)} targets failed" if failed else None)
-        completion_params = _RunCompletionParams(
-            env=context.env,
-            run_id=context.run_id,
-            success=success,
-            computed=tuple(computed),
-            skipped=tuple(skipped),
-            error_summary=error_summary,
+        _complete_build_run(
+            _RunCompletionParams(
+                env=context.env,
+                run_id=context.run_id,
+                success=success,
+                computed=tuple(computed),
+                skipped=tuple(skipped),
+                error_summary=error or (f"{len(failed)} targets failed" if failed else None),
+            )
         )
-        _complete_build_run(completion_params)
 
         log.info(
             "build.hamilton.executor.complete run_id=%s success=%s duration_ms=%.1f",
@@ -420,8 +438,13 @@ class HamiltonBuildExecutor:
             runtime=context.runtime,
         )
 
-    def _build_runtime(self) -> HamiltonRuntime:
-        """Build Hamilton runtime with configured mode.
+    def _build_runtime(
+        self,
+        *,
+        env: BuildEnv,
+        telemetry_hook: NodeTelemetryHook,
+    ) -> HamiltonRuntime:
+        """Build Hamilton runtime with configured mode and lifecycle adapters.
 
         Returns
         -------
@@ -429,11 +452,45 @@ class HamiltonBuildExecutor:
             Configured runtime with driver and target graph.
         """
         config: dict[str, Any] = {"profile": self._profile or "default"}
-        return build_driver(config=config, mode=self._mode)
+        adapters = self._build_adapters(env=env, telemetry_hook=telemetry_hook)
+        return build_driver(config=config, mode=self._mode, adapter=adapters)
+
+    @staticmethod
+    def _build_contract_graph() -> TargetGraph:
+        unified = get_unified_registry()
+        graph = TargetGraph()
+        for target in unified.get_all_targets():
+            graph.register(target)
+        return graph
+
+    def _build_adapters(
+        self,
+        *,
+        env: BuildEnv,
+        telemetry_hook: NodeTelemetryHook,
+    ) -> list[LifecycleAdapter]:
+        adapters: list[LifecycleAdapter] = []
+
+        parallel_adapter = create_parallel_adapter(
+            self._parallel_backend,
+            max_workers=self._max_workers,
+            thread_name_prefix="codeintel-build",
+        )
+
+        if parallel_adapter is not None:
+            adapters.append(parallel_adapter)
+        else:
+            adapters.append(h_base.DictResult())
+
+        if env.strict_contracts:
+            adapters.append(ContractEnforcementHook(self._build_contract_graph(), strict=True))
+
+        adapters.append(telemetry_hook)
+        return adapters
 
     @staticmethod
     def _compute_closure(
-        runtime: HamiltonRuntime,
+        graph: TargetGraph,
         targets: list[str],
         run_id: str,
     ) -> tuple[str, ...] | None:
@@ -445,7 +502,7 @@ class HamiltonBuildExecutor:
             Ordered dependency closure, or None if computation failed.
         """
         try:
-            return runtime.graph.topological_order(targets)
+            return graph.topological_order(targets)
         except (KeyError, ValueError):
             log.exception("build.hamilton.executor.closure_error run_id=%s", run_id)
             return None
@@ -504,7 +561,7 @@ class HamiltonBuildExecutor:
         env: BuildEnv,
         run_id: str,
         *,
-        telemetry_hook: object | None = None,
+        graph: TargetGraph,
     ) -> tuple[dict[str, Any], str | None]:
         """Execute the Hamilton DAG, returning (outputs, error).
 
@@ -518,8 +575,8 @@ class HamiltonBuildExecutor:
             Build environment.
         run_id
             Run identifier for tracking.
-        telemetry_hook
-            Optional telemetry hook for node-level tracking.
+        graph
+            Target graph for dependency and contract lookups.
 
         Returns
         -------
@@ -535,23 +592,10 @@ class HamiltonBuildExecutor:
                     gateway=cast("StorageGateway", wrapped_gateway),
                 )
 
-            # Pass hook as adapter if provided
-            execute_kwargs: dict[str, Any] = {
-                "final_vars": list(final_vars),
-                "inputs": {"env": execution_env, "graph": runtime.graph},
-            }
-
-            # Register hook as adapter if available
-            # Hamilton adapters can be passed via adapters parameter to execute()
-            adapters: list[object] = []
-            if env.strict_contracts:
-                adapters.append(ContractEnforcementHook(runtime.graph, strict=True))
-            if telemetry_hook is not None:
-                adapters.append(telemetry_hook)
-            if adapters:
-                execute_kwargs["adapters"] = adapters
-
-            outputs = runtime.dr.execute(**execute_kwargs)
+            outputs = runtime.dr.execute(
+                list(final_vars),
+                inputs={"env": execution_env, "graph": graph},
+            )
         except Exception as exc:
             log.exception("build.hamilton.executor.error run_id=%s", run_id)
             return {}, str(exc)

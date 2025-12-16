@@ -7,6 +7,7 @@ pointer updates for zero-downtime deployments.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import shutil
 from dataclasses import dataclass
@@ -16,12 +17,17 @@ from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.serving.manifest import ServingSnapshotManifest
+from codeintel.build.serving.search_index import build_search_documents_table, ensure_fts_index
+from codeintel.storage.gateway.config import StorageConfig
+from codeintel.storage.gateway.connection import connect
+from codeintel.storage.gateway.protocol import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.storage.gateway.config import StorageConfig
     from codeintel.storage.gateway.protocol import DuckDBConnection
+
+log = logging.getLogger(__name__)
 
 
 class SnapshotPublisherGateway(Protocol):
@@ -131,6 +137,21 @@ def publish_serving_snapshot(
 
     snap_db = snap_dir / "codeintel.duckdb"
     shutil.copy2(db_path, snap_db)
+
+    try:
+        snap_con = connect(StorageConfig(db_path=snap_db))
+        try:
+            build_search_documents_table(snap_con)
+            ensure_fts_index(snap_con)
+        finally:
+            snap_con.commit()
+            snap_con.close()
+    except (OSError, ValueError, DuckDBError) as exc:
+        log.warning(
+            "build.serving.publisher.search_index_failed run_id=%s error=%s",
+            request.run_id,
+            exc,
+        )
 
     snap_registry = snap_dir / "semantic_registry.json"
     shutil.copy2(request.semantic_registry_path, snap_registry)
