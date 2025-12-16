@@ -145,11 +145,7 @@ class TestNativeDriverMode:
         runtime = build_driver(mode="native", domains={"analytics"})
 
         # Should have t__target nodes for analytics
-        target_nodes = [
-            name
-            for name in runtime.target_to_node.values()
-            if name.startswith("t__")
-        ]
+        target_nodes = [name for name in runtime.target_to_node.values() if name.startswith("t__")]
         expect_not_empty(target_nodes)
 
     @staticmethod

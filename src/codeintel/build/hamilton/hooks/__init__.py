@@ -12,12 +12,7 @@ Example
 -------
 >>> from codeintel.build.hamilton.hooks import build_hooks
 >>> hooks = build_hooks(run_id, gateway, graph, enable_validation=True)
->>> driver = (
-...     Builder()
-...     .with_modules(modules)
-...     .with_adapters(*hooks)
-...     .build()
-... )
+>>> driver = Builder().with_modules(modules).with_adapters(*hooks).build()
 >>> # After execution, get validation summary
 >>> contract_hook = next(h for h in hooks if isinstance(h, ContractEnforcementHook))
 >>> summary = contract_hook.get_validation_summary()

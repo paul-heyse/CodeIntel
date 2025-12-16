@@ -191,7 +191,9 @@ def t__tests_ingest(
         return executor.skip()
 
     if not t__tests_ingest__ingest.success:
-        return executor.fail(RuntimeError(t__tests_ingest__ingest.error or "Tests ingestion failed"))
+        return executor.fail(
+            RuntimeError(t__tests_ingest__ingest.error or "Tests ingestion failed")
+        )
 
     def compute() -> dict[str, int]:
         return dict(t__tests_ingest__ingest.table_counts)

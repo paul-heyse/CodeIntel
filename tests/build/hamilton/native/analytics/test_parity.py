@@ -36,7 +36,9 @@ class TestModuleDiscovery:
         modules = loader.load_for_driver(domains={"analytics"})
 
         # Should find a reasonable number of analytics modules
-        expect_true(len(modules) >= 20, message=f"Expected >= 20 analytics modules, found {len(modules)}")
+        expect_true(
+            len(modules) >= 20, message=f"Expected >= 20 analytics modules, found {len(modules)}"
+        )
 
     def test_analytics_domain_exists(self) -> None:
         """Verify analytics domain is registered in loader packages."""
@@ -92,13 +94,17 @@ class TestModuleStructure:
         if missing:
             pytest.fail("Modules missing __all__:\n" + "\n".join(missing))
 
-    def test_modules_export_materialize_node(self, analytics_modules: list[tuple[str, Any]]) -> None:
+    def test_modules_export_materialize_node(
+        self, analytics_modules: list[tuple[str, Any]]
+    ) -> None:
         """Verify each module exports at least one t__<target> materialize node."""
         missing: list[str] = []
         for path, mod in analytics_modules:
             all_exports = getattr(mod, "__all__", [])
             has_materialize = any(
-                name.startswith("t__") and not name.endswith("__compute") and not name.endswith("__extract")
+                name.startswith("t__")
+                and not name.endswith("__compute")
+                and not name.endswith("__extract")
                 for name in all_exports
             )
             if not has_materialize:
@@ -177,9 +183,7 @@ class TestTargetPresence:
             "t__symbol_graph_metrics",
         ],
     )
-    def test_required_target_exists(
-        self, all_exported_names: set[str], target_name: str
-    ) -> None:
+    def test_required_target_exists(self, all_exported_names: set[str], target_name: str) -> None:
         """Verify required target is exported from some analytics module."""
         expect_in(target_name, all_exported_names, label="target_exports")
 

@@ -20,6 +20,7 @@ Preferred (Hamilton-native)::
 
     from tests._helpers.hamilton_execution import HamiltonTestBuilder
 
+
     def test_modules(analytics_gateway: StorageGateway, tmp_path: Path) -> None:
         builder = HamiltonTestBuilder.create(analytics_gateway, tmp_path)
         record = builder.execute_target("modules")

@@ -22,6 +22,7 @@ Check available backends:
 >>> backends = get_available_backends()
 >>> print(backends)  # ['sequential', 'threadpool']
 """
+
 from __future__ import annotations
 
 import logging

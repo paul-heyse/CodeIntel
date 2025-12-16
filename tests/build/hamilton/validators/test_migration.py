@@ -1,4 +1,5 @@
 """Tests for Hamilton migration utilities."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -193,7 +194,7 @@ class TestGenerateMigrationCode:
 
         # Check decorator structure
         expect_in("@tag(", code)
-        expect_in('@schema.output(', code)
+        expect_in("@schema.output(", code)
         expect_in("@check_output_custom(", code)
 
         # Check domain and target are extracted

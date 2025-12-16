@@ -220,9 +220,7 @@ def build_driver(
 
         # Only include targets that have native implementations
         t2n = {
-            t.name: target_node(t.name)
-            for t in graph.all_targets
-            if t.name in native_target_set
+            t.name: target_node(t.name) for t in graph.all_targets if t.name in native_target_set
         }
         n2t = {v: k for k, v in t2n.items()}
 

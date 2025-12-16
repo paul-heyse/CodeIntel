@@ -209,9 +209,8 @@ class ContractEnforcementHook:
         else:
             error_msg = str(error) if error else "Unknown error"
             # Check if this is a validation error from @check_output_custom
-            is_validation_error = (
-                error is not None
-                and ("validation" in error_msg.lower() or "validator" in error_msg.lower())
+            is_validation_error = error is not None and (
+                "validation" in error_msg.lower() or "validator" in error_msg.lower()
             )
 
             self._validation_results[node_name] = ValidationResult(
@@ -245,13 +244,9 @@ class ContractEnforcementHook:
         passed = sum(1 for r in self._validation_results.values() if r.passed)
         failed = sum(1 for r in self._validation_results.values() if not r.passed)
         skipped = sum(
-            1
-            for r in self._validation_results.values()
-            if r.diagnostics.get("skipped", False)
+            1 for r in self._validation_results.values() if r.diagnostics.get("skipped", False)
         )
-        failed_nodes = [
-            name for name, r in self._validation_results.items() if not r.passed
-        ]
+        failed_nodes = [name for name, r in self._validation_results.items() if not r.passed]
 
         return ValidationSummary(
             total_nodes=len(self._validation_results),

@@ -154,7 +154,9 @@ class NativeModuleLoader:
     >>> modules = loader.load_for_driver(domains={"analytics"})
 
     >>> # Validate a specific module
-    >>> result = loader.validate_module_path("codeintel.build.hamilton.native.analytics.risk_factors")
+    >>> result = loader.validate_module_path(
+    ...     "codeintel.build.hamilton.native.analytics.risk_factors"
+    ... )
     >>> result.is_valid
     True
     """
@@ -205,11 +207,7 @@ class NativeModuleLoader:
         """
         if domain is not None:
             return list(_NATIVE_MODULE_PACKAGES.get(domain, []))
-        return [
-            module
-            for modules in _NATIVE_MODULE_PACKAGES.values()
-            for module in modules
-        ]
+        return [module for modules in _NATIVE_MODULE_PACKAGES.values() for module in modules]
 
     def discover_modules(
         self,
@@ -430,9 +428,7 @@ class NativeModuleLoader:
 
         # Filter and validate
         result_modules: list[ModuleType] = []
-        exclude_nodes = (
-            {target_node(t) for t in exclude_targets} if exclude_targets else set()
-        )
+        exclude_nodes = {target_node(t) for t in exclude_targets} if exclude_targets else set()
 
         for module in all_modules:
             validation = self.validate_module(module)

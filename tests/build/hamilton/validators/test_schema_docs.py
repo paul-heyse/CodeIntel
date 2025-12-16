@@ -1,4 +1,5 @@
 """Tests for Hamilton schema documentation utilities."""
+
 from __future__ import annotations
 
 import pytest
@@ -63,19 +64,23 @@ class TestColumnSchema:
     def test_to_dict_full() -> None:
         """Test conversion to dict with all fields."""
         col = ColumnSchema(
-            "id", "int",
+            "id",
+            "int",
             description="Primary key",
             nullable=False,
             unique=True,
         )
         result = col.to_dict()
-        expect_equal(result, {
-            "name": "id",
-            "dtype": "int",
-            "description": "Primary key",
-            "nullable": False,
-            "unique": True,
-        })
+        expect_equal(
+            result,
+            {
+                "name": "id",
+                "dtype": "int",
+                "description": "Primary key",
+                "nullable": False,
+                "unique": True,
+            },
+        )
 
 
 class TestTableSchema:

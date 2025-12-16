@@ -26,15 +26,11 @@ Using BuildTimingHook for performance analysis:
 
 >>> from codeintel.build.hamilton.hooks.lifecycle import BuildTimingHook
 >>> timing_hook = BuildTimingHook()
->>> dr = (
-...     driver.Builder()
-...     .with_modules(modules)
-...     .with_adapters(timing_hook)
-...     .build()
-... )
+>>> dr = driver.Builder().with_modules(modules).with_adapters(timing_hook).build()
 >>> # After execution:
 >>> print(timing_hook.get_slowest_nodes(n=10))
 """
+
 from __future__ import annotations
 
 import logging
@@ -141,8 +137,7 @@ class ProgressBarHook(NodeExecutionHook):
             )
         except ImportError:
             log.warning(
-                "tqdm not available, progress bar disabled. "
-                "Install with: pip install tqdm",
+                "tqdm not available, progress bar disabled. Install with: pip install tqdm",
             )
         return self._delegate
 

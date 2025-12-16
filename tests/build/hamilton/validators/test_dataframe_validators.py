@@ -3,6 +3,7 @@
 These tests verify that the custom validators correctly validate
 DataFrame outputs according to Hamilton's validation framework.
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -299,11 +300,13 @@ class TestValidatorIntegration:
     @staticmethod
     def test_multiple_validators() -> None:
         """Test that multiple validators can be used together."""
-        df = pd.DataFrame({
-            "id": [1, 2, 3],
-            "name": ["a", "b", "c"],
-            "status": ["active", "active", "inactive"],
-        })
+        df = pd.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "name": ["a", "b", "c"],
+                "status": ["active", "active", "inactive"],
+            }
+        )
 
         validators = [
             ColumnsExistValidator(["id", "name", "status"]),
@@ -347,12 +350,14 @@ def test_column_types_parametrized(
     expected_pass: bool,
 ) -> None:
     """Parametrized test for column type validation."""
-    df = pd.DataFrame({
-        "id": [1, 2, 3],
-        "name": ["a", "b", "c"],
-        "value": [1.0, 2.0, 3.0],
-        "active": [True, False, True],
-    })
+    df = pd.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "name": ["a", "b", "c"],
+            "value": [1.0, 2.0, 3.0],
+            "active": [True, False, True],
+        }
+    )
     validator = ColumnTypesValidator(column_types)
     result = validator.validate(df)
     expect_equal(result.passes, expected_pass)

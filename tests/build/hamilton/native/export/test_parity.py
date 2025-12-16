@@ -94,9 +94,7 @@ class TestModuleStructure:
         if missing:
             pytest.fail("Modules missing __all__:\n" + "\n".join(missing))
 
-    def test_modules_export_materialize_node(
-        self, export_modules: list[tuple[str, Any]]
-    ) -> None:
+    def test_modules_export_materialize_node(self, export_modules: list[tuple[str, Any]]) -> None:
         """Verify each module exports at least one t__<target> materialize node."""
         missing: list[str] = []
         for path, mod in export_modules:
@@ -110,9 +108,7 @@ class TestModuleStructure:
         if missing:
             pytest.fail("Modules missing materialize node export:\n" + "\n".join(missing))
 
-    def test_compute_nodes_follow_pattern(
-        self, export_modules: list[tuple[str, Any]]
-    ) -> None:
+    def test_compute_nodes_follow_pattern(self, export_modules: list[tuple[str, Any]]) -> None:
         """Verify compute nodes follow t__<target>__compute naming pattern."""
         invalid: list[str] = []
         for path, mod in export_modules:
@@ -154,9 +150,7 @@ class TestTargetPresence:
         return names
 
     @pytest.mark.parametrize("target_name", REQUIRED_EXPORT_TARGETS)
-    def test_required_target_exists(
-        self, target_name: str, all_exported_names: set[str]
-    ) -> None:
+    def test_required_target_exists(self, target_name: str, all_exported_names: set[str]) -> None:
         """Verify required export targets are exported."""
         expect_in(target_name, all_exported_names)
 

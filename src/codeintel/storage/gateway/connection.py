@@ -53,7 +53,9 @@ def connect(
         config.db_path.parent.mkdir(parents=True, exist_ok=True)
     con: DuckDBConnection = _open_primary_connection(
         config,
-        duckdb_config=_merge_duckdb_connect_config(_duckdb_connect_config_from_env(), duckdb_config),
+        duckdb_config=_merge_duckdb_connect_config(
+            _duckdb_connect_config_from_env(), duckdb_config
+        ),
     )
     _load_duckdb_extensions_from_env(con)
     _attach_history_if_needed(con, config)
@@ -113,10 +115,7 @@ def _load_duckdb_extensions_from_env(con: DuckDBConnection) -> None:
     extensions = [ext.strip() for ext in raw.split(",") if ext.strip()]
     for extension in extensions:
         if _DUCKDB_EXTENSION_NAME_PATTERN.fullmatch(extension) is None:
-            message = (
-                "Invalid DuckDB extension name in CODEINTEL_DUCKDB_EXTENSIONS: "
-                f"{extension!r}"
-            )
+            message = f"Invalid DuckDB extension name in CODEINTEL_DUCKDB_EXTENSIONS: {extension!r}"
             raise ValueError(message)
         con.execute(f"INSTALL {extension}")
         con.execute(f"LOAD {extension}")

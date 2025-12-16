@@ -16,6 +16,7 @@ Examples
 >>> def my_node(...) -> pd.DataFrame:
 ...     ...
 """
+
 from __future__ import annotations
 
 import logging
@@ -320,9 +321,7 @@ class ColumnTypesValidator(BaseDefaultValidator):
             expected_dtypes = dtype_map.get(expected_type, (expected_type,))
 
             # Check if actual dtype matches any expected dtype (case-insensitive for Ibis)
-            dtype_matches = any(
-                exp.lower() in actual_dtype.lower() for exp in expected_dtypes
-            )
+            dtype_matches = any(exp.lower() in actual_dtype.lower() for exp in expected_dtypes)
 
             if not dtype_matches:
                 mismatches[col] = {

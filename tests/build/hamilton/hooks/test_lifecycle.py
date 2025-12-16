@@ -1,4 +1,5 @@
 """Tests for Hamilton lifecycle hooks."""
+
 from __future__ import annotations
 
 import time
@@ -163,11 +164,13 @@ class TestBuildTimingHook:
     def test_total_duration() -> None:
         """Test calculating total duration."""
         hook = BuildTimingHook()
-        hook._records.extend([
-            NodeTimingRecord("a", 1.0, 0),
-            NodeTimingRecord("b", 2.0, 0),
-            NodeTimingRecord("c", 3.0, 0),
-        ])
+        hook._records.extend(
+            [
+                NodeTimingRecord("a", 1.0, 0),
+                NodeTimingRecord("b", 2.0, 0),
+                NodeTimingRecord("c", 3.0, 0),
+            ]
+        )
 
         total = hook.total_duration()
         expect_equal(total, 6.0)
@@ -282,7 +285,7 @@ class TestCreateProgressHook:
         pytest.param(1.0, 1.5, True, id="above_threshold"),
         pytest.param(0.0, 0.001, True, id="zero_threshold"),
     ],
-    )
+)
 def test_timing_hook_logging_threshold(
     min_duration: float,
     actual_duration: float,

@@ -19,6 +19,7 @@ Before::
     from tests._helpers.fakes.contexts import ExecutionContextBuilder
     from codeintel.build.plugins.ingestion.stubs import RepoScanPlugin
 
+
     def test_modules(tmp_path: Path) -> None:
         builder = ExecutionContextBuilder.create(tmp_path)
         result = builder.execute_plugin(RepoScanPlugin())
@@ -26,6 +27,7 @@ Before::
 After::
 
     from tests._helpers.hamilton_execution import HamiltonTestBuilder
+
 
     def test_modules(analytics_gateway: StorageGateway, tmp_path: Path) -> None:
         builder = HamiltonTestBuilder.create(analytics_gateway, tmp_path)

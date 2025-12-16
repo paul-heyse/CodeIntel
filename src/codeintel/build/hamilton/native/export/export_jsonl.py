@@ -109,9 +109,7 @@ def t__export_jsonl__compute(
     # Execute queries and convert to Python lists
     modules_df = cast("pd.DataFrame", modules.execute())
     function_metrics_df = cast("pd.DataFrame", function_metrics.execute())
-    modules_data = tuple(
-        cast("list[dict[str, Any]]", modules_df.to_dict(orient="records"))
-    )
+    modules_data = tuple(cast("list[dict[str, Any]]", modules_df.to_dict(orient="records")))
     function_metrics_data = tuple(
         cast("list[dict[str, Any]]", function_metrics_df.to_dict(orient="records"))
     )

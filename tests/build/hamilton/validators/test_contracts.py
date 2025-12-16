@@ -3,6 +3,7 @@
 These tests verify that the contract builder functions correctly
 create validator sets for common patterns.
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -70,18 +71,22 @@ class TestBuildTableContract:
         )
 
         # Valid DataFrame
-        df_valid = pd.DataFrame({
-            "id": [1, 2, 3],
-            "name": ["a", "b", "c"],
-        })
+        df_valid = pd.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "name": ["a", "b", "c"],
+            }
+        )
         results = [v.validate(df_valid) for v in validators]
         expect_true(all(r.passes for r in results))
 
         # Invalid DataFrame (duplicate id)
-        df_invalid = pd.DataFrame({
-            "id": [1, 1, 3],
-            "name": ["a", "b", "c"],
-        })
+        df_invalid = pd.DataFrame(
+            {
+                "id": [1, 1, 3],
+                "name": ["a", "b", "c"],
+            }
+        )
         results = [v.validate(df_invalid) for v in validators]
         expect_false(all(r.passes for r in results))
 
@@ -139,10 +144,12 @@ class TestBuildKeyColumnContract:
             additional_columns=["name"],
         )
 
-        df = pd.DataFrame({
-            "id": [1, 2, 3],
-            "name": ["a", "b", "c"],
-        })
+        df = pd.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "name": ["a", "b", "c"],
+            }
+        )
 
         results = [v.validate(df) for v in validators]
         expect_true(all(r.passes for r in results))
@@ -181,10 +188,12 @@ class TestBuildMetricsContract:
             metric_types={"loc": "int"},
         )
 
-        df = pd.DataFrame({
-            "loc": [10, 20, 30],
-            "complexity": [1, 2, 3],
-        })
+        df = pd.DataFrame(
+            {
+                "loc": [10, 20, 30],
+                "complexity": [1, 2, 3],
+            }
+        )
 
         results = [v.validate(df) for v in validators]
         expect_true(all(r.passes for r in results))

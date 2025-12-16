@@ -37,12 +37,14 @@ class TestIbisTableValidation:
         from codeintel.build.hamilton.validators import ColumnsExistValidator
 
         # Create a mock Ibis table using memtable
-        df = pd.DataFrame({
-            "function_goid_h128": ["abc123"],
-            "repo": ["org/repo"],
-            "commit": ["abc123"],
-            "risk_score": [5],
-        })
+        df = pd.DataFrame(
+            {
+                "function_goid_h128": ["abc123"],
+                "repo": ["org/repo"],
+                "commit": ["abc123"],
+                "risk_score": [5],
+            }
+        )
         ibis_table = ibis.memtable(df)
 
         # Test with all columns present
@@ -75,11 +77,13 @@ class TestIbisTableValidation:
 
         from codeintel.build.hamilton.validators import ColumnTypesValidator
 
-        df = pd.DataFrame({
-            "name": ["Alice", "Bob"],
-            "age": [30, 25],
-            "score": [95.5, 88.0],
-        })
+        df = pd.DataFrame(
+            {
+                "name": ["Alice", "Bob"],
+                "age": [30, 25],
+                "score": [95.5, 88.0],
+            }
+        )
         ibis_table = ibis.memtable(df)
 
         # Test type matching
@@ -132,10 +136,12 @@ class TestDataFrameValidation:
         """Verify NoNullsInColumnsValidator catches nulls in DataFrames."""
         from codeintel.build.hamilton.validators import NoNullsInColumnsValidator
 
-        df = pd.DataFrame({
-            "id": [1, 2, None],
-            "name": ["Alice", "Bob", "Charlie"],
-        })
+        df = pd.DataFrame(
+            {
+                "id": [1, 2, None],
+                "name": ["Alice", "Bob", "Charlie"],
+            }
+        )
 
         validator = NoNullsInColumnsValidator(["id"])
         result = validator.validate(df)
