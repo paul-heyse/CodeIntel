@@ -7,6 +7,8 @@ at the gateway layer via DuckDBPolicyBackend.
 
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,6 +26,8 @@ DuckDBConnectConfig = dict[str, DuckDBConnectConfigValue]
 __all__ = [
     "connect",
 ]
+
+_DUCKDB_EXTENSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 
 
 def connect(
@@ -47,10 +51,75 @@ def connect(
     """
     if not config.read_only and config.db_path != Path(":memory:"):
         config.db_path.parent.mkdir(parents=True, exist_ok=True)
-    con: DuckDBConnection = _open_primary_connection(config, duckdb_config=duckdb_config)
+    con: DuckDBConnection = _open_primary_connection(
+        config,
+        duckdb_config=_merge_duckdb_connect_config(_duckdb_connect_config_from_env(), duckdb_config),
+    )
+    _load_duckdb_extensions_from_env(con)
     _attach_history_if_needed(con, config)
     _apply_schema(con, config)
     return con
+
+
+def _merge_duckdb_connect_config(
+    env_config: DuckDBConnectConfig, explicit_config: DuckDBConnectConfig | None
+) -> DuckDBConnectConfig | None:
+    if explicit_config is None:
+        return env_config if env_config else None
+    merged: DuckDBConnectConfig = {**env_config, **explicit_config}
+    return merged if merged else None
+
+
+def _duckdb_connect_config_from_env() -> DuckDBConnectConfig:
+    config: DuckDBConnectConfig = {}
+
+    threads = os.environ.get("CODEINTEL_DUCKDB_THREADS", "").strip()
+    if threads:
+        config["threads"] = int(threads)
+
+    memory_limit = os.environ.get("CODEINTEL_DUCKDB_MEMORY_LIMIT", "").strip()
+    if memory_limit:
+        config["memory_limit"] = memory_limit
+
+    temp_directory = os.environ.get("CODEINTEL_DUCKDB_TEMP_DIRECTORY", "").strip()
+    if temp_directory:
+        config["temp_directory"] = temp_directory
+
+    enable_profiling = os.environ.get("CODEINTEL_DUCKDB_ENABLE_PROFILING", "").strip()
+    if enable_profiling:
+        config["enable_profiling"] = _parse_bool_or_string(enable_profiling)
+
+    profiling_output = os.environ.get("CODEINTEL_DUCKDB_PROFILING_OUTPUT", "").strip()
+    if profiling_output:
+        config["profiling_output"] = profiling_output
+
+    return config
+
+
+def _parse_bool_or_string(value: str) -> bool | str:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return value.strip()
+
+
+def _load_duckdb_extensions_from_env(con: DuckDBConnection) -> None:
+    raw = os.environ.get("CODEINTEL_DUCKDB_EXTENSIONS", "").strip()
+    if not raw:
+        return
+
+    extensions = [ext.strip() for ext in raw.split(",") if ext.strip()]
+    for extension in extensions:
+        if _DUCKDB_EXTENSION_NAME_PATTERN.fullmatch(extension) is None:
+            message = (
+                "Invalid DuckDB extension name in CODEINTEL_DUCKDB_EXTENSIONS: "
+                f"{extension!r}"
+            )
+            raise ValueError(message)
+        con.execute(f"INSTALL {extension}")
+        con.execute(f"LOAD {extension}")
 
 
 def _open_primary_connection(

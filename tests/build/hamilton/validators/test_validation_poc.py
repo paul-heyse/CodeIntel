@@ -48,7 +48,7 @@ class TestIbisTableValidation:
         # Test with all columns present
         validator = ColumnsExistValidator(["function_goid_h128", "repo", "commit"])
         result = validator.validate(ibis_table)
-        assert result.passes, "Expected validation to pass for Ibis table"
+        expect_true(result.passes, message="Expected validation to pass for Ibis table")
         expect_in("Ibis table", result.message)
 
     @staticmethod
@@ -64,7 +64,7 @@ class TestIbisTableValidation:
 
         validator = ColumnsExistValidator(["col_a", "col_b", "col_c"])
         result = validator.validate(ibis_table)
-        assert not result.passes, "Expected validation to fail for missing column"
+        expect_false(result.passes, message="Expected validation to fail for missing column")
         expect_in("col_c", str(result.diagnostics.get("missing_columns", [])))
 
     @staticmethod
@@ -86,9 +86,10 @@ class TestIbisTableValidation:
         validator = ColumnTypesValidator({"name": "string", "age": "int", "score": "float"})
         result = validator.validate(ibis_table)
         # Note: Ibis may use different type names, so validation may pass or need adjustment
-        assert (
-            result.passes or result.diagnostics.get("data_type") == "Ibis table"
-        ), "Expected Ibis table type validation"
+        expect_true(
+            result.passes or result.diagnostics.get("data_type") == "Ibis table",
+            message="Expected Ibis table type validation",
+        )
 
     @staticmethod
     def test_no_nulls_validator_skips_ibis() -> None:
@@ -103,8 +104,8 @@ class TestIbisTableValidation:
 
         validator = NoNullsInColumnsValidator(["col"])
         result = validator.validate(ibis_table)
-        assert result.passes, "Expected validation to pass (skipped for Ibis)"
-        assert result.diagnostics.get("skipped", False), "Expected skipped=True"
+        expect_true(result.passes, message="Expected validation to pass (skipped for Ibis)")
+        expect_true(result.diagnostics.get("skipped", False), message="Expected skipped=True")
 
     @staticmethod
     def test_column_values_in_set_skips_ibis() -> None:
@@ -119,8 +120,8 @@ class TestIbisTableValidation:
 
         validator = ColumnValuesInSetValidator("status", {"active", "inactive"})
         result = validator.validate(ibis_table)
-        assert result.passes, "Expected validation to pass (skipped for Ibis)"
-        assert result.diagnostics.get("skipped", False), "Expected skipped=True"
+        expect_true(result.passes, message="Expected validation to pass (skipped for Ibis)")
+        expect_true(result.diagnostics.get("skipped", False), message="Expected skipped=True")
 
 
 class TestDataFrameValidation:
@@ -138,7 +139,7 @@ class TestDataFrameValidation:
 
         validator = NoNullsInColumnsValidator(["id"])
         result = validator.validate(df)
-        assert not result.passes, "Expected validation to fail for null values"
+        expect_false(result.passes, message="Expected validation to fail for null values")
         expect_equal(result.diagnostics.get("null_counts", {}).get("id"), 1)
 
     @staticmethod
@@ -150,7 +151,7 @@ class TestDataFrameValidation:
 
         validator = ColumnValuesInSetValidator("risk_level", {"high", "medium", "low"})
         result = validator.validate(df)
-        assert not result.passes, "Expected validation to fail for invalid value"
+        expect_false(result.passes, message="Expected validation to fail for invalid value")
         expect_in("invalid", str(result.diagnostics.get("invalid_values", [])))
 
 
@@ -204,7 +205,7 @@ class TestContractEnforcementHook:
         # Check validation results
         results = hook.validation_results
         expect_in("test_node", results)
-        assert results["test_node"].passed
+        expect_true(results["test_node"].passed)
 
     @staticmethod
     def test_hook_captures_failure(
@@ -226,7 +227,7 @@ class TestContractEnforcementHook:
 
         results = hook.validation_results
         expect_in("failing_node", results)
-        assert not results["failing_node"].passed
+        expect_false(results["failing_node"].passed)
         expect_in("Validation", str(results["failing_node"].error))
 
     @staticmethod
@@ -261,7 +262,7 @@ class TestRiskFactorsModuleValidation:
 
         # Check that the compute function exists
         compute_fn = getattr(risk_factors, "t__risk_factors__compute", None)
-        assert compute_fn is not None, "Expected t__risk_factors__compute to exist"
+        expect_true(compute_fn is not None, message="Expected t__risk_factors__compute to exist")
 
         # Check for Hamilton tags (indicates proper decoration)
         fn_tags = getattr(compute_fn, "_tags", {})
@@ -288,7 +289,7 @@ class TestHotspotsModuleValidation:
 
         # Check that the compute function exists
         compute_fn = getattr(hotspots, "t__hotspots__compute", None)
-        assert compute_fn is not None, "Expected t__hotspots__compute to exist"
+        expect_true(compute_fn is not None, message="Expected t__hotspots__compute to exist")
 
     @staticmethod
     def test_hotspots_module_exports() -> None:
@@ -320,7 +321,10 @@ class TestBuildHooksValidation:
 
         # Should include ContractEnforcementHook
         contract_hooks = [h for h in hooks if isinstance(h, ContractEnforcementHook)]
-        assert len(contract_hooks) >= 1, "Expected ContractEnforcementHook in hooks"
+        expect_true(
+            len(contract_hooks) >= 1,
+            message="Expected ContractEnforcementHook in hooks",
+        )
 
     @staticmethod
     def test_build_hooks_validation_can_be_disabled(
@@ -365,16 +369,17 @@ class TestTableContractBuilders:
 
         # First validator should check required columns
         columns_validator = validators[0]
-        assert isinstance(
-            columns_validator, ColumnsExistValidator
-        ), "Expected first validator to be ColumnsExistValidator"
+        expect_true(
+            isinstance(columns_validator, ColumnsExistValidator),
+            message="Expected first validator to be ColumnsExistValidator",
+        )
 
     @staticmethod
     def test_build_enum_column_contract() -> None:
         """Verify build_enum_column_contract creates expected validators."""
         from codeintel.build.hamilton.validators import (
-            ColumnValuesInSetValidator,
             ColumnsExistValidator,
+            ColumnValuesInSetValidator,
             NoNullsInColumnsValidator,
             build_enum_column_contract,
         )
@@ -386,9 +391,9 @@ class TestTableContractBuilders:
 
         # Returns 3 validators: columns exist, values in set, no nulls
         expect_equal(len(validators), 3)
-        assert isinstance(validators[0], ColumnsExistValidator)
-        assert isinstance(validators[1], ColumnValuesInSetValidator)
-        assert isinstance(validators[2], NoNullsInColumnsValidator)
+        expect_true(isinstance(validators[0], ColumnsExistValidator))
+        expect_true(isinstance(validators[1], ColumnValuesInSetValidator))
+        expect_true(isinstance(validators[2], NoNullsInColumnsValidator))
 
 
 @pytest.fixture
@@ -415,4 +420,3 @@ def storage_gateway_for_tests() -> Any:
     from unittest.mock import MagicMock
 
     return MagicMock()
-

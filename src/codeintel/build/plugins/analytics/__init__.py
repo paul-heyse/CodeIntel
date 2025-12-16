@@ -4,41 +4,64 @@ This package contains all analytics plugins that implement the
 TargetPlugin protocol from codeintel.build.plugin. Plugins are
 registered in the build registry (codeintel.build.unified_registry).
 
-Note: Several plugins have been removed in favor of Hamilton native modules
-(see ``codeintel.build.hamilton.native.analytics``). The removed plugins are:
-- CfgDfgMetricsPlugin
-- CoverageFunctionsPlugin
-- DataModelsPlugin
-- DataModelUsagePlugin
-- EntrypointsPlugin
-- ExternalDepsPlugin
-- FunctionHistoryPlugin
-- HistoryTimeseriesPlugin
-- TestGraphMetricsPlugin
+**Phase 4 Migration Complete**
+
+All analytics plugins have been migrated to native Hamilton modules.
+The original plugin implementations are no longer used. This module
+now exports stub classes that emit deprecation warnings when used.
+
+For the actual implementations, see:
+``codeintel.build.hamilton.native.analytics``
+
+Migrated plugins:
+- BehavioralCoveragePlugin -> behavioral_coverage.py
+- ConfigDataFlowPlugin -> config_data_flow.py
+- CoverageTestEdgesPlugin -> coverage_test_edges.py
+- FunctionAstFeaturesPlugin -> ast_features.py
+- FunctionContractsPlugin -> function_contracts.py
+- FunctionEffectsPlugin -> function_effects.py
+- FunctionMetricsPlugin -> function_metrics.py
+- HotspotsPlugin -> hotspots.py
+- ProfilesPlugin -> profiles.py
+- RiskFactorsPlugin -> risk_factors.py
+- SemanticRolesPlugin -> semantic_roles.py
+- SubsystemAgreementPlugin -> subsystem_agreement.py
+- SubsystemGraphMetricsPlugin -> subsystem_graph_metrics.py
+- SubsystemsPlugin -> subsystems.py
+- SymbolGraphMetricsPlugin -> symbol_graph_metrics.py
+- TestProfilePlugin -> test_profile.py
+
+Previously migrated (Phase 3):
+- CfgDfgMetricsPlugin -> cfg_dfg.py
+- CoverageFunctionsPlugin -> coverage_functions.py
+- DataModelsPlugin -> data_models.py
+- DataModelUsagePlugin -> data_models.py
+- EntrypointsPlugin -> entrypoints.py
+- ExternalDepsPlugin -> dependencies.py
+- FunctionHistoryPlugin -> function_history.py
+- HistoryTimeseriesPlugin -> history_timeseries.py
+- TestGraphMetricsPlugin -> test_graph_metrics.py
 """
 
 from __future__ import annotations
 
-from codeintel.build.plugins.analytics.config_data_flow import ConfigDataFlowPlugin
-from codeintel.build.plugins.analytics.coverage import CoverageTestEdgesPlugin
-from codeintel.build.plugins.analytics.functions import (
+# Import stub classes for backward compatibility
+from codeintel.build.plugins.analytics.stubs import (
+    BehavioralCoveragePlugin,
+    ConfigDataFlowPlugin,
+    CoverageTestEdgesPlugin,
     FunctionAstFeaturesPlugin,
     FunctionContractsPlugin,
     FunctionEffectsPlugin,
     FunctionMetricsPlugin,
-)
-from codeintel.build.plugins.analytics.hotspots import HotspotsPlugin
-from codeintel.build.plugins.analytics.profiles import ProfilesPlugin
-from codeintel.build.plugins.analytics.risk import RiskFactorsPlugin
-from codeintel.build.plugins.analytics.semantic_roles import SemanticRolesPlugin
-from codeintel.build.plugins.analytics.subsystem_metrics import (
+    HotspotsPlugin,
+    ProfilesPlugin,
+    RiskFactorsPlugin,
+    SemanticRolesPlugin,
     SubsystemAgreementPlugin,
     SubsystemGraphMetricsPlugin,
-)
-from codeintel.build.plugins.analytics.subsystems import SubsystemsPlugin
-from codeintel.build.plugins.analytics.symbol_graph_metrics import SymbolGraphMetricsPlugin
-from codeintel.build.plugins.analytics.tests import (
-    BehavioralCoveragePlugin,
+    SubsystemsPlugin,
+    SymbolGraphMetricsPlugin,
     TestProfilePlugin,
 )
 

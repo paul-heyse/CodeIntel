@@ -13,11 +13,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from codeintel.build.schemas import (
-    get_schema_provider,
-    is_view,
-    iter_contracts,
-)
+from codeintel.storage.build_bridge import get_schema_provider, is_view, iter_contracts
 from codeintel.storage.constants import SCHEMAS
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
@@ -64,8 +60,9 @@ def create_schemas(con: DuckDBPyConnection) -> None:
     con
         DuckDB connection.
     """
-    for schema in SCHEMAS:
-        con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema};")
+    backend = _get_policy_backend(con)
+    for schema_name in SCHEMAS:
+        backend.create_schema_if_not_exists(schema_name)
 
 
 def apply_all_schemas(

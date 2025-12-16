@@ -5,11 +5,12 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.build.schemas import iter_contracts, iter_contracts_by_table_key
+from codeintel.storage.build_bridge import iter_contracts, iter_contracts_by_table_key
 from codeintel.storage.datasets.registry import (
     build_dataset_dependency_graph,
     load_dataset_registry,
 )
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -115,7 +116,7 @@ def _validate_table_columns(con: DuckDBPyConnection, registry: DatasetRegistry) 
     for name, ds in registry.by_name.items():
         if ds.is_view or ds.schema is None:
             continue
-        schema_name, table_name = ds.table_key.split(".", maxsplit=1)
+        schema_name, table_name = split_table_key(ds.table_key)
         info = con.execute(
             """
             SELECT column_name

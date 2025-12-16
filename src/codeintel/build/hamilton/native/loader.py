@@ -41,6 +41,10 @@ log = logging.getLogger(__name__)
 # Known native module packages organized by domain
 _NATIVE_MODULE_PACKAGES: dict[str, list[str]] = {
     "analytics": [
+        # Phase 1.5 - Already native with validators
+        "codeintel.build.hamilton.native.analytics.hotspots",
+        "codeintel.build.hamilton.native.analytics.risk_factors",
+        # Phase 3 - Migrated from plugins
         "codeintel.build.hamilton.native.analytics.cfg_dfg",
         "codeintel.build.hamilton.native.analytics.coverage_functions",
         "codeintel.build.hamilton.native.analytics.data_models",
@@ -48,10 +52,25 @@ _NATIVE_MODULE_PACKAGES: dict[str, list[str]] = {
         "codeintel.build.hamilton.native.analytics.entrypoints",
         "codeintel.build.hamilton.native.analytics.function_history",
         "codeintel.build.hamilton.native.analytics.history_timeseries",
-        "codeintel.build.hamilton.native.analytics.hotspots",
-        "codeintel.build.hamilton.native.analytics.risk_factors",
         "codeintel.build.hamilton.native.analytics.subsystems",
         "codeintel.build.hamilton.native.analytics.test_graph_metrics",
+        # Phase 4 - Function analytics plugins
+        "codeintel.build.hamilton.native.analytics.function_metrics",
+        "codeintel.build.hamilton.native.analytics.ast_features",
+        "codeintel.build.hamilton.native.analytics.function_effects",
+        "codeintel.build.hamilton.native.analytics.function_contracts",
+        # Phase 4 - Coverage/testing plugins
+        "codeintel.build.hamilton.native.analytics.coverage_test_edges",
+        "codeintel.build.hamilton.native.analytics.test_profile",
+        "codeintel.build.hamilton.native.analytics.behavioral_coverage",
+        # Phase 4 - Semantic/subsystem plugins
+        "codeintel.build.hamilton.native.analytics.semantic_roles",
+        "codeintel.build.hamilton.native.analytics.subsystem_graph_metrics",
+        "codeintel.build.hamilton.native.analytics.subsystem_agreement",
+        # Phase 4 - Remaining plugins
+        "codeintel.build.hamilton.native.analytics.config_data_flow",
+        "codeintel.build.hamilton.native.analytics.profiles",
+        "codeintel.build.hamilton.native.analytics.symbol_graph_metrics",
     ],
     "ingestion": [
         "codeintel.build.hamilton.native.ingestion.ast",
@@ -65,7 +84,14 @@ _NATIVE_MODULE_PACKAGES: dict[str, list[str]] = {
         "codeintel.build.hamilton.native.ingestion.typing",
     ],
     "graphs": [
+        "codeintel.build.hamilton.native.graphs.call_graph",
         "codeintel.build.hamilton.native.graphs.call_graph_views",
+        "codeintel.build.hamilton.native.graphs.cfg_dfg",
+        "codeintel.build.hamilton.native.graphs.goids",
+        "codeintel.build.hamilton.native.graphs.graph_metrics",
+        "codeintel.build.hamilton.native.graphs.graph_validation",
+        "codeintel.build.hamilton.native.graphs.import_graph",
+        "codeintel.build.hamilton.native.graphs.symbol_uses",
     ],
     "export": [
         "codeintel.build.hamilton.native.export.export_jsonl",

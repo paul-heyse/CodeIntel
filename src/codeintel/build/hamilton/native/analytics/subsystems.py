@@ -2,6 +2,9 @@
 
 This module implements the subsystems analytics target as a pure Hamilton DAG,
 computing architectural subsystem identification from import graph and semantic roles.
+
+Includes Hamilton-native validation via @check_output_custom (Phase 4)
+and schema documentation via @schema.output.
 """
 
 from __future__ import annotations
@@ -10,12 +13,13 @@ import logging
 
 import ibis
 import ibis.expr.types as ir
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import check_output_custom, schema, tag
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
+from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
@@ -24,6 +28,35 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
 @tag(domain="analytics", target="subsystems", node_type="compute")
+@check_output_custom(
+    *build_table_contract(
+        required_columns=[
+            "repo",
+            "commit",
+            "subsystem_id",
+            "name",
+            "module_count",
+        ],
+        column_types={
+            "repo": "string",
+            "commit": "string",
+            "subsystem_id": "string",
+            "name": "string",
+            "module_count": "int64",
+        },
+        no_nulls=["repo", "commit", "subsystem_id", "name"],
+    ),
+)
+@schema.output(
+    ("repo", "string"),
+    ("commit", "string"),
+    ("subsystem_id", "string"),
+    ("name", "string"),
+    ("description", "string"),
+    ("module_count", "int"),
+    ("modules_json", "string"),
+    ("entrypoints_json", "string"),
+)
 def t__subsystems__compute(
     env: BuildEnv,
     q__analytics__semantic_roles_modules: ir.Table,
