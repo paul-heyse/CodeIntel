@@ -27,6 +27,18 @@ State = Annotated[ServingState, Depends(_get_state)]
 
 
 def get_kernel(state: State) -> SemanticQueryKernel:
+    """Extract the SemanticQueryKernel from the serving state.
+
+    Parameters
+    ----------
+    state
+        Application serving state.
+
+    Returns
+    -------
+    SemanticQueryKernel
+        The kernel instance for semantic queries.
+    """
     return state.kernel
 
 
