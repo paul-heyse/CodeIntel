@@ -17,11 +17,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from codeintel.build.plugin import MetadataPlugin
-
 from codeintel.build.context import TargetResult
-from codeintel.build.plugins._helpers import filter_mapping, is_test_path
 from codeintel.build.hamilton.native.options.graphs import SymbolUsesOptions
+from codeintel.build.plugin import MetadataPlugin
+from codeintel.build.plugins._helpers import filter_mapping, is_test_path
 from codeintel.core.paths import normalize_path
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 from codeintel.graphs.compute import symbols as symbols_compute

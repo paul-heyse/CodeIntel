@@ -9,11 +9,9 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
-from codeintel.build.contracts import OutputContract
+from codeintel.build.contracts import EMPTY_CONTRACT, OutputContract
 from codeintel.build.hamilton.helpers import paths_to_modules
 from codeintel.build.plugins.ingestion.helpers import get_module_paths
-from codeintel.build.plugins.ingestion.stubs import RepoScanPlugin, TestsIngestPlugin
-from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import SnapshotRef
@@ -43,7 +41,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Sequence
     from pathlib import Path
 
-    from codeintel.build.context import TargetExecutionContext
+    from codeintel.build.context import TargetExecutionContext, TargetResult
     from codeintel.build.plugin import TargetPlugin
     from codeintel.build.providers import Providers
     from codeintel.config.datasets.primitives import TableSchema
@@ -51,7 +49,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.storage.gateway import StorageGateway
 
-TResult_co = TypeVar("TResult_co", bound=TargetResult, covariant=True)
+TResult_co = TypeVar("TResult_co", bound="TargetResult", covariant=True)
 
 
 class TargetPluginProtocol(Protocol[TResult_co]):
@@ -61,6 +59,31 @@ class TargetPluginProtocol(Protocol[TResult_co]):
         self, ctx: TargetExecutionContext
     ) -> TResult_co:  # pragma: no cover - protocol
         ...
+
+
+def _make_ingestion_target(name: str, description: str = "") -> OutputTarget:
+    """Create a minimal OutputTarget for ingestion testing.
+
+    Parameters
+    ----------
+    name
+        Target name (e.g., "repo_scan", "tests_ingest").
+    description
+        Optional description.
+
+    Returns
+    -------
+    OutputTarget
+        Minimal target suitable for test execution.
+    """
+    return OutputTarget(
+        name=name,
+        module="ingestion",
+        plugin=name,
+        contract=EMPTY_CONTRACT,
+        dependencies=(),
+        description=description or f"Test target for {name}",
+    )
 
 
 __all__ = [
@@ -84,6 +107,7 @@ __all__ = [
     "build_scip_ingest_context",
     "build_scip_repo_fixture",
     "build_target_context_for_plugin",
+    "build_target_context_for_target",
     "closing_gateway",
     "create_scan_and_docstring_steps",
     "create_scan_step",
@@ -183,14 +207,22 @@ class ScanSetupOptions:
     gateway_factory: GatewayFactory | None = None
 
 
-def build_target_context_for_plugin(
-    plugin: TargetPluginProtocol[TargetResult],
+def build_target_context_for_target(
+    target: OutputTarget,
     tmp_path: Path,
     *,
     config: TargetContextConfig | None = None,
-    target: OutputTarget | None = None,
 ) -> TargetExecutionContext:
     """Construct a TargetExecutionContext wired to real adapters.
+
+    Parameters
+    ----------
+    target
+        Output target for the context.
+    tmp_path
+        Temporary directory for test isolation.
+    config
+        Optional configuration overrides.
 
     Returns
     -------
@@ -215,12 +247,40 @@ def build_target_context_for_plugin(
         env_overrides=overrides,
         repo_root=effective_repo_root,
     )
-    effective_target = target or make_test_output_target(cast("TargetPlugin", plugin))
     resource_overrides = cfg.resources or TargetResourceOverrides(
         providers=cfg.providers,
         modules=cfg.modules or (),
     )
-    return builder.build_target_context(target=effective_target, resources=resource_overrides)
+    return builder.build_target_context(target=target, resources=resource_overrides)
+
+
+def build_target_context_for_plugin(
+    plugin: TargetPluginProtocol[TargetResult],
+    tmp_path: Path,
+    *,
+    config: TargetContextConfig | None = None,
+    target: OutputTarget | None = None,
+) -> TargetExecutionContext:
+    """Construct a TargetExecutionContext wired to real adapters.
+
+    .. deprecated::
+        Use ``build_target_context_for_target()`` with an explicit target instead.
+
+    Returns
+    -------
+    TargetExecutionContext
+        Context with gateway, resources, and target metadata.
+    """
+    import warnings
+
+    warnings.warn(
+        "build_target_context_for_plugin() is deprecated. "
+        "Use build_target_context_for_target() with an explicit OutputTarget instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    effective_target = target or make_test_output_target(cast("TargetPlugin", plugin))
+    return build_target_context_for_target(effective_target, tmp_path, config=config)
 
 
 async def run_ingestion_plugin(
@@ -380,9 +440,9 @@ def build_ingestion_context_bundle(
         )
     )
     gateway = (gateway_factory or GatewayFactory().with_macros()).open()
-    plugin = RepoScanPlugin()
-    ctx = build_target_context_for_plugin(
-        plugin,
+    target = _make_ingestion_target("repo_scan", "Repository scan target for testing")
+    ctx = build_target_context_for_target(
+        target,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
     )
@@ -569,8 +629,9 @@ def create_scan_step(
     tuple[RepoScanStep, DuckDBStorageAdapter, FilesystemDiscoveryAdapter]
         Repo scan step plus the storage and discovery adapters backing it.
     """
-    ctx = build_target_context_for_plugin(
-        RepoScanPlugin(),
+    target = _make_ingestion_target("repo_scan", "Repository scan step")
+    ctx = build_target_context_for_target(
+        target,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
     )
@@ -677,9 +738,9 @@ def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
     db_path = build_dir / "db" / "codeintel.duckdb"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     gateway = GatewayFactory().file_backed(db_path).with_macros().open()
-    plugin = TestsIngestPlugin()
-    ctx = build_target_context_for_plugin(
-        plugin,
+    target = _make_ingestion_target("tests_ingest", "Tests ingestion target")
+    ctx = build_target_context_for_target(
+        target,
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
     )

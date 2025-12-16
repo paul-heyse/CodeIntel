@@ -9,13 +9,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import warnings
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from coverage import Coverage
 
 from codeintel.analytics.graphs import compute_graph_metrics
-from codeintel.build.plugins.graphs.builders.callgraph import CallGraphPlugin
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.graphs.runtime import GraphMetricsOptions
 from codeintel.ingestion import (
@@ -799,8 +799,8 @@ def graph_metrics_ready_gateway(
                 )
             ],
         )
-    if opts.build_callgraph_enabled and not opts.run_metrics:
-        _ = CallGraphPlugin()
+    # Note: call_graph target should be executed via Hamilton if needed
+    # The build_callgraph_enabled flag is legacy and can be ignored
     if opts.include_symbol_edges:
         insert_rows(
             gateway,
@@ -989,13 +989,21 @@ def build_callgraph_fixture_repo(
         tool_cache=build_dir / ".tool_cache",
         log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
     )
+    from tests._helpers.fakes.contexts import ExecutionContextBuilder
+
     builder = ExecutionContextBuilder(
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
     )
 
-    result = builder.execute_plugin(CallGraphPlugin())
+    # Execute using the legacy plugin-based execution
+    # until full Hamilton driver execution is implemented
+    from codeintel.build.plugins.graphs.builders import CallGraphPlugin
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        result = builder.execute_plugin(CallGraphPlugin())
     if not result.success:
         msg = f"CallGraphPlugin failed: {result.error_message}"
         raise RuntimeError(msg)

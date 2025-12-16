@@ -18,7 +18,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.plugins.ingestion.stubs import RepoScanPlugin
+from codeintel.build.contracts import EMPTY_CONTRACT
+from codeintel.build.targets import OutputTarget
 from codeintel.storage.queries.safe import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
@@ -49,7 +50,7 @@ from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
     SeedIngestionConfig,
     TargetContextConfig,
-    build_target_context_for_plugin,
+    build_target_context_for_target,
     seed_ingestion_tables,
 )
 
@@ -69,11 +70,23 @@ EXPECTED_MIN_VALUE = 5.0
 EXPECTED_MAX_VALUE = 20.0
 
 
+def _make_test_target(name: str = "repo_scan") -> OutputTarget:
+    """Create a minimal test target."""
+    return OutputTarget(
+        name=name,
+        module="ingestion",
+        plugin=name,
+        contract=EMPTY_CONTRACT,
+        dependencies=(),
+        description="Test target",
+    )
+
+
 def _ctx_for_gateway(gateway: StorageGateway, tmp_path: Path) -> TargetExecutionContext:
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
-    return build_target_context_for_plugin(
-        RepoScanPlugin(),
+    return build_target_context_for_target(
+        _make_test_target(),
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
     )
@@ -155,8 +168,8 @@ def test_safe_count_with_scope_filters_by_snapshot(
         bundle.ctx,
         SeedIngestionConfig(module_paths=["a.py", "b.py"], include_defaults=False),
     )
-    other_ctx = build_target_context_for_plugin(
-        RepoScanPlugin(),
+    other_ctx = build_target_context_for_target(
+        _make_test_target(),
         tmp_path,
         config=TargetContextConfig(
             repo_root=bundle.repo_root,

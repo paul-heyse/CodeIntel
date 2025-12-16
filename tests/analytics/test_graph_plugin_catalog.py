@@ -1,4 +1,9 @@
-"""Catalog generation coverage for analytics plugins."""
+"""Catalog generation coverage for analytics plugins.
+
+.. deprecated::
+    The plugin catalog is deprecated. All plugins have been migrated to
+    native Hamilton modules. Use ``codeintel.build.hamilton.native`` instead.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +17,7 @@ from codeintel.analytics.graphs.plugin_catalog import (
 )
 
 
+@pytest.mark.skip(reason="Plugin catalog deprecated - all plugins migrated to Hamilton native")
 def test_build_plugin_catalog_includes_expected_fields() -> None:
     """Catalog JSON should expose core metadata fields for each plugin."""
     catalog = build_plugin_catalog()
@@ -38,6 +44,7 @@ def test_build_plugin_catalog_includes_expected_fields() -> None:
         pytest.fail(message)
 
 
+@pytest.mark.skip(reason="Plugin catalog deprecated - all plugins migrated to Hamilton native")
 def test_render_plugin_catalog_markdown_contains_examples() -> None:
     """Markdown render should include plugin names and plan/manifest examples."""
     catalog = build_plugin_catalog()

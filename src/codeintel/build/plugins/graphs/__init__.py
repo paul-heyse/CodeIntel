@@ -9,19 +9,17 @@ This package contains all graph plugins organized by category:
 All plugins implement the TargetPlugin protocol for the build system.
 Plugins are registered with the build registry in codeintel.build.unified_registry.
 
-Phase 3: All graph plugins migrated to native Hamilton modules.
-The actual plugin classes are now stub classes that emit deprecation warnings.
-Use the native modules in codeintel.build.hamilton.native.graphs instead.
+.. deprecated::
+    All graph plugins have been migrated to native Hamilton modules.
+    Use the native modules in ``codeintel.build.hamilton.native.graphs`` instead.
 """
 
 from __future__ import annotations
 
-from codeintel.build.plugins.graphs.stubs import (
+from codeintel.build.plugins.graphs.builders import (
     CallGraphPlugin,
     CfgDfgPlugin,
-    CoreMetricsPlugin,
     GoidBuilderPlugin,
-    GraphValidationPlugin,
     ImportGraphPlugin,
     SymbolUsesPlugin,
 )
@@ -29,9 +27,7 @@ from codeintel.build.plugins.graphs.stubs import (
 __all__ = [
     "CallGraphPlugin",
     "CfgDfgPlugin",
-    "CoreMetricsPlugin",
     "GoidBuilderPlugin",
-    "GraphValidationPlugin",
     "ImportGraphPlugin",
     "SymbolUsesPlugin",
 ]

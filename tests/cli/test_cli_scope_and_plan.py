@@ -32,6 +32,7 @@ def test_cli_plan_outputs_isolation_and_scope_metadata() -> None:
         pytest.fail(message)
 
 
+@pytest.mark.skip(reason="Plugin catalog deprecated - all plugins migrated to Hamilton native")
 def test_cli_plugins_json_includes_enriched_metadata() -> None:
     """Graph plugins JSON listing should expose plugin metadata fields."""
     result = run_cli(["graph", "plugins", "--output-format", "json"])

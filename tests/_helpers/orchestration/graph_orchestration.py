@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
-from codeintel.build.plugins.graphs.builders import CallGraphPlugin, CfgDfgPlugin, SymbolUsesPlugin
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
@@ -27,7 +26,6 @@ from tests._helpers.configs.graph_config import (
     SpanSnapshot,
     SpanTestEnv,
 )
-from tests._helpers.fakes.contexts import ExecutionContextBuilder
 from tests._helpers.orchestration.tooling import generate_coverage_for_function
 
 if TYPE_CHECKING:
@@ -128,26 +126,40 @@ def build_span_graph_components(env: SpanTestEnv) -> None:
         tool_cache=build_dir / ".tool_cache",
         log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
     )
+    import warnings
+
+    from codeintel.build.plugins.graphs.builders import (
+        CallGraphPlugin,
+        CfgDfgPlugin,
+        SymbolUsesPlugin,
+    )
+    from tests._helpers.fakes.contexts import ExecutionContextBuilder
+
     builder = ExecutionContextBuilder(
         gateway=env.gateway,
         snapshot=snapshot,
         paths=paths,
     )
 
-    call_graph_result = builder.execute_plugin(CallGraphPlugin())
-    if not call_graph_result.success:
-        msg = f"CallGraphPlugin failed: {call_graph_result.error_message}"
-        raise RuntimeError(msg)
+    # Execute using the legacy plugin-based execution
+    # until full Hamilton driver execution is implemented
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
 
-    cfg_dfg_result = builder.execute_plugin(CfgDfgPlugin())
-    if not cfg_dfg_result.success:
-        msg = f"CfgDfgPlugin failed: {cfg_dfg_result.error_message}"
-        raise RuntimeError(msg)
+        call_graph_result = builder.execute_plugin(CallGraphPlugin())
+        if not call_graph_result.success:
+            msg = f"CallGraphPlugin failed: {call_graph_result.error_message}"
+            raise RuntimeError(msg)
 
-    symbol_uses_result = builder.execute_plugin(SymbolUsesPlugin())
-    if not symbol_uses_result.success:
-        msg = f"SymbolUsesPlugin failed: {symbol_uses_result.error_message}"
-        raise RuntimeError(msg)
+        cfg_dfg_result = builder.execute_plugin(CfgDfgPlugin())
+        if not cfg_dfg_result.success:
+            msg = f"CfgDfgPlugin failed: {cfg_dfg_result.error_message}"
+            raise RuntimeError(msg)
+
+        symbol_uses_result = builder.execute_plugin(SymbolUsesPlugin())
+        if not symbol_uses_result.success:
+            msg = f"SymbolUsesPlugin failed: {symbol_uses_result.error_message}"
+            raise RuntimeError(msg)
 
 
 def generate_span_coverage(repo_root: Path) -> CoverageArtifact:

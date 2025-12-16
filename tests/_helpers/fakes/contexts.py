@@ -14,7 +14,18 @@ This module provides the canonical entry point for building execution contexts i
 
 Migration Guide
 ---------------
-**From plugin_execution.py:**
+**For new tests, use Hamilton-native helpers:**
+
+Preferred (Hamilton-native)::
+
+    from tests._helpers.hamilton_execution import HamiltonTestBuilder
+
+    def test_modules(analytics_gateway: StorageGateway, tmp_path: Path) -> None:
+        builder = HamiltonTestBuilder.create(analytics_gateway, tmp_path)
+        record = builder.execute_target("modules")
+        assert record.status == "succeeded"
+
+**Legacy plugin-based execution (deprecated):**
 
 Before::
 
@@ -52,6 +63,7 @@ After::
 from __future__ import annotations
 
 import asyncio
+import warnings
 from dataclasses import dataclass
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
@@ -76,6 +88,7 @@ if TYPE_CHECKING:
 
     from codeintel.analytics.resources.catalog import FunctionCatalogProvider
     from codeintel.build.context import TargetResult
+    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
     from codeintel.build.parameters import TargetParameters
     from codeintel.build.plugin import TargetPlugin
     from codeintel.build.providers import Providers
@@ -557,6 +570,10 @@ class ExecutionContextBuilder:
         This method wraps the async plugin.execute() and runs it using
         asyncio.run() for use in synchronous test code.
 
+        .. deprecated::
+            Use ``HamiltonTestBuilder.execute_target()`` instead for
+            Hamilton-native execution.
+
         Parameters
         ----------
         plugin
@@ -571,6 +588,12 @@ class ExecutionContextBuilder:
         TargetResult
             Result of plugin execution.
         """
+        warnings.warn(
+            "execute_plugin() is deprecated. Use HamiltonTestBuilder.execute_target() "
+            "for Hamilton-native execution. See tests/_helpers/hamilton_execution.py",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return asyncio.run(
             self.execute_plugin_async(
                 plugin,
@@ -578,6 +601,41 @@ class ExecutionContextBuilder:
                 resources=resources,
             )
         )
+
+    def execute_hamilton_target(self, target_name: str) -> TargetRunRecord:
+        """Execute a Hamilton target by name.
+
+        This method provides a bridge from the existing builder to
+        Hamilton-native execution. For new tests, prefer using
+        ``HamiltonTestBuilder`` directly.
+
+        Parameters
+        ----------
+        target_name
+            Name of the target to execute (e.g., "modules", "goids").
+
+        Returns
+        -------
+        TargetRunRecord
+            Execution record with status, duration, and row counts.
+
+        Examples
+        --------
+        >>> builder = ExecutionContextBuilder.create(tmp_path)
+        >>> record = builder.execute_hamilton_target("modules")
+        >>> assert record.status == "succeeded"
+        """
+        from tests._helpers.hamilton_execution import HamiltonTestBuilder
+
+        hamilton_builder = HamiltonTestBuilder(
+            gateway=cast("StorageGateway", self._gateway),
+            tmp_path=self.snapshot.repo_root.parent,
+            repo_root=self.snapshot.repo_root,
+            build_dir=self.build_paths.build_dir,
+            repo_slug=self.snapshot.repo,
+            commit_sha=self.snapshot.commit,
+        )
+        return hamilton_builder.execute_target(target_name)
 
     @property
     def effective_gateway(self) -> StorageGateway | RecordingGateway:
