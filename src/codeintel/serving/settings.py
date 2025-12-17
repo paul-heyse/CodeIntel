@@ -61,6 +61,34 @@ class ServingSettings:
         Mask internal error details in MCP tool responses for security.
     mcp_max_concurrent_queries
         Maximum concurrent heavy queries allowed (for memory protection).
+    mcp_enable_event_store
+        Enable EventStore for SSE polling/resumability on HTTP transport.
+    mcp_retry_interval_ms
+        SSE retry interval in milliseconds for reconnecting clients.
+    uvicorn_workers
+        Number of Uvicorn worker processes. Use >1 for production.
+    uvicorn_loop
+        Event loop implementation: "auto", "asyncio", or "uvloop".
+    uvicorn_http
+        HTTP protocol implementation: "auto", "h11", or "httptools".
+    uvicorn_limit_concurrency
+        Maximum concurrent connections (None for unlimited).
+    uvicorn_limit_max_requests
+        Maximum requests per worker before restart (None for unlimited).
+    uvicorn_timeout_keep_alive
+        Keep-alive timeout in seconds.
+    uvicorn_backlog
+        Maximum pending connections in socket backlog.
+    uvicorn_access_log
+        Enable access logging.
+    uvicorn_server_header
+        Include Server header in responses (disable for security).
+    uvicorn_proxy_headers
+        Trust proxy headers (X-Forwarded-*) from allowed IPs.
+    uvicorn_forwarded_allow_ips
+        Comma-separated list of IPs allowed to set proxy headers.
+    auth_required_for_remote
+        Require authentication when binding to non-localhost interfaces.
     """
 
     serve_dir: Path
@@ -91,6 +119,26 @@ class ServingSettings:
 
     # MCP Query Concurrency Control
     mcp_max_concurrent_queries: int = 2
+
+    # MCP EventStore for SSE Resumability
+    mcp_enable_event_store: bool = True
+    mcp_retry_interval_ms: int = 1000
+
+    # Uvicorn Production Configuration
+    uvicorn_workers: int = 1
+    uvicorn_loop: str = "auto"
+    uvicorn_http: str = "auto"
+    uvicorn_limit_concurrency: int | None = None
+    uvicorn_limit_max_requests: int | None = None
+    uvicorn_timeout_keep_alive: int = 30
+    uvicorn_backlog: int = 2048
+    uvicorn_access_log: bool = True
+    uvicorn_server_header: bool = False
+    uvicorn_proxy_headers: bool = False
+    uvicorn_forwarded_allow_ips: str = "127.0.0.1"
+
+    # Security: Auth Enforcement
+    auth_required_for_remote: bool = True
 
     @classmethod
     def from_env(cls) -> ServingSettings:
@@ -132,12 +180,92 @@ class ServingSettings:
             mcp_max_concurrent_queries=int(
                 os.environ.get("CODEINTEL_MCP_MAX_CONCURRENT_QUERIES", "2")
             ),
+            # MCP EventStore for SSE Resumability
+            mcp_enable_event_store=os.environ.get("CODEINTEL_MCP_EVENT_STORE", "1") == "1",
+            mcp_retry_interval_ms=int(os.environ.get("CODEINTEL_MCP_RETRY_INTERVAL", "1000")),
+            # Uvicorn Production Configuration
+            uvicorn_workers=int(os.environ.get("CODEINTEL_UVICORN_WORKERS", "1")),
+            uvicorn_loop=os.environ.get("CODEINTEL_UVICORN_LOOP", "auto"),
+            uvicorn_http=os.environ.get("CODEINTEL_UVICORN_HTTP", "auto"),
+            uvicorn_limit_concurrency=_parse_optional_int(
+                os.environ.get("CODEINTEL_UVICORN_LIMIT_CONCURRENCY")
+            ),
+            uvicorn_limit_max_requests=_parse_optional_int(
+                os.environ.get("CODEINTEL_UVICORN_LIMIT_MAX_REQUESTS")
+            ),
+            uvicorn_timeout_keep_alive=int(
+                os.environ.get("CODEINTEL_UVICORN_TIMEOUT_KEEP_ALIVE", "30")
+            ),
+            uvicorn_backlog=int(os.environ.get("CODEINTEL_UVICORN_BACKLOG", "2048")),
+            uvicorn_access_log=os.environ.get("CODEINTEL_UVICORN_ACCESS_LOG", "1") == "1",
+            uvicorn_server_header=os.environ.get("CODEINTEL_UVICORN_SERVER_HEADER", "0") == "1",
+            uvicorn_proxy_headers=os.environ.get("CODEINTEL_UVICORN_PROXY_HEADERS", "0") == "1",
+            uvicorn_forwarded_allow_ips=os.environ.get(
+                "CODEINTEL_UVICORN_FORWARDED_ALLOW_IPS", "127.0.0.1"
+            ),
+            # Security: Auth Enforcement
+            auth_required_for_remote=os.environ.get("CODEINTEL_AUTH_REQUIRED_FOR_REMOTE", "1")
+            == "1",
         )
+
+    def validate_auth_for_host(self) -> None:
+        """Validate that auth is configured when binding to non-localhost.
+
+        Fail-fast security check: if binding to a public interface (0.0.0.0, ::),
+        require either auth_token or api_key to be configured.
+
+        Raises
+        ------
+        ValueError
+            If bound to public interface without auth configured.
+        """
+        if not self.auth_required_for_remote:
+            return
+
+        public_hosts = {"0.0.0.0", "::", ""}
+        if self.host in public_hosts:
+            if not self.auth_token and not self.api_key:
+                msg = (
+                    f"Security error: Binding to {self.host!r} requires authentication. "
+                    f"Set CODEINTEL_AUTH_TOKEN or CODEINTEL_SERVE_API_KEY, "
+                    f"or set CODEINTEL_AUTH_REQUIRED_FOR_REMOTE=0 to disable this check."
+                )
+                raise ValueError(msg)
 
 
 __all__ = ["ServingSettings"]
 
 
 def _split_csv(raw: str) -> tuple[str, ...]:
+    """Split comma-separated values into a tuple of strings.
+
+    Parameters
+    ----------
+    raw
+        Raw comma-separated string.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Tuple of stripped, non-empty values.
+    """
     items = [item.strip() for item in raw.split(",") if item.strip()]
     return tuple(items)
+
+
+def _parse_optional_int(value: str | None) -> int | None:
+    """Parse optional integer from environment variable.
+
+    Parameters
+    ----------
+    value
+        Raw string value or None.
+
+    Returns
+    -------
+    int | None
+        Parsed integer or None if input was None/empty.
+    """
+    if value is None or value.strip() == "":
+        return None
+    return int(value)

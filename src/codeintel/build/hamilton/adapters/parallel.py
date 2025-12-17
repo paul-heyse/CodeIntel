@@ -242,8 +242,9 @@ class ThreadPoolAdapter(
         self,
         *,
         node: Node,
-        kwargs: dict[str, object],
+        kwargs: dict[str, object] | None = None,
         execute_lifecycle_for_node: Callable[..., object],
+        **node_kwargs: object,
     ) -> Future[object]:
         """Execute a node in the threadpool.
 
@@ -253,6 +254,12 @@ class ThreadPoolAdapter(
             Node to execute.
         kwargs
             Keyword arguments for the node (may contain Future values).
+            Hamilton may omit this argument for seed/user-defined nodes that
+            have no inputs; in that case this adapter treats it as empty.
+        **node_kwargs
+            Per-input keyword arguments for the node. Some Hamilton versions
+            pass node inputs as flattened keyword arguments rather than a single
+            ``kwargs`` mapping; this adapter supports both forms.
         execute_lifecycle_for_node
             Hamilton-provided callable that runs lifecycle hooks and executes the node.
 
@@ -261,11 +268,15 @@ class ThreadPoolAdapter(
         Future[object]
             Future for the node result.
         """
+        resolved_kwargs = dict(kwargs) if kwargs is not None else {}
+        resolved_kwargs.update(node_kwargs)
         if self._is_write_node(node):
             return self._executor.submit(
-                self._execute_with_lock, execute_lifecycle_for_node, kwargs
+                self._execute_with_lock, execute_lifecycle_for_node, resolved_kwargs
             )
-        return self._executor.submit(self._execute_without_lock, execute_lifecycle_for_node, kwargs)
+        return self._executor.submit(
+            self._execute_without_lock, execute_lifecycle_for_node, resolved_kwargs
+        )
 
     def _execute_without_lock(self, fn: Callable[..., object], kwargs: dict[str, object]) -> object:
         resolved = _resolve_futures(kwargs)

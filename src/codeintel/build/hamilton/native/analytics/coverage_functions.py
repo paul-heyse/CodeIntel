@@ -41,7 +41,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
     target_name=value("coverage_functions"),
     table_key=value("analytics.coverage_functions"),
 )
-@tag(domain="analytics", target="coverage_functions", node_type="compute")
 @check_output_custom(
     *build_table_contract(
         required_columns=[
@@ -62,6 +61,12 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
         ],
         no_nulls=["function_goid_h128", "repo", "commit"],
     ),
+)
+@tag(
+    domain="analytics",
+    target="coverage_functions",
+    node_type="compute",
+    target_="t__coverage_functions__compute",
 )
 def t__coverage_functions__compute(env: BuildEnv) -> ir.Table | None:
     """Compute per-function coverage metrics from GOIDs and coverage lines.

@@ -148,6 +148,16 @@ class BuildSession:
         self._manifest_cache = {m.target: m for m in manifests}
         self._manifests_preloaded = True
 
+    def cached_manifest_targets(self) -> frozenset[str]:
+        """Return the set of target names present in the manifest cache.
+
+        Returns
+        -------
+        frozenset[str]
+            Target names for which a manifest is cached.
+        """
+        return frozenset(self._manifest_cache)
+
     def seed_manifest_cache(self, manifests: Mapping[str, OutputManifest]) -> None:
         """Seed the manifest cache with externally provided entries.
 

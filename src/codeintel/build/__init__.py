@@ -10,7 +10,7 @@ Key concepts:
 - **OutputContract**: Tables and artifacts a target produces (single source of truth)
 - **OutputManifest**: Record of a target's computation with input/output hashes
 - **BuildRunRecord**: Record of a build system run for observability
-- **TargetExecutionContext**: Everything a plugin needs for execution
+- **TargetExecutionContext**: Execution context for build operations
 - **BuildError**: Rich error hierarchy with actionable hints
 
 Import patterns::
@@ -72,15 +72,11 @@ __all__ = [
     "TargetGraph",
     "TargetModule",
     "TargetParameters",
-    "TargetPlugin",
-    "TargetPluginProtocol",
     "TargetResources",
     "TargetResult",
-    "UnifiedRegistry",
     "compute_input_hash",
     "compute_options_hash",
     "get_target_graph",
-    "get_unified_registry",
 ]
 
 if TYPE_CHECKING:
@@ -90,7 +86,6 @@ if TYPE_CHECKING:
     from codeintel.build.hashing import compute_input_hash, compute_options_hash
     from codeintel.build.manifest import BuildRunRecord, OutputManifest
     from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
-    from codeintel.build.plugin import TargetPlugin, TargetPluginProtocol
     from codeintel.build.registry import get_target_graph
     from codeintel.build.resources import (
         DEFAULT_EXECUTION,
@@ -100,7 +95,6 @@ if TYPE_CHECKING:
     )
     from codeintel.build.run_config import BuildRunConfig
     from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
-    from codeintel.build.unified_registry import UnifiedRegistry, get_unified_registry
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "DEFAULT_EXECUTION": ("codeintel.build.resources", "DEFAULT_EXECUTION"),
@@ -120,15 +114,11 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "TargetGraph": ("codeintel.build.targets", "TargetGraph"),
     "TargetModule": ("codeintel.build.targets", "TargetModule"),
     "TargetParameters": ("codeintel.build.parameters", "TargetParameters"),
-    "TargetPlugin": ("codeintel.build.plugin", "TargetPlugin"),
-    "TargetPluginProtocol": ("codeintel.build.plugin", "TargetPluginProtocol"),
     "TargetResources": ("codeintel.build.resources", "TargetResources"),
     "TargetResult": ("codeintel.build.context", "TargetResult"),
-    "UnifiedRegistry": ("codeintel.build.unified_registry", "UnifiedRegistry"),
     "compute_input_hash": ("codeintel.build.hashing", "compute_input_hash"),
     "compute_options_hash": ("codeintel.build.hashing", "compute_options_hash"),
     "get_target_graph": ("codeintel.build.registry", "get_target_graph"),
-    "get_unified_registry": ("codeintel.build.unified_registry", "get_unified_registry"),
 }
 
 

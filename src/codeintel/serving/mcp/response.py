@@ -67,7 +67,7 @@ def build_envelope(
         repo=ptr.repo,
         commit=ptr.commit,
         run_id=ptr.run_id,
-        published_at=ptr.published_at,
+        published_at=ptr.published_at.isoformat(),
         semantic_layer_version=ptr.semantic_layer_version,
     )
     meta = McpResponseMeta(
@@ -80,4 +80,3 @@ def build_envelope(
 
 
 __all__ = ["build_envelope"]
-

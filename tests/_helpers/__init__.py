@@ -48,7 +48,6 @@ from __future__ import annotations
 
 from tests._helpers.build import (
     ManifestParams,
-    RecordingPlugin,
     RecordingProviders,
     make_build_config,
     make_build_paths,
@@ -189,7 +188,6 @@ __all__ = [
     "QueryRow",
     "RecordingAsyncClient",
     "RecordingGateway",
-    "RecordingPlugin",
     "RecordingProviders",
     "ScenarioConfig",
     "SeedPack",

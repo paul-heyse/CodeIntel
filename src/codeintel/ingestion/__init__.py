@@ -1,7 +1,5 @@
 """Ingestion stages that parse repositories into normalized DuckDB tables for analytics.
 
-This module provides the plugin-based ingestion architecture for CodeIntel.
-
 Architecture Overview
 ---------------------
 The ingestion system follows a port-adapter pattern for clean separation of concerns:
@@ -30,21 +28,6 @@ The ingestion system follows a port-adapter pattern for clean separation of conc
 - `ConfigIngestStep`: Configuration file flattening
 - `RepoScanStep`: Repository scanning and module discovery
 
-**Plugins** (TargetPlugin implementations):
-- `RepoScanPlugin`, `AstExtractPlugin`, etc.: Build system integrated plugins
-
-Builtin Plugins
----------------
-The following plugins are registered by default:
-- `repo_scan` - Scans repository modules and builds change-tracker state
-- `scip_ingest` - Runs scip-python for symbol indexing
-- `cst_extract` - Parses CST via LibCST
-- `ast_extract` - Parses Python AST for nodes and metrics
-- `typing_ingest` - Computes typedness and static diagnostics
-- `coverage_ingest` - Loads coverage.py data
-- `tests_ingest` - Ingests pytest JSON reports
-- `docstrings_ingest` - Extracts and persists docstrings
-- `config_ingest` - Flattens configuration files
 """
 
 from __future__ import annotations
@@ -60,9 +43,6 @@ from codeintel.core.paths import (
     ensure_repo_root,
     repo_relpath,
 )
-
-# Note: Plugin imports are deferred to avoid circular imports.
-# Use `from codeintel.build.plugins.ingestion import FooPlugin` directly.
 from codeintel.ingestion.adapters import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
@@ -113,8 +93,6 @@ from codeintel.ingestion.tracker import (
 )
 
 __all__ = [
-    # Plugin classes moved to codeintel.build.plugins.ingestion to break circular imports.
-    # Import directly: from codeintel.build.plugins.ingestion import AstExtractPlugin
     "AstExtractStep",
     "BatchResult",
     "BuildToolAdapter",

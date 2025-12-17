@@ -211,7 +211,6 @@ def _hotspots_select(hotspots: ir.Table) -> ir.Table:
     namespace=None,
     on_input="q__core__file_state",
 )
-@tag(domain="analytics", target="hotspots", node_type="compute")
 @check_output_custom(
     *build_table_contract(
         required_columns=[
@@ -226,6 +225,7 @@ def _hotspots_select(hotspots: ir.Table) -> ir.Table:
         no_nulls=["rel_path"],
     )
 )
+@tag(domain="analytics", target="hotspots", node_type="compute", target_="t__hotspots__compute")
 @schema.output(
     ("rel_path", "string"),
     ("commit_count", "int"),

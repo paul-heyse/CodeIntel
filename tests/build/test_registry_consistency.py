@@ -1,35 +1,35 @@
-"""Test target registry and UnifiedRegistry consistency."""
+"""Test target registry and Hamilton DAG consistency."""
 
 from __future__ import annotations
 
+from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.naming import target_node
 from codeintel.build.registry import get_target_graph
-from codeintel.build.unified_registry import get_unified_registry
 from tests._helpers.assertions import expect_true
 
 
 class TestRegistryConsistency:
-    """Ensure UnifiedRegistry and target registry are aligned."""
+    """Ensure the build registry and Hamilton runtime stay aligned."""
 
     @staticmethod
-    def test_all_targets_registered_in_unified_registry() -> None:
-        """Every OutputTarget should be present in the unified registry."""
-        reg = get_unified_registry()
+    def test_all_targets_have_hamilton_nodes() -> None:
+        """Every OutputTarget must have a corresponding Hamilton target node."""
+        runtime = build_driver()
         graph = get_target_graph()
-        missing = {t.name for t in graph.all_targets if t.name not in reg}
-        expect_true(len(missing) == 0, message=f"Targets missing from UnifiedRegistry: {missing}")
+        missing = {
+            t.name for t in graph.all_targets if target_node(t.name) not in runtime.dr.graph.nodes
+        }
+        expect_true(
+            len(missing) == 0,
+            message=f"Targets missing from Hamilton DAG: {sorted(missing)}",
+        )
 
     @staticmethod
-    def test_targets_with_plugin_field_have_implementations() -> None:
-        """Targets with a plugin field must have a plugin or native implementation."""
-        reg = get_unified_registry()
+    def test_targets_do_not_declare_plugin_implementations() -> None:
+        """Targets should not declare plugin implementations in Hamilton-first execution."""
         graph = get_target_graph()
-        for target in graph.all_targets:
-            if not target.plugin:
-                continue
-            expect_true(
-                reg.has_implementation(target.name),
-                message=(
-                    f"Target '{target.name}' declares plugin='{target.plugin}' "
-                    "but has no registered implementation"
-                ),
-            )
+        non_empty = {t.name: t.plugin for t in graph.all_targets if t.plugin}
+        expect_true(
+            len(non_empty) == 0,
+            message=f"Targets still declare plugin implementations: {non_empty}",
+        )

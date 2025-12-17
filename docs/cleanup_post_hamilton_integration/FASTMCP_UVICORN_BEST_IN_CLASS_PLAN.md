@@ -10,6 +10,60 @@
 
 ---
 
+## Implementation Status
+
+| PR | Items | Status | Notes |
+|----|-------|--------|-------|
+| **PR1** | C0 (gofastmcp normalization) | ✅ Complete | Import shim, mount path, test patterns |
+| **PR2** | H1 + H2 + H7 (Tool signature modernization) | ✅ Complete | Async tools, Context, Annotations, ToolError |
+| **PR3** | H3 + H4 (Response envelope + Query limiter) | ✅ Complete | McpEnvelope models, QueryLimiter class |
+| **PR4** | H5 + H6 (Resources + EventStore) | 🔲 Pending | Large data delivery, SSE resumability |
+| **PR5** | M1-M4 (Uvicorn + Auth + Health) | 🔲 Pending | Production hardening |
+| **PR6** | M5-M8 (Tags, Metrics, Feature flags) | 🔲 Pending | Observability and extensibility |
+| **PR7** | L1-L6 (Composition, Prompts, etc.) | 🔲 Pending | Optional enhancements |
+
+### Key Learnings from PR1-PR3 Implementation
+
+1. **Import Shim Pattern Works Well**: The `_compat.py` pattern for feature detection (e.g., `HAS_EVENT_STORE`) provides clean fallback behavior.
+
+2. **QueryLimiter Type Signatures**: The limiter returns `object` from `run()`, requiring explicit result capture in a variable for type-safe access to result attributes like `.model_dump()`, `.truncated`, `.rows`.
+
+3. **Pointer `published_at` is datetime**: The `ServingSnapshotPointer.published_at` is a `datetime` object, requiring `.isoformat()` conversion for the string-typed `McpSnapshotMeta.published_at`.
+
+4. **Protocol for Kernel Access**: Use `Protocol` classes to define minimal interfaces (e.g., `SemanticKernel`, `_KernelDBProtocol`) to avoid circular imports while maintaining type safety.
+
+5. **Test Refactoring**: Extract setup helpers like `_setup_test_snapshot()` to reduce local variable count and improve test maintainability.
+
+6. **Settings Must Be Passed Through**: The `settings` object must flow from `build_mcp_app()` through all tool registration functions to access configuration values.
+
+7. **Tool Pattern Consistency**: All 6 tools now follow the same pattern:
+   - `async def tool_name(..., *, ctx: Context) -> dict[str, object]`
+   - Use `limiter.run()` for blocking operations
+   - Use `time.perf_counter()` for timing
+   - Return `build_envelope(kernel, data, ...).model_dump(mode="json")`
+
+### Quick Reference: Remaining PRs
+
+| PR | Duration | Items | Key Deliverables |
+|----|----------|-------|------------------|
+| **PR4** | 2 days | H5, H6 | `resource_store.py`, `resources.py`, EventStore config |
+| **PR5** | 2 days | M1-M4 | Uvicorn settings, auth enforcement, health endpoint |
+| **PR6** | 1.5 days | M5-M7 | Tool tags, metrics emission, feature flags |
+| **PR7** | 2 days | M8, L1, L2, L6 | Unified lifespan, server composition, prompts |
+
+### Test File Reference
+
+| Test File | What It Tests | Created In |
+|-----------|---------------|------------|
+| `tests/serving/test_semantic_mcp_tools.py` | All 6 tools, envelope, annotations | PR2-3 ✅ |
+| `tests/serving/mcp/test_runtime.py` | QueryLimiter class | PR3 ✅ |
+| `tests/serving/mcp/test_resources.py` | MCP resources, resource store | PR4 🔲 |
+| `tests/serving/test_uvicorn_config.py` | Uvicorn settings application | PR5 🔲 |
+| `tests/serving/test_auth_enforcement.py` | Auth required for public bind | PR5 🔲 |
+| `tests/serving/http/test_mcp_mount.py` | Mount path contract | PR7 🔲 |
+
+---
+
 ## Table of Contents
 
 1. [Executive Summary](#executive-summary)
@@ -59,37 +113,47 @@
 
 ## Current State Analysis
 
-### FastMCP Implementation
+### FastMCP Implementation (Post PR1-PR3)
 
 **Location**: `src/codeintel/serving/mcp/`
 
-| Component | Status | Gaps |
-|-----------|--------|------|
-| `app.py` | ✅ Functional | **Uses MCP SDK FastMCP, not gofastmcp 2.x**; No Context usage, no annotations, sync-only |
-| `server.py` | ✅ Functional | Basic lifespan, no auth integration |
-| `__main__.py` | ✅ Functional | Minimal entry point |
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `_compat.py` | ✅ New | Import shim with feature flags (`HAS_EVENT_STORE`) |
+| `app.py` | ✅ Updated | gofastmcp 2.x, async tools, Context, annotations, envelope, limiter |
+| `models.py` | ✅ New | `McpSnapshotMeta`, `McpResponseMeta`, `McpEnvelope` |
+| `response.py` | ✅ New | `build_envelope()` helper |
+| `runtime.py` | ✅ New | `QueryLimiter` class for concurrency control |
+| `server.py` | ✅ Updated | Uses gofastmcp imports |
+| `__main__.py` | ✅ Functional | Entry point for stdio transport |
 
-**Critical Issue Identified**: Current code imports from `mcp.server.fastmcp` (MCP SDK flavor) while plan references gofastmcp 2.x features (tool annotations, `http_app()`, `EventStore`, `ResourceContent`). These are **incompatible ecosystems**.
+**Current Tools** (6 total, all modernized):
+- `semantic_catalog` - List views (async, Context, envelope, limiter)
+- `semantic_describe` - Describe view schema (async, Context, envelope, limiter)
+- `semantic_query` - Query with filters (async, Context, envelope, limiter)
+- `semantic_explain` - SQL + plan output (async, Context, envelope, limiter)
+- `serving_meta` - Metadata endpoint (async, Context, envelope, limiter)
+- `code_search` - FTS search (async, Context, envelope, limiter)
 
-**Current Tools** (6 total):
-- `semantic_catalog` - List views
-- `semantic_describe` - Describe view schema
-- `semantic_query` - Query with filters
-- `semantic_explain` - SQL + plan output
-- `serving_meta` - Metadata endpoint
-- `code_search` - FTS search
+**Completed Features** (PR1-PR3):
+- ✅ gofastmcp 2.x imports via `_compat.py`
+- ✅ MCP Context with `*, ctx: Context` (keyword-only)
+- ✅ Progress reporting via `ctx.report_progress()`
+- ✅ MCP Annotations (`readOnlyHint`, `idempotentHint`, `openWorldHint`)
+- ✅ Response meta envelope with snapshot provenance
+- ✅ ToolError for controlled error messages
+- ✅ Error masking via `mask_error_details` setting
+- ✅ Query concurrency limiter via `QueryLimiter`
+- ✅ Timing metadata (`query_ms`) in all responses
 
-**Missing Features**:
-- No MCP Context access (progress, logging, sampling)
-- No MCP Annotations (readOnlyHint, idempotentHint)
-- No MCP Resources for large data delivery
-- No structured return types (Pydantic models)
-- No response meta envelope (snapshot info, version, truncation)
-- No error masking or ToolError usage
-- No query concurrency limiter
-- No EventStore for SSE resumability
-- No tags for tool organization
-- No health check on MCP endpoint
+**Remaining Features**:
+- ❌ MCP Resources for large data delivery (H5)
+- ❌ EventStore for SSE resumability (H6)
+- ❌ Tags for tool organization (M5)
+- ❌ Health check on MCP endpoint (M3)
+- ❌ Bearer token authentication (M4)
+- ❌ Metrics emission from tools (M6)
+- ❌ Tool feature flags (M7)
 
 ### Uvicorn Implementation
 
@@ -106,15 +170,32 @@
 | Proxy Headers | None | No forwarded-IP policy |
 | Query Limiter | None | Heavy queries can OOM |
 
-### Integration Points
+### Integration Points (Post PR1-PR3)
 
 | System | Integration Status |
 |--------|-------------------|
 | HTTP Routes | ✅ Full (metrics, correlation ID, RFC 9457) |
-| MCP Tools | ⚠️ Basic (no metrics, no correlation ID, no response envelope) |
-| Settings | ⚠️ Partial (missing Uvicorn settings, MCP settings) |
-| Storage Gateway | ✅ Full (via SemanticQueryKernel) |
-| Auth | ⚠️ Partial (HTTP has API key, MCP has auth_token but no enforcement) |
+| MCP Tools | ✅ Enhanced (response envelope, timing, snapshot provenance) |
+| Settings | ✅ MCP settings added (`mcp_*` family), ⚠️ Uvicorn settings pending |
+| Storage Gateway | ✅ Full (via SemanticQueryKernel, accessed through Protocol) |
+| Auth | ⚠️ Partial (HTTP has API key, MCP has `auth_token` setting but not wired) |
+| Concurrency | ✅ QueryLimiter prevents concurrent heavy query OOM |
+| Error Handling | ✅ ToolError + mask_error_details for controlled messages |
+
+### Current MCP Settings (in `ServingSettings`)
+
+```python
+# MCP Context Features
+mcp_enable_sampling: bool = False      # CODEINTEL_MCP_ENABLE_SAMPLING
+mcp_sample_threshold: int = 500        # CODEINTEL_MCP_SAMPLE_THRESHOLD
+mcp_progress_reporting: bool = True    # CODEINTEL_MCP_PROGRESS
+
+# MCP Error Handling
+mcp_mask_errors: bool = True           # CODEINTEL_MCP_MASK_ERRORS
+
+# MCP Query Concurrency Control
+mcp_max_concurrent_queries: int = 2    # CODEINTEL_MCP_MAX_CONCURRENT_QUERIES
+```
 
 ---
 
@@ -136,9 +217,11 @@ Items that improve code organization and future extensibility.
 
 ## Critical-Priority Enhancements
 
-### C0: Normalize FastMCP Runtime to gofastmcp 2.x
+### C0: Normalize FastMCP Runtime to gofastmcp 2.x ✅ COMPLETE (PR1)
 
 **Category**: D - Architecture & Extensibility
+
+**Status**: ✅ Implemented in PR1
 
 **Problem**: Current code imports `FastMCP` from `mcp.server.fastmcp` (MCP SDK flavor) while the plan and advanced feature guide reference gofastmcp 2.x features. These are incompatible:
 
@@ -251,13 +334,33 @@ def _maybe_mount_mcp(
 - Test mount path contract (verify `/mcp` works, `/mcp/mcp` returns 404)
 - Test feature flag detection
 
+**Implementation Notes (PR1)**:
+
+The implementation created `src/codeintel/serving/mcp/_compat.py` with:
+- `FastMCP`, `Context`, `ToolError` exports from `fastmcp`
+- Feature detection for `EventStore` (v2.14.0+)
+- `HAS_EVENT_STORE` boolean flag for conditional features
+
+Key patterns established:
+```python
+# All MCP code imports from _compat, never directly from fastmcp
+from codeintel.serving.mcp._compat import Context, FastMCP, ToolError
+
+# Tests use fastmcp.client.Client pattern
+from fastmcp.client import Client
+async with Client(mcp) as client:
+    result = await client.call_tool("tool_name", {...})
+```
+
 ---
 
 ## High-Priority Enhancements
 
-### H1: MCP Context Access for Rich Tool Orchestration
+### H1: MCP Context Access for Rich Tool Orchestration ✅ COMPLETE (PR2)
 
 **Category**: A - MCP Tool Enhancements
+
+**Status**: ✅ Implemented in PR2
 
 **Problem**: Tools are synchronous functions with no ability to report progress, log to clients, or leverage LLM sampling for large result summarization.
 
@@ -409,11 +512,38 @@ class ServingSettings:
 - Test LLM sampling threshold logic
 - Verify keyword-only ctx doesn't break tool schema generation
 
+**Implementation Notes (PR2)**:
+
+All 6 tools were refactored with this pattern:
+```python
+def _register_query_tool(
+    mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter
+) -> None:
+    @mcp.tool(
+        name="semantic_query",
+        description="...",
+        annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
+    )
+    async def semantic_query(
+        view_id: str,
+        filters: list[dict[str, object]] | None = None,
+        *,  # keyword-only marker
+        ctx: Context,
+    ) -> dict[str, object]:
+        await ctx.info(f"Querying view: {view_id}")
+        await ctx.report_progress(10, 100)
+        # ... use limiter.run() for blocking calls ...
+```
+
+Key insight: Tool registration functions were extracted to keep `build_mcp_app()` complexity manageable (Ruff C901 limit of 10).
+
 ---
 
-### H2: MCP Annotations for LLM Client Optimization
+### H2: MCP Annotations for LLM Client Optimization ✅ COMPLETE (PR2)
 
 **Category**: A - MCP Tool Enhancements
+
+**Status**: ✅ Implemented in PR2
 
 **Problem**: LLM clients (ChatGPT, Claude) prompt users for confirmation before running tools, even for safe read-only operations.
 
@@ -499,11 +629,26 @@ async def code_search(..., *, ctx: Context) -> dict[str, object]:
 - Test that annotations don't affect tool execution
 - Document client-specific behavior
 
+**Implementation Notes (PR2)**:
+
+Annotations are defined as a reusable constant:
+```python
+_READ_ONLY_LOCAL_ANNOTATIONS = {
+    "readOnlyHint": True,      # No data modification
+    "idempotentHint": True,    # Safe to retry
+    "openWorldHint": False,    # Local database only
+}
+```
+
+Test added: `test_mcp_tool_annotations_present()` verifies all tools have `readOnlyHint=True`.
+
 ---
 
-### H3: Standard Response Meta Envelope
+### H3: Standard Response Meta Envelope ✅ COMPLETE (PR3)
 
 **Category**: A - MCP Tool Enhancements
+
+**Status**: ✅ Implemented in PR3
 
 **Problem**: Tool responses lack context for agentic workflows. LLM agents doing iterative analysis cannot determine:
 - What snapshot/version the data came from
@@ -717,11 +862,44 @@ async def semantic_query(
 - Verify timing information is captured
 - Test truncation flag propagation
 
+**Implementation Notes (PR3)**:
+
+Created `src/codeintel/serving/mcp/models.py` with three models:
+- `McpSnapshotMeta`: repo, commit, run_id, published_at, semantic_layer_version
+- `McpResponseMeta`: snapshot, truncated, query_ms, row_count
+- `McpEnvelope`: meta + data
+
+Created `src/codeintel/serving/mcp/response.py` with `build_envelope()` helper.
+
+Key insight: `ServingSnapshotPointer.published_at` is `datetime`, requires `.isoformat()` conversion:
+```python
+snapshot = McpSnapshotMeta(
+    repo=ptr.repo,
+    commit=ptr.commit,
+    published_at=ptr.published_at.isoformat(),  # datetime -> str
+    ...
+)
+```
+
+Protocol pattern for kernel access (avoiding circular imports):
+```python
+class _KernelDBProtocol(Protocol):
+    def current_pointer(self) -> ServingSnapshotPointer: ...
+
+class _KernelProtocol(Protocol):
+    @property
+    def db(self) -> _KernelDBProtocol: ...
+```
+
+Tests added: `test_mcp_response_envelope_structure()`, `test_mcp_response_timing_captured()`, `test_mcp_response_snapshot_values()`.
+
 ---
 
-### H4: Query Limiter for Concurrency Control
+### H4: Query Limiter for Concurrency Control ✅ COMPLETE (PR3)
 
 **Category**: B - Uvicorn & Deployment
+
+**Status**: ✅ Implemented in PR3
 
 **Problem**: With 3 LLM consumers, heavy DuckDB queries can run simultaneously, causing:
 - Memory blowout from multiple large result sets
@@ -904,11 +1082,44 @@ def build_mcp_app(
 - Load test with concurrent tool calls
 - Verify memory usage stays bounded
 
+**Implementation Notes (PR3)**:
+
+Created `src/codeintel/serving/mcp/runtime.py` with `QueryLimiter` class:
+```python
+class QueryLimiter:
+    def __init__(self, max_concurrent: int) -> None:
+        self._sem = anyio.Semaphore(max_concurrent)
+    
+    async def run(self, fn: object, *args, **kwargs) -> object:
+        async with self._sem:
+            return await to_thread.run_sync(lambda: fn(*args, **kwargs))
+```
+
+Key insight: `limiter.run()` returns `object`, requiring `cast()` for type safety:
+```python
+result = cast("SemanticQueryResponse", await limiter.run(kernel.query, request))
+# Now result.rows, result.truncated, result.model_dump() are type-safe
+```
+
+Limiter is initialized in `build_mcp_app()` and passed to all tool registration functions:
+```python
+limiter = QueryLimiter(max_concurrent=settings.mcp_max_concurrent_queries)
+_register_query_tool(mcp, kernel, limiter)
+```
+
+Tests added in `tests/serving/mcp/test_runtime.py`: concurrency verification, serialization behavior.
+
 ---
 
-### H5: MCP Resources for Large Dataset Delivery
+### H5: MCP Resources for Large Dataset Delivery 🔲 PENDING (PR4)
 
 **Category**: A - MCP Tool Enhancements
+
+**Status**: 🔲 Not started - Planned for PR4
+
+**Estimated Effort**: 1.5 days
+
+**Prerequisites**: PR1-PR3 complete (all satisfied)
 
 **Problem**: Current export approach materializes all rows in Python memory:
 
@@ -1218,11 +1429,52 @@ async def semantic_export(
 - Test export artifact storage and retrieval
 - Verify ResourceContent MIME types
 
+**Execution Guidance for PR4**:
+
+1. **Create `resource_store.py`** first - this is a standalone module with no dependencies on existing MCP code:
+   - `ResourceStore` class with `put_json()`, `put_ndjson()`, `get()` methods
+   - `StoredArtifact` dataclass with path, mime_type, row_count, size_bytes
+
+2. **Update `_compat.py`** to export `ResourceContent`:
+   ```python
+   from fastmcp.resources import ResourceContent
+   ```
+   Note: `ResourceContent` is available in fastmcp 2.14.1+ (already pinned)
+
+3. **Create `resources.py`** with `register_resources()` function:
+   - Static resources: `codeintel://semantic/registry`, `codeintel://meta`
+   - Parameterized resources: `codeintel://semantic/views/{view_id}`
+   - Export resources: `codeintel://exports/{token}`
+
+4. **Update `build_mcp_app()`** to:
+   - Instantiate `ResourceStore` in serve_dir/exports/
+   - Call `register_resources(mcp, kernel, store)`
+   - Add `semantic_export` tool that returns resource URI
+
+5. **Integration with existing code**:
+   - The `semantic_export` tool follows the same pattern as other tools (limiter, envelope)
+   - Resource store uses `secrets.token_urlsafe(16)` for artifact tokens
+   - Consider TTL cleanup for old exports (optional, could be separate PR)
+
+**Key Files to Create**:
+- `src/codeintel/serving/mcp/resource_store.py` (~80 lines)
+- `src/codeintel/serving/mcp/resources.py` (~60 lines)
+
+**Key Files to Modify**:
+- `src/codeintel/serving/mcp/_compat.py` (add ResourceContent export)
+- `src/codeintel/serving/mcp/app.py` (add semantic_export tool, call register_resources)
+
 ---
 
-### H6: SSE Polling and EventStore for Remote Resumability
+### H6: SSE Polling and EventStore for Remote Resumability 🔲 PENDING (PR4)
 
 **Category**: B - Uvicorn & Deployment
+
+**Status**: 🔲 Not started - Planned for PR4 (bundled with H5)
+
+**Estimated Effort**: 0.5 days (most infrastructure already in `_compat.py`)
+
+**Prerequisites**: C0 complete (EventStore feature flag in `_compat.py`)
 
 **Problem**: For remote internet connections, long-running tool calls can:
 - Be interrupted by proxy timeouts (Cloudflare has 100s limit)
@@ -1322,11 +1574,34 @@ async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
 - Test SSE reconnect behavior (integration test)
 - Verify settings are respected
 
+**Execution Guidance for PR4**:
+
+1. **Add settings** to `ServingSettings`:
+   ```python
+   mcp_enable_event_store: bool = True
+   mcp_retry_interval_ms: int = 1000
+   ```
+
+2. **Update `_maybe_mount_mcp()` in `http/app.py`**:
+   - Import `EventStore, HAS_EVENT_STORE` from `_compat`
+   - Conditionally create `EventStore()` if enabled and available
+   - Pass to `mcp.http_app(path="/", event_store=event_store, retry_interval=...)`
+
+3. **Optional: Add `ctx.close_sse_stream()`** to long-running tools like `semantic_export`:
+   - Helps with proxy timeouts on very large exports
+   - Only needed if exports take >60 seconds
+
+**Key Insight**: The `HAS_EVENT_STORE` flag in `_compat.py` already handles feature detection. The main work is:
+- Adding 2 settings
+- ~10 lines of conditional logic in `_maybe_mount_mcp()`
+
 ---
 
-### H7: Error Masking and ToolError for Security
+### H7: Error Masking and ToolError for Security ✅ COMPLETE (PR2)
 
 **Category**: C - Observability & Security
+
+**Status**: ✅ Implemented in PR2
 
 **Problem**: Exceptions propagate with full stack traces to LLM clients, potentially exposing internal implementation details.
 
@@ -1404,13 +1679,51 @@ class ServingSettings:
 - Verify other exceptions are masked when `mask_error_details=True`
 - Test error logging to server logs
 
+**Implementation Notes (PR2)**:
+
+FastMCP server initialized with masking:
+```python
+mcp = FastMCP(
+    "CodeIntel",
+    json_response=True,
+    mask_error_details=settings.mcp_mask_errors,
+)
+```
+
+Error handling pattern in tools:
+```python
+try:
+    result = await limiter.run(kernel.query, request)
+    return build_envelope(kernel, result.model_dump(), ...).model_dump()
+except KeyError as e:
+    raise ToolError(f"View '{view_id}' not found in semantic registry") from e
+except ValueError as e:
+    raise ToolError(f"Invalid parameters: {e}") from e
+except Exception as e:
+    LOG.exception("Query failed for view %s", view_id)
+    raise ToolError("Query execution failed. Check server logs.") from e
+```
+
+Error message constants defined at module level for consistency:
+```python
+_ERR_CATALOG_FAILED = "Failed to retrieve catalog. Check server logs."
+_ERR_QUERY_FAILED = "Query execution failed. Check server logs."
+# etc.
+```
+
+Test added: `test_mcp_tool_error_handling()` verifies controlled error messages.
+
 ---
 
 ## Medium-Priority Enhancements
 
-### M1: Production Uvicorn Configuration
+### M1: Production Uvicorn Configuration 🔲 PENDING (PR5)
 
 **Category**: B - Uvicorn & Deployment
+
+**Status**: 🔲 Not started - Planned for PR5
+
+**Estimated Effort**: 1 day
 
 **Problem**: Current Uvicorn configuration uses defaults, missing performance optimizations, resource protection, and proxy support.
 
@@ -1557,11 +1870,31 @@ def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
 - Verify settings are applied correctly
 - Test proxy headers when enabled
 
+**Execution Guidance for PR5**:
+
+1. **Add settings to `ServingSettings`** (~15 new fields):
+   - `uvicorn_workers`, `uvicorn_loop`, `uvicorn_http`
+   - `uvicorn_limit_concurrency`, `uvicorn_limit_max_requests`
+   - `uvicorn_timeout_keep_alive`, `uvicorn_backlog`
+   - `uvicorn_access_log`, `uvicorn_server_header`
+   - `uvicorn_proxy_headers`, `uvicorn_forwarded_allow_ips`
+
+2. **Update `serve_http_handler()` in `cli/handlers/ops.py`**:
+   - Build `uvicorn_config` dict from settings
+   - Handle multi-worker mode with factory pattern
+   - Log recommended CLI command for production
+
+3. **Key consideration**: With `workers > 1`, each worker gets its own `QueryLimiter`. This is actually correct behavior - the limit is per-process. Document this.
+
 ---
 
-### M2: Authentication Enforcement for Non-Localhost
+### M2: Authentication Enforcement for Non-Localhost 🔲 PENDING (PR5)
 
 **Category**: C - Observability & Security
+
+**Status**: 🔲 Not started - Planned for PR5 (bundled with M1)
+
+**Estimated Effort**: 0.5 days
 
 **Problem**: Auth is optional everywhere, but remote serving without auth is a security risk. Some MCP clients may refuse to connect to unauthenticated remote servers.
 
@@ -1641,9 +1974,13 @@ def create_serving_app(
 
 ---
 
-### M3: Custom MCP Route for Health Checks
+### M3: Custom MCP Route for Health Checks 🔲 PENDING (PR5)
 
 **Category**: B - Uvicorn & Deployment
+
+**Status**: 🔲 Not started - Planned for PR5 (bundled with M1, M2, M4)
+
+**Estimated Effort**: 0.25 days
 
 **Problem**: Health check exists on FastAPI (`/health`) but not on the MCP endpoint, preventing load balancers from checking MCP server health.
 
@@ -1699,11 +2036,21 @@ def build_mcp_app(...) -> FastMCP:
 - Test `/health` returns 503 when no snapshot
 - Test `/ready` probe behavior
 
+**Key Callouts**:
+- The `@mcp.custom_route()` decorator creates standard Starlette routes on the MCP HTTP app
+- These routes are accessible at `/mcp/health` and `/mcp/ready` when MCP is mounted
+- Health check returns pointer info for debugging; readiness probe returns minimal text
+- The `RuntimeError` catch handles case where no snapshot is loaded yet
+
 ---
 
-### M4: Bearer Token Authentication for MCP
+### M4: Bearer Token Authentication for MCP 🔲 PENDING (PR5)
 
 **Category**: C - Observability & Security
+
+**Status**: 🔲 Not started - Planned for PR5 (bundled with M1-M3)
+
+**Estimated Effort**: 0.25 days
 
 **Problem**: HTTP routes have API key protection, but MCP server has no authentication.
 
@@ -1746,11 +2093,22 @@ def build_mcp_app(
 - Test request with valid token succeeds
 - Test request with invalid token returns 401
 
+**Key Callouts**:
+- The `auth_token` parameter in FastMCP constructor enables Bearer token auth
+- Reuse the existing `settings.auth_token` field - no new setting needed
+- FastMCP handles the 401 response automatically for invalid/missing tokens
+- Works with both StreamableHTTP and SSE transports
+- STDIO transport (for Claude Desktop) doesn't use HTTP auth - it relies on local trust
+
 ---
 
-### M5: Tags for Tool Organization
+### M5: Tags for Tool Organization 🔲 PENDING (PR6)
 
 **Category**: D - Architecture & Extensibility
+
+**Status**: 🔲 Not started - Planned for PR6
+
+**Estimated Effort**: 0.25 days
 
 **Problem**: All 6 tools are flat with no categorization, making it harder to manage as the tool set grows.
 
@@ -1808,11 +2166,22 @@ async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
 - Client-side tool discovery by tag
 - Admin tools with `internal` tag that can be excluded
 
+**Key Callouts**:
+- Tags are metadata only - they don't change tool behavior
+- Define tag constants at module level for consistency and typo prevention
+- Current tags scheme: `semantic`, `search`, `meta` (functional) + `read`, `export` (operation type)
+- Tags appear in tool discovery response, helping LLMs choose appropriate tools
+- Very low effort - just add `tags=[...]` parameter to existing `@mcp.tool()` decorators
+
 ---
 
-### M6: Metrics Emission from MCP Tools
+### M6: Metrics Emission from MCP Tools 🔲 PENDING (PR6)
 
 **Category**: C - Observability & Security
+
+**Status**: 🔲 Not started - Planned for PR6 (bundled with M5, M7)
+
+**Estimated Effort**: 0.5 days
 
 **Problem**: HTTP routes have background metrics logging, but MCP tools have no metrics emission.
 
@@ -1867,11 +2236,26 @@ async def semantic_query(..., *, ctx: Context) -> dict[str, object]:
 - Test correlation ID from ctx.session_id
 - Verify metrics format matches HTTP route metrics
 
+**Key Callouts**:
+- Must import and reuse existing `QueryMetrics` / `log_query_metrics` from HTTP layer
+- The `ctx.session_id` may be `None` for streamable HTTP - handle gracefully
+- Metrics logging should be in `finally` block to capture even on errors
+- Consider whether to use `ctx.info()` in addition to structured metrics logging
+- This item pairs naturally with M5 (tags) for filtering metrics by tag
+
+**Dependencies**:
+- Requires no new files - reuses existing HTTP metrics infrastructure
+- All 6 tools in `app.py` need the try/finally wrapper pattern
+
 ---
 
-### M7: Tool Enable/Disable for Feature Flags
+### M7: Tool Enable/Disable for Feature Flags 🔲 PENDING (PR6)
 
 **Category**: D - Architecture & Extensibility
+
+**Status**: 🔲 Not started - Planned for PR6 (bundled with M5, M6)
+
+**Estimated Effort**: 0.5 days
 
 **Problem**: All tools are always enabled; no way to conditionally disable features.
 
@@ -1943,11 +2327,33 @@ async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
 - Test enabled tools work normally
 - Verify tool list excludes disabled tools
 
+**Key Callouts**:
+- The `enabled` parameter on `@mcp.tool()` is evaluated at registration time, not at runtime
+- Core tools (`semantic_catalog`, `semantic_query`, `semantic_describe`) should NOT be feature-flagged
+- Only advanced/optional tools should have enable/disable flags
+- Environment variable naming convention: `CODEINTEL_MCP_ENABLE_<FEATURE>`
+- This is useful for gradual rollouts or disabling experimental features in production
+
+**Implementation Note**:
+The `enabled=settings.mcp_enable_X` must be evaluated when the tool is registered:
+```python
+# This works because settings is captured at registration time
+@mcp.tool(enabled=settings.mcp_enable_search)
+async def code_search(...): ...
+
+# NOT this - lambda would be evaluated each call but enabled is registration-time
+# @mcp.tool(enabled=lambda: settings.mcp_enable_search)  # WRONG
+```
+
 ---
 
-### M8: Unified Lifespan Management
+### M8: Unified Lifespan Management 🔲 PENDING (PR7)
 
 **Category**: D - Architecture & Extensibility
+
+**Status**: 🔲 Not started - Planned for PR7 (bundled with L1, L2)
+
+**Estimated Effort**: 1 day
 
 **Problem**: Separate lifespan contexts for FastAPI and standalone MCP, causing code duplication.
 
@@ -2017,13 +2423,32 @@ def create_mcp_server(
     )
 ```
 
+**Key Callouts**:
+- The `owns_db_manager` pattern is critical - prevents double-stop on shared resources
+- When HTTP app mounts MCP, the HTTP app owns `ServingDBManager` and MCP uses it
+- When MCP runs standalone (STDIO/SSE), MCP owns and manages the lifecycle
+- This enables clean embedding in FastAPI via `http/app.py` routing
+
+**Testing Requirements**:
+- Test standalone MCP server starts and stops cleanly
+- Test MCP embedded in FastAPI shares db_manager
+- Verify no double-close errors when shutting down composed app
+
+**Dependencies**:
+- Pairs naturally with L1 (Server Composition) for full modularity
+- Must coordinate with existing `http/app.py` lifespan
+
 ---
 
 ## Low-Priority Enhancements
 
-### L1: Server Composition for Modularity
+### L1: Server Composition for Modularity 🔲 PENDING (PR7)
 
 **Category**: D - Architecture & Extensibility
+
+**Status**: 🔲 Not started - Planned for PR7 (bundled with M8, L2)
+
+**Estimated Effort**: 1 day
 
 **Problem**: Single monolithic MCP app; as tool count grows, maintenance becomes harder.
 
@@ -2078,13 +2503,28 @@ def build_mcp_app(...) -> FastMCP:
     return main
 ```
 
+**Key Callouts**:
+- The `mount(sub_server, prefix="semantic")` makes tools available as `semantic/catalog`, `semantic/query`, etc.
+- Prefix naming should be intuitive for LLM agents discovering tools
+- Sub-servers can have their own lifespan contexts if needed
+- This is a refactor - all existing tool functionality must be preserved
+
+**Testing Requirements**:
+- Verify all existing tool tests pass after composition
+- Test tool discovery returns prefixed names
+- Test calling prefixed tools works correctly
+
 **Note**: This is a structural refactor that doesn't change functionality. Consider implementing after M1-M8 are stable.
 
 ---
 
-### L2: MCP Prompts for Guided Interactions
+### L2: MCP Prompts for Guided Interactions 🔲 PENDING (PR7)
 
 **Category**: A - MCP Tool Enhancements
+
+**Status**: 🔲 Not started - Planned for PR7 (bundled with M8, L1)
+
+**Estimated Effort**: 0.5 days
 
 **Problem**: No guided prompts for common workflows; LLMs must discover tool usage patterns.
 
@@ -2097,13 +2537,57 @@ def build_mcp_app(...) -> FastMCP:
 | `src/codeintel/serving/mcp/prompts.py` | New file with prompt definitions |
 | `src/codeintel/serving/mcp/app.py` | Register prompts |
 
-(Implementation details same as original plan)
+**Implementation Sketch**:
+```python
+# src/codeintel/serving/mcp/prompts.py
+
+from codeintel.serving.mcp._compat import FastMCP
+
+def register_prompts(mcp: FastMCP) -> None:
+    """Register guided prompts for common workflows."""
+    
+    @mcp.prompt()
+    def explore_codebase() -> str:
+        """Guided workflow for exploring an unfamiliar codebase."""
+        return """
+        To explore this codebase:
+        1. First call semantic_catalog() to see available data views
+        2. Pick a view that interests you and call semantic_describe(view_id=...)
+        3. Use semantic_query(view_id=...) to fetch data
+        4. Use code_search(query=...) to find specific code patterns
+        """
+    
+    @mcp.prompt()
+    def find_function(name: str) -> str:
+        """Guided workflow for finding and understanding a function."""
+        return f"""
+        To find function '{name}':
+        1. Use code_search(query="{name}") to locate it
+        2. Get details via semantic_describe(view_id="functions")
+        3. Check its callers via semantic_query(view_id="call_graph", filters=[...])
+        """
+```
+
+**Key Callouts**:
+- Prompts are discoverable via MCP protocol - LLMs can request them
+- Prompts should encode "best practices" for using the tool suite
+- Keep prompts concise and actionable
+- Use templating (f-strings) for dynamic prompts
+
+**Testing Requirements**:
+- Verify prompts are listed via `list_prompts()`
+- Test prompt rendering with arguments
+- Verify prompts are valid text (no rendering errors)
 
 ---
 
-### L3: Correlation ID Propagation to MCP
+### L3: Correlation ID Propagation to MCP 🔲 PENDING (Optional)
 
 **Category**: C - Observability & Security
+
+**Status**: 🔲 Not started - Optional enhancement
+
+**Estimated Effort**: 0.5 days
 
 **Problem**: Correlation IDs are HTTP-middleware only; MCP tools use session_id but not integrated.
 
@@ -2116,37 +2600,91 @@ def build_mcp_app(...) -> FastMCP:
 | `src/codeintel/serving/mcp/context.py` | New file for MCP context management |
 | `src/codeintel/serving/mcp/app.py` | Set correlation_id from ctx.session_id |
 
-(Implementation details same as original plan)
+**Implementation Sketch**:
+```python
+# src/codeintel/serving/mcp/context.py
+
+from contextvars import ContextVar
+from uuid import uuid4
+
+correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
+
+def get_correlation_id() -> str:
+    """Get current correlation ID or generate one."""
+    cid = correlation_id_var.get()
+    if not cid:
+        cid = str(uuid4())
+        correlation_id_var.set(cid)
+    return cid
+
+def set_correlation_id(cid: str) -> None:
+    """Set correlation ID for current context."""
+    correlation_id_var.set(cid)
+```
+
+**Key Callouts**:
+- `ctx.session_id` from FastMCP is the natural correlation ID source for MCP tools
+- For HTTP-embedded MCP, the HTTP correlation ID middleware should set the contextvar
+- Logs and metrics should include the correlation ID for distributed tracing
+- This is optional because M6 (metrics) can use `ctx.session_id` directly
+
+**Testing Requirements**:
+- Verify correlation ID flows from HTTP middleware to MCP tool logs
+- Test correlation ID is consistent across a single request
 
 ---
 
-### L4: OpenAPI/FastAPI Integration Documentation
+### L4: OpenAPI/FastAPI Integration Documentation 🔲 PENDING (Optional)
 
 **Category**: D - Architecture & Extensibility
+
+**Status**: 🔲 Not started - Documentation item
+
+**Estimated Effort**: 0.5 days
 
 **Problem**: HTTP routes and MCP tools are defined separately; potential for drift.
 
 **Solution**: Document pattern for `FastMCP.from_fastapi()` integration.
 
-(Documentation item, same as original plan)
+**Key Callouts**:
+- `FastMCP.from_fastapi(app)` auto-generates MCP tools from FastAPI routes
+- Our current design has MCP tools as the primary API, with HTTP routes as secondary
+- This documentation should explain WHY we chose manual tool definitions
+- Useful for future consideration if HTTP API expands significantly
+
+**Deliverable**: Add section to `docs/architecture/serving.md` explaining the design choice.
 
 ---
 
-### L5: Proxy Pattern for Remote Services
+### L5: Proxy Pattern for Remote Services 🔲 PENDING (Optional)
 
 **Category**: D - Architecture & Extensibility
 
+**Status**: 🔲 Not started - Future extensibility
+
+**Estimated Effort**: 0.5 days
+
 **Problem**: No pattern for integrating external MCP services.
 
-**Solution**: Document proxy pattern for future extensibility.
+**Solution**: Document proxy pattern for future extensibility using FastMCP's `Client` and proxy helpers.
 
-(Documentation item, same as original plan)
+**Key Callouts**:
+- FastMCP supports creating proxy servers that forward to upstream MCP servers
+- Pattern: `FastMCP().proxy(client=remote_client)` or `register_all()` from upstream
+- Useful for aggregating multiple code analysis services (e.g., SCIP indexer, test runner)
+- This is a documentation/design item - no implementation required yet
+
+**Deliverable**: Add section to `docs/architecture/serving.md` documenting the proxy pattern.
 
 ---
 
-### L6: Mount Path Contract Test
+### L6: Mount Path Contract Test 🔲 PENDING (PR7)
 
 **Category**: B - Uvicorn & Deployment
+
+**Status**: 🔲 Not started - Planned for PR7 (bundled with M8, L1, L2)
+
+**Estimated Effort**: 0.5 days
 
 **Problem**: No test validates the mount path contract (effective endpoint is `/mcp`, not `/mcp/mcp`).
 
@@ -2158,7 +2696,7 @@ def build_mcp_app(...) -> FastMCP:
 |------|---------|
 | `tests/serving/http/test_mcp_mount.py` | New: Mount path contract tests |
 
-**Implementation**:
+**Implementation Sketch**:
 
 ```python
 # tests/serving/http/test_mcp_mount.py
@@ -2184,52 +2722,77 @@ def test_mcp_mount_path_contract(serving_app: FastAPI) -> None:
     assert response.status_code == 404, "Double prefix /mcp/mcp should not exist"
 ```
 
+**Key Callouts**:
+- This test catches a common FastMCP mounting error
+- The mount happens in `http/app.py` via `app.mount("/mcp", mcp.http_app())`
+- The FastMCP `root_path` setting must be coordinated with the mount path
+- Regression test prevents accidental double-prefix bugs
+
+**Testing Requirements**:
+- Verify /mcp/* routes work
+- Verify /mcp/mcp/* returns 404
+- Test with different mount paths to ensure contract is understood
+
 ---
 
 ## Implementation Phases
 
-### Phase 0: Critical Foundation
+### Phase 0: Critical Foundation ✅ COMPLETE (PR1)
 **Duration**: 1 day
+**Status**: ✅ Completed
 
-| Day | Items | Focus |
-|-----|-------|-------|
-| 1 | C0 | Normalize to gofastmcp 2.x |
+| Day | Items | Focus | Status |
+|-----|-------|-------|--------|
+| 1 | C0 | Normalize to gofastmcp 2.x | ✅ Done |
 
-**Gate**: All imports use gofastmcp, MCP tools functional
+**Gate**: ✅ All imports use gofastmcp, MCP tools functional
 
-### Phase 1: Core Tool Enhancements (High Priority)
+### Phase 1: Core Tool Enhancements (High Priority) ✅ COMPLETE (PR2 + PR3)
 **Duration**: 4-5 days
+**Status**: ✅ Completed
 
-| Day | Items | Focus |
-|-----|-------|-------|
-| 1 | H1, H2 | Context API (keyword-only) + Annotations |
-| 2 | H3 | Response meta envelope |
-| 3 | H4 | Query limiter |
-| 4 | H5, H6 | Resources + EventStore |
-| 5 | H7 | Error handling |
+| Day | Items | Focus | Status |
+|-----|-------|-------|--------|
+| 1 | H1, H2, H7 | Context API + Annotations + ToolError | ✅ Done (PR2) |
+| 2 | H3, H4 | Response envelope + Query limiter | ✅ Done (PR3) |
+| 3-4 | H5, H6 | Resources + EventStore | 🔲 Pending (PR4) |
 
-**Gate**: All high-priority items complete, tests passing
+**Gate**: H1-H4, H7 complete ✅. H5, H6 pending in PR4.
 
-### Phase 2: Production Hardening (Medium Priority)
+### Remaining High-Priority Work (PR4)
+**Duration**: 2 days
+**Status**: 🔲 Not started
+
+| Item | Focus | Estimated |
+|------|-------|-----------|
+| H5 | MCP Resources for Export Artifacts | 1 day |
+| H6 | EventStore for Resumable Exports | 1 day |
+
+**Gate**: Export workflow complete with SSE resumability
+
+### Phase 2: Production Hardening (Medium Priority) 🔲 PENDING (PR5 + PR6)
 **Duration**: 3-4 days
+**Status**: 🔲 Not started
 
-| Day | Items | Focus |
-|-----|-------|-------|
-| 1 | M1, M2 | Uvicorn config + Auth enforcement |
-| 2 | M3, M4 | Health checks + Bearer auth |
-| 3 | M5, M6, M7 | Tags + Metrics + Feature flags |
-| 4 | M8 | Unified lifespan |
+| PR | Items | Focus | Estimated |
+|----|-------|-------|-----------|
+| PR5 | M1, M2, M3, M4 | Uvicorn config + Auth + Health | 2 days |
+| PR6 | M5, M6, M7 | Tags + Metrics + Feature flags | 1.5 days |
 
 **Gate**: All medium-priority items complete, integration tests passing
 
-### Phase 3: Extensibility (Low Priority)
+### Phase 3: Extensibility (Low Priority) 🔲 PENDING (PR7)
 **Duration**: 2-3 days
+**Status**: 🔲 Not started
 
-| Day | Items | Focus |
-|-----|-------|-------|
-| 1 | L1 | Server composition |
-| 2 | L2, L3 | Prompts + Correlation ID |
-| 3 | L4, L5, L6 | Documentation + Mount test |
+| PR | Items | Focus | Estimated |
+|----|-------|-------|-----------|
+| PR7 | M8, L1, L2, L6 | Lifespan + Composition + Prompts + Mount test | 2 days |
+
+**Optional Items** (can be done ad-hoc):
+- L3: Correlation ID propagation
+- L4: OpenAPI integration docs
+- L5: Proxy pattern docs
 
 **Gate**: All items complete, documentation updated
 
@@ -2239,31 +2802,43 @@ def test_mcp_mount_path_contract(serving_app: FastAPI) -> None:
 
 ### New Files
 
-| File | Purpose | Phase |
-|------|---------|-------|
-| `src/codeintel/serving/mcp/_compat.py` | FastMCP import shim | P0 |
-| `src/codeintel/serving/mcp/models.py` | Pydantic response models + envelope | P1 |
-| `src/codeintel/serving/mcp/response.py` | Envelope builder helper | P1 |
-| `src/codeintel/serving/mcp/runtime.py` | QueryLimiter | P1 |
-| `src/codeintel/serving/mcp/resource_store.py` | Export artifact storage | P1 |
-| `src/codeintel/serving/mcp/resources.py` | MCP resource handlers | P1 |
-| `src/codeintel/serving/mcp/prompts.py` | MCP prompt templates | P3 |
-| `src/codeintel/serving/mcp/context.py` | Correlation ID context | P3 |
-| `src/codeintel/serving/mcp/servers/` | Sub-server modules | P3 |
-| `tests/serving/mcp/test_tools.py` | MCP tool tests | P1 |
-| `tests/serving/mcp/test_resources.py` | MCP resource tests | P1 |
-| `tests/serving/http/test_mcp_mount.py` | Mount path contract test | P3 |
+| File | Purpose | Phase | Status |
+|------|---------|-------|--------|
+| `src/codeintel/serving/mcp/_compat.py` | FastMCP import shim | P0 | ✅ Created |
+| `src/codeintel/serving/mcp/models.py` | Pydantic response models + envelope | P1 | ✅ Created |
+| `src/codeintel/serving/mcp/response.py` | Envelope builder helper | P1 | ✅ Created |
+| `src/codeintel/serving/mcp/runtime.py` | QueryLimiter | P1 | ✅ Created |
+| `src/codeintel/serving/mcp/resource_store.py` | Export artifact storage | P1 (H5) | 🔲 Pending |
+| `src/codeintel/serving/mcp/resources.py` | MCP resource handlers | P1 (H5) | 🔲 Pending |
+| `src/codeintel/serving/mcp/prompts.py` | MCP prompt templates | P3 | 🔲 Pending |
+| `src/codeintel/serving/mcp/context.py` | Correlation ID context | P3 | 🔲 Optional |
+| `src/codeintel/serving/mcp/servers/` | Sub-server modules | P3 | 🔲 Pending |
+| `tests/serving/mcp/__init__.py` | Test package | P1 | ✅ Created |
+| `tests/serving/mcp/test_runtime.py` | QueryLimiter tests | P1 | ✅ Created |
+| `tests/serving/mcp/test_resources.py` | MCP resource tests | P1 (H5) | 🔲 Pending |
+| `tests/serving/http/test_mcp_mount.py` | Mount path contract test | P3 | 🔲 Pending |
 
 ### Modified Files
 
+| File | Items Affecting | Phase | Status |
+|------|-----------------|-------|--------|
+| `pyproject.toml` | C0 | P0 | ✅ Updated |
+| `src/codeintel/serving/mcp/app.py` | C0, H1-H4, H7 | P0-P1 | ✅ Updated (PR1-3) |
+| `src/codeintel/serving/mcp/server.py` | C0 | P0 | ✅ Updated (PR1) |
+| `src/codeintel/serving/settings.py` | H1, H4, H7 | P1 | ✅ Updated (PR2-3) |
+| `src/codeintel/serving/http/app.py` | C0 | P0 | ✅ Updated (PR1) |
+| `src/codeintel/serving/db/pointer.py` | H3 | P1 | ✅ Updated (PR3) |
+| `tests/serving/test_semantic_mcp_tools.py` | H1-H4, H7 | P1 | ✅ Updated (PR2-3) |
+
+### Files To Be Modified (Remaining Items)
+
 | File | Items Affecting | Phase |
 |------|-----------------|-------|
-| `pyproject.toml` | C0 | P0 |
-| `src/codeintel/serving/mcp/app.py` | C0, H1-H7, M3-M7 | P0-P2 |
-| `src/codeintel/serving/mcp/server.py` | C0, M4, M8 | P0, P2 |
-| `src/codeintel/serving/settings.py` | H1, H4, H6, H7, M1, M2, M7 | P1-P2 |
+| `src/codeintel/serving/mcp/app.py` | H5, H6, M3-M7 | P1-P2 |
+| `src/codeintel/serving/mcp/server.py` | M4, M8 | P2 |
+| `src/codeintel/serving/settings.py` | H6, M1, M2, M7 | P1-P2 |
 | `src/codeintel/cli/handlers/ops.py` | M1 | P2 |
-| `src/codeintel/serving/http/app.py` | C0, H6, M2 | P0, P1, P2 |
+| `src/codeintel/serving/http/app.py` | H6, M2 | P1-P2 |
 
 ### Dependencies to Update
 
@@ -2330,6 +2905,37 @@ def test_mcp_mount_path_contract(serving_app: FastAPI) -> None:
 - Feature flags allow disabling new functionality
 - `mcp_mask_errors=False` for debugging
 - Previous settings remain functional
+
+---
+
+## Success Metrics
+
+### Completed (PR1 + PR2 + PR3)
+
+| Metric | Status | Notes |
+|--------|--------|-------|
+| gofastmcp 2.x migration | ✅ Done | All imports via `_compat.py` |
+| All 6 tools use `async def` + `Context` | ✅ Done | Blocking ops offloaded via `anyio.to_thread.run_sync` |
+| Tool annotations (`readOnlyHint`, etc.) | ✅ Done | All tools have consistent annotations |
+| `ToolError` for user-friendly errors | ✅ Done | Invalid inputs return clean error messages |
+| Response envelope with provenance | ✅ Done | All tools return `{meta: {...}, data: {...}}` |
+| Query concurrency limiter | ✅ Done | Default limit: 2 concurrent heavy queries |
+| Error masking in production | ✅ Done | Internal errors hidden, configurable via setting |
+
+### Remaining (PR4-PR7)
+
+| Metric | Target | Item |
+|--------|--------|------|
+| MCP resources for exports | Export artifacts via `codeintel://` URIs | H5 |
+| SSE resumability | Long exports survivel network reconnects | H6 |
+| Environment-driven Uvicorn config | All settings via env vars | M1 |
+| Auth required for public bind | Auto-reject if no auth on 0.0.0.0 | M2 |
+| MCP health endpoint | `/mcp/health` responds correctly | M3 |
+| Bearer auth support | Token-based auth for remote clients | M4 |
+| Tool tagging | Semantic grouping for discovery | M5 |
+| Metrics emission | Structured logs for all tool calls | M6 |
+| Feature flags | Enable/disable tools via env vars | M7 |
+| Unified lifespan | DB manager shared between HTTP and MCP | M8 |
 
 ---
 
@@ -2423,5 +3029,5 @@ def test_mcp_mount_path_contract(serving_app: FastAPI) -> None:
 ---
 
 *Document created: 2025-12-16*
-*Last updated: 2025-12-16 (integrated feedback from FastMCP_implementation_comments.md)*
-*Status: Ready for implementation*
+*Last updated: 2025-12-16 (Post PR3 - Response Envelope & Query Limiter complete)*
+*Status: PR1-PR3 complete (C0, H1-H4, H7). PR4-PR7 pending.*

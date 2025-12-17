@@ -221,7 +221,6 @@ def _risk_factors_finalize(risk: ir.Table) -> ir.Table:
     namespace=None,
     on_input="q__analytics__function_metrics",
 )
-@tag(domain="analytics", target="risk_factors", node_type="compute")
 @check_output_custom(
     *build_table_contract(
         required_columns=[
@@ -241,6 +240,12 @@ def _risk_factors_finalize(risk: ir.Table) -> ir.Table:
         column="risk_level",
         allowed_values={"high", "medium", "low"},
     ),
+)
+@tag(
+    domain="analytics",
+    target="risk_factors",
+    node_type="compute",
+    target_="t__risk_factors__compute",
 )
 @schema.output(
     ("function_goid_h128", "string"),

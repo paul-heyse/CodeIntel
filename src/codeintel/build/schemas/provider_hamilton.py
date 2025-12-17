@@ -132,6 +132,31 @@ def _inferable_candidates_for_table_key(
     return candidates
 
 
+def _compute_node_for_inference(runtime: HamiltonRuntime, *, compute_name: str) -> str:
+    """Return the best node name to use for schema inference execution.
+
+    Hamilton decorators like ``@check_output_custom`` wrap the original compute
+    node with validator plumbing and create an internal ``*_raw`` node that
+    represents the underlying compute graph. For schema inference we want the
+    compute-only graph, not the validator wrapper.
+
+    Parameters
+    ----------
+    runtime
+        Hamilton runtime containing the resolved FunctionGraph.
+    compute_name
+        Canonical compute node name (e.g., ``t__risk_factors__compute``).
+
+    Returns
+    -------
+    str
+        Node name to execute/traverse for inference. This is either
+        ``{compute_name}_raw`` when present, or ``compute_name`` otherwise.
+    """
+    raw_name = f"{compute_name}_raw"
+    return raw_name if raw_name in runtime.dr.graph.nodes else compute_name
+
+
 def _inference_requirements(
     *,
     runtime: HamiltonRuntime,
@@ -161,9 +186,10 @@ def _inference_requirements(
         If the compute node depends on target/materialize nodes or other inputs
         that cannot be satisfied by seeding q__ inputs and env.
     """
-    node = runtime.dr.graph.nodes.get(compute_name)
+    effective_compute_name = _compute_node_for_inference(runtime, compute_name=compute_name)
+    node = runtime.dr.graph.nodes.get(effective_compute_name)
     if node is None:
-        msg = f"Compute node not found in Hamilton DAG: {compute_name}"
+        msg = f"Compute node not found in Hamilton DAG: {effective_compute_name}"
         raise ValueError(msg)
 
     qparams: set[str] = set()

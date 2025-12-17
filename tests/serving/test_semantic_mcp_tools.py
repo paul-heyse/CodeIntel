@@ -117,7 +117,7 @@ def _extract_payload(tool_result: Any) -> dict[str, object]:  # noqa: ANN401
     Returns
     -------
     dict[str, object]
-        The extracted payload dictionary.
+        The extracted payload dictionary (full envelope).
 
     Raises
     ------
@@ -146,9 +146,44 @@ def _extract_payload(tool_result: Any) -> dict[str, object]:  # noqa: ANN401
     raise TypeError(msg)
 
 
-@pytest.mark.anyio
-async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
-    """Expose semantic tools over FastMCP and execute them against the snapshot DB."""
+def _extract_data(envelope: dict[str, object]) -> dict[str, object]:
+    """Extract the data payload from an envelope.
+
+    Parameters
+    ----------
+    envelope
+        The envelope containing meta and data keys.
+
+    Returns
+    -------
+    dict[str, object]
+        The data dictionary from the envelope.
+
+    Raises
+    ------
+    KeyError
+        If data key is missing.
+    """
+    data = envelope.get("data")
+    if not isinstance(data, dict):
+        msg = "Expected envelope to contain 'data' dict"
+        raise KeyError(msg)
+    return data
+
+
+def _setup_test_snapshot(tmp_path: Path) -> Path:
+    """Set up test snapshot files and return pointer path.
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory for test files.
+
+    Returns
+    -------
+    Path
+        Path to the pointer JSON file.
+    """
     db_path = tmp_path / "codeintel.duckdb"
     registry_path = tmp_path / "semantic_registry.json"
     manifest_path = tmp_path / "schema_manifest.json"
@@ -166,6 +201,13 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
         manifest_path=manifest_path,
         buildspec_path=buildspec_path,
     )
+    return pointer_path
+
+
+@pytest.mark.anyio
+async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
+    """Expose semantic tools over FastMCP and execute them against the snapshot DB."""
+    pointer_path = _setup_test_snapshot(tmp_path)
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
@@ -188,20 +230,23 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
 
         # Use gofastmcp client pattern for testing
         async with Client(mcp) as client:
-            catalog = _extract_payload(await client.call_tool("semantic_catalog", {}))
-            views_raw = catalog.get("views")
+            catalog_envelope = _extract_payload(await client.call_tool("semantic_catalog", {}))
+            # Verify envelope structure
+            expect_true("meta" in catalog_envelope, message="Should have meta in envelope")
+            expect_true("data" in catalog_envelope, message="Should have data in envelope")
+            catalog_data = _extract_data(catalog_envelope)
+            views_raw = catalog_data.get("views")
             if not isinstance(views_raw, list):
-                pytest.fail("Expected semantic_catalog.views to be a list")
-            expect_true(
-                any(isinstance(v, dict) and v.get("id") == "demo.view" for v in views_raw)
-            )
+                pytest.fail("Expected semantic_catalog.data.views to be a list")
+            expect_true(any(isinstance(v, dict) and v.get("id") == "demo.view" for v in views_raw))
 
-            desc = _extract_payload(
+            desc_envelope = _extract_payload(
                 await client.call_tool("semantic_describe", {"view_id": "demo.view"})
             )
-            expect_equal(desc.get("table_key"), "docs.v_demo")
+            desc_data = _extract_data(desc_envelope)
+            expect_equal(desc_data.get("table_key"), "docs.v_demo")
 
-            query = _extract_payload(
+            query_envelope = _extract_payload(
                 await client.call_tool(
                     "semantic_query",
                     {
@@ -210,9 +255,10 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
                     },
                 )
             )
-            rows_raw = query.get("rows")
+            query_data = _extract_data(query_envelope)
+            rows_raw = query_data.get("rows")
             if not isinstance(rows_raw, list):
-                pytest.fail("Expected semantic_query.rows to be a list")
+                pytest.fail("Expected semantic_query.data.rows to be a list")
             ids = [row.get("id") for row in rows_raw if isinstance(row, dict)]
             expect_equal(ids, [2, 3])
     finally:
@@ -222,23 +268,7 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_mcp_tool_annotations_present(tmp_path: Path) -> None:
     """Verify tools have readOnlyHint annotations."""
-    db_path = tmp_path / "codeintel.duckdb"
-    registry_path = tmp_path / "semantic_registry.json"
-    manifest_path = tmp_path / "schema_manifest.json"
-    buildspec_path = tmp_path / "buildspec.json"
-    pointer_path = tmp_path / "current.json"
-
-    _make_db(db_path)
-    _write_registry(registry_path)
-    _write_schema_manifest(manifest_path)
-    _write_buildspec(buildspec_path)
-    _write_pointer(
-        pointer_path,
-        db_path=db_path,
-        registry_path=registry_path,
-        manifest_path=manifest_path,
-        buildspec_path=buildspec_path,
-    )
+    pointer_path = _setup_test_snapshot(tmp_path)
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
@@ -282,23 +312,7 @@ async def test_mcp_tool_annotations_present(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_mcp_tool_error_handling(tmp_path: Path) -> None:
     """Verify ToolError returns controlled message for invalid view."""
-    db_path = tmp_path / "codeintel.duckdb"
-    registry_path = tmp_path / "semantic_registry.json"
-    manifest_path = tmp_path / "schema_manifest.json"
-    buildspec_path = tmp_path / "buildspec.json"
-    pointer_path = tmp_path / "current.json"
-
-    _make_db(db_path)
-    _write_registry(registry_path)
-    _write_schema_manifest(manifest_path)
-    _write_buildspec(buildspec_path)
-    _write_pointer(
-        pointer_path,
-        db_path=db_path,
-        registry_path=registry_path,
-        manifest_path=manifest_path,
-        buildspec_path=buildspec_path,
-    )
+    pointer_path = _setup_test_snapshot(tmp_path)
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
@@ -327,5 +341,153 @@ async def test_mcp_tool_error_handling(tmp_path: Path) -> None:
             )
             # Result should indicate an error
             expect_true(result.is_error, message="Expected error for nonexistent view")
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_mcp_response_envelope_structure(tmp_path: Path) -> None:
+    """Verify all tools return responses with meta envelope."""
+    pointer_path = _setup_test_snapshot(tmp_path)
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=DuckDBPoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        settings = ServingSettings(
+            serve_dir=tmp_path,
+            hot_swap=False,
+            pool_size=1,
+            poll_interval_s=0.01,
+            result_engine="pandas",
+            schema_enforcement="strict",
+        )
+        kernel = SemanticQueryKernel(db=manager, settings=settings)
+        mcp = build_mcp_app(kernel=kernel, settings=settings)
+
+        async with Client(mcp) as client:
+            # Test catalog tool
+            result = _extract_payload(await client.call_tool("semantic_catalog", {}))
+
+            # Verify envelope structure
+            expect_true("meta" in result, message="Should have meta key")
+            expect_true("data" in result, message="Should have data key")
+
+            meta = result.get("meta")
+            expect_true(isinstance(meta, dict), message="meta should be dict")
+            if isinstance(meta, dict):
+                expect_true("snapshot" in meta, message="meta should have snapshot")
+                expect_true("truncated" in meta, message="meta should have truncated")
+                expect_true("query_ms" in meta, message="meta should have query_ms")
+
+                snapshot = meta.get("snapshot")
+                expect_true(isinstance(snapshot, dict), message="snapshot should be dict")
+                if isinstance(snapshot, dict):
+                    expect_true("repo" in snapshot, message="snapshot should have repo")
+                    expect_true("commit" in snapshot, message="snapshot should have commit")
+                    expect_true("run_id" in snapshot, message="snapshot should have run_id")
+                    expect_true(
+                        "published_at" in snapshot, message="snapshot should have published_at"
+                    )
+                    expect_true(
+                        "semantic_layer_version" in snapshot,
+                        message="snapshot should have semantic_layer_version",
+                    )
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_mcp_response_timing_captured(tmp_path: Path) -> None:
+    """Verify query_ms is captured in response."""
+    pointer_path = _setup_test_snapshot(tmp_path)
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=DuckDBPoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        settings = ServingSettings(
+            serve_dir=tmp_path,
+            hot_swap=False,
+            pool_size=1,
+            poll_interval_s=0.01,
+            result_engine="pandas",
+            schema_enforcement="strict",
+        )
+        kernel = SemanticQueryKernel(db=manager, settings=settings)
+        mcp = build_mcp_app(kernel=kernel, settings=settings)
+
+        async with Client(mcp) as client:
+            result = _extract_payload(
+                await client.call_tool(
+                    "semantic_query",
+                    {"view_id": "demo.view"},
+                )
+            )
+
+            meta = result.get("meta")
+            expect_true(isinstance(meta, dict), message="meta should be dict")
+            if isinstance(meta, dict):
+                query_ms = meta.get("query_ms")
+                expect_true(query_ms is not None, message="query_ms should be present")
+                expect_true(
+                    isinstance(query_ms, int) and query_ms >= 0,
+                    message="query_ms should be non-negative int",
+                )
+
+                # For query tool, should have row_count
+                row_count = meta.get("row_count")
+                expect_true(row_count is not None, message="row_count should be present")
+                expect_true(
+                    isinstance(row_count, int) and row_count >= 0,
+                    message="row_count should be non-negative int",
+                )
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_mcp_response_snapshot_values(tmp_path: Path) -> None:
+    """Verify snapshot metadata contains correct values from pointer."""
+    pointer_path = _setup_test_snapshot(tmp_path)
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=DuckDBPoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        settings = ServingSettings(
+            serve_dir=tmp_path,
+            hot_swap=False,
+            pool_size=1,
+            poll_interval_s=0.01,
+            result_engine="pandas",
+            schema_enforcement="strict",
+        )
+        kernel = SemanticQueryKernel(db=manager, settings=settings)
+        mcp = build_mcp_app(kernel=kernel, settings=settings)
+
+        async with Client(mcp) as client:
+            result = _extract_payload(await client.call_tool("serving_meta", {}))
+
+            meta = result.get("meta")
+            expect_true(isinstance(meta, dict), message="meta should be dict")
+            if isinstance(meta, dict):
+                snapshot = meta.get("snapshot")
+                expect_true(isinstance(snapshot, dict), message="snapshot should be dict")
+                if isinstance(snapshot, dict):
+                    # These values come from _write_pointer
+                    expect_equal(snapshot.get("repo"), "demo/repo")
+                    expect_equal(snapshot.get("commit"), "deadbeef")
+                    expect_equal(snapshot.get("run_id"), "run-1")
+                    expect_equal(snapshot.get("semantic_layer_version"), "v123")
     finally:
         await manager.stop()

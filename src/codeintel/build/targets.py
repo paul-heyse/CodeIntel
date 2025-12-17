@@ -11,7 +11,7 @@ from `codeintel.build.hamilton.introspect` to get a TargetGraph with
 Hamilton-derived dependencies.
 
 The static `dependencies` field on OutputTarget remains for compatibility with
-`registrations.py`, but Hamilton is the source of truth for actual execution
+historical tooling, but Hamilton is the source of truth for actual execution
 dependencies.
 
 The OutputTarget is the single source of truth for:
@@ -78,7 +78,7 @@ class OutputTarget:
     module
         Which target module produces this output.
     plugin
-        Plugin name that produces this target.
+        Legacy implementation identifier (empty in Hamilton-first execution).
     contract
         Output contract defining tables and artifacts produced.
         This is authoritative; prefer `contract.table_keys` over legacy
@@ -116,7 +116,7 @@ class OutputTarget:
 
     name: str
     module: TargetModule
-    plugin: str
+    plugin: str = ""
 
     contract: OutputContract = field(default_factory=lambda: EMPTY_CONTRACT)
     dependencies: tuple[str, ...] = ()
@@ -147,7 +147,7 @@ class OutputTarget:
         *,
         name: str,
         module: TargetModule,
-        plugin: str,
+        plugin: str = "",
         tables: Iterable[str],
         options: TargetOptions | None = None,
     ) -> OutputTarget:

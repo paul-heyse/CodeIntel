@@ -28,6 +28,7 @@ from codeintel.serving.http.middleware import (
 )
 from codeintel.serving.http.routes import router as api_router
 from codeintel.serving.http.state import ServingState
+from codeintel.serving.mcp._compat import HAS_EVENT_STORE, EventStore
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
@@ -59,8 +60,17 @@ def create_serving_app(
     -------
     FastAPI
         Configured application.
+
+    Notes
+    -----
+    Calls ``cfg.validate_auth_for_host()`` which raises ``ValueError`` if
+    binding to a public interface (0.0.0.0, ::) without authentication.
     """
     cfg = settings or ServingSettings.from_env()
+
+    # Fail-fast: require auth for public interfaces
+    cfg.validate_auth_for_host()
+
     db_manager = ServingDBManager(
         pointer_path=cfg.serve_dir / "current.json",
         pool_cfg=PoolConfig(size=cfg.pool_size),
@@ -181,7 +191,7 @@ def _maybe_mount_mcp(
     settings: ServingSettings,
     enabled: bool,
 ) -> None:
-    """Mount MCP server under /mcp with explicit path contract.
+    """Mount MCP server under /mcp with EventStore for resumability.
 
     Mount Contract
     --------------
@@ -202,9 +212,25 @@ def _maybe_mount_mcp(
     """
     if not enabled:
         return
+
     mcp = build_mcp_app(kernel=kernel, settings=settings)
+
+    # Configure EventStore for SSE polling/resumability
+    event_store = None
+    retry_interval = None
+    if settings.mcp_enable_event_store and HAS_EVENT_STORE and EventStore is not None:
+        event_store = EventStore()
+        retry_interval = settings.mcp_retry_interval_ms
+
     # gofastmcp 2.x uses http_app() with path="/" to avoid double-prefix
-    app.mount("/mcp", mcp.http_app(path="/"))
+    app.mount(
+        "/mcp",
+        mcp.http_app(
+            path="/",
+            event_store=event_store,
+            retry_interval=retry_interval,
+        ),
+    )
 
 
 def _custom_openapi(app: FastAPI) -> dict[str, object]:

@@ -100,4 +100,3 @@ class QueryLimiter:
 
 
 __all__ = ["QueryLimiter"]
-

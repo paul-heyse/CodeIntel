@@ -2,233 +2,98 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pandas as pd
-import pytest
 
 from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
 from codeintel.config.primitives import SnapshotRef
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_true,
+)
 
 if TYPE_CHECKING:
-    import ibis.expr.types as ir
-
-    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.storage.gateway import StorageGateway
 
 
-class FakeScalar:
-    """Fake Ibis scalar wrapper for testing count()."""
-
-    def __init__(self, value: int) -> None:
-        """Initialize with a scalar value."""
-        self.value = value
-        self.execute_calls = 0
-
-    def execute(self) -> int:
-        """Return the stored value and track calls.
-
-        Returns
-        -------
-        int
-            Stored scalar value.
-        """
-        self.execute_calls += 1
-        return self.value
+def _modules_rows(*, repo: str, commit: str, count: int) -> pd.DataFrame:
+    rows = [
+        {
+            "module": f"m{idx}",
+            "path": f"pkg/mod_{idx}.py",
+            "repo": repo,
+            "commit": commit,
+            "language": "python",
+            "tags": "[]",
+            "owners": "[]",
+        }
+        for idx in range(count)
+    ]
+    return pd.DataFrame(rows)
 
 
-class FakeTable:
-    """Minimal stand-in for an Ibis Table expression."""
+def test_materialize_table_uses_policy_and_insert_select(
+    fresh_gateway: StorageGateway,
+    tmp_path: Path,
+) -> None:
+    """materialize_table should replace snapshot rows via INSERT...SELECT."""
+    repo = "r"
+    commit = "c"
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
+    ctx = MaterializationContext(gateway=fresh_gateway, snapshot=snapshot, validate=False)
 
-    def __init__(self, df: pd.DataFrame, count_value: int | None = None) -> None:
-        """Store DataFrame and configure count value."""
-        self.df = df
-        self.count_value = count_value if count_value is not None else len(df)
-        self.count_calls = 0
-        self.execute_calls = 0
+    df1 = _modules_rows(repo=repo, commit=commit, count=1)
+    fresh_gateway.con.register("tmp_modules_1", df1)
+    expr1 = fresh_gateway.ibis.con.table("tmp_modules_1")
+    ref1 = materialize_table(ctx, "core.modules", expr1)
+    expect_equal(ref1.row_count, 1)
 
-    def count(self) -> FakeScalar:
-        """Return a fake scalar representing row count.
+    df2 = _modules_rows(repo=repo, commit=commit, count=2)
+    fresh_gateway.con.register("tmp_modules_2", df2)
+    expr2 = fresh_gateway.ibis.con.table("tmp_modules_2")
+    ref2 = materialize_table(ctx, "core.modules", expr2)
+    expect_equal(ref2.row_count, 2)
 
-        Returns
-        -------
-        FakeScalar
-            Scalar returning the configured count value.
-        """
-        self.count_calls += 1
-        return FakeScalar(self.count_value)
-
-    def execute(self) -> pd.DataFrame:
-        """Return the backing DataFrame and record execution count.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Stored DataFrame for this fake table.
-        """
-        self.execute_calls += 1
-        return self.df
+    row = fresh_gateway.con.execute(
+        "SELECT COUNT(*) FROM core.modules WHERE repo=? AND commit=?",
+        [repo, commit],
+    ).fetchone()
+    expect_true(row is not None, message="Expected COUNT(*) query to return a row")
+    expect_equal(int(row[0]), 2)
 
 
-class FakePolicy:
-    """Tracks delete_for_snapshot calls."""
-
-    def __init__(self) -> None:
-        """Initialize call recorder."""
-        self.calls: list[tuple[str, str, str]] = []
-
-    def delete_for_snapshot(self, table_key: str, *, repo: str, commit: str) -> None:
-        """Record delete operations."""
-        self.calls.append((table_key, repo, commit))
-
-
-@dataclass
-class FakeWriteResult:
-    """Captured write results."""
-
-    table_key: str
-    data: pd.DataFrame | FakeTable
-
-
-class FakeIbisGateway:
-    """Records writes without touching DuckDB."""
-
-    def __init__(self) -> None:
-        """Initialize write recorder."""
-        self.writes: list[FakeWriteResult] = []
-
-    def write(
-        self,
-        table_key: str,
-        data: pd.DataFrame | FakeTable,
-        columns: object | None = None,
-        on_conflict: object | None = None,
-    ) -> FakeWriteResult:
-        """Record write calls.
-
-        Returns
-        -------
-        FakeWriteResult
-            Captured write data for assertions.
-        """
-        _ = (columns, on_conflict)
-        result = FakeWriteResult(table_key=table_key, data=data)
-        self.writes.append(result)
-        return result
-
-
-class FakeGateway:
-    """Minimal gateway exposing policy + ibis for materializer."""
-
-    def __init__(self) -> None:
-        """Initialize fake policy and ibis gateways."""
-        self.policy = FakePolicy()
-        self.ibis = FakeIbisGateway()
-
-
-def expect(*, condition: bool, message: str) -> None:
-    """Fail the test with the provided message when condition is False."""
-    if not condition:
-        pytest.fail(message)
-
-
-def test_materialize_table_uses_policy_and_insert_select() -> None:
-    """materialize_table should delete snapshot rows then insert via IbisGateway."""
-    df = pd.DataFrame({"repo": ["r"], "commit": ["c"], "value": [1]})
-    table = FakeTable(df, count_value=5)
-    gateway = FakeGateway()
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=Path("repo"))
-    expected_row_count = 5
-
-    ref = materialize_table(
-        MaterializationContext(
-            gateway=cast("StorageGateway", gateway), snapshot=snapshot, validate=False
-        ),
-        "analytics.example",
-        cast("ir.Table", table),
-    )
-
-    expect(
-        condition=gateway.policy.calls == [("analytics.example", "r", "c")],
-        message=f"Unexpected delete calls: {gateway.policy.calls}",
-    )
-    expect(
-        condition=bool(gateway.ibis.writes) and gateway.ibis.writes[0].data is table,
-        message="Expected materializer to write the Ibis expression",
-    )
-    expect(
-        condition=table.count_calls == 1,
-        message=f"Count should run once, got {table.count_calls}",
-    )
-    expect(
-        condition=table.execute_calls == 0,
-        message="Execute should not run when validation is disabled",
-    )
-    expect(
-        condition=ref.row_count == expected_row_count,
-        message=f"Row count mismatch: {ref.row_count}",
-    )
-
-
-def test_materialize_table_validates_when_schema_available() -> None:
+def test_materialize_table_validates_when_schema_available(
+    fresh_gateway: StorageGateway,
+    tmp_path: Path,
+) -> None:
     """materialize_table should validate DataFrame when schema is present."""
-    df = pd.DataFrame(
-        {"repo": ["r", "r"], "commit": ["c", "c"], "value": [1, 2]},
-    )
-    table = FakeTable(df)
-    gateway = FakeGateway()
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=Path("repo"))
+    repo = "r"
+    commit = "c"
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
+    ctx = MaterializationContext(gateway=fresh_gateway, snapshot=snapshot, validate=True)
+
+    df = _modules_rows(repo=repo, commit=commit, count=2)
+    fresh_gateway.con.register("tmp_modules_validate", df)
+    expr = fresh_gateway.ibis.con.table("tmp_modules_validate")
 
     class StubSchema:
         def __init__(self) -> None:
-            """Capture validate call metadata."""
             self.calls: list[dict[str, object]] = []
 
         def validate(self, frame: pd.DataFrame, *, lazy: bool = False) -> pd.DataFrame:
-            """Record validation calls and return the frame.
-
-            Returns
-            -------
-            pandas.DataFrame
-                Frame passed to validation (unchanged).
-            """
             self.calls.append({"frame": frame.copy(), "lazy": lazy})
             return frame
 
     schema = StubSchema()
-
     ref = materialize_table(
-        MaterializationContext(
-            gateway=cast("StorageGateway", gateway), snapshot=snapshot, validate=True
-        ),
-        "analytics.example",
-        cast("ir.Table", table),
+        ctx,
+        "core.modules",
+        expr,
         schema_resolver=lambda _: schema,
     )
 
-    expect(condition=bool(schema.calls), message="Schema.validate should be invoked")
-    expect(
-        condition=schema.calls[0]["lazy"] is False,
-        message=f"Validation should be eager, got {schema.calls[0]['lazy']}",
-    )
-    expect(condition=bool(gateway.ibis.writes), message="Expected a write to be recorded")
-    written_df = gateway.ibis.writes[0].data
-    if not isinstance(written_df, pd.DataFrame):
-        pytest.fail("Write should receive a DataFrame")
-    expect(
-        condition=len(written_df) == len(df),
-        message=f"Unexpected row count: {len(written_df)}",
-    )
-    expect(
-        condition=table.count_calls == 0,
-        message="Count should not run during validation",
-    )
-    expect(
-        condition=table.execute_calls == 1,
-        message="Execute should run once during validation",
-    )
-    expect(
-        condition=ref.row_count == len(df),
-        message=f"Row count mismatch: {ref.row_count}",
-    )
+    expect_true(bool(schema.calls), message="Schema.validate should be invoked")
+    expect_equal(schema.calls[0]["lazy"], expected=False)
+    expect_equal(ref.row_count, len(df))

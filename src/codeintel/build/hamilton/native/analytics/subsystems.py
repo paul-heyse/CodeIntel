@@ -40,7 +40,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
     target_name=value("subsystems"),
     table_key=value("analytics.subsystems"),
 )
-@tag(domain="analytics", target="subsystems", node_type="compute")
 @check_output_custom(
     *build_table_contract(
         required_columns=[
@@ -60,6 +59,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
         no_nulls=["repo", "commit", "subsystem_id", "name"],
     ),
 )
+@tag(domain="analytics", target="subsystems", node_type="compute", target_="t__subsystems__compute")
 @schema.output(
     ("repo", "string"),
     ("commit", "string"),
