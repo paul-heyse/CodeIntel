@@ -17,13 +17,21 @@ if TYPE_CHECKING:
     from codeintel.serving.mcp._compat import FastMCP
 
 
-def create_mcp_server(settings: ServingSettings | None = None) -> FastMCP:
+def create_mcp_server(
+    settings: ServingSettings | None = None,
+    *,
+    db_manager: ServingDBManager | None = None,
+) -> FastMCP:
     """Create an MCP server bound to the current serving snapshot.
 
     Parameters
     ----------
     settings
         Serving settings (defaults to environment).
+    db_manager
+        Optional pre-configured database manager. If provided, the MCP server
+        will not manage its lifecycle (caller is responsible for start/stop).
+        If None, creates and manages its own db_manager.
 
     Returns
     -------
@@ -31,21 +39,33 @@ def create_mcp_server(settings: ServingSettings | None = None) -> FastMCP:
         Configured MCP server.
     """
     cfg = settings or ServingSettings.from_env()
-    db_manager = ServingDBManager(
-        pointer_path=cfg.serve_dir / "current.json",
-        pool_cfg=PoolConfig(size=cfg.pool_size),
-        poll_interval_s=cfg.poll_interval_s,
-        hot_swap=cfg.hot_swap,
-    )
+
+    # Fail-fast security check
+    cfg.validate_auth_for_host()
+
+    # Use injected or create new
+    if db_manager is None:
+        db_manager = ServingDBManager(
+            pointer_path=cfg.serve_dir / "current.json",
+            pool_cfg=PoolConfig(size=cfg.pool_size),
+            poll_interval_s=cfg.poll_interval_s,
+            hot_swap=cfg.hot_swap,
+        )
+        owns_db_manager = True
+    else:
+        owns_db_manager = False
+
     kernel = SemanticQueryKernel(db=db_manager, settings=cfg)
 
     @asynccontextmanager
     async def lifespan(_mcp: FastMCP) -> AsyncGenerator[object]:
-        await db_manager.start()
+        if owns_db_manager:
+            await db_manager.start()
         try:
             yield object()
         finally:
-            await db_manager.stop()
+            if owns_db_manager:
+                await db_manager.stop()
 
     return build_mcp_app(
         kernel=kernel,

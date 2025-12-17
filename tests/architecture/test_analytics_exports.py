@@ -54,8 +54,6 @@ EXPECTED_EXPORTS: Mapping[str, set[str]] = {
         "build_span_index",
         "get_parser",
         "get_validation_rows",
-        "materialize_function_validation",
-        "materialize_graph_validation",
         "parse_python_module",
         "register_parser",
         "resolve_span",

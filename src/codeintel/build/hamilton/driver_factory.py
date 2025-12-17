@@ -123,6 +123,7 @@ def build_driver(
         .with_config(config or {})
         .with_modules(template_mod, *native_mods)
         .allow_module_overrides()
+        .with_cache()
         .with_adapters(*adapter_list)
         .build()
     )

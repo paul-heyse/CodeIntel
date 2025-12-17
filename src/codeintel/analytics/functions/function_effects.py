@@ -199,15 +199,18 @@ def _effects_payload(
     return payload
 
 
-def compute_function_effects(
+def build_function_effects_rows(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     options: FunctionEffectsOptions | None = None,
     inputs: FunctionEffectsInputs | None = None,
-) -> None:
+) -> list[dict[str, object]]:
     """
-    Populate `analytics.function_effects` for the target repo/commit.
+    Build function effects rows without persisting.
+
+    This is the pure compute path for Hamilton DAG-visible I/O. It returns
+    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
 
     Parameters
     ----------
@@ -219,6 +222,11 @@ def compute_function_effects(
         Configuration options for effects detection.
     inputs
         Optional inputs containing catalog, runtime, AST map, and missing GOIDs.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Effect rows ready for persistence.
     """
     opts = options or FunctionEffectsOptions()
     input_opts = inputs or FunctionEffectsInputs()
@@ -240,7 +248,31 @@ def compute_function_effects(
         ast_map=input_opts.ast_map,
         missing_goids=input_opts.missing_goids,
     )
-    rows = _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
+    return _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
+
+
+def compute_function_effects(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    options: FunctionEffectsOptions | None = None,
+    inputs: FunctionEffectsInputs | None = None,
+) -> None:
+    """
+    Populate `analytics.function_effects` for the target repo/commit.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for DuckDB.
+    snapshot
+        Snapshot reference (repo, commit, repo_root).
+    options
+        Configuration options for effects detection.
+    inputs
+        Optional inputs containing catalog, runtime, AST map, and missing GOIDs.
+    """
+    rows = build_function_effects_rows(gateway, snapshot, options=options, inputs=inputs)
 
     table_key = "analytics.function_effects"
     backend = gateway.policy

@@ -18,9 +18,10 @@ Therefore, materialization of calls must happen before computing dependencies.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.dependencies.compute import (
     DependencyCallsResult,
@@ -35,11 +36,13 @@ from codeintel.analytics.dependencies.core import (
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materializer import (
-    MaterializationContext,
-    materialize_rows,
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 
@@ -111,7 +114,7 @@ def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
 
 
 @tag(domain="analytics", target="external_deps", node_type="compute")
-def t__external_deps__compute_calls(env: BuildEnv) -> DependencyCallsResult:
+def t__external_deps__compute_calls(env: BuildEnv, graph: TargetGraph) -> DependencyCallsResult | None:
     """Compute external dependency calls for all functions in the snapshot.
 
     This is a pure compute node with no side effects. It loads function
@@ -124,8 +127,9 @@ def t__external_deps__compute_calls(env: BuildEnv) -> DependencyCallsResult:
 
     Returns
     -------
-    DependencyCallsResult
+    DependencyCallsResult | None
         Container with rows for external_dependency_calls table.
+        Returns None when manifest-skip indicates the target is current.
 
     Notes
     -----
@@ -134,6 +138,18 @@ def t__external_deps__compute_calls(env: BuildEnv) -> DependencyCallsResult:
     - Usage modes (read, write, admin, etc.)
     - Evidence with code snippets
     """
+    target = graph.get("external_deps")
+    if target is not None:
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            options_hash=None,
+            manifests=env.manifest_index,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
+
     inputs = _build_inputs(env)
     if inputs is None:
         return DependencyCallsResult(rows=())
@@ -145,11 +161,59 @@ def t__external_deps__compute_calls(env: BuildEnv) -> DependencyCallsResult:
     )
 
 
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.external_dependency_calls"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("external_deps"),
+    table_key=value("analytics.external_dependency_calls"),
+    columns=value(tuple(EXTERNAL_DEPENDENCY_CALLS_COLS)),
+)
+@tag(domain="analytics", target="external_deps", node_type="compute", target_="external_deps__calls_rows")
+def external_deps__calls_rows(
+    t__external_deps__compute_calls: DependencyCallsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.external_dependency_calls."""
+    if t__external_deps__compute_calls is None:
+        return None
+    return tuple(t__external_deps__compute_calls.rows)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.external_dependencies"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("external_deps"),
+    table_key=value("analytics.external_dependencies"),
+    columns=value(tuple(EXTERNAL_DEPENDENCIES_COLS)),
+)
+@tag(
+    domain="analytics",
+    target="external_deps",
+    node_type="compute",
+    target_="external_deps__dependencies_rows",
+)
+def external_deps__dependencies_rows(
+    env: BuildEnv,
+    m__analytics__external_dependency_calls: dict[str, Any],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Compute rows for analytics.external_dependencies after calls are written."""
+    status = m__analytics__external_dependency_calls.get("status")
+    if status != "succeeded":
+        return None
+
+    result = compute_external_dependencies_pure(env.gateway, env.snapshot)
+    return tuple(result.rows)
+
+
 @tag(domain="analytics", target="external_deps", node_type="materialize")
 def t__external_deps(
     env: BuildEnv,
     graph: TargetGraph,
-    t__external_deps__compute_calls: DependencyCallsResult,
+    m__analytics__external_dependency_calls: dict[str, Any],
+    m__analytics__external_dependencies: dict[str, Any],
 ) -> TargetRunRecord:
     """Materialize both external dependency tables to DuckDB.
 
@@ -180,50 +244,15 @@ def t__external_deps(
     The order matters because external_dependencies reads from the
     external_dependency_calls table.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "external_deps")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        # Ensure tables exist
-        backend = env.gateway.policy
-        backend.ensure_table("analytics.external_dependency_calls")
-        backend.ensure_table("analytics.external_dependencies")
-
-        ctx = MaterializationContext(
-            gateway=env.gateway,
-            snapshot=env.snapshot,
-            validate=env.validate_outputs,
-            owner_target="external_deps",
-            input_hash=executor.input_hash,
-        )
-
-        row_counts: dict[str, int] = {}
-
-        # Step 1: Materialize dependency calls first
-        calls_ref = materialize_rows(
-            ctx,
-            "analytics.external_dependency_calls",
-            t__external_deps__compute_calls.rows,
-            EXTERNAL_DEPENDENCY_CALLS_COLS,
-        )
-        row_counts["analytics.external_dependency_calls"] = calls_ref.row_count or 0
-
-        # Step 2: Compute and materialize aggregated dependencies
-        # This MUST happen after calls are written since it reads from the table
-        deps_result = compute_external_dependencies_pure(env.gateway, env.snapshot)
-        deps_ref = materialize_rows(
-            ctx,
-            "analytics.external_dependencies",
-            deps_result.rows,
-            EXTERNAL_DEPENDENCIES_COLS,
-        )
-        row_counts["analytics.external_dependencies"] = deps_ref.row_count or 0
-
-        return row_counts
-
-    return executor.execute(compute)
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name="external_deps",
+        materializations={
+            "analytics.external_dependency_calls": m__analytics__external_dependency_calls,
+            "analytics.external_dependencies": m__analytics__external_dependencies,
+        },
+    )
 
 
 # Export node names for Hamilton discovery

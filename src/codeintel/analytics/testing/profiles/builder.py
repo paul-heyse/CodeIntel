@@ -37,6 +37,9 @@ from codeintel.analytics.testing.profiles.types import (
 )
 from codeintel.analytics.utilities.ast import resolve_call_target
 from codeintel.core.paths import path_to_module
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsTestProfileRow as ProfileRowModel,
+)
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
@@ -109,13 +112,29 @@ class BehavioralProfile:
     markers: list[str]
 
 
-def build_test_profile(
+@dataclass(frozen=True)
+class TestProfileBuildResult:
+    """Result from test profile computation.
+
+    Attributes
+    ----------
+    rows
+        Profile row models ready for insertion, or None if no tests found.
+    """
+
+    rows: list[ProfileRowModel] | None
+
+
+def build_test_profile_result(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     options: TestProfileOptions | None = None,
-) -> None:
-    """Populate analytics.test_profile for a repo snapshot.
+) -> TestProfileBuildResult:
+    """Compute test profile rows without persisting.
+
+    This is the pure compute path for Hamilton DAG-visible I/O. It returns
+    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
 
     Parameters
     ----------
@@ -125,15 +144,18 @@ def build_test_profile(
         Snapshot reference with repo, commit, and repo_root.
     options
         Optional test profile configuration options.
+
+    Returns
+    -------
+    TestProfileBuildResult
+        Container with profile row models.
     """
     opts = options or TestProfileOptions()
-    backend = gateway.policy
-    backend.ensure_table("analytics.test_profile")
     con = gateway.con
     tests: list[TestRecord] = _load_test_records(con, snapshot.repo, snapshot.commit)
     if not tests:
         log.info("No tests found for %s@%s; skipping test_profile", snapshot.repo, snapshot.commit)
-        return
+        return TestProfileBuildResult(rows=None)
 
     functions_covered = _load_functions_covered(con, snapshot.repo, snapshot.commit)
     subsystems_covered = _load_subsystems_covered(con, snapshot.repo, snapshot.commit)
@@ -153,8 +175,36 @@ def build_test_profile(
         options=opts,
     )
     rows = build_test_profile_rows(tests, ctx)
-    inserted = write_test_profile_rows(gateway, snapshot, rows)
-    log.info("test_profile populated: %d rows for %s@%s", inserted, snapshot.repo, snapshot.commit)
+    return TestProfileBuildResult(rows=rows)
+
+
+def build_test_profile(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    options: TestProfileOptions | None = None,
+) -> None:
+    """Populate analytics.test_profile for a repo snapshot.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway bound to the target DuckDB database.
+    snapshot
+        Snapshot reference with repo, commit, and repo_root.
+    options
+        Optional test profile configuration options.
+    """
+    backend = gateway.policy
+    backend.ensure_table("analytics.test_profile")
+
+    result = build_test_profile_result(gateway, snapshot, options=options)
+
+    if result.rows:
+        inserted = write_test_profile_rows(gateway, snapshot, result.rows)
+        log.info(
+            "test_profile populated: %d rows for %s@%s", inserted, snapshot.repo, snapshot.commit
+        )
 
 
 def build_behavioral_coverage(
@@ -874,10 +924,12 @@ __all__ = [
     "SpanState",
     "SubsystemCoverageEntry",
     "TestGraphMetrics",
+    "TestProfileBuildResult",
     "build_behavioral_coverage",
     "build_test_ast_index",
     "build_test_ast_index_for_tests",
     "build_test_profile",
+    "build_test_profile_result",
     "compute_flakiness_score",
     "compute_importance_score",
     "infer_behavior_tags",

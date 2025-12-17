@@ -1,4 +1,8 @@
-"""Tests for semantic MCP tools built from the semantic kernel."""
+"""Tests for semantic MCP tools built from the semantic kernel.
+
+Tests validate that MCP tools return typed Pydantic models (Phase 3 upgrade)
+with proper structure and content.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +19,11 @@ from codeintel.serving.db.pool import DuckDBPoolConfig
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
-from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_is_not_none,
+    expect_true,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -146,31 +154,6 @@ def _extract_payload(tool_result: Any) -> dict[str, object]:  # noqa: ANN401
     raise TypeError(msg)
 
 
-def _extract_data(envelope: dict[str, object]) -> dict[str, object]:
-    """Extract the data payload from an envelope.
-
-    Parameters
-    ----------
-    envelope
-        The envelope containing meta and data keys.
-
-    Returns
-    -------
-    dict[str, object]
-        The data dictionary from the envelope.
-
-    Raises
-    ------
-    KeyError
-        If data key is missing.
-    """
-    data = envelope.get("data")
-    if not isinstance(data, dict):
-        msg = "Expected envelope to contain 'data' dict"
-        raise KeyError(msg)
-    return data
-
-
 def _setup_test_snapshot(tmp_path: Path) -> Path:
     """Set up test snapshot files and return pointer path.
 
@@ -206,7 +189,13 @@ def _setup_test_snapshot(tmp_path: Path) -> Path:
 
 @pytest.mark.anyio
 async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
-    """Expose semantic tools over FastMCP and execute them against the snapshot DB."""
+    """Expose semantic tools over FastMCP and execute them against the snapshot DB.
+
+    Tests now validate typed Pydantic model returns (Phase 3 upgrade):
+    - semantic_catalog returns SemanticCatalogResponse
+    - semantic_describe returns SemanticViewDescriptionResponse
+    - semantic_query returns SemanticQueryToolResponse
+    """
     pointer_path = _setup_test_snapshot(tmp_path)
 
     manager = ServingDBManager(
@@ -230,23 +219,23 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
 
         # Use gofastmcp client pattern for testing
         async with Client(mcp) as client:
-            catalog_envelope = _extract_payload(await client.call_tool("semantic_catalog", {}))
-            # Verify envelope structure
-            expect_true("meta" in catalog_envelope, message="Should have meta in envelope")
-            expect_true("data" in catalog_envelope, message="Should have data in envelope")
-            catalog_data = _extract_data(catalog_envelope)
-            views_raw = catalog_data.get("views")
+            # Test semantic_catalog - returns SemanticCatalogResponse
+            catalog_result = _extract_payload(await client.call_tool("semantic_catalog", {}))
+            # SemanticCatalogResponse has 'views' list directly
+            views_raw = catalog_result.get("views")
             if not isinstance(views_raw, list):
-                pytest.fail("Expected semantic_catalog.data.views to be a list")
+                pytest.fail("Expected semantic_catalog.views to be a list")
             expect_true(any(isinstance(v, dict) and v.get("id") == "demo.view" for v in views_raw))
 
-            desc_envelope = _extract_payload(
+            # Test semantic_describe - returns SemanticViewDescriptionResponse
+            desc_result = _extract_payload(
                 await client.call_tool("semantic_describe", {"view_id": "demo.view"})
             )
-            desc_data = _extract_data(desc_envelope)
-            expect_equal(desc_data.get("table_key"), "docs.v_demo")
+            # SemanticViewDescriptionResponse has 'table_key' directly
+            expect_equal(desc_result.get("table_key"), "docs.v_demo")
 
-            query_envelope = _extract_payload(
+            # Test semantic_query - returns SemanticQueryToolResponse
+            query_result = _extract_payload(
                 await client.call_tool(
                     "semantic_query",
                     {
@@ -255,10 +244,13 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
                     },
                 )
             )
-            query_data = _extract_data(query_envelope)
-            rows_raw = query_data.get("rows")
+            # SemanticQueryToolResponse has 'result' containing the query response
+            result_data = query_result.get("result")
+            if not isinstance(result_data, dict):
+                pytest.fail("Expected semantic_query.result to be a dict")
+            rows_raw = result_data.get("rows")
             if not isinstance(rows_raw, list):
-                pytest.fail("Expected semantic_query.data.rows to be a list")
+                pytest.fail("Expected semantic_query.result.rows to be a list")
             ids = [row.get("id") for row in rows_raw if isinstance(row, dict)]
             expect_equal(ids, [2, 3])
     finally:
@@ -346,8 +338,14 @@ async def test_mcp_tool_error_handling(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_mcp_response_envelope_structure(tmp_path: Path) -> None:
-    """Verify all tools return responses with meta envelope."""
+async def test_mcp_typed_response_structure(tmp_path: Path) -> None:
+    """Verify tools return typed Pydantic model structures (Phase 3).
+
+    Tests the structure of typed responses:
+    - SemanticCatalogResponse has version, snapshot, views
+    - SemanticViewDescriptionResponse has id, table_key, columns, etc.
+    - SemanticQueryToolResponse has result (with rows), preview, note
+    """
     pointer_path = _setup_test_snapshot(tmp_path)
 
     manager = ServingDBManager(
@@ -369,40 +367,43 @@ async def test_mcp_response_envelope_structure(tmp_path: Path) -> None:
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            # Test catalog tool
-            result = _extract_payload(await client.call_tool("semantic_catalog", {}))
+            # Test SemanticCatalogResponse structure
+            catalog = _extract_payload(await client.call_tool("semantic_catalog", {}))
+            expect_true("version" in catalog, message="Should have version key")
+            expect_true("snapshot" in catalog, message="Should have snapshot key")
+            expect_true("views" in catalog, message="Should have views key")
 
-            # Verify envelope structure
-            expect_true("meta" in result, message="Should have meta key")
-            expect_true("data" in result, message="Should have data key")
+            # Validate snapshot structure in catalog
+            snapshot = catalog.get("snapshot")
+            expect_true(isinstance(snapshot, dict), message="snapshot should be dict")
+            if isinstance(snapshot, dict):
+                expect_true("repo" in snapshot, message="snapshot should have repo")
+                expect_true("commit" in snapshot, message="snapshot should have commit")
 
-            meta = result.get("meta")
-            expect_true(isinstance(meta, dict), message="meta should be dict")
-            if isinstance(meta, dict):
-                expect_true("snapshot" in meta, message="meta should have snapshot")
-                expect_true("truncated" in meta, message="meta should have truncated")
-                expect_true("query_ms" in meta, message="meta should have query_ms")
-
-                snapshot = meta.get("snapshot")
-                expect_true(isinstance(snapshot, dict), message="snapshot should be dict")
-                if isinstance(snapshot, dict):
-                    expect_true("repo" in snapshot, message="snapshot should have repo")
-                    expect_true("commit" in snapshot, message="snapshot should have commit")
-                    expect_true("run_id" in snapshot, message="snapshot should have run_id")
-                    expect_true(
-                        "published_at" in snapshot, message="snapshot should have published_at"
-                    )
-                    expect_true(
-                        "semantic_layer_version" in snapshot,
-                        message="snapshot should have semantic_layer_version",
-                    )
+            # Test SemanticQueryToolResponse structure
+            query = _extract_payload(
+                await client.call_tool("semantic_query", {"view_id": "demo.view"})
+            )
+            expect_true("result" in query, message="Should have result key")
+            # preview and note are optional
+            result = query.get("result")
+            expect_true(isinstance(result, dict), message="result should be dict")
+            if isinstance(result, dict):
+                expect_true("view_id" in result, message="result should have view_id")
+                expect_true("rows" in result, message="result should have rows")
+                expect_true("columns" in result, message="result should have columns")
+                expect_true("truncated" in result, message="result should have truncated")
     finally:
         await manager.stop()
 
 
 @pytest.mark.anyio
-async def test_mcp_response_timing_captured(tmp_path: Path) -> None:
-    """Verify query_ms is captured in response."""
+async def test_mcp_query_response_has_result_data(tmp_path: Path) -> None:
+    """Verify SemanticQueryToolResponse contains proper result data.
+
+    With typed responses (Phase 3), the result data is directly in the response,
+    no envelope/meta wrapper.
+    """
     pointer_path = _setup_test_snapshot(tmp_path)
 
     manager = ServingDBManager(
@@ -424,37 +425,42 @@ async def test_mcp_response_timing_captured(tmp_path: Path) -> None:
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            result = _extract_payload(
+            response = _extract_payload(
                 await client.call_tool(
                     "semantic_query",
                     {"view_id": "demo.view"},
                 )
             )
 
-            meta = result.get("meta")
-            expect_true(isinstance(meta, dict), message="meta should be dict")
-            if isinstance(meta, dict):
-                query_ms = meta.get("query_ms")
-                expect_true(query_ms is not None, message="query_ms should be present")
-                expect_true(
-                    isinstance(query_ms, int) and query_ms >= 0,
-                    message="query_ms should be non-negative int",
-                )
+            # SemanticQueryToolResponse has 'result' key
+            result = response.get("result")
+            expect_is_not_none(result, message="result should be present")
+            expect_true(isinstance(result, dict), message="result should be dict")
 
-                # For query tool, should have row_count
-                row_count = meta.get("row_count")
-                expect_true(row_count is not None, message="row_count should be present")
-                expect_true(
-                    isinstance(row_count, int) and row_count >= 0,
-                    message="row_count should be non-negative int",
-                )
+            if isinstance(result, dict):
+                # Result should have rows
+                rows = result.get("rows")
+                expect_is_not_none(rows, message="rows should be present")
+                expect_true(isinstance(rows, list), message="rows should be list")
+
+                # Result should have view_id
+                view_id = result.get("view_id")
+                expect_equal(view_id, "demo.view")
+
+                # Result should have columns
+                columns = result.get("columns")
+                expect_is_not_none(columns, message="columns should be present")
     finally:
         await manager.stop()
 
 
 @pytest.mark.anyio
-async def test_mcp_response_snapshot_values(tmp_path: Path) -> None:
-    """Verify snapshot metadata contains correct values from pointer."""
+async def test_mcp_serving_meta_typed_response(tmp_path: Path) -> None:
+    """Verify ServingMetaResponse contains correct snapshot values.
+
+    With typed responses (Phase 3), serving_meta returns ServingMetaResponse
+    with snapshot, semantic_layer, buildspec, features, limits, etc.
+    """
     pointer_path = _setup_test_snapshot(tmp_path)
 
     manager = ServingDBManager(
@@ -478,16 +484,31 @@ async def test_mcp_response_snapshot_values(tmp_path: Path) -> None:
         async with Client(mcp) as client:
             result = _extract_payload(await client.call_tool("serving_meta", {}))
 
-            meta = result.get("meta")
-            expect_true(isinstance(meta, dict), message="meta should be dict")
-            if isinstance(meta, dict):
-                snapshot = meta.get("snapshot")
-                expect_true(isinstance(snapshot, dict), message="snapshot should be dict")
-                if isinstance(snapshot, dict):
-                    # These values come from _write_pointer
-                    expect_equal(snapshot.get("repo"), "demo/repo")
-                    expect_equal(snapshot.get("commit"), "deadbeef")
-                    expect_equal(snapshot.get("run_id"), "run-1")
-                    expect_equal(snapshot.get("semantic_layer_version"), "v123")
+            # ServingMetaResponse has 'snapshot' directly at top level
+            snapshot = result.get("snapshot")
+            expect_is_not_none(snapshot, message="snapshot should be present")
+            expect_true(isinstance(snapshot, dict), message="snapshot should be dict")
+            if isinstance(snapshot, dict):
+                # These values come from _write_pointer
+                expect_equal(snapshot.get("repo"), "demo/repo")
+                expect_equal(snapshot.get("commit"), "deadbeef")
+                expect_equal(snapshot.get("run_id"), "run-1")
+
+            # ServingMetaResponse has semantic_layer info
+            semantic_layer = result.get("semantic_layer")
+            expect_is_not_none(semantic_layer, message="semantic_layer should be present")
+
+            # ServingMetaResponse has features dict
+            features = result.get("features")
+            expect_is_not_none(features, message="features should be present")
+            expect_true(isinstance(features, dict), message="features should be dict")
+
+            # ServingMetaResponse has limits
+            limits = result.get("limits")
+            expect_is_not_none(limits, message="limits should be present")
+
+            # ServingMetaResponse has server_version
+            server_version = result.get("server_version")
+            expect_is_not_none(server_version, message="server_version should be present")
     finally:
         await manager.stop()

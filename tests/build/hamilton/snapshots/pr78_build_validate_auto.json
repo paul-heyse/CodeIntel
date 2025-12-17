@@ -175,13 +175,13 @@
     },
     {
       "code": "deps_mismatch",
-      "message": "Declared deps drift from Hamilton-derived deps (declared=['profiles'], derived=['function_metrics', 'modules'])",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['profiles'], derived=[])",
       "severity": "warning",
       "target": "export_jsonl"
     },
     {
       "code": "deps_mismatch",
-      "message": "Declared deps drift from Hamilton-derived deps (declared=['profiles'], derived=['function_metrics'])",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['profiles'], derived=[])",
       "severity": "warning",
       "target": "export_parquet"
     },

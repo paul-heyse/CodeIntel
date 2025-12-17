@@ -11,9 +11,11 @@ from __future__ import annotations
 import os
 import tempfile
 import time
+import types
+import typing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args, get_origin
 
 from hamilton.io.data_adapters import DataSaver
 
@@ -62,7 +64,6 @@ class FileArtifactSaver(DataSaver):
         str
             Adapter name used by Hamilton for saver metadata.
         """
-
         return "codeintel.file_artifact"
 
     @classmethod
@@ -74,8 +75,32 @@ class FileArtifactSaver(DataSaver):
         list[type]
             Types that this saver can write as a file artifact.
         """
-
         return [bytes, str, Path]
+
+    @classmethod
+    def applies_to(cls, type_: type) -> bool:
+        """Return True when this saver can handle the Hamilton node output type.
+
+        Parameters
+        ----------
+        type_
+            Hamilton node output type.
+
+        Returns
+        -------
+        bool
+            True when the saver can persist the output type.
+        """
+        if type_ in {bytes, str, Path}:
+            return True
+
+        origin = get_origin(type_)
+        if origin in {types.UnionType, typing.Union}:
+            bases = {get_origin(arg) or arg for arg in get_args(type_)}
+            if bases.issubset({bytes, str, Path, type(None)}):
+                return True
+
+        return super().applies_to(type_)
 
     def save_data(self, data: object) -> dict[str, Any]:
         """Save the provided artifact content and return metadata.
@@ -91,7 +116,6 @@ class FileArtifactSaver(DataSaver):
         dict[str, Any]
             Metadata describing the write, including status and input hash.
         """
-
         start = time.perf_counter()
         input_hash: str | None = None
         result: dict[str, Any] | None = None
@@ -321,5 +345,3 @@ __all__ = [
     "FileArtifactSaver",
     "SaveStatus",
 ]
-
-

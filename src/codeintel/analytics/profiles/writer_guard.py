@@ -3,9 +3,8 @@
 This module provides utilities for writing profile data with schema validation
 and bulk insertion support.
 
-For new code, use ``materialize_rows`` from
-``codeintel.build.hamilton.native.materializer`` with Hamilton materializers,
-or ``write_rows_via_policy_backend`` via ``PolicyWriterConfig``.
+For new code, prefer ``write_rows_via_policy_backend`` via ``PolicyWriterConfig``,
+or use Hamilton materializers (DataSavers) from ``codeintel.build.hamilton.materializers``.
 """
 
 from __future__ import annotations

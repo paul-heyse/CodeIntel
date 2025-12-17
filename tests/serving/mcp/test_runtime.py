@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import cast
 
 import anyio
 import pytest
@@ -51,7 +52,7 @@ async def test_query_limiter_concurrency() -> None:
 
     # Both tasks should complete
     expected_results = [1, 2]
-    expect_equal(sorted(results), expected_results)
+    expect_equal(sorted(cast(tuple[int, int], results)), expected_results)
 
     # With max_concurrent=1, tasks should serialize:
     # One task must fully complete before the other starts
@@ -100,7 +101,7 @@ async def test_query_limiter_run_async_concurrency() -> None:
         limiter.run_async(async_task, "b"),
     )
 
-    expect_equal(sorted(results), ["a", "b"])
+    expect_equal(sorted(cast(tuple[str, str], results)), ["a", "b"])
     expected_count = 4
     expect_equal(len(execution_order), expected_count)
 

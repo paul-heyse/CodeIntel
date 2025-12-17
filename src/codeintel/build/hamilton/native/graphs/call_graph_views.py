@@ -14,12 +14,16 @@ from typing import Any, cast
 
 import ibis
 import ibis.expr.types as ir
-from hamilton.function_modifiers import check_output_custom, schema, tag
+from hamilton.function_modifiers import check_output_custom, schema, source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_tables
+from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materializations,
+)
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
@@ -28,7 +32,21 @@ LOG = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
-@tag(domain="graphs", target="call_graph_views", node_type="compute", view="function_call_counts")
+@SaveToDecorator(
+    [DuckDBIbisTableSaver],
+    output_name_=materialize_node("graph.v_function_call_counts"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("call_graph_views"),
+    table_key=value("graph.v_function_call_counts"),
+)
+@tag(
+    domain="graphs",
+    target="call_graph_views",
+    node_type="compute",
+    view="function_call_counts",
+    target_="call_graph_function_call_counts",
+)
 @check_output_custom(
     *build_table_contract(
         required_columns=[
@@ -49,6 +67,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
     ("num_callees", "int64"),
     ("num_unique_callees", "int64"),
     ("num_callers", "int64"),
+    target_="call_graph_function_call_counts",
 )
 def call_graph_function_call_counts(
     env: BuildEnv,
@@ -128,7 +147,21 @@ def call_graph_function_call_counts(
     return call_counts
 
 
-@tag(domain="graphs", target="call_graph_views", node_type="compute", view="call_depth_stats")
+@SaveToDecorator(
+    [DuckDBIbisTableSaver],
+    output_name_=materialize_node("graph.v_call_depth_stats"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("call_graph_views"),
+    table_key=value("graph.v_call_depth_stats"),
+)
+@tag(
+    domain="graphs",
+    target="call_graph_views",
+    node_type="compute",
+    view="call_depth_stats",
+    target_="call_graph_depth_stats",
+)
 @check_output_custom(
     *build_table_contract(
         required_columns=[
@@ -147,6 +180,7 @@ def call_graph_function_call_counts(
     ("function_goid_h128", "int64"),
     ("max_call_depth", "int64"),
     ("is_leaf", "boolean"),
+    target_="call_graph_depth_stats",
 )
 def call_graph_depth_stats(
     env: BuildEnv,
@@ -223,8 +257,8 @@ def call_graph_depth_stats(
 def t__call_graph_views(
     env: BuildEnv,
     graph: TargetGraph,
-    call_graph_function_call_counts: ir.Table,
-    call_graph_depth_stats: ir.Table,
+    m__graph__v_function_call_counts: dict[str, Any],
+    m__graph__v_call_depth_stats: dict[str, Any],
 ) -> TargetRunRecord:
     """Materialize all call graph views to DuckDB.
 
@@ -250,34 +284,15 @@ def t__call_graph_views(
     """
     LOG.info("Materializing call_graph_views to DuckDB")
 
-    executor = NativeTargetExecutor.for_target(env, graph, "call_graph_views")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        views_dict = {
-            "graph.v_function_call_counts": call_graph_function_call_counts,
-            "graph.v_call_depth_stats": call_graph_depth_stats,
-        }
-
-        dataset_refs = materialize_tables(
-            MaterializationContext(
-                gateway=env.gateway,
-                snapshot=env.snapshot,
-                validate=env.validate_outputs,
-                owner_target="call_graph_views",
-                input_hash=executor.input_hash,
-            ),
-            views_dict,
-        )
-
-        row_counts = {ref.table_key: ref.row_count or 0 for ref in dataset_refs}
-        total_rows = sum(row_counts.values())
-        LOG.info("call_graph_views materialization complete: %d total rows", total_rows)
-        return row_counts
-
-    return executor.execute(compute)
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name="call_graph_views",
+        materializations={
+            "graph.v_function_call_counts": m__graph__v_function_call_counts,
+            "graph.v_call_depth_stats": m__graph__v_call_depth_stats,
+        },
+    )
 
 
 __all__ = [

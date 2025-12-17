@@ -33,6 +33,9 @@ if TYPE_CHECKING:
         FunctionEffectsInputs,
         FunctionEffectsOptions,
     )
+    from codeintel.analytics.functions.metrics import (
+        FunctionAnalyticsResult as _FunctionAnalyticsResult,
+    )
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
@@ -41,13 +44,19 @@ if TYPE_CHECKING:
 __all__ = [
     "FUNCTION_HISTORY_COLS",
     "FunctionAnalyticsOptions",
+    "FunctionAnalyticsResult",
     "build_function_history_rows",
+    "compute_function_analytics_result",
     "compute_function_contracts",
     "compute_function_effects",
     "compute_function_metrics_and_types",
 ]
 
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
+    "compute_function_analytics_result": (
+        "codeintel.analytics.functions.metrics",
+        "compute_function_analytics_result",
+    ),
     "compute_function_contracts": (
         "codeintel.analytics.functions.function_contracts",
         "compute_function_contracts",
@@ -59,6 +68,10 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "compute_function_metrics_and_types": (
         "codeintel.analytics.functions.metrics",
         "compute_function_metrics_and_types",
+    ),
+    "FunctionAnalyticsResult": (
+        "codeintel.analytics.functions.metrics",
+        "FunctionAnalyticsResult",
     ),
 }
 
@@ -129,6 +142,38 @@ def compute_function_effects(
         _load("compute_function_effects"),
     )
     return func(gateway, snapshot, options=options, inputs=inputs)
+
+
+def compute_function_analytics_result(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    options: FunctionAnalyticsOptions | None = None,
+) -> _FunctionAnalyticsResult:
+    """Compute pure function analytics result without persisting.
+
+    This is the pure compute path for Hamilton DAG-visible I/O. It returns
+    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DuckDB access.
+    snapshot
+        Repository and commit identifiers.
+    options
+        Optional configuration for metrics computation.
+
+    Returns
+    -------
+    FunctionAnalyticsResult
+        Container with metrics_rows, types_rows, and validation reporter.
+    """
+    func = cast(
+        "Callable[..., _FunctionAnalyticsResult]",
+        _load("compute_function_analytics_result"),
+    )
+    return func(gateway, snapshot, options=options)
 
 
 def compute_function_metrics_and_types(

@@ -11,7 +11,7 @@ from codeintel.build.hamilton.materializers.duckdb_rows_saver import DuckDBRowsS
 from codeintel.build.hamilton.materializers.duckdb_saver import DuckDBIbisTableSaver
 
 __all__ = [
-    "DuckDBRowsSaver",
     "DuckDBIbisTableSaver",
+    "DuckDBRowsSaver",
     "FileArtifactSaver",
 ]

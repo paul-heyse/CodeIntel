@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import cache, tag
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import build_scan_profile, filter_modules
@@ -87,6 +87,7 @@ class RepoMapWriteResult:
     error: str | None = None
 
 
+@cache(format="memory")
 @tag(domain="ingestion", target="modules", node_type="compute")
 def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
     """Execute repository scan to discover modules.

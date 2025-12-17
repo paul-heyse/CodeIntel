@@ -1,20 +1,8 @@
-"""Pure compute functions and materialization helpers for validation reporters.
+"""Pure compute utilities for validation reporters.
 
 This module provides pure compute functions that extract row data from validation
-reporters and materialization helpers that integrate with the Hamilton build layer.
-
-The ``to_rows()`` method on reporter instances extracts accumulated data for
-batch database insertion via Hamilton materializers.
-
-Example
--------
->>> from codeintel.analytics.parsing import (
-...     FunctionValidationReporter,
-...     materialize_function_validation,
-... )
->>> reporter = FunctionValidationReporter(repo="org/repo", commit="abc123")
->>> # ... accumulate validation findings ...
->>> ref = materialize_function_validation(ctx, reporter)
+reporters without performing any I/O. The returned row tuples can be persisted
+by the build system using Hamilton materializers.
 """
 
 from __future__ import annotations
@@ -22,15 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.parsing.validation import FUNCTION_VALIDATION_COLS, GRAPH_VALIDATION_COLS
-from codeintel.build.hamilton.native.materializer import materialize_rows
-
 if TYPE_CHECKING:
     from codeintel.analytics.parsing.validation import (
         FunctionValidationReporter,
         GraphValidationReporter,
     )
-    from codeintel.build.hamilton.native.materializer import DatasetRef, MaterializationContext
 
 
 @dataclass(frozen=True)
@@ -80,67 +64,7 @@ def get_validation_rows(
     )
 
 
-def materialize_function_validation(
-    ctx: MaterializationContext,
-    reporter: FunctionValidationReporter,
-) -> DatasetRef:
-    """Materialize function validation rows via Hamilton build layer.
-
-    Use this function instead of `FunctionValidationReporter.flush()` to
-    persist validation findings with proper asset catalog tracking.
-
-    Parameters
-    ----------
-    ctx
-        Materialization context with gateway and snapshot info.
-    reporter
-        Function validation reporter with accumulated rows.
-
-    Returns
-    -------
-    DatasetRef
-        Reference to the materialized dataset with row count.
-    """
-    return materialize_rows(
-        ctx,
-        "analytics.function_validation",
-        reporter.to_rows(),
-        FUNCTION_VALIDATION_COLS,
-    )
-
-
-def materialize_graph_validation(
-    ctx: MaterializationContext,
-    reporter: GraphValidationReporter,
-) -> DatasetRef:
-    """Materialize graph validation rows via Hamilton build layer.
-
-    Use this function instead of `GraphValidationReporter.flush()` to
-    persist validation findings with proper asset catalog tracking.
-
-    Parameters
-    ----------
-    ctx
-        Materialization context with gateway and snapshot info.
-    reporter
-        Graph validation reporter with accumulated rows.
-
-    Returns
-    -------
-    DatasetRef
-        Reference to the materialized dataset with row count.
-    """
-    return materialize_rows(
-        ctx,
-        "analytics.graph_validation",
-        reporter.to_rows(),
-        GRAPH_VALIDATION_COLS,
-    )
-
-
 __all__ = [
     "ValidationResult",
     "get_validation_rows",
-    "materialize_function_validation",
-    "materialize_graph_validation",
 ]

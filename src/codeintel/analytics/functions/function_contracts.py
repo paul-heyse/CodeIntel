@@ -54,6 +54,62 @@ class _RowInputs:
     now: datetime
 
 
+def build_function_contracts_rows(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    function_ast_map: dict[int, FunctionAst] | None = None,
+    catalog: FunctionCatalogProvider | None = None,
+    max_conditions_per_func: int = 64,
+) -> list[dict[str, object]]:
+    """
+    Build contract rows for `analytics.function_contracts` without persisting.
+
+    This is the pure compute path for Hamilton DAG-visible I/O. It returns
+    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DuckDB access.
+    snapshot
+        Repository and commit identifiers.
+    function_ast_map
+        Mapping of GOID to parsed function AST (from AstProvider).
+    catalog
+        Function catalog provider (from CatalogProvider).
+    max_conditions_per_func
+        Maximum number of preconditions/postconditions/raises per function.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Contract rows ready for persistence.
+    """
+    ast_by_goid = function_ast_map or {}
+
+    if catalog is not None:
+        all_goids = {span.goid for span in catalog.catalog().function_spans}
+    else:
+        all_goids = set()
+
+    doc_map = _load_docstrings(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    type_map = _load_function_types(gateway, repo=snapshot.repo, commit=snapshot.commit)
+
+    return _build_rows(
+        _RowInputs(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            max_conditions_per_func=max_conditions_per_func,
+            goids=all_goids,
+            ast_by_goid=ast_by_goid,
+            doc_map=doc_map,
+            type_map=type_map,
+            now=datetime.now(tz=UTC),
+        )
+    )
+
+
 def compute_function_contracts(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
@@ -78,29 +134,13 @@ def compute_function_contracts(
     max_conditions_per_func
         Maximum number of preconditions/postconditions/raises per function.
     """
-    ast_by_goid = function_ast_map or {}
-
-    if catalog is not None:
-        all_goids = {span.goid for span in catalog.catalog().function_spans}
-    else:
-        all_goids = set()
-
-    doc_map = _load_docstrings(gateway, repo=snapshot.repo, commit=snapshot.commit)
-    type_map = _load_function_types(gateway, repo=snapshot.repo, commit=snapshot.commit)
-
-    rows = _build_rows(
-        _RowInputs(
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            max_conditions_per_func=max_conditions_per_func,
-            goids=all_goids,
-            ast_by_goid=ast_by_goid,
-            doc_map=doc_map,
-            type_map=type_map,
-            now=datetime.now(tz=UTC),
-        )
+    rows = build_function_contracts_rows(
+        gateway,
+        snapshot,
+        function_ast_map=function_ast_map,
+        catalog=catalog,
+        max_conditions_per_func=max_conditions_per_func,
     )
-
     _persist_contract_rows(gateway, snapshot, rows)
 
 
