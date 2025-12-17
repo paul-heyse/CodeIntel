@@ -84,7 +84,6 @@ if TYPE_CHECKING:
     from codeintel.build.contracts import EMPTY_CONTRACT, ArtifactSpec, OutputContract
     from codeintel.build.errors import BuildError, BuildErrorCollection
     from codeintel.build.hashing import compute_input_hash, compute_options_hash
-    from codeintel.build.manifest import BuildRunRecord, OutputManifest
     from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
     from codeintel.build.registry import get_target_graph
     from codeintel.build.resources import (
@@ -95,6 +94,7 @@ if TYPE_CHECKING:
     )
     from codeintel.build.run_config import BuildRunConfig
     from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
+    from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "DEFAULT_EXECUTION": ("codeintel.build.resources", "DEFAULT_EXECUTION"),
@@ -105,9 +105,9 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "BuildError": ("codeintel.build.errors", "BuildError"),
     "BuildErrorCollection": ("codeintel.build.errors", "BuildErrorCollection"),
     "BuildRunConfig": ("codeintel.build.run_config", "BuildRunConfig"),
-    "BuildRunRecord": ("codeintel.build.manifest", "BuildRunRecord"),
+    "BuildRunRecord": ("codeintel.core.build_manifest", "BuildRunRecord"),
     "OutputContract": ("codeintel.build.contracts", "OutputContract"),
-    "OutputManifest": ("codeintel.build.manifest", "OutputManifest"),
+    "OutputManifest": ("codeintel.core.build_manifest", "OutputManifest"),
     "OutputTarget": ("codeintel.build.targets", "OutputTarget"),
     "TargetExecution": ("codeintel.build.resources", "TargetExecution"),
     "TargetExecutionContext": ("codeintel.build.context", "TargetExecutionContext"),

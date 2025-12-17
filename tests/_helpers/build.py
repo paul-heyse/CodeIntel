@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
-from codeintel.build.manifest import OutputManifest
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
+from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
 from tests._helpers.fakes.fake_providers import (

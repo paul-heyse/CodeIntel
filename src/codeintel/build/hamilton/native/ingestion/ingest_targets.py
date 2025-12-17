@@ -31,7 +31,11 @@ from codeintel.build.hamilton.helpers import (
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.hamilton.native.table_counts import normalize_table_counts
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
@@ -65,53 +69,69 @@ log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ModuleRecord)
 
+MODULES_TARGET_NAME = "modules"
+CONFIG_INGEST_TARGET_NAME = "config_ingest"
+COVERAGE_INGEST_TARGET_NAME = "coverage_ingest"
+TESTS_INGEST_TARGET_NAME = "tests_ingest"
+TYPING_TARGET_NAME = "typing"
+
+MODULES_TABLE_KEY = "core.modules"
+FILE_STATE_TABLE_KEY = "core.file_state"
+REPO_MAP_TABLE_KEY = "core.repo_map"
+MODULES_TABLE_KEYS = (MODULES_TABLE_KEY, FILE_STATE_TABLE_KEY, REPO_MAP_TABLE_KEY)
+
+CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
+COVERAGE_LINES_TABLE_KEY = "analytics.coverage_lines"
+TEST_CATALOG_TABLE_KEY = "analytics.test_catalog"
+TYPEDNESS_TABLE_KEY = "analytics.typedness"
+STATIC_DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
+TYPING_TABLE_KEYS = (TYPEDNESS_TABLE_KEY, STATIC_DIAGNOSTICS_TABLE_KEY)
+
+
 TARGET_SPECS = (
     make_output_target(
-        name="modules",
+        name=MODULES_TARGET_NAME,
         module="ingestion",
         description="Repository module and file index from scanning.",
-        table_keys=(
-            "core.modules",
-            "core.file_state",
-            "core.repo_map",
+        options=TargetSpecOptions(
+            table_keys=MODULES_TABLE_KEYS,
         ),
     ),
     make_output_target(
-        name="config_ingest",
+        name=CONFIG_INGEST_TARGET_NAME,
         module="ingestion",
         description="Configuration file parsing and reference tracking.",
-        table_keys=("analytics.config_values",),
+        options=TargetSpecOptions(table_keys=(CONFIG_VALUES_TABLE_KEY,)),
     ),
     make_output_target(
-        name="coverage_ingest",
+        name=COVERAGE_INGEST_TARGET_NAME,
         module="ingestion",
         description="Line-level test coverage ingestion.",
-        table_keys=("analytics.coverage_lines",),
+        options=TargetSpecOptions(table_keys=(COVERAGE_LINES_TABLE_KEY,)),
     ),
     make_output_target(
-        name="tests_ingest",
+        name=TESTS_INGEST_TARGET_NAME,
         module="ingestion",
         description="Test catalog ingestion from pytest.",
-        table_keys=("analytics.test_catalog",),
+        options=TargetSpecOptions(table_keys=(TEST_CATALOG_TABLE_KEY,)),
     ),
     make_output_target(
-        name="typing",
+        name=TYPING_TARGET_NAME,
         module="ingestion",
         description="Type annotation analysis and static diagnostics.",
-        table_keys=(
-            "analytics.typedness",
-            "analytics.static_diagnostics",
-        ),
-        resources=TargetResources(
-            tracker=True,
-            modules=True,
-            tools=(
-                "pyright",
-                "pyrefly",
-                "ruff",
+        options=TargetSpecOptions(
+            table_keys=TYPING_TABLE_KEYS,
+            resources=TargetResources(
+                tracker=True,
+                modules=True,
+                tools=(
+                    "pyright",
+                    "pyrefly",
+                    "ruff",
+                ),
             ),
+            execution=TOOL_EXECUTION,
         ),
-        execution=TOOL_EXECUTION,
     ),
 )
 
@@ -208,7 +228,7 @@ def module_records(env: BuildEnv, module_paths: tuple[str, ...]) -> tuple[Module
 
 
 @cache(format="memory")
-@tag(domain="ingestion", target="modules", node_type="tool")
+@tag(domain="ingestion", target=MODULES_TARGET_NAME, node_type="tool")
 def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
     """Execute repository scan to discover modules.
 
@@ -270,7 +290,7 @@ def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
         )
 
 
-@tag(domain="ingestion", target="modules", node_type="tool")
+@tag(domain="ingestion", target=MODULES_TARGET_NAME, node_type="tool")
 def t__modules__write_repo_map(
     env: BuildEnv,
     t__modules__scan: ModuleScanResult,
@@ -313,7 +333,7 @@ def t__modules__write_repo_map(
 
         warehouse = Warehouse(env.gateway)
         warehouse.materialize_mappings(
-            "core.repo_map",
+            REPO_MAP_TABLE_KEY,
             [
                 {
                     "repo": env.snapshot.repo,
@@ -339,7 +359,7 @@ def t__modules__write_repo_map(
         )
 
 
-@tag(domain="ingestion", target="modules", node_type="materialize")
+@tag(domain="ingestion", target=MODULES_TARGET_NAME, node_type="materialize")
 def t__modules(
     env: BuildEnv,
     graph: TargetGraph,
@@ -367,7 +387,7 @@ def t__modules(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "modules")
+    executor = NativeTargetExecutor.for_target(env, graph, MODULES_TARGET_NAME)
 
     if executor.should_skip():
         return executor.skip()
@@ -383,8 +403,11 @@ def t__modules(
 
     # Compute final row counts
     def compute() -> dict[str, int]:
-        row_counts = dict(t__modules__scan.table_counts)
-        row_counts["core.repo_map"] = t__modules__write_repo_map.row_count
+        row_counts = normalize_table_counts(
+            MODULES_TABLE_KEYS,
+            dict(t__modules__scan.table_counts),
+        )
+        row_counts[REPO_MAP_TABLE_KEY] = t__modules__write_repo_map.row_count
         return row_counts
 
     return executor.execute(compute)
@@ -436,7 +459,7 @@ class ConfigIngestResult:
     error: str | None = None
 
 
-@tag(domain="ingestion", target="config_ingest", node_type="tool")
+@tag(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, node_type="tool")
 def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
     """Discover config files in repository.
 
@@ -463,7 +486,7 @@ def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
         return ConfigScanResult(success=False, error="Config file discovery failed with exception")
 
 
-@tag(domain="ingestion", target="config_ingest", node_type="tool")
+@tag(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, node_type="tool")
 def t__config_ingest__ingest(
     env: BuildEnv,
     t__config_ingest__scan: ConfigScanResult,
@@ -483,7 +506,10 @@ def t__config_ingest__ingest(
 
     config_files = t__config_ingest__scan.config_files
     if not config_files:
-        return ConfigIngestResult(success=True, table_counts={})
+        return ConfigIngestResult(
+            success=True,
+            table_counts=normalize_table_counts((CONFIG_VALUES_TABLE_KEY,), None),
+        )
 
     try:
         storage = DuckDBStorageAdapter(env.gateway)
@@ -505,7 +531,10 @@ def t__config_ingest__ingest(
 
         return ConfigIngestResult(
             success=True,
-            table_counts=result.table_counts or {},
+            table_counts=normalize_table_counts(
+                (CONFIG_VALUES_TABLE_KEY,),
+                dict(result.table_counts) if result.table_counts else None,
+            ),
             errors=list(result.errors) if result.errors else [],
         )
     except Exception:
@@ -516,7 +545,7 @@ def t__config_ingest__ingest(
         )
 
 
-@tag(domain="ingestion", target="config_ingest", node_type="materialize")
+@tag(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, node_type="materialize")
 def t__config_ingest(
     env: BuildEnv,
     graph: TargetGraph,
@@ -533,7 +562,7 @@ def t__config_ingest(
     for error in t__config_ingest__ingest.errors:
         log.warning("Config parse warning: %s", error)
 
-    return executor_materialize(env, graph, "config_ingest", t__config_ingest__ingest)
+    return executor_materialize(env, graph, CONFIG_INGEST_TARGET_NAME, t__config_ingest__ingest)
 
 
 # ---------------------------------------------------------------------------
@@ -566,7 +595,7 @@ def _resolve_coverage_file(env: BuildEnv) -> Path | None:
     return None
 
 
-@tag(domain="ingestion", target="coverage_ingest", node_type="tool")
+@tag(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME, node_type="tool")
 async def t__coverage_ingest__ingest(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -588,7 +617,11 @@ async def t__coverage_ingest__ingest(
     coverage_path = _resolve_coverage_file(env)
     if coverage_path is None:
         log.info("No coverage file found, skipping coverage ingestion")
-        return CoverageIngestResult(success=True, skipped=True, table_counts={})
+        return CoverageIngestResult(
+            success=True,
+            skipped=True,
+            table_counts=normalize_table_counts((COVERAGE_LINES_TABLE_KEY,), None),
+        )
 
     try:
         storage = DuckDBStorageAdapter(env.gateway)
@@ -614,7 +647,10 @@ async def t__coverage_ingest__ingest(
 
         return CoverageIngestResult(
             success=True,
-            table_counts=result.table_counts or {},
+            table_counts=normalize_table_counts(
+                (COVERAGE_LINES_TABLE_KEY,),
+                dict(result.table_counts) if result.table_counts else None,
+            ),
         )
     except Exception:
         log.exception("Coverage ingestion failed")
@@ -624,7 +660,7 @@ async def t__coverage_ingest__ingest(
         )
 
 
-@tag(domain="ingestion", target="coverage_ingest", node_type="materialize")
+@tag(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME, node_type="materialize")
 def t__coverage_ingest(
     env: BuildEnv,
     graph: TargetGraph,
@@ -637,7 +673,7 @@ def t__coverage_ingest(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    return executor_materialize(env, graph, "coverage_ingest", t__coverage_ingest__ingest)
+    return executor_materialize(env, graph, COVERAGE_INGEST_TARGET_NAME, t__coverage_ingest__ingest)
 
 
 # ---------------------------------------------------------------------------
@@ -677,7 +713,7 @@ def _resolve_report_file(env: BuildEnv) -> Path | None:
     return None
 
 
-@tag(domain="ingestion", target="tests_ingest", node_type="tool")
+@tag(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, node_type="tool")
 def t__tests_ingest__ingest(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -699,7 +735,11 @@ def t__tests_ingest__ingest(
     report_path = _resolve_report_file(env)
     if report_path is None:
         log.info("No pytest report found, skipping tests ingestion")
-        return TestsIngestResult(success=True, skipped=True, table_counts={})
+        return TestsIngestResult(
+            success=True,
+            skipped=True,
+            table_counts=normalize_table_counts((TEST_CATALOG_TABLE_KEY,), None),
+        )
 
     try:
         storage = DuckDBStorageAdapter(env.gateway)
@@ -720,7 +760,10 @@ def t__tests_ingest__ingest(
 
         return TestsIngestResult(
             success=True,
-            table_counts=result.table_counts or {},
+            table_counts=normalize_table_counts(
+                (TEST_CATALOG_TABLE_KEY,),
+                dict(result.table_counts) if result.table_counts else None,
+            ),
         )
     except Exception:
         log.exception("Tests ingestion failed")
@@ -730,7 +773,7 @@ def t__tests_ingest__ingest(
         )
 
 
-@tag(domain="ingestion", target="tests_ingest", node_type="materialize")
+@tag(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, node_type="materialize")
 def t__tests_ingest(
     env: BuildEnv,
     graph: TargetGraph,
@@ -743,7 +786,7 @@ def t__tests_ingest(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    return executor_materialize(env, graph, "tests_ingest", t__tests_ingest__ingest)
+    return executor_materialize(env, graph, TESTS_INGEST_TARGET_NAME, t__tests_ingest__ingest)
 
 
 # ---------------------------------------------------------------------------
@@ -761,7 +804,7 @@ class TypingIngestResult:
     error: str | None = None
 
 
-@tag(domain="ingestion", target="typing", node_type="tool")
+@tag(domain="ingestion", target=TYPING_TARGET_NAME, node_type="tool")
 def t__typing__ingest(
     env: BuildEnv,
     graph: TargetGraph,
@@ -781,12 +824,19 @@ def t__typing__ingest(
             error=f"Upstream modules target failed: {t__modules.error}",
         )
 
-    executor = NativeTargetExecutor.for_target(env, graph, "typing")
+    executor = NativeTargetExecutor.for_target(env, graph, TYPING_TARGET_NAME)
     if executor.should_skip():
-        return TypingIngestResult(success=True, skipped=True)
+        return TypingIngestResult(
+            success=True,
+            skipped=True,
+            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, None),
+        )
 
     if not module_records:
-        return TypingIngestResult(success=True, table_counts={})
+        return TypingIngestResult(
+            success=True,
+            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, None),
+        )
 
     storage = DuckDBStorageAdapter(env.gateway)
     discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
@@ -813,21 +863,24 @@ def t__typing__ingest(
         return TypingIngestResult(
             success=True,
             skipped=True,
-            table_counts=dict(result.table_counts),
+            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts)),
             error=result.skip_reason,
         )
 
     if not result.success:
         return TypingIngestResult(
             success=False,
-            table_counts=dict(result.table_counts),
+            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts)),
             error="; ".join(result.errors) if result.errors else "Typing ingestion failed",
         )
 
-    return TypingIngestResult(success=True, table_counts=dict(result.table_counts))
+    return TypingIngestResult(
+        success=True,
+        table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts)),
+    )
 
 
-@tag(domain="ingestion", target="typing", node_type="materialize")
+@tag(domain="ingestion", target=TYPING_TARGET_NAME, node_type="materialize")
 def t__typing(
     env: BuildEnv,
     graph: TargetGraph,
@@ -840,4 +893,4 @@ def t__typing(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    return executor_materialize(env, graph, "typing", t__typing__ingest)
+    return executor_materialize(env, graph, TYPING_TARGET_NAME, t__typing__ingest)

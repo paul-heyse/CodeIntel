@@ -249,6 +249,16 @@ def main() -> int:
         ),
         CommandSpec(name="ruff_check", args=["uv", "run", "ruff", "check", "--fix"]),
         CommandSpec(
+            name="target_contracts",
+            args=[
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "codeintel.build.hamilton.contracts.check_target_contracts",
+            ],
+        ),
+        CommandSpec(
             name="operation_contracts",
             args=[
                 "uv",

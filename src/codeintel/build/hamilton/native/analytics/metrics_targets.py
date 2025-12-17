@@ -56,8 +56,11 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -73,48 +76,68 @@ _HAMILTON_TYPE_HINTS = (
     TestGraphMetricsResult,
 )
 
+FUNCTION_HISTORY_TARGET_NAME = "function_history"
+HISTORY_TIMESERIES_TARGET_NAME = "history_timeseries"
+SUBSYSTEM_GRAPH_METRICS_TARGET_NAME = "subsystem_graph_metrics"
+SYMBOL_GRAPH_METRICS_TARGET_NAME = "symbol_graph_metrics"
+SUBSYSTEM_AGREEMENT_TARGET_NAME = "subsystem_agreement"
+TEST_GRAPH_METRICS_TARGET_NAME = "test_graph_metrics"
+
+FUNCTION_HISTORY_TABLE_KEY = "analytics.function_history"
+HISTORY_TIMESERIES_TABLE_KEY = "analytics.history_timeseries"
+SUBSYSTEM_GRAPH_METRICS_TABLE_KEY = "analytics.subsystem_graph_metrics"
+SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY = "analytics.symbol_graph_metrics_modules"
+SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY = "analytics.symbol_graph_metrics_functions"
+SYMBOL_GRAPH_METRICS_TABLE_KEYS = (
+    SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY,
+    SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+)
+SUBSYSTEM_AGREEMENT_TABLE_KEY = "analytics.subsystem_agreement"
+TEST_GRAPH_METRICS_TESTS_TABLE_KEY = "analytics.test_graph_metrics_tests"
+TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY = "analytics.test_graph_metrics_functions"
+TEST_GRAPH_METRICS_TABLE_KEYS = (
+    TEST_GRAPH_METRICS_TESTS_TABLE_KEY,
+    TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+)
+
 TARGET_SPECS = (
     make_output_target(
-        name="function_history",
+        name=FUNCTION_HISTORY_TARGET_NAME,
         module="analytics",
         description="Function git history and churn metrics.",
-        table_keys=("analytics.function_history",),
+        options=TargetSpecOptions(table_keys=(FUNCTION_HISTORY_TABLE_KEY,)),
     ),
     make_output_target(
-        name="history_timeseries",
+        name=HISTORY_TIMESERIES_TARGET_NAME,
         module="analytics",
         description="Historical metrics timeseries for trending.",
-        table_keys=("analytics.history_timeseries",),
+        options=TargetSpecOptions(table_keys=(HISTORY_TIMESERIES_TABLE_KEY,)),
     ),
     make_output_target(
-        name="subsystem_graph_metrics",
+        name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
         module="analytics",
         description="Graph metrics for subsystems.",
-        table_keys=("analytics.subsystem_graph_metrics",),
+        options=TargetSpecOptions(table_keys=(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,)),
     ),
     make_output_target(
-        name="symbol_graph_metrics",
+        name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
         module="analytics",
         description="Graph metrics from symbol usage patterns.",
-        table_keys=(
-            "analytics.symbol_graph_metrics_modules",
-            "analytics.symbol_graph_metrics_functions",
+        options=TargetSpecOptions(
+            table_keys=SYMBOL_GRAPH_METRICS_TABLE_KEYS,
         ),
     ),
     make_output_target(
-        name="subsystem_agreement",
+        name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
         module="analytics",
         description="Subsystem vs import community agreement.",
-        table_keys=("analytics.subsystem_agreement",),
+        options=TargetSpecOptions(table_keys=(SUBSYSTEM_AGREEMENT_TABLE_KEY,)),
     ),
     make_output_target(
-        name="test_graph_metrics",
+        name=TEST_GRAPH_METRICS_TARGET_NAME,
         module="analytics",
         description="Graph metrics from test-function bipartite graph.",
-        table_keys=(
-            "analytics.test_graph_metrics_tests",
-            "analytics.test_graph_metrics_functions",
-        ),
+        options=TargetSpecOptions(table_keys=TEST_GRAPH_METRICS_TABLE_KEYS),
     ),
 )
 
@@ -192,16 +215,16 @@ class SubsystemAgreementResult:
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.function_history"),
+    output_name_=materialize_node(FUNCTION_HISTORY_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("function_history"),
-    table_key=value("analytics.function_history"),
+    target_name=value(FUNCTION_HISTORY_TARGET_NAME),
+    table_key=value(FUNCTION_HISTORY_TABLE_KEY),
     columns=value(tuple(FUNCTION_HISTORY_COLS)),
 )
 @tag(
     domain="analytics",
-    target="function_history",
+    target=FUNCTION_HISTORY_TARGET_NAME,
     node_type="compute",
     target_="t__function_history__compute",
 )
@@ -234,7 +257,7 @@ def t__function_history__compute(
     - Lines added and deleted (churn)
     - Stability bucket classification
     """
-    target = graph.get("function_history")
+    target = graph.get(FUNCTION_HISTORY_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -248,7 +271,7 @@ def t__function_history__compute(
     return build_function_history_rows(env.gateway, env.snapshot)
 
 
-@tag(domain="analytics", target="function_history", node_type="materialize")
+@tag(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME, node_type="materialize")
 def t__function_history(
     env: BuildEnv,
     graph: TargetGraph,
@@ -273,8 +296,8 @@ def t__function_history(
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,
-        target_name="function_history",
-        expected_table_key="analytics.function_history",
+        target_name=FUNCTION_HISTORY_TARGET_NAME,
+        expected_table_key=FUNCTION_HISTORY_TABLE_KEY,
         materialization=m__analytics__function_history,
     )
 
@@ -286,16 +309,16 @@ def t__function_history(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.history_timeseries"),
+    output_name_=materialize_node(HISTORY_TIMESERIES_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("history_timeseries"),
-    table_key=value("analytics.history_timeseries"),
+    target_name=value(HISTORY_TIMESERIES_TARGET_NAME),
+    table_key=value(HISTORY_TIMESERIES_TABLE_KEY),
     columns=value(tuple(HISTORY_TIMESERIES_COLS)),
 )
 @tag(
     domain="analytics",
-    target="history_timeseries",
+    target=HISTORY_TIMESERIES_TARGET_NAME,
     node_type="compute",
     target_="t__history_timeseries__compute",
 )
@@ -323,7 +346,7 @@ def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], .
     return ()
 
 
-@tag(domain="analytics", target="history_timeseries", node_type="materialize")
+@tag(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME, node_type="materialize")
 def t__history_timeseries(
     env: BuildEnv,
     graph: TargetGraph,
@@ -348,8 +371,8 @@ def t__history_timeseries(
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,
-        target_name="history_timeseries",
-        expected_table_key="analytics.history_timeseries",
+        target_name=HISTORY_TIMESERIES_TARGET_NAME,
+        expected_table_key=HISTORY_TIMESERIES_TABLE_KEY,
         materialization=m__analytics__history_timeseries,
     )
 
@@ -359,7 +382,7 @@ def t__history_timeseries(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target="subsystem_graph_metrics", node_type="tool")
+@tag(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME, node_type="tool")
 def t__subsystem_graph_metrics__compute(
     env: BuildEnv,
     t__subsystems: TargetRunRecord,
@@ -409,7 +432,7 @@ def t__subsystem_graph_metrics__compute(
 
         return SubsystemGraphMetricsResult(
             success=True,
-            table_counts={"analytics.subsystem_graph_metrics": row_count},
+            table_counts={SUBSYSTEM_GRAPH_METRICS_TABLE_KEY: row_count},
         )
 
     except Exception as exc:
@@ -417,7 +440,7 @@ def t__subsystem_graph_metrics__compute(
         return SubsystemGraphMetricsResult(success=False, error=str(exc))
 
 
-@tag(domain="analytics", target="subsystem_graph_metrics", node_type="materialize")
+@tag(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME, node_type="materialize")
 def t__subsystem_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -440,7 +463,10 @@ def t__subsystem_graph_metrics(
         Record with status, datasets, and execution metadata.
     """
     return executor_materialize(
-        env, graph, "subsystem_graph_metrics", t__subsystem_graph_metrics__compute
+        env,
+        graph,
+        SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+        t__subsystem_graph_metrics__compute,
     )
 
 
@@ -449,7 +475,7 @@ def t__subsystem_graph_metrics(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target="symbol_graph_metrics", node_type="tool")
+@tag(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME, node_type="tool")
 def t__symbol_graph_metrics__compute(
     env: BuildEnv,
     t__symbol_uses: TargetRunRecord,
@@ -474,7 +500,11 @@ def t__symbol_graph_metrics__compute(
             error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
         )
 
-    table_counts: dict[str, int] = {}
+    table_counts: dict[str, int] = {
+        SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY: 0,
+        SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY: 0,
+    }
+    errors: list[str] = []
 
     try:
         graph_runtime = _get_graph_runtime(env)
@@ -496,8 +526,9 @@ def t__symbol_graph_metrics__compute(
                 """,
                 [repo, commit],
             ).fetchone()
-            table_counts["analytics.symbol_graph_metrics_modules"] = int(row[0]) if row else 0
+            table_counts[SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY] = int(row[0]) if row else 0
         except (RuntimeError, ValueError, OSError) as exc:
+            errors.append(f"modules: {exc}")
             log.warning("Symbol graph metrics (modules) failed: %s", exc)
 
         try:
@@ -515,11 +546,18 @@ def t__symbol_graph_metrics__compute(
                 """,
                 [repo, commit],
             ).fetchone()
-            table_counts["analytics.symbol_graph_metrics_functions"] = int(row[0]) if row else 0
+            table_counts[SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY] = int(row[0]) if row else 0
         except (RuntimeError, ValueError, OSError) as exc:
+            errors.append(f"functions: {exc}")
             log.warning("Symbol graph metrics (functions) failed: %s", exc)
 
         log.info("Symbol graph metrics completed: %s", table_counts)
+        if errors:
+            return SymbolGraphMetricsResult(
+                success=False,
+                table_counts=table_counts,
+                error="; ".join(errors),
+            )
         return SymbolGraphMetricsResult(success=True, table_counts=table_counts)
 
     except Exception as exc:
@@ -527,7 +565,7 @@ def t__symbol_graph_metrics__compute(
         return SymbolGraphMetricsResult(success=False, error=str(exc))
 
 
-@tag(domain="analytics", target="symbol_graph_metrics", node_type="materialize")
+@tag(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME, node_type="materialize")
 def t__symbol_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -550,7 +588,10 @@ def t__symbol_graph_metrics(
         Record with status, datasets, and execution metadata.
     """
     return executor_materialize(
-        env, graph, "symbol_graph_metrics", t__symbol_graph_metrics__compute
+        env,
+        graph,
+        SYMBOL_GRAPH_METRICS_TARGET_NAME,
+        t__symbol_graph_metrics__compute,
     )
 
 
@@ -559,7 +600,7 @@ def t__symbol_graph_metrics(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target="subsystem_agreement", node_type="tool")
+@tag(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME, node_type="tool")
 def t__subsystem_agreement__compute(
     env: BuildEnv,
     t__subsystems: TargetRunRecord,
@@ -607,14 +648,14 @@ def t__subsystem_agreement__compute(
 
         return SubsystemAgreementResult(
             success=True,
-            table_counts={"analytics.subsystem_agreement": row_count},
+            table_counts={SUBSYSTEM_AGREEMENT_TABLE_KEY: row_count},
         )
     except Exception as exc:
         log.exception("Subsystem agreement computation failed")
         return SubsystemAgreementResult(success=False, error=str(exc))
 
 
-@tag(domain="analytics", target="subsystem_agreement", node_type="materialize")
+@tag(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME, node_type="materialize")
 def t__subsystem_agreement(
     env: BuildEnv,
     graph: TargetGraph,
@@ -636,7 +677,12 @@ def t__subsystem_agreement(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return executor_materialize(env, graph, "subsystem_agreement", t__subsystem_agreement__compute)
+    return executor_materialize(
+        env,
+        graph,
+        SUBSYSTEM_AGREEMENT_TARGET_NAME,
+        t__subsystem_agreement__compute,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -644,7 +690,7 @@ def t__subsystem_agreement(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target="test_graph_metrics", node_type="tool")
+@tag(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME, node_type="tool")
 def t__test_graph_metrics__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -663,7 +709,7 @@ def t__test_graph_metrics__compute(
     TestGraphMetricsResult | None
         Container with rows for test and function metrics tables, or None if skipped.
     """
-    target = graph.get("test_graph_metrics")
+    target = graph.get(TEST_GRAPH_METRICS_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -683,16 +729,16 @@ def t__test_graph_metrics__compute(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.test_graph_metrics_tests"),
+    output_name_=materialize_node(TEST_GRAPH_METRICS_TESTS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("test_graph_metrics"),
-    table_key=value("analytics.test_graph_metrics_tests"),
+    target_name=value(TEST_GRAPH_METRICS_TARGET_NAME),
+    table_key=value(TEST_GRAPH_METRICS_TESTS_TABLE_KEY),
     columns=value(tuple(TEST_GRAPH_METRICS_TESTS_COLS)),
 )
 @tag(
     domain="analytics",
-    target="test_graph_metrics",
+    target=TEST_GRAPH_METRICS_TARGET_NAME,
     node_type="compute",
     target_="test_graph_metrics__tests_rows",
 )
@@ -718,16 +764,16 @@ def test_graph_metrics__tests_rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.test_graph_metrics_functions"),
+    output_name_=materialize_node(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("test_graph_metrics"),
-    table_key=value("analytics.test_graph_metrics_functions"),
+    target_name=value(TEST_GRAPH_METRICS_TARGET_NAME),
+    table_key=value(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
     columns=value(tuple(TEST_GRAPH_METRICS_FUNCTIONS_COLS)),
 )
 @tag(
     domain="analytics",
-    target="test_graph_metrics",
+    target=TEST_GRAPH_METRICS_TARGET_NAME,
     node_type="compute",
     target_="test_graph_metrics__functions_rows",
 )
@@ -751,7 +797,7 @@ def test_graph_metrics__functions_rows(
     return tuple(t__test_graph_metrics__compute.function_rows)
 
 
-@tag(domain="analytics", target="test_graph_metrics", node_type="materialize")
+@tag(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME, node_type="materialize")
 def t__test_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -779,10 +825,10 @@ def t__test_graph_metrics(
     return record_from_duckdb_materializations(
         env=env,
         graph=graph,
-        target_name="test_graph_metrics",
+        target_name=TEST_GRAPH_METRICS_TARGET_NAME,
         materializations={
-            "analytics.test_graph_metrics_tests": m__analytics__test_graph_metrics_tests,
-            "analytics.test_graph_metrics_functions": m__analytics__test_graph_metrics_functions,
+            TEST_GRAPH_METRICS_TESTS_TABLE_KEY: m__analytics__test_graph_metrics_tests,
+            TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY: m__analytics__test_graph_metrics_functions,
         },
     )
 

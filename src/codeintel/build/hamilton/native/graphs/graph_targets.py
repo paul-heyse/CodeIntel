@@ -59,7 +59,10 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
 from codeintel.build.hamilton.native.options.graphs import GoidBuilderOptions, SymbolUsesOptions
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
@@ -84,58 +87,76 @@ LOG = log
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
-TARGET_SPECS = (
-    make_output_target(
-        name="goids",
-        module="graphs",
-        description="GOID resolution and crosswalk construction.",
-        table_keys=(
-            "core.goids",
-            "core.goid_crosswalk",
-        ),
-    ),
-    make_output_target(
-        name="symbol_uses",
-        module="graphs",
-        description="Symbol definition-to-use edge extraction.",
-        table_keys=("graph.symbol_use_edges",),
-    ),
-    make_output_target(
-        name="call_graph_views",
-        module="graphs",
-        description="Derived views over call graph for analytics.",
-        table_keys=(
-            "graph.v_function_call_counts",
-            "graph.v_call_depth_stats",
-        ),
-    ),
-    make_output_target(
-        name="graph_metrics",
-        module="graphs",
-        description="Graph topology metrics for functions and modules.",
-        table_keys=(
-            "analytics.graph_metrics_functions",
-            "analytics.graph_metrics_functions_ext",
-            "analytics.graph_metrics_modules",
-            "analytics.graph_metrics_modules_ext",
-            "analytics.graph_stats",
-        ),
-    ),
-    make_output_target(
-        name="graph_validation",
-        module="graphs",
-        description="Graph integrity validation checks.",
-        table_keys=("analytics.graph_validation",),
-    ),
+GOIDS_TARGET_NAME = "goids"
+SYMBOL_USES_TARGET_NAME = "symbol_uses"
+CALL_GRAPH_VIEWS_TARGET_NAME = "call_graph_views"
+GRAPH_METRICS_TARGET_NAME = "graph_metrics"
+GRAPH_VALIDATION_TARGET_NAME = "graph_validation"
+
+GOIDS_GOIDS_TABLE_KEY = "core.goids"
+GOIDS_CROSSWALK_TABLE_KEY = "core.goid_crosswalk"
+GOIDS_TABLE_KEYS = (
+    GOIDS_GOIDS_TABLE_KEY,
+    GOIDS_CROSSWALK_TABLE_KEY,
 )
 
-_GRAPH_METRICS_OUTPUT_TABLES = (
+SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
+SYMBOL_USES_TABLE_KEYS = (SYMBOL_USE_EDGES_TABLE_KEY,)
+
+CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS = "graph.v_function_call_counts"
+CALL_GRAPH_VIEWS_CALL_DEPTH_STATS = "graph.v_call_depth_stats"
+CALL_GRAPH_VIEWS_TABLE_KEYS = (
+    CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS,
+    CALL_GRAPH_VIEWS_CALL_DEPTH_STATS,
+)
+
+GRAPH_METRICS_TABLE_KEYS = (
     "analytics.graph_metrics_functions",
-    "analytics.graph_metrics_modules",
     "analytics.graph_metrics_functions_ext",
+    "analytics.graph_metrics_modules",
     "analytics.graph_metrics_modules_ext",
     "analytics.graph_stats",
 )
+
+GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
+GRAPH_VALIDATION_TABLE_KEYS = (GRAPH_VALIDATION_TABLE_KEY,)
+
+TARGET_SPECS = (
+    make_output_target(
+        name=GOIDS_TARGET_NAME,
+        module="graphs",
+        description="GOID resolution and crosswalk construction.",
+        options=TargetSpecOptions(
+            table_keys=GOIDS_TABLE_KEYS,
+        ),
+    ),
+    make_output_target(
+        name=SYMBOL_USES_TARGET_NAME,
+        module="graphs",
+        description="Symbol definition-to-use edge extraction.",
+        options=TargetSpecOptions(table_keys=SYMBOL_USES_TABLE_KEYS),
+    ),
+    make_output_target(
+        name=CALL_GRAPH_VIEWS_TARGET_NAME,
+        module="graphs",
+        description="Derived views over call graph for analytics.",
+        options=TargetSpecOptions(table_keys=CALL_GRAPH_VIEWS_TABLE_KEYS),
+    ),
+    make_output_target(
+        name=GRAPH_METRICS_TARGET_NAME,
+        module="graphs",
+        description="Graph topology metrics for functions and modules.",
+        options=TargetSpecOptions(table_keys=GRAPH_METRICS_TABLE_KEYS),
+    ),
+    make_output_target(
+        name=GRAPH_VALIDATION_TARGET_NAME,
+        module="graphs",
+        description="Graph integrity validation checks.",
+        options=TargetSpecOptions(table_keys=GRAPH_VALIDATION_TABLE_KEYS),
+    ),
+)
+
+_GRAPH_METRICS_OUTPUT_TABLES = GRAPH_METRICS_TABLE_KEYS
 
 # ---------------------------------------------------------------------------
 # Result dataclasses for goids target
@@ -573,7 +594,7 @@ def _load_path_to_goid_map(
         Mapping of normalized relative paths to module GOIDs.
     """
     try:
-        goids_tbl = gateway.ibis.table("core.goids")
+        goids_tbl = gateway.ibis.table(GOIDS_GOIDS_TABLE_KEY)
         expr = goids_tbl.filter(
             cast("Any", goids_tbl.repo == repo)
             & cast("Any", goids_tbl.commit == commit)
@@ -815,7 +836,7 @@ def _validate_cfg_integrity(
 # ---------------------------------------------------------------------------
 
 
-@tag(domain="graphs", target="goids", node_type="tool")
+@tag(domain="graphs", target=GOIDS_TARGET_NAME, node_type="tool")
 def t__goids__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -870,8 +891,8 @@ def t__goids__extract(
                 goid_count=0,
                 crosswalk_count=0,
                 table_counts={
-                    "core.goids": 0,
-                    "core.goid_crosswalk": 0,
+                    GOIDS_GOIDS_TABLE_KEY: 0,
+                    GOIDS_CROSSWALK_TABLE_KEY: 0,
                 },
             )
 
@@ -902,10 +923,18 @@ def t__goids__extract(
         )
 
         goid_count = persist_rows(
-            env.gateway, "core.goids", all_goid_rows, repo=repo, commit=commit
+            env.gateway,
+            GOIDS_GOIDS_TABLE_KEY,
+            all_goid_rows,
+            repo=repo,
+            commit=commit,
         )
         crosswalk_count = persist_rows(
-            env.gateway, "core.goid_crosswalk", all_crosswalk_rows, repo=repo, commit=commit
+            env.gateway,
+            GOIDS_CROSSWALK_TABLE_KEY,
+            all_crosswalk_rows,
+            repo=repo,
+            commit=commit,
         )
 
         log.info(
@@ -919,8 +948,8 @@ def t__goids__extract(
             goid_count=goid_count,
             crosswalk_count=crosswalk_count,
             table_counts={
-                "core.goids": goid_count,
-                "core.goid_crosswalk": crosswalk_count,
+                GOIDS_GOIDS_TABLE_KEY: goid_count,
+                GOIDS_CROSSWALK_TABLE_KEY: crosswalk_count,
             },
         )
 
@@ -932,7 +961,7 @@ def t__goids__extract(
         )
 
 
-@tag(domain="graphs", target="goids", node_type="materialize")
+@tag(domain="graphs", target=GOIDS_TARGET_NAME, node_type="materialize")
 def t__goids(
     env: BuildEnv,
     graph: TargetGraph,
@@ -957,7 +986,7 @@ def t__goids(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, "goids", t__goids__extract)
+    return executor_materialize(env, graph, GOIDS_TARGET_NAME, t__goids__extract)
 
 
 # ---------------------------------------------------------------------------
@@ -965,7 +994,7 @@ def t__goids(
 # ---------------------------------------------------------------------------
 
 
-@tag(domain="graphs", target="symbol_uses", node_type="tool")
+@tag(domain="graphs", target=SYMBOL_USES_TARGET_NAME, node_type="tool")
 def t__symbol_uses__extract(
     env: BuildEnv,
     t__scip: TargetRunRecord,
@@ -996,7 +1025,11 @@ def t__symbol_uses__extract(
 
         if not occurrences:
             log.info("symbol_uses: No SCIP occurrences found, skipping")
-            return SymbolUsesExtractResult(success=True, edge_count=0, table_counts={})
+            return SymbolUsesExtractResult(
+                success=True,
+                edge_count=0,
+                table_counts={SYMBOL_USE_EDGES_TABLE_KEY: 0},
+            )
 
         occurrences = _filter_symbol_occurrences(occurrences, options=opts)
 
@@ -1013,19 +1046,23 @@ def t__symbol_uses__extract(
         enriched_edges = _enrich_edges_with_goids(edges, path_to_goid)
         rows = symbols_compute.edges_to_rows(enriched_edges)
         row_count = persist_rows(
-            env.gateway, "graph.symbol_use_edges", rows, repo=repo, commit=commit
+            env.gateway,
+            SYMBOL_USE_EDGES_TABLE_KEY,
+            rows,
+            repo=repo,
+            commit=commit,
         )
         return SymbolUsesExtractResult(
             success=True,
             edge_count=row_count,
-            table_counts={"graph.symbol_use_edges": row_count},
+            table_counts={SYMBOL_USE_EDGES_TABLE_KEY: row_count},
         )
     except (RuntimeError, ValueError, OSError, KeyError) as exc:
         log.exception("symbol_uses: extraction failed")
         return SymbolUsesExtractResult(success=False, error=str(exc))
 
 
-@tag(domain="graphs", target="symbol_uses", node_type="materialize")
+@tag(domain="graphs", target=SYMBOL_USES_TARGET_NAME, node_type="materialize")
 def t__symbol_uses(
     env: BuildEnv,
     graph: TargetGraph,
@@ -1038,7 +1075,7 @@ def t__symbol_uses(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return executor_materialize(env, graph, "symbol_uses", t__symbol_uses__extract)
+    return executor_materialize(env, graph, SYMBOL_USES_TARGET_NAME, t__symbol_uses__extract)
 
 
 # ---------------------------------------------------------------------------
@@ -1225,11 +1262,11 @@ def _call_graph_views_finalize_depth_stats(tables: CallGraphDepthTables, env: Bu
 
 @SaveToDecorator(
     [DuckDBIbisTableSaver],
-    output_name_=materialize_node("graph.v_function_call_counts"),
+    output_name_=materialize_node(CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("call_graph_views"),
-    table_key=value("graph.v_function_call_counts"),
+    target_name=value(CALL_GRAPH_VIEWS_TARGET_NAME),
+    table_key=value(CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS),
 )
 @pipe_input(
     step(_call_graph_views_filter_edges, env=source("env")),
@@ -1240,7 +1277,7 @@ def _call_graph_views_finalize_depth_stats(tables: CallGraphDepthTables, env: Bu
 )
 @tag(
     domain="graphs",
-    target="call_graph_views",
+    target=CALL_GRAPH_VIEWS_TARGET_NAME,
     node_type="compute",
     view="function_call_counts",
     target_="call_graph_function_call_counts",
@@ -1282,11 +1319,11 @@ def call_graph_function_call_counts(
 
 @SaveToDecorator(
     [DuckDBIbisTableSaver],
-    output_name_=materialize_node("graph.v_call_depth_stats"),
+    output_name_=materialize_node(CALL_GRAPH_VIEWS_CALL_DEPTH_STATS),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("call_graph_views"),
-    table_key=value("graph.v_call_depth_stats"),
+    target_name=value(CALL_GRAPH_VIEWS_TARGET_NAME),
+    table_key=value(CALL_GRAPH_VIEWS_CALL_DEPTH_STATS),
 )
 @pipe_input(
     step(_call_graph_views_filter_edges, env=source("env")),
@@ -1297,7 +1334,7 @@ def call_graph_function_call_counts(
 )
 @tag(
     domain="graphs",
-    target="call_graph_views",
+    target=CALL_GRAPH_VIEWS_TARGET_NAME,
     node_type="compute",
     view="call_depth_stats",
     target_="call_graph_depth_stats",
@@ -1335,7 +1372,7 @@ def call_graph_depth_stats(
     return q__graph__call_graph_edges
 
 
-@tag(domain="graphs", target="call_graph_views", node_type="materialize")
+@tag(domain="graphs", target=CALL_GRAPH_VIEWS_TARGET_NAME, node_type="materialize")
 def t__call_graph_views(
     env: BuildEnv,
     graph: TargetGraph,
@@ -1354,10 +1391,10 @@ def t__call_graph_views(
     return record_from_duckdb_materializations(
         env=env,
         graph=graph,
-        target_name="call_graph_views",
+        target_name=CALL_GRAPH_VIEWS_TARGET_NAME,
         materializations={
-            "graph.v_function_call_counts": m__graph__v_function_call_counts,
-            "graph.v_call_depth_stats": m__graph__v_call_depth_stats,
+            CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS: m__graph__v_function_call_counts,
+            CALL_GRAPH_VIEWS_CALL_DEPTH_STATS: m__graph__v_call_depth_stats,
         },
     )
 
@@ -1367,7 +1404,7 @@ def t__call_graph_views(
 # ---------------------------------------------------------------------------
 
 
-@tag(domain="graphs", target="graph_metrics", node_type="tool")
+@tag(domain="graphs", target=GRAPH_METRICS_TARGET_NAME, node_type="tool")
 def t__graph_metrics__compute(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
@@ -1454,7 +1491,7 @@ def t__graph_metrics__compute(
         )
 
 
-@tag(domain="graphs", target="graph_metrics", node_type="materialize")
+@tag(domain="graphs", target=GRAPH_METRICS_TARGET_NAME, node_type="materialize")
 def t__graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -1467,7 +1504,7 @@ def t__graph_metrics(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return executor_materialize(env, graph, "graph_metrics", t__graph_metrics__compute)
+    return executor_materialize(env, graph, GRAPH_METRICS_TARGET_NAME, t__graph_metrics__compute)
 
 
 # ---------------------------------------------------------------------------
@@ -1475,7 +1512,7 @@ def t__graph_metrics(
 # ---------------------------------------------------------------------------
 
 
-@tag(domain="graphs", target="graph_validation", node_type="tool")
+@tag(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME, node_type="tool")
 def t__graph_validation__check(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
@@ -1527,7 +1564,7 @@ def t__graph_validation__check(
             success=len(all_errors) == 0,
             error_count=len(all_errors),
             errors=all_errors,
-            table_counts={"analytics.graph_validation": len(all_errors)},
+            table_counts={GRAPH_VALIDATION_TABLE_KEY: len(all_errors)},
         )
 
     except Exception as exc:
@@ -1538,7 +1575,7 @@ def t__graph_validation__check(
         )
 
 
-@tag(domain="graphs", target="graph_validation", node_type="materialize")
+@tag(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME, node_type="materialize")
 def t__graph_validation(
     env: BuildEnv,
     graph: TargetGraph,
@@ -1554,7 +1591,7 @@ def t__graph_validation(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "graph_validation")
+    executor = NativeTargetExecutor.for_target(env, graph, GRAPH_VALIDATION_TARGET_NAME)
 
     if executor.should_skip():
         return executor.skip()

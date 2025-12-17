@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.manifest import OutputManifest
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.build_manifest import OutputManifest
     from codeintel.storage.gateway import StorageGateway
 
 

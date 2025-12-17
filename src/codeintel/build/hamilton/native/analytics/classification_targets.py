@@ -27,8 +27,11 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -43,21 +46,30 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, SemanticRolesResult)
 
+SEMANTIC_ROLES_TARGET_NAME = "semantic_roles"
+TEST_PROFILE_TARGET_NAME = "test_profile"
+
+SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY = "analytics.semantic_roles_functions"
+SEMANTIC_ROLES_MODULES_TABLE_KEY = "analytics.semantic_roles_modules"
+SEMANTIC_ROLES_TABLE_KEYS = (SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY, SEMANTIC_ROLES_MODULES_TABLE_KEY)
+
+TEST_PROFILE_TABLE_KEY = "analytics.test_profile"
+TEST_PROFILE_TABLE_KEYS = (TEST_PROFILE_TABLE_KEY,)
+
 TARGET_SPECS = (
     make_output_target(
-        name="semantic_roles",
+        name=SEMANTIC_ROLES_TARGET_NAME,
         module="analytics",
         description="Semantic role classification (handler, utility, etc.).",
-        table_keys=(
-            "analytics.semantic_roles_functions",
-            "analytics.semantic_roles_modules",
+        options=TargetSpecOptions(
+            table_keys=SEMANTIC_ROLES_TABLE_KEYS,
         ),
     ),
     make_output_target(
-        name="test_profile",
+        name=TEST_PROFILE_TARGET_NAME,
         module="analytics",
         description="Per-test profile with coverage and characteristics.",
-        table_keys=("analytics.test_profile",),
+        options=TargetSpecOptions(table_keys=TEST_PROFILE_TABLE_KEYS),
     ),
 )
 
@@ -84,7 +96,7 @@ SEMANTIC_ROLES_MODULES_COLS: tuple[str, ...] = (
 )
 
 
-@tag(domain="analytics", target="semantic_roles", node_type="compute")
+@tag(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME, node_type="compute")
 def t__semantic_roles__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -129,7 +141,7 @@ def t__semantic_roles__compute(
         )
         return None
 
-    target = graph.get("semantic_roles")
+    target = graph.get(SEMANTIC_ROLES_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -174,16 +186,16 @@ def t__semantic_roles__compute(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.semantic_roles_functions"),
+    output_name_=materialize_node(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("semantic_roles"),
-    table_key=value("analytics.semantic_roles_functions"),
+    target_name=value(SEMANTIC_ROLES_TARGET_NAME),
+    table_key=value(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
     columns=value(SEMANTIC_ROLES_FUNCTIONS_COLS),
 )
 @tag(
     domain="analytics",
-    target="semantic_roles",
+    target=SEMANTIC_ROLES_TARGET_NAME,
     node_type="compute",
     target_="semantic_roles__functions_rows",
 )
@@ -210,16 +222,16 @@ def semantic_roles__functions_rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.semantic_roles_modules"),
+    output_name_=materialize_node(SEMANTIC_ROLES_MODULES_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("semantic_roles"),
-    table_key=value("analytics.semantic_roles_modules"),
+    target_name=value(SEMANTIC_ROLES_TARGET_NAME),
+    table_key=value(SEMANTIC_ROLES_MODULES_TABLE_KEY),
     columns=value(SEMANTIC_ROLES_MODULES_COLS),
 )
 @tag(
     domain="analytics",
-    target="semantic_roles",
+    target=SEMANTIC_ROLES_TARGET_NAME,
     node_type="compute",
     target_="semantic_roles__modules_rows",
 )
@@ -244,7 +256,7 @@ def semantic_roles__modules_rows(
     return tuple(t__semantic_roles__compute.module_rows)
 
 
-@tag(domain="analytics", target="semantic_roles", node_type="materialize")
+@tag(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME, node_type="materialize")
 def t__semantic_roles(
     env: BuildEnv,
     graph: TargetGraph,
@@ -275,10 +287,10 @@ def t__semantic_roles(
     return record_from_duckdb_materializations(
         env=env,
         graph=graph,
-        target_name="semantic_roles",
+        target_name=SEMANTIC_ROLES_TARGET_NAME,
         materializations={
-            "analytics.semantic_roles_functions": m__analytics__semantic_roles_functions,
-            "analytics.semantic_roles_modules": m__analytics__semantic_roles_modules,
+            SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY: m__analytics__semantic_roles_functions,
+            SEMANTIC_ROLES_MODULES_TABLE_KEY: m__analytics__semantic_roles_modules,
         },
     )
 
@@ -362,7 +374,7 @@ def _test_profile_row_to_tuple(
     return tuple(row.get(col) for col in cols)
 
 
-@tag(domain="analytics", target="test_profile", node_type="compute")
+@tag(domain="analytics", target=TEST_PROFILE_TARGET_NAME, node_type="compute")
 def t__test_profile__compute(
     env: BuildEnv,
     t__coverage_test_edges: TargetRunRecord,
@@ -390,14 +402,19 @@ def t__test_profile__compute(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.test_profile"),
+    output_name_=materialize_node(TEST_PROFILE_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("test_profile"),
-    table_key=value("analytics.test_profile"),
+    target_name=value(TEST_PROFILE_TARGET_NAME),
+    table_key=value(TEST_PROFILE_TABLE_KEY),
     columns=value(TEST_PROFILE_COLS),
 )
-@tag(domain="analytics", target="test_profile", node_type="compute", target_="test_profile__rows")
+@tag(
+    domain="analytics",
+    target=TEST_PROFILE_TARGET_NAME,
+    node_type="compute",
+    target_="test_profile__rows",
+)
 def test_profile__rows(
     t__test_profile__compute: TestProfileComputeResult,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -418,7 +435,7 @@ def test_profile__rows(
     )
 
 
-@tag(domain="analytics", target="test_profile", node_type="materialize")
+@tag(domain="analytics", target=TEST_PROFILE_TARGET_NAME, node_type="materialize")
 def t__test_profile(
     env: BuildEnv,
     graph: TargetGraph,
@@ -434,8 +451,8 @@ def t__test_profile(
     """
     if t__test_profile__compute.error:
         return TargetRunRecord(
-            target="test_profile",
-            plugin_name="native:test_profile",
+            target=TEST_PROFILE_TARGET_NAME,
+            plugin_name=f"native:{TEST_PROFILE_TARGET_NAME}",
             status="failed",
             input_hash="",
             options_hash=None,
@@ -449,7 +466,7 @@ def t__test_profile(
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,
-        target_name="test_profile",
-        expected_table_key="analytics.test_profile",
+        target_name=TEST_PROFILE_TARGET_NAME,
+        expected_table_key=TEST_PROFILE_TABLE_KEY,
         materialization=m__analytics__test_profile,
     )

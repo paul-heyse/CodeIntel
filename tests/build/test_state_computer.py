@@ -15,12 +15,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.build.contracts import EMPTY_CONTRACT
-from codeintel.build.manifest import OutputManifest
 from codeintel.build.session import BuildSession
 from codeintel.build.state import StateValidator
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,

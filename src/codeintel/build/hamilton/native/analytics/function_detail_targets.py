@@ -38,8 +38,11 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -51,18 +54,24 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
+FUNCTION_CONTRACTS_TARGET_NAME = "function_contracts"
+FUNCTION_EFFECTS_TARGET_NAME = "function_effects"
+
+FUNCTION_CONTRACTS_TABLE_KEY = "analytics.function_contracts"
+FUNCTION_EFFECTS_TABLE_KEY = "analytics.function_effects"
+
 TARGET_SPECS = (
     make_output_target(
-        name="function_effects",
+        name=FUNCTION_EFFECTS_TARGET_NAME,
         module="analytics",
         description="Function purity and side-effect analysis.",
-        table_keys=("analytics.function_effects",),
+        options=TargetSpecOptions(table_keys=(FUNCTION_EFFECTS_TABLE_KEY,)),
     ),
     make_output_target(
-        name="function_contracts",
+        name=FUNCTION_CONTRACTS_TARGET_NAME,
         module="analytics",
         description="Inferred function pre/postconditions.",
-        table_keys=("analytics.function_contracts",),
+        options=TargetSpecOptions(table_keys=(FUNCTION_CONTRACTS_TABLE_KEY,)),
     ),
 )
 
@@ -126,7 +135,7 @@ def _row_to_tuple(row: Mapping[str, object], cols: tuple[str, ...]) -> tuple[obj
     return tuple(row.get(col) for col in cols)
 
 
-@tag(domain="analytics", target="function_contracts", node_type="compute")
+@tag(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME, node_type="compute")
 def t__function_contracts__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -164,7 +173,7 @@ def t__function_contracts__compute(
             error=f"Upstream goids target failed: {t__goids.error}",
         )
 
-    target = graph.get("function_contracts")
+    target = graph.get(FUNCTION_CONTRACTS_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -226,16 +235,16 @@ def t__function_contracts__compute(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.function_contracts"),
+    output_name_=materialize_node(FUNCTION_CONTRACTS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("function_contracts"),
-    table_key=value("analytics.function_contracts"),
+    target_name=value(FUNCTION_CONTRACTS_TARGET_NAME),
+    table_key=value(FUNCTION_CONTRACTS_TABLE_KEY),
     columns=value(FUNCTION_CONTRACTS_COLS),
 )
 @tag(
     domain="analytics",
-    target="function_contracts",
+    target=FUNCTION_CONTRACTS_TARGET_NAME,
     node_type="compute",
     target_="function_contracts__rows",
 )
@@ -262,7 +271,7 @@ def function_contracts__rows(
     )
 
 
-@tag(domain="analytics", target="function_contracts", node_type="materialize")
+@tag(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME, node_type="materialize")
 def t__function_contracts(
     env: BuildEnv,
     graph: TargetGraph,
@@ -290,8 +299,8 @@ def t__function_contracts(
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,
-        target_name="function_contracts",
-        expected_table_key="analytics.function_contracts",
+        target_name=FUNCTION_CONTRACTS_TARGET_NAME,
+        expected_table_key=FUNCTION_CONTRACTS_TABLE_KEY,
         materialization=m__analytics__function_contracts,
     )
 
@@ -341,7 +350,7 @@ class FunctionEffectsResult:
         return self.error is None
 
 
-@tag(domain="analytics", target="function_effects", node_type="compute")
+@tag(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME, node_type="compute")
 def t__function_effects__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -360,7 +369,7 @@ def t__function_effects__compute(
             error=f"Upstream call_graph target failed: {t__call_graph.error}",
         )
 
-    target = graph.get("function_effects")
+    target = graph.get(FUNCTION_EFFECTS_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -419,16 +428,16 @@ def t__function_effects__compute(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.function_effects"),
+    output_name_=materialize_node(FUNCTION_EFFECTS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("function_effects"),
-    table_key=value("analytics.function_effects"),
+    target_name=value(FUNCTION_EFFECTS_TARGET_NAME),
+    table_key=value(FUNCTION_EFFECTS_TABLE_KEY),
     columns=value(FUNCTION_EFFECTS_COLS),
 )
 @tag(
     domain="analytics",
-    target="function_effects",
+    target=FUNCTION_EFFECTS_TARGET_NAME,
     node_type="compute",
     target_="function_effects__rows",
 )
@@ -449,7 +458,7 @@ def function_effects__rows(
     )
 
 
-@tag(domain="analytics", target="function_effects", node_type="materialize")
+@tag(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME, node_type="materialize")
 def t__function_effects(
     env: BuildEnv,
     graph: TargetGraph,
@@ -465,8 +474,8 @@ def t__function_effects(
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,
-        target_name="function_effects",
-        expected_table_key="analytics.function_effects",
+        target_name=FUNCTION_EFFECTS_TARGET_NAME,
+        expected_table_key=FUNCTION_EFFECTS_TABLE_KEY,
         materialization=m__analytics__function_effects,
     )
 

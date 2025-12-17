@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.manifest import OutputManifest
+    from codeintel.core.build_manifest import OutputManifest
 
 __all__ = [
     "BlockingReason",

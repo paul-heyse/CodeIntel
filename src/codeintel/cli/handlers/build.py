@@ -70,10 +70,10 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton import HamiltonBuildResult
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.planner import HamiltonBuildPlan
-    from codeintel.build.manifest import BuildRunRecord
     from codeintel.build.targets import TargetGraph, TargetModule
     from codeintel.cli.context import CommandContext
     from codeintel.cli.resolution.types import ResolvedRuntime
+    from codeintel.core.build_manifest import BuildRunRecord
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)

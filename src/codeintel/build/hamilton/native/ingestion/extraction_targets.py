@@ -22,7 +22,11 @@ from hamilton.function_modifiers import cache, tag
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.hamilton.native.table_counts import normalize_table_counts
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
@@ -33,29 +37,42 @@ log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ModuleRecord)
 
+AST_TARGET_NAME = "ast"
+CST_TARGET_NAME = "cst"
+DOCSTRINGS_TARGET_NAME = "docstrings"
+
+AST_NODES_TABLE_KEY = "core.ast_nodes"
+AST_METRICS_TABLE_KEY = "core.ast_metrics"
+AST_TABLE_KEYS = (AST_NODES_TABLE_KEY, AST_METRICS_TABLE_KEY)
+
+CST_NODES_TABLE_KEY = "core.cst_nodes"
+CST_TABLE_KEYS = (CST_NODES_TABLE_KEY,)
+
+DOCSTRINGS_TABLE_KEY = "core.docstrings"
+DOCSTRINGS_TABLE_KEYS = (DOCSTRINGS_TABLE_KEY,)
+
 TARGET_SPECS = (
     make_output_target(
-        name="ast",
+        name=AST_TARGET_NAME,
         module="ingestion",
         description="Python AST extraction and metrics.",
-        table_keys=(
-            "core.ast_nodes",
-            "core.ast_metrics",
+        options=TargetSpecOptions(
+            table_keys=AST_TABLE_KEYS,
+            resources=TargetResources(tracker=True, modules=True),
+            execution=CPU_INTENSIVE_EXECUTION,
         ),
-        resources=TargetResources(tracker=True, modules=True),
-        execution=CPU_INTENSIVE_EXECUTION,
     ),
     make_output_target(
-        name="cst",
+        name=CST_TARGET_NAME,
         module="ingestion",
         description="Concrete syntax tree extraction.",
-        table_keys=("core.cst_nodes",),
+        options=TargetSpecOptions(table_keys=CST_TABLE_KEYS),
     ),
     make_output_target(
-        name="docstrings",
+        name=DOCSTRINGS_TARGET_NAME,
         module="ingestion",
         description="Docstring extraction and parsing.",
-        table_keys=("core.docstrings",),
+        options=TargetSpecOptions(table_keys=DOCSTRINGS_TABLE_KEYS),
     ),
 )
 
@@ -127,7 +144,7 @@ class DocstringsExtractResult:
 
 
 @cache(format="memory")
-@tag(domain="ingestion", target="ast", node_type="tool")
+@tag(domain="ingestion", target=AST_TARGET_NAME, node_type="tool")
 def t__ast__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -149,7 +166,10 @@ def t__ast__extract(
     try:
         if not module_records:
             log.info("No modules found for AST extraction")
-            return AstExtractResult(success=True, table_counts={})
+            return AstExtractResult(
+                success=True,
+                table_counts=normalize_table_counts(AST_TABLE_KEYS, None),
+            )
 
         storage = DuckDBStorageAdapter(env.gateway)
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
@@ -161,7 +181,10 @@ def t__ast__extract(
         )
         return AstExtractResult(
             success=True,
-            table_counts=result.table_counts or {},
+            table_counts=normalize_table_counts(
+                AST_TABLE_KEYS,
+                dict(result.table_counts) if result.table_counts else None,
+            ),
             errors=list(result.errors) if result.errors else [],
         )
     except Exception as exc:
@@ -169,7 +192,7 @@ def t__ast__extract(
         return AstExtractResult(success=False, error=str(exc))
 
 
-@tag(domain="ingestion", target="ast", node_type="materialize")
+@tag(domain="ingestion", target=AST_TARGET_NAME, node_type="materialize")
 def t__ast(
     env: BuildEnv,
     graph: TargetGraph,
@@ -182,7 +205,7 @@ def t__ast(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "ast")
+    executor = NativeTargetExecutor.for_target(env, graph, AST_TARGET_NAME)
     if executor.should_skip():
         return executor.skip()
     if not t__ast__extract.success:
@@ -191,11 +214,16 @@ def t__ast(
     for warning in t__ast__extract.errors:
         log.warning("AST extraction warning: %s", warning)
 
-    return executor.execute(lambda: dict(t__ast__extract.table_counts))
+    return executor.execute(
+        lambda: normalize_table_counts(
+            AST_TABLE_KEYS,
+            dict(t__ast__extract.table_counts),
+        )
+    )
 
 
 @cache(format="memory")
-@tag(domain="ingestion", target="cst", node_type="tool")
+@tag(domain="ingestion", target=CST_TARGET_NAME, node_type="tool")
 def t__cst__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -217,7 +245,10 @@ def t__cst__extract(
     try:
         if not module_records:
             log.info("No modules found for CST extraction")
-            return CstExtractResult(success=True, table_counts={})
+            return CstExtractResult(
+                success=True,
+                table_counts=normalize_table_counts(CST_TABLE_KEYS, None),
+            )
 
         storage = DuckDBStorageAdapter(env.gateway)
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
@@ -229,7 +260,10 @@ def t__cst__extract(
         )
         return CstExtractResult(
             success=True,
-            table_counts=result.table_counts or {},
+            table_counts=normalize_table_counts(
+                CST_TABLE_KEYS,
+                dict(result.table_counts) if result.table_counts else None,
+            ),
             errors=list(result.errors) if result.errors else [],
         )
     except Exception as exc:
@@ -237,7 +271,7 @@ def t__cst__extract(
         return CstExtractResult(success=False, error=str(exc))
 
 
-@tag(domain="ingestion", target="cst", node_type="materialize")
+@tag(domain="ingestion", target=CST_TARGET_NAME, node_type="materialize")
 def t__cst(
     env: BuildEnv,
     graph: TargetGraph,
@@ -250,7 +284,7 @@ def t__cst(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "cst")
+    executor = NativeTargetExecutor.for_target(env, graph, CST_TARGET_NAME)
     if executor.should_skip():
         return executor.skip()
     if not t__cst__extract.success:
@@ -259,11 +293,16 @@ def t__cst(
     for warning in t__cst__extract.errors:
         log.warning("CST extraction warning: %s", warning)
 
-    return executor.execute(lambda: dict(t__cst__extract.table_counts))
+    return executor.execute(
+        lambda: normalize_table_counts(
+            CST_TABLE_KEYS,
+            dict(t__cst__extract.table_counts),
+        )
+    )
 
 
 @cache(format="memory")
-@tag(domain="ingestion", target="docstrings", node_type="tool")
+@tag(domain="ingestion", target=DOCSTRINGS_TARGET_NAME, node_type="tool")
 def t__docstrings__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -285,7 +324,10 @@ def t__docstrings__extract(
     try:
         if not module_records:
             log.info("No modules found for docstring extraction")
-            return DocstringsExtractResult(success=True, table_counts={})
+            return DocstringsExtractResult(
+                success=True,
+                table_counts=normalize_table_counts(DOCSTRINGS_TABLE_KEYS, None),
+            )
 
         storage = DuckDBStorageAdapter(env.gateway)
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
@@ -297,7 +339,10 @@ def t__docstrings__extract(
         )
         return DocstringsExtractResult(
             success=True,
-            table_counts=result.table_counts or {},
+            table_counts=normalize_table_counts(
+                DOCSTRINGS_TABLE_KEYS,
+                dict(result.table_counts) if result.table_counts else None,
+            ),
             errors=list(result.errors) if result.errors else [],
         )
     except Exception as exc:
@@ -305,7 +350,7 @@ def t__docstrings__extract(
         return DocstringsExtractResult(success=False, error=str(exc))
 
 
-@tag(domain="ingestion", target="docstrings", node_type="materialize")
+@tag(domain="ingestion", target=DOCSTRINGS_TARGET_NAME, node_type="materialize")
 def t__docstrings(
     env: BuildEnv,
     graph: TargetGraph,
@@ -318,7 +363,7 @@ def t__docstrings(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "docstrings")
+    executor = NativeTargetExecutor.for_target(env, graph, DOCSTRINGS_TARGET_NAME)
     if executor.should_skip():
         return executor.skip()
     if not t__docstrings__extract.success:
@@ -329,7 +374,12 @@ def t__docstrings(
     for warning in t__docstrings__extract.errors:
         log.warning("Docstring extraction warning: %s", warning)
 
-    return executor.execute(lambda: dict(t__docstrings__extract.table_counts))
+    return executor.execute(
+        lambda: normalize_table_counts(
+            DOCSTRINGS_TABLE_KEYS,
+            dict(t__docstrings__extract.table_counts),
+        )
+    )
 
 
 __all__ = [

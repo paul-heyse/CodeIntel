@@ -15,7 +15,8 @@ from types import FunctionType, MethodType
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.build.hamilton.tags import (
+from codeintel.build.schemas import get_schema_provider
+from codeintel.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
     NODE_TYPE_COMPUTE,
     NODE_TYPE_DATASET,
@@ -26,7 +27,6 @@ from codeintel.build.hamilton.tags import (
     TAG_TABLE_KEY,
     TAG_TARGET,
 )
-from codeintel.build.schemas import get_schema_provider
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

@@ -31,8 +31,8 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.introspect import GraphSource
-    from codeintel.build.manifest import OutputManifest
     from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
+    from codeintel.core.build_manifest import OutputManifest
 
 
 PlanStatus = Literal["compute", "skip", "missing", "blocked"]

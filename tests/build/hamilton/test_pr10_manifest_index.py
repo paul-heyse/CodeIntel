@@ -15,8 +15,8 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import SkipCheckRequest, should_skip
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.manifest import OutputManifest
 from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.build import make_build_config, make_build_paths, make_snapshot
 from tests._helpers.fakes.fake_providers import FakeProviders
 

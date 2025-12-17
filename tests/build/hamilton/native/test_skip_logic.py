@@ -15,7 +15,7 @@ from codeintel.build.hamilton.hooks.manifest_hook import (
     TargetRunRecord,
     should_skip,
 )
-from codeintel.build.manifest import OutputManifest
+from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,

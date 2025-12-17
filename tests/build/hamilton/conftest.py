@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.manifest import OutputManifest
 from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.core.build_manifest import OutputManifest
 from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest
 
 if TYPE_CHECKING:

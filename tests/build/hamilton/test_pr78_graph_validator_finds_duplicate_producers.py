@@ -6,7 +6,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from codeintel.build.hamilton.tags import (
+from codeintel.build.hamilton.validate import validate_nodes
+from codeintel.hamilton.tags import (
     NODE_TYPE_DATASET,
     NODE_TYPE_MATERIALIZE,
     TAG_DOMAIN,
@@ -14,7 +15,6 @@ from codeintel.build.hamilton.tags import (
     TAG_TABLE_KEY,
     TAG_TARGET,
 )
-from codeintel.build.hamilton.validate import validate_nodes
 
 
 @dataclass(frozen=True)

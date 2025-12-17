@@ -23,7 +23,10 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root, persist_rows
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.paths import normalize_path
@@ -41,21 +44,33 @@ log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
+CFG_TARGET_NAME = "cfg"
+DFG_TARGET_NAME = "dfg"
+
+CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
+CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
+DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
+
+CFG_TABLE_KEYS = (
+    CFG_BLOCKS_TABLE_KEY,
+    CFG_EDGES_TABLE_KEY,
+)
+DFG_TABLE_KEYS = (DFG_EDGES_TABLE_KEY,)
+
 TARGET_SPECS = (
     make_output_target(
-        name="cfg",
+        name=CFG_TARGET_NAME,
         module="graphs",
         description="Control flow graph construction per function.",
-        table_keys=(
-            "graph.cfg_blocks",
-            "graph.cfg_edges",
+        options=TargetSpecOptions(
+            table_keys=CFG_TABLE_KEYS,
         ),
     ),
     make_output_target(
-        name="dfg",
+        name=DFG_TARGET_NAME,
         module="graphs",
         description="Data flow graph construction per function.",
-        table_keys=("graph.dfg_edges",),
+        options=TargetSpecOptions(table_keys=DFG_TABLE_KEYS),
     ),
 )
 
@@ -326,7 +341,7 @@ def _process_all_files(
     return all_cfg_results, all_block_rows, all_edge_rows
 
 
-@tag(domain="graphs", target="cfg", node_type="tool")
+@tag(domain="graphs", target=CFG_TARGET_NAME, node_type="tool")
 def t__cfg__extract(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -379,8 +394,8 @@ def t__cfg__extract(
                 edge_count=0,
                 cfg_results=[],
                 table_counts={
-                    "graph.cfg_blocks": 0,
-                    "graph.cfg_edges": 0,
+                    CFG_BLOCKS_TABLE_KEY: 0,
+                    CFG_EDGES_TABLE_KEY: 0,
                 },
             )
 
@@ -396,14 +411,14 @@ def t__cfg__extract(
 
         block_count = persist_rows(
             gateway,
-            "graph.cfg_blocks",
+            CFG_BLOCKS_TABLE_KEY,
             block_rows,
             repo=repo,
             commit=commit,
         )
         edge_count = persist_rows(
             gateway,
-            "graph.cfg_edges",
+            CFG_EDGES_TABLE_KEY,
             edge_rows,
             repo=repo,
             commit=commit,
@@ -417,8 +432,8 @@ def t__cfg__extract(
             edge_count=edge_count,
             cfg_results=cfg_results,
             table_counts={
-                "graph.cfg_blocks": block_count,
-                "graph.cfg_edges": edge_count,
+                CFG_BLOCKS_TABLE_KEY: block_count,
+                CFG_EDGES_TABLE_KEY: edge_count,
             },
         )
 
@@ -430,7 +445,7 @@ def t__cfg__extract(
         )
 
 
-@tag(domain="graphs", target="cfg", node_type="materialize")
+@tag(domain="graphs", target=CFG_TARGET_NAME, node_type="materialize")
 def t__cfg(
     env: BuildEnv,
     graph: TargetGraph,
@@ -455,10 +470,10 @@ def t__cfg(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, "cfg", t__cfg__extract)
+    return executor_materialize(env, graph, CFG_TARGET_NAME, t__cfg__extract)
 
 
-@tag(domain="graphs", target="dfg", node_type="tool")
+@tag(domain="graphs", target=DFG_TARGET_NAME, node_type="tool")
 def t__dfg__extract(
     env: BuildEnv,
     t__cfg__extract: CFGExtractResult,
@@ -503,7 +518,7 @@ def t__dfg__extract(
             return DFGExtractResult(
                 success=True,
                 edge_count=0,
-                table_counts={"graph.dfg_edges": 0},
+                table_counts={DFG_EDGES_TABLE_KEY: 0},
             )
 
         all_dfg_rows: list[DFGEdgeRow] = []
@@ -519,7 +534,7 @@ def t__dfg__extract(
 
         edge_count = persist_rows(
             gateway,
-            "graph.dfg_edges",
+            DFG_EDGES_TABLE_KEY,
             all_dfg_rows,
             repo=repo,
             commit=commit,
@@ -530,7 +545,7 @@ def t__dfg__extract(
         return DFGExtractResult(
             success=True,
             edge_count=edge_count,
-            table_counts={"graph.dfg_edges": edge_count},
+            table_counts={DFG_EDGES_TABLE_KEY: edge_count},
         )
 
     except Exception as exc:
@@ -541,7 +556,7 @@ def t__dfg__extract(
         )
 
 
-@tag(domain="graphs", target="dfg", node_type="materialize")
+@tag(domain="graphs", target=DFG_TARGET_NAME, node_type="materialize")
 def t__dfg(
     env: BuildEnv,
     graph: TargetGraph,
@@ -566,7 +581,7 @@ def t__dfg(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, "dfg", t__dfg__extract)
+    return executor_materialize(env, graph, DFG_TARGET_NAME, t__dfg__extract)
 
 
 __all__ = [

@@ -389,6 +389,31 @@ class NativeTargetExecutor:
         TargetRunRecord
             Record with status="succeeded".
         """
+        expected = set(self.target.contract.table_keys)
+        observed = set(row_counts)
+        if observed != expected:
+            missing = tuple(sorted(expected - observed))
+            extra = tuple(sorted(observed - expected))
+            parts: list[str] = []
+            if missing:
+                parts.append(f"missing table_counts for {missing}")
+            if extra:
+                parts.append(f"unexpected table_counts for {extra}")
+            message = "; ".join(parts) if parts else "Invalid table_counts for target"
+            duration_ms = (time.perf_counter() - start) * 1000
+            run = NativeRunInfo(
+                input_hash=self.input_hash,
+                options_hash=self.options_hash,
+                duration_ms=duration_ms,
+                row_counts=None,
+            )
+            return create_run_record(
+                self.target,
+                "failed",
+                self.input_hash,
+                inputs=RunRecordInputs(env=self.env, run=run, error=ValueError(message)),
+            )
+
         duration_ms = (time.perf_counter() - start) * 1000
         run = NativeRunInfo(
             input_hash=self.input_hash,

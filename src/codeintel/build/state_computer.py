@@ -33,13 +33,13 @@ from codeintel.build.state_types import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.build.manifest import OutputManifest
     from codeintel.build.state_types import (
         BlockingReason,
         TargetStatus,
     )
     from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.build_manifest import OutputManifest
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

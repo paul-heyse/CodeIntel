@@ -12,9 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from tests._helpers.context import create_test_context
-from tests._helpers.fakes.contexts import (
-    ExecutionContextBuilder,
-)
+from tests._helpers.fakes.contexts import ExecutionContextBuilder
 from tests._helpers.seeds import (
     CORE_PACK,
     COVERAGE_LINES_PACK,
@@ -30,9 +28,9 @@ if TYPE_CHECKING:
 
     from codeintel.build.context import TargetResult
     from codeintel.build.parameters import TargetParameters
-    from codeintel.build.plugin import TargetPlugin
     from tests._helpers.context import SeedPack, TestContext
     from tests._helpers.fakes.contexts import (
+        PluginLike,
         TargetResourceOverrides,
     )
 
@@ -49,7 +47,7 @@ class AnalyticsPluginHarness:
 
     def execute_plugin(
         self,
-        plugin: TargetPlugin,
+        plugin: PluginLike,
         *,
         parameters: TargetParameters | None = None,
         resources: TargetResourceOverrides | None = None,

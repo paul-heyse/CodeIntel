@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from hamilton.lifecycle import base as lifecycle_base
 
-from codeintel.build.hamilton import tags as ht
+from codeintel.hamilton import tags as ht
 from codeintel.hamilton.records import NodeExecutionRecord
 
 if TYPE_CHECKING:

@@ -20,7 +20,10 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import filter_mapping, get_source_root, persist_rows
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.options.graphs import ImportGraphOptions
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.paths import normalize_path
@@ -36,14 +39,21 @@ log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
+IMPORT_GRAPH_TARGET_NAME = "import_graph"
+IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
+IMPORT_GRAPH_EDGES_TABLE_KEY = "graph.import_graph_edges"
+IMPORT_GRAPH_TABLE_KEYS = (
+    IMPORT_MODULES_TABLE_KEY,
+    IMPORT_GRAPH_EDGES_TABLE_KEY,
+)
+
 TARGET_SPECS = (
     make_output_target(
-        name="import_graph",
+        name=IMPORT_GRAPH_TARGET_NAME,
         module="graphs",
         description="Module import graph construction.",
-        table_keys=(
-            "graph.import_modules",
-            "graph.import_graph_edges",
+        options=TargetSpecOptions(
+            table_keys=IMPORT_GRAPH_TABLE_KEYS,
         ),
     ),
 )
@@ -147,7 +157,7 @@ def _extract_imports_from_file(file_path: Path) -> list[tuple[str, tuple[str, ..
     return imports
 
 
-@tag(domain="graphs", target="import_graph", node_type="tool")
+@tag(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, node_type="tool")
 def t__import_graph__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -201,8 +211,8 @@ def t__import_graph__extract(
                 module_count=0,
                 edge_count=0,
                 table_counts={
-                    "graph.import_modules": 0,
-                    "graph.import_graph_edges": 0,
+                    IMPORT_MODULES_TABLE_KEY: 0,
+                    IMPORT_GRAPH_EDGES_TABLE_KEY: 0,
                 },
             )
 
@@ -220,14 +230,14 @@ def t__import_graph__extract(
 
         mc = persist_rows(
             gateway,
-            "graph.import_modules",
+            IMPORT_MODULES_TABLE_KEY,
             imports_compute.build_import_module_rows(repo, commit, result),
             repo=repo,
             commit=commit,
         )
         ec = persist_rows(
             gateway,
-            "graph.import_graph_edges",
+            IMPORT_GRAPH_EDGES_TABLE_KEY,
             imports_compute.build_import_edge_rows(repo, commit, result),
             repo=repo,
             commit=commit,
@@ -240,8 +250,8 @@ def t__import_graph__extract(
             module_count=mc,
             edge_count=ec,
             table_counts={
-                "graph.import_modules": mc,
-                "graph.import_graph_edges": ec,
+                IMPORT_MODULES_TABLE_KEY: mc,
+                IMPORT_GRAPH_EDGES_TABLE_KEY: ec,
             },
         )
 
@@ -253,7 +263,7 @@ def t__import_graph__extract(
         )
 
 
-@tag(domain="graphs", target="import_graph", node_type="materialize")
+@tag(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, node_type="materialize")
 def t__import_graph(
     env: BuildEnv,
     graph: TargetGraph,
@@ -278,7 +288,7 @@ def t__import_graph(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, "import_graph", t__import_graph__extract)
+    return executor_materialize(env, graph, IMPORT_GRAPH_TARGET_NAME, t__import_graph__extract)
 
 
 __all__ = [

@@ -23,7 +23,7 @@ from codeintel.build.hashing import (
     compute_input_hash_with_deps,
     compute_options_hash,
 )
-from codeintel.build.manifest import OutputManifest
+from codeintel.core.build_manifest import OutputManifest
 from codeintel.hamilton.records import TargetRunRecord
 
 if TYPE_CHECKING:

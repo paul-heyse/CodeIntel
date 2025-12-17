@@ -144,7 +144,6 @@ from codeintel.build.hamilton.native.analytics.risk_factors import (
 )
 from codeintel.build.hamilton.native.analytics.subsystem_targets import (
     t__subsystems,
-    t__subsystems__compute,
 )
 
 __all__ = [
@@ -222,7 +221,6 @@ __all__ = [
     "t__subsystem_graph_metrics",
     "t__subsystem_graph_metrics__compute",
     "t__subsystems",
-    "t__subsystems__compute",
     "t__symbol_graph_metrics",
     "t__symbol_graph_metrics__compute",
     "t__test_graph_metrics",

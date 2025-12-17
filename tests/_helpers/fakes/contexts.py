@@ -10,7 +10,7 @@ This module provides the canonical entry point for building execution contexts i
   TargetExecutionContext
 - ``RecordingGateway`` - SQL recording wrapper around real gateways
 - ``make_test_output_target`` - Create minimal OutputTarget for plugin testing
-- ``execute_plugin`` / ``execute_plugin_async`` - Execute TargetPlugin with builder
+- ``execute_plugin`` / ``execute_plugin_async`` - Execute plugin with builder (deprecated)
 
 Migration Guide
 ---------------
@@ -67,7 +67,7 @@ import asyncio
 import warnings
 from dataclasses import dataclass
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Protocol, Self, TypeVar, cast, runtime_checkable
 
 from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.context_base import BuildContext
@@ -89,8 +89,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
-    from codeintel.build.plugin import TargetPlugin
-
     from codeintel.analytics.resources.catalog import FunctionCatalogProvider
     from codeintel.build.context import TargetResult
     from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
@@ -104,7 +102,30 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-def make_test_output_target(plugin: TargetPlugin) -> OutputTarget:
+@runtime_checkable
+class PluginLike(Protocol):
+    """Minimal protocol for legacy plugin test helpers.
+
+    This protocol defines the interface expected by plugin execution helpers.
+    New tests should use ``HamiltonTestBuilder.execute_target()`` instead.
+    """
+
+    @property
+    def plugin_name(self) -> str:
+        """Return the plugin name used as a target identifier."""
+        ...
+
+    @property
+    def plugin_description(self) -> str:
+        """Return a short human-readable description."""
+        ...
+
+    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
+        """Execute the plugin with the provided context."""
+        ...
+
+
+def make_test_output_target(plugin: PluginLike) -> OutputTarget:
     """Create a minimal OutputTarget for testing a plugin.
 
     Parameters
@@ -501,7 +522,7 @@ class ExecutionContextBuilder:
 
     def build_target_context_for_plugin(
         self,
-        plugin: TargetPlugin,
+        plugin: PluginLike,
         *,
         parameters: TargetParameters | None = None,
         resources: TargetResourceOverrides | None = None,
@@ -534,7 +555,7 @@ class ExecutionContextBuilder:
 
     async def execute_plugin_async(
         self,
-        plugin: TargetPlugin,
+        plugin: PluginLike,
         *,
         parameters: TargetParameters | None = None,
         resources: TargetResourceOverrides | None = None,
@@ -567,7 +588,7 @@ class ExecutionContextBuilder:
 
     def execute_plugin(
         self,
-        plugin: TargetPlugin,
+        plugin: PluginLike,
         *,
         parameters: TargetParameters | None = None,
         resources: TargetResourceOverrides | None = None,
@@ -747,6 +768,7 @@ __all__ = [
     "BuilderOptions",
     "EnvOverrides",
     "ExecutionContextBuilder",
+    "PluginLike",
     "RecordingGateway",
     "SqlCall",
     "TargetResourceOverrides",

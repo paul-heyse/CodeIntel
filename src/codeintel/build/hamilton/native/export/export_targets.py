@@ -28,8 +28,11 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materialization,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -39,29 +42,42 @@ log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table, pd.DataFrame)
 
+EXPORT_JSONL_TARGET_NAME = "export_jsonl"
+EXPORT_PARQUET_TARGET_NAME = "export_parquet"
+
+JSONL_EXPORT_ARTIFACT_NAME = "jsonl_export"
+PARQUET_EXPORT_ARTIFACT_NAME = "parquet_export"
+
+EXPORT_JSONL_ARTIFACT_SPECS = (
+    ArtifactSpec(
+        JSONL_EXPORT_ARTIFACT_NAME,
+        "{export_dir}/codeintel.jsonl",
+        "JSONL export of analytics datasets",
+    ),
+)
+EXPORT_PARQUET_ARTIFACT_SPECS = (
+    ArtifactSpec(
+        PARQUET_EXPORT_ARTIFACT_NAME,
+        "{export_dir}/codeintel.parquet",
+        "Parquet export of analytics datasets",
+    ),
+)
+
 TARGET_SPECS = (
     make_output_target(
-        name="export_jsonl",
+        name=EXPORT_JSONL_TARGET_NAME,
         module="export",
         description="Export datasets to JSONL format for Document Output.",
-        artifacts=(
-            ArtifactSpec(
-                "jsonl_export",
-                "{export_dir}/codeintel.jsonl",
-                "JSONL export of analytics datasets",
-            ),
+        options=TargetSpecOptions(
+            artifacts=EXPORT_JSONL_ARTIFACT_SPECS,
         ),
     ),
     make_output_target(
-        name="export_parquet",
+        name=EXPORT_PARQUET_TARGET_NAME,
         module="export",
         description="Export datasets to Parquet format for Document Output.",
-        artifacts=(
-            ArtifactSpec(
-                "parquet_export",
-                "{export_dir}/codeintel.parquet",
-                "Parquet export of analytics datasets",
-            ),
+        options=TargetSpecOptions(
+            artifacts=EXPORT_PARQUET_ARTIFACT_SPECS,
         ),
     ),
 )
@@ -86,7 +102,7 @@ class ExportJsonlComputeResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-@tag(domain="export", target="export_jsonl", node_type="tool")
+@tag(domain="export", target=EXPORT_JSONL_TARGET_NAME, node_type="tool")
 def t__export_jsonl__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -100,7 +116,7 @@ def t__export_jsonl__compute(
     ExportJsonlComputeResult | None
         Export payload components, or None when the target is skipped.
     """
-    target = graph.get("export_jsonl")
+    target = graph.get(EXPORT_JSONL_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -150,13 +166,18 @@ def t__export_jsonl__compute(
 
 @SaveToDecorator(
     [FileArtifactSaver],
-    output_name_=materialize_node("artifact.jsonl_export"),
+    output_name_=materialize_node(f"artifact.{JSONL_EXPORT_ARTIFACT_NAME}"),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("export_jsonl"),
-    artifact_name=value("jsonl_export"),
+    target_name=value(EXPORT_JSONL_TARGET_NAME),
+    artifact_name=value(JSONL_EXPORT_ARTIFACT_NAME),
 )
-@tag(domain="export", target="export_jsonl", node_type="compute", target_="export_jsonl__content")
+@tag(
+    domain="export",
+    target=EXPORT_JSONL_TARGET_NAME,
+    node_type="compute",
+    target_="export_jsonl__content",
+)
 def export_jsonl__content(t__export_jsonl__compute: ExportJsonlComputeResult | None) -> str | None:
     """Build JSONL content for export_jsonl artifact.
 
@@ -183,7 +204,7 @@ def export_jsonl__content(t__export_jsonl__compute: ExportJsonlComputeResult | N
     return "\n".join(jsonl_lines) + "\n"
 
 
-@tag(domain="export", target="export_jsonl", node_type="materialize")
+@tag(domain="export", target=EXPORT_JSONL_TARGET_NAME, node_type="materialize")
 def t__export_jsonl(
     env: BuildEnv,
     graph: TargetGraph,
@@ -199,13 +220,13 @@ def t__export_jsonl(
     return record_from_file_artifact_materialization(
         env=env,
         graph=graph,
-        target_name="export_jsonl",
-        expected_artifact_name="jsonl_export",
+        target_name=EXPORT_JSONL_TARGET_NAME,
+        expected_artifact_name=JSONL_EXPORT_ARTIFACT_NAME,
         materialization=m__artifact__jsonl_export,
     )
 
 
-@tag(domain="export", target="export_parquet", node_type="compute")
+@tag(domain="export", target=EXPORT_PARQUET_TARGET_NAME, node_type="compute")
 @check_output_custom(
     *build_table_contract(
         required_columns=["function_goid_h128", "repo", "commit"],
@@ -243,13 +264,18 @@ def t__export_parquet__compute(
 
 @SaveToDecorator(
     [FileArtifactSaver],
-    output_name_=materialize_node("artifact.parquet_export"),
+    output_name_=materialize_node(f"artifact.{PARQUET_EXPORT_ARTIFACT_NAME}"),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("export_parquet"),
-    artifact_name=value("parquet_export"),
+    target_name=value(EXPORT_PARQUET_TARGET_NAME),
+    artifact_name=value(PARQUET_EXPORT_ARTIFACT_NAME),
 )
-@tag(domain="export", target="export_parquet", node_type="tool", target_="export_parquet__bytes")
+@tag(
+    domain="export",
+    target=EXPORT_PARQUET_TARGET_NAME,
+    node_type="tool",
+    target_="export_parquet__bytes",
+)
 def export_parquet__bytes(
     env: BuildEnv,
     graph: TargetGraph,
@@ -262,7 +288,7 @@ def export_parquet__bytes(
     bytes | None
         Serialized Parquet bytes, or None when the target is skipped.
     """
-    target = graph.get("export_parquet")
+    target = graph.get(EXPORT_PARQUET_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -280,7 +306,7 @@ def export_parquet__bytes(
     return buffer.getvalue()
 
 
-@tag(domain="export", target="export_parquet", node_type="materialize")
+@tag(domain="export", target=EXPORT_PARQUET_TARGET_NAME, node_type="materialize")
 def t__export_parquet(
     env: BuildEnv,
     graph: TargetGraph,
@@ -296,8 +322,8 @@ def t__export_parquet(
     return record_from_file_artifact_materialization(
         env=env,
         graph=graph,
-        target_name="export_parquet",
-        expected_artifact_name="parquet_export",
+        target_name=EXPORT_PARQUET_TARGET_NAME,
+        expected_artifact_name=PARQUET_EXPORT_ARTIFACT_NAME,
         materialization=m__artifact__parquet_export,
     )
 

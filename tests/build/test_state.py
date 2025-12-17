@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.manifest import OutputManifest
 from codeintel.build.registry import get_target_graph
 from codeintel.build.state import BuildState, StateValidator, TargetState
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,

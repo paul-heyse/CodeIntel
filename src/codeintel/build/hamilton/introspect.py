@@ -16,7 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.hamilton.tags import (
+from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
     NODE_TYPE_DATASET,
     NODE_TYPE_MATERIALIZE,
@@ -25,7 +26,6 @@ from codeintel.build.hamilton.tags import (
     TAG_TABLE_KEY,
     TAG_TARGET,
 )
-from codeintel.build.targets import OutputTarget, TargetGraph
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping

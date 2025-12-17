@@ -23,7 +23,10 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import load_function_index
@@ -54,14 +57,21 @@ log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
+CALL_GRAPH_TARGET_NAME = "call_graph"
+CALL_GRAPH_NODES_TABLE_KEY = "graph.call_graph_nodes"
+CALL_GRAPH_EDGES_TABLE_KEY = "graph.call_graph_edges"
+CALL_GRAPH_TABLE_KEYS = (
+    CALL_GRAPH_NODES_TABLE_KEY,
+    CALL_GRAPH_EDGES_TABLE_KEY,
+)
+
 TARGET_SPECS = (
     make_output_target(
-        name="call_graph",
+        name=CALL_GRAPH_TARGET_NAME,
         module="graphs",
         description="Function call graph construction.",
-        table_keys=(
-            "graph.call_graph_nodes",
-            "graph.call_graph_edges",
+        options=TargetSpecOptions(
+            table_keys=CALL_GRAPH_TABLE_KEYS,
         ),
     ),
 )
@@ -414,9 +424,9 @@ def _persist_nodes(
     if not nodes:
         return 0
 
-    gateway.policy.ensure_table("graph.call_graph_nodes")
-    gateway.policy.delete_for_snapshot("graph.call_graph_nodes", repo=repo, commit=commit)
-    gateway.policy.bulk_insert_mappings("graph.call_graph_nodes", nodes)
+    gateway.policy.ensure_table(CALL_GRAPH_NODES_TABLE_KEY)
+    gateway.policy.delete_for_snapshot(CALL_GRAPH_NODES_TABLE_KEY, repo=repo, commit=commit)
+    gateway.policy.bulk_insert_mappings(CALL_GRAPH_NODES_TABLE_KEY, nodes)
     return len(nodes)
 
 
@@ -458,9 +468,9 @@ def _persist_edges(
         else:
             serialized.append(edge)
 
-    gateway.policy.ensure_table("graph.call_graph_edges")
-    gateway.policy.delete_for_snapshot("graph.call_graph_edges", repo=repo, commit=commit)
-    gateway.policy.bulk_insert_mappings("graph.call_graph_edges", serialized)
+    gateway.policy.ensure_table(CALL_GRAPH_EDGES_TABLE_KEY)
+    gateway.policy.delete_for_snapshot(CALL_GRAPH_EDGES_TABLE_KEY, repo=repo, commit=commit)
+    gateway.policy.bulk_insert_mappings(CALL_GRAPH_EDGES_TABLE_KEY, serialized)
     return len(serialized)
 
 
@@ -518,7 +528,7 @@ def _collect_all_edges(
     return all_edges
 
 
-@tag(domain="graphs", target="call_graph", node_type="tool")
+@tag(domain="graphs", target=CALL_GRAPH_TARGET_NAME, node_type="tool")
 def t__call_graph__extract(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -572,8 +582,8 @@ def t__call_graph__extract(
                 node_count=0,
                 edge_count=0,
                 table_counts={
-                    "graph.call_graph_nodes": 0,
-                    "graph.call_graph_edges": 0,
+                    CALL_GRAPH_NODES_TABLE_KEY: 0,
+                    CALL_GRAPH_EDGES_TABLE_KEY: 0,
                 },
             )
 
@@ -608,8 +618,8 @@ def t__call_graph__extract(
             node_count=node_count,
             edge_count=edge_count,
             table_counts={
-                "graph.call_graph_nodes": node_count,
-                "graph.call_graph_edges": edge_count,
+                CALL_GRAPH_NODES_TABLE_KEY: node_count,
+                CALL_GRAPH_EDGES_TABLE_KEY: edge_count,
             },
         )
 
@@ -621,7 +631,7 @@ def t__call_graph__extract(
         )
 
 
-@tag(domain="graphs", target="call_graph", node_type="materialize")
+@tag(domain="graphs", target=CALL_GRAPH_TARGET_NAME, node_type="materialize")
 def t__call_graph(
     env: BuildEnv,
     graph: TargetGraph,
@@ -646,7 +656,7 @@ def t__call_graph(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, "call_graph", t__call_graph__extract)
+    return executor_materialize(env, graph, CALL_GRAPH_TARGET_NAME, t__call_graph__extract)
 
 
 __all__ = [

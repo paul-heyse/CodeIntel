@@ -44,7 +44,10 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
@@ -54,24 +57,32 @@ log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
+COVERAGE_FUNCTIONS_TARGET_NAME = "coverage_functions"
+COVERAGE_TEST_EDGES_TARGET_NAME = "coverage_test_edges"
+BEHAVIORAL_COVERAGE_TARGET_NAME = "behavioral_coverage"
+
+COVERAGE_FUNCTIONS_TABLE_KEY = "analytics.coverage_functions"
+TEST_COVERAGE_EDGES_TABLE_KEY = "analytics.test_coverage_edges"
+BEHAVIORAL_COVERAGE_TABLE_KEY = "analytics.behavioral_coverage"
+
 TARGET_SPECS = (
     make_output_target(
-        name="coverage_functions",
+        name=COVERAGE_FUNCTIONS_TARGET_NAME,
         module="analytics",
         description="Per-function coverage aggregation.",
-        table_keys=("analytics.coverage_functions",),
+        options=TargetSpecOptions(table_keys=(COVERAGE_FUNCTIONS_TABLE_KEY,)),
     ),
     make_output_target(
-        name="coverage_test_edges",
+        name=COVERAGE_TEST_EDGES_TARGET_NAME,
         module="analytics",
         description="Test-to-function coverage edges.",
-        table_keys=("analytics.test_coverage_edges",),
+        options=TargetSpecOptions(table_keys=(TEST_COVERAGE_EDGES_TABLE_KEY,)),
     ),
     make_output_target(
-        name="behavioral_coverage",
+        name=BEHAVIORAL_COVERAGE_TARGET_NAME,
         module="analytics",
         description="Behavioral coverage tagging from test patterns.",
-        table_keys=("analytics.behavioral_coverage",),
+        options=TargetSpecOptions(table_keys=(BEHAVIORAL_COVERAGE_TABLE_KEY,)),
     ),
 )
 
@@ -219,11 +230,11 @@ def _coverage_functions_enrich(aggregated: ir.Table) -> ir.Table:
 
 @SaveToDecorator(
     [DuckDBIbisTableSaver],
-    output_name_=materialize_node("analytics.coverage_functions"),
+    output_name_=materialize_node(COVERAGE_FUNCTIONS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("coverage_functions"),
-    table_key=value("analytics.coverage_functions"),
+    target_name=value(COVERAGE_FUNCTIONS_TARGET_NAME),
+    table_key=value(COVERAGE_FUNCTIONS_TABLE_KEY),
 )
 @pipe_input(
     step(_coverage_functions_filter_goids, env=source("env")),
@@ -260,7 +271,7 @@ def _coverage_functions_enrich(aggregated: ir.Table) -> ir.Table:
 )
 @tag(
     domain="analytics",
-    target="coverage_functions",
+    target=COVERAGE_FUNCTIONS_TARGET_NAME,
     node_type="compute",
     target_="t__coverage_functions__compute",
 )
@@ -282,7 +293,7 @@ def t__coverage_functions__compute(
     return q__core__goids
 
 
-@tag(domain="analytics", target="coverage_functions", node_type="materialize")
+@tag(domain="analytics", target=COVERAGE_FUNCTIONS_TARGET_NAME, node_type="materialize")
 def t__coverage_functions(
     env: BuildEnv,
     graph: TargetGraph,
@@ -307,8 +318,8 @@ def t__coverage_functions(
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,
-        target_name="coverage_functions",
-        expected_table_key="analytics.coverage_functions",
+        target_name=COVERAGE_FUNCTIONS_TARGET_NAME,
+        expected_table_key=COVERAGE_FUNCTIONS_TABLE_KEY,
         materialization=m__analytics__coverage_functions,
     )
 
@@ -318,7 +329,7 @@ def t__coverage_functions(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target="coverage_test_edges", node_type="tool")
+@tag(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME, node_type="tool")
 def t__coverage_test_edges__compute(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -363,7 +374,7 @@ def t__coverage_test_edges__compute(
 
         return CoverageTestEdgesResult(
             success=True,
-            table_counts={"analytics.test_coverage_edges": 0},
+            table_counts={TEST_COVERAGE_EDGES_TABLE_KEY: 0},
         )
 
     except Exception as exc:
@@ -375,7 +386,7 @@ def t__coverage_test_edges__compute(
         )
 
 
-@tag(domain="analytics", target="coverage_test_edges", node_type="materialize")
+@tag(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME, node_type="materialize")
 def t__coverage_test_edges(
     env: BuildEnv,
     graph: TargetGraph,
@@ -397,7 +408,12 @@ def t__coverage_test_edges(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, "coverage_test_edges", t__coverage_test_edges__compute)
+    return executor_materialize(
+        env,
+        graph,
+        COVERAGE_TEST_EDGES_TARGET_NAME,
+        t__coverage_test_edges__compute,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -405,7 +421,7 @@ def t__coverage_test_edges(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target="behavioral_coverage", node_type="tool")
+@tag(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME, node_type="tool")
 def t__behavioral_coverage__compute(
     env: BuildEnv,
     t__test_profile: TargetRunRecord,
@@ -449,7 +465,7 @@ def t__behavioral_coverage__compute(
 
         return BehavioralCoverageResult(
             success=True,
-            table_counts={"analytics.behavioral_coverage": row_count},
+            table_counts={BEHAVIORAL_COVERAGE_TABLE_KEY: row_count},
         )
 
     except Exception as exc:
@@ -461,7 +477,7 @@ def t__behavioral_coverage__compute(
         )
 
 
-@tag(domain="analytics", target="behavioral_coverage", node_type="materialize")
+@tag(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME, node_type="materialize")
 def t__behavioral_coverage(
     env: BuildEnv,
     graph: TargetGraph,
@@ -483,7 +499,12 @@ def t__behavioral_coverage(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, "behavioral_coverage", t__behavioral_coverage__compute)
+    return executor_materialize(
+        env,
+        graph,
+        BEHAVIORAL_COVERAGE_TARGET_NAME,
+        t__behavioral_coverage__compute,
+    )
 
 
 __all__ = [

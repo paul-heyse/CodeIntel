@@ -50,8 +50,11 @@ from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -70,23 +73,35 @@ _HAMILTON_TYPE_HINTS = (
     EntrypointsResult,
 )
 
+EXTERNAL_DEPS_TARGET_NAME = "external_deps"
+ENTRYPOINTS_TARGET_NAME = "entrypoints"
+
+EXTERNAL_DEPENDENCIES_TABLE_KEY = "analytics.external_dependencies"
+EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY = "analytics.external_dependency_calls"
+EXTERNAL_DEPS_TABLE_KEYS = (
+    EXTERNAL_DEPENDENCIES_TABLE_KEY,
+    EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
+)
+
+ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
+ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
+ENTRYPOINTS_TABLE_KEYS = (ENTRYPOINTS_TABLE_KEY, ENTRYPOINT_TESTS_TABLE_KEY)
+
 TARGET_SPECS = (
     make_output_target(
-        name="external_deps",
+        name=EXTERNAL_DEPS_TARGET_NAME,
         module="analytics",
         description="External library dependency analysis.",
-        table_keys=(
-            "analytics.external_dependencies",
-            "analytics.external_dependency_calls",
+        options=TargetSpecOptions(
+            table_keys=EXTERNAL_DEPS_TABLE_KEYS,
         ),
     ),
     make_output_target(
-        name="entrypoints",
+        name=ENTRYPOINTS_TARGET_NAME,
         module="analytics",
         description="External entrypoint detection (HTTP, CLI, etc.).",
-        table_keys=(
-            "analytics.entrypoints",
-            "analytics.entrypoint_tests",
+        options=TargetSpecOptions(
+            table_keys=ENTRYPOINTS_TABLE_KEYS,
         ),
     ),
 )
@@ -152,7 +167,7 @@ def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
 
 
 @cache(format="memory")
-@tag(node_type="helper", domain="analytics", target="external_deps")
+@tag(node_type="helper", domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
 def external_deps_inputs(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
@@ -169,7 +184,7 @@ def external_deps_inputs(
     return _build_inputs(env)
 
 
-@tag(domain="analytics", target="external_deps", node_type="compute")
+@tag(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME, node_type="compute")
 def t__external_deps__compute_calls(
     env: BuildEnv,
     graph: TargetGraph,
@@ -202,7 +217,7 @@ def t__external_deps__compute_calls(
     - Usage modes (read, write, admin, etc.)
     - Evidence with code snippets
     """
-    target = graph.get("external_deps")
+    target = graph.get(EXTERNAL_DEPS_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -226,16 +241,16 @@ def t__external_deps__compute_calls(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.external_dependency_calls"),
+    output_name_=materialize_node(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("external_deps"),
-    table_key=value("analytics.external_dependency_calls"),
+    target_name=value(EXTERNAL_DEPS_TARGET_NAME),
+    table_key=value(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
     columns=value(tuple(EXTERNAL_DEPENDENCY_CALLS_COLS)),
 )
 @tag(
     domain="analytics",
-    target="external_deps",
+    target=EXTERNAL_DEPS_TARGET_NAME,
     node_type="compute",
     target_="external_deps__calls_rows",
 )
@@ -256,16 +271,16 @@ def external_deps__calls_rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.external_dependencies"),
+    output_name_=materialize_node(EXTERNAL_DEPENDENCIES_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("external_deps"),
-    table_key=value("analytics.external_dependencies"),
+    target_name=value(EXTERNAL_DEPS_TARGET_NAME),
+    table_key=value(EXTERNAL_DEPENDENCIES_TABLE_KEY),
     columns=value(tuple(EXTERNAL_DEPENDENCIES_COLS)),
 )
 @tag(
     domain="analytics",
-    target="external_deps",
+    target=EXTERNAL_DEPS_TARGET_NAME,
     node_type="compute",
     target_="external_deps__dependencies_rows",
 )
@@ -288,7 +303,7 @@ def external_deps__dependencies_rows(
     return tuple(result.rows)
 
 
-@tag(domain="analytics", target="external_deps", node_type="materialize")
+@tag(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME, node_type="materialize")
 def t__external_deps(
     env: BuildEnv,
     graph: TargetGraph,
@@ -330,17 +345,17 @@ def t__external_deps(
     external_dependency_calls table.
     """
     if t__call_graph.status != "succeeded":
-        executor = NativeTargetExecutor.for_target(env, graph, "external_deps")
+        executor = NativeTargetExecutor.for_target(env, graph, EXTERNAL_DEPS_TARGET_NAME)
         return executor.fail(
             RuntimeError(f"Upstream call_graph target failed: {t__call_graph.error}")
         )
     return record_from_duckdb_materializations(
         env=env,
         graph=graph,
-        target_name="external_deps",
+        target_name=EXTERNAL_DEPS_TARGET_NAME,
         materializations={
-            "analytics.external_dependency_calls": m__analytics__external_dependency_calls,
-            "analytics.external_dependencies": m__analytics__external_dependencies,
+            EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY: m__analytics__external_dependency_calls,
+            EXTERNAL_DEPENDENCIES_TABLE_KEY: m__analytics__external_dependencies,
         },
     )
 
@@ -403,7 +418,7 @@ def _build_entrypoint_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
 
 
 @cache(format="memory")
-@tag(node_type="helper", domain="analytics", target="entrypoints")
+@tag(node_type="helper", domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def entrypoints_inputs(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -426,7 +441,7 @@ def entrypoints_inputs(
     return _build_entrypoint_inputs(env)
 
 
-@tag(domain="analytics", target="entrypoints", node_type="compute")
+@tag(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, node_type="compute")
 def t__entrypoints__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -439,7 +454,7 @@ def t__entrypoints__compute(
     EntrypointsResult | None
         Computed entrypoints, or None when skipped or inputs are unavailable.
     """
-    target = graph.get("entrypoints")
+    target = graph.get(ENTRYPOINTS_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -459,16 +474,16 @@ def t__entrypoints__compute(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.entrypoints"),
+    output_name_=materialize_node(ENTRYPOINTS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("entrypoints"),
-    table_key=value("analytics.entrypoints"),
+    target_name=value(ENTRYPOINTS_TARGET_NAME),
+    table_key=value(ENTRYPOINTS_TABLE_KEY),
     columns=value(tuple(ENTRYPOINTS_COLS)),
 )
 @tag(
     domain="analytics",
-    target="entrypoints",
+    target=ENTRYPOINTS_TARGET_NAME,
     node_type="compute",
     target_="entrypoints__entrypoint_rows",
 )
@@ -489,15 +504,18 @@ def entrypoints__entrypoint_rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.entrypoint_tests"),
+    output_name_=materialize_node(ENTRYPOINT_TESTS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("entrypoints"),
-    table_key=value("analytics.entrypoint_tests"),
+    target_name=value(ENTRYPOINTS_TARGET_NAME),
+    table_key=value(ENTRYPOINT_TESTS_TABLE_KEY),
     columns=value(tuple(ENTRYPOINT_TESTS_COLS)),
 )
 @tag(
-    domain="analytics", target="entrypoints", node_type="compute", target_="entrypoints__test_rows"
+    domain="analytics",
+    target=ENTRYPOINTS_TARGET_NAME,
+    node_type="compute",
+    target_="entrypoints__test_rows",
 )
 def entrypoints__test_rows(
     t__entrypoints__compute: EntrypointsResult | None,
@@ -514,7 +532,7 @@ def entrypoints__test_rows(
     return tuple(t__entrypoints__compute.test_rows)
 
 
-@tag(domain="analytics", target="entrypoints", node_type="helper")
+@tag(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, node_type="helper")
 def entrypoints__upstream_error(
     t__goids: TargetRunRecord,
     t__semantic_roles: TargetRunRecord,
@@ -536,7 +554,7 @@ def entrypoints__upstream_error(
     return None
 
 
-@tag(domain="analytics", target="entrypoints", node_type="helper")
+@tag(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, node_type="helper")
 def entrypoints__materializations(
     m__analytics__entrypoints: dict[str, Any],
     m__analytics__entrypoint_tests: dict[str, Any],
@@ -549,12 +567,12 @@ def entrypoints__materializations(
         Materialization metadata keyed by table key.
     """
     return {
-        "analytics.entrypoints": m__analytics__entrypoints,
-        "analytics.entrypoint_tests": m__analytics__entrypoint_tests,
+        ENTRYPOINTS_TABLE_KEY: m__analytics__entrypoints,
+        ENTRYPOINT_TESTS_TABLE_KEY: m__analytics__entrypoint_tests,
     }
 
 
-@tag(domain="analytics", target="entrypoints", node_type="materialize")
+@tag(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, node_type="materialize")
 def t__entrypoints(
     env: BuildEnv,
     graph: TargetGraph,
@@ -569,12 +587,12 @@ def t__entrypoints(
         Record describing the materialization outcome.
     """
     if entrypoints__upstream_error is not None:
-        executor = NativeTargetExecutor.for_target(env, graph, "entrypoints")
+        executor = NativeTargetExecutor.for_target(env, graph, ENTRYPOINTS_TARGET_NAME)
         return executor.fail(RuntimeError(entrypoints__upstream_error))
 
     return record_from_duckdb_materializations(
         env=env,
         graph=graph,
-        target_name="entrypoints",
+        target_name=ENTRYPOINTS_TARGET_NAME,
         materializations=entrypoints__materializations,
     )
