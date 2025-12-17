@@ -51,6 +51,16 @@ class ServingSettings:
         Maximum rows allowed for export endpoints.
     enable_export_endpoints
         Whether to enable the /export endpoints.
+    mcp_enable_sampling
+        Enable LLM sampling in MCP tools for large result summarization.
+    mcp_sample_threshold
+        Row count threshold above which LLM sampling is triggered.
+    mcp_progress_reporting
+        Enable progress updates in MCP tools via Context.report_progress().
+    mcp_mask_errors
+        Mask internal error details in MCP tool responses for security.
+    mcp_max_concurrent_queries
+        Maximum concurrent heavy queries allowed (for memory protection).
     """
 
     serve_dir: Path
@@ -70,6 +80,17 @@ class ServingSettings:
     enable_gzip: bool = True
     export_max_rows: int = 100_000
     enable_export_endpoints: bool = True
+
+    # MCP Context Features
+    mcp_enable_sampling: bool = False
+    mcp_sample_threshold: int = 500
+    mcp_progress_reporting: bool = True
+
+    # MCP Error Handling
+    mcp_mask_errors: bool = True
+
+    # MCP Query Concurrency Control
+    mcp_max_concurrent_queries: int = 2
 
     @classmethod
     def from_env(cls) -> ServingSettings:
@@ -101,6 +122,16 @@ class ServingSettings:
             enable_gzip=os.environ.get("CODEINTEL_SERVE_GZIP", "1") == "1",
             export_max_rows=int(os.environ.get("CODEINTEL_SERVE_EXPORT_MAX_ROWS", "100000")),
             enable_export_endpoints=os.environ.get("CODEINTEL_SERVE_ENABLE_EXPORT", "1") == "1",
+            # MCP Context Features
+            mcp_enable_sampling=os.environ.get("CODEINTEL_MCP_ENABLE_SAMPLING", "0") == "1",
+            mcp_sample_threshold=int(os.environ.get("CODEINTEL_MCP_SAMPLE_THRESHOLD", "500")),
+            mcp_progress_reporting=os.environ.get("CODEINTEL_MCP_PROGRESS", "1") == "1",
+            # MCP Error Handling
+            mcp_mask_errors=os.environ.get("CODEINTEL_MCP_MASK_ERRORS", "1") == "1",
+            # MCP Query Concurrency Control
+            mcp_max_concurrent_queries=int(
+                os.environ.get("CODEINTEL_MCP_MAX_CONCURRENT_QUERIES", "2")
+            ),
         )
 
 

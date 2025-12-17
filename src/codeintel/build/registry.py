@@ -16,12 +16,12 @@ contracts using derive_schemas_from_targets().
 
 from __future__ import annotations
 
+import importlib
 import logging
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from codeintel.build.contracts import ArtifactSpec, OutputContract
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.resources import (
     CPU_INTENSIVE_EXECUTION,
@@ -32,6 +32,10 @@ from codeintel.build.schemas.declared_schemas import TABLE_SCHEMAS as _DATASET_T
 from codeintel.build.targets import OutputTarget
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from types import ModuleType
+
+    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.targets import TargetGraph
     from codeintel.core.schemas.primitives import TableSchema
 
@@ -654,6 +658,12 @@ def get_target_graph() -> TargetGraph:
     TargetGraph
         The singleton target graph with Hamilton-derived dependencies.
 
+    Raises
+    ------
+    TypeError
+        If the Hamilton driver factory does not expose a callable
+        ``build_driver`` function.
+
     Examples
     --------
     >>> graph = get_target_graph()
@@ -663,7 +673,16 @@ def get_target_graph() -> TargetGraph:
     >>> "scip" in deps
     True
     """
-    runtime = build_driver()
+    driver_factory_mod: ModuleType = importlib.import_module(
+        "codeintel.build.hamilton.driver_factory"
+    )
+    build_driver_fn_raw = getattr(driver_factory_mod, "build_driver", None)
+    if not callable(build_driver_fn_raw):
+        msg = "codeintel.build.hamilton.driver_factory.build_driver is missing or not callable"
+        raise TypeError(msg)
+
+    build_driver_fn = cast("Callable[[], HamiltonRuntime]", build_driver_fn_raw)
+    runtime = build_driver_fn()
     return target_graph_from_hamilton(runtime)
 
 

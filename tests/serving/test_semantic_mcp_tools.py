@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import duckdb
 import pytest
+from fastmcp.client import Client
 
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.db.pool import DuckDBPoolConfig
@@ -103,17 +104,40 @@ def _write_pointer(
     path.write_text(json.dumps(pointer, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def _extract_payload(tool_result: object) -> dict[str, object]:
-    if isinstance(tool_result, tuple):
-        match tool_result:
-            case (_content, payload) if isinstance(payload, dict):
-                return payload
-            case (_content, payload):
-                msg = f"Unexpected payload type: {type(payload)}"
-                raise TypeError(msg)
-            case _:
-                msg = f"Unexpected tool result tuple: {tool_result!r}"
-                raise TypeError(msg)
+def _extract_payload(tool_result: Any) -> dict[str, object]:  # noqa: ANN401
+    """Extract the payload from a gofastmcp tool result.
+
+    Parameters
+    ----------
+    tool_result
+        The result from calling a tool via the fastmcp client.
+        Can be a CallToolResult object with content attribute,
+        or a list of content items, or a plain dict.
+
+    Returns
+    -------
+    dict[str, object]
+        The extracted payload dictionary.
+
+    Raises
+    ------
+    TypeError
+        If the result type is unexpected.
+    """
+    # gofastmcp client.call_tool returns a CallToolResult with content attribute
+    if hasattr(tool_result, "content"):
+        content_list = tool_result.content
+        if content_list and len(content_list) > 0:
+            first_content = content_list[0]
+            # TextContent has a .text attribute containing JSON
+            if hasattr(first_content, "text"):
+                return json.loads(first_content.text)
+
+    # Fallback: handle list of content items directly
+    if isinstance(tool_result, list) and len(tool_result) > 0:
+        first_content = tool_result[0]
+        if hasattr(first_content, "text"):
+            return json.loads(first_content.text)
 
     if isinstance(tool_result, dict):
         return tool_result
@@ -150,41 +174,158 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
     )
     await manager.start()
     try:
-        kernel = SemanticQueryKernel(
-            db=manager,
-            settings=ServingSettings(
-                serve_dir=tmp_path,
-                hot_swap=False,
-                pool_size=1,
-                poll_interval_s=0.01,
-                result_engine="pandas",
-                schema_enforcement="strict",
-            ),
+        settings = ServingSettings(
+            serve_dir=tmp_path,
+            hot_swap=False,
+            pool_size=1,
+            poll_interval_s=0.01,
+            result_engine="pandas",
+            schema_enforcement="strict",
+            mcp_mask_errors=False,  # Disable masking for clearer test errors
         )
-        mcp = build_mcp_app(kernel=kernel, streamable_http_path="/mcp")
+        kernel = SemanticQueryKernel(db=manager, settings=settings)
+        mcp = build_mcp_app(kernel=kernel, settings=settings)
 
-        catalog = _extract_payload(await mcp.call_tool("semantic_catalog", {}))
-        views_raw = catalog.get("views")
-        if not isinstance(views_raw, list):
-            pytest.fail("Expected semantic_catalog.views to be a list")
-        expect_true(any(isinstance(v, dict) and v.get("id") == "demo.view" for v in views_raw))
-
-        desc = _extract_payload(await mcp.call_tool("semantic_describe", {"view_id": "demo.view"}))
-        expect_equal(desc.get("table_key"), "docs.v_demo")
-
-        query = _extract_payload(
-            await mcp.call_tool(
-                "semantic_query",
-                {
-                    "view_id": "demo.view",
-                    "filters": [{"column": "id", "op": "gte", "value": 2}],
-                },
+        # Use gofastmcp client pattern for testing
+        async with Client(mcp) as client:
+            catalog = _extract_payload(await client.call_tool("semantic_catalog", {}))
+            views_raw = catalog.get("views")
+            if not isinstance(views_raw, list):
+                pytest.fail("Expected semantic_catalog.views to be a list")
+            expect_true(
+                any(isinstance(v, dict) and v.get("id") == "demo.view" for v in views_raw)
             )
+
+            desc = _extract_payload(
+                await client.call_tool("semantic_describe", {"view_id": "demo.view"})
+            )
+            expect_equal(desc.get("table_key"), "docs.v_demo")
+
+            query = _extract_payload(
+                await client.call_tool(
+                    "semantic_query",
+                    {
+                        "view_id": "demo.view",
+                        "filters": [{"column": "id", "op": "gte", "value": 2}],
+                    },
+                )
+            )
+            rows_raw = query.get("rows")
+            if not isinstance(rows_raw, list):
+                pytest.fail("Expected semantic_query.rows to be a list")
+            ids = [row.get("id") for row in rows_raw if isinstance(row, dict)]
+            expect_equal(ids, [2, 3])
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_mcp_tool_annotations_present(tmp_path: Path) -> None:
+    """Verify tools have readOnlyHint annotations."""
+    db_path = tmp_path / "codeintel.duckdb"
+    registry_path = tmp_path / "semantic_registry.json"
+    manifest_path = tmp_path / "schema_manifest.json"
+    buildspec_path = tmp_path / "buildspec.json"
+    pointer_path = tmp_path / "current.json"
+
+    _make_db(db_path)
+    _write_registry(registry_path)
+    _write_schema_manifest(manifest_path)
+    _write_buildspec(buildspec_path)
+    _write_pointer(
+        pointer_path,
+        db_path=db_path,
+        registry_path=registry_path,
+        manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+    )
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=DuckDBPoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        settings = ServingSettings(
+            serve_dir=tmp_path,
+            hot_swap=False,
+            pool_size=1,
+            poll_interval_s=0.01,
+            result_engine="pandas",
+            schema_enforcement="strict",
         )
-        rows_raw = query.get("rows")
-        if not isinstance(rows_raw, list):
-            pytest.fail("Expected semantic_query.rows to be a list")
-        ids = [row.get("id") for row in rows_raw if isinstance(row, dict)]
-        expect_equal(ids, [2, 3])
+        kernel = SemanticQueryKernel(db=manager, settings=settings)
+        mcp = build_mcp_app(kernel=kernel, settings=settings)
+
+        async with Client(mcp) as client:
+            # list_tools() returns list[Tool] directly
+            tools = await client.list_tools()
+
+            # Verify all tools have annotations
+            for tool in tools:
+                expect_true(
+                    tool.annotations is not None,
+                    message=f"Tool {tool.name} should have annotations",
+                )
+                # Check readOnlyHint is True for all our tools
+                annotations = tool.annotations
+                if annotations is not None:
+                    expect_true(
+                        annotations.readOnlyHint is True,
+                        message=f"Tool {tool.name} should have readOnlyHint=True",
+                    )
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_mcp_tool_error_handling(tmp_path: Path) -> None:
+    """Verify ToolError returns controlled message for invalid view."""
+    db_path = tmp_path / "codeintel.duckdb"
+    registry_path = tmp_path / "semantic_registry.json"
+    manifest_path = tmp_path / "schema_manifest.json"
+    buildspec_path = tmp_path / "buildspec.json"
+    pointer_path = tmp_path / "current.json"
+
+    _make_db(db_path)
+    _write_registry(registry_path)
+    _write_schema_manifest(manifest_path)
+    _write_buildspec(buildspec_path)
+    _write_pointer(
+        pointer_path,
+        db_path=db_path,
+        registry_path=registry_path,
+        manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+    )
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=DuckDBPoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        settings = ServingSettings(
+            serve_dir=tmp_path,
+            hot_swap=False,
+            pool_size=1,
+            poll_interval_s=0.01,
+            result_engine="pandas",
+            schema_enforcement="strict",
+            mcp_mask_errors=False,
+        )
+        kernel = SemanticQueryKernel(db=manager, settings=settings)
+        mcp = build_mcp_app(kernel=kernel, settings=settings)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "semantic_describe",
+                {"view_id": "nonexistent.view"},
+                raise_on_error=False,  # Don't raise, check is_error instead
+            )
+            # Result should indicate an error
+            expect_true(result.is_error, message="Expected error for nonexistent view")
     finally:
         await manager.stop()

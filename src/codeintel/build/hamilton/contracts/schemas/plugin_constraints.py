@@ -1,9 +1,15 @@
-"""Plugin-based constraint extraction for dataset schema introspection.
+"""Target-based table relationship extraction for dataset introspection.
 
-This module extracts constraints from plugin metadata using the build
-registry as the single source of truth. It specifically extracts
-produces_tables and consumes_tables declarations to represent data
-dependencies and producer/consumer relationships in the plugin DAG.
+This module originally extracted constraints from plugin metadata. The build
+system has moved to a Hamilton-first architecture where targets and their
+contracts are the source of truth.
+
+We preserve the public API (`get_producer_plugins`, `get_consumer_plugins`, ...)
+but implement it in terms of build targets:
+
+- Producers are targets whose contracts produce the table.
+- Consumers are targets whose (Hamilton-derived) dependencies include at least
+  one target that produces the table.
 
 Architecture Reference: Section 5.4.1 - Implement ConstraintSet aggregation
 """
@@ -20,10 +26,11 @@ from codeintel.build.hamilton.contracts.schemas.constraints import (
     ConstraintKind,
     ConstraintSet,
 )
-from codeintel.build.unified_registry import get_unified_registry
+from codeintel.build.registry import get_target_graph
+from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
-    from codeintel.core.plugins.types.metadata import CorePluginMetadata
+    ...
 
 __all__ = [
     "PluginTableRelation",
@@ -36,10 +43,17 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
+_DOMAIN_BY_MODULE: dict[str, PluginDomain] = {
+    "ingestion": PluginDomain.INGEST,
+    "graphs": PluginDomain.GRAPH,
+    "analytics": PluginDomain.ANALYTICS,
+    "export": PluginDomain.EXPORT,
+}
+
 
 @lru_cache(maxsize=1)
 def _get_all_plugins_metadata() -> dict[str, CorePluginMetadata]:
-    """Load all plugin metadata from the build registry.
+    """Build target-derived "plugin metadata" for dataset relationships.
 
     Returns
     -------
@@ -47,16 +61,32 @@ def _get_all_plugins_metadata() -> dict[str, CorePluginMetadata]:
         Mapping of target name to core metadata.
     """
     result: dict[str, CorePluginMetadata] = {}
-    for target_name, plugin_class in get_unified_registry().get_all_plugins().items():
-        try:
-            plugin = plugin_class()
-        except (TypeError, ValueError, AttributeError):
-            log.debug("Failed to instantiate plugin %s", target_name)
-            continue
+    graph = get_target_graph()
 
-        core_meta = getattr(plugin, "core_metadata", None)
-        if core_meta is not None:
-            result[target_name] = core_meta
+    for target in graph.all_targets:
+        consumed: set[str] = set()
+        for dep_name in graph.dependencies_of(target.name):
+            try:
+                dep_target = graph.get(dep_name)
+            except KeyError:
+                continue
+            consumed.update(dep_target.contract.table_keys)
+
+        domain = _DOMAIN_BY_MODULE.get(target.module, PluginDomain.CLI)
+        result[target.name] = CorePluginMetadata(
+            name=f"{target.module}.{target.name}",
+            version="0.0.0",
+            description=target.description or "",
+            domain=domain,
+            kind="build_target",
+            stage=target.module,
+            provides=(),
+            requires=(),
+            produces_tables=tuple(sorted(target.contract.table_keys)),
+            consumes_tables=tuple(sorted(consumed)),
+            supports_incremental=True,
+            scope_aware=False,
+        )
 
     return result
 

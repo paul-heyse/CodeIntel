@@ -33,8 +33,8 @@ from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.hooks.telemetry_hook import NodeTelemetryHook
 from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.manifest import BuildRunRecord
+from codeintel.build.registry import ALL_TARGETS
 from codeintel.build.targets import TargetGraph
-from codeintel.build.unified_registry import get_unified_registry
 from codeintel.storage.exceptions import StorageError
 
 if TYPE_CHECKING:
@@ -450,9 +450,8 @@ class HamiltonBuildExecutor:
 
     @staticmethod
     def _build_contract_graph() -> TargetGraph:
-        unified = get_unified_registry()
         graph = TargetGraph()
-        for target in unified.get_all_targets():
+        for target in ALL_TARGETS:
             graph.register(target)
         return graph
 
