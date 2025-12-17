@@ -32,7 +32,10 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hamilton.validators import (
     build_enum_column_contract,
     build_table_contract,
@@ -42,12 +45,15 @@ from codeintel.storage.ibis_types import ge, gt
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
+RISK_FACTORS_TARGET_NAME = "risk_factors"
+RISK_FACTORS_TABLE_KEY = "analytics.goid_risk_factors"
+
 TARGET_SPECS = (
     make_output_target(
-        name="risk_factors",
+        name=RISK_FACTORS_TARGET_NAME,
         module="analytics",
         description="Composite risk factors per function.",
-        table_keys=("analytics.goid_risk_factors",),
+        options=TargetSpecOptions(table_keys=(RISK_FACTORS_TABLE_KEY,)),
     ),
 )
 
@@ -60,7 +66,7 @@ RISK_LEVEL_HIGH_THRESHOLD = 5
 RISK_LEVEL_MEDIUM_THRESHOLD = 3
 
 
-@tag(domain="analytics", target="risk_factors", node_type="compute")
+@tag(domain="analytics", target=RISK_FACTORS_TARGET_NAME, node_type="compute")
 def risk_factors__fan_in(q__graph__call_graph_edges: ir.Table) -> ir.Table:
     """Compute fan-in counts per callee function.
 
@@ -83,7 +89,7 @@ def risk_factors__fan_in(q__graph__call_graph_edges: ir.Table) -> ir.Table:
     )
 
 
-@tag(domain="analytics", target="risk_factors", node_type="compute")
+@tag(domain="analytics", target=RISK_FACTORS_TARGET_NAME, node_type="compute")
 def risk_factors__fan_out(q__graph__call_graph_edges: ir.Table) -> ir.Table:
     """Compute fan-out counts per caller function.
 
@@ -214,11 +220,11 @@ def _risk_factors_finalize(risk: ir.Table) -> ir.Table:
 
 @SaveToDecorator(
     [DuckDBIbisTableSaver],
-    output_name_=materialize_node("analytics.goid_risk_factors"),
+    output_name_=materialize_node(RISK_FACTORS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("risk_factors"),
-    table_key=value("analytics.goid_risk_factors"),
+    target_name=value(RISK_FACTORS_TARGET_NAME),
+    table_key=value(RISK_FACTORS_TABLE_KEY),
 )
 @pipe_input(
     step(
@@ -253,7 +259,7 @@ def _risk_factors_finalize(risk: ir.Table) -> ir.Table:
 )
 @tag(
     domain="analytics",
-    target="risk_factors",
+    target=RISK_FACTORS_TARGET_NAME,
     node_type="compute",
     target_="t__risk_factors__compute",
 )
@@ -302,7 +308,7 @@ def t__risk_factors__compute(
     return q__analytics__function_metrics
 
 
-@tag(domain="analytics", target="risk_factors", node_type="materialize")
+@tag(domain="analytics", target=RISK_FACTORS_TARGET_NAME, node_type="materialize")
 def t__risk_factors(
     env: BuildEnv,
     graph: TargetGraph,
@@ -332,8 +338,8 @@ def t__risk_factors(
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,
-        target_name="risk_factors",
-        expected_table_key="analytics.goid_risk_factors",
+        target_name=RISK_FACTORS_TARGET_NAME,
+        expected_table_key=RISK_FACTORS_TABLE_KEY,
         materialization=m__analytics__goid_risk_factors,
     )
 

@@ -1,286 +1,135 @@
-"""Native Hamilton implementation for subsystems target.
+"""Native Hamilton implementation for the `subsystems` analytics target.
 
-This module implements the subsystems analytics target as a pure Hamilton DAG,
-computing architectural subsystem identification from import graph and semantic roles.
+This target is implemented as a native execution boundary that reuses the
+canonical subsystem inference pipeline in `codeintel.analytics.subsystems`.
 
-Uses @pipe_input for DAG-visible multi-step transformations (Phase 5).
-Includes Hamilton-native validation via @check_output_custom (Phase 4)
-and schema documentation via @schema.output.
-
-Note: The subsystem_agreement target has been moved to metrics_targets.py
-as part of the Phase 2 consolidation effort.
+The subsystem pipeline materializes both:
+- ``analytics.subsystems``
+- ``analytics.subsystem_modules``
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING
 
-import ibis
-import ibis.expr.types as ir
-from hamilton.function_modifiers import (
-    check_output_custom,
-    pipe_input,
-    schema,
-    source,
-    step,
-    tag,
-    value,
-)
-from hamilton.function_modifiers.adapters import SaveToDecorator
+from hamilton.function_modifiers import tag
 
+from codeintel.analytics.subsystems.materialize import build_subsystems
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
-from codeintel.build.hamilton.naming import materialize_node
-from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
-from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
-from codeintel.storage.ibis_types import and_predicates
 
-LOG = logging.getLogger(__name__)
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
+
+log = logging.getLogger(__name__)
+
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+
+SUBSYSTEMS_TARGET_NAME = "subsystems"
+
+SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
+SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
+SUBSYSTEMS_TABLE_KEYS = (SUBSYSTEMS_TABLE_KEY, SUBSYSTEM_MODULES_TABLE_KEY)
 
 TARGET_SPECS = (
     make_output_target(
-        name="subsystems",
+        name=SUBSYSTEMS_TARGET_NAME,
         module="analytics",
         description="Architectural subsystem inference.",
-        table_keys=(
-            "analytics.subsystems",
-            "analytics.subsystem_modules",
-        ),
+        options=TargetSpecOptions(table_keys=SUBSYSTEMS_TABLE_KEYS),
     ),
 )
 
-
-def _filter_to_snapshot(
-    roles: ir.Table,
-    env: BuildEnv,
-) -> ir.Table:
-    """Filter semantic roles to current snapshot.
-
-    Parameters
-    ----------
-    roles
-        Ibis table expression for analytics.semantic_roles_modules.
-    env
-        Build environment with snapshot info.
-
-    Returns
-    -------
-    ir.Table
-        Filtered Ibis expression for current repo/commit.
-    """
-    LOG.debug("Filtering semantic roles to snapshot %s@%s", env.snapshot.repo, env.snapshot.commit)
-    return roles.filter(
-        and_predicates(
-            roles.repo == env.snapshot.repo,
-            roles.commit == env.snapshot.commit,
-        )
-    )
-
-
-def _group_modules_by_role(roles: ir.Table) -> ir.Table:
-    """Group modules by their semantic role to form subsystem candidates.
-
-    Parameters
-    ----------
-    roles
-        Filtered semantic roles table.
-
-    Returns
-    -------
-    ir.Table
-        Grouped table with role counts per module.
-    """
-    LOG.debug("Grouping modules by semantic role")
-    # Each module's dominant role forms its subsystem assignment
-    return roles.group_by(["repo", "commit", "module", "role"]).aggregate(
-        role_strength=ibis._.count(),
-    )
-
-
-def _assign_subsystem_ids(grouped: ir.Table) -> ir.Table:
-    """Assign subsystem IDs based on module roles.
-
-    Parameters
-    ----------
-    grouped
-        Grouped modules with role assignments.
-
-    Returns
-    -------
-    ir.Table
-        Table with subsystem_id assignments.
-    """
-    LOG.debug("Assigning subsystem IDs from roles")
-    # Use the role as the subsystem identifier
-    return grouped.select(
-        repo=grouped.repo,
-        commit=grouped.commit,
-        module=grouped.module,
-        subsystem_id=grouped.role,
-    )
-
-
-def _build_subsystem_schema(assigned: ir.Table) -> ir.Table:
-    """Build final subsystems schema with metadata columns.
-
-    Parameters
-    ----------
-    assigned
-        Table with subsystem assignments.
-
-    Returns
-    -------
-    ir.Table
-        Final Ibis expression for analytics.subsystems table.
-    """
-    LOG.info("Building final subsystems schema")
-    return assigned.select(
-        repo=assigned.repo,
-        commit=assigned.commit,
-        subsystem_id=assigned.subsystem_id,
-        name=assigned.module,
-        description=ibis.literal(""),
-        module_count=ibis.literal(1),
-        modules_json=ibis.literal("[]"),
-        entrypoints_json=ibis.literal(""),
-    )
-
-
-@SaveToDecorator(
-    [DuckDBIbisTableSaver],
-    output_name_=materialize_node("analytics.subsystems"),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value("subsystems"),
-    table_key=value("analytics.subsystems"),
-)
-@pipe_input(
-    step(_filter_to_snapshot, env=source("env")),
-    step(_group_modules_by_role),
-    step(_assign_subsystem_ids),
-    step(_build_subsystem_schema),
-    namespace=None,
-    on_input="q__analytics__semantic_roles_modules",
-)
-@check_output_custom(
-    *build_table_contract(
-        required_columns=[
-            "repo",
-            "commit",
-            "subsystem_id",
-            "name",
-            "module_count",
-        ],
-        column_types={
-            "repo": "string",
-            "commit": "string",
-            "subsystem_id": "string",
-            "name": "string",
-            "module_count": "int64",
-        },
-        no_nulls=["repo", "commit", "subsystem_id", "name"],
+_COUNT_ROWS_QUERY_BY_TABLE_KEY: dict[str, str] = {
+    SUBSYSTEMS_TABLE_KEY: (
+        "SELECT COUNT(*) FROM analytics.subsystems WHERE repo = ? AND commit = ?"
     ),
-)
-@tag(domain="analytics", target="subsystems", node_type="compute", target_="t__subsystems__compute")
-@schema.output(
-    ("repo", "string"),
-    ("commit", "string"),
-    ("subsystem_id", "string"),
-    ("name", "string"),
-    ("description", "string"),
-    ("module_count", "int"),
-    ("modules_json", "string"),
-    ("entrypoints_json", "string"),
-    target_="t__subsystems__compute",
-)
-def t__subsystems__compute(
-    q__analytics__semantic_roles_modules: ir.Table,
-) -> ir.Table:
-    """Compute architectural subsystems from import graph and semantic roles.
-
-    This node applies a multi-step transformation pipeline via @pipe_input:
-    1. Filter to current snapshot
-    2. Group modules by semantic role
-    3. Assign subsystem IDs from roles
-    4. Build final schema
-
-    Parameters
-    ----------
-    q__analytics__semantic_roles_modules
-        Ibis table expression for analytics.semantic_roles_modules (semantic classifications).
-
-    Returns
-    -------
-    ir.Table
-        Ibis expression for analytics.subsystems with schema:
-        - repo: Repository name
-        - commit: Commit hash
-        - subsystem_id: Unique subsystem identifier
-        - name: Subsystem name
-        - description: Subsystem description (optional)
-        - module_count: Number of modules in subsystem
-        - modules_json: JSON array of module paths
-        - entrypoints_json: JSON array of entry point paths (optional)
-
-    Notes
-    -----
-    The @pipe_input decorator makes each transformation step DAG-visible,
-    enabling better tracing and debugging of the subsystem computation.
-    """
-    # The @pipe_input chain transforms q__analytics__semantic_roles_modules
-    # into the final result; returning it keeps the function body minimal
-    # and ensures intermediate steps are DAG-visible.
-    return q__analytics__semantic_roles_modules
+    SUBSYSTEM_MODULES_TABLE_KEY: (
+        "SELECT COUNT(*) FROM analytics.subsystem_modules WHERE repo = ? AND commit = ?"
+    ),
+}
 
 
-@tag(domain="analytics", target="subsystems", node_type="materialize")
+def _count_rows(gateway: StorageGateway, table_key: str, *, repo: str, commit: str) -> int:
+    query = _COUNT_ROWS_QUERY_BY_TABLE_KEY.get(table_key)
+    if query is None:
+        msg = f"Unsupported table_key for row count query: {table_key}"
+        raise ValueError(msg)
+    row = gateway.execute(query, [repo, commit]).fetchone()
+    return int(row[0]) if row else 0
+
+
+@tag(domain="analytics", target=SUBSYSTEMS_TARGET_NAME, node_type="materialize")
 def t__subsystems(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__subsystems: dict[str, Any],
+    t__import_graph: TargetRunRecord,
+    t__semantic_roles: TargetRunRecord,
 ) -> TargetRunRecord:
-    """Finalize subsystems execution from DAG-visible DuckDB materialization.
-
-    The DuckDB write is performed by a Hamilton materializer node
-    (``m__analytics__subsystems``). This target node converts the materialization
-    metadata into a TargetRunRecord and persists the manifest on success.
+    """Materialize subsystems and subsystem membership tables.
 
     Parameters
     ----------
     env
-        Build environment with gateway, snapshot, and config.
+        Build environment with gateway and snapshot info.
     graph
-        Target graph for accessing OutputTarget contract.
-    m__analytics__subsystems
-        Materialization metadata dict produced by the DuckDB saver node.
+        Target graph for metadata lookup and skip detection.
+    t__import_graph
+        Upstream import graph record.
+    t__semantic_roles
+        Upstream semantic roles record.
 
     Returns
     -------
     TargetRunRecord
-        Record capturing execution status, duration, and output references.
-
-    Examples
-    --------
-    >>> # This node is executed by Hamilton after the compute node succeeds
-    >>> # It converts the saver metadata into a TargetRunRecord
+        Record with status, datasets, and execution metadata.
     """
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name="subsystems",
-        expected_table_key="analytics.subsystems",
-        materialization=m__analytics__subsystems,
-    )
+    executor = NativeTargetExecutor.for_target(env, graph, SUBSYSTEMS_TARGET_NAME)
+
+    if executor.should_skip():
+        return executor.skip()
+
+    if t__import_graph.status != "succeeded":
+        return executor.fail(
+            RuntimeError(f"Upstream import_graph target failed: {t__import_graph.error}")
+        )
+
+    if t__semantic_roles.status != "succeeded":
+        return executor.fail(
+            RuntimeError(f"Upstream semantic_roles target failed: {t__semantic_roles.error}")
+        )
+
+    def compute() -> dict[str, int]:
+        build_subsystems(env.gateway, env.snapshot)
+        repo = env.snapshot.repo
+        commit = env.snapshot.commit
+        row_counts = {
+            SUBSYSTEMS_TABLE_KEY: _count_rows(
+                env.gateway,
+                SUBSYSTEMS_TABLE_KEY,
+                repo=repo,
+                commit=commit,
+            ),
+            SUBSYSTEM_MODULES_TABLE_KEY: _count_rows(
+                env.gateway,
+                SUBSYSTEM_MODULES_TABLE_KEY,
+                repo=repo,
+                commit=commit,
+            ),
+        }
+        log.info("subsystems: materialized row_counts=%s", row_counts)
+        return row_counts
+
+    return executor.execute(compute)
 
 
 __all__ = [
     "t__subsystems",
-    "t__subsystems__compute",
 ]

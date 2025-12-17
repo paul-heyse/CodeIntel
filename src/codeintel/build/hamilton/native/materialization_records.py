@@ -102,6 +102,51 @@ def record_from_duckdb_materialization(
             artifacts=(),
         )
 
+    contract_table_keys = tuple(target.contract.table_keys)
+    if contract_table_keys != (expected_table_key,):
+        if expected_table_key not in contract_table_keys:
+            msg = (
+                "DuckDB materialization table_key is not declared in the target contract: "
+                f"target={target_name} table_key={expected_table_key}"
+            )
+        else:
+            msg = (
+                "record_from_duckdb_materialization requires a single-table contract: "
+                f"target={target_name} contract_table_keys={contract_table_keys} "
+                f"expected_table_key={expected_table_key}"
+            )
+        run = NativeRunInfo(
+            input_hash=parsed.input_hash,
+            options_hash=None,
+            duration_ms=parsed.duration_ms,
+            row_counts=None,
+        )
+        return create_run_record(
+            target,
+            "failed",
+            parsed.input_hash,
+            inputs=RunRecordInputs(env=env, run=run, error=ValueError(msg)),
+        )
+
+    if parsed.table_key != expected_table_key:
+        msg = (
+            "DuckDB materialization metadata table_key does not match expected table_key: "
+            f"target={target_name} table_key={parsed.table_key} "
+            f"expected_table_key={expected_table_key}"
+        )
+        run = NativeRunInfo(
+            input_hash=parsed.input_hash,
+            options_hash=None,
+            duration_ms=parsed.duration_ms,
+            row_counts=None,
+        )
+        return create_run_record(
+            target,
+            "failed",
+            parsed.input_hash,
+            inputs=RunRecordInputs(env=env, run=run, error=ValueError(msg)),
+        )
+
     run = NativeRunInfo(
         input_hash=parsed.input_hash,
         options_hash=None,
@@ -187,6 +232,51 @@ def record_from_file_artifact_materialization(
             artifacts=(),
         )
 
+    contract_artifact_names = tuple(target.contract.artifact_names)
+    if contract_artifact_names != (expected_artifact_name,):
+        if expected_artifact_name not in contract_artifact_names:
+            msg = (
+                "Artifact materialization name is not declared in the target contract: "
+                f"target={target_name} artifact_name={expected_artifact_name}"
+            )
+        else:
+            msg = (
+                "record_from_file_artifact_materialization requires a single-artifact contract: "
+                f"target={target_name} contract_artifact_names={contract_artifact_names} "
+                f"expected_artifact_name={expected_artifact_name}"
+            )
+        run = NativeRunInfo(
+            input_hash=parsed.input_hash,
+            options_hash=None,
+            duration_ms=parsed.duration_ms,
+            row_counts=None,
+        )
+        return create_run_record(
+            target,
+            "failed",
+            parsed.input_hash,
+            inputs=RunRecordInputs(env=env, run=run, error=ValueError(msg)),
+        )
+
+    if parsed.artifact_name != expected_artifact_name:
+        msg = (
+            "File artifact materialization metadata artifact_name does not match expected: "
+            f"target={target_name} artifact_name={parsed.artifact_name} "
+            f"expected_artifact_name={expected_artifact_name}"
+        )
+        run = NativeRunInfo(
+            input_hash=parsed.input_hash,
+            options_hash=None,
+            duration_ms=parsed.duration_ms,
+            row_counts=None,
+        )
+        return create_run_record(
+            target,
+            "failed",
+            parsed.input_hash,
+            inputs=RunRecordInputs(env=env, run=run, error=ValueError(msg)),
+        )
+
     run = NativeRunInfo(
         input_hash=parsed.input_hash,
         options_hash=None,
@@ -219,31 +309,7 @@ def record_from_file_artifact_materialization(
         inputs=RunRecordInputs(env=env, run=run),
     )
 
-    updated_artifacts: list[ArtifactRef] = []
-    for art in record.artifacts:
-        if isinstance(art, ArtifactRef) and art.name == parsed.artifact_name:
-            updated = art
-            if parsed.path is not None:
-                updated = updated.with_path(parsed.path)
-            if parsed.size_bytes is not None:
-                updated = updated.with_metadata("size_bytes", parsed.size_bytes)
-            updated_artifacts.append(updated)
-        elif isinstance(art, ArtifactRef):
-            updated_artifacts.append(art)
-
-    if updated_artifacts:
-        record = TargetRunRecord(
-            target=record.target,
-            plugin_name=record.plugin_name,
-            status=record.status,
-            input_hash=record.input_hash,
-            options_hash=record.options_hash,
-            duration_ms=record.duration_ms,
-            row_counts=record.row_counts,
-            error=record.error,
-            datasets=record.datasets,
-            artifacts=tuple(updated_artifacts),
-        )
+    record = _apply_file_artifact_results(record, {expected_artifact_name: parsed})
 
     save_manifest(env, record)
     return record
@@ -290,6 +356,16 @@ def record_from_duckdb_materializations(
             artifacts=(),
         )
 
+    extra_table_keys = set(materializations) - set(target.contract.table_keys)
+    if extra_table_keys:
+        msg = f"Unexpected materialization metadata for tables: {sorted(extra_table_keys)}"
+        return create_run_record(
+            target,
+            "failed",
+            "",
+            inputs=RunRecordInputs(error=RuntimeError(msg)),
+        )
+
     parsed: dict[str, DuckDBMaterializationResult] = {}
     for expected_table_key in target.contract.table_keys:
         meta = materializations.get(expected_table_key)
@@ -303,9 +379,22 @@ def record_from_duckdb_materializations(
                 error=f"Missing materialization metadata for table: {expected_table_key}",
             )
             continue
-        parsed[expected_table_key] = _parse_materialization(
-            meta, default_table_key=expected_table_key
-        )
+
+        result = _parse_materialization(meta, default_table_key=expected_table_key)
+        if result.status != "failed" and result.table_key != expected_table_key:
+            parsed[expected_table_key] = DuckDBMaterializationResult(
+                status="failed",
+                table_key=expected_table_key,
+                row_count=None,
+                duration_ms=result.duration_ms,
+                input_hash=result.input_hash,
+                error=(
+                    "DuckDB materialization metadata table_key mismatch: "
+                    f"expected={expected_table_key} got={result.table_key}"
+                ),
+            )
+            continue
+        parsed[expected_table_key] = result
 
     statuses = {r.status for r in parsed.values()}
     input_hash = next((r.input_hash for r in parsed.values() if r.input_hash), "")
@@ -405,6 +494,16 @@ def record_from_file_artifact_materializations(
             artifacts=(),
         )
 
+    extra_artifacts = set(materializations) - set(target.contract.artifact_names)
+    if extra_artifacts:
+        msg = f"Unexpected materialization metadata for artifacts: {sorted(extra_artifacts)}"
+        return create_run_record(
+            target,
+            "failed",
+            "",
+            inputs=RunRecordInputs(error=RuntimeError(msg)),
+        )
+
     parsed = _parse_expected_artifact_materializations(target, materializations)
     statuses, input_hash, duration_ms = _summarize_file_artifact_results(parsed)
 
@@ -477,10 +576,26 @@ def _parse_expected_artifact_materializations(
             )
             continue
 
-        parsed[expected_artifact_name] = _parse_file_artifact_materialization(
+        result = _parse_file_artifact_materialization(
             meta,
             default_artifact_name=expected_artifact_name,
         )
+        if result.status != "failed" and result.artifact_name != expected_artifact_name:
+            parsed[expected_artifact_name] = FileArtifactMaterializationResult(
+                status="failed",
+                artifact_name=expected_artifact_name,
+                path=result.path,
+                size_bytes=result.size_bytes,
+                duration_ms=result.duration_ms,
+                input_hash=result.input_hash,
+                error=(
+                    "File artifact materialization metadata artifact_name mismatch: "
+                    f"expected={expected_artifact_name} got={result.artifact_name}"
+                ),
+            )
+            continue
+
+        parsed[expected_artifact_name] = result
     return parsed
 
 

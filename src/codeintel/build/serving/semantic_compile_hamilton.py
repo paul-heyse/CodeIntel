@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from hamilton.driver import Driver
 
-from codeintel.build.hamilton import tags as ht
+from codeintel.hamilton import tags as ht
 
 if TYPE_CHECKING:
     from types import ModuleType

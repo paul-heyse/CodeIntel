@@ -27,7 +27,10 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materializations,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.schemas import SchemaManifest, get_schema_provider
 from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
 from codeintel.build.serving.semantic_compile_hamilton import (
@@ -40,27 +43,39 @@ from codeintel.storage.views import ibis_views as _ibis_views
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
+SERVING_ARTIFACTS_TARGET_NAME = "serving_artifacts"
+
+SERVING_ARTIFACT_SEMANTIC_REGISTRY = "semantic_registry"
+SERVING_ARTIFACT_SCHEMA_MANIFEST = "schema_manifest"
+SERVING_ARTIFACT_BUILDSPEC = "buildspec"
+
+SERVING_ARTIFACT_SPECS = (
+    ArtifactSpec(
+        SERVING_ARTIFACT_SEMANTIC_REGISTRY,
+        "{build_dir}/serving/artifacts/semantic_registry.json",
+        "Compiled semantic registry for serving",
+    ),
+    ArtifactSpec(
+        SERVING_ARTIFACT_SCHEMA_MANIFEST,
+        "{build_dir}/serving/artifacts/schema_manifest.json",
+        "Compiled schema manifest for serving",
+    ),
+    ArtifactSpec(
+        SERVING_ARTIFACT_BUILDSPEC,
+        "{build_dir}/serving/artifacts/buildspec.json",
+        "Compiled BuildSpec contract for serving",
+    ),
+)
+
 TARGET_SPECS = (
     make_output_target(
-        name="serving_artifacts",
+        name=SERVING_ARTIFACTS_TARGET_NAME,
         module="export",
-        description="Compile deterministic serving artifacts (semantic registry, schema manifest, buildspec).",
-        artifacts=(
-            ArtifactSpec(
-                "semantic_registry",
-                "{build_dir}/serving/artifacts/semantic_registry.json",
-                "Compiled semantic registry for serving",
-            ),
-            ArtifactSpec(
-                "schema_manifest",
-                "{build_dir}/serving/artifacts/schema_manifest.json",
-                "Compiled schema manifest for serving",
-            ),
-            ArtifactSpec(
-                "buildspec",
-                "{build_dir}/serving/artifacts/buildspec.json",
-                "Compiled BuildSpec contract for serving",
-            ),
+        description=(
+            "Compile deterministic serving artifacts (semantic registry, schema manifest, buildspec)."
+        ),
+        options=TargetSpecOptions(
+            artifacts=SERVING_ARTIFACT_SPECS,
         ),
     ),
 )
@@ -91,15 +106,15 @@ def _buildspec_json() -> str:
 
 @SaveToDecorator(
     [FileArtifactSaver],
-    output_name_=materialize_node("artifact.semantic_registry"),
+    output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_SEMANTIC_REGISTRY}"),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("serving_artifacts"),
-    artifact_name=value("semantic_registry"),
+    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
+    artifact_name=value(SERVING_ARTIFACT_SEMANTIC_REGISTRY),
 )
 @tag(
     domain="export",
-    target="serving_artifacts",
+    target=SERVING_ARTIFACTS_TARGET_NAME,
     node_type="compute",
     target_="serving_artifacts__semantic_registry",
 )
@@ -121,15 +136,15 @@ def serving_artifacts__semantic_registry(_env: BuildEnv) -> str:
 
 @SaveToDecorator(
     [FileArtifactSaver],
-    output_name_=materialize_node("artifact.schema_manifest"),
+    output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_SCHEMA_MANIFEST}"),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("serving_artifacts"),
-    artifact_name=value("schema_manifest"),
+    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
+    artifact_name=value(SERVING_ARTIFACT_SCHEMA_MANIFEST),
 )
 @tag(
     domain="export",
-    target="serving_artifacts",
+    target=SERVING_ARTIFACTS_TARGET_NAME,
     node_type="compute",
     target_="serving_artifacts__schema_manifest",
 )
@@ -151,15 +166,15 @@ def serving_artifacts__schema_manifest(_env: BuildEnv) -> str:
 
 @SaveToDecorator(
     [FileArtifactSaver],
-    output_name_=materialize_node("artifact.buildspec"),
+    output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_BUILDSPEC}"),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("serving_artifacts"),
-    artifact_name=value("buildspec"),
+    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
+    artifact_name=value(SERVING_ARTIFACT_BUILDSPEC),
 )
 @tag(
     domain="export",
-    target="serving_artifacts",
+    target=SERVING_ARTIFACTS_TARGET_NAME,
     node_type="compute",
     target_="serving_artifacts__buildspec",
 )
@@ -179,7 +194,7 @@ def serving_artifacts__buildspec(_env: BuildEnv) -> str:
     return _buildspec_json()
 
 
-@tag(domain="export", target="serving_artifacts", node_type="helper")
+@tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
 def serving_artifacts__materializations(
     m__artifact__semantic_registry: dict[str, Any],
     m__artifact__schema_manifest: dict[str, Any],
@@ -202,13 +217,13 @@ def serving_artifacts__materializations(
         Mapping of artifact name to saver metadata.
     """
     return {
-        "semantic_registry": m__artifact__semantic_registry,
-        "schema_manifest": m__artifact__schema_manifest,
-        "buildspec": m__artifact__buildspec,
+        SERVING_ARTIFACT_SEMANTIC_REGISTRY: m__artifact__semantic_registry,
+        SERVING_ARTIFACT_SCHEMA_MANIFEST: m__artifact__schema_manifest,
+        SERVING_ARTIFACT_BUILDSPEC: m__artifact__buildspec,
     }
 
 
-@tag(domain="export", target="serving_artifacts", node_type="materialize")
+@tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="materialize")
 def t__serving_artifacts(
     env: BuildEnv,
     graph: TargetGraph,
@@ -233,7 +248,7 @@ def t__serving_artifacts(
     return record_from_file_artifact_materializations(
         env=env,
         graph=graph,
-        target_name="serving_artifacts",
+        target_name=SERVING_ARTIFACTS_TARGET_NAME,
         materializations=serving_artifacts__materializations,
     )
 

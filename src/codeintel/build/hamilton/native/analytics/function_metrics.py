@@ -37,8 +37,11 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 
@@ -48,15 +51,24 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, FunctionAnalyticsResult)
 
+FUNCTION_METRICS_TARGET_NAME = "function_metrics"
+
+FUNCTION_METRICS_TABLE_KEY = "analytics.function_metrics"
+FUNCTION_TYPES_TABLE_KEY = "analytics.function_types"
+FUNCTION_VALIDATION_TABLE_KEY = "analytics.function_validation"
+FUNCTION_METRICS_TABLE_KEYS = (
+    FUNCTION_METRICS_TABLE_KEY,
+    FUNCTION_TYPES_TABLE_KEY,
+    FUNCTION_VALIDATION_TABLE_KEY,
+)
+
 TARGET_SPECS = (
     make_output_target(
-        name="function_metrics",
+        name=FUNCTION_METRICS_TARGET_NAME,
         module="analytics",
         description="Function structural metrics and type annotations.",
-        table_keys=(
-            "analytics.function_metrics",
-            "analytics.function_types",
-            "analytics.function_validation",
+        options=TargetSpecOptions(
+            table_keys=FUNCTION_METRICS_TABLE_KEYS,
         ),
     ),
 )
@@ -142,7 +154,7 @@ def _row_to_tuple(row: Mapping[str, object], cols: tuple[str, ...]) -> tuple[obj
     return tuple(row.get(col) for col in cols)
 
 
-@tag(domain="analytics", target="function_metrics", node_type="compute")
+@tag(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME, node_type="compute")
 def t__function_metrics__compute(
     env: BuildEnv, graph: TargetGraph
 ) -> FunctionAnalyticsResult | None:
@@ -171,7 +183,7 @@ def t__function_metrics__compute(
     - Nesting depth
     - Type annotation coverage
     """
-    target = graph.get("function_metrics")
+    target = graph.get(FUNCTION_METRICS_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -193,16 +205,16 @@ def t__function_metrics__compute(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.function_metrics"),
+    output_name_=materialize_node(FUNCTION_METRICS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("function_metrics"),
-    table_key=value("analytics.function_metrics"),
+    target_name=value(FUNCTION_METRICS_TARGET_NAME),
+    table_key=value(FUNCTION_METRICS_TABLE_KEY),
     columns=value(FUNCTION_METRICS_COLS),
 )
 @tag(
     domain="analytics",
-    target="function_metrics",
+    target=FUNCTION_METRICS_TARGET_NAME,
     node_type="compute",
     target_="function_metrics__metrics_rows",
 )
@@ -232,16 +244,16 @@ def function_metrics__metrics_rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.function_types"),
+    output_name_=materialize_node(FUNCTION_TYPES_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("function_metrics"),
-    table_key=value("analytics.function_types"),
+    target_name=value(FUNCTION_METRICS_TARGET_NAME),
+    table_key=value(FUNCTION_TYPES_TABLE_KEY),
     columns=value(FUNCTION_TYPES_COLS),
 )
 @tag(
     domain="analytics",
-    target="function_metrics",
+    target=FUNCTION_METRICS_TARGET_NAME,
     node_type="compute",
     target_="function_metrics__types_rows",
 )
@@ -270,16 +282,16 @@ def function_metrics__types_rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.function_validation"),
+    output_name_=materialize_node(FUNCTION_VALIDATION_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("function_metrics"),
-    table_key=value("analytics.function_validation"),
+    target_name=value(FUNCTION_METRICS_TARGET_NAME),
+    table_key=value(FUNCTION_VALIDATION_TABLE_KEY),
     columns=value(tuple(FUNCTION_VALIDATION_COLS)),
 )
 @tag(
     domain="analytics",
-    target="function_metrics",
+    target=FUNCTION_METRICS_TARGET_NAME,
     node_type="compute",
     target_="function_metrics__validation_rows",
 )
@@ -307,7 +319,7 @@ def function_metrics__validation_rows(
     return tuple(validation_rows)
 
 
-@tag(domain="analytics", target="function_metrics", node_type="materialize")
+@tag(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME, node_type="materialize")
 def t__function_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -341,11 +353,11 @@ def t__function_metrics(
     return record_from_duckdb_materializations(
         env=env,
         graph=graph,
-        target_name="function_metrics",
+        target_name=FUNCTION_METRICS_TARGET_NAME,
         materializations={
-            "analytics.function_metrics": m__analytics__function_metrics,
-            "analytics.function_types": m__analytics__function_types,
-            "analytics.function_validation": m__analytics__function_validation,
+            FUNCTION_METRICS_TABLE_KEY: m__analytics__function_metrics,
+            FUNCTION_TYPES_TABLE_KEY: m__analytics__function_types,
+            FUNCTION_VALIDATION_TABLE_KEY: m__analytics__function_validation,
         },
     )
 

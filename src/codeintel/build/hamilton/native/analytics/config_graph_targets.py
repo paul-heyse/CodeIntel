@@ -50,8 +50,11 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -66,31 +69,49 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
+CONFIG_DATA_FLOW_TARGET_NAME = "config_data_flow"
+CFG_DFG_METRICS_TARGET_NAME = "cfg_dfg_metrics"
+
+CONFIG_DATA_FLOW_TABLE_KEY = "analytics.config_data_flow"
+CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY = "analytics.config_graph_metrics_keys"
+CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY = "analytics.config_graph_metrics_modules"
+CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY = "analytics.config_projection_key_edges"
+CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY = "analytics.config_projection_module_edges"
+CONFIG_DATA_FLOW_TABLE_KEYS = (
+    CONFIG_DATA_FLOW_TABLE_KEY,
+    CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY,
+    CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY,
+    CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY,
+    CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY,
+)
+
+CFG_FUNCTION_METRICS_TABLE_KEY = "analytics.cfg_function_metrics"
+CFG_BLOCK_METRICS_TABLE_KEY = "analytics.cfg_block_metrics"
+CFG_FUNCTION_METRICS_EXT_TABLE_KEY = "analytics.cfg_function_metrics_ext"
+DFG_FUNCTION_METRICS_TABLE_KEY = "analytics.dfg_function_metrics"
+DFG_BLOCK_METRICS_TABLE_KEY = "analytics.dfg_block_metrics"
+DFG_FUNCTION_METRICS_EXT_TABLE_KEY = "analytics.dfg_function_metrics_ext"
+CFG_DFG_METRICS_TABLE_KEYS = (
+    CFG_FUNCTION_METRICS_TABLE_KEY,
+    CFG_BLOCK_METRICS_TABLE_KEY,
+    CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+    DFG_FUNCTION_METRICS_TABLE_KEY,
+    DFG_BLOCK_METRICS_TABLE_KEY,
+    DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
+)
+
 TARGET_SPECS = (
     make_output_target(
-        name="config_data_flow",
+        name=CONFIG_DATA_FLOW_TARGET_NAME,
         module="analytics",
         description="Config key usage flow through functions.",
-        table_keys=(
-            "analytics.config_data_flow",
-            "analytics.config_graph_metrics_keys",
-            "analytics.config_graph_metrics_modules",
-            "analytics.config_projection_key_edges",
-            "analytics.config_projection_module_edges",
-        ),
+        options=TargetSpecOptions(table_keys=CONFIG_DATA_FLOW_TABLE_KEYS),
     ),
     make_output_target(
-        name="cfg_dfg_metrics",
+        name=CFG_DFG_METRICS_TARGET_NAME,
         module="analytics",
         description="Control-flow and data-flow graph metrics per function.",
-        table_keys=(
-            "analytics.cfg_function_metrics",
-            "analytics.cfg_block_metrics",
-            "analytics.cfg_function_metrics_ext",
-            "analytics.dfg_function_metrics",
-            "analytics.dfg_block_metrics",
-            "analytics.dfg_function_metrics_ext",
-        ),
+        options=TargetSpecOptions(table_keys=CFG_DFG_METRICS_TABLE_KEYS),
     ),
 )
 
@@ -114,7 +135,7 @@ class ConfigDataFlowComputeResult:
     error: str | None = None
 
 
-@tag(domain="analytics", target="config_data_flow", node_type="compute")
+@tag(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME, node_type="compute")
 def t__config_data_flow__compute(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
@@ -230,16 +251,16 @@ def t__config_data_flow__compute(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.config_data_flow"),
+    output_name_=materialize_node(CONFIG_DATA_FLOW_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("config_data_flow"),
-    table_key=value("analytics.config_data_flow"),
+    target_name=value(CONFIG_DATA_FLOW_TARGET_NAME),
+    table_key=value(CONFIG_DATA_FLOW_TABLE_KEY),
     columns=value(tuple(CONFIG_DATA_FLOW_COLS)),
 )
 @tag(
     domain="analytics",
-    target="config_data_flow",
+    target=CONFIG_DATA_FLOW_TARGET_NAME,
     node_type="compute",
     target_="config_data_flow__rows",
 )
@@ -260,16 +281,16 @@ def config_data_flow__rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.config_graph_metrics_keys"),
+    output_name_=materialize_node(CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("config_data_flow"),
-    table_key=value("analytics.config_graph_metrics_keys"),
+    target_name=value(CONFIG_DATA_FLOW_TARGET_NAME),
+    table_key=value(CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY),
     columns=value(CONFIG_GRAPH_METRICS_KEYS_COLS),
 )
 @tag(
     domain="analytics",
-    target="config_data_flow",
+    target=CONFIG_DATA_FLOW_TARGET_NAME,
     node_type="compute",
     target_="config_graph_metrics_keys__rows",
 )
@@ -290,16 +311,16 @@ def config_graph_metrics_keys__rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.config_graph_metrics_modules"),
+    output_name_=materialize_node(CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("config_data_flow"),
-    table_key=value("analytics.config_graph_metrics_modules"),
+    target_name=value(CONFIG_DATA_FLOW_TARGET_NAME),
+    table_key=value(CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY),
     columns=value(CONFIG_GRAPH_METRICS_MODULES_COLS),
 )
 @tag(
     domain="analytics",
-    target="config_data_flow",
+    target=CONFIG_DATA_FLOW_TARGET_NAME,
     node_type="compute",
     target_="config_graph_metrics_modules__rows",
 )
@@ -320,16 +341,16 @@ def config_graph_metrics_modules__rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.config_projection_key_edges"),
+    output_name_=materialize_node(CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("config_data_flow"),
-    table_key=value("analytics.config_projection_key_edges"),
+    target_name=value(CONFIG_DATA_FLOW_TARGET_NAME),
+    table_key=value(CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY),
     columns=value(CONFIG_PROJECTION_KEY_EDGES_COLS),
 )
 @tag(
     domain="analytics",
-    target="config_data_flow",
+    target=CONFIG_DATA_FLOW_TARGET_NAME,
     node_type="compute",
     target_="config_projection_key_edges__rows",
 )
@@ -350,16 +371,16 @@ def config_projection_key_edges__rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.config_projection_module_edges"),
+    output_name_=materialize_node(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("config_data_flow"),
-    table_key=value("analytics.config_projection_module_edges"),
+    target_name=value(CONFIG_DATA_FLOW_TARGET_NAME),
+    table_key=value(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY),
     columns=value(CONFIG_PROJECTION_MODULE_EDGES_COLS),
 )
 @tag(
     domain="analytics",
-    target="config_data_flow",
+    target=CONFIG_DATA_FLOW_TARGET_NAME,
     node_type="compute",
     target_="config_projection_module_edges__rows",
 )
@@ -389,7 +410,7 @@ class _ConfigMaterializations:
     module_edges: dict[str, Any]
 
 
-@tag(domain="analytics", target="config_data_flow", node_type="compute")
+@tag(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME, node_type="compute")
 def config_data_flow__materializations(
     m__analytics__config_data_flow: dict[str, Any],
     m__analytics__config_graph_metrics_keys: dict[str, Any],
@@ -426,7 +447,7 @@ def config_data_flow__materializations(
     )
 
 
-@tag(domain="analytics", target="config_data_flow", node_type="materialize")
+@tag(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME, node_type="materialize")
 def t__config_data_flow(
     env: BuildEnv,
     graph: TargetGraph,
@@ -455,8 +476,8 @@ def t__config_data_flow(
     """
     if t__config_data_flow__compute.error:
         return TargetRunRecord(
-            target="config_data_flow",
-            plugin_name="native:config_data_flow",
+            target=CONFIG_DATA_FLOW_TARGET_NAME,
+            plugin_name=f"native:{CONFIG_DATA_FLOW_TARGET_NAME}",
             status="failed",
             input_hash="",
             options_hash=None,
@@ -471,13 +492,13 @@ def t__config_data_flow(
     return record_from_duckdb_materializations(
         env=env,
         graph=graph,
-        target_name="config_data_flow",
+        target_name=CONFIG_DATA_FLOW_TARGET_NAME,
         materializations={
-            "analytics.config_data_flow": mat.data_flow,
-            "analytics.config_graph_metrics_keys": mat.keys,
-            "analytics.config_graph_metrics_modules": mat.modules,
-            "analytics.config_projection_key_edges": mat.key_edges,
-            "analytics.config_projection_module_edges": mat.module_edges,
+            CONFIG_DATA_FLOW_TABLE_KEY: mat.data_flow,
+            CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY: mat.keys,
+            CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY: mat.modules,
+            CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY: mat.key_edges,
+            CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY: mat.module_edges,
         },
     )
 
@@ -490,7 +511,7 @@ def t__config_data_flow(
 _CFG_DFG_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, CfgMetricsResult, DfgMetricsResult)
 
 
-@tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute")
+@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="compute")
 def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMetricsResult | None:
     """Compute CFG metrics for all functions in the snapshot.
 
@@ -499,7 +520,7 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMet
     CfgMetricsResult | None
         Computed metrics, or None when the target is skipped.
     """
-    target = graph.get("cfg_dfg_metrics")
+    target = graph.get(CFG_DFG_METRICS_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -517,7 +538,7 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMet
     )
 
 
-@tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute")
+@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="compute")
 def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMetricsResult | None:
     """Compute DFG metrics for all functions in the snapshot.
 
@@ -526,7 +547,7 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMet
     DfgMetricsResult | None
         Computed metrics, or None when the target is skipped.
     """
-    target = graph.get("cfg_dfg_metrics")
+    target = graph.get(CFG_DFG_METRICS_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -546,16 +567,16 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMet
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.cfg_function_metrics"),
+    output_name_=materialize_node(CFG_FUNCTION_METRICS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("cfg_dfg_metrics"),
-    table_key=value("analytics.cfg_function_metrics"),
+    target_name=value(CFG_DFG_METRICS_TARGET_NAME),
+    table_key=value(CFG_FUNCTION_METRICS_TABLE_KEY),
     columns=value(tuple(CFG_FUNCTION_METRICS_COLS)),
 )
 @tag(
     domain="analytics",
-    target="cfg_dfg_metrics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
     node_type="compute",
     target_="cfg_function_metrics__rows",
 )
@@ -576,16 +597,16 @@ def cfg_function_metrics__rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.cfg_block_metrics"),
+    output_name_=materialize_node(CFG_BLOCK_METRICS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("cfg_dfg_metrics"),
-    table_key=value("analytics.cfg_block_metrics"),
+    target_name=value(CFG_DFG_METRICS_TARGET_NAME),
+    table_key=value(CFG_BLOCK_METRICS_TABLE_KEY),
     columns=value(tuple(CFG_BLOCK_METRICS_COLS)),
 )
 @tag(
     domain="analytics",
-    target="cfg_dfg_metrics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
     node_type="compute",
     target_="cfg_block_metrics__rows",
 )
@@ -606,16 +627,16 @@ def cfg_block_metrics__rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.cfg_function_metrics_ext"),
+    output_name_=materialize_node(CFG_FUNCTION_METRICS_EXT_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("cfg_dfg_metrics"),
-    table_key=value("analytics.cfg_function_metrics_ext"),
+    target_name=value(CFG_DFG_METRICS_TARGET_NAME),
+    table_key=value(CFG_FUNCTION_METRICS_EXT_TABLE_KEY),
     columns=value(tuple(CFG_FUNCTION_METRICS_EXT_COLS)),
 )
 @tag(
     domain="analytics",
-    target="cfg_dfg_metrics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
     node_type="compute",
     target_="cfg_function_metrics_ext__rows",
 )
@@ -636,16 +657,16 @@ def cfg_function_metrics_ext__rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.dfg_function_metrics"),
+    output_name_=materialize_node(DFG_FUNCTION_METRICS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("cfg_dfg_metrics"),
-    table_key=value("analytics.dfg_function_metrics"),
+    target_name=value(CFG_DFG_METRICS_TARGET_NAME),
+    table_key=value(DFG_FUNCTION_METRICS_TABLE_KEY),
     columns=value(tuple(DFG_FUNCTION_METRICS_COLS)),
 )
 @tag(
     domain="analytics",
-    target="cfg_dfg_metrics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
     node_type="compute",
     target_="dfg_function_metrics__rows",
 )
@@ -666,16 +687,16 @@ def dfg_function_metrics__rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.dfg_block_metrics"),
+    output_name_=materialize_node(DFG_BLOCK_METRICS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("cfg_dfg_metrics"),
-    table_key=value("analytics.dfg_block_metrics"),
+    target_name=value(CFG_DFG_METRICS_TARGET_NAME),
+    table_key=value(DFG_BLOCK_METRICS_TABLE_KEY),
     columns=value(tuple(DFG_BLOCK_METRICS_COLS)),
 )
 @tag(
     domain="analytics",
-    target="cfg_dfg_metrics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
     node_type="compute",
     target_="dfg_block_metrics__rows",
 )
@@ -696,16 +717,16 @@ def dfg_block_metrics__rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.dfg_function_metrics_ext"),
+    output_name_=materialize_node(DFG_FUNCTION_METRICS_EXT_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("cfg_dfg_metrics"),
-    table_key=value("analytics.dfg_function_metrics_ext"),
+    target_name=value(CFG_DFG_METRICS_TARGET_NAME),
+    table_key=value(DFG_FUNCTION_METRICS_EXT_TABLE_KEY),
     columns=value(tuple(DFG_FUNCTION_METRICS_EXT_COLS)),
 )
 @tag(
     domain="analytics",
-    target="cfg_dfg_metrics",
+    target=CFG_DFG_METRICS_TARGET_NAME,
     node_type="compute",
     target_="dfg_function_metrics_ext__rows",
 )
@@ -724,7 +745,7 @@ def dfg_function_metrics_ext__rows(
     return tuple(t__cfg_dfg_metrics__compute_dfg.ext_rows)
 
 
-@tag(domain="analytics", target="cfg_dfg_metrics", node_type="helper")
+@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="helper")
 def cfg_dfg_metrics__cfg_materializations(
     m__analytics__cfg_function_metrics: dict[str, Any],
     m__analytics__cfg_block_metrics: dict[str, Any],
@@ -738,13 +759,13 @@ def cfg_dfg_metrics__cfg_materializations(
         Materialization metadata keyed by table key.
     """
     return {
-        "analytics.cfg_function_metrics": m__analytics__cfg_function_metrics,
-        "analytics.cfg_block_metrics": m__analytics__cfg_block_metrics,
-        "analytics.cfg_function_metrics_ext": m__analytics__cfg_function_metrics_ext,
+        CFG_FUNCTION_METRICS_TABLE_KEY: m__analytics__cfg_function_metrics,
+        CFG_BLOCK_METRICS_TABLE_KEY: m__analytics__cfg_block_metrics,
+        CFG_FUNCTION_METRICS_EXT_TABLE_KEY: m__analytics__cfg_function_metrics_ext,
     }
 
 
-@tag(domain="analytics", target="cfg_dfg_metrics", node_type="helper")
+@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="helper")
 def cfg_dfg_metrics__dfg_materializations(
     m__analytics__dfg_function_metrics: dict[str, Any],
     m__analytics__dfg_block_metrics: dict[str, Any],
@@ -758,13 +779,13 @@ def cfg_dfg_metrics__dfg_materializations(
         Materialization metadata keyed by table key.
     """
     return {
-        "analytics.dfg_function_metrics": m__analytics__dfg_function_metrics,
-        "analytics.dfg_block_metrics": m__analytics__dfg_block_metrics,
-        "analytics.dfg_function_metrics_ext": m__analytics__dfg_function_metrics_ext,
+        DFG_FUNCTION_METRICS_TABLE_KEY: m__analytics__dfg_function_metrics,
+        DFG_BLOCK_METRICS_TABLE_KEY: m__analytics__dfg_block_metrics,
+        DFG_FUNCTION_METRICS_EXT_TABLE_KEY: m__analytics__dfg_function_metrics_ext,
     }
 
 
-@tag(domain="analytics", target="cfg_dfg_metrics", node_type="helper")
+@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="helper")
 def cfg_dfg_metrics__materializations(
     cfg_dfg_metrics__cfg_materializations: dict[str, dict[str, Any]],
     cfg_dfg_metrics__dfg_materializations: dict[str, dict[str, Any]],
@@ -781,7 +802,7 @@ def cfg_dfg_metrics__materializations(
     return materializations
 
 
-@tag(domain="analytics", target="cfg_dfg_metrics", node_type="materialize")
+@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="materialize")
 def t__cfg_dfg_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -797,7 +818,7 @@ def t__cfg_dfg_metrics(
     return record_from_duckdb_materializations(
         env=env,
         graph=graph,
-        target_name="cfg_dfg_metrics",
+        target_name=CFG_DFG_METRICS_TARGET_NAME,
         materializations=cfg_dfg_metrics__materializations,
     )
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.build.schemas.declared_schemas import TABLE_SCHEMAS
+from codeintel.config.datasets.declared_schemas import TABLE_SCHEMAS
 from codeintel.core.schemas.provider import MappingSchemaProvider
 
 if TYPE_CHECKING:

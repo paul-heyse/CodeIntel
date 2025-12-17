@@ -52,8 +52,11 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -61,37 +64,59 @@ from codeintel.storage.helpers.module_index import load_module_map
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DataModelsResult, TargetGraph, TargetRunRecord)
 
+DATA_MODELS_TARGET_NAME = "data_models"
+DATA_MODEL_USAGE_TARGET_NAME = "data_model_usage"
+FUNCTION_AST_FEATURES_TARGET_NAME = "function_ast_features"
+PROFILES_TARGET_NAME = "profiles"
+
+DATA_MODELS_TABLE_KEY = "analytics.data_models"
+DATA_MODEL_FIELDS_TABLE_KEY = "analytics.data_model_fields"
+DATA_MODEL_RELATIONSHIPS_TABLE_KEY = "analytics.data_model_relationships"
+DATA_MODELS_TABLE_KEYS = (
+    DATA_MODELS_TABLE_KEY,
+    DATA_MODEL_FIELDS_TABLE_KEY,
+    DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
+)
+
+DATA_MODEL_USAGE_TABLE_KEY = "analytics.data_model_usage"
+FUNCTION_AST_FEATURES_TABLE_KEY = "analytics.function_ast_features"
+
+FUNCTION_PROFILE_TABLE_KEY = "analytics.function_profile"
+FILE_PROFILE_TABLE_KEY = "analytics.file_profile"
+MODULE_PROFILE_TABLE_KEY = "analytics.module_profile"
+PROFILES_TABLE_KEYS = (
+    FUNCTION_PROFILE_TABLE_KEY,
+    FILE_PROFILE_TABLE_KEY,
+    MODULE_PROFILE_TABLE_KEY,
+)
+
 TARGET_SPECS = (
     make_output_target(
-        name="data_models",
+        name=DATA_MODELS_TARGET_NAME,
         module="analytics",
         description="Data model extraction (dataclasses, Pydantic, etc.).",
-        table_keys=(
-            "analytics.data_models",
-            "analytics.data_model_fields",
-            "analytics.data_model_relationships",
+        options=TargetSpecOptions(
+            table_keys=DATA_MODELS_TABLE_KEYS,
         ),
     ),
     make_output_target(
-        name="data_model_usage",
+        name=DATA_MODEL_USAGE_TARGET_NAME,
         module="analytics",
         description="Function-level data model usage tracking.",
-        table_keys=("analytics.data_model_usage",),
+        options=TargetSpecOptions(table_keys=(DATA_MODEL_USAGE_TABLE_KEY,)),
     ),
     make_output_target(
-        name="function_ast_features",
+        name=FUNCTION_AST_FEATURES_TARGET_NAME,
         module="analytics",
         description="AST-derived semantic features for functions.",
-        table_keys=("analytics.function_ast_features",),
+        options=TargetSpecOptions(table_keys=(FUNCTION_AST_FEATURES_TABLE_KEY,)),
     ),
     make_output_target(
-        name="profiles",
+        name=PROFILES_TARGET_NAME,
         module="analytics",
         description="Denormalized profile tables for querying.",
-        table_keys=(
-            "analytics.function_profile",
-            "analytics.file_profile",
-            "analytics.module_profile",
+        options=TargetSpecOptions(
+            table_keys=PROFILES_TABLE_KEYS,
         ),
     ),
 )
@@ -103,7 +128,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
 
 
-@tag(domain="analytics", target="data_models", node_type="compute")
+@tag(domain="analytics", target=DATA_MODELS_TARGET_NAME, node_type="compute")
 def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResult | None:
     """Compute data models for all classes in the snapshot.
 
@@ -133,7 +158,7 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
     - Field types, constraints, and defaults
     - Relationships between models
     """
-    target = graph.get("data_models")
+    target = graph.get(DATA_MODELS_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -149,15 +174,18 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.data_models"),
+    output_name_=materialize_node(DATA_MODELS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("data_models"),
-    table_key=value("analytics.data_models"),
+    target_name=value(DATA_MODELS_TARGET_NAME),
+    table_key=value(DATA_MODELS_TABLE_KEY),
     columns=value(tuple(DATA_MODELS_COLS)),
 )
 @tag(
-    domain="analytics", target="data_models", node_type="compute", target_="data_models__model_rows"
+    domain="analytics",
+    target=DATA_MODELS_TARGET_NAME,
+    node_type="compute",
+    target_="data_models__model_rows",
 )
 def data_models__model_rows(
     t__data_models__compute: DataModelsResult | None,
@@ -176,15 +204,18 @@ def data_models__model_rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.data_model_fields"),
+    output_name_=materialize_node(DATA_MODEL_FIELDS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("data_models"),
-    table_key=value("analytics.data_model_fields"),
+    target_name=value(DATA_MODELS_TARGET_NAME),
+    table_key=value(DATA_MODEL_FIELDS_TABLE_KEY),
     columns=value(tuple(DATA_MODEL_FIELDS_COLS)),
 )
 @tag(
-    domain="analytics", target="data_models", node_type="compute", target_="data_models__field_rows"
+    domain="analytics",
+    target=DATA_MODELS_TARGET_NAME,
+    node_type="compute",
+    target_="data_models__field_rows",
 )
 def data_models__field_rows(
     t__data_models__compute: DataModelsResult | None,
@@ -203,16 +234,16 @@ def data_models__field_rows(
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.data_model_relationships"),
+    output_name_=materialize_node(DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("data_models"),
-    table_key=value("analytics.data_model_relationships"),
+    target_name=value(DATA_MODELS_TARGET_NAME),
+    table_key=value(DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
     columns=value(tuple(DATA_MODEL_RELATIONSHIPS_COLS)),
 )
 @tag(
     domain="analytics",
-    target="data_models",
+    target=DATA_MODELS_TARGET_NAME,
     node_type="compute",
     target_="data_models__relationship_rows",
 )
@@ -231,7 +262,7 @@ def data_models__relationship_rows(
     return tuple(t__data_models__compute.relationship_rows)
 
 
-@tag(domain="analytics", target="data_models", node_type="materialize")
+@tag(domain="analytics", target=DATA_MODELS_TARGET_NAME, node_type="materialize")
 def t__data_models(
     env: BuildEnv,
     graph: TargetGraph,
@@ -272,27 +303,27 @@ def t__data_models(
     return record_from_duckdb_materializations(
         env=env,
         graph=graph,
-        target_name="data_models",
+        target_name=DATA_MODELS_TARGET_NAME,
         materializations={
-            "analytics.data_models": m__analytics__data_models,
-            "analytics.data_model_fields": m__analytics__data_model_fields,
-            "analytics.data_model_relationships": m__analytics__data_model_relationships,
+            DATA_MODELS_TABLE_KEY: m__analytics__data_models,
+            DATA_MODEL_FIELDS_TABLE_KEY: m__analytics__data_model_fields,
+            DATA_MODEL_RELATIONSHIPS_TABLE_KEY: m__analytics__data_model_relationships,
         },
     )
 
 
 @SaveToDecorator(
     [DuckDBRowsSaver],
-    output_name_=materialize_node("analytics.data_model_usage"),
+    output_name_=materialize_node(DATA_MODEL_USAGE_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("data_model_usage"),
-    table_key=value("analytics.data_model_usage"),
+    target_name=value(DATA_MODEL_USAGE_TARGET_NAME),
+    table_key=value(DATA_MODEL_USAGE_TABLE_KEY),
     columns=value(tuple(DATA_MODEL_USAGE_COLS)),
 )
 @tag(
     domain="analytics",
-    target="data_model_usage",
+    target=DATA_MODEL_USAGE_TARGET_NAME,
     node_type="compute",
     target_="t__data_model_usage__compute",
 )
@@ -315,7 +346,7 @@ def t__data_model_usage__compute(
         Row tuples for analytics.data_model_usage in DATA_MODEL_USAGE_COLS order.
         Returns None when manifest-skip indicates the target is current.
     """
-    target = graph.get("data_model_usage")
+    target = graph.get(DATA_MODEL_USAGE_TARGET_NAME)
     if target is not None:
         input_hash = compute_input_hash(
             target=target,
@@ -352,7 +383,7 @@ def t__data_model_usage__compute(
     )
 
 
-@tag(domain="analytics", target="data_model_usage", node_type="materialize")
+@tag(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME, node_type="materialize")
 def t__data_model_usage(
     env: BuildEnv,
     graph: TargetGraph,
@@ -377,8 +408,8 @@ def t__data_model_usage(
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,
-        target_name="data_model_usage",
-        expected_table_key="analytics.data_model_usage",
+        target_name=DATA_MODEL_USAGE_TARGET_NAME,
+        expected_table_key=DATA_MODEL_USAGE_TABLE_KEY,
         materialization=m__analytics__data_model_usage,
     )
 
@@ -397,7 +428,7 @@ class AstFeaturesResult:
     error: str | None = None
 
 
-@tag(domain="analytics", target="function_ast_features", node_type="compute")
+@tag(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME, node_type="compute")
 def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
     """Compute AST-derived semantic features for functions.
 
@@ -430,7 +461,7 @@ def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
     return AstFeaturesResult(success=True, features_map=features_map)
 
 
-@tag(domain="analytics", target="function_ast_features", node_type="materialize")
+@tag(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME, node_type="materialize")
 def t__function_ast_features(
     env: BuildEnv,
     graph: TargetGraph,
@@ -443,7 +474,7 @@ def t__function_ast_features(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "function_ast_features")
+    executor = NativeTargetExecutor.for_target(env, graph, FUNCTION_AST_FEATURES_TARGET_NAME)
 
     if executor.should_skip():
         return executor.skip()
@@ -461,7 +492,7 @@ def t__function_ast_features(
                 env.snapshot.repo,
                 env.snapshot.commit,
             )
-            return {"analytics.function_ast_features": 0}
+            return {FUNCTION_AST_FEATURES_TABLE_KEY: 0}
 
         rows = [
             features_to_row(
@@ -482,7 +513,7 @@ def t__function_ast_features(
             scope=f"{env.snapshot.repo}@{env.snapshot.commit}",
         )
 
-        return {"analytics.function_ast_features": len(rows)}
+        return {FUNCTION_AST_FEATURES_TABLE_KEY: len(rows)}
 
     return executor.execute(compute)
 
@@ -500,7 +531,7 @@ class ProfilesResult:
     error: str | None = None
 
 
-@tag(domain="analytics", target="profiles", node_type="compute")
+@tag(domain="analytics", target=PROFILES_TARGET_NAME, node_type="compute")
 def t__profiles__compute(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
@@ -559,7 +590,7 @@ def t__profiles__compute(
         return ProfilesResult(success=False, error=str(exc))
 
 
-@tag(domain="analytics", target="profiles", node_type="materialize")
+@tag(domain="analytics", target=PROFILES_TARGET_NAME, node_type="materialize")
 def t__profiles(
     env: BuildEnv,
     graph: TargetGraph,
@@ -572,7 +603,7 @@ def t__profiles(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "profiles")
+    executor = NativeTargetExecutor.for_target(env, graph, PROFILES_TARGET_NAME)
 
     if executor.should_skip():
         return executor.skip()
@@ -582,9 +613,9 @@ def t__profiles(
 
     def compute() -> dict[str, int]:
         return {
-            "analytics.function_profile": 0,
-            "analytics.file_profile": 0,
-            "analytics.module_profile": 0,
+            FUNCTION_PROFILE_TABLE_KEY: 0,
+            FILE_PROFILE_TABLE_KEY: 0,
+            MODULE_PROFILE_TABLE_KEY: 0,
         }
 
     return executor.execute(compute)

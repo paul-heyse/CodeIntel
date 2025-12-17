@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 import hamilton.driver as h_driver
 
 from codeintel.build.hamilton.naming import target_node
-from codeintel.build.hamilton.native.registry import load_native_modules
+from codeintel.build.hamilton.native.discovery import load_native_modules
 from codeintel.build.hamilton.templates import get_template_module
 from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.target_registry import TargetRegistry

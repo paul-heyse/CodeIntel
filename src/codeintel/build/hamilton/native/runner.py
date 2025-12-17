@@ -17,7 +17,7 @@ from codeintel.build.hamilton.hooks.manifest_hook import (
 )
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
-from codeintel.build.manifest import OutputManifest
+from codeintel.core.build_manifest import OutputManifest
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv

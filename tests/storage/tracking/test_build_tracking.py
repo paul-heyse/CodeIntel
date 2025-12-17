@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.manifest import BuildRunRecord, OutputManifest
+from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_none,

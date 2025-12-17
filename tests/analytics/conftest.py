@@ -75,11 +75,11 @@ if TYPE_CHECKING:
 
     from codeintel.build.context import TargetResult
     from codeintel.build.parameters import TargetParameters
-    from codeintel.build.plugin import TargetPlugin
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
     from tests._helpers.fakes.contexts import (
+        PluginLike,
         TargetResourceOverrides,
     )
     from tests._helpers.graph_runtime_harness import (
@@ -367,12 +367,12 @@ class PluginTestHarness:
 
     def execute_plugin(
         self,
-        plugin: TargetPlugin,
+        plugin: PluginLike,
         *,
         parameters: TargetParameters | None = None,
         resources: TargetResourceOverrides | None = None,
     ) -> TargetResult:
-        """Execute a TargetPlugin using ExecutionContextBuilder.
+        """Execute a plugin using ExecutionContextBuilder.
 
         This is the preferred method for executing plugins in tests.
 

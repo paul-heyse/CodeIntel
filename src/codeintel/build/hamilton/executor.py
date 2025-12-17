@@ -27,13 +27,13 @@ import hamilton.base as h_base
 from codeintel.build.assets.emitter import persist_asset_catalog_for_run
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
-from codeintel.build.hamilton.contracts.enforcement_hook import ContractEnforcementHook
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
+from codeintel.build.hamilton.hooks.contract_hook import ContractEnforcementHook
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.hooks.telemetry_hook import NodeTelemetryHook
-from codeintel.build.manifest import BuildRunRecord
 from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.targets import TargetGraph
+from codeintel.core.build_manifest import BuildRunRecord
 from codeintel.storage.exceptions import StorageError
 
 if TYPE_CHECKING:

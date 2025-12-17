@@ -37,15 +37,15 @@ from codeintel.build.hamilton.naming import (
     query_node,
     target_node,
 )
-from codeintel.build.hamilton.tags import (
+from codeintel.build.target_catalog import load_target_specs
+from codeintel.build.targets import TargetGraph
+from codeintel.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
     NODE_TYPE_DATASET,
     NODE_TYPE_LOADER_DATAFRAME,
     NODE_TYPE_LOADER_QUERY,
     NODE_TYPE_MATERIALIZE,
 )
-from codeintel.build.target_catalog import load_target_specs
-from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -20,7 +20,7 @@ import logging
 from functools import lru_cache
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.target_catalog import load_target_specs
+from codeintel.build.target_catalog import load_target_catalog
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -105,8 +105,11 @@ def get_all_target_table_keys(targets: tuple[OutputTarget, ...] | None = None) -
     frozenset[str]
         Set of all table keys from target contracts.
     """
+    if targets is None:
+        return load_target_catalog().all_table_keys
+
     keys: set[str] = set()
-    for target in targets or load_target_specs():
+    for target in targets:
         keys.update(target.table_keys)
     return frozenset(keys)
 
@@ -130,7 +133,10 @@ def get_target_by_table(
     OutputTarget | None
         Target that produces this table, or None.
     """
-    for target in targets or load_target_specs():
+    if targets is None:
+        return load_target_catalog().target_for_table_key(table_key)
+
+    for target in targets:
         if table_key in target.table_keys:
             return target
     return None
@@ -142,4 +148,3 @@ __all__ = [
     "get_target_by_table",
     "get_target_graph",
 ]
-

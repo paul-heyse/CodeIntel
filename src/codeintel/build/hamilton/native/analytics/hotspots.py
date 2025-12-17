@@ -32,7 +32,10 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.hamilton.native.target_spec_helpers import (
+    TargetSpecOptions,
+    make_output_target,
+)
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
@@ -40,17 +43,20 @@ from codeintel.storage.ibis_types import and_predicates
 LOG = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
+HOTSPOTS_TARGET_NAME = "hotspots"
+HOTSPOTS_TABLE_KEY = "analytics.hotspots"
+
 TARGET_SPECS = (
     make_output_target(
-        name="hotspots",
+        name=HOTSPOTS_TARGET_NAME,
         module="analytics",
         description="File hotspot analysis based on churn.",
-        table_keys=("analytics.hotspots",),
+        options=TargetSpecOptions(table_keys=(HOTSPOTS_TABLE_KEY,)),
     ),
 )
 
 
-@tag(domain="analytics", target="hotspots", node_type="compute")
+@tag(domain="analytics", target=HOTSPOTS_TARGET_NAME, node_type="compute")
 def hotspots__modules_complexity(env: BuildEnv, q__core__modules: ir.Table) -> ir.Table:
     """Compute per-file complexity proxy from core.modules.
 
@@ -206,11 +212,11 @@ def _hotspots_select(hotspots: ir.Table) -> ir.Table:
 
 @SaveToDecorator(
     [DuckDBIbisTableSaver],
-    output_name_=materialize_node("analytics.hotspots"),
+    output_name_=materialize_node(HOTSPOTS_TABLE_KEY),
     env=source("env"),
     graph=source("graph"),
-    target_name=value("hotspots"),
-    table_key=value("analytics.hotspots"),
+    target_name=value(HOTSPOTS_TARGET_NAME),
+    table_key=value(HOTSPOTS_TABLE_KEY),
 )
 @pipe_input(
     step(_hotspots_filter_file_state, env=source("env")),
@@ -235,7 +241,12 @@ def _hotspots_select(hotspots: ir.Table) -> ir.Table:
         no_nulls=["rel_path"],
     )
 )
-@tag(domain="analytics", target="hotspots", node_type="compute", target_="t__hotspots__compute")
+@tag(
+    domain="analytics",
+    target=HOTSPOTS_TARGET_NAME,
+    node_type="compute",
+    target_="t__hotspots__compute",
+)
 @schema.output(
     ("rel_path", "string"),
     ("commit_count", "int"),
@@ -281,7 +292,7 @@ def t__hotspots__compute(
     return q__core__file_state
 
 
-@tag(domain="analytics", target="hotspots", node_type="materialize")
+@tag(domain="analytics", target=HOTSPOTS_TARGET_NAME, node_type="materialize")
 def t__hotspots(
     env: BuildEnv,
     graph: TargetGraph,
@@ -314,8 +325,8 @@ def t__hotspots(
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,
-        target_name="hotspots",
-        expected_table_key="analytics.hotspots",
+        target_name=HOTSPOTS_TARGET_NAME,
+        expected_table_key=HOTSPOTS_TABLE_KEY,
         materialization=m__analytics__hotspots,
     )
 

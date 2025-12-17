@@ -12,9 +12,9 @@ import pytest
 from codeintel.build.contracts import OutputContract
 from codeintel.build.errors import CycleDetectedError
 from codeintel.build.hashing import compute_input_hash, compute_options_hash
-from codeintel.build.manifest import BuildRunRecord, OutputManifest
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column, TableSchema
+from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from tests._helpers import make_snapshot
 from tests._helpers.assertions import (
     expect_equal,

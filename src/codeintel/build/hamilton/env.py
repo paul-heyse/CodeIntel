@@ -28,9 +28,9 @@ if TYPE_CHECKING:
         FingerprintPolicy,
     )
     from codeintel.build.config import BuildConfig
-    from codeintel.build.manifest import OutputManifest
     from codeintel.build.providers import Providers
     from codeintel.config.primitives import BuildPaths, SnapshotRef
+    from codeintel.core.build_manifest import OutputManifest
     from codeintel.storage.gateway import StorageGateway
 
 
