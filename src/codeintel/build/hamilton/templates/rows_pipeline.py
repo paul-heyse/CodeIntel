@@ -8,6 +8,12 @@ It is intended to be used with Hamilton's ``@subdag`` decorator to reduce
 boilerplate in native target modules that produce row-oriented data rather
 than Ibis expressions.
 
+Additionally, this module provides helper utilities for converting mapping rows
+(dicts or TypedDicts) to tuples in a specified column order:
+
+- ``row_to_tuple``: Convert a single mapping row to a tuple
+- ``rows_to_tuples``: Convert a sequence of mapping rows to a tuple of tuples
+
 Notes
 -----
 Hamilton namespaces nodes created by ``@subdag`` using dotted names
@@ -28,7 +34,7 @@ from codeintel.build.hamilton.native.materialization_records import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import TargetGraph
@@ -100,7 +106,79 @@ def record(
     )
 
 
+# ============================================================================
+# Row Conversion Helpers
+# ============================================================================
+
+
+def row_to_tuple(row: Mapping[str, object], columns: tuple[str, ...]) -> tuple[object, ...]:
+    """Convert a mapping row to a tuple in column order.
+
+    This utility is useful when converting TypedDict or dict rows to the tuple
+    format expected by ``DuckDBRowsSaver``.
+
+    Parameters
+    ----------
+    row
+        Row mapping from column name to value (e.g., a dict or TypedDict).
+    columns
+        Column names in the desired order for the output tuple.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values extracted from the row in the specified column order.
+        Missing columns will produce ``None`` values.
+
+    Examples
+    --------
+    >>> cols = ("id", "name", "value")
+    >>> row = {"id": 1, "name": "test", "value": 42}
+    >>> row_to_tuple(row, cols)
+    (1, 'test', 42)
+
+    >>> # Missing columns produce None
+    >>> row_to_tuple({"id": 1}, ("id", "name"))
+    (1, None)
+    """
+    return tuple(row.get(col) for col in columns)
+
+
+def rows_to_tuples(
+    rows: Sequence[Mapping[str, object]],
+    columns: tuple[str, ...],
+) -> tuple[tuple[object, ...], ...]:
+    """Convert a sequence of mapping rows to a tuple of tuples in column order.
+
+    This utility is useful when converting a list of TypedDict or dict rows
+    to the format expected by ``DuckDBRowsSaver``.
+
+    Parameters
+    ----------
+    rows
+        Sequence of row mappings from column name to value.
+    columns
+        Column names in the desired order for the output tuples.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...]
+        Tuple of row tuples with values in the specified column order.
+        Missing columns will produce ``None`` values.
+
+    Examples
+    --------
+    >>> cols = ("id", "name")
+    >>> rows = [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]
+    >>> rows_to_tuples(rows, cols)
+    ((1, 'a'), (2, 'b'))
+    """
+    return tuple(row_to_tuple(row, columns) for row in rows)
+
+
 __all__ = [
     "record",
+    "row_to_tuple",
     "rows_to_save",
+    "rows_to_tuples",
 ]

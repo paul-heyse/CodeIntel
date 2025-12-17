@@ -62,7 +62,7 @@ from codeintel.build.hamilton.native.analytics.config_graph_targets import (
     t__config_data_flow,
     t__config_data_flow__compute,
 )
-from codeintel.build.hamilton.native.analytics.coverage_pipeline import (
+from codeintel.build.hamilton.native.analytics.coverage_targets import (
     BehavioralCoverageResult,
     CoverageTestEdgesResult,
     t__behavioral_coverage,
@@ -100,24 +100,6 @@ from codeintel.build.hamilton.native.analytics.function_metrics import (
     t__function_metrics,
     t__function_metrics__compute,
 )
-from codeintel.build.hamilton.native.analytics.graph_metrics_pipeline import (
-    SubsystemGraphMetricsResult,
-    SymbolGraphMetricsResult,
-    t__subsystem_graph_metrics,
-    t__subsystem_graph_metrics__compute,
-    t__symbol_graph_metrics,
-    t__symbol_graph_metrics__compute,
-    t__test_graph_metrics,
-    t__test_graph_metrics__compute,
-    test_graph_metrics__functions_rows,
-    test_graph_metrics__tests_rows,
-)
-from codeintel.build.hamilton.native.analytics.history_targets import (
-    t__function_history,
-    t__function_history__compute,
-    t__history_timeseries,
-    t__history_timeseries__compute,
-)
 from codeintel.build.hamilton.native.analytics.hotspots import (
     hotspots__modules_complexity,
     t__hotspots,
@@ -135,6 +117,25 @@ from codeintel.build.hamilton.native.analytics.metadata_targets import (
     t__profiles,
     t__profiles__compute,
 )
+from codeintel.build.hamilton.native.analytics.metrics_targets import (
+    SubsystemAgreementResult,
+    SubsystemGraphMetricsResult,
+    SymbolGraphMetricsResult,
+    t__function_history,
+    t__function_history__compute,
+    t__history_timeseries,
+    t__history_timeseries__compute,
+    t__subsystem_agreement,
+    t__subsystem_agreement__compute,
+    t__subsystem_graph_metrics,
+    t__subsystem_graph_metrics__compute,
+    t__symbol_graph_metrics,
+    t__symbol_graph_metrics__compute,
+    t__test_graph_metrics,
+    t__test_graph_metrics__compute,
+    test_graph_metrics__functions_rows,
+    test_graph_metrics__tests_rows,
+)
 from codeintel.build.hamilton.native.analytics.risk_factors import (
     risk_factors__fan_in,
     risk_factors__fan_out,
@@ -142,9 +143,6 @@ from codeintel.build.hamilton.native.analytics.risk_factors import (
     t__risk_factors__compute,
 )
 from codeintel.build.hamilton.native.analytics.subsystem_targets import (
-    SubsystemAgreementResult,
-    t__subsystem_agreement,
-    t__subsystem_agreement__compute,
     t__subsystems,
     t__subsystems__compute,
 )

@@ -31,6 +31,7 @@ from codeintel.build.hamilton.helpers import (
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
+from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import (
     BuildToolAdapter,
@@ -155,7 +156,7 @@ def module_records(env: BuildEnv, module_paths: tuple[str, ...]) -> tuple[Module
 
 
 @cache(format="memory")
-@tag(domain="ingestion", target="modules", node_type="compute")
+@tag(domain="ingestion", target="modules", node_type="tool")
 def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
     """Execute repository scan to discover modules.
 
@@ -217,7 +218,7 @@ def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
         )
 
 
-@tag(domain="ingestion", target="modules", node_type="compute")
+@tag(domain="ingestion", target="modules", node_type="tool")
 def t__modules__write_repo_map(
     env: BuildEnv,
     t__modules__scan: ModuleScanResult,
@@ -383,7 +384,7 @@ class ConfigIngestResult:
     error: str | None = None
 
 
-@tag(domain="ingestion", target="config_ingest", node_type="compute")
+@tag(domain="ingestion", target="config_ingest", node_type="tool")
 def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
     """Discover config files in repository.
 
@@ -397,7 +398,9 @@ def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
     """
     try:
         profile = default_config_profile(env.snapshot.repo_root)
-        config_files = list(FilesystemDiscoveryAdapter.discover_modules(env.snapshot.repo_root, profile))
+        config_files = list(
+            FilesystemDiscoveryAdapter.discover_modules(env.snapshot.repo_root, profile)
+        )
 
         if not config_files:
             log.info("No config files found matching profile")
@@ -408,7 +411,7 @@ def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
         return ConfigScanResult(success=False, error="Config file discovery failed with exception")
 
 
-@tag(domain="ingestion", target="config_ingest", node_type="compute")
+@tag(domain="ingestion", target="config_ingest", node_type="tool")
 def t__config_ingest__ingest(
     env: BuildEnv,
     t__config_ingest__scan: ConfigScanResult,
@@ -474,16 +477,11 @@ def t__config_ingest(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "config_ingest")
-    if executor.should_skip():
-        return executor.skip()
-    if not t__config_ingest__ingest.success:
-        return executor.fail(RuntimeError(t__config_ingest__ingest.error or "Config ingestion failed"))
-
+    # Log parse warnings before materialization
     for error in t__config_ingest__ingest.errors:
         log.warning("Config parse warning: %s", error)
 
-    return executor.execute(lambda: dict(t__config_ingest__ingest.table_counts))
+    return executor_materialize(env, graph, "config_ingest", t__config_ingest__ingest)
 
 
 # ---------------------------------------------------------------------------
@@ -516,7 +514,7 @@ def _resolve_coverage_file(env: BuildEnv) -> Path | None:
     return None
 
 
-@tag(domain="ingestion", target="coverage_ingest", node_type="compute")
+@tag(domain="ingestion", target="coverage_ingest", node_type="tool")
 async def t__coverage_ingest__ingest(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -587,13 +585,7 @@ def t__coverage_ingest(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "coverage_ingest")
-    if executor.should_skip():
-        return executor.skip()
-    if not t__coverage_ingest__ingest.success:
-        return executor.fail(RuntimeError(t__coverage_ingest__ingest.error or "Coverage ingestion failed"))
-
-    return executor.execute(lambda: dict(t__coverage_ingest__ingest.table_counts))
+    return executor_materialize(env, graph, "coverage_ingest", t__coverage_ingest__ingest)
 
 
 # ---------------------------------------------------------------------------
@@ -633,7 +625,7 @@ def _resolve_report_file(env: BuildEnv) -> Path | None:
     return None
 
 
-@tag(domain="ingestion", target="tests_ingest", node_type="compute")
+@tag(domain="ingestion", target="tests_ingest", node_type="tool")
 def t__tests_ingest__ingest(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -699,13 +691,7 @@ def t__tests_ingest(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "tests_ingest")
-    if executor.should_skip():
-        return executor.skip()
-    if not t__tests_ingest__ingest.success:
-        return executor.fail(RuntimeError(t__tests_ingest__ingest.error or "Tests ingestion failed"))
-
-    return executor.execute(lambda: dict(t__tests_ingest__ingest.table_counts))
+    return executor_materialize(env, graph, "tests_ingest", t__tests_ingest__ingest)
 
 
 # ---------------------------------------------------------------------------
@@ -723,7 +709,7 @@ class TypingIngestResult:
     error: str | None = None
 
 
-@tag(domain="ingestion", target="typing", node_type="compute")
+@tag(domain="ingestion", target="typing", node_type="tool")
 def t__typing__ingest(
     env: BuildEnv,
     graph: TargetGraph,
@@ -802,10 +788,4 @@ def t__typing(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "typing")
-    if executor.should_skip():
-        return executor.skip()
-    if not t__typing__ingest.success:
-        return executor.fail(RuntimeError(t__typing__ingest.error or "Typing ingestion failed"))
-
-    return executor.execute(lambda: dict(t__typing__ingest.table_counts))
+    return executor_materialize(env, graph, "typing", t__typing__ingest)

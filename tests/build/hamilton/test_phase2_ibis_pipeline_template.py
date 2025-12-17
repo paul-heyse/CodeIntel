@@ -12,10 +12,12 @@ from types import ModuleType
 from typing import TYPE_CHECKING, cast
 
 import hamilton.driver as h_driver
+import ibis.expr.types as ir
 import pandas as pd
 from hamilton.function_modifiers import source, subdag, tag, value
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.templates import ibis_pipeline
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
@@ -27,10 +29,7 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Protocol
 
-    import ibis.expr.types as ir
-
     from codeintel.build.providers import Providers
-    from codeintel.hamilton.records import TargetRunRecord
     from codeintel.storage.gateway import StorageGateway
 
     class _EphemeralModule(Protocol):
@@ -68,6 +67,11 @@ def _build_module() -> ModuleType:
     mod = ModuleType("tests.build.hamilton._phase2_ibis_pipeline_case")
     mod.__doc__ = "Ephemeral module for testing ibis_pipeline via @subdag."
     sys.modules[mod.__name__] = mod
+
+    # Inject types into the module namespace for Hamilton type resolution
+    mod.ir = ir
+    mod.BuildEnv = BuildEnv
+    mod.TargetRunRecord = TargetRunRecord
 
     @tag(domain="ingestion", target="modules", node_type="compute")
     def t__modules__compute(env: BuildEnv) -> ir.Table:

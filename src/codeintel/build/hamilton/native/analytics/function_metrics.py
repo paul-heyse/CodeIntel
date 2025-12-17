@@ -129,7 +129,9 @@ def _row_to_tuple(row: Mapping[str, object], cols: tuple[str, ...]) -> tuple[obj
 
 
 @tag(domain="analytics", target="function_metrics", node_type="compute")
-def t__function_metrics__compute(env: BuildEnv, graph: TargetGraph) -> FunctionAnalyticsResult | None:
+def t__function_metrics__compute(
+    env: BuildEnv, graph: TargetGraph
+) -> FunctionAnalyticsResult | None:
     """Compute function metrics and type coverage for all functions.
 
     This is a pure compute node that returns rows without persistence.
@@ -248,8 +250,7 @@ def function_metrics__types_rows(
     if t__function_metrics__compute is None:
         return None
     return tuple(
-        _row_to_tuple(row, FUNCTION_TYPES_COLS)
-        for row in t__function_metrics__compute.types_rows
+        _row_to_tuple(row, FUNCTION_TYPES_COLS) for row in t__function_metrics__compute.types_rows
     )
 
 

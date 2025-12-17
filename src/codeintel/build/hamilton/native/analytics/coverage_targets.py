@@ -1,14 +1,14 @@
 """Consolidated Hamilton implementation for coverage-related analytics targets.
 
-This module provides Hamilton native nodes for coverage analytics targets:
-- `coverage_functions`: Per-function coverage aggregation (Ibis -> DuckDB)
-- `coverage_test_edges`: Test-to-function coverage edge computation
-- `behavioral_coverage`: Heuristic behavior tag assignment for tests
+This module consolidates coverage analytics targets using Phase 1 templates:
 
-Both targets use the NativeTargetExecutor pattern where persistence is
-handled internally by the compute functions.
+- ``coverage_functions``: Per-function coverage aggregation (Ibis -> DuckDB)
+- ``coverage_test_edges``: Test-to-function coverage edge computation (Pattern D)
+- ``behavioral_coverage``: Heuristic behavior tag assignment for tests (Pattern D)
 
-coverage_functions uses DAG-visible I/O via ``DuckDBIbisTableSaver``.
+The coverage_functions target uses DAG-visible I/O via ``DuckDBIbisTableSaver``.
+The other two targets use the ``executor_materialize`` template for simplified
+materialize nodes with ``NativeTargetExecutor`` pattern.
 """
 
 from __future__ import annotations
@@ -28,10 +28,10 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
 from codeintel.build.hamilton.naming import materialize_node
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
+from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -39,6 +39,49 @@ from codeintel.core.catalog import CatalogService
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
+
+
+# -----------------------------------------------------------------------------
+# Result dataclasses
+# -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CoverageTestEdgesResult:
+    """Result from coverage test edges computation.
+
+    Parameters
+    ----------
+    success
+        Whether the computation succeeded.
+    table_counts
+        Mapping of table_key to row count.
+    error
+        Error message if computation failed.
+    """
+
+    success: bool
+    table_counts: dict[str, int]
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class BehavioralCoverageResult:
+    """Result from behavioral coverage computation.
+
+    Parameters
+    ----------
+    success
+        Whether the computation succeeded.
+    table_counts
+        Mapping of table_key to row count.
+    error
+        Error message if computation failed.
+    """
+
+    success: bool
+    table_counts: dict[str, int]
+    error: str | None = None
 
 
 # -----------------------------------------------------------------------------
@@ -75,13 +118,27 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
         no_nulls=["function_goid_h128", "repo", "commit"],
     ),
 )
-@tag(domain="analytics", target="coverage_functions", node_type="compute")
+@tag(
+    domain="analytics",
+    target="coverage_functions",
+    node_type="compute",
+    target_="t__coverage_functions__compute",
+)
 def t__coverage_functions__compute(
     env: BuildEnv,
     q__core__goids: ir.Table,
     q__analytics__coverage_lines: ir.Table,
 ) -> ir.Table:
     """Compute per-function coverage metrics from GOIDs and coverage lines.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot info.
+    q__core__goids
+        Ibis table expression for core.goids.
+    q__analytics__coverage_lines
+        Ibis table expression for analytics.coverage_lines.
 
     Returns
     -------
@@ -103,6 +160,15 @@ def t__coverage_functions(
 ) -> TargetRunRecord:
     """Convert materialization metadata to a TargetRunRecord.
 
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot info.
+    graph
+        Target graph for metadata lookup.
+    m__analytics__coverage_functions
+        Materialization metadata for analytics.coverage_functions.
+
     Returns
     -------
     TargetRunRecord
@@ -118,19 +184,11 @@ def t__coverage_functions(
 
 
 # -----------------------------------------------------------------------------
-# Coverage test edges
+# Coverage test edges (Pattern D - Executor)
 # -----------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class CoverageTestEdgesResult:
-    """Result from coverage test edges computation."""
-
-    success: bool
-    error: str | None = None
-
-
-@tag(domain="analytics", target="coverage_test_edges", node_type="compute")
+@tag(domain="analytics", target="coverage_test_edges", node_type="tool")
 def t__coverage_test_edges__compute(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -147,11 +205,12 @@ def t__coverage_test_edges__compute(
     Returns
     -------
     CoverageTestEdgesResult
-        Result indicating success or failure.
+        Result indicating success or failure with table counts.
     """
     if t__goids.status != "succeeded":
         return CoverageTestEdgesResult(
             success=False,
+            table_counts={},
             error=f"Upstream goids target failed: {t__goids.error}",
         )
 
@@ -172,11 +231,18 @@ def t__coverage_test_edges__compute(
             catalog_provider=catalog,
         )
 
-        return CoverageTestEdgesResult(success=True)
+        return CoverageTestEdgesResult(
+            success=True,
+            table_counts={"analytics.test_coverage_edges": 0},
+        )
 
     except Exception as exc:
         log.exception("Coverage test edges computation failed")
-        return CoverageTestEdgesResult(success=False, error=str(exc))
+        return CoverageTestEdgesResult(
+            success=False,
+            table_counts={},
+            error=str(exc),
+        )
 
 
 @tag(domain="analytics", target="coverage_test_edges", node_type="materialize")
@@ -185,7 +251,7 @@ def t__coverage_test_edges(
     graph: TargetGraph,
     t__coverage_test_edges__compute: CoverageTestEdgesResult,
 ) -> TargetRunRecord:
-    """Materialize coverage test edges target.
+    """Materialize coverage test edges target using executor template.
 
     Parameters
     ----------
@@ -201,37 +267,15 @@ def t__coverage_test_edges(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "coverage_test_edges")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    if not t__coverage_test_edges__compute.success:
-        return executor.fail(
-            RuntimeError(t__coverage_test_edges__compute.error or "Coverage test edges failed")
-        )
-
-    def compute() -> dict[str, int]:
-        return {"analytics.test_coverage_edges": 0}
-
-    return executor.execute(compute)
+    return executor_materialize(env, graph, "coverage_test_edges", t__coverage_test_edges__compute)
 
 
 # -----------------------------------------------------------------------------
-# Behavioral coverage
+# Behavioral coverage (Pattern D - Executor)
 # -----------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class BehavioralCoverageResult:
-    """Result from behavioral coverage computation."""
-
-    success: bool
-    row_count: int = 0
-    error: str | None = None
-
-
-@tag(domain="analytics", target="behavioral_coverage", node_type="compute")
+@tag(domain="analytics", target="behavioral_coverage", node_type="tool")
 def t__behavioral_coverage__compute(
     env: BuildEnv,
     t__test_profile: TargetRunRecord,
@@ -248,11 +292,12 @@ def t__behavioral_coverage__compute(
     Returns
     -------
     BehavioralCoverageResult
-        Result indicating success or failure with row count.
+        Result indicating success or failure with table counts.
     """
     if t__test_profile.status != "succeeded":
         return BehavioralCoverageResult(
             success=False,
+            table_counts={},
             error=f"Upstream test_profile target failed: {t__test_profile.error}",
         )
 
@@ -272,11 +317,18 @@ def t__behavioral_coverage__compute(
         ).fetchone()
         row_count = int(row[0]) if row else 0
 
-        return BehavioralCoverageResult(success=True, row_count=row_count)
+        return BehavioralCoverageResult(
+            success=True,
+            table_counts={"analytics.behavioral_coverage": row_count},
+        )
 
     except Exception as exc:
         log.exception("Behavioral coverage computation failed")
-        return BehavioralCoverageResult(success=False, error=str(exc))
+        return BehavioralCoverageResult(
+            success=False,
+            table_counts={},
+            error=str(exc),
+        )
 
 
 @tag(domain="analytics", target="behavioral_coverage", node_type="materialize")
@@ -285,7 +337,7 @@ def t__behavioral_coverage(
     graph: TargetGraph,
     t__behavioral_coverage__compute: BehavioralCoverageResult,
 ) -> TargetRunRecord:
-    """Materialize behavioral coverage target.
+    """Materialize behavioral coverage target using executor template.
 
     Parameters
     ----------
@@ -301,20 +353,7 @@ def t__behavioral_coverage(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "behavioral_coverage")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    if not t__behavioral_coverage__compute.success:
-        return executor.fail(
-            RuntimeError(t__behavioral_coverage__compute.error or "Behavioral coverage failed")
-        )
-
-    def compute() -> dict[str, int]:
-        return {"analytics.behavioral_coverage": t__behavioral_coverage__compute.row_count}
-
-    return executor.execute(compute)
+    return executor_materialize(env, graph, "behavioral_coverage", t__behavioral_coverage__compute)
 
 
 __all__ = [

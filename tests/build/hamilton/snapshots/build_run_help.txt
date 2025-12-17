@@ -7,7 +7,7 @@ Build targets with automatic dependency resolution.
 │   --empty-targets             call_graph). [env var:                         │
 │                               CODEINTEL_BUILD_RUN_TARGETS] [default: (none)] │
 │ MODULE --module -m            Build all targets in a module (ingestion,      │
-│                               graphs, analytics). [env var:                  │
+│                               graphs, analytics, export). [env var:          │
 │                               CODEINTEL_BUILD_RUN_MODULE] [default: (none)]  │
 │ ALL --all -a                  Build all targets across all modules. [env     │
 │                               var: CODEINTEL_BUILD_RUN_ALL] [default: false] │
@@ -41,6 +41,21 @@ Build targets with automatic dependency resolution.
 │   --workers                   backend. [env var:                             │
 │                               CODEINTEL_BUILD_RUN_MAX_WORKERS] [default:     │
 │                               (none)]                                        │
+│ CACHE --cache --no-cache      Enable Hamilton on-disk caching for nodes      │
+│                               decorated with @cache. [env var:               │
+│                               CODEINTEL_BUILD_RUN_CACHE] [default: true]     │
+│ CACHE-DIR --cache-dir         Directory for Hamilton cache (default:         │
+│                               build/.hamilton_cache). [env var:              │
+│                               CODEINTEL_BUILD_RUN_CACHE_DIR] [default:       │
+│                               (none)]                                        │
+│ CLEAR-CACHE --clear-cache     Clear the Hamilton cache directory before      │
+│                               executing. [env var:                           │
+│                               CODEINTEL_BUILD_RUN_CLEAR_CACHE] [default:     │
+│                               false]                                         │
+│ CACHE-REPORT --cache-report   Include a cache hit/miss report for nodes      │
+│                               decorated with @cache. [env var:               │
+│                               CODEINTEL_BUILD_RUN_CACHE_REPORT] [default:    │
+│                               false]                                         │
 │ PROGRESS --progress           Show progress bar during execution. [env var:  │
 │   --no-progress               CODEINTEL_BUILD_RUN_PROGRESS] [default: false] │
 │ --flags                       [env var: CODEINTEL_BUILD_RUN_FLAGS] [default: │

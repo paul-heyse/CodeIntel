@@ -22,8 +22,8 @@ from hamilton.function_modifiers import tag
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root, persist_rows
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
+from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import cfg as cfg_compute
@@ -307,7 +307,7 @@ def _process_all_files(
     return all_cfg_results, all_block_rows, all_edge_rows
 
 
-@tag(domain="graphs", target="cfg", node_type="compute")
+@tag(domain="graphs", target="cfg", node_type="tool")
 def t__cfg__extract(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -436,21 +436,10 @@ def t__cfg(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "cfg")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    if not t__cfg__extract.success:
-        return executor.fail(RuntimeError(t__cfg__extract.error or "CFG extraction failed"))
-
-    def compute() -> dict[str, int]:
-        return dict(t__cfg__extract.table_counts)
-
-    return executor.execute(compute)
+    return executor_materialize(env, graph, "cfg", t__cfg__extract)
 
 
-@tag(domain="graphs", target="dfg", node_type="compute")
+@tag(domain="graphs", target="dfg", node_type="tool")
 def t__dfg__extract(
     env: BuildEnv,
     t__cfg__extract: CFGExtractResult,
@@ -558,18 +547,7 @@ def t__dfg(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "dfg")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    if not t__dfg__extract.success:
-        return executor.fail(RuntimeError(t__dfg__extract.error or "DFG extraction failed"))
-
-    def compute() -> dict[str, int]:
-        return dict(t__dfg__extract.table_counts)
-
-    return executor.execute(compute)
+    return executor_materialize(env, graph, "dfg", t__dfg__extract)
 
 
 __all__ = [

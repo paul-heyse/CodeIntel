@@ -1,0 +1,383 @@
+"""Tests for metrics_targets.py analytics module.
+
+This module validates that the consolidated metrics targets in
+``codeintel.build.hamilton.native.analytics.metrics_targets`` work correctly
+with the executor_materialize template for Pattern D targets.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.metrics_targets import (
+    SubsystemAgreementResult,
+    SubsystemGraphMetricsResult,
+    SymbolGraphMetricsResult,
+    t__subsystem_agreement,
+    t__subsystem_graph_metrics,
+    t__symbol_graph_metrics,
+)
+from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.config.primitives import SnapshotRef
+from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.build import make_build_config, make_build_paths
+from tests._helpers.fakes.fake_providers import FakeProviders
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.build.providers import Providers
+    from codeintel.storage.gateway import StorageGateway
+
+
+def _make_env(
+    *,
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    force_targets: frozenset[str] | None = None,
+) -> BuildEnv:
+    """Create a BuildEnv for testing.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway to use.
+    snapshot
+        Snapshot reference.
+    force_targets
+        Optional set of forced targets.
+
+    Returns
+    -------
+    BuildEnv
+        Build environment configured for testing.
+    """
+    paths = make_build_paths(snapshot.repo_root)
+    config = make_build_config()
+    providers = cast("Providers", FakeProviders.defaults())
+    return BuildEnv(
+        gateway=gateway,
+        snapshot=snapshot,
+        paths=paths,
+        providers=providers,
+        config=config,
+        force_targets=force_targets
+        or frozenset({"subsystem_graph_metrics", "symbol_graph_metrics", "subsystem_agreement"}),
+    )
+
+
+def _make_graph() -> TargetGraph:
+    """Create a minimal TargetGraph for metrics targets.
+
+    Returns
+    -------
+    TargetGraph
+        Target graph with metrics targets registered.
+    """
+    graph = TargetGraph()
+    graph.register(
+        OutputTarget.from_tables(
+            name="subsystem_graph_metrics",
+            module="analytics",
+            tables=("analytics.subsystem_graph_metrics",),
+        )
+    )
+    graph.register(
+        OutputTarget.from_tables(
+            name="symbol_graph_metrics",
+            module="analytics",
+            tables=(
+                "analytics.symbol_graph_metrics_modules",
+                "analytics.symbol_graph_metrics_functions",
+            ),
+        )
+    )
+    graph.register(
+        OutputTarget.from_tables(
+            name="subsystem_agreement",
+            module="analytics",
+            tables=("analytics.subsystem_agreement",),
+        )
+    )
+    return graph
+
+
+# ---------------------------------------------------------------------------
+# SubsystemGraphMetricsResult Tests
+# ---------------------------------------------------------------------------
+
+
+def test_subsystem_graph_metrics_result_success() -> None:
+    """Verify SubsystemGraphMetricsResult dataclass for success case."""
+    result = SubsystemGraphMetricsResult(
+        success=True,
+        table_counts={"analytics.subsystem_graph_metrics": 100},
+    )
+    expect_true(result.success, message="Result should be successful")
+    expect_equal(result.table_counts["analytics.subsystem_graph_metrics"], 100)
+    expect_equal(result.error, None)
+
+
+def test_subsystem_graph_metrics_result_failure() -> None:
+    """Verify SubsystemGraphMetricsResult dataclass for failure case."""
+    result = SubsystemGraphMetricsResult(
+        success=False,
+        table_counts={},
+        error="Upstream subsystems failed",
+    )
+    expect_true(not result.success, message="Result should indicate failure")
+    expect_equal(result.error, "Upstream subsystems failed")
+
+
+# ---------------------------------------------------------------------------
+# SymbolGraphMetricsResult Tests
+# ---------------------------------------------------------------------------
+
+
+def test_symbol_graph_metrics_result_success() -> None:
+    """Verify SymbolGraphMetricsResult dataclass for success case."""
+    result = SymbolGraphMetricsResult(
+        success=True,
+        table_counts={
+            "analytics.symbol_graph_metrics_modules": 50,
+            "analytics.symbol_graph_metrics_functions": 200,
+        },
+    )
+    expect_true(result.success, message="Result should be successful")
+    expect_equal(result.table_counts["analytics.symbol_graph_metrics_modules"], 50)
+    expect_equal(result.table_counts["analytics.symbol_graph_metrics_functions"], 200)
+    expect_equal(result.error, None)
+
+
+def test_symbol_graph_metrics_result_failure() -> None:
+    """Verify SymbolGraphMetricsResult dataclass for failure case."""
+    result = SymbolGraphMetricsResult(
+        success=False,
+        table_counts={},
+        error="Upstream symbol_uses failed",
+    )
+    expect_true(not result.success, message="Result should indicate failure")
+    expect_equal(result.error, "Upstream symbol_uses failed")
+
+
+# ---------------------------------------------------------------------------
+# SubsystemAgreementResult Tests
+# ---------------------------------------------------------------------------
+
+
+def test_subsystem_agreement_result_success() -> None:
+    """Verify SubsystemAgreementResult dataclass for success case."""
+    result = SubsystemAgreementResult(
+        success=True,
+        table_counts={"analytics.subsystem_agreement": 30},
+    )
+    expect_true(result.success, message="Result should be successful")
+    expect_equal(result.table_counts["analytics.subsystem_agreement"], 30)
+    expect_equal(result.error, None)
+
+
+def test_subsystem_agreement_result_failure() -> None:
+    """Verify SubsystemAgreementResult dataclass for failure case."""
+    result = SubsystemAgreementResult(
+        success=False,
+        table_counts={},
+        error="Upstream subsystems failed",
+    )
+    expect_true(not result.success, message="Result should indicate failure")
+    expect_equal(result.error, "Upstream subsystems failed")
+
+
+# ---------------------------------------------------------------------------
+# Materialize Function Tests
+# ---------------------------------------------------------------------------
+
+
+def test_subsystem_graph_metrics_materialize_success(
+    fake_gateway: StorageGateway,
+    tmp_path: Path,
+) -> None:
+    """Verify t__subsystem_graph_metrics returns success record.
+
+    Parameters
+    ----------
+    fake_gateway
+        In-memory storage gateway fixture.
+    tmp_path
+        Temporary directory fixture.
+    """
+    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    env = _make_env(gateway=fake_gateway, snapshot=snapshot)
+    graph = _make_graph()
+
+    compute_result = SubsystemGraphMetricsResult(
+        success=True,
+        table_counts={"analytics.subsystem_graph_metrics": 25},
+    )
+
+    record = t__subsystem_graph_metrics(env, graph, compute_result)
+
+    expected_count = 25
+    expect_equal(record.status, "succeeded")
+    expect_true(
+        record.row_counts.get("analytics.subsystem_graph_metrics", 0) == expected_count,
+        message="Row count should match compute result",
+    )
+
+
+def test_subsystem_graph_metrics_materialize_failure(
+    fake_gateway: StorageGateway,
+    tmp_path: Path,
+) -> None:
+    """Verify t__subsystem_graph_metrics returns failure record when compute fails.
+
+    Parameters
+    ----------
+    fake_gateway
+        In-memory storage gateway fixture.
+    tmp_path
+        Temporary directory fixture.
+    """
+    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    env = _make_env(gateway=fake_gateway, snapshot=snapshot)
+    graph = _make_graph()
+
+    compute_result = SubsystemGraphMetricsResult(
+        success=False,
+        table_counts={},
+        error="Upstream subsystems failed",
+    )
+
+    record = t__subsystem_graph_metrics(env, graph, compute_result)
+
+    expect_equal(record.status, "failed")
+    expect_true(
+        "Upstream subsystems failed" in (record.error or ""),
+        message="Error message should be propagated",
+    )
+
+
+def test_symbol_graph_metrics_materialize_success(
+    fake_gateway: StorageGateway,
+    tmp_path: Path,
+) -> None:
+    """Verify t__symbol_graph_metrics returns success record.
+
+    Parameters
+    ----------
+    fake_gateway
+        In-memory storage gateway fixture.
+    tmp_path
+        Temporary directory fixture.
+    """
+    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    env = _make_env(gateway=fake_gateway, snapshot=snapshot)
+    graph = _make_graph()
+
+    compute_result = SymbolGraphMetricsResult(
+        success=True,
+        table_counts={
+            "analytics.symbol_graph_metrics_modules": 10,
+            "analytics.symbol_graph_metrics_functions": 50,
+        },
+    )
+
+    record = t__symbol_graph_metrics(env, graph, compute_result)
+
+    expect_equal(record.status, "succeeded")
+
+
+def test_symbol_graph_metrics_materialize_failure(
+    fake_gateway: StorageGateway,
+    tmp_path: Path,
+) -> None:
+    """Verify t__symbol_graph_metrics returns failure record when compute fails.
+
+    Parameters
+    ----------
+    fake_gateway
+        In-memory storage gateway fixture.
+    tmp_path
+        Temporary directory fixture.
+    """
+    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    env = _make_env(gateway=fake_gateway, snapshot=snapshot)
+    graph = _make_graph()
+
+    compute_result = SymbolGraphMetricsResult(
+        success=False,
+        table_counts={},
+        error="Upstream symbol_uses failed",
+    )
+
+    record = t__symbol_graph_metrics(env, graph, compute_result)
+
+    expect_equal(record.status, "failed")
+    expect_true(
+        "Upstream symbol_uses failed" in (record.error or ""),
+        message="Error message should be propagated",
+    )
+
+
+def test_subsystem_agreement_materialize_success(
+    fake_gateway: StorageGateway,
+    tmp_path: Path,
+) -> None:
+    """Verify t__subsystem_agreement returns success record.
+
+    Parameters
+    ----------
+    fake_gateway
+        In-memory storage gateway fixture.
+    tmp_path
+        Temporary directory fixture.
+    """
+    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    env = _make_env(gateway=fake_gateway, snapshot=snapshot)
+    graph = _make_graph()
+
+    compute_result = SubsystemAgreementResult(
+        success=True,
+        table_counts={"analytics.subsystem_agreement": 15},
+    )
+
+    record = t__subsystem_agreement(env, graph, compute_result)
+
+    expected_count = 15
+    expect_equal(record.status, "succeeded")
+    expect_true(
+        record.row_counts.get("analytics.subsystem_agreement", 0) == expected_count,
+        message="Row count should match compute result",
+    )
+
+
+def test_subsystem_agreement_materialize_failure(
+    fake_gateway: StorageGateway,
+    tmp_path: Path,
+) -> None:
+    """Verify t__subsystem_agreement returns failure record when compute fails.
+
+    Parameters
+    ----------
+    fake_gateway
+        In-memory storage gateway fixture.
+    tmp_path
+        Temporary directory fixture.
+    """
+    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    env = _make_env(gateway=fake_gateway, snapshot=snapshot)
+    graph = _make_graph()
+
+    compute_result = SubsystemAgreementResult(
+        success=False,
+        table_counts={},
+        error="Upstream subsystems failed",
+    )
+
+    record = t__subsystem_agreement(env, graph, compute_result)
+
+    expect_equal(record.status, "failed")
+    expect_true(
+        "Upstream subsystems failed" in (record.error or ""),
+        message="Error message should be propagated",
+    )

@@ -16,22 +16,22 @@ the public target node (e.g., ``t__risk_factors``) remains a stable identifier.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+import ibis.expr.types as ir
 from hamilton.function_modifiers import source, tag
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
+from codeintel.build.targets import TargetGraph
 
-if TYPE_CHECKING:
-    import ibis.expr.types as ir
-
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetGraph
-    from codeintel.hamilton.records import TargetRunRecord
+# Keep types available for Hamilton's runtime type resolution
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
 @SaveToDecorator(

@@ -105,7 +105,9 @@ def t__semantic_roles__compute(
         return None
 
     if t__function_ast_features.status != "succeeded":
-        log.warning("Upstream function_ast_features target failed: %s", t__function_ast_features.error)
+        log.warning(
+            "Upstream function_ast_features target failed: %s", t__function_ast_features.error
+        )
         return None
 
     target = graph.get("semantic_roles")
@@ -335,7 +337,9 @@ class TestProfileComputeResult:
     error: str | None = None
 
 
-def _test_profile_row_to_tuple(row: Mapping[str, object], cols: tuple[str, ...]) -> tuple[object, ...]:
+def _test_profile_row_to_tuple(
+    row: Mapping[str, object], cols: tuple[str, ...]
+) -> tuple[object, ...]:
     return tuple(row.get(col) for col in cols)
 
 
@@ -354,10 +358,7 @@ def t__test_profile__compute(
     if t__coverage_test_edges.status != "succeeded":
         return TestProfileComputeResult(
             result=None,
-            error=(
-                "Upstream coverage_test_edges target failed: "
-                f"{t__coverage_test_edges.error}"
-            ),
+            error=(f"Upstream coverage_test_edges target failed: {t__coverage_test_edges.error}"),
         )
 
     try:

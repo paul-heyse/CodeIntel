@@ -6,13 +6,18 @@ Hamilton graph invariants required for a DAG-first architecture.
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
 from dataclasses import dataclass
+from textwrap import dedent
+from types import FunctionType, MethodType
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
+    NODE_TYPE_COMPUTE,
     NODE_TYPE_DATASET,
     NODE_TYPE_MATERIALIZE,
     TAG_ARTIFACT,
@@ -134,7 +139,11 @@ def validate_graph() -> GraphValidationResult:
         Validation result for the constructed graph.
     """
     runtime = build_driver()
-    return validate_nodes(runtime.dr.graph.nodes, base_graph=runtime.graph)
+    return validate_nodes(
+        runtime.dr.graph.nodes,
+        base_graph=runtime.graph,
+        enforce_compute_io_purity=True,
+    )
 
 
 def _tags_mapping(node: NodeLike) -> Mapping[str, object] | None:
@@ -275,6 +284,93 @@ def _collect_produced_tables(
     return produced_table_to_target, issues
 
 
+def _collect_produced_artifacts(
+    nodes: Mapping[str, NodeLike],
+    *,
+    node_to_target: Mapping[str, str],
+) -> tuple[dict[str, str], list[GraphValidationIssue]]:
+    produced_artifact_to_target: dict[str, str] = {}
+    issues: list[GraphValidationIssue] = []
+
+    for node_name in sorted(nodes):
+        node = nodes[node_name]
+        tags = _tags_mapping(node)
+        if tags is None:
+            continue
+
+        if tags.get(TAG_NODE_TYPE) != NODE_TYPE_ARTIFACT:
+            continue
+
+        domain = tags.get(TAG_DOMAIN)
+        artifact = tags.get(TAG_ARTIFACT)
+        if not isinstance(domain, str) or not domain:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="missing_tag",
+                    message="Artifact node missing domain tag",
+                    node=node.name,
+                )
+            )
+        if not isinstance(artifact, str) or not artifact:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="missing_tag",
+                    message="Artifact node missing artifact tag",
+                    node=node.name,
+                )
+            )
+            continue
+
+        producer_targets = {
+            node_to_target[dep.name] for dep in node.dependencies if dep.name in node_to_target
+        }
+        if not producer_targets:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="missing_producer",
+                    message="Artifact node missing a producing materialize dependency",
+                    node=node.name,
+                    artifact=artifact,
+                )
+            )
+            continue
+        if len(producer_targets) > 1:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="multiple_producers",
+                    message=(
+                        "Artifact node has multiple producing materialize dependencies: "
+                        + ", ".join(sorted(producer_targets))
+                    ),
+                    node=node.name,
+                    artifact=artifact,
+                )
+            )
+            continue
+
+        producer_target = next(iter(producer_targets))
+        existing = produced_artifact_to_target.get(artifact)
+        if existing is not None and existing != producer_target:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="duplicate_artifact_key",
+                    message=f"artifact produced by multiple targets: {existing}, {producer_target}",
+                    node=node.name,
+                    artifact=artifact,
+                    target=producer_target,
+                )
+            )
+        else:
+            produced_artifact_to_target[artifact] = producer_target
+
+    return produced_artifact_to_target, issues
+
+
 def _artifact_tag_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue]:
     issues: list[GraphValidationIssue] = []
 
@@ -307,6 +403,168 @@ def _artifact_tag_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationI
                     node=node.name,
                 )
             )
+
+    return issues
+
+
+def _derived_outputs_mismatch_issues(
+    *,
+    base_graph: TargetGraph,
+    produced_table_to_target: Mapping[str, str],
+    produced_artifact_to_target: Mapping[str, str],
+) -> list[GraphValidationIssue]:
+    tables_by_target: dict[str, set[str]] = {}
+    for table_key, producer in produced_table_to_target.items():
+        tables_by_target.setdefault(producer, set()).add(table_key)
+
+    artifacts_by_target: dict[str, set[str]] = {}
+    for artifact, producer in produced_artifact_to_target.items():
+        artifacts_by_target.setdefault(producer, set()).add(artifact)
+
+    issues: list[GraphValidationIssue] = []
+    for target in sorted(base_graph.all_targets, key=lambda t: t.name):
+        derived_tables = tables_by_target.get(target.name, set())
+        derived_artifacts = artifacts_by_target.get(target.name, set())
+
+        contract_tables = set(target.contract.table_keys)
+        contract_artifacts = set(target.contract.artifact_names)
+
+        if derived_tables != contract_tables:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="contract_tables_mismatch",
+                    message=(
+                        f"Contract tables do not match DAG-derived tables "
+                        f"(contract={sorted(contract_tables)}, derived={sorted(derived_tables)})"
+                    ),
+                    target=target.name,
+                )
+            )
+
+        if derived_artifacts != contract_artifacts:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="contract_artifacts_mismatch",
+                    message=(
+                        f"Contract artifacts do not match DAG-derived artifacts "
+                        f"(contract={sorted(contract_artifacts)}, derived={sorted(derived_artifacts)})"
+                    ),
+                    target=target.name,
+                )
+            )
+
+    return issues
+
+
+def _target_tag_value(tags: Mapping[str, object]) -> str | None:
+    target = tags.get(TAG_TARGET)
+    return target if isinstance(target, str) and target else None
+
+
+def _compute_node_origin_fn(node: NodeLike) -> FunctionType | MethodType | None:
+    originating = getattr(node, "originating_functions", None)
+    if not isinstance(originating, (list, tuple)) or not originating:
+        return None
+
+    fn = originating[0]
+    if not callable(fn):
+        return None
+
+    unwrapped = inspect.unwrap(fn)
+    if isinstance(unwrapped, (FunctionType, MethodType)):
+        return unwrapped
+    return None
+
+
+def _forbidden_calls_in_source(source: str) -> frozenset[str] | None:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    forbidden: set[str] = set()
+    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+        fn_node = call.func
+        if not isinstance(fn_node, ast.Attribute):
+            continue
+
+        if fn_node.attr in {"execute", "execute_async", "execute_scalar"}:
+            forbidden.add(f".{fn_node.attr}()")
+
+        if (
+            fn_node.attr == "table"
+            and isinstance(fn_node.value, ast.Attribute)
+            and fn_node.value.attr == "ibis"
+        ):
+            forbidden.add(".ibis.table()")
+
+    return frozenset(forbidden)
+
+
+def _compute_io_purity_issue(
+    *,
+    node: NodeLike,
+    tags: Mapping[str, object],
+) -> GraphValidationIssue | None:
+    fn = _compute_node_origin_fn(node)
+    if fn is None:
+        return None
+
+    target = _target_tag_value(tags)
+
+    try:
+        raw_source = inspect.getsource(fn)
+    except (OSError, TypeError) as exc:
+        return GraphValidationIssue(
+            severity="warning",
+            code="compute_source_unavailable",
+            message=f"Unable to inspect compute node source: {exc}",
+            node=node.name,
+            target=target,
+        )
+
+    forbidden = _forbidden_calls_in_source(dedent(raw_source))
+    if forbidden is None:
+        return GraphValidationIssue(
+            severity="warning",
+            code="compute_source_unparseable",
+            message="Unable to parse compute node source",
+            node=node.name,
+            target=target,
+        )
+
+    if not forbidden:
+        return None
+
+    return GraphValidationIssue(
+        severity="error",
+        code="compute_io_forbidden",
+        message="Compute node contains forbidden IO calls: " + ", ".join(sorted(forbidden)),
+        node=node.name,
+        target=target,
+    )
+
+
+def _compute_io_purity_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue]:
+    issues: list[GraphValidationIssue] = []
+
+    for node_name in sorted(nodes):
+        node = nodes[node_name]
+        tags = _tags_mapping(node)
+        if tags is None:
+            continue
+        if tags.get(TAG_NODE_TYPE) != NODE_TYPE_COMPUTE:
+            continue
+        if getattr(node, "user_defined", False):
+            continue
+        if node.name.endswith(("_raw", "_validator")):
+            continue
+
+        issue = _compute_io_purity_issue(node=node, tags=tags)
+        if issue is not None:
+            issues.append(issue)
 
     return issues
 
@@ -379,6 +637,7 @@ def validate_nodes(
     *,
     base_graph: TargetGraph | None = None,
     schema_provider: SchemaProvider | None = None,
+    enforce_compute_io_purity: bool = False,
 ) -> GraphValidationResult:
     """Validate Hamilton FunctionGraph nodes against build invariants.
 
@@ -390,6 +649,9 @@ def validate_nodes(
         Optional TargetGraph used for warn-only dependency parity checks.
     schema_provider
         Optional schema provider override (defaults to canonical provider).
+    enforce_compute_io_purity
+        When True, validate that nodes tagged ``node_type="compute"`` do not contain direct I/O
+        calls (e.g., ``.execute()``, ``.execute_scalar()``, or ``.ibis.table()``).
 
     Returns
     -------
@@ -404,11 +666,14 @@ def validate_nodes(
     produced_table_to_target, dataset_issues = _collect_produced_tables(
         nodes, node_to_target=node_to_target
     )
+    produced_artifact_to_target, artifact_issues = _collect_produced_artifacts(
+        nodes, node_to_target=node_to_target
+    )
 
     errors: list[GraphValidationIssue] = [
         *materialize_issues,
         *dataset_issues,
-        *_artifact_tag_issues(nodes),
+        *artifact_issues,
     ]
     errors.extend(_duplicate_materialize_issues(materialize_nodes_by_target))
     errors.extend(
@@ -432,6 +697,18 @@ def validate_nodes(
 
     if derived_deps is not None and base_graph is not None:
         warnings.extend(_deps_mismatch_warnings(derived_deps=derived_deps, base_graph=base_graph))
+        errors.extend(
+            _derived_outputs_mismatch_issues(
+                base_graph=base_graph,
+                produced_table_to_target=produced_table_to_target,
+                produced_artifact_to_target=produced_artifact_to_target,
+            )
+        )
+
+    if enforce_compute_io_purity:
+        io_issues = _compute_io_purity_issues(nodes)
+        errors.extend(i for i in io_issues if i.severity == "error")
+        warnings.extend(i for i in io_issues if i.severity == "warning")
 
     errors_sorted = tuple(sorted(errors, key=lambda i: (i.code, i.message, i.node or "")))
     warnings_sorted = tuple(sorted(warnings, key=lambda i: (i.code, i.message, i.node or "")))

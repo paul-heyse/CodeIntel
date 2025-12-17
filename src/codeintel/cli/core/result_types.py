@@ -476,12 +476,15 @@ class BuildRunResult:
         List of failed target names.
     duration_seconds
         Total duration in seconds.
+    cache
+        Optional cache report for the run (hit/miss summary and per-node outcomes).
     """
 
     executed: list[str]
     skipped: list[str]
     failed: list[str]
     duration_seconds: float
+    cache: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -491,12 +494,15 @@ class BuildRunResult:
         dict[str, object]
             Dictionary representation.
         """
-        return {
+        result: dict[str, object] = {
             "executed": self.executed,
             "skipped": self.skipped,
             "failed": self.failed,
             "duration_seconds": self.duration_seconds,
         }
+        if self.cache is not None:
+            result["cache"] = self.cache
+        return result
 
 
 @dataclass(frozen=True)

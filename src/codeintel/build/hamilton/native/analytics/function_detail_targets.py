@@ -242,8 +242,7 @@ def function_contracts__rows(
     if t__function_contracts__compute.rows is None:
         return None
     return tuple(
-        _row_to_tuple(row, FUNCTION_CONTRACTS_COLS)
-        for row in t__function_contracts__compute.rows
+        _row_to_tuple(row, FUNCTION_CONTRACTS_COLS) for row in t__function_contracts__compute.rows
     )
 
 
@@ -430,8 +429,7 @@ def function_effects__rows(
     if t__function_effects__compute.rows is None:
         return None
     return tuple(
-        _row_to_tuple(row, FUNCTION_EFFECTS_COLS)
-        for row in t__function_effects__compute.rows
+        _row_to_tuple(row, FUNCTION_EFFECTS_COLS) for row in t__function_effects__compute.rows
     )
 
 

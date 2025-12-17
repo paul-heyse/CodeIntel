@@ -1,11 +1,18 @@
-"""Native Hamilton graph support targets.
+"""Consolidated native Hamilton graph targets.
 
-This module consolidates multiple graph-domain support targets that share
-similar execution patterns and are frequently evolved together:
+This module consolidates multiple graph-domain targets that share similar
+execution patterns and are frequently evolved together:
 
+Support targets (from support_targets.py):
 - ``goids``: Extract GOIDs and crosswalks from repository source.
 - ``symbol_uses``: Build symbol-use edges from SCIP occurrences.
 - ``call_graph_views``: Materialize derived views over call graph edges.
+
+Metrics targets (from metrics_targets.py):
+- ``graph_metrics``: Computes graph-derived analytics tables.
+- ``graph_validation``: Runs integrity checks on graph tables.
+
+Phase 3 consolidation uses executor_materialize template for Pattern D targets.
 """
 
 from __future__ import annotations
@@ -15,13 +22,20 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, SupportsInt, cast
 
 import ibis
 import ibis.expr.types as ir
 from hamilton.function_modifiers import check_output_custom, schema, source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
+from codeintel.analytics.graphs import (
+    compute_graph_metrics,
+    compute_graph_metrics_functions_ext,
+    compute_graph_metrics_modules_ext,
+    compute_graph_stats,
+)
+from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import (
     filter_paths,
@@ -37,13 +51,20 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
 from codeintel.build.hamilton.native.options.graphs import GoidBuilderOptions, SymbolUsesOptions
+from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import goid as goid_compute
 from codeintel.graphs.compute import symbols as symbols_compute
+from codeintel.graphs.runtime import (
+    GraphMetricsOptions,
+    GraphRuntimeOptions,
+    build_graph_runtime,
+)
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import and_predicates
+from codeintel.storage.ibis_types import and_predicates, filter_by, ibis_bool
 
 if TYPE_CHECKING:
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
@@ -53,6 +74,18 @@ log = logging.getLogger(__name__)
 LOG = log
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
+
+_GRAPH_METRICS_OUTPUT_TABLES = (
+    "analytics.graph_metrics_functions",
+    "analytics.graph_metrics_modules",
+    "analytics.graph_metrics_functions_ext",
+    "analytics.graph_metrics_modules_ext",
+    "analytics.graph_stats",
+)
+
+# ---------------------------------------------------------------------------
+# Result dataclasses for goids target
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -106,6 +139,92 @@ class GoidExtractResult:
     crosswalk_count: int = 0
     table_counts: dict[str, int] = field(default_factory=dict)
     error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Result dataclasses for symbol_uses target
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SymbolUsesExtractResult:
+    """Result from symbol uses extraction.
+
+    Attributes
+    ----------
+    success
+        Whether extraction completed successfully.
+    edge_count
+        Number of symbol use edges extracted.
+    table_counts
+        Row counts per produced table.
+    error
+        Fatal error message if extraction failed.
+    """
+
+    success: bool
+    edge_count: int = 0
+    table_counts: dict[str, int] = field(default_factory=dict)
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Result dataclasses for graph_metrics target
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GraphMetricsComputeResult:
+    """Result from graph metrics computation.
+
+    Attributes
+    ----------
+    success
+        Whether computation completed successfully.
+    table_counts
+        Row counts per produced table.
+    error
+        Fatal error message if computation failed.
+    """
+
+    success: bool
+    table_counts: dict[str, int] = field(default_factory=dict)
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Result dataclasses for graph_validation target
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GraphValidationResult:
+    """Result from graph validation.
+
+    Attributes
+    ----------
+    success
+        Whether validation passed (no errors).
+    error_count
+        Number of validation errors found.
+    errors
+        List of validation error messages.
+    table_counts
+        Row counts per output (validation errors).
+    error
+        Fatal error message if validation failed.
+    """
+
+    success: bool
+    error_count: int = 0
+    errors: list[str] = field(default_factory=list)
+    table_counts: dict[str, int] = field(default_factory=dict)
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Helper functions for goids target
+# ---------------------------------------------------------------------------
 
 
 @tag(node_type="helper")
@@ -321,187 +440,9 @@ def _extract_entities_from_file(
     return goid_rows, crosswalk_rows
 
 
-@tag(domain="graphs", target="goids", node_type="compute")
-def t__goids__extract(
-    env: BuildEnv,
-    t__modules: TargetRunRecord,
-) -> GoidExtractResult:
-    """Execute GOID extraction on repository modules.
-
-    This is the compute node for the goids target. It parses Python source
-    files, extracts modules, classes, and functions, and computes stable
-    GOIDs for each entity.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    t__modules
-        Upstream modules target result (for dependency).
-
-    Returns
-    -------
-    GoidExtractResult
-        Result containing GOID and crosswalk row counts.
-
-    Notes
-    -----
-    Produces:
-    - core.goids: GOID records for all entities
-    - core.goid_crosswalk: GOID crosswalk records
-    """
-    if t__modules.status != "succeeded":
-        return GoidExtractResult(
-            success=False,
-            error=f"Upstream modules target failed: {t__modules.error}",
-        )
-
-    try:
-        repo = env.snapshot.repo
-        commit = env.snapshot.commit
-        opts = GoidBuilderOptions()
-
-        source_root = env.snapshot.repo_root or get_source_root(env.gateway, repo, commit)
-
-        tracked_files = filter_paths(
-            _get_tracked_files(env.gateway, repo, commit),
-            scope_paths=opts.scope_paths,
-            include_tests=opts.include_tests,
-        )
-
-        if not tracked_files:
-            log.info("goids: No tracked files found, skipping")
-            return GoidExtractResult(
-                success=True,
-                goid_count=0,
-                crosswalk_count=0,
-                table_counts={
-                    "core.goids": 0,
-                    "core.goid_crosswalk": 0,
-                },
-            )
-
-        now = datetime.now(UTC)
-        all_goid_rows: list[GoidRow] = []
-        all_crosswalk_rows: list[GoidCrosswalkRow] = []
-
-        for rel_path in tracked_files:
-            rows = _extract_entities_from_file(
-                source_root / rel_path,
-                GoidExtractionInputs(
-                    repo=repo,
-                    commit=commit,
-                    now=now,
-                    options=opts,
-                    module_name=_path_to_module_name(rel_path),
-                    normalized_path=normalize_path(rel_path),
-                ),
-            )
-            all_goid_rows.extend(rows[0])
-            all_crosswalk_rows.extend(rows[1])
-
-        log.info(
-            "goids: Extracted %d GOIDs and %d crosswalk entries from %d files",
-            len(all_goid_rows),
-            len(all_crosswalk_rows),
-            len(tracked_files),
-        )
-
-        goid_count = persist_rows(
-            env.gateway, "core.goids", all_goid_rows, repo=repo, commit=commit
-        )
-        crosswalk_count = persist_rows(
-            env.gateway, "core.goid_crosswalk", all_crosswalk_rows, repo=repo, commit=commit
-        )
-
-        log.info(
-            "goids: Persisted %d GOIDs and %d crosswalk entries",
-            goid_count,
-            crosswalk_count,
-        )
-
-        return GoidExtractResult(
-            success=True,
-            goid_count=goid_count,
-            crosswalk_count=crosswalk_count,
-            table_counts={
-                "core.goids": goid_count,
-                "core.goid_crosswalk": crosswalk_count,
-            },
-        )
-
-    except Exception as exc:
-        log.exception("GOID extraction failed")
-        return GoidExtractResult(
-            success=False,
-            error=str(exc),
-        )
-
-
-@tag(domain="graphs", target="goids", node_type="materialize")
-def t__goids(
-    env: BuildEnv,
-    graph: TargetGraph,
-    t__goids__extract: GoidExtractResult,
-) -> TargetRunRecord:
-    """Materialize GOIDs target with validation.
-
-    This is the entry point for the goids target. It orchestrates
-    GOID extraction and returns a TargetRunRecord.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    graph
-        Target graph for metadata lookup.
-    t__goids__extract
-        Extraction result from upstream compute node.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record with status, datasets, and execution metadata.
-    """
-    executor = NativeTargetExecutor.for_target(env, graph, "goids")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    if not t__goids__extract.success:
-        return executor.fail(RuntimeError(t__goids__extract.error or "GOID extraction failed"))
-
-    def compute() -> dict[str, int]:
-        return dict(t__goids__extract.table_counts)
-
-    return executor.execute(compute)
-
-
 # ---------------------------------------------------------------------------
-# symbol_uses target
+# Helper functions for symbol_uses target
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class SymbolUsesExtractResult:
-    """Result from symbol uses extraction.
-
-    Attributes
-    ----------
-    success
-        Whether extraction completed successfully.
-    edge_count
-        Number of symbol use edges extracted.
-    table_counts
-        Row counts per produced table.
-    error
-        Fatal error message if extraction failed.
-    """
-
-    success: bool
-    edge_count: int = 0
-    table_counts: dict[str, int] = field(default_factory=dict)
-    error: str | None = None
 
 
 @tag(node_type="helper")
@@ -648,7 +589,329 @@ def _filter_symbol_occurrences(
     return filtered
 
 
-@tag(domain="graphs", target="symbol_uses", node_type="compute")
+# ---------------------------------------------------------------------------
+# Helper functions for graph_metrics target
+# ---------------------------------------------------------------------------
+
+
+@tag(node_type="helper")
+def _count_rows(
+    gateway: StorageGateway,
+    table: str,
+    repo: str,
+    commit: str,
+) -> int:
+    """Count rows in a table for the given snapshot.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    table
+        Table name.
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+
+    Returns
+    -------
+    int
+        Row count.
+    """
+    try:
+        tbl = gateway.ibis.table(table)
+        filtered = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
+        result_df = filtered.aggregate(row_count=tbl.repo.count()).execute()
+        return int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
+    except (RuntimeError, ValueError, OSError, KeyError):
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# Helper functions for graph_validation target
+# ---------------------------------------------------------------------------
+
+
+@tag(node_type="helper")
+def _validate_call_graph_integrity(
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+) -> list[str]:
+    """Validate call graph edge integrity.
+
+    Returns
+    -------
+    list[str]
+        Validation error messages.
+    """
+    errors: list[str] = []
+
+    try:
+        edges = gateway.ibis.table("graph.call_graph_edges")
+        nodes = gateway.ibis.table("graph.call_graph_nodes")
+
+        scoped_edges = filter_by(edges, edges.repo == repo, edges.commit == commit)
+
+        caller_join = scoped_edges.left_join(
+            nodes, predicates=[(scoped_edges.caller_goid_h128, nodes.goid_h128)]
+        )
+        orphan_callers_expr = caller_join.filter(ibis_bool(nodes.goid_h128.isnull())).count()
+        orphan_callers = int(cast("SupportsInt", orphan_callers_expr.execute()))
+        if orphan_callers > 0:
+            errors.append(f"Found {orphan_callers} call graph edges with orphan caller GOIDs")
+
+        callee_join = scoped_edges.left_join(
+            nodes, predicates=[(scoped_edges.callee_goid_h128, nodes.goid_h128)]
+        )
+        orphan_callees_expr = callee_join.filter(
+            ibis_bool(scoped_edges.callee_goid_h128.notnull()) & ibis_bool(nodes.goid_h128.isnull())
+        ).count()
+        orphan_callees = int(cast("SupportsInt", orphan_callees_expr.execute()))
+        if orphan_callees > 0:
+            log.debug(
+                "validation: %d call graph edges have unresolved callee GOIDs",
+                orphan_callees,
+            )
+    except DuckDBError as exc:
+        log.debug("validation: Could not validate call graph: %s", exc)
+
+    return errors
+
+
+@tag(node_type="helper")
+def _validate_import_graph_integrity(
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+) -> list[str]:
+    """Validate import graph integrity.
+
+    Returns
+    -------
+    list[str]
+        Validation error messages.
+    """
+    errors: list[str] = []
+
+    try:
+        edges = gateway.ibis.table("graph.import_graph_edges")
+        modules = gateway.ibis.table("graph.import_modules")
+        scoped_edges = filter_by(edges, edges.repo == repo, edges.commit == commit)
+
+        joined = scoped_edges.left_join(
+            modules,
+            predicates=[
+                (scoped_edges.src_module, modules.module),
+                (scoped_edges.repo, modules.repo),
+                (scoped_edges.commit, modules.commit),
+            ],
+        )
+        orphan_src_expr = joined.filter(ibis_bool(modules.module.isnull())).count()
+        orphan_src = int(cast("SupportsInt", orphan_src_expr.execute()))
+        if orphan_src > 0:
+            errors.append(f"Found {orphan_src} import edges with missing source modules")
+
+    except DuckDBError as exc:
+        log.debug("validation: Could not validate import graph: %s", exc)
+
+    return errors
+
+
+@tag(node_type="helper")
+def _validate_cfg_integrity(
+    gateway: StorageGateway,
+    _repo: str,
+    _commit: str,
+) -> list[str]:
+    """Validate CFG integrity.
+
+    Returns
+    -------
+    list[str]
+        Validation error messages.
+    """
+    errors: list[str] = []
+
+    try:
+        edges = gateway.ibis.table("graph.cfg_edges")
+        blocks = gateway.ibis.table("graph.cfg_blocks")
+
+        joined = edges.left_join(
+            blocks,
+            predicates=[
+                (edges.src_block_id, blocks.block_id),
+                (edges.function_goid_h128, blocks.function_goid_h128),
+            ],
+        )
+        orphan_edges_expr = joined.filter(ibis_bool(blocks.block_id.isnull())).count()
+        orphan_edges = int(cast("SupportsInt", orphan_edges_expr.execute()))
+        if orphan_edges > 0:
+            errors.append(f"Found {orphan_edges} CFG edges with missing source blocks")
+
+    except DuckDBError as exc:
+        log.debug("validation: Could not validate CFG: %s", exc)
+
+    return errors
+
+
+# ---------------------------------------------------------------------------
+# goids target - compute and materialize
+# ---------------------------------------------------------------------------
+
+
+@tag(domain="graphs", target="goids", node_type="tool")
+def t__goids__extract(
+    env: BuildEnv,
+    t__modules: TargetRunRecord,
+) -> GoidExtractResult:
+    """Execute GOID extraction on repository modules.
+
+    This is the compute node for the goids target. It parses Python source
+    files, extracts modules, classes, and functions, and computes stable
+    GOIDs for each entity.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot.
+    t__modules
+        Upstream modules target result (for dependency).
+
+    Returns
+    -------
+    GoidExtractResult
+        Result containing GOID and crosswalk row counts.
+
+    Notes
+    -----
+    Produces:
+    - core.goids: GOID records for all entities
+    - core.goid_crosswalk: GOID crosswalk records
+    """
+    if t__modules.status != "succeeded":
+        return GoidExtractResult(
+            success=False,
+            error=f"Upstream modules target failed: {t__modules.error}",
+        )
+
+    try:
+        repo = env.snapshot.repo
+        commit = env.snapshot.commit
+        opts = GoidBuilderOptions()
+
+        source_root = env.snapshot.repo_root or get_source_root(env.gateway, repo, commit)
+
+        tracked_files = filter_paths(
+            _get_tracked_files(env.gateway, repo, commit),
+            scope_paths=opts.scope_paths,
+            include_tests=opts.include_tests,
+        )
+
+        if not tracked_files:
+            log.info("goids: No tracked files found, skipping")
+            return GoidExtractResult(
+                success=True,
+                goid_count=0,
+                crosswalk_count=0,
+                table_counts={
+                    "core.goids": 0,
+                    "core.goid_crosswalk": 0,
+                },
+            )
+
+        now = datetime.now(UTC)
+        all_goid_rows: list[GoidRow] = []
+        all_crosswalk_rows: list[GoidCrosswalkRow] = []
+
+        for rel_path in tracked_files:
+            rows = _extract_entities_from_file(
+                source_root / rel_path,
+                GoidExtractionInputs(
+                    repo=repo,
+                    commit=commit,
+                    now=now,
+                    options=opts,
+                    module_name=_path_to_module_name(rel_path),
+                    normalized_path=normalize_path(rel_path),
+                ),
+            )
+            all_goid_rows.extend(rows[0])
+            all_crosswalk_rows.extend(rows[1])
+
+        log.info(
+            "goids: Extracted %d GOIDs and %d crosswalk entries from %d files",
+            len(all_goid_rows),
+            len(all_crosswalk_rows),
+            len(tracked_files),
+        )
+
+        goid_count = persist_rows(
+            env.gateway, "core.goids", all_goid_rows, repo=repo, commit=commit
+        )
+        crosswalk_count = persist_rows(
+            env.gateway, "core.goid_crosswalk", all_crosswalk_rows, repo=repo, commit=commit
+        )
+
+        log.info(
+            "goids: Persisted %d GOIDs and %d crosswalk entries",
+            goid_count,
+            crosswalk_count,
+        )
+
+        return GoidExtractResult(
+            success=True,
+            goid_count=goid_count,
+            crosswalk_count=crosswalk_count,
+            table_counts={
+                "core.goids": goid_count,
+                "core.goid_crosswalk": crosswalk_count,
+            },
+        )
+
+    except Exception as exc:
+        log.exception("GOID extraction failed")
+        return GoidExtractResult(
+            success=False,
+            error=str(exc),
+        )
+
+
+@tag(domain="graphs", target="goids", node_type="materialize")
+def t__goids(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__goids__extract: GoidExtractResult,
+) -> TargetRunRecord:
+    """Materialize GOIDs target with validation.
+
+    This is the entry point for the goids target. It orchestrates
+    GOID extraction and returns a TargetRunRecord.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot.
+    graph
+        Target graph for metadata lookup.
+    t__goids__extract
+        Extraction result from upstream compute node.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record with status, datasets, and execution metadata.
+    """
+    return executor_materialize(env, graph, "goids", t__goids__extract)
+
+
+# ---------------------------------------------------------------------------
+# symbol_uses target - compute and materialize
+# ---------------------------------------------------------------------------
+
+
+@tag(domain="graphs", target="symbol_uses", node_type="tool")
 def t__symbol_uses__extract(
     env: BuildEnv,
     t__scip: TargetRunRecord,
@@ -695,7 +958,9 @@ def t__symbol_uses__extract(
 
         enriched_edges = _enrich_edges_with_goids(edges, path_to_goid)
         rows = symbols_compute.edges_to_rows(enriched_edges)
-        row_count = persist_rows(env.gateway, "graph.symbol_use_edges", rows, repo=repo, commit=commit)
+        row_count = persist_rows(
+            env.gateway, "graph.symbol_use_edges", rows, repo=repo, commit=commit
+        )
         return SymbolUsesExtractResult(
             success=True,
             edge_count=row_count,
@@ -719,24 +984,11 @@ def t__symbol_uses(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "symbol_uses")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    if not t__symbol_uses__extract.success:
-        return executor.fail(
-            RuntimeError(t__symbol_uses__extract.error or "Symbol uses extraction failed")
-        )
-
-    def compute() -> dict[str, int]:
-        return dict(t__symbol_uses__extract.table_counts)
-
-    return executor.execute(compute)
+    return executor_materialize(env, graph, "symbol_uses", t__symbol_uses__extract)
 
 
 # ---------------------------------------------------------------------------
-# call_graph_views target
+# call_graph_views target - compute and materialize (uses Ibis materializations)
 # ---------------------------------------------------------------------------
 
 
@@ -954,15 +1206,231 @@ def t__call_graph_views(
     )
 
 
+# ---------------------------------------------------------------------------
+# graph_metrics target - compute and materialize
+# ---------------------------------------------------------------------------
+
+
+@tag(domain="graphs", target="graph_metrics", node_type="tool")
+def t__graph_metrics__compute(
+    env: BuildEnv,
+    t__call_graph: TargetRunRecord,
+) -> GraphMetricsComputeResult:
+    """Compute graph metrics from call graph data.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot.
+    t__call_graph
+        Upstream call_graph target result (for dependency).
+
+    Returns
+    -------
+    GraphMetricsComputeResult
+        Result containing table row counts.
+    """
+    if t__call_graph.status != "succeeded":
+        return GraphMetricsComputeResult(
+            success=False,
+            error=f"Upstream call_graph target failed: {t__call_graph.error}",
+        )
+
+    try:
+        gateway = env.gateway
+        snapshot = env.snapshot
+        repo, commit = snapshot.repo, snapshot.commit
+
+        log.info(
+            "graph_metrics: Computing metrics for repo=%s commit=%s",
+            repo,
+            commit,
+        )
+
+        backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
+        runtime_options = GraphRuntimeOptions(snapshot=snapshot, backend=backend_config)
+        runtime = build_graph_runtime(gateway, runtime_options)
+
+        options = GraphMetricsOptions()
+        deps = GraphMetricsDeps(
+            catalog_provider=None,
+            runtime=runtime,
+        )
+        compute_graph_metrics(gateway, snapshot, options=options, deps=deps)
+
+        compute_graph_metrics_functions_ext(
+            gateway,
+            repo=repo,
+            commit=commit,
+            runtime=runtime,
+        )
+
+        compute_graph_metrics_modules_ext(
+            gateway,
+            repo=repo,
+            commit=commit,
+            runtime=runtime,
+        )
+
+        compute_graph_stats(
+            gateway,
+            repo=repo,
+            commit=commit,
+            runtime=runtime,
+        )
+
+        row_counts: dict[str, int] = {}
+        for table in _GRAPH_METRICS_OUTPUT_TABLES:
+            row_counts[table] = _count_rows(gateway, table, repo, commit)
+
+        log.info("graph_metrics: Computed metrics row_counts=%s", row_counts)
+
+        return GraphMetricsComputeResult(
+            success=True,
+            table_counts=row_counts,
+        )
+
+    except (RuntimeError, ValueError, OSError) as exc:
+        log.exception("Graph metrics computation failed")
+        return GraphMetricsComputeResult(
+            success=False,
+            error=str(exc),
+        )
+
+
+@tag(domain="graphs", target="graph_metrics", node_type="materialize")
+def t__graph_metrics(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__graph_metrics__compute: GraphMetricsComputeResult,
+) -> TargetRunRecord:
+    """Materialize graph metrics target with validation.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
+    return executor_materialize(env, graph, "graph_metrics", t__graph_metrics__compute)
+
+
+# ---------------------------------------------------------------------------
+# graph_validation target - compute and materialize
+# ---------------------------------------------------------------------------
+
+
+@tag(domain="graphs", target="graph_validation", node_type="tool")
+def t__graph_validation__check(
+    env: BuildEnv,
+    t__call_graph: TargetRunRecord,
+    t__import_graph: TargetRunRecord,
+    t__cfg: TargetRunRecord,
+) -> GraphValidationResult:
+    """Run validation checks on all graph data.
+
+    Returns
+    -------
+    GraphValidationResult
+        Validation status and any discovered issues.
+    """
+    deps = [("call_graph", t__call_graph), ("import_graph", t__import_graph), ("cfg", t__cfg)]
+    for name, record in deps:
+        if record.status != "succeeded":
+            return GraphValidationResult(
+                success=False,
+                error=f"Upstream {name} target failed: {record.error}",
+            )
+
+    try:
+        gateway = env.gateway
+        repo = env.snapshot.repo
+        commit = env.snapshot.commit
+
+        all_errors: list[str] = []
+
+        call_graph_errors = _validate_call_graph_integrity(gateway, repo, commit)
+        all_errors.extend(call_graph_errors)
+
+        import_graph_errors = _validate_import_graph_integrity(gateway, repo, commit)
+        all_errors.extend(import_graph_errors)
+
+        cfg_errors = _validate_cfg_integrity(gateway, repo, commit)
+        all_errors.extend(cfg_errors)
+
+        for error in all_errors:
+            log.warning("graph_validation: %s", error)
+
+        log.info(
+            "graph_validation: Completed with %d issues found for repo=%s commit=%s",
+            len(all_errors),
+            repo,
+            commit,
+        )
+
+        return GraphValidationResult(
+            success=len(all_errors) == 0,
+            error_count=len(all_errors),
+            errors=all_errors,
+            table_counts={"analytics.graph_validation": len(all_errors)},
+        )
+
+    except Exception as exc:
+        log.exception("Graph validation failed")
+        return GraphValidationResult(
+            success=False,
+            error=str(exc),
+        )
+
+
+@tag(domain="graphs", target="graph_validation", node_type="materialize")
+def t__graph_validation(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__graph_validation__check: GraphValidationResult,
+) -> TargetRunRecord:
+    """Materialize graph validation target.
+
+    This target requires custom error handling to join validation errors
+    into a readable message, so it does not use executor_materialize.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
+    executor = NativeTargetExecutor.for_target(env, graph, "graph_validation")
+
+    if executor.should_skip():
+        return executor.skip()
+
+    if t__graph_validation__check.error:
+        return executor.fail(RuntimeError(t__graph_validation__check.error))
+
+    if not t__graph_validation__check.success:
+        errors_msg = "\n".join(t__graph_validation__check.errors)
+        return executor.fail(RuntimeError(f"Graph validation failed:\n{errors_msg}"))
+
+    def compute() -> dict[str, int]:
+        return dict(t__graph_validation__check.table_counts)
+
+    return executor.execute(compute)
+
+
 __all__ = [
     "GoidExtractResult",
     "GoidExtractionInputs",
+    "GraphMetricsComputeResult",
+    "GraphValidationResult",
     "SymbolUsesExtractResult",
     "call_graph_depth_stats",
     "call_graph_function_call_counts",
     "t__call_graph_views",
     "t__goids",
     "t__goids__extract",
+    "t__graph_metrics",
+    "t__graph_metrics__compute",
+    "t__graph_validation",
+    "t__graph_validation__check",
     "t__symbol_uses",
     "t__symbol_uses__extract",
 ]

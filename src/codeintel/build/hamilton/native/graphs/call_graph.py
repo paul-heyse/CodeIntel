@@ -22,8 +22,8 @@ from hamilton.function_modifiers import tag
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
+from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import load_function_index
 from codeintel.core.paths import normalize_path
@@ -505,7 +505,7 @@ def _collect_all_edges(
     return all_edges
 
 
-@tag(domain="graphs", target="call_graph", node_type="compute")
+@tag(domain="graphs", target="call_graph", node_type="tool")
 def t__call_graph__extract(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -633,20 +633,7 @@ def t__call_graph(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "call_graph")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    if not t__call_graph__extract.success:
-        return executor.fail(
-            RuntimeError(t__call_graph__extract.error or "Call graph extraction failed")
-        )
-
-    def compute() -> dict[str, int]:
-        return dict(t__call_graph__extract.table_counts)
-
-    return executor.execute(compute)
+    return executor_materialize(env, graph, "call_graph", t__call_graph__extract)
 
 
 __all__ = [

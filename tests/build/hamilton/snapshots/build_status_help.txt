@@ -4,8 +4,8 @@ Show current state of build targets.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ MODULE --module -m    Filter status to a specific module (ingestion, graphs, │
-│                       analytics). [env var: CODEINTEL_BUILD_STATUS_MODULE]   │
-│                       [default: (none)]                                      │
+│                       analytics, export). [env var:                          │
+│                       CODEINTEL_BUILD_STATUS_MODULE] [default: (none)]       │
 │ --flags               [env var: CODEINTEL_BUILD_STATUS_FLAGS] [default:      │
 │                       --flags]                                               │
 │ ROOT --root -r        Explicit project root directory. [env var:             │

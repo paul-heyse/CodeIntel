@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import hamilton.driver as h_driver
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _ALL_TARGET_NAMES: frozenset[str] = frozenset(t.name for t in ALL_TARGETS)
+_DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,7 @@ def build_driver(
     config: dict[str, Any] | None = None,
     adapters: Sequence[LifecycleAdapter] | None = None,
     enable_cache: bool = True,
+    cache_dir: str | Path | None = None,
 ) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.
 
@@ -95,6 +98,9 @@ def build_driver(
         When True, enable Hamilton's caching adapter for nodes decorated with
         ``@cache``. Disable this for schema inference and other workflows that
         pass unhashable inputs like Ibis expressions.
+    cache_dir
+        Directory for Hamilton's on-disk cache. When omitted, defaults to
+        ``build/.hamilton_cache`` under the current working directory.
 
     Returns
     -------
@@ -130,7 +136,9 @@ def build_driver(
         .allow_module_overrides()
     )
     if enable_cache:
+        cache_path = _DEFAULT_HAMILTON_CACHE_DIR if cache_dir is None else Path(cache_dir)
         builder = builder.with_cache(
+            path=cache_path,
             default_behavior="disable",
             default_loader_behavior="disable",
             default_saver_behavior="disable",

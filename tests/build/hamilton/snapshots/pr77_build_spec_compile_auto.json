@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "93191278500d4bfb42c88542e8d732b990fbfa7a88745e79cf6b92d90ced8e6e",
+  "buildspec_hash": "a2a86a3396659be21b15704ec1a539f9421906b28c27fb6c3f24f41b5cca3d64",
   "datasets": [
     {
       "schema_hash": "4fea3b6c5a5a27bc4a5461a3f75e27173887f4605159c550eac43dd3e5d0d0cb",
@@ -132,6 +132,10 @@
     {
       "schema_hash": "6a6f6415c9765574974bb3a2ed3aabc4383c50f8d45fd9c2b1d7296dfb3af1cd",
       "table_key": "analytics.graph_metrics_modules_ext"
+    },
+    {
+      "schema_hash": "39293f9e45b328395a81fe8d6a8ff6847296d322a1fcbff5c5be549af2447a74",
+      "table_key": "analytics.graph_stats"
     },
     {
       "schema_hash": "1672bfe08473dbcb7ec68dca3ba8ff16365f4401afd055d9aa3d951f4affd281",
@@ -396,7 +400,10 @@
     },
     {
       "artifacts": [],
-      "deps": [],
+      "deps": [
+        "coverage_ingest",
+        "goids"
+      ],
       "domain": "analytics",
       "impl_kind": "native",
       "name": "coverage_functions",
@@ -486,7 +493,11 @@
     },
     {
       "artifacts": [],
-      "deps": [],
+      "deps": [
+        "goids",
+        "semantic_roles",
+        "test_profile"
+      ],
       "domain": "analytics",
       "impl_kind": "native",
       "name": "entrypoints",
@@ -502,7 +513,10 @@
           "path_template": "{export_dir}/codeintel.jsonl"
         }
       ],
-      "deps": [],
+      "deps": [
+        "function_metrics",
+        "modules"
+      ],
       "domain": "export",
       "impl_kind": "native",
       "name": "export_jsonl",
@@ -516,7 +530,9 @@
           "path_template": "{export_dir}/codeintel.parquet"
         }
       ],
-      "deps": [],
+      "deps": [
+        "function_metrics"
+      ],
       "domain": "export",
       "impl_kind": "native",
       "name": "export_parquet",
@@ -524,7 +540,9 @@
     },
     {
       "artifacts": [],
-      "deps": [],
+      "deps": [
+        "call_graph"
+      ],
       "domain": "analytics",
       "impl_kind": "native",
       "name": "external_deps",
@@ -613,7 +631,8 @@
         "analytics.graph_metrics_functions",
         "analytics.graph_metrics_functions_ext",
         "analytics.graph_metrics_modules",
-        "analytics.graph_metrics_modules_ext"
+        "analytics.graph_metrics_modules_ext",
+        "analytics.graph_stats"
       ]
     },
     {
@@ -739,6 +758,30 @@
         "analytics.semantic_roles_functions",
         "analytics.semantic_roles_modules"
       ]
+    },
+    {
+      "artifacts": [
+        {
+          "kind": null,
+          "name": "buildspec",
+          "path_template": "{build_dir}/serving/artifacts/buildspec.json"
+        },
+        {
+          "kind": null,
+          "name": "schema_manifest",
+          "path_template": "{build_dir}/serving/artifacts/schema_manifest.json"
+        },
+        {
+          "kind": null,
+          "name": "semantic_registry",
+          "path_template": "{build_dir}/serving/artifacts/semantic_registry.json"
+        }
+      ],
+      "deps": [],
+      "domain": "export",
+      "impl_kind": "native",
+      "name": "serving_artifacts",
+      "outputs": []
     },
     {
       "artifacts": [],
