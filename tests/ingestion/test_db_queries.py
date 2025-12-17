@@ -86,7 +86,6 @@ def _make_test_target(name: str = "repo_scan") -> OutputTarget:
     return OutputTarget(
         name=name,
         module="ingestion",
-        plugin=name,
         contract=EMPTY_CONTRACT,
         dependencies=(),
         description="Test target",

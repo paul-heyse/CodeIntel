@@ -10,11 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.build.hamilton.hooks.manifest_hook import (
-    SkipCheckRequest,
-    TargetRunRecord,
-    should_skip,
-)
+from codeintel.build.hamilton.run_records import SkipCheckRequest, TargetRunRecord, should_skip
 from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,

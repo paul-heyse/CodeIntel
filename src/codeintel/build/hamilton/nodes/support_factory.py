@@ -26,7 +26,6 @@ import pandas as pd
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df, load_dataset_ibis
@@ -37,6 +36,7 @@ from codeintel.build.hamilton.naming import (
     query_node,
     target_node,
 )
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.targets import TargetGraph
 from codeintel.hamilton.tags import (

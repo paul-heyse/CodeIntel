@@ -49,20 +49,20 @@ from codeintel.analytics.testing.graph_metrics import (
     TEST_GRAPH_METRICS_TESTS_COLS,
 )
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hashing import compute_input_hash
+from codeintel.build.storage_queries import count_rows_for_snapshot
 from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 
@@ -421,14 +421,11 @@ def t__subsystem_graph_metrics__compute(
             runtime=graph_runtime,
         )
 
-        row = env.gateway.execute(
-            """
-            SELECT COUNT(*) FROM analytics.subsystem_graph_metrics
-            WHERE repo = ? AND commit = ?
-            """,
-            [env.snapshot.repo, env.snapshot.commit],
-        ).fetchone()
-        row_count = int(row[0]) if row else 0
+        row_count = count_rows_for_snapshot(
+            env.gateway,
+            table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
+            snapshot=env.snapshot,
+        )
 
         return SubsystemGraphMetricsResult(
             success=True,
@@ -519,14 +516,11 @@ def t__symbol_graph_metrics__compute(
                 commit=commit,
                 runtime=graph_runtime,
             )
-            row = env.gateway.execute(
-                """
-                SELECT COUNT(*) FROM analytics.symbol_graph_metrics_modules
-                WHERE repo = ? AND commit = ?
-                """,
-                [repo, commit],
-            ).fetchone()
-            table_counts[SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY] = int(row[0]) if row else 0
+            table_counts[SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY] = count_rows_for_snapshot(
+                env.gateway,
+                table_key=SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY,
+                snapshot=env.snapshot,
+            )
         except (RuntimeError, ValueError, OSError) as exc:
             errors.append(f"modules: {exc}")
             log.warning("Symbol graph metrics (modules) failed: %s", exc)
@@ -539,14 +533,11 @@ def t__symbol_graph_metrics__compute(
                 commit=commit,
                 runtime=graph_runtime,
             )
-            row = env.gateway.execute(
-                """
-                SELECT COUNT(*) FROM analytics.symbol_graph_metrics_functions
-                WHERE repo = ? AND commit = ?
-                """,
-                [repo, commit],
-            ).fetchone()
-            table_counts[SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY] = int(row[0]) if row else 0
+            table_counts[SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY] = count_rows_for_snapshot(
+                env.gateway,
+                table_key=SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+                snapshot=env.snapshot,
+            )
         except (RuntimeError, ValueError, OSError) as exc:
             errors.append(f"functions: {exc}")
             log.warning("Symbol graph metrics (functions) failed: %s", exc)
@@ -637,14 +628,11 @@ def t__subsystem_agreement__compute(
             commit=env.snapshot.commit,
         )
 
-        row = env.gateway.execute(
-            """
-            SELECT COUNT(*) FROM analytics.subsystem_agreement
-            WHERE repo = ? AND commit = ?
-            """,
-            [env.snapshot.repo, env.snapshot.commit],
-        ).fetchone()
-        row_count = int(row[0]) if row else 0
+        row_count = count_rows_for_snapshot(
+            env.gateway,
+            table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY,
+            snapshot=env.snapshot,
+        )
 
         return SubsystemAgreementResult(
             success=True,

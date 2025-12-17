@@ -1,7 +1,7 @@
 """Configuration option dataclasses for Hamilton native modules.
 
-This package contains configuration option dataclasses that were migrated
-from the legacy plugin infrastructure.
+This package contains configuration option dataclasses for native Hamilton
+implementations.
 """
 
 from __future__ import annotations

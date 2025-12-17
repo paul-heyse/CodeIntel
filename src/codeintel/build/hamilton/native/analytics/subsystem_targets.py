@@ -11,22 +11,19 @@ The subsystem pipeline materializes both:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
 from codeintel.analytics.subsystems.materialize import build_subsystems
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.storage_queries import count_rows_for_snapshot
 from codeintel.build.targets import TargetGraph
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -46,25 +43,6 @@ TARGET_SPECS = (
         options=TargetSpecOptions(table_keys=SUBSYSTEMS_TABLE_KEYS),
     ),
 )
-
-_COUNT_ROWS_QUERY_BY_TABLE_KEY: dict[str, str] = {
-    SUBSYSTEMS_TABLE_KEY: (
-        "SELECT COUNT(*) FROM analytics.subsystems WHERE repo = ? AND commit = ?"
-    ),
-    SUBSYSTEM_MODULES_TABLE_KEY: (
-        "SELECT COUNT(*) FROM analytics.subsystem_modules WHERE repo = ? AND commit = ?"
-    ),
-}
-
-
-def _count_rows(gateway: StorageGateway, table_key: str, *, repo: str, commit: str) -> int:
-    query = _COUNT_ROWS_QUERY_BY_TABLE_KEY.get(table_key)
-    if query is None:
-        msg = f"Unsupported table_key for row count query: {table_key}"
-        raise ValueError(msg)
-    row = gateway.execute(query, [repo, commit]).fetchone()
-    return int(row[0]) if row else 0
-
 
 @tag(domain="analytics", target=SUBSYSTEMS_TARGET_NAME, node_type="materialize")
 def t__subsystems(
@@ -108,20 +86,16 @@ def t__subsystems(
 
     def compute() -> dict[str, int]:
         build_subsystems(env.gateway, env.snapshot)
-        repo = env.snapshot.repo
-        commit = env.snapshot.commit
         row_counts = {
-            SUBSYSTEMS_TABLE_KEY: _count_rows(
+            SUBSYSTEMS_TABLE_KEY: count_rows_for_snapshot(
                 env.gateway,
-                SUBSYSTEMS_TABLE_KEY,
-                repo=repo,
-                commit=commit,
+                table_key=SUBSYSTEMS_TABLE_KEY,
+                snapshot=env.snapshot,
             ),
-            SUBSYSTEM_MODULES_TABLE_KEY: _count_rows(
+            SUBSYSTEM_MODULES_TABLE_KEY: count_rows_for_snapshot(
                 env.gateway,
-                SUBSYSTEM_MODULES_TABLE_KEY,
-                repo=repo,
-                commit=commit,
+                table_key=SUBSYSTEM_MODULES_TABLE_KEY,
+                snapshot=env.snapshot,
             ),
         }
         log.info("subsystems: materialized row_counts=%s", row_counts)

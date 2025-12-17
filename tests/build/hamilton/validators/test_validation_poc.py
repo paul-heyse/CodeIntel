@@ -22,6 +22,7 @@ from codeintel.build.hamilton.hooks import (
     build_hooks,
 )
 from codeintel.build.hamilton.native.analytics import hotspots, risk_factors
+from codeintel.build.hamilton.run_writer import BuildRunWriter
 from codeintel.build.hamilton.validators import (
     ColumnsExistValidator,
     ColumnTypesValidator,
@@ -289,9 +290,10 @@ class TestBuildHooksValidation:
     ) -> None:
         """Verify build_hooks includes ContractEnforcementHook by default."""
         gateway = fresh_gateway
+        writer = BuildRunWriter(gateway)
         graph = TargetGraph()
 
-        hooks = build_hooks("run-123", gateway, graph)
+        hooks = build_hooks("run-123", writer, graph)
 
         # Should include ContractEnforcementHook
         contract_hooks = [h for h in hooks if isinstance(h, ContractEnforcementHook)]
@@ -306,9 +308,10 @@ class TestBuildHooksValidation:
     ) -> None:
         """Verify build_hooks can disable validation."""
         gateway = fresh_gateway
+        writer = BuildRunWriter(gateway)
         graph = TargetGraph()
 
-        hooks = build_hooks("run-123", gateway, graph, options=HookOptions(enable_validation=False))
+        hooks = build_hooks("run-123", writer, graph, options=HookOptions(enable_validation=False))
 
         # Should not include ContractEnforcementHook
         contract_hooks = [h for h in hooks if isinstance(h, ContractEnforcementHook)]

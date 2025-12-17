@@ -142,8 +142,6 @@ def export_dataset_to_jsonl(
     gateway: StorageGateway,
     dataset_name: str,
     output_dir: Path,
-    *,
-    options: ExportCallOptions | None = None,
 ) -> Path:
     """Export a dataset resolved through the dataset registry to JSONL.
 
@@ -155,8 +153,6 @@ def export_dataset_to_jsonl(
         Logical dataset name to export (e.g., ``function_profile``).
     output_dir
         Destination directory for the JSONL file.
-    options
-        Export options (unused, for API compatibility).
 
     Returns
     -------
@@ -168,7 +164,6 @@ def export_dataset_to_jsonl(
     ValueError
         If the dataset name is unknown.
     """
-    _ = options
     dataset_mapping = gateway.datasets.mapping
     jsonl_mapping = gateway.datasets.jsonl_mapping or {}
     if dataset_name not in dataset_mapping:

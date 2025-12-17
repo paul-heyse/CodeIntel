@@ -31,7 +31,6 @@ from codeintel.build.hamilton.driver_factory import (
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.executor import HamiltonBuildResult
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.io.dataset_ref import (
     DatasetRef,
     refs_from_target_result,
@@ -51,6 +50,7 @@ from codeintel.build.hamilton.observability import (
     list_execution_order,
     list_execution_targets,
 )
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from tests._helpers import assert_frozen
 
 DEFAULT_ROW_COUNT = 1500

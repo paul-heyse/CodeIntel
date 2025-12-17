@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.registry import get_target_graph
+from codeintel.build.target_system import load_target_system
 from codeintel.cli.core import CliResult
 from codeintel.cli.execution.registry import OperationSpec, register_operation
 
@@ -165,7 +165,7 @@ def graph_targets_list_handler(
 
     LOG.info("Listing graph targets (names=%s)", names_set)
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
     targets = [t for t in graph.all_targets if t.module == "graphs"]
 
     if names_set:
@@ -210,7 +210,7 @@ def graph_targets_plan_handler(
 
     LOG.info("Planning graph targets (names=%s)", names_set)
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
     targets = [t for t in graph.all_targets if t.module == "graphs"]
 
     if names_set:

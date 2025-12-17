@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+    from codeintel.build.hamilton.run_records import TargetRunRecord
     from codeintel.build.targets import TargetGraph
 
 

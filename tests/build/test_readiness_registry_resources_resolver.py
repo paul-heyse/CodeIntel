@@ -29,10 +29,10 @@ def test_registry_derives_schemas_and_detects_duplicates(caplog: pytest.LogCaptu
     caplog.set_level("WARNING")
     table = TableSchema(schema="core", name="items", columns=[Column("id", "INTEGER")])
     t1 = OutputTarget(
-        name="one", module="analytics", plugin="p1", contract=OutputContract(tables=(table,))
+        name="one", module="analytics", contract=OutputContract(tables=(table,))
     )
     t2 = OutputTarget(
-        name="two", module="analytics", plugin="p2", contract=OutputContract(tables=(table,))
+        name="two", module="analytics", contract=OutputContract(tables=(table,))
     )
 
     schemas = derive_schemas_from_targets((t1, t2))
@@ -43,11 +43,10 @@ def test_registry_derives_schemas_and_detects_duplicates(caplog: pytest.LogCaptu
 
 def test_registry_get_target_by_table() -> None:
     """get_target_by_table returns producer target for table."""
-    target = OutputTarget.from_tables(
+    target = OutputTarget(
         name="producer",
         module="analytics",
-        plugin="p",
-        tables=("core.produced",),
+        contract=OutputContract.simple(table_keys=("core.produced",)),
     )
 
     found = get_target_by_table("core.produced", targets=(target,))

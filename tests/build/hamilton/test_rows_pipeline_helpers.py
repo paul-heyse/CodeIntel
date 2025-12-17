@@ -1,7 +1,7 @@
 """Rows pipeline helper function tests.
 
 This module validates that the row conversion utilities in
-``codeintel.build.hamilton.templates.rows_pipeline`` correctly convert
+``codeintel.build.hamilton.templates.materialize_template`` correctly convert
 mapping rows to tuples in the specified column order.
 """
 
@@ -9,10 +9,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from codeintel.build.hamilton.templates.rows_pipeline import (
-    row_to_tuple,
-    rows_to_tuples,
-)
+from codeintel.build.hamilton.templates.materialize_template import row_to_tuple, rows_to_tuples
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
 

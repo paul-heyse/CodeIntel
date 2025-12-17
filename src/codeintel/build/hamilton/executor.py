@@ -1,8 +1,7 @@
 """Hamilton-based build executor.
 
-This module provides HamiltonBuildExecutor, which is a drop-in alternative
-to the legacy BuildExecutor. It uses Hamilton's Driver for DAG-based
-execution of build targets.
+This module provides HamiltonBuildExecutor, a DAG-based executor for build
+targets using Hamilton's Driver.
 
 Design Principles
 -----------------
@@ -24,23 +23,19 @@ from typing import TYPE_CHECKING, Any, cast
 
 import hamilton.base as h_base
 
-from codeintel.build.assets.emitter import persist_asset_catalog_for_run
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
-from codeintel.build.hamilton.hooks.contract_hook import ContractEnforcementHook
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.hooks.telemetry_hook import NodeTelemetryHook
-from codeintel.build.target_catalog import load_target_specs
-from codeintel.build.targets import TargetGraph
-from codeintel.core.build_manifest import BuildRunRecord
-from codeintel.storage.exceptions import StorageError
+from codeintel.build.hamilton.hooks import HookOptions, NodeTelemetryHook, build_hooks
+from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.run_writer import BuildRunWriter
 
 if TYPE_CHECKING:
     from hamilton.lifecycle.base import LifecycleAdapter
 
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.build.targets import TargetGraph
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -133,122 +128,6 @@ def _map_closure_to_nodes(
             final_vars.append(node_name)
 
     return final_vars, missing
-
-
-def _start_build_run(
-    env: BuildEnv,
-    run_id: str,
-    targets: list[str],
-    start_datetime: datetime,
-) -> None:
-    """Record the start of a build run."""
-    try:
-        record = BuildRunRecord(
-            run_id=run_id,
-            repo=env.repo,
-            commit=env.commit,
-            requested_targets=tuple(targets),
-            computed_targets=(),
-            skipped_targets=(),
-            started_at=start_datetime,
-            status="running",
-        )
-        env.gateway.build.start_run(record)
-    except StorageError as exc:
-        log.warning("build.hamilton.executor.start_run_failed run_id=%s error=%s", run_id, exc)
-
-
-@dataclass(frozen=True)
-class _RunCompletionParams:
-    """Parameters for completing a build run."""
-
-    env: BuildEnv
-    run_id: str
-    success: bool
-    computed: tuple[str, ...]
-    skipped: tuple[str, ...]
-    error_summary: str | None
-
-
-def _complete_build_run(params: _RunCompletionParams) -> None:
-    """Complete a build run record."""
-    try:
-        status = "succeeded" if params.success else "failed"
-        params.env.gateway.build.complete_run(
-            run_id=params.run_id,
-            status=status,
-            computed_targets=params.computed,
-            skipped_targets=params.skipped,
-            error_summary=params.error_summary,
-        )
-    except StorageError as exc:
-        log.warning(
-            "build.hamilton.executor.complete_run_failed run_id=%s error=%s", params.run_id, exc
-        )
-
-
-def _persist_run_targets(
-    env: BuildEnv,
-    run_id: str,
-    outputs: dict[str, Any],
-) -> None:
-    """Persist per-target execution records.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway.
-    run_id
-        Run identifier.
-    outputs
-        Outputs from Hamilton execution.
-    """
-    try:
-        records: list[TargetRunRecord] = [
-            value for value in outputs.values() if isinstance(value, TargetRunRecord)
-        ]
-
-        records.sort(key=lambda record: record.target)
-
-        if records:
-            env.gateway.build.save_run_targets(
-                run_id=run_id,
-                repo=env.repo,
-                commit=env.commit,
-                records=records,
-            )
-            log.debug(
-                "build.hamilton.executor.run_targets_saved run_id=%s count=%d",
-                run_id,
-                len(records),
-            )
-    except StorageError as exc:
-        log.warning("build.hamilton.executor.run_targets_failed run_id=%s error=%s", run_id, exc)
-
-
-def _persist_asset_catalog(
-    env: BuildEnv,
-    run_id: str,
-    outputs: dict[str, Any],
-    graph: TargetGraph,
-) -> None:
-    """Persist Phase 4 asset catalog records (versions + lineage + run mapping)."""
-    try:
-        records: list[TargetRunRecord] = [
-            value for value in outputs.values() if isinstance(value, TargetRunRecord)
-        ]
-        if not records:
-            return
-        records.sort(key=lambda record: record.target)
-
-        persist_asset_catalog_for_run(
-            env=env,
-            run_id=run_id,
-            graph=graph,
-            records=records,
-        )
-    except StorageError as exc:
-        log.warning("build.hamilton.executor.asset_catalog_failed run_id=%s error=%s", run_id, exc)
 
 
 @dataclass(frozen=True)
@@ -358,12 +237,8 @@ class HamiltonBuildExecutor:
             Structured result containing outputs and status details.
         """
         run_id = _generate_run_id()
-        telemetry_hook = NodeTelemetryHook(run_id, env.gateway)
-        runtime = self._build_runtime(
-            env=env,
-            telemetry_hook=telemetry_hook,
-        )
-        graph = runtime.graph
+        writer = BuildRunWriter(env.gateway)
+        runtime, telemetry_hook = self._build_runtime(env=env, run_id=run_id, writer=writer)
 
         context = _RunState(
             env=env,
@@ -373,50 +248,90 @@ class HamiltonBuildExecutor:
             start_time=time.perf_counter(),
             started_at=datetime.now(tz=UTC),
         )
+        return self._run_with_state(
+            context=context,
+            writer=writer,
+            telemetry_hook=telemetry_hook,
+        )
+
+    def _run_with_state(
+        self,
+        *,
+        context: _RunState,
+        writer: BuildRunWriter,
+        telemetry_hook: NodeTelemetryHook | None,
+    ) -> HamiltonBuildResult:
+        graph = context.runtime.graph
+        requested_targets = list(context.targets)
+
         log.info(
             "build.hamilton.executor.start run_id=%s targets=%s",
             context.run_id,
-            targets,
+            requested_targets,
         )
 
-        closure = self._compute_closure(graph, targets, context.run_id)
+        writer.start_run(
+            env=context.env,
+            run_id=context.run_id,
+            requested_targets=requested_targets,
+            started_at=context.started_at,
+        )
+
+        closure = self._compute_closure(graph, requested_targets, context.run_id)
         if closure is None:
+            writer.complete_run(
+                run_id=context.run_id,
+                success=False,
+                computed_targets=(),
+                skipped_targets=(),
+                error_summary="Failed to compute closure",
+            )
             return self._make_error_result(context, "Failed to compute closure")
 
         final_vars, missing = _map_closure_to_nodes(closure, context.runtime)
         if missing:
+            writer.complete_run(
+                run_id=context.run_id,
+                success=False,
+                computed_targets=(),
+                skipped_targets=(),
+                error_summary=f"Missing node mappings for: {missing}",
+            )
             return self._make_missing_result(context, closure, missing)
 
-        _start_build_run(context.env, context.run_id, targets, context.started_at)
-
-        outputs, error = self._execute_dag(
-            context.runtime,
-            final_vars,
-            context.env,
-            context.run_id,
-            graph=graph,
-        )
-
-        # Flush telemetry after execution
-        if telemetry_hook:
-            telemetry_hook.flush()
+        try:
+            outputs, error = self._execute_dag(
+                context.runtime,
+                final_vars,
+                context.env,
+                context.run_id,
+                graph=graph,
+            )
+        finally:
+            if telemetry_hook is not None:
+                telemetry_hook.flush()
 
         computed, skipped, failed = _categorize_outputs(closure, outputs, context.runtime)
         duration_ms = context.duration_ms
         success = not failed and error is None
 
-        _persist_run_targets(context.env, context.run_id, outputs)
-        _persist_asset_catalog(context.env, context.run_id, outputs, graph)
+        records: list[TargetRunRecord] = [
+            value for value in outputs.values() if isinstance(value, TargetRunRecord)
+        ]
+        writer.save_run_targets(env=context.env, run_id=context.run_id, records=records)
+        writer.persist_asset_catalog(
+            env=context.env,
+            run_id=context.run_id,
+            graph=graph,
+            records=records,
+        )
 
-        _complete_build_run(
-            _RunCompletionParams(
-                env=context.env,
-                run_id=context.run_id,
-                success=success,
-                computed=tuple(computed),
-                skipped=tuple(skipped),
-                error_summary=error or (f"{len(failed)} targets failed" if failed else None),
-            )
+        writer.complete_run(
+            run_id=context.run_id,
+            success=success,
+            computed_targets=computed,
+            skipped_targets=skipped,
+            error_summary=error or (f"{len(failed)} targets failed" if failed else None),
         )
 
         log.info(
@@ -444,8 +359,9 @@ class HamiltonBuildExecutor:
         self,
         *,
         env: BuildEnv,
-        telemetry_hook: NodeTelemetryHook,
-    ) -> HamiltonRuntime:
+        run_id: str,
+        writer: BuildRunWriter,
+    ) -> tuple[HamiltonRuntime, NodeTelemetryHook | None]:
         """Build Hamilton runtime with configured mode and lifecycle adapters.
 
         Returns
@@ -454,29 +370,8 @@ class HamiltonBuildExecutor:
             Configured runtime with driver and target graph.
         """
         config: dict[str, Any] = {"profile": self._profile or "default"}
-        adapters = self._build_adapters(env=env, telemetry_hook=telemetry_hook)
         cache_dir = self._cache_dir or str(env.paths.build_dir / ".hamilton_cache")
-        return build_driver(
-            config=config,
-            adapters=adapters,
-            enable_cache=self._enable_cache,
-            cache_dir=cache_dir,
-        )
-
-    @staticmethod
-    def _build_contract_graph() -> TargetGraph:
-        graph = TargetGraph()
-        for target in load_target_specs():
-            graph.register(target)
-        return graph
-
-    def _build_adapters(
-        self,
-        *,
-        env: BuildEnv,
-        telemetry_hook: NodeTelemetryHook,
-    ) -> list[LifecycleAdapter]:
-        adapters: list[LifecycleAdapter] = []
+        telemetry_hook: NodeTelemetryHook | None = None
 
         parallel_adapter = create_parallel_adapter(
             self._parallel_backend,
@@ -484,16 +379,34 @@ class HamiltonBuildExecutor:
             thread_name_prefix="codeintel-build",
         )
 
-        if parallel_adapter is not None:
-            adapters.append(parallel_adapter)
-        else:
-            adapters.append(h_base.DictResult())
+        hook_options = HookOptions(
+            strict_contracts=env.strict_contracts,
+            enable_validation=env.strict_contracts,
+            enable_telemetry=True,
+        )
 
-        if env.strict_contracts:
-            adapters.append(ContractEnforcementHook(self._build_contract_graph(), strict=True))
+        def _adapter_factory(graph: TargetGraph) -> list[LifecycleAdapter]:
+            nonlocal telemetry_hook
+            adapters: list[LifecycleAdapter] = []
+            if parallel_adapter is not None:
+                adapters.append(parallel_adapter)
+            else:
+                adapters.append(h_base.DictResult())
 
-        adapters.append(telemetry_hook)
-        return adapters
+            hooks = build_hooks(run_id, writer, graph, options=hook_options)
+            for hook in hooks:
+                if isinstance(hook, NodeTelemetryHook):
+                    telemetry_hook = hook
+                adapters.append(cast("LifecycleAdapter", hook))
+            return adapters
+
+        runtime = build_driver(
+            config=config,
+            adapter_factory=_adapter_factory,
+            enable_cache=self._enable_cache,
+            cache_dir=cache_dir,
+        )
+        return runtime, telemetry_hook
 
     @staticmethod
     def _compute_closure(

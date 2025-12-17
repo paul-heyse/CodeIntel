@@ -23,13 +23,3 @@ class TestRegistryConsistency:
             len(missing) == 0,
             message=f"Targets missing from Hamilton DAG: {sorted(missing)}",
         )
-
-    @staticmethod
-    def test_targets_do_not_declare_plugin_implementations() -> None:
-        """Targets should not declare plugin implementations in Hamilton-first execution."""
-        graph = get_target_graph()
-        non_empty = {t.name: t.plugin for t in graph.all_targets if t.plugin}
-        expect_true(
-            len(non_empty) == 0,
-            message=f"Targets still declare plugin implementations: {non_empty}",
-        )

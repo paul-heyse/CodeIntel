@@ -1,8 +1,8 @@
 """Hamilton-native test execution helpers.
 
 This module provides test execution helpers that use native Hamilton targets
-directly, replacing the legacy plugin-based execution pattern. Tests using
-these helpers execute through the same code paths as production.
+directly. Tests using these helpers execute through the same code paths as
+production.
 
 Key Components
 --------------
@@ -10,21 +10,9 @@ Key Components
 - ``HamiltonTestBuilder`` - Fluent builder for creating test contexts
 - ``execute_hamilton_target`` - Execute a Hamilton target by name
 
-Migration Guide
----------------
-**From plugin-based execution:**
-
-Before::
-
-    from tests._helpers.fakes.contexts import ExecutionContextBuilder
-    from codeintel.build.plugins.ingestion.stubs import RepoScanPlugin
-
-
-    def test_modules(tmp_path: Path) -> None:
-        builder = ExecutionContextBuilder.create(tmp_path)
-        result = builder.execute_plugin(RepoScanPlugin())
-
-After::
+Usage
+-----
+::
 
     from tests._helpers.hamilton_execution import HamiltonTestBuilder
 
@@ -53,7 +41,7 @@ from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+    from codeintel.build.hamilton.run_records import TargetRunRecord
     from codeintel.build.providers import Providers
     from codeintel.build.targets import TargetGraph
     from codeintel.storage.gateway import StorageGateway

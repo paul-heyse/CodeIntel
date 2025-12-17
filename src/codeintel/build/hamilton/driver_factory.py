@@ -27,7 +27,7 @@ from codeintel.build.target_registry import TargetRegistry
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from hamilton.lifecycle.base import LifecycleAdapter
 
@@ -81,6 +81,7 @@ def build_driver(
     *,
     config: dict[str, Any] | None = None,
     adapters: Sequence[LifecycleAdapter] | None = None,
+    adapter_factory: Callable[[TargetGraph], Sequence[LifecycleAdapter]] | None = None,
     enable_cache: bool = True,
     cache_dir: str | Path | None = None,
 ) -> HamiltonRuntime:
@@ -98,6 +99,10 @@ def build_driver(
         Optional Hamilton adapter (or iterable of adapters) to attach to the
         Driver. This is the primary seam for telemetry, contract enforcement,
         and parallel execution.
+    adapter_factory
+        Optional factory that will be invoked with the pre-registry target graph to produce
+        additional adapters. This allows callers to build adapters without re-loading target
+        specs or duplicating graph construction.
     enable_cache
         When True, enable Hamilton's caching adapter for nodes decorated with
         ``@cache``. Disable this for schema inference and other workflows that
@@ -133,6 +138,8 @@ def build_driver(
     native_mods = load_native_modules()
 
     adapter_list = list(adapters) if adapters else []
+    if adapter_factory is not None:
+        adapter_list.extend(adapter_factory(base_graph))
 
     builder = (
         h_driver.Builder()

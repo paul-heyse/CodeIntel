@@ -98,8 +98,7 @@ def collect_semantic_view_tags_from_hamilton(
 ) -> dict[str, dict[str, str]]:
     """Collect semantic tag mappings keyed by view table_key.
 
-    This returns the same shape as the legacy `collect_semantic_view_tags()`
-    helper, but uses Hamilton tag discovery instead of a view registry.
+    Collects semantic tag mappings using Hamilton tag discovery.
 
     Parameters
     ----------

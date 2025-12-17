@@ -11,13 +11,13 @@ import importlib.util
 import pytest
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.naming import dataframe_node, query_node
 from codeintel.build.hamilton.nodes.support_factory import (
     SupportGenerationOptions,
     build_support_module,
     clear_support_module_cache,
 )
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.cli.commands.build import BuildRunCommand
 
 

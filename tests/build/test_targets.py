@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.contracts import OutputContract
 from codeintel.build.errors import CycleDetectedError
-from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
+from codeintel.build.targets import OutputTarget, TargetGraph
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import (
     expect_equal,
@@ -23,23 +24,24 @@ if TYPE_CHECKING:
 def _make_target(
     name: str,
     module: TargetModule,
-    plugin: str,
     tables: tuple[str, ...],
-    options: TargetOptions | None = None,
+    *,
+    dependencies: tuple[str, ...] = (),
+    description: str = "",
 ) -> OutputTarget:
-    """Create targets using the contract-based factory for legacy tests.
+    """Create targets using direct OutputTarget construction.
 
     Returns
     -------
     OutputTarget
         Constructed target with supplied attributes.
     """
-    return OutputTarget.from_tables(
+    return OutputTarget(
         name=name,
         module=module,
-        plugin=plugin,
-        tables=tables,
-        options=options or TargetOptions(),
+        contract=OutputContract.simple(table_keys=tables),
+        dependencies=dependencies,
+        description=description,
     )
 
 
@@ -52,12 +54,10 @@ class TestOutputTarget:
         target = _make_target(
             name="test_target",
             module="ingestion",
-            plugin="test_plugin",
             tables=("core.test_table",),
         )
         expect_equal(target.name, "test_target")
         expect_equal(target.module, "ingestion")
-        expect_equal(target.plugin, "test_plugin")
         expect_equal(target.table_keys, ("core.test_table",))
         expect_equal(target.dependencies, ())
         expect_true(not target.description)
@@ -70,12 +70,9 @@ class TestOutputTarget:
         target = _make_target(
             name="test_target",
             module="analytics",
-            plugin="test_plugin",
             tables=("analytics.test_table",),
-            options=TargetOptions(
-                dependencies=("dep1", "dep2"),
-                description="Test target description",
-            ),
+            dependencies=("dep1", "dep2"),
+            description="Test target description",
         )
         expect_equal(target.name, "test_target")
         expect_equal(target.dependencies, ("dep1", "dep2"))
@@ -89,7 +86,6 @@ class TestOutputTarget:
         target = _make_target(
             name="test_target",
             module="graphs",
-            plugin="test_plugin",
             tables=("graph.test_table",),
         )
         assert_frozen(target, "name", "new_name")
@@ -105,7 +101,6 @@ class TestTargetGraph:
         target = _make_target(
             name="test_target",
             module="ingestion",
-            plugin="test_plugin",
             tables=("core.test_table",),
         )
         graph.register(target)
@@ -120,7 +115,6 @@ class TestTargetGraph:
         target = _make_target(
             name="test_target",
             module="ingestion",
-            plugin="test_plugin",
             tables=("core.test_table",),
         )
         graph.register(target)
@@ -135,7 +129,6 @@ class TestTargetGraph:
         target = _make_target(
             name="test_target",
             module="ingestion",
-            plugin="test_plugin",
             tables=("core.test_table",),
         )
         graph.register(target)
@@ -158,13 +151,11 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="ingestion",
-            plugin="plugin1",
             tables=("core.t1",),
         )
         t2 = _make_target(
             name="target2",
             module="graphs",
-            plugin="plugin2",
             tables=("graph.t2",),
         )
         graph.register(t1)
@@ -182,15 +173,13 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="ingestion",
-            plugin="plugin1",
             tables=("core.t1",),
         )
         t2 = _make_target(
             name="target2",
             module="graphs",
-            plugin="plugin2",
             tables=("graph.t2",),
-            options=TargetOptions(dependencies=("target1",)),
+            dependencies=("target1",),
         )
         graph.register(t1)
         graph.register(t2)
@@ -205,22 +194,19 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="ingestion",
-            plugin="plugin1",
             tables=("core.t1",),
         )
         t2 = _make_target(
             name="target2",
             module="graphs",
-            plugin="plugin2",
             tables=("graph.t2",),
-            options=TargetOptions(dependencies=("target1",)),
+            dependencies=("target1",),
         )
         t3 = _make_target(
             name="target3",
             module="analytics",
-            plugin="plugin3",
             tables=("analytics.t3",),
-            options=TargetOptions(dependencies=("target2",)),
+            dependencies=("target2",),
         )
         graph.register(t1)
         graph.register(t2)
@@ -236,22 +222,19 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="ingestion",
-            plugin="plugin1",
             tables=("core.t1",),
         )
         t2 = _make_target(
             name="target2",
             module="graphs",
-            plugin="plugin2",
             tables=("graph.t2",),
-            options=TargetOptions(dependencies=("target1",)),
+            dependencies=("target1",),
         )
         t3 = _make_target(
             name="target3",
             module="analytics",
-            plugin="plugin3",
             tables=("analytics.t3",),
-            options=TargetOptions(dependencies=("target1",)),
+            dependencies=("target1",),
         )
         graph.register(t1)
         graph.register(t2)
@@ -267,22 +250,19 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="ingestion",
-            plugin="plugin1",
             tables=("core.t1",),
         )
         t2 = _make_target(
             name="target2",
             module="graphs",
-            plugin="plugin2",
             tables=("graph.t2",),
-            options=TargetOptions(dependencies=("target1",)),
+            dependencies=("target1",),
         )
         t3 = _make_target(
             name="target3",
             module="analytics",
-            plugin="plugin3",
             tables=("analytics.t3",),
-            options=TargetOptions(dependencies=("target2",)),
+            dependencies=("target2",),
         )
         graph.register(t1)
         graph.register(t2)
@@ -300,21 +280,18 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="ingestion",
-            plugin="plugin1",
             tables=("core.t1",),
         )
         t2 = _make_target(
             name="target2",
             module="ingestion",
-            plugin="plugin2",
             tables=("core.t2",),
         )
         t3 = _make_target(
             name="target3",
             module="analytics",
-            plugin="plugin3",
             tables=("analytics.t3",),
-            options=TargetOptions(dependencies=("target1", "target2")),
+            dependencies=("target1", "target2"),
         )
         graph.register(t1)
         graph.register(t2)
@@ -333,23 +310,20 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="ingestion",
-            plugin="plugin1",
             tables=("core.t1",),
-            options=TargetOptions(dependencies=("target3",)),
+            dependencies=("target3",),
         )
         t2 = _make_target(
             name="target2",
             module="graphs",
-            plugin="plugin2",
             tables=("graph.t2",),
-            options=TargetOptions(dependencies=("target1",)),
+            dependencies=("target1",),
         )
         t3 = _make_target(
             name="target3",
             module="analytics",
-            plugin="plugin3",
             tables=("analytics.t3",),
-            options=TargetOptions(dependencies=("target2",)),
+            dependencies=("target2",),
         )
         graph.register(t1)
         graph.register(t2)
@@ -365,19 +339,16 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="ingestion",
-            plugin="plugin1",
             tables=("core.t1",),
         )
         t2 = _make_target(
             name="target2",
             module="graphs",
-            plugin="plugin2",
             tables=("graph.t2",),
         )
         t3 = _make_target(
             name="target3",
             module="ingestion",
-            plugin="plugin3",
             tables=("core.t3",),
         )
         graph.register(t1)
@@ -396,15 +367,13 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="ingestion",
-            plugin="plugin1",
             tables=("core.t1",),
         )
         t2 = _make_target(
             name="target2",
             module="graphs",
-            plugin="plugin2",
             tables=("graph.t2",),
-            options=TargetOptions(dependencies=("target1",)),
+            dependencies=("target1",),
         )
         graph.register(t1)
         graph.register(t2)
@@ -419,9 +388,8 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="graphs",
-            plugin="plugin1",
             tables=("graph.t1",),
-            options=TargetOptions(dependencies=("nonexistent",)),
+            dependencies=("nonexistent",),
         )
         graph.register(t1)
 
@@ -436,13 +404,11 @@ class TestTargetGraph:
         t1 = _make_target(
             name="target1",
             module="ingestion",
-            plugin="plugin1",
             tables=("core.t1",),
         )
         t2 = _make_target(
             name="target2",
             module="graphs",
-            plugin="plugin2",
             tables=("graph.t2",),
         )
         graph.register(t1)

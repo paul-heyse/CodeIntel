@@ -13,7 +13,7 @@ from codeintel.build.contracts import ArtifactSpec, OutputContract, TableSchema
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.parameters import ParameterError, TargetParameters
 from codeintel.build.state import BuildState, StateValidator, TargetState
-from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
+from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import (
@@ -80,12 +80,12 @@ def _make_target(name: str, dependencies: tuple[str, ...] = ()) -> OutputTarget:
     OutputTarget
         Target with provided dependencies.
     """
-    return OutputTarget.from_tables(
+    return OutputTarget(
         name=name,
         module="analytics",
-        plugin=f"{name}_plugin",
-        tables=(f"core.{name}",),
-        options=TargetOptions(dependencies=dependencies, description=f"{name} target"),
+        contract=OutputContract.simple(table_keys=(f"core.{name}",)),
+        dependencies=dependencies,
+        description=f"{name} target",
     )
 
 

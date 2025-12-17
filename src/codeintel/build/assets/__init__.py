@@ -9,7 +9,6 @@ from codeintel.build.assets.fingerprinting import (
     FingerprintMode,
     FingerprintPolicy,
     TableVersionInput,
-    compute_fast_version_hash,
     compute_table_schema_hash,
 )
 from codeintel.build.assets.impact import (
@@ -26,7 +25,6 @@ __all__ = [
     "ImpactResult",
     "ImpactedAsset",
     "TableVersionInput",
-    "compute_fast_version_hash",
     "compute_impact",
     "compute_table_schema_hash",
     "persist_asset_catalog_for_run",

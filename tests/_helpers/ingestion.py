@@ -64,7 +64,6 @@ def _make_ingestion_target(name: str, description: str = "") -> OutputTarget:
     return OutputTarget(
         name=name,
         module="ingestion",
-        plugin="",
         contract=EMPTY_CONTRACT,
         dependencies=(),
         description=description or f"Test target for {name}",

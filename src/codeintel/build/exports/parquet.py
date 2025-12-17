@@ -126,8 +126,6 @@ def export_dataset_to_parquet(
     gateway: StorageGateway,
     dataset_name: str,
     output_dir: Path,
-    *,
-    options: ExportCallOptions | None = None,
 ) -> Path:
     """Export a dataset resolved through the dataset registry to Parquet.
 
@@ -139,8 +137,6 @@ def export_dataset_to_parquet(
         Logical dataset name to export (e.g., ``function_profile``).
     output_dir
         Destination directory for the Parquet file.
-    options
-        Export options (unused, for API compatibility).
 
     Returns
     -------
@@ -152,7 +148,6 @@ def export_dataset_to_parquet(
     ValueError
         If the dataset name is unknown.
     """
-    _ = options
     dataset_mapping = gateway.datasets.mapping
     parquet_mapping = gateway.datasets.parquet_mapping or {}
     if dataset_name not in dataset_mapping:

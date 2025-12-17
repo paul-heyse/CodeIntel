@@ -15,7 +15,6 @@ from codeintel.build.errors import (
     SchemaNotFoundError,
 )
 from codeintel.build.parameters import TargetParameters
-from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget
 from codeintel.config.datasets.primitives import Column, TableSchema
 from tests._helpers import build_test_gateway, make_build_paths, make_snapshot
@@ -29,7 +28,6 @@ def _context_with_contract(contract: OutputContract, tmp_path: Path) -> TargetEx
     target = OutputTarget(
         name="demo",
         module="analytics",
-        plugin="demo_plugin",
         contract=contract,
     )
     snapshot = make_snapshot(tmp_path)
@@ -75,11 +73,10 @@ def test_write_table_validation_and_recording(tmp_path: Path) -> None:
 
 def test_write_table_requires_contract_schema(tmp_path: Path) -> None:
     """Writing to table not in contract raises SchemaNotFoundError."""
-    target = OutputTarget.from_tables(
+    target = OutputTarget(
         name="demo",
         module="analytics",
-        plugin="demo_plugin",
-        tables=("core.declared",),
+        contract=OutputContract.simple(table_keys=("core.declared",)),
     )
     snapshot = make_snapshot(tmp_path)
     ctx = TargetExecutionContext(
@@ -142,7 +139,6 @@ def test_gateway_property_returns_build_ctx_gateway(tmp_path: Path) -> None:
         target=OutputTarget(
             name="noop",
             module="analytics",
-            plugin="noop",
             contract=contract,
         ),
         resources=ContextResources(),

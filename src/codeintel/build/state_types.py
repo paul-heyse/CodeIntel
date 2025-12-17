@@ -19,19 +19,6 @@ Type Hierarchy
 - ``BlockingReason``: Why a target cannot be computed
 - ``TargetState``: Complete state for a single target
 - ``BuildState``: Aggregate state for all targets in a snapshot
-
-Status Mapping
---------------
-The unified ``TargetStatus`` maps to legacy types as follows:
-
-+----------+-----------------+--------------------+
-| Unified  | state.py        | readiness.py       |
-+==========+=================+====================+
-| current  | computed        | current            |
-| stale    | stale           | stale              |
-| missing  | missing         | never_computed     |
-| blocked  | blocked         | (dependency)       |
-+----------+-----------------+--------------------+
 """
 
 from __future__ import annotations

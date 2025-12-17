@@ -1,8 +1,7 @@
 """Row binding registry for schema-generated row bindings.
 
-This module provides the canonical entry point for row binding resolution,
-replacing the legacy ``get_row_bindings()`` function with schema-generated
-equivalents that include provenance metadata.
+This module provides the canonical entry point for row binding resolution
+with schema-generated equivalents that include provenance metadata.
 
 Examples
 --------

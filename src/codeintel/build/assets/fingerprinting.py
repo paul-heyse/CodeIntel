@@ -1,15 +1,10 @@
-"""Asset fingerprinting helpers for Phase 4.
+"""Asset fingerprinting helpers.
 
-This module intentionally lives in the build layer: it computes deterministic
-fingerprints for datasets and artifacts without depending on storage accessors.
+This module computes deterministic fingerprints for datasets and artifacts
+without depending on storage accessors.
 
-Fingerprint Policies
---------------------
-- FAST: Legacy behavior, includes input_hash which contains repo+commit.
-  Fast for skip checks but not suitable for cross-commit reuse.
-- STABLE_V1: Content-addressed fingerprint excluding repo+commit.
-  Uses upstream version hashes instead of input_hash for lineage-aware
-  fingerprinting that enables cross-commit asset reuse.
+Fingerprinting uses content-addressed hashing (STABLE_V1 mode) that excludes
+repo/commit, enabling cross-commit asset reuse through upstream version hashes.
 """
 
 from __future__ import annotations
@@ -30,17 +25,12 @@ class FingerprintMode(Enum):
 
     Attributes
     ----------
-    FAST
-        Legacy mode that includes input_hash (commit-dependent).
-        Suitable for skip checking within a single commit but not
-        for cross-commit reuse.
     STABLE_V1
         Content-addressed mode that excludes repo/commit.
         Uses upstream version hashes for lineage-aware fingerprinting
         that enables cross-commit asset reuse.
     """
 
-    FAST = "fast"
     STABLE_V1 = "stable_v1"
 
 
@@ -60,8 +50,6 @@ class TableVersionInput:
         Version hashes of upstream dependencies.
     options_hash
         Hash of plugin options, or None if no options.
-    input_hash
-        Legacy input hash (only used in FAST mode).
     """
 
     table_key: str
@@ -69,7 +57,6 @@ class TableVersionInput:
     row_count: int | None
     upstream_versions: tuple[str, ...]
     options_hash: str | None
-    input_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,8 +75,6 @@ class ArtifactVersionInput:
         Version hashes of upstream dependencies.
     options_hash
         Hash of plugin options, or None if no options.
-    input_hash
-        Legacy input hash (only used in FAST mode).
     """
 
     artifact_name: str
@@ -97,20 +82,16 @@ class ArtifactVersionInput:
     size_bytes: int | None
     upstream_versions: tuple[str, ...]
     options_hash: str | None
-    input_hash: str | None = None
 
 
 @dataclass(frozen=True)
 class FingerprintPolicy:
     """Policy for computing asset version fingerprints.
 
-    This abstraction allows selecting between fast (legacy) fingerprinting
-    and stable (cross-commit-capable) fingerprinting.
-
     Attributes
     ----------
     mode
-        The fingerprinting mode to use.
+        The fingerprinting mode to use (STABLE_V1 for content-addressed).
 
     Examples
     --------
@@ -155,19 +136,9 @@ class FingerprintPolicy:
         str
             Version hash (16 characters).
         """
-        if self.mode == FingerprintMode.FAST:
-            return compute_fast_version_hash(
-                "table",
-                inp.table_key,
-                inp.schema_hash,
-                inp.row_count,
-                inp.input_hash,
-                inp.options_hash,
-            )
-
-        # STABLE_V1: Content-addressed, commit-independent
+        # Content-addressed fingerprinting based on policy mode
         parts = [
-            "stable_v1",
+            self.mode.value,
             "table",
             inp.table_key,
             inp.schema_hash or "",
@@ -205,19 +176,9 @@ class FingerprintPolicy:
         str
             Version hash (16 characters).
         """
-        if self.mode == FingerprintMode.FAST:
-            return compute_fast_version_hash(
-                "artifact",
-                inp.artifact_name,
-                inp.artifact_type,
-                inp.size_bytes,
-                inp.input_hash,
-                inp.options_hash,
-            )
-
-        # STABLE_V1: Content-addressed, commit-independent
+        # Content-addressed fingerprinting based on policy mode
         parts = [
-            "stable_v1",
+            self.mode.value,
             "artifact",
             inp.artifact_name,
             inp.artifact_type,
@@ -254,29 +215,11 @@ def compute_table_schema_hash(table_key: str, *, schema_provider: SchemaProvider
     return schema_hash(schema)
 
 
-def compute_fast_version_hash(*parts: object) -> str:
-    """Compute a fast, stable version hash from a tuple of stable components.
-
-    Notes
-    -----
-    This intentionally produces a short hash for ergonomics. It is content
-    addressed but not collision-proof; Phase 4 can upgrade to a stronger policy.
-
-    Returns
-    -------
-    str
-        Hex digest truncated to 16 characters.
-    """
-    normalized = "|".join("" if p is None else str(p) for p in parts)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
-
-
 __all__ = [
     "DEFAULT_FINGERPRINT_POLICY",
     "ArtifactVersionInput",
     "FingerprintMode",
     "FingerprintPolicy",
     "TableVersionInput",
-    "compute_fast_version_hash",
     "compute_table_schema_hash",
 ]

@@ -132,7 +132,6 @@ def _dataset_version_record(
         row_count=row_count,
         upstream_versions=tuple(upstream_versions),
         options_hash=record.options_hash,
-        input_hash=record.input_hash,
     )
     version_hash = ctx.policy.compute_table_version(version_input)
     status = "materialized" if record.status == "succeeded" else "reused"
@@ -192,7 +191,6 @@ def _artifact_version_record(
         size_bytes=bytes_value,
         upstream_versions=tuple(upstream_versions),
         options_hash=record.options_hash,
-        input_hash=record.input_hash,
     )
     version_hash = ctx.policy.compute_artifact_version(version_input)
     status = "materialized" if record.status == "succeeded" else "reused"

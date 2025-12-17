@@ -12,7 +12,7 @@ from codeintel.build.hamilton.native.ibis_helpers import (
     filter_tables_for_snapshot,
     select_snapshot_columns,
 )
-from codeintel.build.hamilton.native.runner import (
+from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
     create_run_record,
     save_manifest,

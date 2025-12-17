@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef, refs_from_target_result
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 

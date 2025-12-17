@@ -63,7 +63,6 @@ def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> 
     target = OutputTarget(
         name="main",
         module="analytics",
-        plugin="plugin",
         dependencies=("dep", "missing"),
     )
     snapshot = make_snapshot(tmp_path, repo="demo", commit="c1")
@@ -113,30 +112,26 @@ def test_build_run_record_to_dict_handles_none_fields() -> None:
 def test_target_graph_validation_and_topology() -> None:
     """TargetGraph validates missing deps, cycles, and ordering."""
     graph = TargetGraph()
-    graph.register(OutputTarget(name="a", module="ingestion", plugin="p"))
-    graph.register(OutputTarget(name="b", module="graphs", plugin="p", dependencies=("a",)))
-    graph.register(
-        OutputTarget(name="c", module="analytics", plugin="p", dependencies=("b", "missing"))
-    )
+    graph.register(OutputTarget(name="a", module="ingestion"))
+    graph.register(OutputTarget(name="b", module="graphs", dependencies=("a",)))
+    graph.register(OutputTarget(name="c", module="analytics", dependencies=("b", "missing")))
 
     errors = graph.validate()
     expect_in("missing", errors[0])
 
     graph_valid = TargetGraph()
-    graph_valid.register(OutputTarget(name="a", module="ingestion", plugin="p"))
-    graph_valid.register(OutputTarget(name="b", module="graphs", plugin="p", dependencies=("a",)))
-    graph_valid.register(
-        OutputTarget(name="c", module="analytics", plugin="p", dependencies=("b",))
-    )
+    graph_valid.register(OutputTarget(name="a", module="ingestion"))
+    graph_valid.register(OutputTarget(name="b", module="graphs", dependencies=("a",)))
+    graph_valid.register(OutputTarget(name="c", module="analytics", dependencies=("b",)))
     order = graph_valid.topological_order(("c",))
     expect_equal(order[0], "a")
 
     cyclic_graph = TargetGraph()
     cyclic_graph.register(
-        OutputTarget(name="cycle1", module="export", plugin="p", dependencies=("cycle2",))
+        OutputTarget(name="cycle1", module="export", dependencies=("cycle2",))
     )
     cyclic_graph.register(
-        OutputTarget(name="cycle2", module="export", plugin="p", dependencies=("cycle1",))
+        OutputTarget(name="cycle2", module="export", dependencies=("cycle1",))
     )
     errors_cycle = cyclic_graph.validate()
     expect_true(any("Dependency cycle detected" in err for err in errors_cycle))
@@ -149,7 +144,6 @@ def test_target_table_keys_and_execution_duration() -> None:
     contract_target = OutputTarget(
         name="contracted",
         module="ingestion",
-        plugin="p",
         contract=OutputContract(
             tables=(
                 TableSchema(
@@ -163,7 +157,6 @@ def test_target_table_keys_and_execution_duration() -> None:
     legacy_target = OutputTarget(
         name="legacy",
         module="graphs",
-        plugin="p",
         contract=OutputContract.simple(table_keys=("core.legacy",)),
     )
     expect_equal(contract_target.table_keys, ("core.t",))

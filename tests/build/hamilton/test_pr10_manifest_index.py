@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.hooks.manifest_hook import SkipCheckRequest, should_skip
 from codeintel.build.hamilton.planner import compute_plan
+from codeintel.build.hamilton.run_records import SkipCheckRequest, should_skip
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
@@ -114,7 +114,6 @@ class TestHashComputation:
         target = OutputTarget(
             name="main",
             module="analytics",
-            plugin="analytics.main",
             dependencies=("dep",),
         )
 
@@ -148,7 +147,6 @@ class TestHashComputation:
         target = OutputTarget(
             name="downstream",
             module="analytics",
-            plugin="analytics.downstream",
             dependencies=("upstream",),
         )
 
@@ -291,10 +289,8 @@ class TestManifestPrefetch:
         build_accessor.raise_on_load = True
 
         graph = TargetGraph()
-        graph.register(OutputTarget(name="a", module="ingestion", plugin="ingestion.a"))
-        graph.register(
-            OutputTarget(name="b", module="graphs", plugin="graphs.b", dependencies=("a",))
-        )
+        graph.register(OutputTarget(name="a", module="ingestion"))
+        graph.register(OutputTarget(name="b", module="graphs", dependencies=("a",)))
 
         env = BuildEnv(
             gateway=fake_gateway,
@@ -338,13 +334,11 @@ class TestHashCascadeComplete:
         target_b = OutputTarget(
             name="b",
             module="graphs",
-            plugin="graphs.b",
             dependencies=("a",),
         )
         target_c = OutputTarget(
             name="c",
             module="analytics",
-            plugin="analytics.c",
             dependencies=("b",),
         )
 
@@ -441,7 +435,6 @@ class TestHashCascadeComplete:
         target = OutputTarget(
             name="target",
             module="analytics",
-            plugin="analytics.target",
         )
 
         hash_1 = compute_input_hash(

@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING, cast
 
 import pandas as pd
 
+from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
-from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import (
