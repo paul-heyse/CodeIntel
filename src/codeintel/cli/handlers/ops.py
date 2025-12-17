@@ -344,7 +344,7 @@ def dataset_constraints_handler(ctx: CommandContext) -> CliResult[DatasetConstra
 
 
 def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
-    """Start the HTTP server.
+    """Start the HTTP server with production-grade Uvicorn configuration.
 
     Parameters
     ----------
@@ -353,6 +353,7 @@ def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
         - host: Server host (default: CODEINTEL_HOST)
         - port: Server port (default: CODEINTEL_PORT)
         - reload: Enable hot reload
+        - workers: Number of worker processes
 
     Returns
     -------
@@ -367,21 +368,56 @@ def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
     host = ctx.params.get_str("host") or settings.host
     port = ctx.params.get_int("port", settings.port)
     reload = ctx.params.get_bool("reload", default=False)
+    workers = ctx.params.get_int("workers", settings.uvicorn_workers)
 
     pointer = ServingSnapshotPointer.load(settings.serve_dir / "current.json")
-    LOG.info("Starting HTTP server at http://%s:%d", host, port)
+    LOG.info("Starting HTTP server at http://%s:%d (workers=%d)", host, port, workers)
 
-    if reload:
+    # Build Uvicorn configuration dict from settings
+    uvicorn_config: dict[str, object] = {
+        "host": host,
+        "port": port,
+        "loop": settings.uvicorn_loop,
+        "http": settings.uvicorn_http,
+        "timeout_keep_alive": settings.uvicorn_timeout_keep_alive,
+        "backlog": settings.uvicorn_backlog,
+        "access_log": settings.uvicorn_access_log,
+        "log_level": "info",
+    }
+
+    # Optional concurrency limits
+    if settings.uvicorn_limit_concurrency is not None:
+        uvicorn_config["limit_concurrency"] = settings.uvicorn_limit_concurrency
+    if settings.uvicorn_limit_max_requests is not None:
+        uvicorn_config["limit_max_requests"] = settings.uvicorn_limit_max_requests
+
+    # Security: hide server header
+    if not settings.uvicorn_server_header:
+        uvicorn_config["server_header"] = False
+
+    # Proxy support
+    if settings.uvicorn_proxy_headers:
+        uvicorn_config["proxy_headers"] = True
+        uvicorn_config["forwarded_allow_ips"] = settings.uvicorn_forwarded_allow_ips
+
+    # Run with appropriate mode
+    if workers > 1:
         uvicorn.run(
             "codeintel.serving.http.app:create_serving_app",
-            host=host,
-            port=port,
-            reload=True,
             factory=True,
+            workers=workers,
+            **uvicorn_config,  # type: ignore[arg-type]
+        )
+    elif reload:
+        uvicorn.run(
+            "codeintel.serving.http.app:create_serving_app",
+            factory=True,
+            reload=True,
+            **uvicorn_config,  # type: ignore[arg-type]
         )
     else:
         app = create_serving_app(settings)
-        uvicorn.run(app, host=host, port=port)
+        uvicorn.run(app, **uvicorn_config)  # type: ignore[arg-type]
 
     return CliResult.ok(
         ServeStartResult(

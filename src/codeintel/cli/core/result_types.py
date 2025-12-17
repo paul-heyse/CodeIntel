@@ -661,32 +661,6 @@ class ConfigShowResult:
 
 
 @dataclass(frozen=True)
-class GraphPluginsResult:
-    """Result from graph plugins command.
-
-    Parameters
-    ----------
-    plugins
-        List of plugin metadata dictionaries.
-    count
-        Total number of plugins.
-    """
-
-    plugins: list[dict[str, Any]]
-    count: int
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {"plugins": self.plugins, "count": self.count}
-
-
-@dataclass(frozen=True)
 class DryRunStep:
     """A single step in a dry-run plan.
 
@@ -1080,77 +1054,6 @@ class GraphQueryResult:
             "query": self.query,
             "node_count": len(self.nodes),
             "edge_count": len(self.edges),
-        }
-
-
-@dataclass(frozen=True)
-class GraphPluginInfo:
-    """Information about a graph plugin.
-
-    Parameters
-    ----------
-    name
-        Plugin name.
-    stage
-        Plugin stage.
-    output_tables
-        Output tables produced by the plugin.
-    enabled
-        Whether the plugin is enabled.
-    """
-
-    name: str
-    stage: str
-    output_tables: tuple[str, ...]
-    enabled: bool = True
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "name": self.name,
-            "stage": self.stage,
-            "output_tables": list(self.output_tables),
-            "enabled": self.enabled,
-        }
-
-
-@dataclass(frozen=True)
-class GraphPlanResult:
-    """Result from graph plugin planning.
-
-    Parameters
-    ----------
-    plan_id
-        Unique identifier for the plan.
-    plugins
-        Ordered list of plugins to execute.
-    skipped
-        List of skipped plugins with reasons.
-    """
-
-    plan_id: str
-    plugins: list[GraphPluginInfo]
-    skipped: list[dict[str, str]] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "plan_id": self.plan_id,
-            "plugins": [p.to_dict() for p in self.plugins],
-            "skipped": self.skipped,
-            "plugin_count": len(self.plugins),
         }
 
 
@@ -1821,9 +1724,6 @@ __all__ = [
     "DryRunStep",
     "ExportResult",
     "GenerateMacrosResult",
-    "GraphPlanResult",
-    "GraphPluginInfo",
-    "GraphPluginsResult",
     "GraphQueryResult",
     "GraphStatsResult",
     "HealthCheckResult",

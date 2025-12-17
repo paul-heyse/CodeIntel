@@ -207,6 +207,12 @@ class StateComputer:
         # Bulk-load manifests in a single query
         self._session.preload_manifests()
 
+        unknown_targets = sorted(
+            name for name in self._session.cached_manifest_targets() if name not in self._graph
+        )
+        for name in unknown_targets:
+            log.warning("Ignoring manifest for unknown target: %s", name)
+
         states: dict[str, TargetState] = {}
         for target_name in self._graph:
             target = self._graph.get(target_name)
@@ -235,11 +241,12 @@ class StateComputer:
             Preliminary state (may be upgraded to blocked in pass 2).
         """
         if manifest is None:
+            current_hash = self._session.get_input_hash(target)
             return TargetState(
                 name=target.name,
                 status="missing",
                 manifest=None,
-                current_hash=None,
+                current_hash=current_hash,
                 blocking_reason=None,
                 blocking_deps=(),
             )

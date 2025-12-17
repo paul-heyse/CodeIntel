@@ -16,14 +16,6 @@ Build targets with automatic dependency resolution.
 │ FORCE --force --empty-force   Force recompute of specific targets            │
 │   -f                          (repeatable). [env var:                        │
 │                               CODEINTEL_BUILD_RUN_FORCE] [default: (none)]   │
-│ HAMILTON-MODE                 Hamilton node mode: generated (default), auto, │
-│   --hamilton-mode             or native. [env var:                           │
-│                               CODEINTEL_BUILD_RUN_HAMILTON_MODE] [default:   │
-│                               generated]                                     │
-│ NATIVE-DOMAINS                For native mode, restrict to specific domains  │
-│   --native-domains            (analytics, ingestion, graphs, export). [env   │
-│   --empty-native-domains      var: CODEINTEL_BUILD_RUN_NATIVE_DOMAINS]       │
-│                               [default: (none)]                              │
 │ VALIDATE-OUTPUTS              Validate produced datasets against Pandera     │
 │   --validate-outputs          schemas after write. [env var:                 │
 │                               CODEINTEL_BUILD_RUN_VALIDATE_OUTPUTS]          │
@@ -46,7 +38,7 @@ Build targets with automatic dependency resolution.
 │                               CODEINTEL_BUILD_RUN_PARALLEL_BACKEND]          │
 │                               [default: sequential]                          │
 │ MAX-WORKERS --max-workers     Maximum parallel workers for threadpool        │
-│                               backend. [env var:                             │
+│   --workers                   backend. [env var:                             │
 │                               CODEINTEL_BUILD_RUN_MAX_WORKERS] [default:     │
 │                               (none)]                                        │
 │ PROGRESS --progress           Show progress bar during execution. [env var:  │

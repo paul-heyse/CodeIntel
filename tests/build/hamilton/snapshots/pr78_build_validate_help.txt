@@ -3,10 +3,6 @@ Usage: codeintel build validate [ARGS]
 Validate Hamilton DAG invariants for DAG-first planning.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
-│ HAMILTON-MODE         Hamilton node mode: auto (default), generated, or      │
-│   --hamilton-mode     native. [env var:                                      │
-│                       CODEINTEL_BUILD_VALIDATE_HAMILTON_MODE] [default:      │
-│                       auto]                                                  │
 │ FORMAT --format       Output format: json (default). [env var:               │
 │                       CODEINTEL_BUILD_VALIDATE_FORMAT] [default: json]       │
 │ --flags               [env var: CODEINTEL_BUILD_VALIDATE_FLAGS] [default:    │

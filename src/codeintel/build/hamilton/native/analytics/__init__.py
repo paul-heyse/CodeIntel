@@ -107,6 +107,7 @@ from codeintel.build.hamilton.native.analytics.history_timeseries import (
     t__history_timeseries__compute,
 )
 from codeintel.build.hamilton.native.analytics.hotspots import (
+    hotspots__modules_complexity,
     t__hotspots,
     t__hotspots__compute,
 )
@@ -116,6 +117,8 @@ from codeintel.build.hamilton.native.analytics.profiles import (
     t__profiles__compute,
 )
 from codeintel.build.hamilton.native.analytics.risk_factors import (
+    risk_factors__fan_in,
+    risk_factors__fan_out,
     t__risk_factors,
     t__risk_factors__compute,
 )
@@ -154,7 +157,6 @@ from codeintel.build.hamilton.native.analytics.test_profile import (
 )
 
 __all__ = [
-    # Result types
     "AstFeaturesResult",
     "BehavioralCoverageResult",
     "ConfigDataFlowResult",
@@ -168,9 +170,10 @@ __all__ = [
     "SubsystemGraphMetricsResult",
     "SymbolGraphMetricsResult",
     "TestProfileResult",
-    # Materialize nodes
+    "hotspots__modules_complexity",
+    "risk_factors__fan_in",
+    "risk_factors__fan_out",
     "t__behavioral_coverage",
-    # Compute nodes
     "t__behavioral_coverage__compute",
     "t__cfg_dfg_metrics",
     "t__cfg_dfg_metrics__compute_cfg",

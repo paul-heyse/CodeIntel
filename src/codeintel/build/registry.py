@@ -5,9 +5,8 @@ Hamilton-First Architecture
 This module now uses Hamilton as the source of truth for target dependencies.
 Use `get_target_graph()` to get a TargetGraph with Hamilton-derived dependencies.
 
-The static `*_TARGET` constants remain for `registrations.py` compatibility,
-but dependencies are derived from the actual Hamilton DAG, not static
-declarations.
+The static `*_TARGET` constants remain as code-first target definitions, but
+dependencies are derived from the actual Hamilton DAG, not static declarations.
 
 Each OutputTarget defines its output tables via an OutputContract with
 TableSchema definitions. TABLE_SCHEMAS can be derived from target
@@ -45,7 +44,7 @@ log = logging.getLogger(__name__)
 MODULES_TARGET = OutputTarget(
     name="modules",
     module="ingestion",
-    plugin="repo_scan",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["core.modules"],
@@ -60,7 +59,7 @@ MODULES_TARGET = OutputTarget(
 AST_TARGET = OutputTarget(
     name="ast",
     module="ingestion",
-    plugin="ast_extract",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["core.ast_nodes"],
@@ -76,7 +75,7 @@ AST_TARGET = OutputTarget(
 CST_TARGET = OutputTarget(
     name="cst",
     module="ingestion",
-    plugin="cst_extract",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["core.cst_nodes"],)),
     dependencies=("modules",),
     description="Concrete syntax tree extraction.",
@@ -85,7 +84,7 @@ CST_TARGET = OutputTarget(
 SCIP_TARGET = OutputTarget(
     name="scip",
     module="ingestion",
-    plugin="scip_ingest",
+    plugin="",
     contract=OutputContract(
         artifacts=(
             ArtifactSpec("scip_index", "{scip_dir}/index.scip", "SCIP index file"),
@@ -105,7 +104,7 @@ SCIP_TARGET = OutputTarget(
 TYPING_TARGET = OutputTarget(
     name="typing",
     module="ingestion",
-    plugin="typing_ingest",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.typedness"],
@@ -125,7 +124,7 @@ TYPING_TARGET = OutputTarget(
 COVERAGE_INGEST_TARGET = OutputTarget(
     name="coverage_ingest",
     module="ingestion",
-    plugin="coverage_ingest",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.coverage_lines"],)),
     dependencies=("modules",),
     description="Line-level test coverage ingestion.",
@@ -134,7 +133,7 @@ COVERAGE_INGEST_TARGET = OutputTarget(
 TESTS_INGEST_TARGET = OutputTarget(
     name="tests_ingest",
     module="ingestion",
-    plugin="tests_ingest",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.test_catalog"],)),
     dependencies=("modules",),
     description="Test catalog ingestion from pytest.",
@@ -143,7 +142,7 @@ TESTS_INGEST_TARGET = OutputTarget(
 DOCSTRINGS_TARGET = OutputTarget(
     name="docstrings",
     module="ingestion",
-    plugin="docstrings_ingest",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["core.docstrings"],)),
     dependencies=("ast",),
     description="Docstring extraction and parsing.",
@@ -152,7 +151,7 @@ DOCSTRINGS_TARGET = OutputTarget(
 CONFIG_INGEST_TARGET = OutputTarget(
     name="config_ingest",
     module="ingestion",
-    plugin="config_ingest",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.config_values"],)),
     dependencies=("modules",),
     description="Configuration file parsing and reference tracking.",
@@ -162,7 +161,7 @@ CONFIG_INGEST_TARGET = OutputTarget(
 GOIDS_TARGET = OutputTarget(
     name="goids",
     module="graphs",
-    plugin="goid_builder",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["core.goids"],
@@ -176,7 +175,7 @@ GOIDS_TARGET = OutputTarget(
 CALL_GRAPH_TARGET = OutputTarget(
     name="call_graph",
     module="graphs",
-    plugin="callgraph",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["graph.call_graph_nodes"],
@@ -190,7 +189,7 @@ CALL_GRAPH_TARGET = OutputTarget(
 CALL_GRAPH_VIEWS_TARGET = OutputTarget(
     name="call_graph_views",
     module="graphs",
-    plugin="",  # Native target, no plugin
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["graph.v_function_call_counts"],
@@ -204,7 +203,7 @@ CALL_GRAPH_VIEWS_TARGET = OutputTarget(
 IMPORT_GRAPH_TARGET = OutputTarget(
     name="import_graph",
     module="graphs",
-    plugin="import_graph",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["graph.import_modules"],
@@ -218,7 +217,7 @@ IMPORT_GRAPH_TARGET = OutputTarget(
 CFG_TARGET = OutputTarget(
     name="cfg",
     module="graphs",
-    plugin="cfg_dfg",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["graph.cfg_blocks"],
@@ -242,7 +241,7 @@ DFG_TARGET = OutputTarget(
 CFG_DFG_METRICS_TARGET = OutputTarget(
     name="cfg_dfg_metrics",
     module="analytics",
-    plugin="cfg_dfg_metrics",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.cfg_function_metrics"],
@@ -260,7 +259,7 @@ CFG_DFG_METRICS_TARGET = OutputTarget(
 SYMBOL_USES_TARGET = OutputTarget(
     name="symbol_uses",
     module="graphs",
-    plugin="symbol_uses",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["graph.symbol_use_edges"],)),
     dependencies=("scip",),
     description="Symbol definition-to-use edge extraction.",
@@ -269,7 +268,7 @@ SYMBOL_USES_TARGET = OutputTarget(
 GRAPH_VALIDATION_TARGET = OutputTarget(
     name="graph_validation",
     module="graphs",
-    plugin="graph_validation",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.graph_validation"],)),
     dependencies=("call_graph", "import_graph", "cfg"),
     description="Graph integrity validation checks.",
@@ -279,7 +278,7 @@ GRAPH_VALIDATION_TARGET = OutputTarget(
 HOTSPOTS_TARGET = OutputTarget(
     name="hotspots",
     module="analytics",
-    plugin="hotspots",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.hotspots"],)),
     dependencies=("modules",),
     description="File hotspot analysis based on churn.",
@@ -288,7 +287,7 @@ HOTSPOTS_TARGET = OutputTarget(
 FUNCTION_METRICS_TARGET = OutputTarget(
     name="function_metrics",
     module="analytics",
-    plugin="function_metrics",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.function_metrics"],
@@ -302,7 +301,7 @@ FUNCTION_METRICS_TARGET = OutputTarget(
 FUNCTION_EFFECTS_TARGET = OutputTarget(
     name="function_effects",
     module="analytics",
-    plugin="function_effects",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.function_effects"],)),
     dependencies=("function_metrics",),
     description="Function purity and side-effect analysis.",
@@ -311,7 +310,7 @@ FUNCTION_EFFECTS_TARGET = OutputTarget(
 FUNCTION_CONTRACTS_TARGET = OutputTarget(
     name="function_contracts",
     module="analytics",
-    plugin="function_contracts",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.function_contracts"],)),
     dependencies=("function_metrics", "docstrings"),
     description="Inferred function pre/postconditions.",
@@ -320,7 +319,7 @@ FUNCTION_CONTRACTS_TARGET = OutputTarget(
 FUNCTION_HISTORY_TARGET = OutputTarget(
     name="function_history",
     module="analytics",
-    plugin="function_history",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.function_history"],)),
     dependencies=("goids",),
     description="Function git history and churn metrics.",
@@ -329,7 +328,7 @@ FUNCTION_HISTORY_TARGET = OutputTarget(
 HISTORY_TIMESERIES_TARGET = OutputTarget(
     name="history_timeseries",
     module="analytics",
-    plugin="history_timeseries",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.history_timeseries"],)),
     dependencies=("function_history",),
     description="Historical metrics timeseries for trending.",
@@ -338,7 +337,7 @@ HISTORY_TIMESERIES_TARGET = OutputTarget(
 COVERAGE_FUNCTIONS_TARGET = OutputTarget(
     name="coverage_functions",
     module="analytics",
-    plugin="coverage_functions",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.coverage_functions"],)),
     dependencies=("goids", "coverage_ingest"),
     description="Per-function coverage aggregation.",
@@ -347,7 +346,7 @@ COVERAGE_FUNCTIONS_TARGET = OutputTarget(
 COVERAGE_TEST_EDGES_TARGET = OutputTarget(
     name="coverage_test_edges",
     module="analytics",
-    plugin="coverage_test_edges",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.test_coverage_edges"],)),
     dependencies=("coverage_functions", "tests_ingest"),
     description="Test-to-function coverage edges.",
@@ -356,7 +355,7 @@ COVERAGE_TEST_EDGES_TARGET = OutputTarget(
 DATA_MODELS_TARGET = OutputTarget(
     name="data_models",
     module="analytics",
-    plugin="data_models",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.data_models"],)),
     dependencies=("goids", "ast"),
     description="Data model extraction (dataclasses, Pydantic, etc.).",
@@ -365,7 +364,7 @@ DATA_MODELS_TARGET = OutputTarget(
 DATA_MODEL_USAGE_TARGET = OutputTarget(
     name="data_model_usage",
     module="analytics",
-    plugin="data_model_usage",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.data_model_usage"],)),
     dependencies=("data_models", "call_graph"),
     description="Function-level data model usage tracking.",
@@ -374,7 +373,7 @@ DATA_MODEL_USAGE_TARGET = OutputTarget(
 CONFIG_DATA_FLOW_TARGET = OutputTarget(
     name="config_data_flow",
     module="analytics",
-    plugin="config_data_flow",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.config_data_flow"],
@@ -391,7 +390,7 @@ CONFIG_DATA_FLOW_TARGET = OutputTarget(
 RISK_FACTORS_TARGET = OutputTarget(
     name="risk_factors",
     module="analytics",
-    plugin="risk_factors",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.goid_risk_factors"],)),
     dependencies=(
         "call_graph",
@@ -403,7 +402,7 @@ RISK_FACTORS_TARGET = OutputTarget(
 GRAPH_METRICS_TARGET = OutputTarget(
     name="graph_metrics",
     module="graphs",
-    plugin="graph_metrics",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.graph_metrics_functions"],
@@ -419,7 +418,7 @@ GRAPH_METRICS_TARGET = OutputTarget(
 SEMANTIC_ROLES_TARGET = OutputTarget(
     name="semantic_roles",
     module="analytics",
-    plugin="semantic_roles",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.semantic_roles_functions"],
@@ -433,7 +432,7 @@ SEMANTIC_ROLES_TARGET = OutputTarget(
 SUBSYSTEMS_TARGET = OutputTarget(
     name="subsystems",
     module="analytics",
-    plugin="subsystems",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.subsystems"],
@@ -447,7 +446,7 @@ SUBSYSTEMS_TARGET = OutputTarget(
 SUBSYSTEM_GRAPH_METRICS_TARGET = OutputTarget(
     name="subsystem_graph_metrics",
     module="analytics",
-    plugin="subsystem_graph_metrics",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.subsystem_graph_metrics"],)),
     dependencies=("subsystems", "graph_metrics"),
     description="Graph metrics for subsystems.",
@@ -456,7 +455,7 @@ SUBSYSTEM_GRAPH_METRICS_TARGET = OutputTarget(
 SUBSYSTEM_AGREEMENT_TARGET = OutputTarget(
     name="subsystem_agreement",
     module="analytics",
-    plugin="subsystem_agreement",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.subsystem_agreement"],)),
     dependencies=("subsystems", "graph_metrics"),
     description="Subsystem vs import community agreement.",
@@ -465,7 +464,7 @@ SUBSYSTEM_AGREEMENT_TARGET = OutputTarget(
 TEST_PROFILE_TARGET = OutputTarget(
     name="test_profile",
     module="analytics",
-    plugin="test_profile",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.test_profile"],)),
     dependencies=("coverage_test_edges", "tests_ingest"),
     description="Per-test profile with coverage and characteristics.",
@@ -474,7 +473,7 @@ TEST_PROFILE_TARGET = OutputTarget(
 TEST_GRAPH_METRICS_TARGET = OutputTarget(
     name="test_graph_metrics",
     module="analytics",
-    plugin="test_graph_metrics",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.test_graph_metrics_tests"],
@@ -488,7 +487,7 @@ TEST_GRAPH_METRICS_TARGET = OutputTarget(
 SYMBOL_GRAPH_METRICS_TARGET = OutputTarget(
     name="symbol_graph_metrics",
     module="analytics",
-    plugin="symbol_graph_metrics",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.symbol_graph_metrics_modules"],
@@ -502,7 +501,7 @@ SYMBOL_GRAPH_METRICS_TARGET = OutputTarget(
 BEHAVIORAL_COVERAGE_TARGET = OutputTarget(
     name="behavioral_coverage",
     module="analytics",
-    plugin="behavioral_coverage",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.behavioral_coverage"],)),
     dependencies=("test_profile",),
     description="Behavioral coverage tagging from test patterns.",
@@ -511,7 +510,7 @@ BEHAVIORAL_COVERAGE_TARGET = OutputTarget(
 ENTRYPOINTS_TARGET = OutputTarget(
     name="entrypoints",
     module="analytics",
-    plugin="entrypoints",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.entrypoints"],)),
     dependencies=("goids", "semantic_roles", "test_profile"),
     description="External entrypoint detection (HTTP, CLI, etc.).",
@@ -520,7 +519,7 @@ ENTRYPOINTS_TARGET = OutputTarget(
 EXTERNAL_DEPS_TARGET = OutputTarget(
     name="external_deps",
     module="analytics",
-    plugin="external_deps",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.external_dependencies"],
@@ -534,7 +533,7 @@ EXTERNAL_DEPS_TARGET = OutputTarget(
 PROFILES_TARGET = OutputTarget(
     name="profiles",
     module="analytics",
-    plugin="profiles",
+    plugin="",
     contract=OutputContract(
         tables=(
             _DATASET_TABLE_SCHEMAS["analytics.function_profile"],
@@ -555,7 +554,7 @@ PROFILES_TARGET = OutputTarget(
 FUNCTION_AST_FEATURES_TARGET = OutputTarget(
     name="function_ast_features",
     module="analytics",
-    plugin="function_ast_features",
+    plugin="",
     contract=OutputContract(tables=(_DATASET_TABLE_SCHEMAS["analytics.function_ast_features"],)),
     dependencies=("goids", "ast"),
     description="AST-derived semantic features for functions.",
@@ -565,7 +564,7 @@ FUNCTION_AST_FEATURES_TARGET = OutputTarget(
 EXPORT_JSONL_TARGET = OutputTarget(
     name="export_jsonl",
     module="export",
-    plugin="export_jsonl",
+    plugin="",
     contract=OutputContract(
         artifacts=(
             ArtifactSpec(
@@ -582,7 +581,7 @@ EXPORT_JSONL_TARGET = OutputTarget(
 EXPORT_PARQUET_TARGET = OutputTarget(
     name="export_parquet",
     module="export",
-    plugin="export_parquet",
+    plugin="",
     contract=OutputContract(
         artifacts=(
             ArtifactSpec(

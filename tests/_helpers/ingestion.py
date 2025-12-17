@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import json
-import warnings
 from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, cast
 
-from codeintel.build.contracts import EMPTY_CONTRACT, OutputContract
+from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.hamilton.helpers import paths_to_modules
-from codeintel.build.plugins.ingestion.helpers import get_module_paths
 from codeintel.build.targets import OutputTarget
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import SnapshotRef
@@ -32,34 +30,20 @@ from tests._helpers.fakes.contexts import (
     EnvOverrides,
     ExecutionContextBuilder,
     TargetResourceOverrides,
-    make_test_output_target,
 )
 from tests._helpers.fakes.ingestion_context import build_repo_tree
 from tests._helpers.fakes.tools import write_dummy_scip_files
 from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator, Sequence
+    from collections.abc import Generator, Sequence
     from pathlib import Path
 
-    from codeintel.build.context import TargetExecutionContext, TargetResult
-    from codeintel.build.plugin import TargetPlugin
+    from codeintel.build.context import TargetExecutionContext
     from codeintel.build.providers import Providers
-    from codeintel.config.datasets.primitives import TableSchema
     from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.storage.gateway import StorageGateway
-
-TResult_co = TypeVar("TResult_co", bound="TargetResult", covariant=True)
-
-
-class TargetPluginProtocol(Protocol[TResult_co]):
-    """Protocol for target plugins with an execute method."""
-
-    async def execute(
-        self, ctx: TargetExecutionContext
-    ) -> TResult_co:  # pragma: no cover - protocol
-        ...
 
 
 def _make_ingestion_target(name: str, description: str = "") -> OutputTarget:
@@ -80,7 +64,7 @@ def _make_ingestion_target(name: str, description: str = "") -> OutputTarget:
     return OutputTarget(
         name=name,
         module="ingestion",
-        plugin=name,
+        plugin="",
         contract=EMPTY_CONTRACT,
         dependencies=(),
         description=description or f"Test target for {name}",
@@ -96,10 +80,8 @@ __all__ = [
     "ScipIngestContext",
     "SeedIngestionConfig",
     "TargetContextConfig",
-    "TargetPluginProtocol",
     "build_ingestion_adapters",
     "build_ingestion_context_bundle",
-    "build_repo_target",
     "build_repo_tree",
     "build_repo_with_configs",
     "build_repo_with_variants",
@@ -107,7 +89,6 @@ __all__ = [
     "build_scan_setup",
     "build_scip_ingest_context",
     "build_scip_repo_fixture",
-    "build_target_context_for_plugin",
     "build_target_context_for_target",
     "closing_gateway",
     "create_scan_and_docstring_steps",
@@ -118,8 +99,6 @@ __all__ = [
     "module_paths_from_context",
     "module_records_for_paths",
     "repo_variants",
-    "run_ingestion_plugin",
-    "run_ingestion_scenario",
     "seed_foreign_key_tables",
     "seed_ingestion_tables",
     "seed_inventory_from_paths",
@@ -253,73 +232,6 @@ def build_target_context_for_target(
         modules=cfg.modules or (),
     )
     return builder.build_target_context(target=target, resources=resource_overrides)
-
-
-def build_target_context_for_plugin(
-    plugin: TargetPluginProtocol[TargetResult],
-    tmp_path: Path,
-    *,
-    config: TargetContextConfig | None = None,
-    target: OutputTarget | None = None,
-) -> TargetExecutionContext:
-    """Construct a TargetExecutionContext wired to real adapters.
-
-    .. deprecated::
-        Use ``build_target_context_for_target()`` with an explicit target instead.
-
-    Returns
-    -------
-    TargetExecutionContext
-        Context with gateway, resources, and target metadata.
-    """
-    warnings.warn(
-        "build_target_context_for_plugin() is deprecated. "
-        "Use build_target_context_for_target() with an explicit OutputTarget instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    effective_target = target or make_test_output_target(cast("TargetPlugin", plugin))
-    return build_target_context_for_target(effective_target, tmp_path, config=config)
-
-
-async def run_ingestion_plugin(
-    plugin: TargetPluginProtocol[TargetResult],
-    tmp_path: Path,
-    *,
-    config: TargetContextConfig | None = None,
-) -> tuple[TargetExecutionContext, TargetResult]:
-    """Execute a plugin with a built target context and return both.
-
-    Returns
-    -------
-    tuple
-        The constructed target execution context and the plugin result.
-    """
-    ctx = build_target_context_for_plugin(plugin, tmp_path, config=config)
-    result = await plugin.execute(ctx)
-    return ctx, result
-
-
-async def run_ingestion_scenario(
-    plugin_factory: Callable[[], TargetPluginProtocol[TargetResult]],
-    tmp_path: Path,
-    *,
-    seed_fn: Callable[[TargetExecutionContext], None] | None = None,
-    config: TargetContextConfig | None = None,
-) -> tuple[TargetExecutionContext, TargetResult]:
-    """Build a plugin from a factory, optionally seed context, and execute.
-
-    Returns
-    -------
-    tuple
-        The constructed target execution context and the plugin result.
-    """
-    plugin = plugin_factory()
-    ctx = build_target_context_for_plugin(plugin, tmp_path, config=config)
-    if seed_fn is not None:
-        seed_fn(ctx)
-    result = await plugin.execute(ctx)
-    return ctx, result
 
 
 def build_ingestion_adapters(
@@ -779,7 +691,12 @@ def module_paths_from_context(ctx: TargetExecutionContext) -> list[str]:
     list[str]
         Module paths for the target context.
     """
-    return get_module_paths(ctx)
+    repo_root = ctx.repo_root
+    paths = [
+        path.relative_to(repo_root).as_posix() for path in repo_root.rglob("*.py") if path.is_file()
+    ]
+    paths.sort()
+    return paths
 
 
 def module_records_for_paths(
@@ -1071,31 +988,6 @@ def seed_foreign_key_tables(
             insert_child_sql,
             list(child_rows),
         )
-
-
-def build_repo_target(plugin: TargetPlugin, tables: tuple[TableSchema, ...]) -> OutputTarget:
-    """
-    Construct an OutputTarget for repo-oriented plugins.
-
-    Parameters
-    ----------
-    plugin
-        Plugin instance providing name/description metadata.
-    tables
-        Contract tables expected to be produced.
-
-    Returns
-    -------
-    OutputTarget
-        Target wired with an OutputContract for the supplied tables.
-    """
-    return OutputTarget(
-        name=plugin.plugin_name,
-        module="ingestion",
-        plugin=plugin.plugin_name,
-        contract=OutputContract(tables=tables),
-        description=plugin.plugin_description,
-    )
 
 
 def seed_numeric_table(gateway: StorageGateway, table: str, values: Sequence[float]) -> None:

@@ -30,6 +30,33 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
+def _make_test_node(name: str) -> Node:
+    """Create a minimal Hamilton Node for hook unit tests.
+
+    Notes
+    -----
+    Hamilton Node construction requires a non-None callable in recent
+    Hamilton releases. These unit tests only need a ``Node`` instance with a
+    stable name, so we construct it via ``Node.from_fn`` using a trivial
+    function.
+
+    Parameters
+    ----------
+    name
+        Node name.
+
+    Returns
+    -------
+    Node
+        Hamilton Node instance with the given name.
+    """
+
+    def _fn() -> str:
+        return ""
+
+    return Node.from_fn(_fn, name=name)
+
+
 @contextlib.contextmanager
 def _temporary_env(values: dict[str, str | None]) -> Iterator[None]:
     saved: dict[str, str | None] = {key: os.environ.get(key) for key in values}
@@ -95,7 +122,7 @@ class TestProgressBarHook:
     def test_run_before_disabled() -> None:
         """Test run_before returns None when disabled."""
         hook = ProgressBarHook(disable=True)
-        node = Node(name="test", typ=str)
+        node = _make_test_node("test")
         result = hook.pre_node_execute(node_=node)
         expect_is_none(result)
 
@@ -103,7 +130,7 @@ class TestProgressBarHook:
     def test_run_after_disabled() -> None:
         """Test run_after returns None when disabled."""
         hook = ProgressBarHook(disable=True)
-        node = Node(name="test", typ=str)
+        node = _make_test_node("test")
         result = hook.post_node_execute(node_=node, success=True, error=None)
         expect_is_none(result)
 
@@ -122,7 +149,7 @@ class TestBuildTimingHook:
     def test_records_timing() -> None:
         """Test that hook records node timing."""
         hook = BuildTimingHook()
-        node = Node(name="test_node", typ=str)
+        node = _make_test_node("test_node")
 
         # Simulate before execution
         hook.pre_node_execute(node_=node)
@@ -144,7 +171,7 @@ class TestBuildTimingHook:
         perf_values = iter([0.0, 0.1, 1.0, 1.5, 2.0, 4.0])
         hook = BuildTimingHook(clock=lambda: next(perf_values))
         for node_name in ("fast", "medium", "slow"):
-            node = Node(name=node_name, typ=str)
+            node = _make_test_node(node_name)
             hook.pre_node_execute(node_=node)
             hook.post_node_execute(node_=node, success=True, error=None)
 
@@ -159,7 +186,7 @@ class TestBuildTimingHook:
         perf_values = iter([0.0, 1.0, 10.0, 12.0, 20.0, 23.0])
         hook = BuildTimingHook(clock=lambda: next(perf_values))
         for node_name in ("a", "b", "c"):
-            node = Node(name=node_name, typ=str)
+            node = _make_test_node(node_name)
             hook.pre_node_execute(node_=node)
             hook.post_node_execute(node_=node, success=True, error=None)
 
@@ -170,7 +197,7 @@ class TestBuildTimingHook:
     def test_reset() -> None:
         """Test resetting timing records."""
         hook = BuildTimingHook()
-        node = Node(name="test", typ=str)
+        node = _make_test_node("test")
         hook.pre_node_execute(node_=node)
         hook.post_node_execute(node_=node, success=True, error=None)
         hook.reset()
@@ -192,7 +219,7 @@ class TestConditionalHook:
             condition=lambda: True,
         )
 
-        node = Node(name="test", typ=str)
+        node = _make_test_node("test")
         conditional.pre_node_execute(node_=node)
         conditional.post_node_execute(node_=node, success=True, error=None)
 
@@ -207,7 +234,7 @@ class TestConditionalHook:
             condition=lambda: False,
         )
 
-        node = Node(name="test", typ=str)
+        node = _make_test_node("test")
         conditional.pre_node_execute(node_=node)
         conditional.post_node_execute(node_=node, success=True, error=None)
 
@@ -229,7 +256,7 @@ class TestConditionalHook:
             condition=counting_condition,
         )
 
-        node = Node(name="test", typ=str)
+        node = _make_test_node("test")
         for _ in range(5):
             conditional.pre_node_execute(node_=node)
 
@@ -279,7 +306,7 @@ def test_timing_hook_logging_threshold(
     perf_values = iter([0.0, actual_duration])
     hook = BuildTimingHook(min_duration_to_log=min_duration, clock=lambda: next(perf_values))
 
-    node = Node(name="test_node", typ=str)
+    node = _make_test_node("test_node")
     hook.pre_node_execute(node_=node)
     hook.post_node_execute(node_=node, success=True, error=None)
 

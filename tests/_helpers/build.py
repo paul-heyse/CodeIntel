@@ -20,12 +20,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
 from codeintel.build.manifest import OutputManifest
-from codeintel.build.plugin import TargetPlugin
-from codeintel.build.result import TargetResult
 from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
@@ -41,7 +39,6 @@ from tests._helpers.fakes.fake_providers import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.context import TargetExecutionContext
     from codeintel.config.primitives import BuildPaths, SnapshotRef
 
 
@@ -188,50 +185,6 @@ def sample_manifest(target: str, params: ManifestParams | None = None) -> Output
 
 
 @dataclass
-class RecordingPlugin(TargetPlugin):
-    """Minimal plugin that records execution contexts."""
-
-    plugin_name: ClassVar[str] = "recording_plugin"
-    plugin_version: ClassVar[str] = "1.0.0"
-    plugin_description: ClassVar[str] = "Recording test plugin"
-    result: TargetResult = field(default_factory=TargetResult.succeeded)
-    validation_errors: tuple[str, ...] = ()
-    calls: list[TargetExecutionContext] = field(default_factory=list)
-
-    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
-        """Record context and return preconfigured result.
-
-        Parameters
-        ----------
-        ctx
-            Execution context provided by the build system.
-
-        Returns
-        -------
-        TargetResult
-            Preconfigured result for deterministic tests.
-        """
-        self.calls.append(ctx)
-        return self.result
-
-    def validate_context(self, ctx: TargetExecutionContext) -> list[str]:
-        """Return configured validation errors (if any).
-
-        Parameters
-        ----------
-        ctx
-            Context to validate.
-
-        Returns
-        -------
-        list[str]
-            Validation errors configured for this plugin.
-        """
-        _ = ctx
-        return list(self.validation_errors)
-
-
-@dataclass
 class RecordingProviders:
     """Container of fake providers with recording hooks."""
 
@@ -277,28 +230,28 @@ def _default_targets() -> tuple[OutputTarget, ...]:
     ingestion_modules = OutputTarget.from_tables(
         name="modules",
         module="ingestion",
-        plugin="repo_scan",
+        plugin="",
         tables=("core.modules",),
         options=TargetOptions(description="Repository module index"),
     )
     ast_target = OutputTarget.from_tables(
         name="ast",
         module="ingestion",
-        plugin="ast_extract",
+        plugin="",
         tables=("core.ast_nodes",),
         options=TargetOptions(dependencies=("modules",), description="AST extraction"),
     )
     goids_target = OutputTarget.from_tables(
         name="goids",
         module="graphs",
-        plugin="goid_builder",
+        plugin="",
         tables=("core.goids",),
         options=TargetOptions(dependencies=("ast",), description="GOID construction"),
     )
     metrics_target = OutputTarget.from_tables(
         name="function_metrics",
         module="analytics",
-        plugin="function_metrics",
+        plugin="",
         tables=("analytics.function_metrics",),
         options=TargetOptions(dependencies=("goids",), description="Function metrics"),
     )
@@ -307,7 +260,6 @@ def _default_targets() -> tuple[OutputTarget, ...]:
 
 __all__ = [
     "ManifestParams",
-    "RecordingPlugin",
     "RecordingProviders",
     "make_build_config",
     "make_build_paths",
