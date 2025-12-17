@@ -7,21 +7,24 @@ import time
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 
-from codeintel.serving.http.dependencies import Kernel, require_api_key
+from codeintel.serving.http.dependencies import get_kernel, require_api_key
 from codeintel.serving.http.errors import ProblemType, ServingError
 from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.http.middleware import get_correlation_id
 from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
+from codeintel.serving.semantic.kernel import SemanticQueryKernel
 
 router = APIRouter(prefix="/search", tags=["search"], dependencies=[Depends(require_api_key)])
+
+_KERNEL_DEPENDENCY = Depends(get_kernel)
 
 
 @router.post("", response_model=SearchQueryResponse)
 async def search(
     payload: SearchQueryRequest,
-    kernel: Kernel,
     background: BackgroundTasks,
     request: Request,
+    kernel: SemanticQueryKernel = _KERNEL_DEPENDENCY,
 ) -> SearchQueryResponse:
     """Search code metadata for the current serving snapshot.
 
@@ -52,6 +55,15 @@ async def search(
     """
     if not isinstance(payload, SearchQueryRequest):
         msg = "FastAPI did not provide a SearchQueryRequest model"
+        raise TypeError(msg)
+    if not isinstance(background, BackgroundTasks):
+        msg = "FastAPI did not provide a BackgroundTasks instance"
+        raise TypeError(msg)
+    if not isinstance(request, Request):
+        msg = "FastAPI did not provide a Request instance"
+        raise TypeError(msg)
+    if not isinstance(kernel, SemanticQueryKernel):
+        msg = "FastAPI did not provide a SemanticQueryKernel instance"
         raise TypeError(msg)
     correlation_id = get_correlation_id(request)
     start = time.perf_counter()

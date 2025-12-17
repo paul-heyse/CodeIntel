@@ -50,7 +50,7 @@ def list_execution_order(
 
     Examples
     --------
-    >>> runtime = build_driver(mode="generated")
+    >>> runtime = build_driver()
     >>> order = list_execution_order(runtime, ["risk_factors"])
     >>> "t__modules" in order
     True
@@ -85,7 +85,7 @@ def list_execution_targets(
 
     Examples
     --------
-    >>> runtime = build_driver(mode="generated")
+    >>> runtime = build_driver()
     >>> order = list_execution_targets(runtime, ["risk_factors"])
     >>> "modules" in order
     True
@@ -119,7 +119,7 @@ def get_dag_info(
 
     Examples
     --------
-    >>> runtime = build_driver(mode="generated")
+    >>> runtime = build_driver()
     >>> info = get_dag_info(runtime, ["risk_factors"])
     >>> "nodes" in info
     True
@@ -157,7 +157,6 @@ def get_dag_info(
     return {
         "requested": targets,
         "closure": list(closure),
-        "mode": runtime.mode,
         "nodes": nodes,
         "edges": edges,
         "node_count": len(nodes),
@@ -192,7 +191,7 @@ def export_dag_json(
 
     Examples
     --------
-    >>> runtime = build_driver(mode="generated")
+    >>> runtime = build_driver()
     >>> json_str = export_dag_json(runtime, ["risk_factors"])
     >>> import json
     >>> data = json.loads(json_str)
@@ -233,7 +232,7 @@ def export_execution_json(
 
     Examples
     --------
-    >>> runtime = build_driver(mode="generated")
+    >>> runtime = build_driver()
     >>> json_str = export_execution_json(runtime, targets=["modules"], env=env)
     >>> import json
     >>> data = json.loads(json_str)
@@ -285,7 +284,7 @@ def export_dag_mermaid(
 
     Examples
     --------
-    >>> runtime = build_driver(mode="generated")
+    >>> runtime = build_driver()
     >>> mermaid = export_dag_mermaid(runtime, ["risk_factors"])
     >>> mermaid.startswith("graph TD")
     True
@@ -335,7 +334,7 @@ def export_dag_dot(
 
     Examples
     --------
-    >>> runtime = build_driver(mode="generated")
+    >>> runtime = build_driver()
     >>> dot = export_dag_dot(runtime, ["risk_factors"])
     >>> dot.startswith("digraph G {")
     True

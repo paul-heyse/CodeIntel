@@ -1,49 +1,35 @@
-"""Hamilton Driver factory for build execution.
+"""Construct Hamilton drivers for build execution.
 
-This module provides the factory function for constructing Hamilton Driver
-instances configured for the build system.
+This module is the single composition root for Hamilton build execution. The
+core strategy is **templates + native overrides**:
 
-Design Principles
------------------
-1. HamiltonRuntime bundles the Driver with the TargetGraph for convenience.
-2. build_driver() is the single entry point for constructing runtimes.
-3. Supports three modes: "generated", "auto", and "native".
-4. Target-to-node mappings are carried in the runtime for correct lookups.
+- A template module provides fallback nodes for *all* targets.
+- Native modules override templates where explicit implementations exist.
+
+This eliminates mode switching and exclusion lists by relying on Hamilton's
+module override semantics (`driver.Builder().allow_module_overrides()`).
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from hamilton.driver import Driver
+import hamilton.driver as h_driver
 
 from codeintel.build.hamilton.naming import target_node
-from codeintel.build.hamilton.native.loader import NativeModuleLoader
-from codeintel.build.hamilton.native.registry import load_native_modules, native_target_names
-from codeintel.build.hamilton.nodes.node_factory import (
-    GenerationOptions,
-    get_generated_module,
-)
+from codeintel.build.hamilton.native.registry import load_native_modules
+from codeintel.build.hamilton.templates import get_template_module
 from codeintel.build.targets import TargetGraph
 from codeintel.build.unified_registry import get_unified_registry
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
 
     from hamilton.lifecycle.base import LifecycleAdapter
 
 log = logging.getLogger(__name__)
-
-HamiltonNodeMode = Literal["generated", "auto", "native"]
-
-# Legacy alias to keep tests that still reference "phase0" working.
-LegacyHamiltonNodeMode = Literal["generated", "auto", "native", "phase0"]
-
-
-class NativeModeError(Exception):
-    """Raised when native mode cannot satisfy requested targets."""
 
 
 @dataclass(frozen=True)
@@ -60,8 +46,6 @@ class HamiltonRuntime:
         Hamilton Driver configured with the appropriate node module.
     graph
         Target graph containing all registered targets.
-    mode
-        Node mode: "generated", "auto", or "native".
     target_to_node
         Mapping from target names to Hamilton node names.
     node_to_target
@@ -69,7 +53,7 @@ class HamiltonRuntime:
 
     Examples
     --------
-    >>> runtime = build_driver(mode="generated")
+    >>> runtime = build_driver()
     >>> node = runtime.target_to_node.get("function_metrics")
     >>> node
     't__function_metrics'
@@ -79,111 +63,49 @@ class HamiltonRuntime:
     ... )
     """
 
-    dr: Driver
+    dr: h_driver.Driver
     graph: TargetGraph
-    mode: HamiltonNodeMode = "generated"
     target_to_node: dict[str, str] = field(default_factory=dict)
     node_to_target: dict[str, str] = field(default_factory=dict)
-
-
-def _build_target_to_node_map(
-    graph: TargetGraph,
-    *,
-    mode: HamiltonNodeMode,
-) -> dict[str, str]:
-    """Build target-to-node mapping based on mode.
-
-    Parameters
-    ----------
-    graph
-        Target graph containing all registered targets.
-    mode
-        Node mode: "generated", "auto", or "native".
-
-    Returns
-    -------
-    dict[str, str]
-        Mapping from target names to Hamilton node names.
-    """
-    if mode in {"auto", "native"}:
-        # In auto/native modes, targets use canonical `t__<target>` naming
-        return {t.name: target_node(t.name) for t in graph.all_targets}
-
-    # Generated mode.
-    mod = get_generated_module()
-    mapping = getattr(mod, "TARGET_TO_NODE", None)
-    if isinstance(mapping, dict) and mapping:
-        return dict(mapping)
-
-    return {t.name: target_node(t.name) for t in graph.all_targets}
 
 
 def build_driver(
     *,
     config: dict[str, Any] | None = None,
-    mode: HamiltonNodeMode = "generated",
-    domains: set[str] | None = None,
-    strict_native: bool = False,
-    adapter: LifecycleAdapter | list[LifecycleAdapter] | None = None,
+    adapters: Sequence[LifecycleAdapter] | None = None,
 ) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.
 
-    Constructs a Hamilton Driver from node modules and returns it
-    bundled with the target graph and bidirectional mappings.
+    Constructs a Hamilton Driver using template nodes and native overrides,
+    then returns it bundled with the target graph and mappings.
 
     Parameters
     ----------
     config
         Optional configuration dict passed to the Hamilton Driver.
         Can include profile name and other settings.
-    mode
-        Node mode selection:
-        - "generated": Use dynamically generated nodes for all targets
-        - "auto": Use native modules where available, generated elsewhere
-        - "native": Use only native modules, fail if target not available
-    domains
-        For "native" mode, optionally restrict to specific domains.
-        Valid domains: analytics, ingestion, graphs, export.
-    strict_native
-        When True in "native" mode, raise if any requested target
-        does not have a native implementation.
-    adapter
-        Optional Hamilton adapter or list of adapters to attach to the Driver.
+    adapters
+        Optional Hamilton adapter (or iterable of adapters) to attach to the
+        Driver. This is the primary seam for telemetry, contract enforcement,
+        and parallel execution.
 
     Returns
     -------
     HamiltonRuntime
         Runtime containing Driver, TargetGraph, and mappings.
 
-    Raises
-    ------
-    NativeModeError
-        If mode="native" with strict_native=True and a target lacks
-        a native implementation.
-
     Notes
     -----
-    Generated nodes are created from TargetGraph metadata and include
-    all registered targets.
+    The module order is significant:
 
-    In "auto" mode, the driver composes native target modules with
-    generated wrapper nodes. Native targets are excluded from the
-    generated module to avoid name collisions.
-
-    In "native" mode, only native Hamilton modules are loaded.
-    This mode is useful for testing native implementations in isolation.
+    1. Template module is loaded first and defines a complete fallback DAG.
+    2. Native modules load afterwards and override any colliding node names.
 
     Examples
     --------
-    >>> runtime = build_driver(mode="generated")
+    >>> runtime = build_driver()
     >>> len(runtime.target_to_node) > 0
     True
-
-    >>> runtime = build_driver(mode="auto")
-    >>> # Loads native modules + generated wrappers
-
-    >>> runtime = build_driver(mode="native", domains={"analytics"})
-    >>> # Loads only native analytics modules
     """
     # Build TargetGraph from unified registry to avoid circular dependency
     # with get_target_graph() which calls build_driver() for Hamilton deps
@@ -192,89 +114,26 @@ def build_driver(
     for target in unified.get_all_targets():
         graph.register(target)
 
-    if mode == "native":
-        # Native mode: use only native Hamilton modules
-        loader = NativeModuleLoader(strict=strict_native)
-        native_mods = loader.load_for_driver(domains=domains)
+    template_mod = get_template_module()
+    native_mods = load_native_modules()
 
-        if not native_mods:
-            msg = "No native modules found"
-            if domains:
-                msg += f" for domains: {domains}"
-            raise NativeModeError(msg)
+    adapter_list = list(adapters) if adapters else []
 
-        # Get the set of targets covered by native modules
-        native_target_set = loader.get_target_names(domains=domains)
-        log.debug(
-            "Native mode: loaded %d modules covering %d targets",
-            len(native_mods),
-            len(native_target_set),
-        )
+    dr = (
+        h_driver.Builder()
+        .with_config(config or {})
+        .with_modules(template_mod, *native_mods)
+        .allow_module_overrides()
+        .with_adapters(*adapter_list)
+        .build()
+    )
 
-        if strict_native:
-            # Verify all graph targets have native implementations
-            missing = {t.name for t in graph.all_targets} - native_target_set
-            if missing:
-                msg = f"Targets without native implementation: {sorted(missing)}"
-                raise NativeModeError(msg)
-
-        dr = Driver(
-            config or {},
-            *native_mods,
-            adapter=adapter,
-        )
-
-        # Only include targets that have native implementations
-        t2n = {
-            t.name: target_node(t.name) for t in graph.all_targets if t.name in native_target_set
-        }
-        n2t = {v: k for k, v in t2n.items()}
-
-        return HamiltonRuntime(
-            dr=dr,
-            graph=graph,
-            mode=mode,
-            target_to_node=t2n,
-            node_to_target=n2t,
-        )
-
-    if mode == "auto":
-        # Auto mode: compose native + generated (with exclusions)
-        # Get native target names to exclude from generated module
-        native_names = native_target_names()
-
-        # Build generated module, but skip `t__<target>` nodes for native targets
-        # to avoid collisions with the native modules while still emitting helper
-        # nodes (d__/q__/df__/a__) for native outputs.
-        gen_options = GenerationOptions(exclude_target_nodes_for_targets=native_names)
-        generated_mod = get_generated_module(options=gen_options)
-
-        # Load native modules
-        native_mods = load_native_modules()
-
-        # Compose: generated module + native modules
-        dr = Driver(
-            config or {},
-            generated_mod,
-            *native_mods,
-            adapter=adapter,
-        )
-    else:
-        # Generated mode.
-        nodes_module = get_generated_module()
-        dr = Driver(
-            config or {},
-            nodes_module,
-            adapter=adapter,
-        )
-
-    t2n = _build_target_to_node_map(graph, mode=mode)
+    t2n = {t.name: target_node(t.name) for t in graph.all_targets}
     n2t = {v: k for k, v in t2n.items()}
 
     return HamiltonRuntime(
         dr=dr,
         graph=graph,
-        mode=mode,
         target_to_node=t2n,
         node_to_target=n2t,
     )
@@ -293,13 +152,8 @@ def _variable_to_name(variable: object) -> str:
     return str(variable)
 
 
-def list_available_nodes(*, mode: HamiltonNodeMode = "generated") -> list[str]:
+def list_available_nodes() -> list[str]:
     """List all available Hamilton node names.
-
-    Parameters
-    ----------
-    mode
-        Node mode: "generated", "auto", or "native".
 
     Returns
     -------
@@ -308,11 +162,11 @@ def list_available_nodes(*, mode: HamiltonNodeMode = "generated") -> list[str]:
 
     Examples
     --------
-    >>> nodes = list_available_nodes(mode="generated")
+    >>> nodes = list_available_nodes()
     >>> "t__modules" in nodes
     True
     """
-    runtime = build_driver(mode=mode)
+    runtime = build_driver()
     variables: Iterable[object] = runtime.dr.list_available_variables()
     return sorted(_variable_to_name(variable) for variable in variables)
 
@@ -343,7 +197,7 @@ def target_to_node_name(
     >>> target_to_node_name("unknown") is None
     True
 
-    >>> runtime = build_driver(mode="generated")
+    >>> runtime = build_driver()
     >>> target_to_node_name("modules", runtime=runtime)
     't__modules'
     """
@@ -358,9 +212,7 @@ def target_to_node_name(
 
 
 __all__ = [
-    "HamiltonNodeMode",
     "HamiltonRuntime",
-    "NativeModeError",
     "build_driver",
     "list_available_nodes",
     "target_to_node_name",

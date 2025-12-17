@@ -34,7 +34,8 @@ from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Callable
+    from collections.abc import AsyncIterator, Callable
+    from contextlib import AbstractAsyncContextManager
 
     from fastapi import Request
     from fastapi.responses import JSONResponse
@@ -90,9 +91,11 @@ def create_serving_app(
 __all__ = ["create_serving_app"]
 
 
-def _build_lifespan(db_manager: ServingDBManager) -> Callable[[FastAPI], AsyncGenerator[None]]:
+def _build_lifespan(
+    db_manager: ServingDBManager,
+) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     @asynccontextmanager
-    async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await db_manager.start()
         try:
             yield
@@ -102,12 +105,16 @@ def _build_lifespan(db_manager: ServingDBManager) -> Callable[[FastAPI], AsyncGe
     return lifespan
 
 
-def _handle_serving_error(request: Request, exc: ServingError) -> JSONResponse:
+def _handle_serving_error(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, ServingError):
+        return _handle_unexpected(request, exc)
     problem = problem_from_error(request, exc)
     return problem_response(problem, headers=exc.headers)
 
 
-def _handle_request_validation(request: Request, exc: RequestValidationError) -> JSONResponse:
+def _handle_request_validation(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, RequestValidationError):
+        return _handle_unexpected(request, exc)
     problem = ProblemDetail(
         type=str(ProblemType.VALIDATION_ERROR),
         title="Validation Error",

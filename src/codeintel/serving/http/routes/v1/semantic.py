@@ -7,10 +7,11 @@ import time
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 
-from codeintel.serving.http.dependencies import Kernel, require_api_key
+from codeintel.serving.http.dependencies import get_kernel, require_api_key
 from codeintel.serving.http.errors import ProblemType, ServingError
 from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.http.middleware import get_correlation_id
+from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.semantic.models import (
     SemanticCatalogResponse,
     SemanticExplainResponse,
@@ -21,12 +22,14 @@ from codeintel.serving.semantic.models import (
 
 router = APIRouter(prefix="/semantic", tags=["semantic"], dependencies=[Depends(require_api_key)])
 
+_KERNEL_DEPENDENCY = Depends(get_kernel)
+
 
 @router.get("/views", response_model=SemanticCatalogResponse)
 async def list_views(
-    kernel: Kernel,
     background: BackgroundTasks,
     request: Request,
+    kernel: SemanticQueryKernel = _KERNEL_DEPENDENCY,
 ) -> SemanticCatalogResponse:
     """List available semantic views.
 
@@ -43,7 +46,21 @@ async def list_views(
     -------
     SemanticCatalogResponse
         Catalog response payload.
+
+    Raises
+    ------
+    TypeError
+        When FastAPI fails to inject required dependencies.
     """
+    if not isinstance(background, BackgroundTasks):
+        msg = "FastAPI did not provide a BackgroundTasks instance"
+        raise TypeError(msg)
+    if not isinstance(request, Request):
+        msg = "FastAPI did not provide a Request instance"
+        raise TypeError(msg)
+    if not isinstance(kernel, SemanticQueryKernel):
+        msg = "FastAPI did not provide a SemanticQueryKernel instance"
+        raise TypeError(msg)
     correlation_id = get_correlation_id(request)
     start = time.perf_counter()
     payload = await run_in_threadpool(kernel.catalog)
@@ -67,9 +84,9 @@ async def list_views(
 @router.get("/views/{view_id}", response_model=SemanticViewDescriptionResponse)
 async def describe_view(
     view_id: str,
-    kernel: Kernel,
     background: BackgroundTasks,
     request: Request,
+    kernel: SemanticQueryKernel = _KERNEL_DEPENDENCY,
 ) -> SemanticViewDescriptionResponse:
     """Describe a semantic view.
 
@@ -93,7 +110,18 @@ async def describe_view(
     ------
     ServingError
         When the view ID does not exist.
+    TypeError
+        When FastAPI fails to inject required dependencies.
     """
+    if not isinstance(background, BackgroundTasks):
+        msg = "FastAPI did not provide a BackgroundTasks instance"
+        raise TypeError(msg)
+    if not isinstance(request, Request):
+        msg = "FastAPI did not provide a Request instance"
+        raise TypeError(msg)
+    if not isinstance(kernel, SemanticQueryKernel):
+        msg = "FastAPI did not provide a SemanticQueryKernel instance"
+        raise TypeError(msg)
     correlation_id = get_correlation_id(request)
     start = time.perf_counter()
     try:
@@ -125,9 +153,9 @@ async def describe_view(
 @router.post("/query", response_model=SemanticQueryResponse)
 async def query_view(
     payload: SemanticQueryRequest,
-    kernel: Kernel,
     background: BackgroundTasks,
     request: Request,
+    kernel: SemanticQueryKernel = _KERNEL_DEPENDENCY,
 ) -> SemanticQueryResponse:
     """Execute a semantic query against a view.
 
@@ -158,6 +186,15 @@ async def query_view(
     """
     if not isinstance(payload, SemanticQueryRequest):
         msg = "FastAPI did not provide a SemanticQueryRequest model"
+        raise TypeError(msg)
+    if not isinstance(background, BackgroundTasks):
+        msg = "FastAPI did not provide a BackgroundTasks instance"
+        raise TypeError(msg)
+    if not isinstance(request, Request):
+        msg = "FastAPI did not provide a Request instance"
+        raise TypeError(msg)
+    if not isinstance(kernel, SemanticQueryKernel):
+        msg = "FastAPI did not provide a SemanticQueryKernel instance"
         raise TypeError(msg)
     correlation_id = get_correlation_id(request)
     start = time.perf_counter()
@@ -202,9 +239,9 @@ async def query_view(
 @router.post("/explain", response_model=SemanticExplainResponse)
 async def explain_view(
     payload: SemanticQueryRequest,
-    kernel: Kernel,
     background: BackgroundTasks,
     request: Request,
+    kernel: SemanticQueryKernel = _KERNEL_DEPENDENCY,
 ) -> SemanticExplainResponse:
     """Compile a semantic query and return SQL + plan text.
 
@@ -233,6 +270,15 @@ async def explain_view(
     """
     if not isinstance(payload, SemanticQueryRequest):
         msg = "FastAPI did not provide a SemanticQueryRequest model"
+        raise TypeError(msg)
+    if not isinstance(background, BackgroundTasks):
+        msg = "FastAPI did not provide a BackgroundTasks instance"
+        raise TypeError(msg)
+    if not isinstance(request, Request):
+        msg = "FastAPI did not provide a Request instance"
+        raise TypeError(msg)
+    if not isinstance(kernel, SemanticQueryKernel):
+        msg = "FastAPI did not provide a SemanticQueryKernel instance"
         raise TypeError(msg)
     correlation_id = get_correlation_id(request)
     start = time.perf_counter()

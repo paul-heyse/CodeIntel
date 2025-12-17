@@ -4,7 +4,9 @@
 
 > **Target Application**: Single-box, single-user personal application serving at most 3 external LLM consumers over MCP (Claude, ChatGPT, Cursor, etc.).
 
-> **Scope**: 20 enhancement items organized by priority (High/Medium/Low) with detailed implementation specifications.
+> **Scope**: 22 enhancement items organized by priority (Critical/High/Medium/Low) with detailed implementation specifications.
+
+> **Revision Note**: This plan incorporates expert feedback from `FastMCP_implementation_comments.md` validating architectural decisions and adding critical items for runtime normalization, response envelopes, query limiting, and large-data handling.
 
 ---
 
@@ -13,13 +15,14 @@
 1. [Executive Summary](#executive-summary)
 2. [Current State Analysis](#current-state-analysis)
 3. [Enhancement Categories](#enhancement-categories)
-4. [High-Priority Enhancements](#high-priority-enhancements)
-5. [Medium-Priority Enhancements](#medium-priority-enhancements)
-6. [Low-Priority Enhancements](#low-priority-enhancements)
-7. [Implementation Phases](#implementation-phases)
-8. [File Change Matrix](#file-change-matrix)
-9. [Testing Strategy](#testing-strategy)
-10. [Rollout Plan](#rollout-plan)
+4. [Critical-Priority Enhancements](#critical-priority-enhancements)
+5. [High-Priority Enhancements](#high-priority-enhancements)
+6. [Medium-Priority Enhancements](#medium-priority-enhancements)
+7. [Low-Priority Enhancements](#low-priority-enhancements)
+8. [Implementation Phases](#implementation-phases)
+9. [File Change Matrix](#file-change-matrix)
+10. [Testing Strategy](#testing-strategy)
+11. [Rollout Plan](#rollout-plan)
 
 ---
 
@@ -27,26 +30,30 @@
 
 ### Goals
 
-1. **Rich LLM Orchestration**: Leverage FastMCP's Context API for progress reporting, structured logging, and LLM-assisted data summarization
-2. **Optimal Client Integration**: Add MCP annotations so Claude/ChatGPT can skip confirmation prompts for read-only operations
-3. **Production Hardening**: Configure Uvicorn for performance, security, and reliability
-4. **Observability Parity**: Ensure MCP tools have the same metrics/logging as HTTP routes
-5. **Extensibility**: Structure the MCP layer for future growth with composition and modularity patterns
+1. **Runtime Normalization**: Adopt gofastmcp 2.x as the canonical MCP framework for advanced features
+2. **Rich LLM Orchestration**: Leverage FastMCP's Context API for progress reporting, structured logging, and LLM-assisted data summarization
+3. **Optimal Client Integration**: Add MCP annotations so Claude/ChatGPT can skip confirmation prompts for read-only operations
+4. **Production Hardening**: Configure Uvicorn for performance, security, and reliability with query limiting
+5. **Observability Parity**: Ensure MCP tools have the same metrics/logging as HTTP routes with consistent response envelopes
+6. **Large Data Handling**: Use MCP Resources for large dataset delivery instead of JSON blobs
+7. **Extensibility**: Structure the MCP layer for future growth with composition and modularity patterns
 
 ### Impact Summary
 
 | Priority | Count | Key Benefits |
 |----------|-------|--------------|
-| High | 5 | Core UX improvements, security, responsiveness |
-| Medium | 9 | Production readiness, data handling, observability |
+| Critical | 1 | Runtime normalization, feature availability |
+| High | 7 | Core UX improvements, security, responsiveness, data handling |
+| Medium | 8 | Production readiness, observability, feature flags |
 | Low | 6 | Modularity, advanced patterns, future-proofing |
 
 ### Estimated Effort
 
-- **High Priority**: 3-4 days
-- **Medium Priority**: 4-5 days
+- **Critical Priority**: 1 day
+- **High Priority**: 4-5 days
+- **Medium Priority**: 3-4 days
 - **Low Priority**: 2-3 days
-- **Total**: ~10-12 days
+- **Total**: ~11-14 days
 
 ---
 
@@ -58,9 +65,11 @@
 
 | Component | Status | Gaps |
 |-----------|--------|------|
-| `app.py` | ✅ Functional | No Context usage, no annotations, sync-only |
+| `app.py` | ✅ Functional | **Uses MCP SDK FastMCP, not gofastmcp 2.x**; No Context usage, no annotations, sync-only |
 | `server.py` | ✅ Functional | Basic lifespan, no auth integration |
 | `__main__.py` | ✅ Functional | Minimal entry point |
+
+**Critical Issue Identified**: Current code imports from `mcp.server.fastmcp` (MCP SDK flavor) while plan references gofastmcp 2.x features (tool annotations, `http_app()`, `EventStore`, `ResourceContent`). These are **incompatible ecosystems**.
 
 **Current Tools** (6 total):
 - `semantic_catalog` - List views
@@ -75,7 +84,10 @@
 - No MCP Annotations (readOnlyHint, idempotentHint)
 - No MCP Resources for large data delivery
 - No structured return types (Pydantic models)
+- No response meta envelope (snapshot info, version, truncation)
 - No error masking or ToolError usage
+- No query concurrency limiter
+- No EventStore for SSE resumability
 - No tags for tool organization
 - No health check on MCP endpoint
 
@@ -91,15 +103,18 @@
 | Concurrency Limits | None | No resource protection |
 | Timeouts | Default | No keep-alive tuning |
 | Security Headers | None | Server header exposed |
+| Proxy Headers | None | No forwarded-IP policy |
+| Query Limiter | None | Heavy queries can OOM |
 
 ### Integration Points
 
 | System | Integration Status |
 |--------|-------------------|
 | HTTP Routes | ✅ Full (metrics, correlation ID, RFC 9457) |
-| MCP Tools | ⚠️ Basic (no metrics, no correlation ID) |
-| Settings | ⚠️ Partial (missing Uvicorn settings) |
+| MCP Tools | ⚠️ Basic (no metrics, no correlation ID, no response envelope) |
+| Settings | ⚠️ Partial (missing Uvicorn settings, MCP settings) |
 | Storage Gateway | ✅ Full (via SemanticQueryKernel) |
+| Auth | ⚠️ Partial (HTTP has API key, MCP has auth_token but no enforcement) |
 
 ---
 
@@ -119,6 +134,125 @@ Items that improve code organization and future extensibility.
 
 ---
 
+## Critical-Priority Enhancements
+
+### C0: Normalize FastMCP Runtime to gofastmcp 2.x
+
+**Category**: D - Architecture & Extensibility
+
+**Problem**: Current code imports `FastMCP` from `mcp.server.fastmcp` (MCP SDK flavor) while the plan and advanced feature guide reference gofastmcp 2.x features. These are incompatible:
+
+| Feature | MCP SDK FastMCP | gofastmcp 2.x |
+|---------|-----------------|---------------|
+| Tool annotations | ❌ Limited | ✅ Full (readOnlyHint, etc.) |
+| `http_app()` method | ❌ No | ✅ Yes |
+| `EventStore` for SSE | ❌ No | ✅ Yes (v2.14.0+) |
+| `ResourceContent` | ❌ No | ✅ Yes (v2.14.1+) |
+| Tool meta parameter | ❌ Limited | ✅ Full |
+
+**Solution**: 
+1. Update imports to use gofastmcp: `from fastmcp import FastMCP`
+2. Pin dependency: `fastmcp>=2.14.1,<3`
+3. Create import shim for feature flags
+4. Update all MCP code to use gofastmcp APIs
+
+**Files to Modify**:
+
+| File | Changes |
+|------|---------|
+| `pyproject.toml` | Pin `fastmcp>=2.14.1,<3`, evaluate `mcp[cli]` need |
+| `src/codeintel/serving/mcp/_compat.py` | **New**: Import shim with feature flags |
+| `src/codeintel/serving/mcp/app.py` | Change imports, update APIs |
+| `src/codeintel/serving/mcp/server.py` | Change imports, update APIs |
+| `src/codeintel/serving/http/app.py` | Update MCP mounting to use `http_app()` |
+
+**Detailed Implementation**:
+
+```python
+# src/codeintel/serving/mcp/_compat.py
+
+"""FastMCP import shim and feature flags.
+
+This module provides a single import surface for FastMCP, ensuring consistent
+usage across the codebase and enabling feature detection.
+"""
+
+from __future__ import annotations
+
+import logging
+
+# Canonical import from gofastmcp 2.x
+from fastmcp import FastMCP, Context
+from fastmcp.exceptions import ToolError
+from fastmcp.resources import ResourceContent
+
+LOG = logging.getLogger(__name__)
+
+# Feature detection
+try:
+    from fastmcp.server.event_store import EventStore
+    HAS_EVENT_STORE = True
+except ImportError:
+    EventStore = None  # type: ignore[assignment,misc]
+    HAS_EVENT_STORE = False
+    LOG.warning("EventStore not available - SSE resumability disabled")
+
+__all__ = [
+    "Context",
+    "EventStore",
+    "FastMCP",
+    "HAS_EVENT_STORE",
+    "ResourceContent",
+    "ToolError",
+]
+```
+
+```python
+# src/codeintel/serving/mcp/app.py - Updated imports
+
+from codeintel.serving.mcp._compat import (
+    Context,
+    FastMCP,
+    ToolError,
+)
+```
+
+```python
+# src/codeintel/serving/http/app.py - Updated MCP mounting
+
+def _maybe_mount_mcp(
+    app: FastAPI,
+    *,
+    kernel: SemanticQueryKernel,
+    settings: ServingSettings,
+    enabled: bool,
+) -> None:
+    """Mount MCP server under /mcp with explicit path contract.
+    
+    Mount Contract:
+    - FastAPI mounts at: /mcp
+    - MCP ASGI app path: /
+    - Effective MCP endpoint: /mcp (NOT /mcp/mcp)
+    """
+    if not enabled:
+        return
+
+    mcp = build_mcp_app(kernel=kernel, settings=settings)
+    
+    # gofastmcp 2.x uses http_app() instead of streamable_http_app()
+    # path="/" ensures no double-prefixing when mounted at /mcp
+    mcp_asgi = mcp.http_app(path="/")
+    app.mount("/mcp", mcp_asgi)
+```
+
+**Testing Requirements**:
+- Verify imports work with gofastmcp 2.x
+- Test MCP tools remain functional
+- Test mount path contract (verify `/mcp` works, `/mcp/mcp` returns 404)
+- Test feature flag detection
+
+---
+
 ## High-Priority Enhancements
 
 ### H1: MCP Context Access for Rich Tool Orchestration
@@ -133,6 +267,8 @@ Items that improve code organization and future extensibility.
 - Resource reading via `ctx.read_resource()`
 - LLM sampling via `ctx.sample()` for data summarization
 
+**Important**: Context must be **keyword-only** (after `*`) to avoid Python syntax errors when placed after defaulted parameters.
+
 **Files to Modify**:
 
 | File | Changes |
@@ -145,7 +281,7 @@ Items that improve code organization and future extensibility.
 ```python
 # src/codeintel/serving/mcp/app.py
 
-from fastmcp import Context
+from codeintel.serving.mcp._compat import Context, FastMCP
 
 @mcp.tool()
 async def semantic_query(
@@ -154,6 +290,7 @@ async def semantic_query(
     select: list[str] | None = None,
     order_by: list[str] | None = None,
     pagination: dict[str, int] | None = None,
+    *,  # <-- KEYWORD-ONLY MARKER (critical for valid Python)
     ctx: Context,
 ) -> dict[str, object]:
     """Query a semantic view with structured filters.
@@ -196,7 +333,7 @@ async def semantic_query(
     await ctx.report_progress(80, 100)
 
     # Large result summarization via LLM sampling
-    if len(result.rows) > 500 and settings.mcp_enable_sampling:
+    if len(result.rows) > settings.mcp_sample_threshold and settings.mcp_enable_sampling:
         sample_rows = result.rows[:5]
         await ctx.warning(f"Large result set ({len(result.rows)} rows) - generating summary")
         summary_response = await ctx.sample(
@@ -210,6 +347,34 @@ async def semantic_query(
 
     await ctx.report_progress(100, 100)
     return result.model_dump(mode="json")
+```
+
+**Standard Signature Pattern** (use for all tools):
+
+```python
+# Pattern A: Tool with required + optional params
+@mcp.tool()
+async def tool_name(
+    required_param: str,
+    optional_param: list[str] | None = None,
+    *,  # keyword-only marker
+    ctx: Context,
+) -> ReturnType:
+    ...
+
+# Pattern B: Tool with only optional params
+@mcp.tool()
+async def tool_name(
+    optional_param: str | None = None,
+    *,
+    ctx: Context,
+) -> ReturnType:
+    ...
+
+# Pattern C: Tool with no params (still needs ctx)
+@mcp.tool()
+async def tool_name(*, ctx: Context) -> ReturnType:
+    ...
 ```
 
 **Settings Additions**:
@@ -242,6 +407,7 @@ class ServingSettings:
 - Integration test with mock Context
 - Test progress reporting sequence
 - Test LLM sampling threshold logic
+- Verify keyword-only ctx doesn't break tool schema generation
 
 ---
 
@@ -279,7 +445,7 @@ _READ_ONLY_LOCAL_ANNOTATIONS = {
     description="List available semantic views in the CodeIntel database",
     annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
 )
-async def semantic_catalog(ctx: Context) -> dict[str, object]:
+async def semantic_catalog(*, ctx: Context) -> dict[str, object]:
     ...
 
 @mcp.tool(
@@ -287,7 +453,7 @@ async def semantic_catalog(ctx: Context) -> dict[str, object]:
     description="Describe a semantic view's schema and metadata",
     annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
 )
-async def semantic_describe(view_id: str, ctx: Context) -> dict[str, object]:
+async def semantic_describe(view_id: str, *, ctx: Context) -> dict[str, object]:
     ...
 
 @mcp.tool(
@@ -295,7 +461,7 @@ async def semantic_describe(view_id: str, ctx: Context) -> dict[str, object]:
     description="Query a semantic view with structured filters",
     annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
 )
-async def semantic_query(..., ctx: Context) -> dict[str, object]:
+async def semantic_query(..., *, ctx: Context) -> dict[str, object]:
     ...
 
 @mcp.tool(
@@ -303,7 +469,7 @@ async def semantic_query(..., ctx: Context) -> dict[str, object]:
     description="Return compiled SQL and DuckDB plan for a semantic query",
     annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
 )
-async def semantic_explain(..., ctx: Context) -> dict[str, object]:
+async def semantic_explain(..., *, ctx: Context) -> dict[str, object]:
     ...
 
 @mcp.tool(
@@ -311,7 +477,7 @@ async def semantic_explain(..., ctx: Context) -> dict[str, object]:
     description="Get serving layer metadata including snapshot info",
     annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
 )
-async def serving_meta(ctx: Context) -> dict[str, object]:
+async def serving_meta(*, ctx: Context) -> dict[str, object]:
     ...
 
 @mcp.tool(
@@ -319,7 +485,7 @@ async def serving_meta(ctx: Context) -> dict[str, object]:
     description="Search code metadata using BM25 full-text search",
     annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
 )
-async def code_search(..., ctx: Context) -> dict[str, object]:
+async def code_search(..., *, ctx: Context) -> dict[str, object]:
     ...
 ```
 
@@ -335,40 +501,186 @@ async def code_search(..., ctx: Context) -> dict[str, object]:
 
 ---
 
-### H3: Async-First Tool Implementation
+### H3: Standard Response Meta Envelope
 
 **Category**: A - MCP Tool Enhancements
 
-**Problem**: Current tools are synchronous, blocking the event loop during CPU-bound DuckDB queries. This reduces responsiveness when serving multiple LLM clients.
+**Problem**: Tool responses lack context for agentic workflows. LLM agents doing iterative analysis cannot determine:
+- What snapshot/version the data came from
+- Whether results are truncated
+- Query timing information
 
-**Solution**: Convert all tools to `async def` with explicit thread offloading via `anyio.to_thread.run_sync()` for kernel methods.
+This leads to hallucinated conclusions when data changes between calls.
 
-**Files to Modify**:
+**Solution**: Wrap every tool response in a standard `McpEnvelope` with consistent metadata.
+
+**Files to Create/Modify**:
 
 | File | Changes |
 |------|---------|
-| `src/codeintel/serving/mcp/app.py` | Convert all 6 tools to async, add anyio offloading |
+| `src/codeintel/serving/mcp/models.py` | **New**: Define McpEnvelope, McpResponseMeta, McpSnapshotMeta |
+| `src/codeintel/serving/mcp/response.py` | **New**: Helper function to build envelopes |
+| `src/codeintel/serving/mcp/app.py` | Wrap all tool returns in McpEnvelope |
 
 **Detailed Implementation**:
 
 ```python
-# src/codeintel/serving/mcp/app.py
+# src/codeintel/serving/mcp/models.py
 
-import anyio
+"""Pydantic models for MCP tool responses with standard envelope."""
 
-@mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-async def semantic_catalog(ctx: Context) -> dict[str, object]:
-    """List available semantic views in the CodeIntel database."""
-    await ctx.info("Fetching semantic view catalog")
-    result = await anyio.to_thread.run_sync(kernel.catalog)
-    return result
+from __future__ import annotations
 
-@mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-async def semantic_describe(view_id: str, ctx: Context) -> dict[str, object]:
-    """Describe a semantic view's schema and metadata."""
-    await ctx.info(f"Describing view: {view_id}")
-    result = await anyio.to_thread.run_sync(kernel.describe, view_id)
-    return result
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class McpSnapshotMeta(BaseModel):
+    """Snapshot identification for provenance tracking."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repo: str
+    commit: str
+    run_id: str
+    published_at: str
+    semantic_layer_version: str
+
+
+class McpResponseMeta(BaseModel):
+    """Standard response metadata for all MCP tools."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot: McpSnapshotMeta
+    truncated: bool = False
+    query_ms: int | None = None
+    row_count: int | None = None
+
+
+class McpEnvelope(BaseModel):
+    """Standard envelope for all MCP tool responses.
+    
+    Every MCP tool should return data wrapped in this envelope so LLM agents
+    can track provenance and detect data changes between calls.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    meta: McpResponseMeta
+    data: dict[str, object]
+
+
+# Additional response models for specific tools
+class ViewSummary(BaseModel):
+    """Compact view info for catalog listing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    table_key: str
+    entity: str
+    grain: str
+    description: str
+    column_count: int
+
+
+class SearchResultItem(BaseModel):
+    """Single search result."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    name: str
+    module: str | None
+    rel_path: str | None
+    ref_goid_h128: str | None
+    score: float | None
+
+
+__all__ = [
+    "McpEnvelope",
+    "McpResponseMeta",
+    "McpSnapshotMeta",
+    "SearchResultItem",
+    "ViewSummary",
+]
+```
+
+```python
+# src/codeintel/serving/mcp/response.py
+
+"""Helper functions for building MCP response envelopes."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from codeintel.serving.mcp.models import (
+    McpEnvelope,
+    McpResponseMeta,
+    McpSnapshotMeta,
+)
+
+if TYPE_CHECKING:
+    from codeintel.serving.semantic.kernel import SemanticQueryKernel
+
+
+def build_envelope(
+    kernel: SemanticQueryKernel,
+    data: dict[str, object],
+    *,
+    truncated: bool = False,
+    query_ms: int | None = None,
+    row_count: int | None = None,
+) -> McpEnvelope:
+    """Build a standard MCP response envelope with snapshot metadata.
+
+    Parameters
+    ----------
+    kernel
+        Semantic query kernel for snapshot info access.
+    data
+        Tool-specific response data.
+    truncated
+        Whether results were truncated.
+    query_ms
+        Query execution time in milliseconds.
+    row_count
+        Number of rows in response.
+
+    Returns
+    -------
+    McpEnvelope
+        Wrapped response with metadata.
+    """
+    pointer = kernel.db.current_pointer()
+    
+    snapshot_meta = McpSnapshotMeta(
+        repo=pointer.repo,
+        commit=pointer.commit,
+        run_id=pointer.run_id,
+        published_at=pointer.published_at,
+        semantic_layer_version=getattr(pointer, "semantic_layer_version", "unknown"),
+    )
+    
+    response_meta = McpResponseMeta(
+        snapshot=snapshot_meta,
+        truncated=truncated,
+        query_ms=query_ms,
+        row_count=row_count,
+    )
+    
+    return McpEnvelope(meta=response_meta, data=data)
+
+
+__all__ = ["build_envelope"]
+```
+
+```python
+# src/codeintel/serving/mcp/app.py - Updated tool with envelope
+
+import time
+from codeintel.serving.mcp.response import build_envelope
 
 @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
 async def semantic_query(
@@ -377,92 +689,642 @@ async def semantic_query(
     select: list[str] | None = None,
     order_by: list[str] | None = None,
     pagination: dict[str, int] | None = None,
+    *,
     ctx: Context,
 ) -> dict[str, object]:
     """Query a semantic view with structured filters."""
+    start = time.perf_counter()
     await ctx.info(f"Querying view: {view_id}")
-    await ctx.report_progress(10, 100)
-
-    page = pagination or {}
-    request = SemanticQueryRequest(
-        view_id=view_id,
-        select=select,
-        filters=[FilterSpec.model_validate(f) for f in (filters or [])],
-        order_by=order_by or [],
-        limit=page.get("limit", 200),
-        offset=page.get("offset", 0),
-    )
-
-    await ctx.report_progress(20, 100)
+    
+    # ... build request and execute query ...
     result = await anyio.to_thread.run_sync(kernel.query, request)
-    await ctx.report_progress(100, 100)
-
-    return result.model_dump(mode="json")
-
-@mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-async def semantic_explain(
-    view_id: str,
-    filters: list[dict[str, object]] | None = None,
-    select: list[str] | None = None,
-    order_by: list[str] | None = None,
-    pagination: dict[str, int] | None = None,
-    ctx: Context,
-) -> dict[str, object]:
-    """Return compiled SQL and DuckDB plan for a semantic query."""
-    await ctx.info(f"Explaining query for view: {view_id}")
-
-    page = pagination or {}
-    request = SemanticQueryRequest(
-        view_id=view_id,
-        select=select,
-        filters=[FilterSpec.model_validate(f) for f in (filters or [])],
-        order_by=order_by or [],
-        limit=page.get("limit", 200),
-        offset=page.get("offset", 0),
-    )
-
-    result = await anyio.to_thread.run_sync(kernel.explain, request)
-    return result.model_dump(mode="json")
-
-@mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-async def serving_meta(ctx: Context) -> dict[str, object]:
-    """Get serving layer metadata."""
-    await ctx.info("Fetching serving metadata")
-    return await anyio.to_thread.run_sync(kernel.meta)
-
-@mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-async def code_search(
-    query: str,
-    kinds: list[str] | None = None,
-    limit: int = 20,
-    offset: int = 0,
-    ctx: Context,
-) -> dict[str, object]:
-    """Search code metadata using the serving snapshot search index."""
-    await ctx.info(f"Searching: {query}")
-
-    request = SearchQueryRequest(
-        query=query,
-        kinds=kinds,
-        limit=limit,
-        offset=offset,
-    )
-
-    result = await anyio.to_thread.run_sync(kernel.search, request)
-    return result.model_dump(mode="json")
+    
+    query_ms = int((time.perf_counter() - start) * 1000)
+    
+    # Wrap in envelope with metadata
+    return build_envelope(
+        kernel,
+        result.model_dump(mode="json"),
+        truncated=result.truncated,
+        query_ms=query_ms,
+        row_count=len(result.rows),
+    ).model_dump(mode="json")
 ```
 
-**Dependencies**:
-- `anyio` (already in project dependencies)
-
 **Testing Requirements**:
-- Verify tools remain functional after async conversion
-- Test concurrent tool invocation
-- Measure latency improvement under load
+- Verify envelope structure in all tool responses
+- Test snapshot metadata accuracy
+- Verify timing information is captured
+- Test truncation flag propagation
 
 ---
 
-### H4: Error Masking and ToolError for Security
+### H4: Query Limiter for Concurrency Control
+
+**Category**: B - Uvicorn & Deployment
+
+**Problem**: With 3 LLM consumers, heavy DuckDB queries can run simultaneously, causing:
+- Memory blowout from multiple large result sets
+- Query serialization at DuckDB level (single connection isn't truly parallel)
+- Degraded response times for all clients
+
+**Solution**: Add a server-side semaphore limiting concurrent heavy query execution, independent of HTTP concurrency.
+
+**Files to Create/Modify**:
+
+| File | Changes |
+|------|---------|
+| `src/codeintel/serving/mcp/runtime.py` | **New**: QueryLimiter class |
+| `src/codeintel/serving/settings.py` | Add `mcp_max_concurrent_queries` setting |
+| `src/codeintel/serving/mcp/app.py` | Route heavy tools through limiter |
+
+**Detailed Implementation**:
+
+```python
+# src/codeintel/serving/mcp/runtime.py
+
+"""Runtime utilities for MCP server including concurrency control."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TypeVar
+
+import anyio
+
+T = TypeVar("T")
+
+
+class QueryLimiter:
+    """Semaphore-based limiter for concurrent query execution.
+    
+    Prevents memory blowout when multiple LLM consumers trigger heavy queries
+    simultaneously. Independent of HTTP connection limits.
+    
+    Parameters
+    ----------
+    max_concurrent
+        Maximum number of concurrent heavy operations allowed.
+    """
+
+    def __init__(self, max_concurrent: int) -> None:
+        self._sem = anyio.Semaphore(max_concurrent)
+        self._max = max_concurrent
+
+    @property
+    def max_concurrent(self) -> int:
+        """Return the maximum concurrent operations allowed."""
+        return self._max
+
+    async def run(self, fn: Callable[..., T], *args: object, **kwargs: object) -> T:
+        """Execute a function with concurrency limiting.
+
+        Parameters
+        ----------
+        fn
+            Synchronous function to execute (will be offloaded to thread).
+        *args
+            Positional arguments for the function.
+        **kwargs
+            Keyword arguments for the function.
+
+        Returns
+        -------
+        T
+            Function result.
+        """
+        async with self._sem:
+            return await anyio.to_thread.run_sync(lambda: fn(*args, **kwargs))
+
+    async def run_async(self, coro: Callable[..., T], *args: object, **kwargs: object) -> T:
+        """Execute an async function with concurrency limiting.
+
+        Parameters
+        ----------
+        coro
+            Async function to execute.
+        *args
+            Positional arguments for the function.
+        **kwargs
+            Keyword arguments for the function.
+
+        Returns
+        -------
+        T
+            Function result.
+        """
+        async with self._sem:
+            return await coro(*args, **kwargs)
+
+
+__all__ = ["QueryLimiter"]
+```
+
+```python
+# src/codeintel/serving/settings.py - Add limiter setting
+
+@dataclass(frozen=True)
+class ServingSettings:
+    # ... existing fields ...
+
+    # Query Concurrency Control
+    mcp_max_concurrent_queries: int = 2  # Max concurrent heavy queries
+
+    @classmethod
+    def from_env(cls) -> ServingSettings:
+        return cls(
+            # ... existing fields ...
+            mcp_max_concurrent_queries=int(
+                os.environ.get("CODEINTEL_MCP_MAX_CONCURRENT_QUERIES", "2")
+            ),
+        )
+```
+
+```python
+# src/codeintel/serving/mcp/app.py - Use limiter
+
+from codeintel.serving.mcp.runtime import QueryLimiter
+
+def build_mcp_app(
+    *,
+    kernel: SemanticKernel,
+    settings: ServingSettings,
+    ...
+) -> FastMCP:
+    # Initialize query limiter
+    limiter = QueryLimiter(max_concurrent=settings.mcp_max_concurrent_queries)
+
+    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
+    async def semantic_query(..., *, ctx: Context) -> dict[str, object]:
+        """Query a semantic view with structured filters."""
+        await ctx.info(f"Querying view: {view_id}")
+        
+        # ... build request ...
+        
+        # Execute query through limiter (prevents concurrent heavy queries)
+        result = await limiter.run(kernel.query, request)
+        
+        return build_envelope(kernel, result.model_dump(mode="json"), ...).model_dump()
+
+    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
+    async def code_search(..., *, ctx: Context) -> dict[str, object]:
+        """Search code metadata."""
+        await ctx.info(f"Searching: {query}")
+        
+        # ... build request ...
+        
+        # Search also goes through limiter
+        result = await limiter.run(kernel.search, request)
+        
+        return build_envelope(kernel, result.model_dump(mode="json"), ...).model_dump()
+```
+
+**DuckDB Concurrency Constraints** (document in code comments):
+
+```python
+# DuckDB Concurrency Notes:
+# 1. DuckDB connections are NOT thread-safe - each thread needs its own connection
+#    (Our ReadPoolGateway handles this via per-thread pooling)
+# 2. Read-only mode is REQUIRED for multi-process access to same DB file
+#    (Our serving layer uses read_only=True)
+# 3. Even with per-thread connections, parallel heavy queries can thrash memory
+#    (QueryLimiter caps concurrent queries independent of connection count)
+```
+
+**Recommended Presets**:
+
+| Preset | Workers | Max Concurrent Queries | Notes |
+|--------|---------|------------------------|-------|
+| Default | 1 | 2 | Single-process, sufficient for personal use |
+| Snappy | 2 | 2 | Total 4 concurrent queries max across workers |
+
+**Testing Requirements**:
+- Test limiter blocks when at capacity
+- Test queued requests complete after capacity frees
+- Load test with concurrent tool calls
+- Verify memory usage stays bounded
+
+---
+
+### H5: MCP Resources for Large Dataset Delivery
+
+**Category**: A - MCP Tool Enhancements
+
+**Problem**: Current export approach materializes all rows in Python memory:
+
+```python
+rows = list(kernel.export_rows(payload))  # OOM trap!
+table = pa.Table.from_pylist(rows)  # then convert
+```
+
+This will fail for large semantic views.
+
+**Solution**: Use MCP Resources for large data delivery:
+- Tools return small structured summaries + resource URIs
+- Resources serve the actual data (Parquet/Arrow/NDJSON)
+- DuckDB writes directly to Parquet without Python materialization
+
+**Files to Create/Modify**:
+
+| File | Changes |
+|------|---------|
+| `src/codeintel/serving/mcp/resource_store.py` | **New**: Artifact storage for exports |
+| `src/codeintel/serving/mcp/resources.py` | **New**: MCP resource handlers |
+| `src/codeintel/serving/mcp/app.py` | Add export tool returning resource URI |
+
+**Detailed Implementation**:
+
+```python
+# src/codeintel/serving/mcp/resource_store.py
+
+"""On-disk artifact store for MCP resource exports."""
+
+from __future__ import annotations
+
+import json
+import secrets
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
+
+
+@dataclass(frozen=True)
+class StoredArtifact:
+    """Metadata for a stored export artifact."""
+
+    path: Path
+    mime_type: str
+    row_count: int
+    size_bytes: int
+
+
+class ResourceStore:
+    """File-backed store for export artifacts.
+    
+    Artifacts are stored with random tokens and can be retrieved by token.
+    Designed for temporary exports that MCP clients fetch after tool calls.
+    
+    Parameters
+    ----------
+    root
+        Root directory for artifact storage.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self._root = root
+        self._root.mkdir(parents=True, exist_ok=True)
+
+    def put_json(self, payload: object, *, row_count: int = 0) -> tuple[str, StoredArtifact]:
+        """Store a JSON payload and return its token.
+
+        Parameters
+        ----------
+        payload
+            JSON-serializable data.
+        row_count
+            Number of rows in the payload (for metadata).
+
+        Returns
+        -------
+        tuple[str, StoredArtifact]
+            Token and artifact metadata.
+        """
+        token = secrets.token_urlsafe(16)
+        path = self._root / f"{token}.json"
+        content = json.dumps(payload, indent=2, sort_keys=True, default=str)
+        path.write_text(content, encoding="utf-8")
+        
+        return token, StoredArtifact(
+            path=path,
+            mime_type="application/json",
+            row_count=row_count,
+            size_bytes=path.stat().st_size,
+        )
+
+    def put_ndjson(self, rows: list[dict[str, object]]) -> tuple[str, StoredArtifact]:
+        """Store rows as NDJSON and return token.
+
+        Parameters
+        ----------
+        rows
+            List of row dictionaries.
+
+        Returns
+        -------
+        tuple[str, StoredArtifact]
+            Token and artifact metadata.
+        """
+        token = secrets.token_urlsafe(16)
+        path = self._root / f"{token}.ndjson"
+        
+        with path.open("w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row, default=str) + "\n")
+        
+        return token, StoredArtifact(
+            path=path,
+            mime_type="application/x-ndjson",
+            row_count=len(rows),
+            size_bytes=path.stat().st_size,
+        )
+
+    def get(self, token: str) -> StoredArtifact:
+        """Retrieve artifact metadata by token.
+
+        Parameters
+        ----------
+        token
+            Artifact token.
+
+        Returns
+        -------
+        StoredArtifact
+            Artifact metadata.
+
+        Raises
+        ------
+        KeyError
+            If token not found.
+        """
+        for ext, mime_type in [
+            (".json", "application/json"),
+            (".ndjson", "application/x-ndjson"),
+            (".parquet", "application/vnd.apache.parquet"),
+        ]:
+            path = self._root / f"{token}{ext}"
+            if path.exists():
+                return StoredArtifact(
+                    path=path,
+                    mime_type=mime_type,
+                    row_count=0,  # Would need separate metadata file for this
+                    size_bytes=path.stat().st_size,
+                )
+        
+        msg = f"Artifact not found: {token}"
+        raise KeyError(msg)
+
+
+__all__ = ["ResourceStore", "StoredArtifact"]
+```
+
+```python
+# src/codeintel/serving/mcp/resources.py
+
+"""MCP resource handlers for on-demand data access."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from codeintel.serving.mcp._compat import ResourceContent
+
+if TYPE_CHECKING:
+    from codeintel.serving.mcp._compat import FastMCP
+    from codeintel.serving.mcp.app import SemanticKernel
+    from codeintel.serving.mcp.resource_store import ResourceStore
+
+
+def register_resources(
+    mcp: FastMCP,
+    kernel: SemanticKernel,
+    store: ResourceStore,
+) -> None:
+    """Register MCP resources on the server.
+
+    Parameters
+    ----------
+    mcp
+        FastMCP server instance.
+    kernel
+        Semantic query kernel.
+    store
+        Resource store for exports.
+    """
+
+    @mcp.resource("codeintel://semantic/registry")
+    def semantic_registry() -> dict[str, object]:
+        """Full semantic view catalog as a resource."""
+        return kernel.catalog()
+
+    @mcp.resource("codeintel://semantic/views/{view_id}")
+    def view_description(view_id: str) -> dict[str, object]:
+        """Semantic view description as a resource."""
+        return kernel.describe(view_id)
+
+    @mcp.resource("codeintel://semantic/views/{view_id}/schema")
+    def view_schema(view_id: str) -> dict[str, object]:
+        """View schema only (for LLM context efficiency)."""
+        full = kernel.describe(view_id)
+        return {
+            "id": full["id"],
+            "columns": full["columns"],
+            "column_types": full.get("column_types"),
+            "primary_key": full.get("primary_key"),
+        }
+
+    @mcp.resource("codeintel://meta")
+    def serving_meta_resource() -> dict[str, object]:
+        """Serving metadata as a resource."""
+        return kernel.meta()
+
+    @mcp.resource("codeintel://exports/{token}")
+    def read_export(token: str) -> ResourceContent:
+        """Read a previously exported artifact by token."""
+        artifact = store.get(token)
+        data = artifact.path.read_bytes()
+        return ResourceContent(content=data, mime_type=artifact.mime_type)
+
+
+__all__ = ["register_resources"]
+```
+
+```python
+# src/codeintel/serving/mcp/app.py - Export tool returning resource URI
+
+@mcp.tool(
+    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
+    tags=[TAG_SEMANTIC, TAG_READ],
+)
+async def semantic_export(
+    view_id: str,
+    filters: list[dict[str, object]] | None = None,
+    format: str = "ndjson",
+    limit: int = 100_000,
+    *,
+    ctx: Context,
+) -> dict[str, object]:
+    """Export semantic view data and return a resource URI.
+    
+    For large datasets, this tool returns a resource URI that can be fetched
+    separately, avoiding OOM from materializing large result sets in JSON.
+
+    Parameters
+    ----------
+    view_id
+        Semantic view identifier.
+    filters
+        Optional filter specifications.
+    format
+        Export format: "json" or "ndjson".
+    limit
+        Maximum rows to export.
+    ctx
+        MCP execution context.
+
+    Returns
+    -------
+    dict[str, object]
+        Envelope with export_uri and metadata.
+    """
+    await ctx.info(f"Exporting view: {view_id} (format={format})")
+    
+    from codeintel.serving.semantic.models import SemanticExportRequest
+    
+    request = SemanticExportRequest(
+        view_id=view_id,
+        filters=[FilterSpec.model_validate(f) for f in (filters or [])],
+        format=format,
+        limit=limit,
+    )
+    
+    # Stream rows and store as artifact
+    rows = await limiter.run(lambda: list(kernel.export_rows(request)))
+    
+    if format == "ndjson":
+        token, artifact = store.put_ndjson(rows)
+    else:
+        token, artifact = store.put_json({"rows": rows}, row_count=len(rows))
+    
+    await ctx.info(f"Export complete: {artifact.row_count} rows, {artifact.size_bytes} bytes")
+    
+    return build_envelope(
+        kernel,
+        {
+            "export_uri": f"codeintel://exports/{token}",
+            "format": format,
+            "row_count": artifact.row_count,
+            "size_bytes": artifact.size_bytes,
+        },
+        row_count=artifact.row_count,
+    ).model_dump(mode="json")
+```
+
+**Testing Requirements**:
+- Test resource URI resolution
+- Test parameterized resources (view_id)
+- Test export artifact storage and retrieval
+- Verify ResourceContent MIME types
+
+---
+
+### H6: SSE Polling and EventStore for Remote Resumability
+
+**Category**: B - Uvicorn & Deployment
+
+**Problem**: For remote internet connections, long-running tool calls can:
+- Be interrupted by proxy timeouts (Cloudflare has 100s limit)
+- Suffer from transient disconnects
+- Leave clients in limbo on "hung request" failures
+
+**Solution**: Enable gofastmcp's EventStore + SSE polling for StreamableHTTP resumability.
+
+**Files to Modify**:
+
+| File | Changes |
+|------|---------|
+| `src/codeintel/serving/settings.py` | Add EventStore settings |
+| `src/codeintel/serving/http/app.py` | Pass EventStore to `http_app()` |
+| `src/codeintel/serving/mcp/app.py` | Add `ctx.close_sse_stream()` for long tools |
+
+**Detailed Implementation**:
+
+```python
+# src/codeintel/serving/settings.py - Add EventStore settings
+
+@dataclass(frozen=True)
+class ServingSettings:
+    # ... existing fields ...
+
+    # MCP EventStore for SSE Resumability
+    mcp_enable_event_store: bool = True  # Enable SSE polling/resumability
+    mcp_retry_interval_ms: int = 1000     # SSE retry interval
+
+    @classmethod
+    def from_env(cls) -> ServingSettings:
+        return cls(
+            # ... existing fields ...
+            mcp_enable_event_store=os.environ.get("CODEINTEL_MCP_EVENT_STORE", "1") == "1",
+            mcp_retry_interval_ms=int(os.environ.get("CODEINTEL_MCP_RETRY_INTERVAL", "1000")),
+        )
+```
+
+```python
+# src/codeintel/serving/http/app.py - Pass EventStore to http_app()
+
+from codeintel.serving.mcp._compat import EventStore, HAS_EVENT_STORE
+
+def _maybe_mount_mcp(
+    app: FastAPI,
+    *,
+    kernel: SemanticQueryKernel,
+    settings: ServingSettings,
+    enabled: bool,
+) -> None:
+    """Mount MCP server under /mcp with EventStore for resumability."""
+    if not enabled:
+        return
+
+    mcp = build_mcp_app(kernel=kernel, settings=settings)
+    
+    # Configure EventStore for SSE polling/resumability
+    event_store = None
+    if settings.mcp_enable_event_store and HAS_EVENT_STORE:
+        event_store = EventStore()
+    
+    # Build ASGI app with EventStore
+    mcp_asgi = mcp.http_app(
+        path="/",
+        event_store=event_store,
+        retry_interval=settings.mcp_retry_interval_ms if event_store else None,
+    )
+    app.mount("/mcp", mcp_asgi)
+```
+
+```python
+# src/codeintel/serving/mcp/app.py - Close SSE stream for long tools
+
+@mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
+async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
+    """Export semantic view data."""
+    await ctx.info(f"Exporting view: {view_id}")
+    
+    # For long exports, periodically close SSE stream to allow reconnect
+    rows = []
+    batch_size = 10000
+    
+    async for batch in stream_batches(kernel, request, batch_size):
+        rows.extend(batch)
+        await ctx.report_progress(len(rows), request.limit)
+        
+        # Trigger reconnect/resume every 30 batches (~300k rows)
+        # This helps with proxy timeouts
+        if len(rows) % (batch_size * 30) == 0:
+            await ctx.close_sse_stream()
+    
+    # ... store and return ...
+```
+
+**Testing Requirements**:
+- Verify EventStore is configured when enabled
+- Test SSE reconnect behavior (integration test)
+- Verify settings are respected
+
+---
+
+### H7: Error Masking and ToolError for Security
 
 **Category**: C - Observability & Security
 
@@ -485,36 +1347,29 @@ async def code_search(
 ```python
 # src/codeintel/serving/mcp/app.py
 
-from fastmcp.exceptions import ToolError
+from codeintel.serving.mcp._compat import ToolError
 
 def build_mcp_app(
     *,
     kernel: SemanticKernel,
     settings: ServingSettings,
-    host: str = "127.0.0.1",
-    port: int = 8000,
-    streamable_http_path: str = "/mcp",
-    lifespan: Callable[[FastMCP], AbstractAsyncContextManager[object]] | None = None,
+    ...
 ) -> FastMCP:
     """Build FastMCP application with semantic tools."""
     mcp = FastMCP(
         "CodeIntel",
         json_response=True,
-        host=host,
-        port=port,
-        streamable_http_path=streamable_http_path,
-        lifespan=lifespan,
         mask_error_details=settings.mcp_mask_errors,  # Hide internal traces
     )
 
     @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-    async def semantic_query(..., ctx: Context) -> dict[str, object]:
+    async def semantic_query(..., *, ctx: Context) -> dict[str, object]:
         """Query a semantic view with structured filters."""
         try:
             await ctx.info(f"Querying view: {view_id}")
             # ... query logic ...
-            result = await anyio.to_thread.run_sync(kernel.query, request)
-            return result.model_dump(mode="json")
+            result = await limiter.run(kernel.query, request)
+            return build_envelope(kernel, result.model_dump(), ...).model_dump()
         except KeyError as e:
             # User-friendly error (passes through masking)
             raise ToolError(f"View '{view_id}' not found in semantic registry") from e
@@ -525,21 +1380,8 @@ def build_mcp_app(
             await ctx.error(f"Query failed: {type(e).__name__}")
             raise ToolError("Query execution failed. Check server logs for details.") from e
 
-    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-    async def code_search(..., ctx: Context) -> dict[str, object]:
-        """Search code metadata."""
-        try:
-            # ... search logic ...
-        except ValueError as e:
-            raise ToolError(f"Invalid search query: {e}") from e
-        except Exception as e:
-            await ctx.error(f"Search failed: {type(e).__name__}")
-            raise ToolError("Search execution failed. Check server logs for details.") from e
-
     return mcp
 ```
-
-**Settings Addition**:
 
 ```python
 # src/codeintel/serving/settings.py
@@ -564,11 +1406,13 @@ class ServingSettings:
 
 ---
 
-### H5: Production Uvicorn Configuration
+## Medium-Priority Enhancements
+
+### M1: Production Uvicorn Configuration
 
 **Category**: B - Uvicorn & Deployment
 
-**Problem**: Current Uvicorn configuration uses defaults, missing performance optimizations and resource protection.
+**Problem**: Current Uvicorn configuration uses defaults, missing performance optimizations, resource protection, and proxy support.
 
 **Solution**: Add comprehensive Uvicorn configuration with:
 - Optional multi-worker support
@@ -576,6 +1420,7 @@ class ServingSettings:
 - Concurrency and request limits
 - Keep-alive tuning
 - Security headers
+- **Proxy headers policy** (for Nginx/Cloudflare)
 
 **Files to Modify**:
 
@@ -603,6 +1448,8 @@ class ServingSettings:
     uvicorn_backlog: int = 2048
     uvicorn_access_log: bool = True
     uvicorn_server_header: bool = False  # Hide "uvicorn" server header
+    uvicorn_proxy_headers: bool = False  # Trust proxy headers
+    uvicorn_forwarded_allow_ips: str = "127.0.0.1"  # IPs allowed to set X-Forwarded-*
 
     @classmethod
     def from_env(cls) -> ServingSettings:
@@ -626,6 +1473,10 @@ class ServingSettings:
             uvicorn_backlog=int(os.environ.get("CODEINTEL_UVICORN_BACKLOG", "2048")),
             uvicorn_access_log=os.environ.get("CODEINTEL_UVICORN_ACCESS_LOG", "1") == "1",
             uvicorn_server_header=os.environ.get("CODEINTEL_UVICORN_SERVER_HEADER", "0") == "1",
+            uvicorn_proxy_headers=os.environ.get("CODEINTEL_UVICORN_PROXY_HEADERS", "0") == "1",
+            uvicorn_forwarded_allow_ips=os.environ.get(
+                "CODEINTEL_UVICORN_FORWARDED_ALLOW_IPS", "127.0.0.1"
+            ),
         )
 ```
 
@@ -665,157 +1516,132 @@ def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
     if not settings.uvicorn_server_header:
         uvicorn_config["server_header"] = False
 
-    if reload:
-        uvicorn.run(
-            "codeintel.serving.http.app:create_serving_app",
-            factory=True,
-            reload=True,
-            **uvicorn_config,
+    # Proxy support for Nginx/Cloudflare
+    if settings.uvicorn_proxy_headers:
+        uvicorn_config["proxy_headers"] = True
+        uvicorn_config["forwarded_allow_ips"] = settings.uvicorn_forwarded_allow_ips
+
+    # Multi-worker mode guidance
+    if workers > 1:
+        LOG.info(
+            "Multi-worker mode: Recommended CLI command for production:\n"
+            "  uvicorn codeintel.serving.http.app:create_serving_app "
+            "--factory --workers %d --host %s --port %d",
+            workers,
+            host,
+            port,
         )
-    elif workers > 1:
-        # Multi-worker mode requires string import path
         uvicorn.run(
             "codeintel.serving.http.app:create_serving_app",
             factory=True,
             workers=workers,
             **uvicorn_config,
         )
+    elif reload:
+        uvicorn.run(
+            "codeintel.serving.http.app:create_serving_app",
+            factory=True,
+            reload=True,
+            **uvicorn_config,
+        )
     else:
-        # Single worker - can use app instance directly
         app = create_serving_app(settings)
         uvicorn.run(app, **uvicorn_config)
 
-    return CliResult.ok(
-        ServeStartResult(
-            server_type="http",
-            host=host,
-            port=port,
-            auto_pipeline=False,
-            repo=pointer.repo,
-            commit=pointer.commit,
-            db_path=str(pointer.db_path),
-        )
-    )
+    return CliResult.ok(...)
 ```
-
-**Optional Dependencies**:
-- `uvloop` - High-performance event loop (Linux/macOS)
-- `httptools` - Fast HTTP parser
 
 **Testing Requirements**:
 - Test single-worker mode
 - Test multi-worker mode (if workers > 1)
 - Verify settings are applied correctly
-- Load test with concurrency limits
+- Test proxy headers when enabled
 
 ---
 
-## Medium-Priority Enhancements
+### M2: Authentication Enforcement for Non-Localhost
 
-### M1: MCP Resources for Large Dataset Delivery
+**Category**: C - Observability & Security
 
-**Category**: A - MCP Tool Enhancements
+**Problem**: Auth is optional everywhere, but remote serving without auth is a security risk. Some MCP clients may refuse to connect to unauthenticated remote servers.
 
-**Problem**: All data is delivered through tool return values, which can overwhelm LLM context windows for large datasets.
-
-**Solution**: Expose semantic view data and schemas as MCP resources that LLMs can fetch on-demand.
+**Solution**: Enforce auth requirement when bound to non-localhost:
+- `host in {"0.0.0.0", "::"}` ⇒ auth required (fail-fast at startup)
+- `host == "127.0.0.1"` or `host == "localhost"` ⇒ auth optional
 
 **Files to Modify**:
 
 | File | Changes |
 |------|---------|
-| `src/codeintel/serving/mcp/app.py` | Add resource decorators |
-| `src/codeintel/serving/mcp/resources.py` | New file for resource handlers |
+| `src/codeintel/serving/settings.py` | Add `auth_required_for_remote` setting |
+| `src/codeintel/serving/http/app.py` | Add auth enforcement check at startup |
 
 **Detailed Implementation**:
 
 ```python
-# src/codeintel/serving/mcp/resources.py
+# src/codeintel/serving/settings.py
 
-"""MCP resource handlers for on-demand data access."""
+@dataclass(frozen=True)
+class ServingSettings:
+    # ... existing fields ...
+    auth_required_for_remote: bool = True  # Require auth for non-localhost
 
-from __future__ import annotations
+    def validate_auth_for_host(self) -> None:
+        """Validate that auth is configured when binding to non-localhost.
+        
+        Raises
+        ------
+        ValueError
+            If bound to public interface without auth configured.
+        """
+        if not self.auth_required_for_remote:
+            return
+        
+        public_hosts = {"0.0.0.0", "::", ""}
+        if self.host in public_hosts:
+            if not self.auth_token and not self.api_key:
+                msg = (
+                    f"Security error: Binding to {self.host!r} requires authentication. "
+                    f"Set CODEINTEL_AUTH_TOKEN or CODEINTEL_SERVE_API_KEY, "
+                    f"or set CODEINTEL_AUTH_REQUIRED_FOR_REMOTE=0 to disable this check."
+                )
+                raise ValueError(msg)
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from codeintel.serving.mcp.app import SemanticKernel
-
-
-def register_resources(mcp: FastMCP, kernel: SemanticKernel) -> None:
-    """Register MCP resources on the server.
-
-    Parameters
-    ----------
-    mcp
-        FastMCP server instance.
-    kernel
-        Semantic query kernel.
-    """
-
-    @mcp.resource("data://catalog")
-    def catalog_resource() -> dict[str, object]:
-        """Full semantic view catalog as a resource."""
-        return kernel.catalog()
-
-    @mcp.resource("data://view/{view_id}")
-    def view_resource(view_id: str) -> dict[str, object]:
-        """Semantic view description as a resource."""
-        return kernel.describe(view_id)
-
-    @mcp.resource("data://view/{view_id}/schema")
-    def view_schema_resource(view_id: str) -> dict[str, object]:
-        """View schema only (for LLM context efficiency)."""
-        full = kernel.describe(view_id)
-        return {
-            "id": full["id"],
-            "columns": full["columns"],
-            "column_types": full["column_types"],
-            "primary_key": full["primary_key"],
-        }
-
-    @mcp.resource("data://meta")
-    def meta_resource() -> dict[str, object]:
-        """Serving metadata as a resource."""
-        return kernel.meta()
-
-    @mcp.resource("resource://buildspec")
-    def buildspec_resource() -> dict[str, object]:
-        """BuildSpec summary for agent context."""
-        meta = kernel.meta()
-        return {
-            "buildspec_hash": meta.get("buildspec_hash"),
-            "buildspec_version": meta.get("buildspec_version"),
-            "targets": meta.get("targets"),
-            "datasets": meta.get("datasets"),
-        }
+    @classmethod
+    def from_env(cls) -> ServingSettings:
+        return cls(
+            # ... existing fields ...
+            auth_required_for_remote=os.environ.get(
+                "CODEINTEL_AUTH_REQUIRED_FOR_REMOTE", "1"
+            ) == "1",
+        )
 ```
 
 ```python
-# src/codeintel/serving/mcp/app.py
+# src/codeintel/serving/http/app.py
 
-from codeintel.serving.mcp.resources import register_resources
-
-def build_mcp_app(...) -> FastMCP:
-    mcp = FastMCP(...)
-
-    # Register tools (existing)
-    # ...
-
-    # Register resources (new)
-    register_resources(mcp, kernel)
-
-    return mcp
+def create_serving_app(
+    settings: ServingSettings | None = None,
+    *,
+    mount_mcp: bool = True,
+) -> FastAPI:
+    """Create FastAPI serving application."""
+    cfg = settings or ServingSettings.from_env()
+    
+    # Fail-fast: require auth for public interfaces
+    cfg.validate_auth_for_host()
+    
+    # ... rest of function ...
 ```
 
 **Testing Requirements**:
-- Test resource URI resolution
-- Test parameterized resources (view_id)
-- Verify JSON serialization of resources
+- Test startup fails without auth when bound to 0.0.0.0
+- Test startup succeeds with auth when bound to 0.0.0.0
+- Test startup succeeds without auth when bound to 127.0.0.1
 
 ---
 
-### M2: Custom MCP Route for Health Checks
+### M3: Custom MCP Route for Health Checks
 
 **Category**: B - Uvicorn & Deployment
 
@@ -875,227 +1701,50 @@ def build_mcp_app(...) -> FastMCP:
 
 ---
 
-### M3: ASGI App Extraction for Flexible Mounting
+### M4: Bearer Token Authentication for MCP
 
-**Category**: B - Uvicorn & Deployment
+**Category**: C - Observability & Security
 
-**Problem**: MCP is mounted using `mcp.streamable_http_app()` which has limited middleware control.
+**Problem**: HTTP routes have API key protection, but MCP server has no authentication.
 
-**Solution**: Use `mcp.http_app()` for full ASGI control with custom middleware support.
-
-**Files to Modify**:
-
-| File | Changes |
-|------|---------|
-| `src/codeintel/serving/http/app.py` | Update `_maybe_mount_mcp` to use `http_app()` |
-
-**Detailed Implementation**:
-
-```python
-# src/codeintel/serving/http/app.py
-
-from starlette.middleware import Middleware
-from starlette.middleware.cors import CORSMiddleware
-
-def _maybe_mount_mcp(
-    app: FastAPI,
-    *,
-    kernel: SemanticQueryKernel,
-    settings: ServingSettings,
-    enabled: bool,
-) -> None:
-    """Mount MCP server under /mcp with appropriate middleware."""
-    if not enabled:
-        return
-
-    mcp = build_mcp_app(
-        kernel=kernel,
-        settings=settings,
-        streamable_http_path="/",
-    )
-
-    # Build middleware stack for MCP
-    mcp_middleware: list[Middleware] = []
-
-    # Add CORS if configured (with MCP-specific headers)
-    if settings.cors_origins:
-        mcp_middleware.append(
-            Middleware(
-                CORSMiddleware,
-                allow_origins=list(settings.cors_origins),
-                allow_credentials=True,
-                allow_methods=["*"],
-                allow_headers=[
-                    "*",
-                    "mcp-protocol-version",
-                    "mcp-session-id",
-                ],
-                expose_headers=[
-                    "mcp-session-id",
-                    "X-Correlation-ID",
-                ],
-            )
-        )
-
-    # Get full ASGI app with middleware
-    mcp_asgi = mcp.http_app(path="/", middleware=mcp_middleware)
-    app.mount("/mcp", mcp_asgi)
-```
-
-**Testing Requirements**:
-- Verify MCP endpoints remain functional after change
-- Test CORS headers on MCP responses
-- Verify middleware is applied
-
----
-
-### M4: Structured Output with Return Type Annotations
-
-**Category**: A - MCP Tool Enhancements
-
-**Problem**: Tools return `dict[str, object]` which loses schema information for LLM clients.
-
-**Solution**: Use Pydantic models as return types to generate JSON schemas.
+**Solution**: Enable FastMCP's `auth_token` configuration using the existing `auth_token` setting.
 
 **Files to Modify**:
 
 | File | Changes |
 |------|---------|
-| `src/codeintel/serving/mcp/models.py` | New file with MCP response models |
-| `src/codeintel/serving/mcp/app.py` | Update return type annotations |
+| `src/codeintel/serving/mcp/app.py` | Add auth_token to FastMCP init |
 
 **Detailed Implementation**:
-
-```python
-# src/codeintel/serving/mcp/models.py
-
-"""Pydantic models for MCP tool responses."""
-
-from __future__ import annotations
-
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class SnapshotInfo(BaseModel):
-    """Snapshot identification."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    repo: str
-    commit: str
-    run_id: str
-
-
-class ViewSummary(BaseModel):
-    """Compact view info for catalog listing."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    table_key: str
-    entity: str
-    grain: str
-    description: str
-    column_count: int
-
-
-class SemanticCatalogResult(BaseModel):
-    """Response from semantic_catalog tool."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    version: str
-    snapshot: SnapshotInfo
-    views: list[ViewSummary]
-
-
-class SemanticQueryResult(BaseModel):
-    """Response from semantic_query tool."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    view_id: str
-    columns: list[str]
-    rows: list[dict[str, object]]
-    truncated: bool
-    snapshot: SnapshotInfo
-    llm_summary: str | None = None
-
-
-class SemanticExplainResult(BaseModel):
-    """Response from semantic_explain tool."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    view_id: str
-    sql: str
-    plan: str
-    snapshot: SnapshotInfo
-
-
-class SearchResultItem(BaseModel):
-    """Single search result."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: str
-    name: str
-    module: str | None
-    rel_path: str | None
-    ref_goid_h128: str | None
-    score: float | None
-
-
-class CodeSearchResult(BaseModel):
-    """Response from code_search tool."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    query: str
-    results: list[SearchResultItem]
-    truncated: bool
-    snapshot: SnapshotInfo
-    engine: str
-
-
-__all__ = [
-    "CodeSearchResult",
-    "SearchResultItem",
-    "SemanticCatalogResult",
-    "SemanticExplainResult",
-    "SemanticQueryResult",
-    "SnapshotInfo",
-    "ViewSummary",
-]
-```
 
 ```python
 # src/codeintel/serving/mcp/app.py
 
-from codeintel.serving.mcp.models import (
-    SemanticCatalogResult,
-    SemanticQueryResult,
-    SemanticExplainResult,
-    CodeSearchResult,
-)
-
-@mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-async def semantic_catalog(ctx: Context) -> SemanticCatalogResult:
-    """List available semantic views."""
-    result = await anyio.to_thread.run_sync(kernel.catalog)
-    return SemanticCatalogResult.model_validate(result)
-
-@mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-async def semantic_query(..., ctx: Context) -> SemanticQueryResult:
-    """Query a semantic view."""
-    # ... query logic ...
-    return SemanticQueryResult.model_validate(result.model_dump())
+def build_mcp_app(
+    *,
+    kernel: SemanticKernel,
+    settings: ServingSettings,
+    ...
+) -> FastMCP:
+    """Build FastMCP application with semantic tools."""
+    mcp = FastMCP(
+        "CodeIntel",
+        json_response=True,
+        mask_error_details=settings.mcp_mask_errors,
+        auth_token=settings.auth_token,  # Use existing setting for MCP auth
+    )
+    # ... rest of function ...
 ```
 
+**Client Configuration**:
+- ChatGPT: Enter token in Connector setup UI
+- Claude: Configure in MCP settings
+- Cursor: Add to `mcp.json` configuration
+
 **Testing Requirements**:
-- Verify JSON schema is generated in tool definitions
-- Test model validation on tool responses
-- Verify backwards compatibility with existing clients
+- Test request without token returns 401
+- Test request with valid token succeeds
+- Test request with invalid token returns 401
 
 ---
 
@@ -1123,47 +1772,34 @@ TAG_SEMANTIC = "semantic"
 TAG_SEARCH = "search"
 TAG_META = "meta"
 TAG_READ = "read"
+TAG_EXPORT = "export"
 
 @mcp.tool(
     annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
     tags=[TAG_SEMANTIC, TAG_READ],
 )
-async def semantic_catalog(ctx: Context) -> SemanticCatalogResult:
+async def semantic_catalog(*, ctx: Context) -> dict[str, object]:
     ...
 
 @mcp.tool(
     annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
     tags=[TAG_SEMANTIC, TAG_READ],
 )
-async def semantic_describe(view_id: str, ctx: Context) -> dict[str, object]:
-    ...
-
-@mcp.tool(
-    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-    tags=[TAG_SEMANTIC, TAG_READ],
-)
-async def semantic_query(..., ctx: Context) -> SemanticQueryResult:
-    ...
-
-@mcp.tool(
-    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-    tags=[TAG_SEMANTIC, TAG_READ],
-)
-async def semantic_explain(..., ctx: Context) -> SemanticExplainResult:
-    ...
-
-@mcp.tool(
-    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-    tags=[TAG_META, TAG_READ],
-)
-async def serving_meta(ctx: Context) -> dict[str, object]:
+async def semantic_query(..., *, ctx: Context) -> dict[str, object]:
     ...
 
 @mcp.tool(
     annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
     tags=[TAG_SEARCH, TAG_READ],
 )
-async def code_search(..., ctx: Context) -> CodeSearchResult:
+async def code_search(..., *, ctx: Context) -> dict[str, object]:
+    ...
+
+@mcp.tool(
+    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
+    tags=[TAG_SEMANTIC, TAG_EXPORT],
+)
+async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
     ...
 ```
 
@@ -1187,7 +1823,6 @@ async def code_search(..., ctx: Context) -> CodeSearchResult:
 | File | Changes |
 |------|---------|
 | `src/codeintel/serving/mcp/app.py` | Add metrics logging to all tools |
-| `src/codeintel/serving/http/metrics.py` | Add MCP-specific endpoint names |
 
 **Detailed Implementation**:
 
@@ -1198,21 +1833,20 @@ import time
 from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 
 @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS, tags=[TAG_SEMANTIC, TAG_READ])
-async def semantic_query(..., ctx: Context) -> SemanticQueryResult:
+async def semantic_query(..., *, ctx: Context) -> dict[str, object]:
     """Query a semantic view with structured filters."""
     start = time.perf_counter()
-    result: SemanticQueryResult | None = None
+    result: dict[str, object] | None = None
+    row_count = 0
+    truncated = False
 
     try:
         await ctx.info(f"Querying view: {view_id}")
-        await ctx.report_progress(10, 100)
-
-        # ... build request ...
-
-        result_raw = await anyio.to_thread.run_sync(kernel.query, request)
-        result = SemanticQueryResult.model_validate(result_raw.model_dump())
-
-        await ctx.report_progress(100, 100)
+        # ... build request and execute ...
+        result_raw = await limiter.run(kernel.query, request)
+        row_count = len(result_raw.rows)
+        truncated = result_raw.truncated
+        result = build_envelope(kernel, result_raw.model_dump(), ...).model_dump()
         return result
 
     finally:
@@ -1221,36 +1855,10 @@ async def semantic_query(..., ctx: Context) -> SemanticQueryResult:
             endpoint="mcp:semantic_query",
             view_id=view_id,
             query=None,
-            row_count=len(result.rows) if result else 0,
-            truncated=result.truncated if result else False,
+            row_count=row_count,
+            truncated=truncated,
             duration_ms=duration_ms,
             correlation_id=ctx.session_id or "mcp-unknown",
-        ))
-
-
-@mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS, tags=[TAG_SEARCH, TAG_READ])
-async def code_search(..., ctx: Context) -> CodeSearchResult:
-    """Search code metadata."""
-    start = time.perf_counter()
-    result: CodeSearchResult | None = None
-
-    try:
-        await ctx.info(f"Searching: {query}")
-        # ... search logic ...
-        result = CodeSearchResult.model_validate(result_raw.model_dump())
-        return result
-
-    finally:
-        duration_ms = (time.perf_counter() - start) * 1000
-        log_query_metrics(QueryMetrics(
-            endpoint="mcp:code_search",
-            view_id=None,
-            query=query,
-            row_count=len(result.results) if result else 0,
-            truncated=result.truncated if result else False,
-            duration_ms=duration_ms,
-            correlation_id=ctx.session_id or "mcp-unknown",
-            engine=result.engine if result else None,
         ))
 ```
 
@@ -1261,79 +1869,7 @@ async def code_search(..., ctx: Context) -> CodeSearchResult:
 
 ---
 
-### M7: Bearer Token Authentication for MCP
-
-**Category**: C - Observability & Security
-
-**Problem**: HTTP routes have API key protection, but MCP server has no authentication.
-
-**Solution**: Enable FastMCP's `auth_token` configuration using the existing `auth_token` setting.
-
-**Files to Modify**:
-
-| File | Changes |
-|------|---------|
-| `src/codeintel/serving/mcp/app.py` | Add auth_token to FastMCP init |
-| `src/codeintel/serving/mcp/server.py` | Pass auth_token from settings |
-
-**Detailed Implementation**:
-
-```python
-# src/codeintel/serving/mcp/app.py
-
-def build_mcp_app(
-    *,
-    kernel: SemanticKernel,
-    settings: ServingSettings,
-    host: str = "127.0.0.1",
-    port: int = 8000,
-    streamable_http_path: str = "/mcp",
-    lifespan: Callable[[FastMCP], AbstractAsyncContextManager[object]] | None = None,
-) -> FastMCP:
-    """Build FastMCP application with semantic tools."""
-    mcp = FastMCP(
-        "CodeIntel",
-        json_response=True,
-        host=host,
-        port=port,
-        streamable_http_path=streamable_http_path,
-        lifespan=lifespan,
-        mask_error_details=settings.mcp_mask_errors,
-        auth_token=settings.auth_token,  # Use existing setting for MCP auth
-    )
-    # ... rest of function ...
-```
-
-```python
-# src/codeintel/serving/mcp/server.py
-
-def create_mcp_server(settings: ServingSettings | None = None) -> FastMCP:
-    cfg = settings or ServingSettings.from_env()
-    # ... existing setup ...
-
-    return build_mcp_app(
-        kernel=kernel,
-        settings=cfg,  # Pass full settings (includes auth_token)
-        host=cfg.host,
-        port=cfg.port,
-        streamable_http_path="/mcp",
-        lifespan=lifespan,
-    )
-```
-
-**Client Configuration**:
-- ChatGPT: Enter token in Connector setup UI
-- Claude: Configure in MCP settings
-- Cursor: Add to `mcp.json` configuration
-
-**Testing Requirements**:
-- Test request without token returns 401
-- Test request with valid token succeeds
-- Test request with invalid token returns 401
-
----
-
-### M8: Tool Enable/Disable for Feature Flags
+### M7: Tool Enable/Disable for Feature Flags
 
 **Category**: D - Architecture & Extensibility
 
@@ -1361,6 +1897,7 @@ class ServingSettings:
     mcp_enable_search: bool = True
     mcp_enable_explain: bool = True
     mcp_enable_meta: bool = True
+    mcp_enable_export: bool = True
 
     @classmethod
     def from_env(cls) -> ServingSettings:
@@ -1369,50 +1906,36 @@ class ServingSettings:
             mcp_enable_search=os.environ.get("CODEINTEL_MCP_ENABLE_SEARCH", "1") == "1",
             mcp_enable_explain=os.environ.get("CODEINTEL_MCP_ENABLE_EXPLAIN", "1") == "1",
             mcp_enable_meta=os.environ.get("CODEINTEL_MCP_ENABLE_META", "1") == "1",
+            mcp_enable_export=os.environ.get("CODEINTEL_MCP_ENABLE_EXPORT", "1") == "1",
         )
 ```
 
 ```python
 # src/codeintel/serving/mcp/app.py
 
-def build_mcp_app(*, kernel: SemanticKernel, settings: ServingSettings, ...) -> FastMCP:
-    mcp = FastMCP(...)
+@mcp.tool(
+    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
+    tags=[TAG_SEMANTIC, TAG_READ],
+    enabled=settings.mcp_enable_explain,
+)
+async def semantic_explain(..., *, ctx: Context) -> dict[str, object]:
+    ...
 
-    # Always-enabled core tools
-    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS, tags=[TAG_SEMANTIC, TAG_READ])
-    async def semantic_catalog(ctx: Context) -> SemanticCatalogResult:
-        ...
+@mcp.tool(
+    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
+    tags=[TAG_SEARCH, TAG_READ],
+    enabled=settings.mcp_enable_search,
+)
+async def code_search(..., *, ctx: Context) -> dict[str, object]:
+    ...
 
-    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS, tags=[TAG_SEMANTIC, TAG_READ])
-    async def semantic_query(...) -> SemanticQueryResult:
-        ...
-
-    # Conditionally-enabled tools
-    @mcp.tool(
-        annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-        tags=[TAG_SEMANTIC, TAG_READ],
-        enabled=settings.mcp_enable_explain,
-    )
-    async def semantic_explain(...) -> SemanticExplainResult:
-        ...
-
-    @mcp.tool(
-        annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-        tags=[TAG_META, TAG_READ],
-        enabled=settings.mcp_enable_meta,
-    )
-    async def serving_meta(ctx: Context) -> dict[str, object]:
-        ...
-
-    @mcp.tool(
-        annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-        tags=[TAG_SEARCH, TAG_READ],
-        enabled=settings.mcp_enable_search,
-    )
-    async def code_search(...) -> CodeSearchResult:
-        ...
-
-    return mcp
+@mcp.tool(
+    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
+    tags=[TAG_SEMANTIC, TAG_EXPORT],
+    enabled=settings.mcp_enable_export,
+)
+async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
+    ...
 ```
 
 **Testing Requirements**:
@@ -1422,7 +1945,7 @@ def build_mcp_app(*, kernel: SemanticKernel, settings: ServingSettings, ...) -> 
 
 ---
 
-### M9: Unified Lifespan Management
+### M8: Unified Lifespan Management
 
 **Category**: D - Architecture & Extensibility
 
@@ -1490,23 +2013,8 @@ def create_mcp_server(
     return build_mcp_app(
         kernel=kernel,
         settings=cfg,
-        host=cfg.host,
-        port=cfg.port,
-        streamable_http_path="/mcp",
         lifespan=lifespan,
     )
-```
-
-**Use Case**: When mounting MCP within FastAPI app, the FastAPI lifespan manages the db_manager, so we can inject it:
-
-```python
-# Potential future use in http/app.py
-def _maybe_mount_mcp(...) -> None:
-    if not enabled:
-        return
-    # Share the db_manager with MCP
-    mcp = create_mcp_server(settings=settings, db_manager=state.db)
-    app.mount("/mcp", mcp.http_app())
 ```
 
 ---
@@ -1535,26 +2043,18 @@ def _maybe_mount_mcp(...) -> None:
 ```python
 # src/codeintel/serving/mcp/servers/semantic.py
 
-from fastmcp import FastMCP
+from codeintel.serving.mcp._compat import FastMCP
 
 def build_semantic_server(kernel: SemanticKernel, settings: ServingSettings) -> FastMCP:
     """Build semantic-focused MCP sub-server."""
     mcp = FastMCP("CodeIntel-Semantic")
 
     @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-    async def catalog(ctx: Context) -> SemanticCatalogResult:
+    async def catalog(*, ctx: Context) -> dict[str, object]:
         ...
 
     @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-    async def describe(view_id: str, ctx: Context) -> dict[str, object]:
-        ...
-
-    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-    async def query(..., ctx: Context) -> SemanticQueryResult:
-        ...
-
-    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS, enabled=settings.mcp_enable_explain)
-    async def explain(..., ctx: Context) -> SemanticExplainResult:
+    async def query(..., *, ctx: Context) -> dict[str, object]:
         ...
 
     return mcp
@@ -1562,10 +2062,6 @@ def build_semantic_server(kernel: SemanticKernel, settings: ServingSettings) -> 
 
 ```python
 # src/codeintel/serving/mcp/app.py
-
-from codeintel.serving.mcp.servers.semantic import build_semantic_server
-from codeintel.serving.mcp.servers.search import build_search_server
-from codeintel.serving.mcp.servers.meta import build_meta_server
 
 def build_mcp_app(...) -> FastMCP:
     main = FastMCP("CodeIntel", ...)
@@ -1579,13 +2075,10 @@ def build_mcp_app(...) -> FastMCP:
     main.mount(search, prefix="search")
     main.mount(meta, prefix="meta")
 
-    # Register resources on main
-    register_resources(main, kernel)
-
     return main
 ```
 
-**Note**: This is a structural refactor that doesn't change functionality. Consider implementing after M1-M9 are stable.
+**Note**: This is a structural refactor that doesn't change functionality. Consider implementing after M1-M8 are stable.
 
 ---
 
@@ -1604,186 +2097,11 @@ def build_mcp_app(...) -> FastMCP:
 | `src/codeintel/serving/mcp/prompts.py` | New file with prompt definitions |
 | `src/codeintel/serving/mcp/app.py` | Register prompts |
 
-**Implementation**:
-
-```python
-# src/codeintel/serving/mcp/prompts.py
-
-"""MCP prompts for guided interactions."""
-
-from __future__ import annotations
-
-from mcp.server.fastmcp import FastMCP
-
-
-def register_prompts(mcp: FastMCP) -> None:
-    """Register MCP prompts on the server.
-
-    Parameters
-    ----------
-    mcp
-        FastMCP server instance.
-    """
-
-    @mcp.prompt()
-    def explore_codebase() -> str:
-        """Guide the user through codebase exploration."""
-        return """
-To explore the CodeIntel codebase:
-
-1. **Discover available views**: Call `semantic_catalog()` to list all semantic views
-2. **Understand a view**: Call `semantic_describe(view_id)` to see columns and schema
-3. **Query data**: Call `semantic_query(view_id, filters=[...])` to retrieve rows
-4. **Search symbols**: Call `code_search(query)` to find functions, classes, modules
-
-Example workflow:
-```
-# Step 1: See what's available
-catalog = semantic_catalog()
-
-# Step 2: Understand function metrics
-schema = semantic_describe("function_metrics")
-
-# Step 3: Find complex functions
-results = semantic_query(
-    view_id="function_metrics",
-    filters=[{"column": "cyclomatic_complexity", "op": "gt", "value": 10}],
-    order_by=["-cyclomatic_complexity"],
-    pagination={"limit": 20}
-)
-```
-        """
-
-    @mcp.prompt()
-    def analyze_function(goid: str) -> list[dict[str, str]]:
-        """Guide analysis of a specific function by GOID."""
-        return [
-            {
-                "role": "user",
-                "content": f"Analyze function with GOID: {goid}",
-            },
-            {
-                "role": "assistant",
-                "content": f"""I'll analyze the function with GOID `{goid}`.
-
-First, let me search for it and gather metrics...
-
-1. I'll use `code_search` to find the function
-2. I'll use `semantic_query` on `function_metrics` to get complexity data
-3. I'll check `coverage_edges` for test coverage information
-
-Let me start by searching for this function.""",
-            },
-        ]
-
-    @mcp.prompt()
-    def find_risky_code() -> str:
-        """Guide discovery of high-risk code areas."""
-        return """
-To find high-risk code areas in the codebase:
-
-1. **High complexity functions**:
-   ```
-   semantic_query(
-       view_id="function_metrics",
-       filters=[{"column": "cyclomatic_complexity", "op": "gt", "value": 15}],
-       order_by=["-cyclomatic_complexity"]
-   )
-   ```
-
-2. **Large functions**:
-   ```
-   semantic_query(
-       view_id="function_metrics",
-       filters=[{"column": "loc", "op": "gt", "value": 100}],
-       order_by=["-loc"]
-   )
-   ```
-
-3. **Uncovered code** (if coverage data available):
-   ```
-   semantic_query(
-       view_id="coverage_summary",
-       filters=[{"column": "coverage_pct", "op": "lt", "value": 50}]
-   )
-   ```
-
-4. **Recently changed hot spots**:
-   Use `code_search` with function names from above to find related modules.
-        """
-```
+(Implementation details same as original plan)
 
 ---
 
-### L3: ResourceContent for Binary/Streaming Exports
-
-**Category**: A - MCP Tool Enhancements
-
-**Problem**: Export endpoints are HTTP-only; MCP clients can't access Parquet/Arrow exports.
-
-**Solution**: Expose binary exports as MCP resources with proper MIME types.
-
-**Files to Modify**:
-
-| File | Changes |
-|------|---------|
-| `src/codeintel/serving/mcp/resources.py` | Add binary export resources |
-
-**Implementation Sketch**:
-
-```python
-# src/codeintel/serving/mcp/resources.py
-
-from fastmcp.resources import ResourceContent
-
-def register_resources(mcp: FastMCP, kernel: SemanticKernel) -> None:
-    # ... existing resources ...
-
-    @mcp.resource("export://view/{view_id}/ndjson")
-    def export_ndjson(view_id: str) -> ResourceContent:
-        """Export view as newline-delimited JSON."""
-        from codeintel.serving.semantic.models import SemanticExportRequest
-
-        request = SemanticExportRequest(view_id=view_id, format="ndjson")
-        rows = list(kernel.export_rows(request))
-        ndjson = "\n".join(json.dumps(row, default=str) for row in rows)
-
-        return ResourceContent(
-            content=ndjson,
-            mime_type="application/x-ndjson",
-        )
-
-    @mcp.resource("export://view/{view_id}/parquet")
-    def export_parquet(view_id: str) -> ResourceContent:
-        """Export view as Parquet (requires pyarrow)."""
-        try:
-            import pyarrow as pa
-            import pyarrow.parquet as pq
-        except ImportError:
-            return ResourceContent(
-                content="Parquet export requires pyarrow",
-                mime_type="text/plain",
-            )
-
-        from codeintel.serving.semantic.models import SemanticExportRequest
-        import io
-
-        request = SemanticExportRequest(view_id=view_id, format="parquet")
-        rows = list(kernel.export_rows(request))
-        table = pa.Table.from_pylist(rows)
-
-        buffer = io.BytesIO()
-        pq.write_table(table, buffer)
-
-        return ResourceContent(
-            content=buffer.getvalue(),
-            mime_type="application/vnd.apache.parquet",
-        )
-```
-
----
-
-### L4: Correlation ID Propagation to MCP
+### L3: Correlation ID Propagation to MCP
 
 **Category**: C - Observability & Security
 
@@ -1798,50 +2116,11 @@ def register_resources(mcp: FastMCP, kernel: SemanticKernel) -> None:
 | `src/codeintel/serving/mcp/context.py` | New file for MCP context management |
 | `src/codeintel/serving/mcp/app.py` | Set correlation_id from ctx.session_id |
 
-**Implementation**:
-
-```python
-# src/codeintel/serving/mcp/context.py
-
-"""MCP context variable management."""
-
-from __future__ import annotations
-
-import contextvars
-
-mcp_correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "mcp_correlation_id", default=""
-)
-
-
-def get_mcp_correlation_id() -> str:
-    """Return the current MCP correlation ID."""
-    return mcp_correlation_id.get()
-
-
-def set_mcp_correlation_id(value: str) -> contextvars.Token[str]:
-    """Set the MCP correlation ID for the current context."""
-    return mcp_correlation_id.set(value)
-```
-
-```python
-# src/codeintel/serving/mcp/app.py
-
-from codeintel.serving.mcp.context import set_mcp_correlation_id
-
-@mcp.tool(...)
-async def semantic_query(..., ctx: Context) -> SemanticQueryResult:
-    # Set correlation ID from session
-    correlation_id = ctx.session_id or f"mcp-{uuid.uuid4().hex[:8]}"
-    set_mcp_correlation_id(correlation_id)
-
-    await ctx.info(f"[{correlation_id}] Querying view: {view_id}")
-    # ... rest of function ...
-```
+(Implementation details same as original plan)
 
 ---
 
-### L5: OpenAPI/FastAPI Integration
+### L4: OpenAPI/FastAPI Integration Documentation
 
 **Category**: D - Architecture & Extensibility
 
@@ -1849,37 +2128,11 @@ async def semantic_query(..., ctx: Context) -> SemanticQueryResult:
 
 **Solution**: Document pattern for `FastMCP.from_fastapi()` integration.
 
-**This is primarily a documentation/pattern item, not immediate implementation.**
-
-**Documentation to Add**:
-
-```markdown
-## FastAPI to MCP Bridge (Future Pattern)
-
-If we need to expose HTTP endpoints via MCP without code duplication:
-
-```python
-from fastmcp import FastMCP
-from codeintel.serving.http.app import create_serving_app
-
-# Create FastAPI app
-fastapi_app = create_serving_app()
-
-# Wrap as MCP server
-mcp_from_api = FastMCP.from_fastapi(fastapi_app)
-
-# Now LLMs can call HTTP endpoints via MCP tools
-```
-
-This pattern is useful when:
-- You have many HTTP endpoints to expose
-- You want automatic schema generation
-- You need to bridge existing REST APIs to MCP
-```
+(Documentation item, same as original plan)
 
 ---
 
-### L6: Proxy Pattern for Remote Services
+### L5: Proxy Pattern for Remote Services
 
 **Category**: D - Architecture & Extensibility
 
@@ -1887,62 +2140,85 @@ This pattern is useful when:
 
 **Solution**: Document proxy pattern for future extensibility.
 
-**This is primarily a documentation/pattern item.**
+(Documentation item, same as original plan)
 
-**Documentation to Add**:
+---
 
-```markdown
-## MCP Proxy Pattern (Future Pattern)
+### L6: Mount Path Contract Test
 
-If we need to proxy external MCP servers:
+**Category**: B - Uvicorn & Deployment
+
+**Problem**: No test validates the mount path contract (effective endpoint is `/mcp`, not `/mcp/mcp`).
+
+**Solution**: Add explicit test for mount path behavior.
+
+**Files to Create**:
+
+| File | Changes |
+|------|---------|
+| `tests/serving/http/test_mcp_mount.py` | New: Mount path contract tests |
+
+**Implementation**:
 
 ```python
-from fastmcp import FastMCP, Client
+# tests/serving/http/test_mcp_mount.py
 
-async def create_proxy_server():
-    # Connect to external MCP server
-    async with Client("wss://external-mcp-server.com") as client:
-        # Create proxy server
-        proxy = FastMCP.as_proxy(client, name="ExternalTools")
+"""Tests for MCP mount path contract."""
 
-        # Mount into our server
-        main = create_mcp_server()
-        main.mount(proxy, prefix="external")
+import pytest
+from fastapi.testclient import TestClient
 
-        return main
-```
+from codeintel.serving.http.app import create_serving_app
 
-Use cases:
-- Aggregating multiple MCP servers
-- Adding auth/caching layer in front of external services
-- Bridging transports (STDIO ↔ HTTP)
+
+def test_mcp_mount_path_contract(serving_app: FastAPI) -> None:
+    """Verify MCP is accessible at /mcp, not /mcp/mcp."""
+    client = TestClient(serving_app)
+    
+    # /mcp should respond (200 or redirect to /mcp/)
+    response = client.get("/mcp/health")
+    assert response.status_code in {200, 307}, "MCP should be mounted at /mcp"
+    
+    # /mcp/mcp should NOT exist (404)
+    response = client.get("/mcp/mcp/health")
+    assert response.status_code == 404, "Double prefix /mcp/mcp should not exist"
 ```
 
 ---
 
 ## Implementation Phases
 
-### Phase 1: Core Tool Enhancements (High Priority)
-**Duration**: 3-4 days
+### Phase 0: Critical Foundation
+**Duration**: 1 day
 
 | Day | Items | Focus |
 |-----|-------|-------|
-| 1 | H1, H2 | Context API + Annotations |
-| 2 | H3, H4 | Async conversion + Error handling |
-| 3-4 | H5 | Uvicorn configuration + testing |
+| 1 | C0 | Normalize to gofastmcp 2.x |
 
-**Gate**: All high-priority items complete, tests passing
+**Gate**: All imports use gofastmcp, MCP tools functional
 
-### Phase 2: Production Hardening (Medium Priority)
+### Phase 1: Core Tool Enhancements (High Priority)
 **Duration**: 4-5 days
 
 | Day | Items | Focus |
 |-----|-------|-------|
-| 1 | M1, M2 | Resources + Health checks |
-| 2 | M3, M4 | ASGI mounting + Structured output |
-| 3 | M5, M6 | Tags + Metrics |
-| 4 | M7, M8 | Auth + Feature flags |
-| 5 | M9 | Unified lifespan |
+| 1 | H1, H2 | Context API (keyword-only) + Annotations |
+| 2 | H3 | Response meta envelope |
+| 3 | H4 | Query limiter |
+| 4 | H5, H6 | Resources + EventStore |
+| 5 | H7 | Error handling |
+
+**Gate**: All high-priority items complete, tests passing
+
+### Phase 2: Production Hardening (Medium Priority)
+**Duration**: 3-4 days
+
+| Day | Items | Focus |
+|-----|-------|-------|
+| 1 | M1, M2 | Uvicorn config + Auth enforcement |
+| 2 | M3, M4 | Health checks + Bearer auth |
+| 3 | M5, M6, M7 | Tags + Metrics + Feature flags |
+| 4 | M8 | Unified lifespan |
 
 **Gate**: All medium-priority items complete, integration tests passing
 
@@ -1952,8 +2228,8 @@ Use cases:
 | Day | Items | Focus |
 |-----|-------|-------|
 | 1 | L1 | Server composition |
-| 2 | L2, L3 | Prompts + Binary resources |
-| 3 | L4, L5, L6 | Correlation ID + Documentation |
+| 2 | L2, L3 | Prompts + Correlation ID |
+| 3 | L4, L5, L6 | Documentation + Mount test |
 
 **Gate**: All items complete, documentation updated
 
@@ -1963,33 +2239,40 @@ Use cases:
 
 ### New Files
 
-| File | Purpose |
-|------|---------|
-| `src/codeintel/serving/mcp/models.py` | Pydantic response models |
-| `src/codeintel/serving/mcp/resources.py` | MCP resource handlers |
-| `src/codeintel/serving/mcp/prompts.py` | MCP prompt templates |
-| `src/codeintel/serving/mcp/context.py` | Correlation ID context |
-| `src/codeintel/serving/mcp/servers/` | Sub-server modules (L1) |
-| `tests/serving/mcp/test_tools.py` | MCP tool tests |
-| `tests/serving/mcp/test_resources.py` | MCP resource tests |
+| File | Purpose | Phase |
+|------|---------|-------|
+| `src/codeintel/serving/mcp/_compat.py` | FastMCP import shim | P0 |
+| `src/codeintel/serving/mcp/models.py` | Pydantic response models + envelope | P1 |
+| `src/codeintel/serving/mcp/response.py` | Envelope builder helper | P1 |
+| `src/codeintel/serving/mcp/runtime.py` | QueryLimiter | P1 |
+| `src/codeintel/serving/mcp/resource_store.py` | Export artifact storage | P1 |
+| `src/codeintel/serving/mcp/resources.py` | MCP resource handlers | P1 |
+| `src/codeintel/serving/mcp/prompts.py` | MCP prompt templates | P3 |
+| `src/codeintel/serving/mcp/context.py` | Correlation ID context | P3 |
+| `src/codeintel/serving/mcp/servers/` | Sub-server modules | P3 |
+| `tests/serving/mcp/test_tools.py` | MCP tool tests | P1 |
+| `tests/serving/mcp/test_resources.py` | MCP resource tests | P1 |
+| `tests/serving/http/test_mcp_mount.py` | Mount path contract test | P3 |
 
 ### Modified Files
 
-| File | Items Affecting |
-|------|-----------------|
-| `src/codeintel/serving/mcp/app.py` | H1, H2, H3, H4, M4, M5, M6, M8, L1 |
-| `src/codeintel/serving/mcp/server.py` | M7, M9 |
-| `src/codeintel/serving/settings.py` | H1, H4, H5, M8 |
-| `src/codeintel/cli/handlers/ops.py` | H5 |
-| `src/codeintel/serving/http/app.py` | M3 |
+| File | Items Affecting | Phase |
+|------|-----------------|-------|
+| `pyproject.toml` | C0 | P0 |
+| `src/codeintel/serving/mcp/app.py` | C0, H1-H7, M3-M7 | P0-P2 |
+| `src/codeintel/serving/mcp/server.py` | C0, M4, M8 | P0, P2 |
+| `src/codeintel/serving/settings.py` | H1, H4, H6, H7, M1, M2, M7 | P1-P2 |
+| `src/codeintel/cli/handlers/ops.py` | M1 | P2 |
+| `src/codeintel/serving/http/app.py` | C0, H6, M2 | P0, P1, P2 |
 
-### Dependencies to Add
+### Dependencies to Update
 
-| Package | Purpose | Items |
-|---------|---------|-------|
-| `anyio` | Async thread offloading | H3 (already present) |
-| `uvloop` | High-performance event loop | H5 (optional) |
-| `httptools` | Fast HTTP parser | H5 (optional) |
+| Package | Version | Purpose | Items |
+|---------|---------|---------|-------|
+| `fastmcp` | `>=2.14.1,<3` | Canonical MCP framework | C0 |
+| `anyio` | (existing) | Async thread offloading | H1, H4 |
+| `uvloop` | (optional) | High-performance event loop | M1 |
+| `httptools` | (optional) | Fast HTTP parser | M1 |
 
 ---
 
@@ -1999,9 +2282,10 @@ Use cases:
 
 | Test File | Coverage |
 |-----------|----------|
-| `tests/serving/mcp/test_tools.py` | Tool behavior, error handling |
-| `tests/serving/mcp/test_resources.py` | Resource resolution |
+| `tests/serving/mcp/test_tools.py` | Tool behavior, error handling, envelope |
+| `tests/serving/mcp/test_resources.py` | Resource resolution, artifact storage |
 | `tests/serving/mcp/test_models.py` | Response model validation |
+| `tests/serving/mcp/test_runtime.py` | QueryLimiter behavior |
 | `tests/serving/mcp/test_context.py` | Context propagation |
 
 ### Integration Tests
@@ -2009,22 +2293,24 @@ Use cases:
 | Test File | Coverage |
 |-----------|----------|
 | `tests/serving/mcp/test_mcp_server.py` | End-to-end MCP server |
-| `tests/serving/test_http_mcp_mount.py` | MCP mounted in FastAPI |
+| `tests/serving/http/test_mcp_mount.py` | MCP mounted in FastAPI, path contract |
 | `tests/serving/test_uvicorn_config.py` | Uvicorn settings application |
+| `tests/serving/test_auth_enforcement.py` | Auth required for public bind |
 
 ### Performance Tests
 
 | Test | Metric |
 |------|--------|
 | Concurrent tool invocation | Latency under load |
+| QueryLimiter saturation | Queuing behavior |
 | Large result handling | Memory usage |
-| Async vs sync comparison | Throughput |
 
 ---
 
 ## Rollout Plan
 
 ### Stage 1: Development Environment
+- Implement Phase 0 (Critical)
 - Implement Phase 1 (High Priority)
 - Run full test suite
 - Manual testing with Claude Desktop / Cursor
@@ -2033,6 +2319,7 @@ Use cases:
 - Implement Phase 2 (Medium Priority)
 - Load testing with 3 concurrent clients
 - Verify metrics emission
+- Test auth enforcement
 
 ### Stage 3: Production Deployment
 - Implement Phase 3 (Low Priority)
@@ -2056,9 +2343,14 @@ Use cases:
 | `CODEINTEL_MCP_SAMPLE_THRESHOLD` | `500` | Row count threshold for sampling |
 | `CODEINTEL_MCP_PROGRESS` | `1` | Enable progress reporting |
 | `CODEINTEL_MCP_MASK_ERRORS` | `1` | Mask internal error details |
+| `CODEINTEL_MCP_MAX_CONCURRENT_QUERIES` | `2` | Max concurrent heavy queries |
+| `CODEINTEL_MCP_EVENT_STORE` | `1` | Enable SSE resumability |
+| `CODEINTEL_MCP_RETRY_INTERVAL` | `1000` | SSE retry interval (ms) |
 | `CODEINTEL_MCP_ENABLE_SEARCH` | `1` | Enable code_search tool |
 | `CODEINTEL_MCP_ENABLE_EXPLAIN` | `1` | Enable semantic_explain tool |
 | `CODEINTEL_MCP_ENABLE_META` | `1` | Enable serving_meta tool |
+| `CODEINTEL_MCP_ENABLE_EXPORT` | `1` | Enable semantic_export tool |
+| `CODEINTEL_AUTH_REQUIRED_FOR_REMOTE` | `1` | Require auth for non-localhost |
 | `CODEINTEL_UVICORN_WORKERS` | `1` | Number of Uvicorn workers |
 | `CODEINTEL_UVICORN_LOOP` | `auto` | Event loop implementation |
 | `CODEINTEL_UVICORN_HTTP` | `auto` | HTTP parser implementation |
@@ -2068,6 +2360,8 @@ Use cases:
 | `CODEINTEL_UVICORN_BACKLOG` | `2048` | Connection backlog size |
 | `CODEINTEL_UVICORN_ACCESS_LOG` | `1` | Enable access logging |
 | `CODEINTEL_UVICORN_SERVER_HEADER` | `0` | Include server header |
+| `CODEINTEL_UVICORN_PROXY_HEADERS` | `0` | Trust proxy headers |
+| `CODEINTEL_UVICORN_FORWARDED_ALLOW_IPS` | `127.0.0.1` | IPs allowed to set X-Forwarded-* |
 
 ---
 
@@ -2116,7 +2410,18 @@ Use cases:
 
 ---
 
-*Document created: 2025-12-16*
-*Last updated: 2025-12-16*
-*Status: Ready for implementation*
+## Appendix: Recommended Uvicorn Presets
 
+| Use Case | Workers | Query Limit | Command |
+|----------|---------|-------------|---------|
+| **Personal (default)** | 1 | 2 | `codeintel serve http` |
+| **Multi-client** | 2 | 2 | `CODEINTEL_UVICORN_WORKERS=2 codeintel serve http` |
+| **Behind proxy** | 1 | 2 | `CODEINTEL_UVICORN_PROXY_HEADERS=1 codeintel serve http` |
+
+**Important**: With `workers > 1`, DuckDB connections **must** be `read_only=True` (our serving layer handles this automatically).
+
+---
+
+*Document created: 2025-12-16*
+*Last updated: 2025-12-16 (integrated feedback from FastMCP_implementation_comments.md)*
+*Status: Ready for implementation*

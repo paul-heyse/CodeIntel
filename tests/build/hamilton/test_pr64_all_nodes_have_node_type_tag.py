@@ -10,6 +10,7 @@ from codeintel.build.hamilton.driver_factory import build_driver
 _HAMILTON_DECORATOR_SUFFIXES = (
     "_validator",  # From @check_output_custom
     "_raw",  # From various decorators
+    "with_",  # From @pipe_input/@pipe_output macro-generated steps
 )
 
 
@@ -41,7 +42,7 @@ def test_pr64_all_nodes_have_node_type_tag() -> None:
     - User-defined input nodes (node.user_defined = True)
     - Hamilton-generated decorator nodes (e.g., *_validator, *_raw)
     """
-    runtime = build_driver(mode="auto")
+    runtime = build_driver()
 
     missing: list[str] = []
     for node_name, node in runtime.dr.graph.nodes.items():
@@ -51,6 +52,8 @@ def test_pr64_all_nodes_have_node_type_tag() -> None:
         if _is_hamilton_generated_node(node_name):
             continue
         tags = node.tags
+        if isinstance(tags, dict) and tags.get("hamilton.data_saver") is True:
+            continue
         node_type = tags.get("node_type")
         if not isinstance(node_type, str) or not node_type:
             missing.append(node_name)

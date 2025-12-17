@@ -10,7 +10,7 @@ from codeintel.build.hamilton.introspect import derive_target_dependencies
 
 def test_pr65_hamilton_graph_filters_to_targets_only() -> None:
     """Derived dependencies should reference target names only (no loader/dataset nodes)."""
-    runtime = build_driver(mode="auto")
+    runtime = build_driver()
 
     deps = derive_target_dependencies(runtime)
     all_targets = {t.name for t in runtime.graph.all_targets}

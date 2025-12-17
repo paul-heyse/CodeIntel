@@ -88,7 +88,9 @@ class ReadPoolWarehouse:
         return config
 
     def _open(self) -> Warehouse:
-        con = connect(StorageConfig.for_readonly(self._db_path), duckdb_config=self._connect_config())
+        con = connect(
+            StorageConfig.for_readonly(self._db_path), duckdb_config=self._connect_config()
+        )
         gateway = MinimalStorageGateway(con)
         return Warehouse(gateway=cast("StorageGateway", gateway))
 

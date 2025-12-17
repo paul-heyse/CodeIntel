@@ -9,11 +9,8 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_execution_failed
 
 if TYPE_CHECKING:
-    from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
     from codeintel.cli.context import CommandContext
 
-
-_VALID_MODES: frozenset[str] = frozenset({"auto", "generated"})
 _MAX_ERROR_ISSUES: int = 50
 
 
@@ -31,7 +28,6 @@ def build_validate_handler(ctx: CommandContext) -> CliResult[str]:
         Validation report as JSON text on success.
     """
     output_format = ctx.params.get_str("output_format") or "json"
-    mode_raw = ctx.params.get_str("hamilton_mode") or "auto"
 
     if output_format != "json":
         return fail_execution_failed(
@@ -40,16 +36,7 @@ def build_validate_handler(ctx: CommandContext) -> CliResult[str]:
             status=400,
         )
 
-    if mode_raw not in _VALID_MODES:
-        choices = ", ".join(sorted(_VALID_MODES))
-        return fail_execution_failed(
-            "build",
-            f"Unknown Hamilton mode: {mode_raw}. Expected one of: {choices}",
-            status=400,
-        )
-
-    mode: HamiltonNodeMode = "auto" if mode_raw == "auto" else "generated"
-    result = validate_graph(mode=mode)
+    result = validate_graph()
 
     if result.has_errors:
         lines: list[str] = []

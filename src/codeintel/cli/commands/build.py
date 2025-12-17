@@ -90,21 +90,6 @@ class BuildRunCommand:
             help="Force recompute of specific targets (repeatable).",
         ),
     ] = None
-    hamilton_mode: Annotated[
-        str,
-        Parameter(
-            name=["--hamilton-mode"],
-            help="Hamilton node mode: generated (default), auto, or native.",
-            show_choices=True,
-        ),
-    ] = "generated"
-    native_domains: Annotated[
-        list[str] | None,
-        Parameter(
-            name=["--native-domains"],
-            help="For native mode, restrict to specific domains (analytics, ingestion, graphs, export).",
-        ),
-    ] = None
     validate_outputs: Annotated[
         bool,
         Parameter(
@@ -208,14 +193,6 @@ class BuildHistoryCommand:
 class BuildValidateCommand:
     """Validate Hamilton DAG invariants for DAG-first planning."""
 
-    hamilton_mode: Annotated[
-        str,
-        Parameter(
-            name=["--hamilton-mode"],
-            help="Hamilton node mode: auto (default), generated, or native.",
-            show_choices=True,
-        ),
-    ] = "auto"
     output_format: Annotated[
         str,
         Parameter(

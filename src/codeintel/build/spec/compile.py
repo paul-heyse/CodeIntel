@@ -167,7 +167,7 @@ def compile_buildspec(*, options: BuildSpecCompileOptions | None = None) -> Buil
     """
     opts = options or BuildSpecCompileOptions()
 
-    runtime = build_driver(mode="auto")
+    runtime = build_driver()
     deps_by_target = derive_target_dependencies(runtime)
     derived_outputs = derive_target_outputs(runtime)
 

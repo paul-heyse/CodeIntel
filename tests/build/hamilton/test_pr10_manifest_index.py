@@ -310,7 +310,6 @@ class TestManifestPrefetch:
                 env=env,
                 graph=graph,
                 requested=("b",),
-                mode="generated",
             )
         except RuntimeError as e:
             if "load_manifest called" in str(e):

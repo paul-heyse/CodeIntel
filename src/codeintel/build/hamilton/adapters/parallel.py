@@ -233,6 +233,8 @@ class ThreadPoolAdapter(
     @staticmethod
     def _is_write_node(node: Node) -> bool:
         tags = node.tags if isinstance(node.tags, dict) else {}
+        if tags.get("hamilton.data_saver") is True:
+            return True
         node_type = tags.get(ht.TAG_NODE_TYPE)
         return node_type in {ht.NODE_TYPE_MATERIALIZE, ht.NODE_TYPE_ARTIFACT}
 

@@ -40,7 +40,7 @@ from codeintel.storage.exceptions import StorageError
 if TYPE_CHECKING:
     from hamilton.lifecycle.base import LifecycleAdapter
 
-    from codeintel.build.hamilton.driver_factory import HamiltonNodeMode, HamiltonRuntime
+    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.storage.gateway import StorageGateway
 
@@ -316,21 +316,17 @@ class HamiltonBuildExecutor:
     ----------
     profile
         Optional policy profile name (e.g., "fast", "full", "default").
-    mode
-        Node mode: "phase0" for explicit nodes, "generated" for all targets.
     """
 
     def __init__(
         self,
         *,
         profile: str | None = None,
-        mode: HamiltonNodeMode = "generated",
         parallel_backend: str = "sequential",
         max_workers: int | None = None,
     ) -> None:
         """Initialize the Hamilton executor."""
         self._profile = profile
-        self._mode: HamiltonNodeMode = mode
         self._parallel_backend = parallel_backend
         self._max_workers = max_workers
 
@@ -338,11 +334,6 @@ class HamiltonBuildExecutor:
     def profile(self) -> str | None:
         """Return the configured profile name."""
         return self._profile
-
-    @property
-    def mode(self) -> HamiltonNodeMode:
-        """Return the configured node mode."""
-        return self._mode
 
     def run(
         self,
@@ -374,10 +365,9 @@ class HamiltonBuildExecutor:
             started_at=datetime.now(tz=UTC),
         )
         log.info(
-            "build.hamilton.executor.start run_id=%s targets=%s mode=%s",
+            "build.hamilton.executor.start run_id=%s targets=%s",
             context.run_id,
             targets,
-            self._mode,
         )
 
         closure = self._compute_closure(graph, targets, context.run_id)
@@ -456,7 +446,7 @@ class HamiltonBuildExecutor:
         """
         config: dict[str, Any] = {"profile": self._profile or "default"}
         adapters = self._build_adapters(env=env, telemetry_hook=telemetry_hook)
-        return build_driver(config=config, mode=self._mode, adapter=adapters)
+        return build_driver(config=config, adapters=adapters)
 
     @staticmethod
     def _build_contract_graph() -> TargetGraph:

@@ -70,7 +70,6 @@ from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDif
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton import HamiltonBuildResult
-    from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
     from codeintel.build.hamilton.planner import HamiltonBuildPlan
     from codeintel.build.manifest import BuildRunRecord
     from codeintel.build.targets import TargetGraph, TargetModule
@@ -131,7 +130,6 @@ class BuildExecutionArgs:
     goals: list[str]
     force: list[str] | None
     run_mode: RunMode
-    hamilton_mode: HamiltonNodeMode
     validate_outputs: bool
     strict_contracts: bool
     wrapper_allowlist: list[str] | None
@@ -143,11 +141,6 @@ class BuildExecutionArgs:
     def is_dry_run(self) -> bool:
         """Return True when run_mode is DRY_RUN."""
         return self.run_mode is RunMode.DRY_RUN
-
-    @property
-    def node_mode(self) -> HamiltonNodeMode:
-        """Return typed HamiltonNodeMode value."""
-        return self.hamilton_mode
 
 
 @dataclass(frozen=True)
@@ -330,10 +323,9 @@ def _execute_build_hamilton(
         return None
 
     LOG.info(
-        "build.cli.hamilton.execute goals=%s force=%s mode=%s validate=%s",
+        "build.cli.hamilton.execute goals=%s force=%s validate=%s",
         execution.goals,
         execution.force,
-        execution.hamilton_mode,
         execution.validate_outputs,
     )
     providers = create_default_providers(runtime.tools)
@@ -365,7 +357,6 @@ def _execute_build_hamilton(
 
     executor = HamiltonBuildExecutor(
         profile="default",
-        mode=execution.node_mode,
         parallel_backend=execution.parallel_backend,
         max_workers=execution.max_workers,
     )
@@ -531,7 +522,6 @@ class _BuildRunParams:
     all_targets: bool
     dry_run: bool
     force: list[str] | None
-    hamilton_mode: str
     validate_outputs: bool
     strict_contracts: bool
     wrapper_allowlist: list[str] | None
@@ -582,7 +572,6 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         all_targets=ctx.params.get_bool("all_targets"),
         dry_run=ctx.params.get_bool("dry_run"),
         force=force,
-        hamilton_mode=ctx.params.get_str("hamilton_mode") or "generated",
         validate_outputs=ctx.params.get_bool("validate_outputs"),
         strict_contracts=ctx.params.get_bool("strict_contracts"),
         wrapper_allowlist=wrapper_allowlist_list,
@@ -618,13 +607,6 @@ def _validate_build_run_params(
         if sum(provided) != 1:
             error = fail_invalid_target_selection(
                 "Provide exactly one of targets, --module, or --all."
-            )
-
-    if error is None:
-        valid_modes = ("generated", "auto", "native")
-        if params.hamilton_mode not in valid_modes:
-            error = fail_invalid_target_selection(
-                f"Invalid hamilton_mode '{params.hamilton_mode}'. Valid: {', '.join(valid_modes)}"
             )
 
     if error is None and params.publish_serving_snapshot and params.dry_run:
@@ -686,18 +668,16 @@ def build_run_handler(
         return fail_invalid_targets(str(e))
 
     LOG.info(
-        "build.run repo=%s commit=%s targets=%s hamilton_mode=%s",
+        "build.run repo=%s commit=%s targets=%s",
         runtime.snapshot.repo,
         runtime.snapshot.commit,
         goals,
-        params.hamilton_mode,
     )
 
     execution_args = BuildExecutionArgs(
         goals=goals,
         force=params.force,
         run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
-        hamilton_mode=cast("HamiltonNodeMode", params.hamilton_mode),
         validate_outputs=params.validate_outputs,
         strict_contracts=params.strict_contracts,
         wrapper_allowlist=params.wrapper_allowlist,
@@ -737,7 +717,7 @@ def _execute_and_format_result(
             ):
                 _publish_serving_snapshot_from_build(runtime, gateway, run_id=result.run_id)
     except Exception as exc:
-        LOG.exception("build.run.error hamilton_mode=%s", execution.hamilton_mode)
+        LOG.exception("build.run.error")
         return fail_execution_failed("build", str(exc))
 
     if execution.run_mode is RunMode.DRY_RUN or result is None:
@@ -930,7 +910,7 @@ def build_graph_handler(
     except ValidationError as e:
         return fail_invalid_target_selection(str(e))
 
-    hamilton_runtime = build_driver(mode="generated")
+    hamilton_runtime = build_driver()
 
     dag_info = get_dag_info(hamilton_runtime, goals, graph_source="hamilton")
 
@@ -1026,7 +1006,6 @@ def build_plan_handler(
             env=env,
             graph=graph,
             requested=tuple(goals),
-            mode="generated",
             graph_source="hamilton",
         )
 
@@ -1110,7 +1089,6 @@ def _compute_plan_for_explain(
             env=env,
             graph=graph,
             requested=(target,),
-            mode="generated",
             graph_source="hamilton",
         )
 

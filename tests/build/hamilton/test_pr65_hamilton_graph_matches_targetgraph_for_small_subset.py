@@ -20,7 +20,7 @@ def test_pr65_hamilton_graph_matches_targetgraph_for_small_subset() -> None:
     graph now has different intermediate targets and ordering. This needs review
     once the migration is complete to determine if the test expectations need updating.
     """
-    runtime = build_driver(mode="auto")
+    runtime = build_driver()
     base = runtime.graph
     derived = target_graph_from_hamilton(runtime)
 

@@ -10,7 +10,7 @@ from codeintel.build.hamilton.tags import NODE_TYPE_LOADER_DATAFRAME, NODE_TYPE_
 
 def test_pr64_loader_tags_are_canonical() -> None:
     """q__/df__ nodes should be tagged with loader.* node types."""
-    runtime = build_driver(mode="auto")
+    runtime = build_driver()
 
     for node_name, node in runtime.dr.graph.nodes.items():
         tags = node.tags

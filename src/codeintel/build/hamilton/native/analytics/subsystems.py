@@ -10,15 +10,20 @@ and schema documentation via @schema.output.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import ibis
 import ibis.expr.types as ir
-from hamilton.function_modifiers import check_output_custom, schema, tag
+from hamilton.function_modifiers import check_output_custom, schema, source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
+from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materialization,
+)
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
@@ -27,6 +32,14 @@ LOG = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
+@SaveToDecorator(
+    [DuckDBIbisTableSaver],
+    output_name_=materialize_node("analytics.subsystems"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("subsystems"),
+    table_key=value("analytics.subsystems"),
+)
 @tag(domain="analytics", target="subsystems", node_type="compute")
 @check_output_custom(
     *build_table_contract(
@@ -56,6 +69,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
     ("module_count", "int"),
     ("modules_json", "string"),
     ("entrypoints_json", "string"),
+    target_="t__subsystems__compute",
 )
 def t__subsystems__compute(
     env: BuildEnv,
@@ -121,12 +135,13 @@ def t__subsystems__compute(
 def t__subsystems(
     env: BuildEnv,
     graph: TargetGraph,
-    t__subsystems__compute: ir.Table,
+    m__analytics__subsystems: dict[str, Any],
 ) -> TargetRunRecord:
-    """Materialize subsystems compute result to DuckDB.
+    """Finalize subsystems execution from DAG-visible DuckDB materialization.
 
-    This node takes the Ibis expression from the compute node and writes it to
-    analytics.subsystems, creating a DatasetRef for lineage tracking.
+    The DuckDB write is performed by a Hamilton materializer node
+    (``m__analytics__subsystems``). This target node converts the materialization
+    metadata into a TargetRunRecord and persists the manifest on success.
 
     Parameters
     ----------
@@ -134,8 +149,8 @@ def t__subsystems(
         Build environment with gateway, snapshot, and config.
     graph
         Target graph for accessing OutputTarget contract.
-    t__subsystems__compute
-        Ibis expression for subsystems from compute node.
+    m__analytics__subsystems
+        Materialization metadata dict produced by the DuckDB saver node.
 
     Returns
     -------
@@ -145,30 +160,15 @@ def t__subsystems(
     Examples
     --------
     >>> # This node is executed by Hamilton after the compute node succeeds
-    >>> # It materializes the Ibis expression to DuckDB and returns a TargetRunRecord
+    >>> # It converts the saver metadata into a TargetRunRecord
     """
-    LOG.info("Materializing subsystems to DuckDB")
-
-    executor = NativeTargetExecutor.for_target(env, graph, "subsystems")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        ref = materialize_table(
-            MaterializationContext(
-                gateway=env.gateway,
-                snapshot=env.snapshot,
-                validate=env.validate_outputs,
-                owner_target="subsystems",
-                input_hash=executor.input_hash,
-            ),
-            "analytics.subsystems",
-            t__subsystems__compute,
-        )
-        return {ref.table_key: ref.row_count or 0}
-
-    return executor.execute(compute)
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name="subsystems",
+        expected_table_key="analytics.subsystems",
+        materialization=m__analytics__subsystems,
+    )
 
 
 __all__ = ["t__subsystems", "t__subsystems__compute"]

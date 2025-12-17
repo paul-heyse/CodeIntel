@@ -7,13 +7,12 @@ JSON (NDJSON) to support efficient export of large datasets.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from starlette.responses import StreamingResponse
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
 
 def ndjson_stream(rows: Iterable[dict[str, object]]) -> Iterator[bytes]:

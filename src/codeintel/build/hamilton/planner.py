@@ -29,7 +29,6 @@ from codeintel.build.hamilton.native.registry import is_native_target
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.introspect import GraphSource
     from codeintel.build.manifest import OutputManifest
@@ -549,7 +548,6 @@ def compute_plan(
     env: BuildEnv,
     graph: TargetGraph | None = None,
     requested: tuple[str, ...],
-    mode: HamiltonNodeMode = "generated",
     graph_source: GraphSource = "hamilton",
 ) -> HamiltonBuildPlan:
     """Compute build plan for requested targets.
@@ -565,8 +563,6 @@ def compute_plan(
         Target graph to use. If None, fetches from registry.
     requested
         Tuple of target names requested by the user.
-    mode
-        Hamilton node mode (for metadata only, doesn't affect planning).
     graph_source
         Source of dependency edges (only "hamilton" is supported).
 
@@ -580,13 +576,12 @@ def compute_plan(
     >>> plan = compute_plan(
     ...     env=env,
     ...     requested=("risk_factors",),
-    ...     mode="generated",
     ... )
     >>> len(plan.to_compute)
     7
     """
     _ = graph_source
-    runtime = build_driver(mode=mode)
+    runtime = build_driver()
     graph = target_graph_from_hamilton(runtime, base_graph=graph)
 
     closure = graph.topological_order(list(requested))
