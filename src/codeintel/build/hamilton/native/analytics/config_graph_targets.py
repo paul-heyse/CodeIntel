@@ -524,7 +524,12 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMet
     table_key=value("analytics.cfg_function_metrics"),
     columns=value(tuple(CFG_FUNCTION_METRICS_COLS)),
 )
-@tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute", target_="cfg_function_metrics__rows")
+@tag(
+    domain="analytics",
+    target="cfg_dfg_metrics",
+    node_type="compute",
+    target_="cfg_function_metrics__rows",
+)
 def cfg_function_metrics__rows(
     t__cfg_dfg_metrics__compute_cfg: CfgMetricsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -549,7 +554,12 @@ def cfg_function_metrics__rows(
     table_key=value("analytics.cfg_block_metrics"),
     columns=value(tuple(CFG_BLOCK_METRICS_COLS)),
 )
-@tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute", target_="cfg_block_metrics__rows")
+@tag(
+    domain="analytics",
+    target="cfg_dfg_metrics",
+    node_type="compute",
+    target_="cfg_block_metrics__rows",
+)
 def cfg_block_metrics__rows(
     t__cfg_dfg_metrics__compute_cfg: CfgMetricsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -604,7 +614,12 @@ def cfg_function_metrics_ext__rows(
     table_key=value("analytics.dfg_function_metrics"),
     columns=value(tuple(DFG_FUNCTION_METRICS_COLS)),
 )
-@tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute", target_="dfg_function_metrics__rows")
+@tag(
+    domain="analytics",
+    target="cfg_dfg_metrics",
+    node_type="compute",
+    target_="dfg_function_metrics__rows",
+)
 def dfg_function_metrics__rows(
     t__cfg_dfg_metrics__compute_dfg: DfgMetricsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -629,7 +644,12 @@ def dfg_function_metrics__rows(
     table_key=value("analytics.dfg_block_metrics"),
     columns=value(tuple(DFG_BLOCK_METRICS_COLS)),
 )
-@tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute", target_="dfg_block_metrics__rows")
+@tag(
+    domain="analytics",
+    target="cfg_dfg_metrics",
+    node_type="compute",
+    target_="dfg_block_metrics__rows",
+)
 def dfg_block_metrics__rows(
     t__cfg_dfg_metrics__compute_dfg: DfgMetricsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:

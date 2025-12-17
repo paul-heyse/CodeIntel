@@ -8,12 +8,18 @@ from __future__ import annotations
 import json as _json
 import logging
 import os
+import shutil
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-import codeintel.storage.views.ibis_views as _ibis_views
+from hamilton.caching.adapter import (
+    CachingBehavior,
+    CachingEventType,
+    HamiltonCacheAdapter,
+)
+
 from codeintel.build.assets.impact import compute_impact
 from codeintel.build.config import load_build_config
 from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
@@ -27,20 +33,10 @@ from codeintel.build.hamilton.observability import (
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.providers import create_default_providers
 from codeintel.build.registry import get_target_graph
-from codeintel.build.schemas import unified_schema_provider
-from codeintel.build.schemas.manifest import SchemaManifest
 from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
-from codeintel.build.serving.semantic_compile import (
-    compile_semantic_registry_from_views,
-    write_semantic_registry,
-)
-from codeintel.build.serving.semantic_compile_hamilton import (
-    collect_semantic_view_tags_from_hamilton,
-)
-from codeintel.build.spec import BuildSpecCompileOptions, buildspec_to_json, compile_buildspec
 from codeintel.build.state import BuildState, StateValidator
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
@@ -69,7 +65,10 @@ from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 
 if TYPE_CHECKING:
+    from hamilton.caching.adapter import CachingEvent
+
     from codeintel.build.hamilton import HamiltonBuildResult
+    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.planner import HamiltonBuildPlan
     from codeintel.build.manifest import BuildRunRecord
     from codeintel.build.targets import TargetGraph, TargetModule
@@ -122,6 +121,9 @@ class TargetScope(Enum):
     REQUESTED = "requested"
     ALL = "all"
 
+_VALID_MODULES: tuple[str, ...] = ("ingestion", "graphs", "analytics", "export")
+_CACHE_LOG_KEY_TUPLE_LEN: int = 2
+
 
 @dataclass(frozen=True)
 class BuildExecutionArgs:
@@ -136,6 +138,10 @@ class BuildExecutionArgs:
     publish_serving_snapshot: bool
     parallel_backend: str
     max_workers: int | None
+    enable_cache: bool
+    cache_dir: str | None
+    clear_cache: bool
+    cache_report: bool
 
     @property
     def is_dry_run(self) -> bool:
@@ -206,9 +212,8 @@ def _resolve_goals(
         return [t.name for t in graph.all_targets]
 
     if module:
-        valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
-        if module not in valid_modules:
-            msg = f"Unknown module: {module}. Valid: {', '.join(valid_modules)}"
+        if module not in _VALID_MODULES:
+            msg = f"Unknown module: {module}. Valid: {', '.join(_VALID_MODULES)}"
             raise ValidationError(msg)
         module_typed = cast("TargetModule", module)
         module_targets = graph.targets_for_module(module_typed)
@@ -355,28 +360,227 @@ def _execute_build_hamilton(
         wrapper_allowlist=wrapper_allowlist_frozen,
     )
 
+    cache_dir = runtime.paths.build_dir / ".hamilton_cache"
+    if execution.cache_dir:
+        override = Path(execution.cache_dir).expanduser()
+        cache_dir = override if override.is_absolute() else (runtime.root / override)
+
+    if execution.clear_cache:
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
     executor = HamiltonBuildExecutor(
         profile="default",
         parallel_backend=execution.parallel_backend,
         max_workers=execution.max_workers,
+        enable_cache=execution.enable_cache,
+        cache_dir=str(cache_dir),
     )
     hamilton_result = executor.run(env=env, targets=execution.goals)
 
-    return _HamiltonResultAdapter(hamilton_result)
+    cache_report: dict[str, object] | None = None
+    if execution.cache_report:
+        cache_report = _build_cache_report(
+            hamilton_result=hamilton_result,
+            cache_dir=cache_dir,
+            enable_cache=execution.enable_cache,
+        )
+
+    return _HamiltonResultAdapter(hamilton_result, cache_report=cache_report)
+
+
+def _build_cache_report(
+    *,
+    hamilton_result: HamiltonBuildResult,
+    cache_dir: Path,
+    enable_cache: bool,
+) -> dict[str, object]:
+    """Build a cache hit/miss report from Hamilton cache adapter logs.
+
+    Parameters
+    ----------
+    hamilton_result
+        Hamilton build result for the executed run.
+    cache_dir
+        Cache directory used for this run.
+    enable_cache
+        Whether caching was enabled for this run.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serializable cache report payload.
+    """
+    report: dict[str, object] = {
+        "enabled": enable_cache,
+        "cache_dir": str(cache_dir),
+        "node_count": 0,
+        "hit_count": 0,
+        "executed_count": 0,
+        "hit_rate": None,
+        "nodes": [],
+    }
+
+    if not enable_cache:
+        return report
+
+    runtime = hamilton_result.runtime
+    if runtime is None:
+        return report
+
+    cache_adapter = _cache_adapter_from_runtime(runtime)
+    if cache_adapter is None:
+        return report
+
+    cache_run_id = _cache_last_run_id(cache_adapter)
+    if cache_run_id is None:
+        return report
+
+    node_rows, hit_count, executed_count = _collect_cache_node_rows(
+        runtime=runtime,
+        cache_adapter=cache_adapter,
+        cache_run_id=cache_run_id,
+    )
+
+    total = hit_count + executed_count
+    report["node_count"] = total
+    report["hit_count"] = hit_count
+    report["executed_count"] = executed_count
+    report["hit_rate"] = (hit_count / total) if total else None
+    report["nodes"] = node_rows
+    report["cache_run_id"] = cache_run_id
+
+    return report
+
+
+def _cache_adapter_from_runtime(runtime: HamiltonRuntime) -> HamiltonCacheAdapter | None:
+    cache_adapter_raw = getattr(runtime.dr, "cache", None)
+    if isinstance(cache_adapter_raw, HamiltonCacheAdapter):
+        return cache_adapter_raw
+    return None
+
+
+def _cache_last_run_id(cache_adapter: HamiltonCacheAdapter) -> str | None:
+    try:
+        return cache_adapter.last_run_id
+    except IndexError:
+        return None
+
+
+def _cache_log_key_parts(key: object) -> tuple[str, str | None]:
+    if isinstance(key, str):
+        return key, None
+    if (
+        isinstance(key, tuple)
+        and len(key) == _CACHE_LOG_KEY_TUPLE_LEN
+        and all(isinstance(x, str) for x in key)
+    ):
+        return key[0], key[1]
+    return str(key), None
+
+
+def _cache_events_outcome(events: list[CachingEvent]) -> str | None:
+    if any(event.event_type == CachingEventType.GET_RESULT for event in events):
+        return "hit"
+    if any(event.event_type == CachingEventType.EXECUTE_NODE for event in events):
+        return "executed"
+    return None
+
+
+def _cache_behavior_str(behavior: object) -> str | None:
+    if isinstance(behavior, CachingBehavior):
+        return behavior.name.lower()
+    return None
+
+
+def _cache_node_tag_fields(runtime: HamiltonRuntime, node_name: str) -> dict[str, object]:
+    node_obj = runtime.dr.graph.nodes.get(node_name)
+    if node_obj is None:
+        return {}
+
+    node_tags = node_obj.tags if isinstance(node_obj.tags, dict) else None
+    if node_tags is None:
+        return {}
+
+    fields: dict[str, object] = {}
+    target = node_tags.get("target")
+    if isinstance(target, str):
+        fields["target"] = target
+
+    node_type = node_tags.get("node_type")
+    if isinstance(node_type, str):
+        fields["node_type"] = node_type
+
+    return fields
+
+
+def _collect_cache_node_rows(
+    *,
+    runtime: HamiltonRuntime,
+    cache_adapter: HamiltonCacheAdapter,
+    cache_run_id: str,
+) -> tuple[list[dict[str, object]], int, int]:
+    logs_by_node = cast(
+        "dict[object, list[CachingEvent]]",
+        cache_adapter.logs(run_id=cache_run_id, level="info"),
+    )
+    behavior_by_node = cache_adapter.behaviors.get(cache_run_id, {})
+
+    node_rows: list[dict[str, object]] = []
+    hit_count = 0
+    executed_count = 0
+
+    for key, events in logs_by_node.items():
+        node_name, task_id = _cache_log_key_parts(key)
+        outcome = _cache_events_outcome(events)
+        if outcome is None:
+            continue
+
+        if outcome == "hit":
+            hit_count += 1
+        else:
+            executed_count += 1
+
+        row: dict[str, object] = {"node": node_name, "outcome": outcome}
+
+        behavior_str = _cache_behavior_str(behavior_by_node.get(node_name))
+        if behavior_str is not None:
+            row["behavior"] = behavior_str
+
+        if task_id is not None:
+            row["task_id"] = task_id
+
+        row.update(_cache_node_tag_fields(runtime, node_name))
+        node_rows.append(row)
+
+    node_rows.sort(key=lambda r: (str(r.get("node", "")), str(r.get("task_id", ""))))
+    return node_rows, hit_count, executed_count
 
 
 class _HamiltonResultAdapter:
     """Adapter to make HamiltonBuildResult compatible with BuildResult interface."""
 
-    def __init__(self, hamilton_result: HamiltonBuildResult) -> None:
+    def __init__(
+        self,
+        hamilton_result: HamiltonBuildResult,
+        *,
+        cache_report: dict[str, object] | None = None,
+    ) -> None:
         """Initialize adapter with Hamilton result.
 
         Parameters
         ----------
         hamilton_result
             Result from HamiltonBuildExecutor.
+        cache_report
+            Optional cache report for this run.
         """
         self._result = hamilton_result
+        self._cache_report = cache_report
+
+    @property
+    def cache_report(self) -> dict[str, object] | None:
+        """Return an optional cache report for the run."""
+        return self._cache_report
 
     @property
     def run_id(self) -> str:
@@ -467,7 +671,7 @@ def build_status_handler(
     ctx
         Command context with params:
         - project_root: Optional project root override.
-        - module: Optional module filter (ingestion, graphs, analytics).
+        - module: Optional module filter (ingestion, graphs, analytics, export).
 
     Returns
     -------
@@ -494,9 +698,8 @@ def build_status_handler(
     state = validator.validate()
 
     if module:
-        valid_modules: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics")
-        if module not in valid_modules:
-            return fail_invalid_module(module, valid_modules)
+        if module not in _VALID_MODULES:
+            return fail_invalid_module(module, _VALID_MODULES)
 
         module_targets = graph.targets_for_module(cast("TargetModule", module))
         module_names = {t.name for t in module_targets}
@@ -528,6 +731,10 @@ class _BuildRunParams:
     publish_serving_snapshot: bool
     parallel_backend: str
     max_workers: int | None
+    enable_cache: bool
+    cache_dir: str | None
+    clear_cache: bool
+    cache_report: bool
 
 
 def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
@@ -578,6 +785,10 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         publish_serving_snapshot=ctx.params.get_bool("publish_serving_snapshot"),
         parallel_backend=parallel_backend,
         max_workers=max_workers,
+        enable_cache=ctx.params.get_bool("enable_cache"),
+        cache_dir=ctx.params.get_str("cache_dir"),
+        clear_cache=ctx.params.get_bool("clear_cache"),
+        cache_report=ctx.params.get_bool("cache_report"),
     )
 
 
@@ -598,9 +809,8 @@ def _validate_build_run_params(
     """
     error: CliResult[BuildRunResult] | None = None
 
-    valid_modules = ("ingestion", "graphs", "analytics")
-    if params.module and params.module not in valid_modules:
-        error = fail_invalid_module(params.module, valid_modules)
+    if params.module and params.module not in _VALID_MODULES:
+        error = fail_invalid_module(params.module, _VALID_MODULES)
 
     if error is None:
         provided = [bool(params.targets), params.module is not None, params.all_targets]
@@ -639,7 +849,7 @@ def build_run_handler(
         Command context with params:
         - project_root: Optional project root override.
         - targets: Target names to build.
-        - module: Module name (ingestion, graphs, analytics).
+        - module: Module name (ingestion, graphs, analytics, export).
         - all_targets: Build all targets.
         - dry_run: Show plan without executing.
         - force: Force recompute of specific targets.
@@ -667,6 +877,9 @@ def build_run_handler(
     except ValidationError as e:
         return fail_invalid_targets(str(e))
 
+    if params.publish_serving_snapshot and "serving_artifacts" not in goals:
+        goals.append("serving_artifacts")
+
     LOG.info(
         "build.run repo=%s commit=%s targets=%s",
         runtime.snapshot.repo,
@@ -684,6 +897,10 @@ def build_run_handler(
         publish_serving_snapshot=params.publish_serving_snapshot,
         parallel_backend=params.parallel_backend,
         max_workers=params.max_workers,
+        enable_cache=params.enable_cache,
+        cache_dir=params.cache_dir,
+        clear_cache=params.clear_cache,
+        cache_report=params.cache_report,
     )
     return _execute_and_format_result(runtime, execution_args)
 
@@ -730,12 +947,16 @@ def _execute_and_format_result(
             )
         )
 
+    cache_report_raw = getattr(result, "cache_report", None)
+    cache_report = cache_report_raw if isinstance(cache_report_raw, dict) else None
+
     return CliResult.ok(
         BuildRunResult(
             executed=list(result.completed_targets),
             skipped=list(result.skipped_targets),
             failed=list(result.failed_targets),
             duration_seconds=result.duration_ms / 1000.0,
+            cache=cache_report,
         )
     )
 
@@ -746,7 +967,7 @@ def _publish_serving_snapshot_from_build(
     *,
     run_id: str,
 ) -> None:
-    """Compile serving artifacts and publish a snapshot for the current build DB.
+    """Publish a serving snapshot for the current build DB.
 
     Parameters
     ----------
@@ -756,32 +977,27 @@ def _publish_serving_snapshot_from_build(
         Open write-capable gateway for checkpointing the build DB.
     run_id
         Build run identifier used to name the published snapshot.
+
+    Raises
+    ------
+    FileNotFoundError
+        If required serving artifacts are missing.
     """
-    schema_provider = unified_schema_provider()
-    view_tags = collect_semantic_view_tags_from_hamilton(modules=(_ibis_views,))
-    compiled_registry = compile_semantic_registry_from_views(
-        schema_provider=schema_provider,
-        view_tags=view_tags,
-        version="v1",
-    )
+    artifacts_dir = runtime.paths.build_dir / "serving" / "artifacts"
+    semantic_registry_path = artifacts_dir / "semantic_registry.json"
+    schema_manifest_path = artifacts_dir / "schema_manifest.json"
+    buildspec_path = artifacts_dir / "buildspec.json"
 
-    artifact_dir = runtime.paths.build_dir / "serving" / run_id
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    semantic_registry_path = artifact_dir / "semantic_registry.json"
-    schema_manifest_path = artifact_dir / "schema_manifest.json"
-    buildspec_path = artifact_dir / "buildspec.json"
+    missing = [
+        str(path)
+        for path in (semantic_registry_path, schema_manifest_path, buildspec_path)
+        if not path.exists()
+    ]
 
-    write_semantic_registry(registry=compiled_registry, out_path=semantic_registry_path)
-
-    tables = sorted(schema_provider.iter_table_schemas(), key=lambda s: s.table_key)
-    manifest = SchemaManifest(version="v1", tables=tuple(tables))
-    schema_manifest_path.write_text(
-        _json.dumps(manifest.to_json_obj(), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
-    spec = compile_buildspec(options=BuildSpecCompileOptions(include_columns=False))
-    buildspec_path.write_text(buildspec_to_json(spec, indent=2), encoding="utf-8")
+    if missing:
+        joined = ", ".join(missing)
+        msg = f"Missing serving artifacts (run `codeintel build run serving_artifacts`): {joined}"
+        raise FileNotFoundError(msg)
 
     serve_dir_env = os.environ.get("CODEINTEL_SERVE_DIR")
     serve_dir = (
@@ -944,7 +1160,7 @@ def build_plan_handler(
     ctx
         Command context with params:
         - targets: Target names to plan.
-        - module: Module name (ingestion, graphs, analytics).
+        - module: Module name (ingestion, graphs, analytics, export).
         - all_targets: Plan all targets.
         - force: Mark specific targets as forced.
         - output_file: Optional output file path.

@@ -120,7 +120,9 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
     table_key=value("analytics.data_models"),
     columns=value(tuple(DATA_MODELS_COLS)),
 )
-@tag(domain="analytics", target="data_models", node_type="compute", target_="data_models__model_rows")
+@tag(
+    domain="analytics", target="data_models", node_type="compute", target_="data_models__model_rows"
+)
 def data_models__model_rows(
     t__data_models__compute: DataModelsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -145,7 +147,9 @@ def data_models__model_rows(
     table_key=value("analytics.data_model_fields"),
     columns=value(tuple(DATA_MODEL_FIELDS_COLS)),
 )
-@tag(domain="analytics", target="data_models", node_type="compute", target_="data_models__field_rows")
+@tag(
+    domain="analytics", target="data_models", node_type="compute", target_="data_models__field_rows"
+)
 def data_models__field_rows(
     t__data_models__compute: DataModelsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -342,6 +346,7 @@ def t__data_model_usage(
         materialization=m__analytics__data_model_usage,
     )
 
+
 # ---------------------------------------------------------------------------
 # function_ast_features target
 # ---------------------------------------------------------------------------
@@ -408,7 +413,9 @@ def t__function_ast_features(
         return executor.skip()
 
     if not t__function_ast_features__compute.success:
-        return executor.fail(RuntimeError(t__function_ast_features__compute.error or "AST features failed"))
+        return executor.fail(
+            RuntimeError(t__function_ast_features__compute.error or "AST features failed")
+        )
 
     def compute() -> dict[str, int]:
         features_map = t__function_ast_features__compute.features_map

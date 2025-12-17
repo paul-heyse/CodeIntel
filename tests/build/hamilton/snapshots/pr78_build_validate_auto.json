@@ -2,7 +2,7 @@
   "errors": [],
   "summary": {
     "error_count": 0,
-    "warning_count": 31
+    "warning_count": 28
   },
   "warnings": [
     {
@@ -67,12 +67,6 @@
     },
     {
       "code": "deps_mismatch",
-      "message": "Declared deps drift from Hamilton-derived deps (declared=['call_graph'], derived=[])",
-      "severity": "warning",
-      "target": "external_deps"
-    },
-    {
-      "code": "deps_mismatch",
       "message": "Declared deps drift from Hamilton-derived deps (declared=['cfg', 'dfg'], derived=[])",
       "severity": "warning",
       "target": "cfg_dfg_metrics"
@@ -88,12 +82,6 @@
       "message": "Declared deps drift from Hamilton-derived deps (declared=['coverage_functions', 'tests_ingest'], derived=['goids'])",
       "severity": "warning",
       "target": "coverage_test_edges"
-    },
-    {
-      "code": "deps_mismatch",
-      "message": "Declared deps drift from Hamilton-derived deps (declared=['coverage_ingest', 'goids'], derived=[])",
-      "severity": "warning",
-      "target": "coverage_functions"
     },
     {
       "code": "deps_mismatch",
@@ -139,12 +127,6 @@
     },
     {
       "code": "deps_mismatch",
-      "message": "Declared deps drift from Hamilton-derived deps (declared=['goids', 'semantic_roles', 'test_profile'], derived=[])",
-      "severity": "warning",
-      "target": "entrypoints"
-    },
-    {
-      "code": "deps_mismatch",
       "message": "Declared deps drift from Hamilton-derived deps (declared=['goids'], derived=[])",
       "severity": "warning",
       "target": "function_history"
@@ -175,13 +157,13 @@
     },
     {
       "code": "deps_mismatch",
-      "message": "Declared deps drift from Hamilton-derived deps (declared=['profiles'], derived=[])",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['profiles'], derived=['function_metrics', 'modules'])",
       "severity": "warning",
       "target": "export_jsonl"
     },
     {
       "code": "deps_mismatch",
-      "message": "Declared deps drift from Hamilton-derived deps (declared=['profiles'], derived=[])",
+      "message": "Declared deps drift from Hamilton-derived deps (declared=['profiles'], derived=['function_metrics'])",
       "severity": "warning",
       "target": "export_parquet"
     },

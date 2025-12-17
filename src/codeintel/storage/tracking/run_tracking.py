@@ -1,7 +1,7 @@
 """Pipeline run tracking persistence for DuckDB.
 
 This module provides persistent tracking of pipeline runs and their steps,
-enabling observability and debugging of ingestion, graphs, and analytics
+enabling observability and debugging of ingestion, graphs, analytics, and export
 executions.
 
 All DuckDB access is encapsulated here, following the storage layer pattern.
@@ -46,7 +46,7 @@ StepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
 - ``skipped``: Step was skipped (e.g., unchanged inputs)
 """
 
-ModuleKind = Literal["ingestion", "graphs", "analytics"]
+ModuleKind = Literal["ingestion", "graphs", "analytics", "export"]
 """Classification of pipeline module."""
 
 
@@ -105,7 +105,7 @@ class PipelineStepRecord:
     run_id
         Parent run identifier.
     module
-        Module that executed this step (ingestion, graphs, analytics).
+        Module that executed this step (ingestion, graphs, analytics, export).
     stage
         Stage within the module (e.g., scan, parse, index).
     name

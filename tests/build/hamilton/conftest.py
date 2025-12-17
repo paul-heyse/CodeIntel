@@ -178,6 +178,16 @@ class FakeBuildAccessor:
             raise RuntimeError(msg)
         return self.manifests.get(target)
 
+    def save_manifest(self, manifest: OutputManifest) -> None:
+        """Save a manifest to the fake accessor.
+
+        Parameters
+        ----------
+        manifest
+            The manifest to save.
+        """
+        self.manifests[manifest.target] = manifest
+
     def list_manifests(
         self,
         repo: str,

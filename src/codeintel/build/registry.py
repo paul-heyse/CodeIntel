@@ -222,7 +222,6 @@ CFG_TARGET = OutputTarget(
         tables=(
             _DATASET_TABLE_SCHEMAS["graph.cfg_blocks"],
             _DATASET_TABLE_SCHEMAS["graph.cfg_edges"],
-            _DATASET_TABLE_SCHEMAS["graph.dfg_edges"],
         )
     ),
     dependencies=("goids", "ast"),
@@ -409,6 +408,7 @@ GRAPH_METRICS_TARGET = OutputTarget(
             _DATASET_TABLE_SCHEMAS["analytics.graph_metrics_functions_ext"],
             _DATASET_TABLE_SCHEMAS["analytics.graph_metrics_modules"],
             _DATASET_TABLE_SCHEMAS["analytics.graph_metrics_modules_ext"],
+            _DATASET_TABLE_SCHEMAS["analytics.graph_stats"],
         )
     ),
     dependencies=("call_graph", "import_graph"),
@@ -595,6 +595,32 @@ EXPORT_PARQUET_TARGET = OutputTarget(
     description="Export datasets to Parquet format for Document Output.",
 )
 
+SERVING_ARTIFACTS_TARGET = OutputTarget(
+    name="serving_artifacts",
+    module="export",
+    plugin="",
+    contract=OutputContract(
+        artifacts=(
+            ArtifactSpec(
+                "semantic_registry",
+                "{build_dir}/serving/artifacts/semantic_registry.json",
+                "Compiled semantic registry for serving",
+            ),
+            ArtifactSpec(
+                "schema_manifest",
+                "{build_dir}/serving/artifacts/schema_manifest.json",
+                "Compiled schema manifest for serving",
+            ),
+            ArtifactSpec(
+                "buildspec",
+                "{build_dir}/serving/artifacts/buildspec.json",
+                "Compiled BuildSpec contract for serving",
+            ),
+        )
+    ),
+    dependencies=(),
+    description="Compile deterministic serving artifacts (semantic registry, schema manifest, buildspec).",
+)
 
 ALL_TARGETS: tuple[OutputTarget, ...] = (
     MODULES_TARGET,
@@ -642,6 +668,7 @@ ALL_TARGETS: tuple[OutputTarget, ...] = (
     FUNCTION_AST_FEATURES_TARGET,
     EXPORT_JSONL_TARGET,
     EXPORT_PARQUET_TARGET,
+    SERVING_ARTIFACTS_TARGET,
 )
 
 

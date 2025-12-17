@@ -4493,6 +4493,92 @@
       "columns": [
         {
           "description": null,
+          "name": "graph_name",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "node_count",
+          "nullable": true,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "edge_count",
+          "nullable": true,
+          "type": "BIGINT"
+        },
+        {
+          "description": null,
+          "name": "weak_component_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "scc_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "component_layers",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "avg_clustering",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "diameter_estimate",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "avg_shortest_path_estimate",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Global graph-level statistics for call/import graphs",
+      "indexes": [],
+      "name": "graph_stats",
+      "primary_key": [
+        "graph_name",
+        "repo",
+        "commit"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.graph_stats"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
           "name": "repo",
           "nullable": false,
           "type": "VARCHAR"

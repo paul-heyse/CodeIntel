@@ -69,7 +69,7 @@ def _tool_service(env: BuildEnv) -> ToolService:
     return ToolService(runner)
 
 
-@tag(domain="ingestion", target="scip", node_type="compute")
+@tag(domain="ingestion", target="scip", node_type="tool")
 def t__scip__run(
     env: BuildEnv,
     graph: TargetGraph,

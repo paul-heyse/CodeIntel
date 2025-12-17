@@ -57,7 +57,7 @@ class ExportJsonlComputeResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-@tag(domain="export", target="export_jsonl", node_type="compute")
+@tag(domain="export", target="export_jsonl", node_type="tool")
 def t__export_jsonl__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -220,7 +220,7 @@ def t__export_parquet__compute(
     target_name=value("export_parquet"),
     artifact_name=value("parquet_export"),
 )
-@tag(domain="export", target="export_parquet", node_type="compute", target_="export_parquet__bytes")
+@tag(domain="export", target="export_parquet", node_type="tool", target_="export_parquet__bytes")
 def export_parquet__bytes(
     env: BuildEnv,
     graph: TargetGraph,

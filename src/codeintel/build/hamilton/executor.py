@@ -316,6 +316,12 @@ class HamiltonBuildExecutor:
     ----------
     profile
         Optional policy profile name (e.g., "fast", "full", "default").
+    enable_cache
+        When True, enable Hamilton's on-disk caching adapter for nodes decorated with
+        ``@cache``.
+    cache_dir
+        Optional override for the Hamilton cache directory. When omitted, uses
+        ``{build_dir}/.hamilton_cache`` from the provided BuildEnv.
     """
 
     def __init__(
@@ -324,11 +330,15 @@ class HamiltonBuildExecutor:
         profile: str | None = None,
         parallel_backend: str = "sequential",
         max_workers: int | None = None,
+        enable_cache: bool = True,
+        cache_dir: str | None = None,
     ) -> None:
         """Initialize the Hamilton executor."""
         self._profile = profile
         self._parallel_backend = parallel_backend
         self._max_workers = max_workers
+        self._enable_cache = enable_cache
+        self._cache_dir = cache_dir
 
     @property
     def profile(self) -> str | None:
@@ -446,7 +456,13 @@ class HamiltonBuildExecutor:
         """
         config: dict[str, Any] = {"profile": self._profile or "default"}
         adapters = self._build_adapters(env=env, telemetry_hook=telemetry_hook)
-        return build_driver(config=config, adapters=adapters)
+        cache_dir = self._cache_dir or str(env.paths.build_dir / ".hamilton_cache")
+        return build_driver(
+            config=config,
+            adapters=adapters,
+            enable_cache=self._enable_cache,
+            cache_dir=cache_dir,
+        )
 
     @staticmethod
     def _build_contract_graph() -> TargetGraph:

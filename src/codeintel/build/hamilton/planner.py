@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.introspect import GraphSource
     from codeintel.build.manifest import OutputManifest
-    from codeintel.build.targets import OutputTarget, TargetGraph
+    from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
 
 
 PlanStatus = Literal["compute", "skip", "missing", "blocked"]
@@ -65,7 +65,8 @@ class PlanEntry:
     node
         Hamilton node name (e.g., "t__function_metrics").
     module
-        Target module (ingestion, graphs, analytics).
+        Target module (ingestion, graphs, analytics, export).
+        May be ``"unknown"`` for missing targets.
     status
         Plan status: "compute", "skip", "missing", or "blocked".
     reason
@@ -112,7 +113,7 @@ class PlanEntry:
 
     target: str
     node: str
-    module: str
+    module: TargetModule | Literal["unknown"]
     status: PlanStatus
     reason: PlanReason
     input_hash: str | None

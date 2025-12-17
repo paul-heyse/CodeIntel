@@ -61,7 +61,13 @@ if TYPE_CHECKING:
 
 
 log = logging.getLogger(__name__)
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, DependencyCallsResult, EntrypointsResult)
+_HAMILTON_TYPE_HINTS = (
+    BuildEnv,
+    TargetGraph,
+    TargetRunRecord,
+    DependencyCallsResult,
+    EntrypointsResult,
+)
 
 
 def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
@@ -205,7 +211,12 @@ def t__external_deps__compute_calls(
     table_key=value("analytics.external_dependency_calls"),
     columns=value(tuple(EXTERNAL_DEPENDENCY_CALLS_COLS)),
 )
-@tag(domain="analytics", target="external_deps", node_type="compute", target_="external_deps__calls_rows")
+@tag(
+    domain="analytics",
+    target="external_deps",
+    node_type="compute",
+    target_="external_deps__calls_rows",
+)
 def external_deps__calls_rows(
     t__external_deps__compute_calls: DependencyCallsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -463,7 +474,9 @@ def entrypoints__entrypoint_rows(
     table_key=value("analytics.entrypoint_tests"),
     columns=value(tuple(ENTRYPOINT_TESTS_COLS)),
 )
-@tag(domain="analytics", target="entrypoints", node_type="compute", target_="entrypoints__test_rows")
+@tag(
+    domain="analytics", target="entrypoints", node_type="compute", target_="entrypoints__test_rows"
+)
 def entrypoints__test_rows(
     t__entrypoints__compute: EntrypointsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:

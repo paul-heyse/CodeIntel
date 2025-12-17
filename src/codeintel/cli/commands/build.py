@@ -63,7 +63,7 @@ class BuildRunCommand:
         str | None,
         Parameter(
             name=["--module", "-m"],
-            help="Build all targets in a module (ingestion, graphs, analytics).",
+            help="Build all targets in a module (ingestion, graphs, analytics, export).",
             show_choices=True,
         ),
     ] = None
@@ -136,6 +136,37 @@ class BuildRunCommand:
             help="Maximum parallel workers for threadpool backend.",
         ),
     ] = None
+    enable_cache: Annotated[
+        bool,
+        Parameter(
+            name=["--cache"],
+            help="Enable Hamilton on-disk caching for nodes decorated with @cache.",
+            negative=("--no-cache",),
+        ),
+    ] = True
+    cache_dir: Annotated[
+        str | None,
+        Parameter(
+            name=["--cache-dir"],
+            help="Directory for Hamilton cache (default: build/.hamilton_cache).",
+        ),
+    ] = None
+    clear_cache: Annotated[
+        bool,
+        Parameter(
+            name=["--clear-cache"],
+            help="Clear the Hamilton cache directory before executing.",
+            negative=(),
+        ),
+    ] = False
+    cache_report: Annotated[
+        bool,
+        Parameter(
+            name=["--cache-report"],
+            help="Include a cache hit/miss report for nodes decorated with @cache.",
+            negative=(),
+        ),
+    ] = False
     enable_progress: Annotated[
         bool,
         Parameter(
@@ -157,7 +188,7 @@ class BuildStatusCommand:
         str | None,
         Parameter(
             name=["--module", "-m"],
-            help="Filter status to a specific module (ingestion, graphs, analytics).",
+            help="Filter status to a specific module (ingestion, graphs, analytics, export).",
             show_choices=True,
         ),
     ] = None
@@ -220,7 +251,7 @@ class BuildPlanCommand:
         str | None,
         Parameter(
             name=["--module", "-m"],
-            help="Plan all targets in a module (ingestion, graphs, analytics).",
+            help="Plan all targets in a module (ingestion, graphs, analytics, export).",
             show_choices=True,
         ),
     ] = None
@@ -289,7 +320,7 @@ class BuildGraphCommand:
         str | None,
         Parameter(
             name=["--module", "-m"],
-            help="Show DAG for all targets in a module (ingestion, graphs, analytics).",
+            help="Show DAG for all targets in a module (ingestion, graphs, analytics, export).",
             show_choices=True,
         ),
     ] = None

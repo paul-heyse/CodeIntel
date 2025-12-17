@@ -100,7 +100,7 @@ class DocstringsExtractResult:
 
 
 @cache(format="memory")
-@tag(domain="ingestion", target="ast", node_type="compute")
+@tag(domain="ingestion", target="ast", node_type="tool")
 def t__ast__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -168,7 +168,7 @@ def t__ast(
 
 
 @cache(format="memory")
-@tag(domain="ingestion", target="cst", node_type="compute")
+@tag(domain="ingestion", target="cst", node_type="tool")
 def t__cst__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -236,7 +236,7 @@ def t__cst(
 
 
 @cache(format="memory")
-@tag(domain="ingestion", target="docstrings", node_type="compute")
+@tag(domain="ingestion", target="docstrings", node_type="tool")
 def t__docstrings__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
