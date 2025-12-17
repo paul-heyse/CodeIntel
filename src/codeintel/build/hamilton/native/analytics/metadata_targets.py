@@ -52,6 +52,7 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -59,6 +60,41 @@ from codeintel.core.catalog import CatalogService
 from codeintel.storage.helpers.module_index import load_module_map
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DataModelsResult, TargetGraph, TargetRunRecord)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="data_models",
+        module="analytics",
+        description="Data model extraction (dataclasses, Pydantic, etc.).",
+        table_keys=(
+            "analytics.data_models",
+            "analytics.data_model_fields",
+            "analytics.data_model_relationships",
+        ),
+    ),
+    make_output_target(
+        name="data_model_usage",
+        module="analytics",
+        description="Function-level data model usage tracking.",
+        table_keys=("analytics.data_model_usage",),
+    ),
+    make_output_target(
+        name="function_ast_features",
+        module="analytics",
+        description="AST-derived semantic features for functions.",
+        table_keys=("analytics.function_ast_features",),
+    ),
+    make_output_target(
+        name="profiles",
+        module="analytics",
+        description="Denormalized profile tables for querying.",
+        table_keys=(
+            "analytics.function_profile",
+            "analytics.file_profile",
+            "analytics.module_profile",
+        ),
+    ),
+)
 
 LOG = logging.getLogger(__name__)
 log = LOG

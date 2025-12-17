@@ -22,7 +22,7 @@ import hamilton.driver as h_driver
 from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hamilton.native.registry import load_native_modules
 from codeintel.build.hamilton.templates import get_template_module
-from codeintel.build.registry import ALL_TARGETS
+from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.target_registry import TargetRegistry
 from codeintel.build.targets import TargetGraph
 
@@ -33,8 +33,11 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-_ALL_TARGET_NAMES: frozenset[str] = frozenset(t.name for t in ALL_TARGETS)
 _DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
+
+
+def _all_target_names() -> frozenset[str]:
+    return frozenset(target.name for target in load_target_specs())
 
 
 @dataclass(frozen=True)
@@ -121,8 +124,9 @@ def build_driver(
     >>> len(runtime.target_to_node) > 0
     True
     """
+    targets = load_target_specs()
     base_graph = TargetGraph()
-    for target in ALL_TARGETS:
+    for target in targets:
         base_graph.register(target)
 
     template_mod = get_template_module()
@@ -227,7 +231,7 @@ def target_to_node_name(
     if runtime is not None:
         return runtime.target_to_node.get(target_name)
 
-    if target_name not in _ALL_TARGET_NAMES:
+    if target_name not in _all_target_names():
         return None
     return target_node(target_name)
 

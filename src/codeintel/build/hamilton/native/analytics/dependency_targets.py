@@ -50,6 +50,7 @@ from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -67,6 +68,27 @@ _HAMILTON_TYPE_HINTS = (
     TargetRunRecord,
     DependencyCallsResult,
     EntrypointsResult,
+)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="external_deps",
+        module="analytics",
+        description="External library dependency analysis.",
+        table_keys=(
+            "analytics.external_dependencies",
+            "analytics.external_dependency_calls",
+        ),
+    ),
+    make_output_target(
+        name="entrypoints",
+        module="analytics",
+        description="External entrypoint detection (HTTP, CLI, etc.).",
+        table_keys=(
+            "analytics.entrypoints",
+            "analytics.entrypoint_tests",
+        ),
+    ),
 )
 
 

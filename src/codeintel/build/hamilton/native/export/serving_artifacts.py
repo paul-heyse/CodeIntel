@@ -19,6 +19,7 @@ from typing import Any
 from hamilton.function_modifiers import source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
+from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import FileArtifactSaver
@@ -26,6 +27,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materializations,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.schemas import SchemaManifest, get_schema_provider
 from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
 from codeintel.build.serving.semantic_compile_hamilton import (
@@ -37,6 +39,31 @@ from codeintel.build.targets import TargetGraph
 from codeintel.storage.views import ibis_views as _ibis_views
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="serving_artifacts",
+        module="export",
+        description="Compile deterministic serving artifacts (semantic registry, schema manifest, buildspec).",
+        artifacts=(
+            ArtifactSpec(
+                "semantic_registry",
+                "{build_dir}/serving/artifacts/semantic_registry.json",
+                "Compiled semantic registry for serving",
+            ),
+            ArtifactSpec(
+                "schema_manifest",
+                "{build_dir}/serving/artifacts/schema_manifest.json",
+                "Compiled schema manifest for serving",
+            ),
+            ArtifactSpec(
+                "buildspec",
+                "{build_dir}/serving/artifacts/buildspec.json",
+                "Compiled BuildSpec contract for serving",
+            ),
+        ),
+    ),
+)
 
 
 def _semantic_registry_json() -> str:

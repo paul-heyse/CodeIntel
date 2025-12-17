@@ -23,6 +23,7 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root, persist_rows
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.paths import normalize_path
@@ -39,6 +40,24 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="cfg",
+        module="graphs",
+        description="Control flow graph construction per function.",
+        table_keys=(
+            "graph.cfg_blocks",
+            "graph.cfg_edges",
+        ),
+    ),
+    make_output_target(
+        name="dfg",
+        module="graphs",
+        description="Data flow graph construction per function.",
+        table_keys=("graph.dfg_edges",),
+    ),
+)
 
 
 @dataclass(frozen=True)

@@ -19,6 +19,7 @@ from typing import Any
 from hamilton.function_modifiers import source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
+from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import FileArtifactSaver
@@ -27,6 +28,8 @@ from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materializations,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
@@ -34,6 +37,27 @@ from codeintel.ingestion.engine.service import ToolService
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, Path, TargetRunRecord)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="scip",
+        module="ingestion",
+        description="SCIP index ingestion and GOID generation.",
+        artifacts=(
+            ArtifactSpec("scip_index", "{scip_dir}/index.scip", "SCIP index file"),
+            ArtifactSpec("scip_json", "{scip_dir}/index.json", "SCIP JSON export"),
+        ),
+        resources=TargetResources(
+            tracker=True,
+            modules=True,
+            tools=(
+                "scip-python",
+                "scip",
+            ),
+        ),
+        execution=TOOL_EXECUTION,
+    ),
+)
 
 
 @dataclass(frozen=True)

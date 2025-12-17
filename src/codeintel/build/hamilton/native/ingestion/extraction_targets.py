@@ -22,6 +22,8 @@ from hamilton.function_modifiers import cache, tag
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
+from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute import AstExtractStep, CstExtractStep, DocstringsExtractStep
@@ -30,6 +32,32 @@ from codeintel.ingestion.ports.discovery import ModuleRecord
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ModuleRecord)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="ast",
+        module="ingestion",
+        description="Python AST extraction and metrics.",
+        table_keys=(
+            "core.ast_nodes",
+            "core.ast_metrics",
+        ),
+        resources=TargetResources(tracker=True, modules=True),
+        execution=CPU_INTENSIVE_EXECUTION,
+    ),
+    make_output_target(
+        name="cst",
+        module="ingestion",
+        description="Concrete syntax tree extraction.",
+        table_keys=("core.cst_nodes",),
+    ),
+    make_output_target(
+        name="docstrings",
+        module="ingestion",
+        description="Docstring extraction and parsing.",
+        table_keys=("core.docstrings",),
+    ),
+)
 
 
 @dataclass(frozen=True)

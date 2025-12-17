@@ -23,6 +23,7 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import load_function_index
@@ -52,6 +53,18 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="call_graph",
+        module="graphs",
+        description="Function call graph construction.",
+        table_keys=(
+            "graph.call_graph_nodes",
+            "graph.call_graph_edges",
+        ),
+    ),
+)
 
 
 @dataclass(frozen=True)

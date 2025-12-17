@@ -27,6 +27,7 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -41,6 +42,24 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, SemanticRolesResult)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="semantic_roles",
+        module="analytics",
+        description="Semantic role classification (handler, utility, etc.).",
+        table_keys=(
+            "analytics.semantic_roles_functions",
+            "analytics.semantic_roles_modules",
+        ),
+    ),
+    make_output_target(
+        name="test_profile",
+        module="analytics",
+        description="Per-test profile with coverage and characteristics.",
+        table_keys=("analytics.test_profile",),
+    ),
+)
 
 # Column definitions - must match the bulk_insert order in core.py
 SEMANTIC_ROLES_FUNCTIONS_COLS: tuple[str, ...] = (

@@ -59,6 +59,7 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
 from codeintel.build.hamilton.native.options.graphs import GoidBuilderOptions, SymbolUsesOptions
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
@@ -82,6 +83,51 @@ log = logging.getLogger(__name__)
 LOG = log
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="goids",
+        module="graphs",
+        description="GOID resolution and crosswalk construction.",
+        table_keys=(
+            "core.goids",
+            "core.goid_crosswalk",
+        ),
+    ),
+    make_output_target(
+        name="symbol_uses",
+        module="graphs",
+        description="Symbol definition-to-use edge extraction.",
+        table_keys=("graph.symbol_use_edges",),
+    ),
+    make_output_target(
+        name="call_graph_views",
+        module="graphs",
+        description="Derived views over call graph for analytics.",
+        table_keys=(
+            "graph.v_function_call_counts",
+            "graph.v_call_depth_stats",
+        ),
+    ),
+    make_output_target(
+        name="graph_metrics",
+        module="graphs",
+        description="Graph topology metrics for functions and modules.",
+        table_keys=(
+            "analytics.graph_metrics_functions",
+            "analytics.graph_metrics_functions_ext",
+            "analytics.graph_metrics_modules",
+            "analytics.graph_metrics_modules_ext",
+            "analytics.graph_stats",
+        ),
+    ),
+    make_output_target(
+        name="graph_validation",
+        module="graphs",
+        description="Graph integrity validation checks.",
+        table_keys=("analytics.graph_validation",),
+    ),
+)
 
 _GRAPH_METRICS_OUTPUT_TABLES = (
     "analytics.graph_metrics_functions",

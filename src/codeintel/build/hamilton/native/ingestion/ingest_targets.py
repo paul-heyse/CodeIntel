@@ -31,7 +31,9 @@ from codeintel.build.hamilton.helpers import (
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.templates import executor_materialize
+from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import (
     BuildToolAdapter,
@@ -62,6 +64,56 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ModuleRecord)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="modules",
+        module="ingestion",
+        description="Repository module and file index from scanning.",
+        table_keys=(
+            "core.modules",
+            "core.file_state",
+            "core.repo_map",
+        ),
+    ),
+    make_output_target(
+        name="config_ingest",
+        module="ingestion",
+        description="Configuration file parsing and reference tracking.",
+        table_keys=("analytics.config_values",),
+    ),
+    make_output_target(
+        name="coverage_ingest",
+        module="ingestion",
+        description="Line-level test coverage ingestion.",
+        table_keys=("analytics.coverage_lines",),
+    ),
+    make_output_target(
+        name="tests_ingest",
+        module="ingestion",
+        description="Test catalog ingestion from pytest.",
+        table_keys=("analytics.test_catalog",),
+    ),
+    make_output_target(
+        name="typing",
+        module="ingestion",
+        description="Type annotation analysis and static diagnostics.",
+        table_keys=(
+            "analytics.typedness",
+            "analytics.static_diagnostics",
+        ),
+        resources=TargetResources(
+            tracker=True,
+            modules=True,
+            tools=(
+                "pyright",
+                "pyrefly",
+                "ruff",
+            ),
+        ),
+        execution=TOOL_EXECUTION,
+    ),
+)
 
 
 @dataclass(frozen=True)

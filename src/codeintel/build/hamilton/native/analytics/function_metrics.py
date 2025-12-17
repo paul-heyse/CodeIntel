@@ -37,6 +37,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -46,6 +47,19 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, FunctionAnalyticsResult)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="function_metrics",
+        module="analytics",
+        description="Function structural metrics and type annotations.",
+        table_keys=(
+            "analytics.function_metrics",
+            "analytics.function_types",
+            "analytics.function_validation",
+        ),
+    ),
+)
 
 # Column definitions for function_metrics table
 FUNCTION_METRICS_COLS: tuple[str, ...] = (
