@@ -33,8 +33,14 @@ Build targets with automatic dependency resolution.
 │                               var:                                           │
 │                               CODEINTEL_BUILD_RUN_PUBLISH_SERVING_SNAPSHOT]  │
 │                               [default: false]                               │
-│ PARALLEL-BACKEND              Parallel execution backend: sequential         │
-│   --parallel-backend          (default), threadpool, or auto. [env var:      │
+│ PARALLEL-BACKEND              Parallel execution backend.                    │
+│   --parallel-backend                                                         │
+│                               Options: sequential (default, safest);         │
+│                               threadpool (multi-threaded with write lock);   │
+│                               auto (auto-select best backend).               │
+│                                                                              │
+│                               Example: --parallel-backend=threadpool         │
+│                               --max-workers=4. [env var:                     │
 │                               CODEINTEL_BUILD_RUN_PARALLEL_BACKEND]          │
 │                               [default: sequential]                          │
 │ MAX-WORKERS --max-workers     Maximum parallel workers for threadpool        │

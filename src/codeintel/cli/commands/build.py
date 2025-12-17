@@ -125,7 +125,12 @@ class BuildRunCommand:
         str,
         Parameter(
             name=["--parallel-backend"],
-            help="Parallel execution backend: sequential (default), threadpool, or auto.",
+            help=(
+                "Parallel execution backend.\n\n"
+                "Options: sequential (default, safest); threadpool (multi-threaded with write lock); "
+                "auto (auto-select best backend).\n\n"
+                "Example: --parallel-backend=threadpool --max-workers=4."
+            ),
             show_choices=True,
         ),
     ] = "sequential"

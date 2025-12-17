@@ -121,6 +121,7 @@ class TargetScope(Enum):
     REQUESTED = "requested"
     ALL = "all"
 
+
 _VALID_MODULES: tuple[str, ...] = ("ingestion", "graphs", "analytics", "export")
 _CACHE_LOG_KEY_TUPLE_LEN: int = 2
 
@@ -737,6 +738,32 @@ class _BuildRunParams:
     cache_report: bool
 
 
+def resolve_parallel_backend(*, parallel_backend: str | None, max_workers: int | None) -> str:
+    """Resolve the effective parallel backend from CLI inputs.
+
+    Parameters
+    ----------
+    parallel_backend
+        Raw backend value from CLI (None means default).
+    max_workers
+        Requested worker count (None means not provided).
+
+    Returns
+    -------
+    str
+        Effective backend name.
+
+    Notes
+    -----
+    ``--max-workers`` implies ``--parallel-backend=threadpool`` when the backend is left as the
+    default ``sequential``. This keeps the CLI ergonomics simple while preserving a safe default.
+    """
+    backend = parallel_backend or "sequential"
+    if max_workers is not None and backend == "sequential":
+        return "threadpool"
+    return backend
+
+
 def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
     """Extract and normalize build run parameters from context.
 
@@ -767,11 +794,13 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
             else:
                 wrapper_allowlist_list.append(str(item))
 
-    parallel_backend = ctx.params.get_str("parallel_backend") or "sequential"
+    parallel_backend_raw = ctx.params.get_str("parallel_backend")
     max_workers_raw = ctx.params.get_int("max_workers", 0)
     max_workers = max_workers_raw or None
-    if max_workers is not None and parallel_backend == "sequential":
-        parallel_backend = "threadpool"
+    parallel_backend = resolve_parallel_backend(
+        parallel_backend=parallel_backend_raw,
+        max_workers=max_workers,
+    )
 
     return _BuildRunParams(
         targets=targets,

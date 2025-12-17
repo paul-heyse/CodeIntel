@@ -21,7 +21,6 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, cast
 
 from codeintel.build.contracts import ArtifactSpec, OutputContract
-from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.resources import (
     CPU_INTENSIVE_EXECUTION,
     TOOL_EXECUTION,
@@ -709,7 +708,7 @@ def get_target_graph() -> TargetGraph:
 
     build_driver_fn = cast("Callable[[], HamiltonRuntime]", build_driver_fn_raw)
     runtime = build_driver_fn()
-    return target_graph_from_hamilton(runtime)
+    return runtime.graph
 
 
 def derive_schemas_from_targets(

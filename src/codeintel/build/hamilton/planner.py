@@ -583,7 +583,10 @@ def compute_plan(
     """
     _ = graph_source
     runtime = build_driver()
-    graph = target_graph_from_hamilton(runtime, base_graph=graph)
+    if graph is None:
+        graph = runtime.graph
+    else:
+        graph = target_graph_from_hamilton(runtime, base_graph=graph)
 
     closure = graph.topological_order(list(requested))
 

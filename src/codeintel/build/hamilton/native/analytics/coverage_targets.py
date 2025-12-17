@@ -18,10 +18,23 @@ from dataclasses import dataclass
 from typing import Any
 
 import ibis.expr.types as ir
-from hamilton.function_modifiers import check_output_custom, source, tag, value
+from hamilton.function_modifiers import (
+    check_output_custom,
+    pipe_input,
+    source,
+    step,
+    tag,
+    value,
+)
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
-from codeintel.analytics.compute.coverage.compute import build_coverage_functions_expr_from_tables
+from codeintel.analytics.compute.coverage.compute import (
+    aggregate_coverage_lines,
+    enrich_coverage_results,
+    filter_coverage_lines_for_snapshot,
+    filter_goids_for_snapshot,
+    join_goids_with_coverage_lines,
+)
 from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
 from codeintel.build.hamilton.env import BuildEnv
@@ -89,6 +102,99 @@ class BehavioralCoverageResult:
 # -----------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class CoverageJoinState:
+    """Intermediate state for coverage_functions pipeline.
+
+    Parameters
+    ----------
+    joined
+        Joined GOIDs and coverage line table.
+    goids
+        Filtered GOIDs table used for aggregation group-by references.
+    """
+
+    joined: ir.Table
+    goids: ir.Table
+
+
+def _coverage_functions_filter_goids(goids: ir.Table, env: BuildEnv) -> ir.Table:
+    """Filter GOIDs to the current snapshot and function-like kinds.
+
+    Parameters
+    ----------
+    goids
+        Ibis table expression for ``core.goids``.
+    env
+        Build environment providing the snapshot to filter against.
+
+    Returns
+    -------
+    ir.Table
+        Filtered GOIDs table.
+    """
+    return filter_goids_for_snapshot(goids, env.snapshot)
+
+
+def _coverage_functions_join_with_coverage(
+    goids: ir.Table,
+    *,
+    env: BuildEnv,
+    coverage_lines: ir.Table,
+) -> CoverageJoinState:
+    """Join filtered GOIDs with coverage lines for the current snapshot.
+
+    Parameters
+    ----------
+    goids
+        Filtered GOIDs table.
+    env
+        Build environment providing the snapshot.
+    coverage_lines
+        Ibis table expression for ``analytics.coverage_lines``.
+
+    Returns
+    -------
+    CoverageJoinState
+        Joined table plus the filtered GOIDs table for downstream aggregation.
+    """
+    coverage_filtered = filter_coverage_lines_for_snapshot(coverage_lines, env.snapshot)
+    joined = join_goids_with_coverage_lines(goids, coverage_filtered)
+    return CoverageJoinState(joined=joined, goids=goids)
+
+
+def _coverage_functions_aggregate(state: CoverageJoinState) -> ir.Table:
+    """Aggregate coverage metrics per function.
+
+    Parameters
+    ----------
+    state
+        Coverage join state containing the joined table and filtered GOIDs.
+
+    Returns
+    -------
+    ir.Table
+        Aggregated coverage metrics table.
+    """
+    return aggregate_coverage_lines(state.joined, state.goids)
+
+
+def _coverage_functions_enrich(aggregated: ir.Table) -> ir.Table:
+    """Enrich aggregated coverage with ratios and tested flags.
+
+    Parameters
+    ----------
+    aggregated
+        Aggregated coverage table.
+
+    Returns
+    -------
+    ir.Table
+        Final coverage functions table.
+    """
+    return enrich_coverage_results(aggregated)
+
+
 @SaveToDecorator(
     [DuckDBIbisTableSaver],
     output_name_=materialize_node("analytics.coverage_functions"),
@@ -96,6 +202,18 @@ class BehavioralCoverageResult:
     graph=source("graph"),
     target_name=value("coverage_functions"),
     table_key=value("analytics.coverage_functions"),
+)
+@pipe_input(
+    step(_coverage_functions_filter_goids, env=source("env")),
+    step(
+        _coverage_functions_join_with_coverage,
+        env=source("env"),
+        coverage_lines=source("q__analytics__coverage_lines"),
+    ),
+    step(_coverage_functions_aggregate),
+    step(_coverage_functions_enrich),
+    namespace=None,
+    on_input="q__core__goids",
 )
 @check_output_custom(
     *build_table_contract(
@@ -125,31 +243,21 @@ class BehavioralCoverageResult:
     target_="t__coverage_functions__compute",
 )
 def t__coverage_functions__compute(
-    env: BuildEnv,
     q__core__goids: ir.Table,
-    q__analytics__coverage_lines: ir.Table,
 ) -> ir.Table:
     """Compute per-function coverage metrics from GOIDs and coverage lines.
 
     Parameters
     ----------
-    env
-        Build environment with gateway and snapshot info.
     q__core__goids
         Ibis table expression for core.goids.
-    q__analytics__coverage_lines
-        Ibis table expression for analytics.coverage_lines.
 
     Returns
     -------
     ir.Table
         Ibis expression producing coverage functions rows.
     """
-    return build_coverage_functions_expr_from_tables(
-        q__core__goids,
-        q__analytics__coverage_lines,
-        snapshot=env.snapshot,
-    )
+    return q__core__goids
 
 
 @tag(domain="analytics", target="coverage_functions", node_type="materialize")

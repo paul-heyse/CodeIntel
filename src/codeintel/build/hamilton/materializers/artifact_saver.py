@@ -313,7 +313,9 @@ def _failed(
     }
 
 
-def _resolve_artifact_path(env: BuildEnv, graph: TargetGraph, target_name: str, artifact_name: str) -> Path | None:
+def _resolve_artifact_path(
+    env: BuildEnv, graph: TargetGraph, target_name: str, artifact_name: str
+) -> Path | None:
     target = graph.get(target_name)
     if target is None:
         return None

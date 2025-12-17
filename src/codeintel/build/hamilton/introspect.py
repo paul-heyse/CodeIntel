@@ -268,6 +268,7 @@ def target_graph_from_hamilton(
     runtime: HamiltonRuntime,
     *,
     base_graph: TargetGraph | None = None,
+    derived_deps: Mapping[str, tuple[str, ...]] | None = None,
     strict: bool = False,
 ) -> TargetGraph:
     """Build a TargetGraph whose dependency edges are derived from Hamilton.
@@ -278,6 +279,9 @@ def target_graph_from_hamilton(
         Hamilton runtime containing a configured Driver and base TargetGraph.
     base_graph
         Optional TargetGraph providing OutputTarget metadata (defaults to runtime.graph).
+    derived_deps
+        Optional precomputed dependency mapping from :func:`derive_target_dependencies`.
+        When omitted, dependencies are derived from the runtime's Driver graph.
     strict
         When True, raise if the Hamilton graph does not contain a materialize node
         for every target in the base graph.
@@ -293,13 +297,13 @@ def target_graph_from_hamilton(
         If strict is True and the Hamilton graph is missing materialize nodes.
     """
     base = runtime.graph if base_graph is None else base_graph
-    derived_deps = derive_target_dependencies(runtime)
+    deps_map = derive_target_dependencies(runtime) if derived_deps is None else derived_deps
 
     graph = TargetGraph()
     missing: list[str] = []
 
     for target in base.all_targets:
-        deps = derived_deps.get(target.name)
+        deps = deps_map.get(target.name)
         if deps is None:
             missing.append(target.name)
             deps = target.dependencies

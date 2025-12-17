@@ -303,7 +303,9 @@ def record_from_duckdb_materializations(
                 error=f"Missing materialization metadata for table: {expected_table_key}",
             )
             continue
-        parsed[expected_table_key] = _parse_materialization(meta, default_table_key=expected_table_key)
+        parsed[expected_table_key] = _parse_materialization(
+            meta, default_table_key=expected_table_key
+        )
 
     statuses = {r.status for r in parsed.values()}
     input_hash = next((r.input_hash for r in parsed.values() if r.input_hash), "")
@@ -407,7 +409,9 @@ def record_from_file_artifact_materializations(
     statuses, input_hash, duration_ms = _summarize_file_artifact_results(parsed)
 
     if "failed" in statuses:
-        errors = [result.error for result in parsed.values() if result.status == "failed" and result.error]
+        errors = [
+            result.error for result in parsed.values() if result.status == "failed" and result.error
+        ]
         message = errors[0] if errors else "One or more artifact writes failed"
         run = NativeRunInfo(
             input_hash=input_hash,
