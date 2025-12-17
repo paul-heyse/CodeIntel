@@ -14,7 +14,7 @@ from codeintel.storage.gateway.pool import PoolConfig
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
-    from mcp.server.fastmcp import FastMCP
+    from codeintel.serving.mcp._compat import FastMCP
 
 
 def create_mcp_server(settings: ServingSettings | None = None) -> FastMCP:
@@ -49,9 +49,7 @@ def create_mcp_server(settings: ServingSettings | None = None) -> FastMCP:
 
     return build_mcp_app(
         kernel=kernel,
-        host=cfg.host,
-        port=cfg.port,
-        streamable_http_path="/mcp",
+        settings=cfg,
         lifespan=lifespan,
     )
 
@@ -60,8 +58,8 @@ def main() -> None:
     """Run the CodeIntel MCP server with stdio or HTTP transport."""
     cfg = ServingSettings.from_env()
     mcp = create_mcp_server(cfg)
-    transport: Literal["stdio", "streamable-http"]
-    transport = "stdio" if cfg.mcp_transport == "stdio" else "streamable-http"
+    transport: Literal["stdio", "http"]
+    transport = "stdio" if cfg.mcp_transport == "stdio" else "http"
     mcp.run(transport=transport)
 
 

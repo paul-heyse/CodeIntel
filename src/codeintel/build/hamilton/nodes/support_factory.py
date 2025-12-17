@@ -44,8 +44,8 @@ from codeintel.build.hamilton.tags import (
     NODE_TYPE_LOADER_QUERY,
     NODE_TYPE_MATERIALIZE,
 )
+from codeintel.build.registry import ALL_TARGETS
 from codeintel.build.targets import TargetGraph
-from codeintel.build.unified_registry import get_unified_registry
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -423,16 +423,15 @@ def _create_artifact_node_function(
 
 
 def _build_contract_graph() -> TargetGraph:
-    """Build a TargetGraph from the unified registry.
+    """Build a TargetGraph from the canonical target catalog.
 
     Returns
     -------
     TargetGraph
         Graph containing all registered build targets.
     """
-    unified = get_unified_registry()
     graph = TargetGraph()
-    for target in unified.get_all_targets():
+    for target in ALL_TARGETS:
         graph.register(target)
     return graph
 

@@ -21,8 +21,8 @@ import hamilton.driver as h_driver
 from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hamilton.native.registry import load_native_modules
 from codeintel.build.hamilton.templates import get_template_module
+from codeintel.build.registry import ALL_TARGETS
 from codeintel.build.targets import TargetGraph
-from codeintel.build.unified_registry import get_unified_registry
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from hamilton.lifecycle.base import LifecycleAdapter
 
 log = logging.getLogger(__name__)
+
+_ALL_TARGET_NAMES: frozenset[str] = frozenset(t.name for t in ALL_TARGETS)
 
 
 @dataclass(frozen=True)
@@ -107,11 +109,8 @@ def build_driver(
     >>> len(runtime.target_to_node) > 0
     True
     """
-    # Build TargetGraph from unified registry to avoid circular dependency
-    # with get_target_graph() which calls build_driver() for Hamilton deps
-    unified = get_unified_registry()
     graph = TargetGraph()
-    for target in unified.get_all_targets():
+    for target in ALL_TARGETS:
         graph.register(target)
 
     template_mod = get_template_module()
@@ -204,9 +203,7 @@ def target_to_node_name(
     if runtime is not None:
         return runtime.target_to_node.get(target_name)
 
-    # When runtime is None, check if target exists in unified registry
-    unified = get_unified_registry()
-    if unified.get_registration(target_name) is None:
+    if target_name not in _ALL_TARGET_NAMES:
         return None
     return target_node(target_name)
 

@@ -15,7 +15,6 @@ Inference strategy (Strategy B)
 
 from __future__ import annotations
 
-import importlib
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -29,7 +28,6 @@ from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.naming import compute_node
 from codeintel.build.schemas.infer_duckdb import infer_table_schema_from_ibis
 from codeintel.build.schemas.seed_harness import MiniSeedHarness
-from codeintel.build.unified_registry import get_unified_registry
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
@@ -105,20 +103,25 @@ def _inferable_candidates_for_table_key(
     table_key: str,
     producers: list[str],
 ) -> list[tuple[str, Callable[..., object]]]:
-    registry = get_unified_registry()
     candidates: list[tuple[str, Callable[..., object]]] = []
+    runtime = _runtime_auto()
 
     for target_name in sorted(producers):
-        module_path = registry.get_native_module(target_name)
-        if module_path is None:
-            continue
-        module = importlib.import_module(module_path)
         compute_name = compute_node(target_name)
-        compute_fn_obj = getattr(module, compute_name, None)
+        node = runtime.dr.graph.nodes.get(compute_name)
+        if node is None:
+            continue
+        if not node.originating_functions:
+            continue
+        compute_fn_obj = node.originating_functions[0]
         if not isinstance(compute_fn_obj, Callable):
             continue
         compute_fn: Callable[..., object] = compute_fn_obj
         if not _looks_inferable_compute(compute_fn):
+            continue
+        try:
+            _inference_requirements(runtime=runtime, compute_name=compute_name)
+        except ValueError:
             continue
         candidates.append((target_name, compute_fn))
 
@@ -131,20 +134,73 @@ def _inferable_candidates_for_table_key(
 
 def _inference_requirements(
     *,
-    target_name: str,
-    compute_fn: Callable[..., object],
+    runtime: HamiltonRuntime,
+    compute_name: str,
 ) -> tuple[set[str], bool]:
-    sig = inspect.signature(compute_fn)
-    qparams = {name for name in sig.parameters if name.startswith("q__")}
-    requires_env = "env" in sig.parameters
+    """Return q__ inputs and env requirement for executing a compute node.
 
-    extra_params = {name for name in sig.parameters if name not in qparams and name != "env"}
-    if extra_params:
-        msg = (
-            f"Target {target_name} compute has unsupported params for inference: "
-            f"{sorted(extra_params)}"
-        )
+    This is derived from the *actual* Hamilton dependency graph for the compute
+    node (including nodes injected by @pipe_input), rather than relying solely
+    on the compute function signature.
+
+    Parameters
+    ----------
+    runtime
+        Hamilton runtime containing the resolved FunctionGraph.
+    compute_name
+        Name of the compute node to analyze (e.g., ``t__risk_factors__compute``).
+
+    Returns
+    -------
+    tuple[set[str], bool]
+        Pair of (q__ node names required, whether an ``env`` input is required).
+
+    Raises
+    ------
+    ValueError
+        If the compute node depends on target/materialize nodes or other inputs
+        that cannot be satisfied by seeding q__ inputs and env.
+    """
+    node = runtime.dr.graph.nodes.get(compute_name)
+    if node is None:
+        msg = f"Compute node not found in Hamilton DAG: {compute_name}"
         raise ValueError(msg)
+
+    qparams: set[str] = set()
+    requires_env = False
+    visited: set[str] = set()
+    stack = list(node.dependencies)
+
+    while stack:
+        dep = stack.pop()
+        if dep.name in visited:
+            continue
+        visited.add(dep.name)
+
+        if dep.name == "env":
+            requires_env = True
+            continue
+
+        if dep.name.startswith("q__"):
+            qparams.add(dep.name)
+            continue  # q__ inputs are injected directly; stop traversal.
+
+        if dep.name.startswith("t__") and not dep.name.endswith("__compute"):
+            msg = (
+                f"Compute node {compute_name} depends on target node {dep.name}; "
+                "schema inference requires q__-driven compute graphs without target execution."
+            )
+            raise ValueError(msg)
+
+        tags = dep.tags if isinstance(dep.tags, dict) else {}
+        if tags.get("hamilton.data_saver") is True:
+            msg = (
+                f"Compute node {compute_name} depends on data_saver node {dep.name}; "
+                "schema inference requires compute-only graphs."
+            )
+            raise ValueError(msg)
+
+        stack.extend(dep.dependencies)
 
     return qparams, requires_env
 
@@ -220,9 +276,8 @@ def infer_schema_for_table_key(
         target_name, compute_fn = candidates[0]
         compute_name = compute_node(target_name)
 
-        qparams, requires_env = _inference_requirements(
-            target_name=target_name, compute_fn=compute_fn
-        )
+        _ = compute_fn
+        qparams, requires_env = _inference_requirements(runtime=runtime, compute_name=compute_name)
         job = _ComputeInferenceJob(
             compute_name=compute_name,
             table_key=table_key,
@@ -349,19 +404,19 @@ def inferable_native_table_keys(*, graph: TargetGraph) -> frozenset[str]:
     frozenset[str]
         Output table keys from targets that have q__-driven Ibis compute nodes.
     """
-    registry = get_unified_registry()
-
+    runtime = _runtime_auto()
     inferable: set[str] = set()
     for target in graph.all_targets:
-        module_path = registry.get_native_module(target.name)
-        if module_path is None:
-            continue
-        module = importlib.import_module(module_path)
         compute_name = compute_node(target.name)
-        fn = getattr(module, compute_name, None)
-        if fn is None or not callable(fn):
+        node = runtime.dr.graph.nodes.get(compute_name)
+        if node is None or not node.originating_functions:
             continue
-        if not _looks_inferable_compute(fn):
+        fn_obj = node.originating_functions[0]
+        if not callable(fn_obj) or not _looks_inferable_compute(fn_obj):
+            continue
+        try:
+            _inference_requirements(runtime=runtime, compute_name=compute_name)
+        except ValueError:
             continue
         inferable.update(target.contract.table_keys)
     return frozenset(inferable)
@@ -388,9 +443,8 @@ def _build_inference_jobs(
 
         target_name, compute_fn = candidates[0]
         compute_name = compute_node(target_name)
-        qparams, requires_env = _inference_requirements(
-            target_name=target_name, compute_fn=compute_fn
-        )
+        _ = compute_fn
+        qparams, requires_env = _inference_requirements(runtime=runtime, compute_name=compute_name)
         jobs.append(
             _ComputeInferenceJob(
                 compute_name=compute_name,

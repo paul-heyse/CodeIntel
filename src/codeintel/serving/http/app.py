@@ -82,7 +82,7 @@ def create_serving_app(
     _install_middlewares(app, cfg)
     app.include_router(api_router)
     _install_observability_routes(app, db_manager=db_manager, kernel=kernel)
-    _maybe_mount_mcp(app, kernel=kernel, enabled=mount_mcp)
+    _maybe_mount_mcp(app, kernel=kernel, settings=cfg, enabled=mount_mcp)
 
     app.openapi = lambda: _custom_openapi(app)
     return app
@@ -174,11 +174,37 @@ def _install_observability_routes(
         return await run_in_threadpool(kernel.meta)
 
 
-def _maybe_mount_mcp(app: FastAPI, *, kernel: SemanticQueryKernel, enabled: bool) -> None:
+def _maybe_mount_mcp(
+    app: FastAPI,
+    *,
+    kernel: SemanticQueryKernel,
+    settings: ServingSettings,
+    enabled: bool,
+) -> None:
+    """Mount MCP server under /mcp with explicit path contract.
+
+    Mount Contract
+    --------------
+    - FastAPI mounts at: /mcp
+    - MCP ASGI app path: /
+    - Effective MCP endpoint: /mcp (NOT /mcp/mcp)
+
+    Parameters
+    ----------
+    app
+        FastAPI application to mount MCP on.
+    kernel
+        Semantic query kernel for MCP tools.
+    settings
+        Serving settings for MCP configuration.
+    enabled
+        Whether MCP mounting is enabled.
+    """
     if not enabled:
         return
-    mcp = build_mcp_app(kernel=kernel, streamable_http_path="/")
-    app.mount("/mcp", mcp.streamable_http_app())
+    mcp = build_mcp_app(kernel=kernel, settings=settings)
+    # gofastmcp 2.x uses http_app() with path="/" to avoid double-prefix
+    app.mount("/mcp", mcp.http_app(path="/"))
 
 
 def _custom_openapi(app: FastAPI) -> dict[str, object]:
