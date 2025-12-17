@@ -44,7 +44,7 @@ from codeintel.build.hamilton.tags import (
     NODE_TYPE_LOADER_QUERY,
     NODE_TYPE_MATERIALIZE,
 )
-from codeintel.build.registry import ALL_TARGETS
+from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -431,7 +431,7 @@ def _build_contract_graph() -> TargetGraph:
         Graph containing all registered build targets.
     """
     graph = TargetGraph()
-    for target in ALL_TARGETS:
+    for target in load_target_specs():
         graph.register(target)
     return graph
 

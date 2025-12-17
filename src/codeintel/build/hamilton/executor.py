@@ -32,7 +32,7 @@ from codeintel.build.hamilton.driver_factory import build_driver, target_to_node
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.hooks.telemetry_hook import NodeTelemetryHook
 from codeintel.build.manifest import BuildRunRecord
-from codeintel.build.registry import ALL_TARGETS
+from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.exceptions import StorageError
 
@@ -466,7 +466,7 @@ class HamiltonBuildExecutor:
     @staticmethod
     def _build_contract_graph() -> TargetGraph:
         graph = TargetGraph()
-        for target in ALL_TARGETS:
+        for target in load_target_specs():
             graph.register(target)
         return graph
 

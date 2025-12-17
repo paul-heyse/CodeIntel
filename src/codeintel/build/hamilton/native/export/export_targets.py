@@ -20,6 +20,7 @@ import pandas as pd
 from hamilton.function_modifiers import check_output_custom, schema, source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
+from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import FileArtifactSaver
@@ -27,6 +28,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materialization,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.hashing import compute_input_hash
@@ -36,6 +38,33 @@ from codeintel.storage.ibis_types import and_predicates
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table, pd.DataFrame)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="export_jsonl",
+        module="export",
+        description="Export datasets to JSONL format for Document Output.",
+        artifacts=(
+            ArtifactSpec(
+                "jsonl_export",
+                "{export_dir}/codeintel.jsonl",
+                "JSONL export of analytics datasets",
+            ),
+        ),
+    ),
+    make_output_target(
+        name="export_parquet",
+        module="export",
+        description="Export datasets to Parquet format for Document Output.",
+        artifacts=(
+            ArtifactSpec(
+                "parquet_export",
+                "{export_dir}/codeintel.parquet",
+                "Parquet export of analytics datasets",
+            ),
+        ),
+    ),
+)
 
 
 @dataclass(frozen=True)

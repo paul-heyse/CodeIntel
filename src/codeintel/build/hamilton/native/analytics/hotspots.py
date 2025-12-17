@@ -32,12 +32,22 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
 LOG = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="hotspots",
+        module="analytics",
+        description="File hotspot analysis based on churn.",
+        table_keys=("analytics.hotspots",),
+    ),
+)
 
 
 @tag(domain="analytics", target="hotspots", node_type="compute")

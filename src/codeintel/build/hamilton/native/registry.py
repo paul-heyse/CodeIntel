@@ -14,7 +14,7 @@ import importlib
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.build.registry import ALL_TARGETS
+from codeintel.build.targets import OutputTarget
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -47,7 +47,7 @@ _NATIVE_MODULE_PATHS: tuple[str, ...] = (
     "codeintel.build.hamilton.native.export.serving_artifacts",
 )
 
-
+@lru_cache(maxsize=1)
 def native_target_names() -> frozenset[str]:
     """Return the set of target names that have native implementations.
 
@@ -62,7 +62,23 @@ def native_target_names() -> frozenset[str]:
     >>> "risk_factors" in names
     True
     """
-    return frozenset(t.name for t in ALL_TARGETS)
+    names: set[str] = set()
+    for module in load_native_modules():
+        specs_obj = getattr(module, "TARGET_SPECS", None)
+        if specs_obj is None:
+            continue
+        if not isinstance(specs_obj, tuple | list):
+            msg = f"{module.__name__}.TARGET_SPECS must be a tuple/list, got {type(specs_obj)}"
+            raise TypeError(msg)
+        for item in specs_obj:
+            if not isinstance(item, OutputTarget):
+                msg = (
+                    f"{module.__name__}.TARGET_SPECS contains non-OutputTarget element: "
+                    f"{type(item)}"
+                )
+                raise TypeError(msg)
+            names.add(item.name)
+    return frozenset(names)
 
 
 @lru_cache(maxsize=1)

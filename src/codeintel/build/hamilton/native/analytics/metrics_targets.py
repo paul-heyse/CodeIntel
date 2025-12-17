@@ -56,6 +56,7 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hashing import compute_input_hash
@@ -70,6 +71,51 @@ _HAMILTON_TYPE_HINTS = (
     TargetGraph,
     TargetRunRecord,
     TestGraphMetricsResult,
+)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="function_history",
+        module="analytics",
+        description="Function git history and churn metrics.",
+        table_keys=("analytics.function_history",),
+    ),
+    make_output_target(
+        name="history_timeseries",
+        module="analytics",
+        description="Historical metrics timeseries for trending.",
+        table_keys=("analytics.history_timeseries",),
+    ),
+    make_output_target(
+        name="subsystem_graph_metrics",
+        module="analytics",
+        description="Graph metrics for subsystems.",
+        table_keys=("analytics.subsystem_graph_metrics",),
+    ),
+    make_output_target(
+        name="symbol_graph_metrics",
+        module="analytics",
+        description="Graph metrics from symbol usage patterns.",
+        table_keys=(
+            "analytics.symbol_graph_metrics_modules",
+            "analytics.symbol_graph_metrics_functions",
+        ),
+    ),
+    make_output_target(
+        name="subsystem_agreement",
+        module="analytics",
+        description="Subsystem vs import community agreement.",
+        table_keys=("analytics.subsystem_agreement",),
+    ),
+    make_output_target(
+        name="test_graph_metrics",
+        module="analytics",
+        description="Graph metrics from test-function bipartite graph.",
+        table_keys=(
+            "analytics.test_graph_metrics_tests",
+            "analytics.test_graph_metrics_functions",
+        ),
+    ),
 )
 
 

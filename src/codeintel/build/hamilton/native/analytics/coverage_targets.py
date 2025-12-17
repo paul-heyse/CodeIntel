@@ -44,6 +44,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
@@ -52,6 +53,27 @@ from codeintel.core.catalog import CatalogService
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="coverage_functions",
+        module="analytics",
+        description="Per-function coverage aggregation.",
+        table_keys=("analytics.coverage_functions",),
+    ),
+    make_output_target(
+        name="coverage_test_edges",
+        module="analytics",
+        description="Test-to-function coverage edges.",
+        table_keys=("analytics.test_coverage_edges",),
+    ),
+    make_output_target(
+        name="behavioral_coverage",
+        module="analytics",
+        description="Behavioral coverage tagging from test patterns.",
+        table_keys=("analytics.behavioral_coverage",),
+    ),
+)
 
 
 # -----------------------------------------------------------------------------

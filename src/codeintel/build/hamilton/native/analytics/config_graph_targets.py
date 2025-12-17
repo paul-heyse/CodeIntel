@@ -50,6 +50,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_spec_helpers import make_output_target
 from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -64,6 +65,34 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+
+TARGET_SPECS = (
+    make_output_target(
+        name="config_data_flow",
+        module="analytics",
+        description="Config key usage flow through functions.",
+        table_keys=(
+            "analytics.config_data_flow",
+            "analytics.config_graph_metrics_keys",
+            "analytics.config_graph_metrics_modules",
+            "analytics.config_projection_key_edges",
+            "analytics.config_projection_module_edges",
+        ),
+    ),
+    make_output_target(
+        name="cfg_dfg_metrics",
+        module="analytics",
+        description="Control-flow and data-flow graph metrics per function.",
+        table_keys=(
+            "analytics.cfg_function_metrics",
+            "analytics.cfg_block_metrics",
+            "analytics.cfg_function_metrics_ext",
+            "analytics.dfg_function_metrics",
+            "analytics.dfg_block_metrics",
+            "analytics.dfg_function_metrics_ext",
+        ),
+    ),
+)
 
 
 @dataclass(frozen=True)

@@ -3,8 +3,9 @@
 > **Purpose**: Unified assessment of DuckDB, Ibis, and SQLGlot enhancement opportunities across the CodeIntel storage, build, and serving layers—identifying synergies, integration points, and a cohesive implementation roadmap.
 
 **Generated**: 2024-12-17  
-**Status**: Strategic Assessment  
-**Scope**: Storage layer and integrations with build/serving
+**Updated**: 2025-12-17 (repo review + implementation reality check)  
+**Status**: Strategic Assessment (Revised)  
+**Scope**: Storage + build + serving data operations
 
 ---
 
@@ -13,10 +14,21 @@
 The CodeIntel data operations stack is built on three powerful technologies—**DuckDB** (execution), **Ibis** (query building), and **SQLGlot** (SQL generation/analysis)—but currently uses only a fraction of their combined capabilities. This document presents a **holistic enhancement strategy** that leverages synergies between these tools to achieve:
 
 1. **40-60% reduction in boilerplate** through schema/DDL automation
-2. **Type-safe query composition** via Ibis parameterization and SQLGlot AST access
-3. **Zero-copy data interchange** using Arrow throughout the pipeline
-4. **Query observability** through lineage extraction, fingerprinting, and profiling
-5. **Extensibility** via centralized extension/UDF management
+2. **Type-safe query composition** via Ibis parameterization and a first-class SQLGlot AST hook
+3. **Zero-copy interchange + true streaming exports** with Arrow end-to-end (no buffering)
+4. **Operational observability** (build-time profiling artifacts + serving-side instrumentation)
+5. **Deterministic capability bootstrap** via centralized extension/secret/session management
+
+### Repo Review Addendum (2025-12-17): Immediate Priorities
+
+The repo already implements several pieces of this plan (schema contracts, view dependency ordering, warehouse profiling),
+and it also reveals a few high-impact gaps that should be pulled forward:
+
+- **Exports buffer in memory**: “streaming” endpoints collect full `list(...)` payloads and use `fetchall()` in serving paths.
+- **Upsert-from-expression fallback**: `IbisGateway` upsert from an Ibis expression materializes to pandas as a fallback.
+- **DDL typing is hand-maintained**: `_column_type_to_sqlglot()` and `_build_column_def()` are a recurring maintenance tax.
+- **Extension loading is split**: env-based installs at connect-time plus ad-hoc loads (FTS) rather than one policy surface.
+- **Typed parameterization not standardized**: no `ibis.param()` usage; most dynamic inputs are `ibis.literal()` or `.isin()`.
 
 ### Strategic Insight: The Three-Layer Integration Model
 
@@ -48,17 +60,19 @@ The CodeIntel data operations stack is built on three powerful technologies—**
 
 | Component | Current Usage | Untapped Potential |
 |-----------|---------------|-------------------|
-| **DuckDB** | `execute()`, basic Relational API | Complex types, Arrow streaming, UDFs, profiling |
-| **Ibis** | Query building, `to_sql()` | Schema round-trips, `ibis.param()`, AST access |
-| **SQLGlot** | DDL generation in `DuckDBPolicyBackend` | Optimization, transforms, lineage, diffing |
+| **DuckDB** | DDL/mutations via policy backend; warehouse profiling artifacts; selective extension load | True Arrow batch streaming in serving; prepared-statement patterns; unified extension/secret policy |
+| **Ibis** | Query building + compile to SQL strings; snapshot filtering in warehouse reads | Typed scalar params (`ibis.param`); Arrow batch streaming (`to_pyarrow_batches`); param-aware SQLGlot compilation |
+| **SQLGlot** | DDL generation; view dependency extraction | Canonicalization for fingerprints; lineage/diff integrated with build/asset tracking; perimeter validation for SQL strings |
 
 ### Key Integration Gaps
 
 1. **Schema Management**: Manual type mapping in `_column_type_to_sqlglot()` when Ibis provides `Schema.to_sqlglot_column_defs()`
-2. **Query Compilation**: Using `ibis.to_sql()` (string) when `con.compiler.to_sqlglot()` (AST) enables analysis
-3. **Parameterization**: Ad-hoc `ibis.literal()` when `ibis.param()` provides type-safe templates
-4. **Data Transfer**: Pandas intermediaries when Arrow provides zero-copy
-5. **Query Analysis**: No fingerprinting, lineage, or semantic diffing
+2. **Query Compilation**: String-first SQL generation (and parse round-trips) where a param-aware SQLGlot AST hook is possible
+3. **Parameterization**: No standardized `ibis.param()` templates; dynamic inputs reduce cacheability and complicate typing
+4. **Export/Streaming**: “Streaming” APIs buffer results (list + fetchall) instead of Arrow-batch streaming
+5. **Write Paths**: Upsert-from-expression falls back to pandas materialization rather than staged temp tables + `INSERT..SELECT`
+6. **Temp Object Hygiene**: No shared lifecycle management for staged memtables/temp tables (risk of leaks in long-lived sessions)
+7. **Governance Hooks**: Diff/lineage/fingerprinting concepts exist but are not wired into build tracking or serving caching
 
 ---
 
@@ -66,75 +80,74 @@ The CodeIntel data operations stack is built on three powerful technologies—**
 
 ### 1. Unified Schema Management Pipeline
 
-**Current Pain Point**: Three separate schema representations (Python dataclasses, TableSchema, SQLGlot column defs) that must be kept in sync manually.
+**Current Pain Point**: The repo already has a canonical schema language (`TableSchema`), but DDL typing is still
+hand-maintained (`_column_type_to_sqlglot()` / `_build_column_def()`), which creates drift risk and slows evolution.
 
-**Integrated Solution**: Single-source schema definition flowing through all layers.
+**Revised Integrated Solution**: Keep `TableSchema` as the single source of truth and add a *single* bridge:
+`TableSchema → ibis.Schema → SQLGlot ColumnDef` using `Schema.to_sqlglot_column_defs(dialect="duckdb")`.
+
+This preserves the contract-first architecture (Pandera generation, schema drift checks, dataset registry) while
+removing the need to maintain a parallel DDL type mapping.
 
 ```python
-# PROPOSED: Unified schema flow
-from dataclasses import dataclass
+# PROPOSED: src/codeintel/storage/schema/ibis_roundtrip.py
 import ibis
 from sqlglot import exp
 
-@dataclass(frozen=True)
-class UnifiedSchema:
-    """Single source of truth for table schemas."""
-    
-    name: str
-    schema: str
-    ibis_schema: ibis.Schema
-    primary_key: tuple[str, ...] = ()
-    
-    @classmethod
-    def from_columns(
-        cls,
-        name: str,
-        schema: str,
-        columns: dict[str, str],  # {"col": "int64", "col2": "!string"} (! = not nullable)
-        primary_key: tuple[str, ...] = (),
-    ) -> "UnifiedSchema":
-        """Create from Ibis schema notation."""
-        return cls(
-            name=name,
-            schema=schema,
-            ibis_schema=ibis.schema(columns),
-            primary_key=primary_key,
+from codeintel.core.schemas.primitives import TableSchema
+from codeintel.storage.constants import DUCKDB_DIALECT
+
+
+def ibis_schema_from_table_schema(table: TableSchema) -> ibis.Schema:
+    """Convert TableSchema to an ibis.Schema (including nullability)."""
+    type_map: dict[str, str] = {
+        "BOOLEAN": "boolean",
+        "INTEGER": "int32",
+        "BIGINT": "int64",
+        "DOUBLE": "float64",
+        "VARCHAR": "string",
+        "JSON": "json",
+        "TIMESTAMP": "timestamp",
+        "TIMESTAMPTZ": "timestamp",
+        "DECIMAL": "decimal",
+        "DECIMAL(38,0)": "decimal(38,0)",
+    }
+
+    cols: dict[str, str] = {}
+    for col in table.columns:
+        dtype = type_map[col.type]
+        cols[col.name] = f"!{dtype}" if not col.nullable else dtype
+    return ibis.schema(cols)
+
+
+def create_table_ast(table: TableSchema, *, if_not_exists: bool = True) -> exp.Create:
+    """Build SQLGlot CREATE TABLE from TableSchema via Ibis round-trip."""
+    ibis_schema = ibis_schema_from_table_schema(table)
+    col_defs = ibis_schema.to_sqlglot_column_defs(dialect=DUCKDB_DIALECT)
+
+    if table.primary_key:
+        col_defs.append(
+            exp.PrimaryKey(expressions=[exp.to_identifier(c) for c in table.primary_key])
         )
-    
-    def to_sqlglot_create_table(self, *, if_not_exists: bool = True) -> exp.Create:
-        """Generate SQLGlot CREATE TABLE using Ibis round-trip."""
-        col_defs = self.ibis_schema.to_sqlglot_column_defs(dialect="duckdb")
-        
-        if self.primary_key:
-            pk_constraint = exp.PrimaryKey(
-                expressions=[exp.to_identifier(c) for c in self.primary_key]
-            )
-            col_defs.append(pk_constraint)
-        
-        return exp.Create(
-            this=exp.Schema(
-                this=exp.Table(
-                    this=exp.to_identifier(self.name),
-                    db=exp.to_identifier(self.schema),
-                ),
-                expressions=col_defs,
-            ),
-            kind="TABLE",
-            exists=if_not_exists,
-        )
-    
-    def to_pandera_schema(self) -> "pa.DataFrameSchema":
-        """Generate Pandera validation schema."""
-        # Leverage existing schema registry integration
-        ...
+
+    return exp.Create(
+        this=exp.Schema(
+            this=exp.Table(this=exp.to_identifier(table.name), db=exp.to_identifier(table.schema)),
+            expressions=col_defs,
+        ),
+        kind="TABLE",
+        exists=if_not_exists,
+    )
 ```
 
-**Impact**: 
-- Eliminates `_column_type_to_sqlglot()` (~50 lines)
-- Eliminates `_build_column_def()` chain (~30 lines)
-- Type correctness guaranteed by Ibis
+**Impact**
+- Removes hand-maintained DDL type mapping (less drift, faster schema evolution).
+- Keeps `TableSchema` canonical across build + storage + serving validation.
+- Sets up a clean future path for complex types (requires extending `ColumnType` + Pandera mapping first).
 
-**Files Affected**: `duckdb_policy_backend.py`, `storage/schema/`, `build/hamilton/contracts/`
+**Files Affected**
+- `src/codeintel/storage/duckdb_policy_backend.py` (swap manual ColumnDef building for round-trip helpers)
+- `src/codeintel/storage/schema/` (add the round-trip bridge as a single reusable utility)
 
 ---
 
@@ -156,13 +169,23 @@ if TYPE_CHECKING:
 class IbisGateway:
     # ... existing code ...
     
-    def to_sqlglot(self, expr: it.Expr) -> exp.Expression:
+    def to_sqlglot(
+        self,
+        expr: it.Expr,
+        *,
+        params: dict[it.Scalar, object] | None = None,
+        limit: int | None = None,
+    ) -> exp.Expression:
         """Return SQLGlot AST for an Ibis expression.
         
         Parameters
         ----------
         expr
             Any Ibis expression (Table, Scalar, etc.)
+        params
+            Optional scalar parameter bindings. Required when `expr` contains `ibis.param(...)`.
+        limit
+            Optional limit to apply at compile time.
         
         Returns
         -------
@@ -183,7 +206,7 @@ class IbisGateway:
         >>> tables = {t.name for t in sg_expr.find_all(exp.Table)}
         >>> sql = sg_expr.sql(dialect="duckdb", pretty=True)
         """
-        return self.con.compiler.to_sqlglot(expr)
+        return self.con.compiler.to_sqlglot(expr, params=params, limit=limit)
     
     def extract_table_lineage(self, expr: it.Table) -> set[str]:
         """Extract all tables referenced by an expression."""
@@ -201,9 +224,15 @@ class IbisGateway:
             for col in sg_expr.find_all(exp.Column)
         }
     
-    def canonicalize(self, expr: it.Expr, *, schema: dict[str, dict[str, str]] | None = None) -> exp.Expression:
+    def canonicalize(
+        self,
+        expr: it.Expr,
+        *,
+        params: dict[it.Scalar, object] | None = None,
+        schema: dict[str, dict[str, str]] | None = None,
+    ) -> exp.Expression:
         """Return canonical SQLGlot AST for fingerprinting/caching."""
-        sg_expr = self.to_sqlglot(expr)
+        sg_expr = self.to_sqlglot(expr, params=params)
         return optimizer.optimize(
             sg_expr,
             dialect="duckdb",
@@ -214,10 +243,16 @@ class IbisGateway:
             ),
         )
     
-    def query_fingerprint(self, expr: it.Expr, *, schema: dict[str, dict[str, str]] | None = None) -> str:
+    def query_fingerprint(
+        self,
+        expr: it.Expr,
+        *,
+        params: dict[it.Scalar, object] | None = None,
+        schema: dict[str, dict[str, str]] | None = None,
+    ) -> str:
         """Generate stable fingerprint for query caching."""
         import hashlib
-        canonical = self.canonicalize(expr, schema=schema)
+        canonical = self.canonicalize(expr, params=params, schema=schema)
         sql = canonical.sql(dialect="duckdb", pretty=False)
         return hashlib.sha256(sql.encode()).hexdigest()[:16]
 ```
@@ -228,9 +263,9 @@ class IbisGateway:
 - Foundation for semantic view diffing
 
 **Integration Points**:
-- `serving/semantic/kernel.py`: Use fingerprints for response caching
-- `build/contracts.py`: Extract lineage for dependency tracking
-- `storage/views/`: Enable semantic diff for view evolution
+- `src/codeintel/serving/semantic/kernel.py`: Use fingerprints for response caching
+- `src/codeintel/build/contracts.py`: Extract lineage for dependency tracking
+- `src/codeintel/storage/views/`: Enable semantic diff for view evolution
 
 ---
 
@@ -241,7 +276,7 @@ class IbisGateway:
 **Integrated Solution**: Ibis `param()` based template system.
 
 ```python
-# PROPOSED: serving/semantic/templates.py
+# PROPOSED: src/codeintel/serving/semantic/templates.py
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -318,20 +353,28 @@ class QueryTemplate:
         expr: it.Table,
         bindings: dict[str, Any],
         *,
+        limit: int | None = None,
         pretty: bool = True,
     ) -> str:
         """Compile to SQL with bound parameters."""
         param_map = self.bind(**bindings)
-        return expr.compile(params=param_map, pretty=pretty)
+        return expr.compile(params=param_map, limit=limit, pretty=pretty)
     
     def execute(
         self,
         expr: it.Table,
         bindings: dict[str, Any],
+        *,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> Any:
         """Execute with bound parameters."""
         param_map = self.bind(**bindings)
-        return expr.execute(params=param_map)
+        if limit is None and offset:
+            msg = "offset requires limit to be set"
+            raise ValueError(msg)
+        limited = expr.limit(limit, offset=offset) if limit is not None else expr
+        return limited.execute(params=param_map)
 
 
 # Usage example in semantic query builder:
@@ -341,15 +384,14 @@ def build_semantic_query_template() -> tuple[QueryTemplate, it.Table]:
         QueryTemplate("semantic_search", "Vector similarity search")
         .param("repo", "string", required=True, description="Repository identifier")
         .param("min_score", "float64", default=0.5, description="Minimum similarity score")
-        .param("limit", "int64", default=100, description="Maximum results")
     )
     
-    # Build expression using parameters
+    # Build a reusable expression template using scalar parameters.
+    # Apply pagination (limit/offset) out-of-band at compile/execute time to keep the template stable.
     t = con.table("vectors.embeddings")
     expr = (
         t.filter(t.repo == template.get_param_expr("repo"))
         .filter(t.score >= template.get_param_expr("min_score"))
-        .limit(template.get_param_expr("limit"))
     )
     
     return template, expr
@@ -358,25 +400,30 @@ def build_semantic_query_template() -> tuple[QueryTemplate, it.Table]:
 **Impact**:
 - Type-safe parameter binding
 - SQL injection prevention (values never interpolated)
-- Query plan caching (same SQL shape)
+- Enables stable query templates at the Ibis IR level; input values flow via `params` for hashing/caching
 
 **Integration Points**:
-- `serving/semantic/query_builder.py`: Replace literal injection
-- `build/exports/exprs.py`: Template-based export queries
+- `src/codeintel/serving/semantic/query_builder.py`: Replace literal injection
+- `src/codeintel/build/exports/exprs.py`: Template-based export queries
 
 ---
 
-### 4. Arrow-Native Data Pipeline
+### 4. Arrow-Native Data Pipeline + True Streaming Exports
 
-**Current Pain Point**: Data converted to Pandas, losing zero-copy benefits and adding memory overhead.
+**Current Pain Point**: “Streaming” APIs frequently buffer results (e.g., `list(...)` materialization, `fetchall()`), and
+export implementations often round-trip through pandas. This risks OOM on large views and delays time-to-first-byte.
 
-**Integrated Solution**: Arrow-first data flow with streaming support.
+**Integrated Solution**: Arrow-first data flow with batch streaming end-to-end:
+- Use `to_pyarrow_batches()` for constant-memory iteration.
+- Build NDJSON streaming responses without collecting full result sets; Arrow/Parquet via streaming writer or spool-to-disk.
+- Prefer Arrow registration/replacement scans for bulk writes (avoid Python tuple loops when large).
 
 ```python
 # PROPOSED: Add to IbisGateway
 
-from collections.abc import Iterator
+import json
 import pyarrow as pa
+import pyarrow.csv as pa_csv
 
 class IbisGateway:
     # ... existing code ...
@@ -390,7 +437,7 @@ class IbisGateway:
         expr: it.Table,
         *,
         chunk_size: int = 10_000,
-    ) -> Iterator[pa.RecordBatch]:
+    ) -> pa.RecordBatchReader:
         """Stream results as Arrow batches for memory-efficient processing.
         
         Parameters
@@ -402,8 +449,8 @@ class IbisGateway:
         
         Yields
         ------
-        pa.RecordBatch
-            Arrow record batches for streaming processing.
+        pa.RecordBatchReader
+            Arrow RecordBatchReader for streaming processing.
         
         Notes
         -----
@@ -442,10 +489,9 @@ class IbisGateway:
 
 async def stream_query_results(
     expr: it.Table,
-    con: ibis.backends.duckdb.Backend,
     *,
     chunk_size: int = 10_000,
-    format: str = "jsonl",
+    output_format: str = "jsonl",
 ) -> AsyncIterator[bytes]:
     """Stream query results as HTTP response chunks.
     
@@ -453,33 +499,29 @@ async def stream_query_results(
     ----------
     expr
         Ibis expression to stream.
-    con
-        DuckDB backend connection.
     chunk_size
         Rows per batch.
-    format
-        Output format: 'jsonl', 'arrow', or 'csv'.
+    output_format
+        Output format: 'jsonl' or 'csv'. (Arrow/Parquet are handled separately.)
     
     Yields
     ------
     bytes
         Encoded response chunks.
     """
-    batches = con.to_pyarrow_batches(expr, chunk_size=chunk_size)
-    
-    for batch in batches:
-        if format == "jsonl":
-            df = batch.to_pandas()
-            for _, row in df.iterrows():
-                yield (row.to_json() + "\n").encode()
-        elif format == "arrow":
+    reader = expr.to_pyarrow_batches(chunk_size=chunk_size)
+
+    for batch in reader:
+        if output_format == "jsonl":
+            # Avoid buffering the full resultset; emit per batch.
+            for row in batch.to_pylist():
+                yield (json.dumps(row, default=str) + "\n").encode("utf-8")
+        elif output_format == "csv":
+            # CSV is row-oriented; keep the batch size small to limit memory.
+            table = pa.Table.from_batches([batch])
             sink = pa.BufferOutputStream()
-            writer = pa.ipc.new_stream(sink, batch.schema)
-            writer.write_batch(batch)
-            writer.close()
+            pa_csv.write_csv(table, sink)
             yield sink.getvalue().to_pybytes()
-        elif format == "csv":
-            yield batch.to_pandas().to_csv(index=False, header=False).encode()
 ```
 
 **Impact**:
@@ -488,374 +530,153 @@ async def stream_query_results(
 - Native integration with ML frameworks (PyTorch, TensorFlow)
 
 **Integration Points**:
-- `serving/http/`: Streaming endpoints
-- `build/hamilton/io/`: Arrow-based data loaders
-- `storage/repositories/`: Arrow-first read methods
+- `src/codeintel/serving/http/routes/v1/export.py`: Remove list buffering; stream generator output directly
+- `src/codeintel/serving/semantic/kernel.py`: Avoid `fetchall()`; expose Arrow-batch export primitives
+- `src/codeintel/build/hamilton/io/`: Optional Arrow-based loaders/exports where pandas becomes a bottleneck
 
 ---
 
-### 5. DuckDB Complex Types for Nested Data
+### 5. DuckDB Complex Types for Nested Data (Defer / v2 Experiment)
 
-**Current Pain Point**: Flattened schemas lose semantic structure; metadata stored as JSON strings parsed at runtime.
+**Current Pain Point**: Flattened schemas lose semantic structure; some fields are stored as JSON strings and parsed at runtime.
 
-**Integrated Solution**: Native DuckDB complex types (STRUCT, LIST, MAP).
+**Repo Review Adjustment**: Complex types are high-upside but *high-blast-radius* today because the schema contract language
+(`ColumnType` + Pandera mapping) currently models a small scalar set. Complex types should be introduced only after:
 
-```python
-# PROPOSED: Complex type support in schema definitions
+1. DDL round-trips are stabilized (Opportunity 1),
+2. streaming exports are fixed (Opportunity 4), and
+3. the contract language is extended end-to-end (schema hashing + Pandera + row bindings).
 
-from duckdb.typing import DuckDBPyType
-
-# Define complex types for code intelligence data
-FUNCTION_PARAMS_TYPE = DuckDBPyType(list[{
-    "name": str,
-    "type": str,
-    "default": str | None,
-    "position": int,
-}])
-
-SYMBOL_LOCATION_TYPE = DuckDBPyType({
-    "file_path": str,
-    "line_start": int,
-    "line_end": int,
-    "column_start": int,
-    "column_end": int,
-})
-
-EDGE_METADATA_TYPE = DuckDBPyType({str: str})  # MAP for flexible attributes
-
-
-# Example schema using complex types
-ENHANCED_FUNCTION_METRICS_SCHEMA = UnifiedSchema.from_columns(
-    name="function_metrics_v2",
-    schema="analytics",
-    columns={
-        "function_goid_h128": "!string",
-        "repo": "!string",
-        "commit": "!string",
-        "name": "!string",
-        "qualified_name": "!string",
-        # Complex nested types (new)
-        "location": SYMBOL_LOCATION_TYPE,  # STRUCT
-        "parameters": FUNCTION_PARAMS_TYPE,  # LIST<STRUCT>
-        "annotations": DuckDBPyType(list[str]),  # LIST<VARCHAR>
-        "metrics": DuckDBPyType({str: float}),  # MAP<VARCHAR, DOUBLE>
-        # Scalars
-        "loc": "!int64",
-        "cyclomatic_complexity": "!int64",
-    },
-    primary_key=("function_goid_h128", "repo", "commit"),
-)
-
-
-# Query nested data naturally
-def query_complex_function(gateway: StorageGateway, repo: str, commit: str):
-    """Query function with nested data access."""
-    t = gateway.ibis.table("analytics.function_metrics_v2")
-    
-    return (
-        t.filter(t.repo == repo)
-        .filter(t.commit == commit)
-        # Access nested fields
-        .mutate(
-            file_path=t.location["file_path"],
-            line_start=t.location["line_start"],
-            param_count=t.parameters.length(),
-            has_default=t.parameters.map(lambda p: p["default"].notnull()).any(),
-        )
-        .select("name", "file_path", "line_start", "param_count", "has_default")
-    )
-```
-
-**Impact**:
-- More natural data modeling (matches code structure)
-- Fewer JOINs for related data
-- Better query expressiveness
-
-**Migration Consideration**: Requires schema evolution; implement as v2 tables alongside existing.
-
----
-
-### 6. Centralized Extension & UDF Management
-
-**Current Pain Point**: Extensions loaded ad-hoc; no standard UDF registration.
-
-**Integrated Solution**: Gateway-level extension and UDF bootstrap.
+**Experimental Path**: Pilot 1–2 v2 tables (side-by-side) using DuckDB Types API helpers.
 
 ```python
-# PROPOSED: storage/gateway/extensions.py
-
-from dataclasses import dataclass, field
-from typing import Callable, Any
+# PROPOSED (experimental): complex types via DuckDB Types API
 import duckdb
 
-@dataclass
-class ExtensionSpec:
-    """Specification for a DuckDB extension."""
-    
-    name: str
-    required: bool = True
-    config: dict[str, Any] = field(default_factory=dict)
+# STRUCT
+symbol_location_type = duckdb.struct_type(
+    {
+        "file_path": duckdb.sqltypes.VARCHAR,
+        "line_start": duckdb.sqltypes.INTEGER,
+        "line_end": duckdb.sqltypes.INTEGER,
+        "column_start": duckdb.sqltypes.INTEGER,
+        "column_end": duckdb.sqltypes.INTEGER,
+    }
+)
 
+# LIST<STRUCT>
+function_param_type = duckdb.struct_type(
+    {
+        "name": duckdb.sqltypes.VARCHAR,
+        "type": duckdb.sqltypes.VARCHAR,
+        "default": duckdb.sqltypes.VARCHAR,
+        "position": duckdb.sqltypes.INTEGER,
+    }
+)
+function_params_type = duckdb.list_type(function_param_type)
 
-@dataclass
-class UDFSpec:
-    """Specification for a Python UDF."""
-    
-    name: str
-    func: Callable
-    parameters: list[str] | None = None  # None = infer from annotations
-    return_type: str | None = None
-    vectorized: bool = False  # type='arrow' if True
-    null_handling: str = "NULL"  # "NULL" or "special"
-    exception_handling: str = "throw"  # "throw" or "return_null"
-
-
-# Standard extensions for CodeIntel
-REQUIRED_EXTENSIONS: list[ExtensionSpec] = [
-    ExtensionSpec("json"),
-    ExtensionSpec("parquet"),
-    ExtensionSpec("fts"),  # Full-text search
-]
-
-OPTIONAL_EXTENSIONS: list[ExtensionSpec] = [
-    ExtensionSpec("httpfs", required=False, config={"s3_region": "us-west-2"}),
-    ExtensionSpec("spatial", required=False),
-    ExtensionSpec("delta", required=False),
-]
-
-
-def ensure_extensions(
-    con: duckdb.DuckDBPyConnection,
-    *,
-    enable_cloud: bool = False,
-    enable_spatial: bool = False,
-) -> list[str]:
-    """Load required extensions and optionally enable optional ones.
-    
-    Returns
-    -------
-    list[str]
-        Names of loaded extensions.
-    """
-    loaded: list[str] = []
-    
-    # Required extensions
-    for ext in REQUIRED_EXTENSIONS:
-        _load_extension(con, ext)
-        loaded.append(ext.name)
-    
-    # Optional extensions based on flags
-    if enable_cloud:
-        httpfs = next(e for e in OPTIONAL_EXTENSIONS if e.name == "httpfs")
-        _load_extension(con, httpfs)
-        loaded.append("httpfs")
-    
-    if enable_spatial:
-        spatial = next(e for e in OPTIONAL_EXTENSIONS if e.name == "spatial")
-        _load_extension(con, spatial)
-        loaded.append("spatial")
-    
-    return loaded
-
-
-def _load_extension(con: duckdb.DuckDBPyConnection, spec: ExtensionSpec) -> None:
-    """Load a single extension with config."""
-    try:
-        con.execute(f"LOAD {spec.name}")
-    except duckdb.Error:
-        if spec.required:
-            con.execute(f"INSTALL {spec.name}")
-            con.execute(f"LOAD {spec.name}")
-        else:
-            return
-    
-    # Apply extension config
-    for key, value in spec.config.items():
-        con.execute(f"SET {key} = '{value}'")
-
-
-# Standard UDFs for CodeIntel
-def goid_hash(file_path: str, symbol_name: str, line: int) -> str:
-    """Compute GOID hash for a symbol."""
-    import hashlib
-    content = f"{file_path}:{symbol_name}:{line}"
-    return hashlib.blake2b(content.encode(), digest_size=16).hexdigest()
-
-
-def complexity_score(loc: int, cyclomatic: int) -> float:
-    """Compute normalized complexity score."""
-    if loc <= 0:
-        return 0.0
-    return cyclomatic / (loc + 1)
-
-
-STANDARD_UDFS: list[UDFSpec] = [
-    UDFSpec("goid_hash", goid_hash),
-    UDFSpec("complexity_score", complexity_score),
-]
-
-
-def register_standard_udfs(con: duckdb.DuckDBPyConnection) -> list[str]:
-    """Register standard CodeIntel UDFs."""
-    registered: list[str] = []
-    
-    for udf in STANDARD_UDFS:
-        params = udf.parameters
-        ret = udf.return_type
-        udf_type = "arrow" if udf.vectorized else "native"
-        
-        con.create_function(
-            udf.name,
-            udf.func,
-            parameters=params,
-            return_type=ret,
-            type=udf_type,
-            null_handling=udf.null_handling,
-            exception_handling=udf.exception_handling,
-        )
-        registered.append(udf.name)
-    
-    return registered
+# MAP<VARCHAR, VARCHAR>
+edge_metadata_type = duckdb.map_type(duckdb.sqltypes.VARCHAR, duckdb.sqltypes.VARCHAR)
 ```
 
-**Impact**:
-- Deterministic extension loading at startup
-- Configuration-driven capability enablement
-- Reusable SQL functions for common operations
+**Impact (when ready)**
+- Better modeling of code-intelligence entities (nested/structured data)
+- Fewer joins and less JSON parsing in query paths
+- Better alignment with Arrow-native interchange
+
+**Migration Consideration**: Treat as v2 schemas/tables; do not block core operational fixes.
 
 ---
 
-### 7. Query Policy Enforcement via AST Transforms
+### 6. Centralized Session, Extension, and Secret Management (Revise)
 
-**Current Pain Point**: Snapshot filtering (`repo`, `commit`) manually added to each query.
+**Current Pain Point**: Extension and session initialization is spread across env-driven connect-time behavior and
+feature-local code paths (e.g., FTS loads its own extension). This creates inconsistent behavior between build vs serving,
+and it risks performing `INSTALL` in environments where network access or write permissions are undesirable.
 
-**Integrated Solution**: Automatic AST transformation for policy enforcement.
+**Repo Review Adjustment**: The repo already has the correct seams:
+- env-based extension list loading at connect-time, and
+- a session wrapper (`DuckDBSession`) that can own init SQL.
+
+The enhancement should consolidate on *one* lifecycle owner: the session/connection layer.
+
+**Revised Integrated Solution**: Promote a single “capabilities bootstrap” surface in the session layer:
+
+- **Serving/read-only**: `LOAD` only, fail-fast if missing (no implicit installs).
+- **Build/write**: allow `INSTALL` + `LOAD` when explicitly enabled.
+- **Secrets/init SQL**: use a single init pipeline (e.g., `CODEINTEL_DUCKDB_INIT_SQL`) for `SET/PRAGMA/CREATE SECRET/ATTACH`.
 
 ```python
-# PROPOSED: storage/helpers/query_policy.py
+# PROPOSED: storage/backend/duckdb_session.py (capability bootstrap sketch)
+#
+# Policy:
+# - allow_install=False in serving (read-only)
+# - allow_install=True only in build / explicit admin paths
 
-from sqlglot import exp, parse_one
-from dataclasses import dataclass
-
-@dataclass(frozen=True)
-class SnapshotRef:
-    """Reference to a specific data snapshot."""
-    repo: str
-    commit: str
-
-
-def inject_snapshot_filter(
-    sg_expr: exp.Expression,
-    snapshot: SnapshotRef,
+def bootstrap_capabilities(
+    con: "DuckDBPyConnection",
     *,
-    tables: set[str] | None = None,
-) -> exp.Expression:
-    """Inject snapshot filtering into all table references.
-    
-    Parameters
-    ----------
-    sg_expr
-        SQLGlot expression to transform.
-    snapshot
-        Snapshot reference (repo, commit) to filter by.
-    tables
-        Optional set of table names to filter. If None, filter all tables.
-    
-    Returns
-    -------
-    exp.Expression
-        Transformed expression with snapshot filters.
-    
-    Notes
-    -----
-    This is the key to centralized snapshot scoping. Instead of manually
-    adding repo/commit filters everywhere, we transform the AST after
-    Ibis compilation.
-    """
-    def transform_node(node: exp.Expression) -> exp.Expression:
-        if not isinstance(node, exp.Select):
-            return node
-        
-        # Find all tables in FROM clause
-        from_clause = node.find(exp.From)
-        if not from_clause:
-            return node
-        
-        # Build filter conditions for each table
-        conditions: list[exp.Expression] = []
-        for table in from_clause.find_all(exp.Table):
-            table_name = table.this.name if hasattr(table.this, "name") else str(table.this)
-            
-            if tables and table_name not in tables:
-                continue
-            
-            alias = table.alias or table_name
-            conditions.extend([
-                exp.EQ(
-                    this=exp.Column(this=exp.to_identifier("repo"), table=exp.to_identifier(alias)),
-                    expression=exp.Literal.string(snapshot.repo),
-                ),
-                exp.EQ(
-                    this=exp.Column(this=exp.to_identifier("commit"), table=exp.to_identifier(alias)),
-                    expression=exp.Literal.string(snapshot.commit),
-                ),
-            ])
-        
-        if not conditions:
-            return node
-        
-        # Combine with existing WHERE clause
-        combined = conditions[0]
-        for cond in conditions[1:]:
-            combined = exp.And(this=combined, expression=cond)
-        
-        existing_where = node.args.get("where")
-        if existing_where:
-            combined = exp.And(this=existing_where.this, expression=combined)
-        
-        return node.copy()
-        # Note: Full implementation would modify the WHERE clause properly
-    
-    return sg_expr.transform(transform_node)
-
-
-class QueryPolicy:
-    """Policy-based query transformation and validation."""
-    
-    def __init__(self, snapshot: SnapshotRef | None = None):
-        self.snapshot = snapshot
-        self._snapshot_scoped_tables: set[str] = {
-            "analytics.function_metrics",
-            "analytics.test_catalog",
-            "graph.call_graph_edges",
-            "graph.import_graph_edges",
-            # Add all snapshot-scoped tables
-        }
-    
-    def enforce(self, sg_expr: exp.Expression) -> exp.Expression:
-        """Apply all policy transformations."""
-        result = sg_expr
-        
-        if self.snapshot:
-            result = inject_snapshot_filter(
-                result,
-                self.snapshot,
-                tables=self._snapshot_scoped_tables,
-            )
-        
-        return result
-    
-    def validate_tables(self, sg_expr: exp.Expression) -> list[str]:
-        """Validate that query only accesses allowed tables."""
-        tables = {t.this.name for t in sg_expr.find_all(exp.Table)}
-        # Could implement allowlist checking here
-        return list(tables)
+    extensions: list[str],
+    allow_install: bool,
+) -> list[str]:
+    loaded: list[str] = []
+    for name in extensions:
+        try:
+            con.execute(f"LOAD {name}")
+        except Exception:
+            if not allow_install:
+                raise
+            con.execute(f"INSTALL {name}")
+            con.execute(f"LOAD {name}")
+        loaded.append(name)
+    return loaded
 ```
 
-**Impact**:
-- Centralized snapshot scoping
-- Eliminates repetitive filter code
-- Foundation for access control integration
+**UDF Registry (Optional)**: Only introduce a standard UDF catalog if there is repeated SQL-level demand. Today, the repo
+has near-zero registered UDF usage, so start with extension/session unification first.
+
+**Impact**
+- Deterministic “capabilities on startup” for build + serving
+- Clear `LOAD` vs `INSTALL` policy (safe defaults in serving)
+- One place to wire secrets/session configuration for cloud access
+
+---
+
+### 7. Snapshot Scoping & Query Governance (Ibis-first; AST optional)
+
+**Current Pain Point**: Snapshot scoping (`repo`, `commit`) is applied inconsistently: some paths rely on the warehouse
+helper, while many repository/query paths still manually add filters.
+
+**Repo Review Adjustment**: The repo already implements an Ibis-layer snapshot filter in the warehouse read path
+(`Warehouse.read(...)` only scopes when both `repo` and `commit` exist). This is the safest place to start because it
+preserves Ibis typing and avoids SQL rewriting edge cases.
+
+**Revised Integrated Solution**
+
+1. **Ibis-first scoping (near-term)**  
+   Provide a snapshot-aware table accessor for repository code so most queries no longer repeat `repo/commit` filters.
+   (E.g., BaseRepository can route through `Warehouse.read(...)` or a shared `scoped_table(...)` helper.)
+
+2. **SQLGlot governance hooks (later; boundary-only)**  
+   Use SQLGlot AST inspection/transforms only at boundaries where SQL strings exist (e.g., `Table.sql(...)`,
+   `Backend.sql(...)`, or any “raw SQL” ingress), primarily for:
+   - **table allowlists** (what does this SQL touch?)
+   - **schema/column minimization** (what does this query select?)
+   - **safety policies** (disallow writes, forbid unbounded scans in serving, etc.)
+
+```python
+# PROPOSED: minimal perimeter validation using SQLGlot (allowlist example)
+from sqlglot import exp, parse_one
+
+def referenced_tables(sql: str, *, dialect: str = "duckdb") -> set[str]:
+    root = parse_one(sql, dialect=dialect)
+    return {f\"{t.db}.{t.name}\" if t.db else t.name for t in root.find_all(exp.Table)}
+```
+
+**Impact**
+- Removes repetitive snapshot filter boilerplate in repository/query code
+- Preserves Ibis typing and avoids brittle AST rewrite semantics
+- Still enables SQLGlot-based governance where SQL strings are unavoidable
 
 ---
 
@@ -996,10 +817,14 @@ def summarize_view_evolution(
     return {k: v for k, v in summary.items() if v}  # Remove empty lists
 ```
 
+**Repo Review Adjustment**: Treat semantic SQL diffs as a *build artifact*, not a standalone utility. The repo already
+compiles view SQL for materialization ordering; persist compiled SQL per build/run and compute semantic diffs between
+successive versions to power changelogs and breaking-change detection.
+
 **Impact**:
 - Automated changelog generation for view updates
 - Breaking change detection (column removal)
-- Schema evolution tracking
+- Schema/view evolution tracking integrated with asset/build tracking
 
 ---
 
@@ -1007,15 +832,46 @@ def summarize_view_evolution(
 
 **Current Pain Point**: Large `IN (...)` lists can exceed placeholder limits or generate slow query plans.
 
-**Integrated Solution**: Automatic memtable + semi-join pattern.
+**Repo Review Adjustment**: This should be a reusable primitive with explicit lifecycle management. Creating temp tables
+inside “pure” query builder code makes cleanup difficult and risks leaking temp objects in long-lived serving processes.
+
+**Integrated Solution**: A 2–3 tier strategy with staging at execution time:
+
+1. **Small lists**: use `.isin(...)`
+2. **Large lists**: stage values into a temp table and use a semi-join
+3. **Raw SQL paths (optional)**: prefer `col = ANY(?)` where DuckDB supports array parameters (reduces temp tables)
 
 ```python
-# PROPOSED: Add to serving/semantic/query_builder.py
+# PROPOSED: serving/semantic/in_list.py (execution-time staging)
+
+from contextlib import contextmanager
+from collections.abc import Iterator
+
+import ibis
+import ibis.expr.types as it
 
 IN_LIST_THRESHOLD = 100  # Use memtable pattern above this size
 
 
-def build_in_predicate(
+@contextmanager
+def staged_values_table(
+    con: ibis.backends.duckdb.Backend,
+    *,
+    column_name: str,
+    values: list[object],
+    instance_id: str,
+) -> Iterator[it.Table]:
+    """Stage list values into a temp table and ensure cleanup."""
+    temp_name = f"__in_{column_name}_{instance_id}"
+    mt = ibis.memtable({column_name: values})
+    con.create_table(temp_name, mt, temp=True, overwrite=True)
+    try:
+        yield con.table(temp_name)
+    finally:
+        con.drop_table(temp_name, force=True)
+
+
+def apply_in_filter(
     table: it.Table,
     col_expr: it.Value,
     values: list,
@@ -1045,194 +901,211 @@ def build_in_predicate(
     
     Notes
     -----
-    For small lists (<=100 values), uses standard IN clause.
-    For large lists, creates a temporary memtable and uses semi-join.
-    This avoids placeholder limits and generates better query plans.
+    Staging must happen at execution time (so the temp table exists when executed) and must be cleaned up.
     """
     if len(values) <= IN_LIST_THRESHOLD:
         # Standard IN clause for small lists
         return table.filter(col_expr.isin([ibis.literal(v) for v in values]))
-    
-    # Large list: use memtable + semi-join
+
     col_name = col_expr.get_name()
-    temp_name = f"_in_list_{col_name}_{instance_id}"
-    
-    # Create memtable with deduplicated values
-    unique_values = list(set(values))
-    mt = ibis.memtable({col_name: unique_values})
-    
-    # Materialize as temp table
-    con.create_table(temp_name, mt, temp=True, overwrite=True)
-    temp_table = con.table(temp_name)
-    
-    # Semi-join (keeps only matching rows from left table)
-    return table.semi_join(
-        temp_table,
-        col_expr == temp_table[col_name],
-    )
+    unique_values = list(dict.fromkeys(values))  # stable dedupe
+
+    with staged_values_table(
+        con,
+        column_name=col_name,
+        values=unique_values,
+        instance_id=instance_id,
+    ) as staged:
+        return table.semi_join(staged, col_expr == staged[col_name])
 ```
 
 **Impact**:
 - No placeholder limits
 - Better query plans (hash join vs OR chain)
-- Automatic deduplication
+- Automatic deduplication + temp table hygiene
 
 ---
 
-### 10. Query Profiling Integration
+### 10. Query Profiling & Observability (Build + Serving)
 
-**Current Pain Point**: Query performance is opaque; debugging slow queries requires manual EXPLAIN.
+**Current Pain Point**: Query performance instrumentation is inconsistent across layers. Build/materialization may capture
+profiling artifacts, while serving/query paths often rely on ad-hoc `EXPLAIN` and buffered result extraction.
 
-**Integrated Solution**: Integrated profiling with OpenTelemetry.
+**Repo Review Adjustment**: The repo already supports DuckDB JSON profiling artifacts in the warehouse materialization
+path. The enhancement should extend and standardize this rather than introducing a parallel profiling subsystem.
+
+**Integrated Solution**
+
+1. **Build-time (warehouse)**  
+   Keep DuckDB JSON profiling artifacts as the canonical “deep profile” output (enabled via a profiling output dir).
+
+2. **Serving-time (semantic/query/export)**  
+   Add lightweight instrumentation by default:
+   - duration (ms)
+   - row counts (when cheaply available)
+   - query hash (inputs) + schema hash (manifest) for correlation
+
+   Gate heavier capture (EXPLAIN ANALYZE / DuckDB profiles) behind configuration and/or slow-query thresholds.
 
 ```python
-# PROPOSED: storage/helpers/profiling.py
+# PROPOSED: lightweight query telemetry (serving)
 
-from contextlib import contextmanager
-from dataclasses import dataclass, field
-from typing import Any
-import time
-import json
+from dataclasses import dataclass
+from time import perf_counter
 
-@dataclass
-class QueryProfile:
-    """Profile data for a single query execution."""
-    
+@dataclass(frozen=True)
+class QueryTelemetry:
     sql: str
     duration_ms: float
-    rows_returned: int
-    plan: dict[str, Any] = field(default_factory=dict)
-    fingerprint: str = ""
-    
-    def to_otel_attributes(self) -> dict[str, Any]:
-        """Convert to OpenTelemetry span attributes."""
-        return {
-            "db.statement": self.sql[:1000],  # Truncate for safety
-            "db.operation.duration_ms": self.duration_ms,
-            "db.operation.rows_returned": self.rows_returned,
-            "codeintel.query.fingerprint": self.fingerprint,
-        }
+    query_hash: str | None = None
+    schema_hash: str | None = None
+    rows_returned: int | None = None
 
 
-@contextmanager
-def profile_query(
-    con: "DuckDBPyConnection",
-    *,
-    capture_plan: bool = False,
-):
-    """Context manager for query profiling.
-    
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    capture_plan
-        Whether to capture EXPLAIN ANALYZE output.
-    
-    Yields
-    ------
-    QueryProfile
-        Profile object populated after query execution.
-    
-    Examples
-    --------
-    >>> with profile_query(con, capture_plan=True) as profile:
-    ...     result = con.execute("SELECT * FROM large_table").fetchall()
-    >>> print(f"Query took {profile.duration_ms}ms")
-    """
-    profile = QueryProfile(sql="", duration_ms=0, rows_returned=0)
-    
-    if capture_plan:
-        con.execute("SET enable_profiling = 'json'")
-        con.execute("SET profiling_mode = 'detailed'")
-    
-    start = time.perf_counter()
-    
-    try:
-        yield profile
-    finally:
-        end = time.perf_counter()
-        profile.duration_ms = (end - start) * 1000
-        
-        if capture_plan:
-            try:
-                plan_result = con.execute("SELECT * FROM duckdb_profiles()").fetchone()
-                if plan_result:
-                    profile.plan = json.loads(plan_result[0])
-            except Exception:
-                pass
-            finally:
-                con.execute("SET enable_profiling = 'none'")
+def timed_execute(con: "DuckDBPyConnection", *, sql: str, params: list[object] | None = None):
+    start = perf_counter()
+    rel = con.execute(sql, params) if params is not None else con.execute(sql)
+    duration_ms = (perf_counter() - start) * 1000
+    return rel, QueryTelemetry(sql=sql, duration_ms=duration_ms)
 ```
 
-**Impact**:
-- Query performance visibility
-- Integration with observability stack
-- Debugging aid for slow queries
+**Impact**
+- Consistent observability signals across build + serving
+- Faster diagnosis of slow queries and export bottlenecks
+- Clear separation between “cheap telemetry” and “expensive profiling”
+
+---
+
+### 11. Eliminate Pandas Fallbacks in Write Paths (Upsert + Bulk)
+
+**Current Pain Point**: Some write paths are “safe but expensive”:
+- upsert-from-expression can fall back to `expr.to_pandas()` materialization,
+- large DataFrame writes may normalize into Python tuples (slow, high overhead),
+- temp object staging (for joins or writes) is not consistently cleaned up.
+
+**Integrated Solution**: Add two fast lanes while keeping existing small-write behavior:
+
+1. **Upsert from expression without pandas**  
+   Stage the expression result into DuckDB (temp table or registered Arrow) and run:
+   `INSERT ... ON CONFLICT ... SELECT ...` (same semantics, no full DataFrame materialization).
+
+2. **Bulk writes via Arrow/replacement scans**  
+   For large DataFrames/Arrow tables, prefer `register(...)` + `INSERT ... SELECT` over Python tuple loops.
+
+**Impact**
+- Removes a major OOM risk in write-heavy pipelines
+- Improves throughput for large inserts/upserts
+- Aligns with Arrow-first pipeline goals
+
+---
+
+### 12. Contract-Driven Filter Typing and Query Validation (Serving)
+
+**Current Pain Point**: Serving validates *identifiers* (allowed columns) but not *operator compatibility*.
+This allows invalid queries to reach DuckDB (e.g., string operators on numeric columns) and complicates caching and
+client ergonomics.
+
+**Integrated Solution**: Use the schema inventory (column name → type) to validate filter specs:
+
+- string ops (`contains`, `startswith`, `ilike`) → `VARCHAR`
+- numeric comparisons (`lt/lte/gt/gte`) → numeric/temporal only
+- `in` → element type check + list size strategy (Opportunity 9)
+- enforce nullable semantics where needed (e.g., optional filters)
+
+**Impact**
+- Fewer runtime query errors
+- Better client feedback (fast fail with clear messages)
+- Stronger guarantees for query hashing/fingerprinting in exports and MCP responses
+
+---
+
+### 13. Compiler Upgrade Gates (SQLGlot/Ibis)
+
+**Current Pain Point**: SQLGlot minor releases can be backwards-incompatible, and Ibis uses SQLGlot as its compilation
+substrate. This means dependency bumps can silently change compiled SQL, query plans, and even semantics.
+
+**Integrated Solution**: Treat SQLGlot/Ibis bumps like compiler upgrades:
+
+- pin versions deliberately (and bump with a small “compiler upgrade” PR),
+- add golden SQL snapshots for representative expressions,
+- add AST-shape checks and/or SQLGlot semantic diffs to explain changes,
+- include execution validation on DuckDB for critical query paths.
+
+**Impact**
+- Predictable upgrades with clear diffs
+- Lower risk of “silent” query behavior changes
 
 ---
 
 ## Part III: Implementation Roadmap
 
-### Phase 1: Foundation (Weeks 1-2)
-**Goal**: Establish core infrastructure for all subsequent enhancements.
+This roadmap is ordered by “repo reality” impact: first remove known OOM/buffering paths and pandas fallbacks, then
+standardize query inputs and DDL generation, and finally add governance/observability and upgrade gates.
+
+### Phase 1: Operational Hardening (Weeks 1-2)
+**Goal**: Make serving exports truly streaming and remove pandas/materialization fallbacks in write paths.
 
 | Task | Files | Effort | Dependencies |
 |------|-------|--------|--------------|
-| Unified Schema Pipeline | `storage/schema/`, `duckdb_policy_backend.py` | 3d | None |
-| SQLGlot AST Access in IbisGateway | `ibis_adapter.py` | 2d | None |
-| Extension Bootstrap at Connect | `gateway/factory.py` | 1d | None |
-| Query Fingerprinting | `storage/helpers/` | 1d | AST Access |
+| Stream `export_rows` without `fetchall()` | `src/codeintel/serving/semantic/kernel.py` | 1-2d | None |
+| NDJSON export without `list(...)` buffering | `src/codeintel/serving/http/routes/v1/export.py`, `src/codeintel/serving/http/streaming.py` | 1d | export_rows streaming |
+| Arrow/Parquet exports without row lists (spool-to-disk or streaming writer) | `src/codeintel/serving/http/routes/v1/export.py` | 2-3d | export_rows streaming |
+| Remove `list(kernel.export_rows(...))` buffering in MCP | `src/codeintel/serving/mcp/app.py`, `src/codeintel/serving/mcp/resources.py` | 0.5-1d | export_rows streaming |
+| Upsert-from-expression without pandas fallback | `src/codeintel/storage/ibis_adapter.py` | 2-3d | None |
+| Bulk writes via Arrow/replacement scans | `src/codeintel/storage/ibis_adapter.py` | 1-2d | Upsert fast lane |
+| Centralize `LOAD` vs `INSTALL` policy (+ init SQL) | `src/codeintel/storage/gateway/connection.py`, `src/codeintel/storage/backend/duckdb_session.py` | 1-2d | None |
 
 **Success Criteria**:
-- Schema created via Ibis round-trip matches existing DDL
-- `gateway.ibis.to_sqlglot(expr)` returns valid AST
-- All tests pass with new extension loading
+- NDJSON export starts streaming immediately and does not materialize `rows: list[...]`.
+- `SemanticQueryKernel.export_rows()` does not call `fetchall()` and maintains constant memory for large exports.
+- Upsert-from-expression does not materialize to pandas for large inputs and preserves current semantics.
+- Serving environments do not perform `INSTALL` implicitly (explicit opt-in only).
 
-### Phase 2: Query Intelligence (Weeks 3-4)
-**Goal**: Type-safe parameterization and query caching.
+### Phase 2: Safe Query Inputs + Schema Automation (Weeks 3-4)
+**Goal**: Make query inputs typed/validated and reduce DDL drift/boilerplate.
 
 | Task | Files | Effort | Dependencies |
 |------|-------|--------|--------------|
-| QueryTemplate System | `serving/semantic/templates.py` | 3d | Phase 1 |
-| Migrate Semantic Queries | `serving/semantic/query_builder.py` | 2d | QueryTemplate |
-| Query Fingerprint Caching | `serving/semantic/kernel.py` | 2d | Fingerprinting |
-| Large IN-List Handling | `serving/semantic/query_builder.py` | 1d | None |
+| TableSchema → Ibis → SQLGlot DDL bridge | `src/codeintel/storage/duckdb_policy_backend.py`, `src/codeintel/storage/schema/ibis_roundtrip.py` (new) | 2-3d | None |
+| Param-aware SQLGlot AST hook (`to_sqlglot`) | `src/codeintel/storage/ibis_adapter.py` | 1-2d | None |
+| Typed QueryTemplate + param binding | `src/codeintel/serving/semantic/query_builder.py`, `src/codeintel/serving/semantic/templates.py` (new) | 2-3d | None |
+| Contract-driven filter typing/validation | `src/codeintel/serving/semantic/models.py`, `src/codeintel/serving/semantic/query_builder.py` | 1-2d | QueryTemplate |
+| Large IN-list staging with cleanup | `src/codeintel/serving/semantic/in_list.py` (new), `src/codeintel/serving/semantic/query_builder.py` | 1-2d | Filter validation |
 
 **Success Criteria**:
-- Semantic queries use typed parameters
-- Cache hit rate observable
-- No placeholder limit errors
+- Dynamic inputs flow via validated specs + `params` (no SQL string interpolation; fewer ad-hoc `ibis.literal(...)` paths).
+- DDL generation no longer depends on hand-maintained `_column_type_to_sqlglot()` mappings.
+- Large IN-list queries succeed without placeholder limits and leave no temp tables behind.
 
-### Phase 3: Data Pipeline (Weeks 5-6)
-**Goal**: Arrow-native data flow and complex types.
+### Phase 3: Caching, Telemetry, and Build Artifacts (Weeks 5-6)
+**Goal**: Make query execution observable and make upgrades predictable.
 
 | Task | Files | Effort | Dependencies |
 |------|-------|--------|--------------|
-| Arrow Methods in IbisGateway | `ibis_adapter.py` | 2d | Phase 1 |
-| Streaming HTTP Responses | `serving/http/` | 3d | Arrow Methods |
-| Complex Type Schema Definitions | `storage/schema/` | 3d | Unified Schema |
-| Standard UDF Registration | `gateway/extensions.py` | 2d | Extension Bootstrap |
+| Query fingerprinting integrated in serving | `src/codeintel/serving/semantic/kernel.py`, `src/codeintel/serving/mcp/response_models.py` | 1-2d | AST hook |
+| Lightweight serving telemetry (duration/rows/query hash) | `src/codeintel/serving/semantic/kernel.py` | 1d | None |
+| Semantic SQL diffs as build artifacts | `src/codeintel/storage/views/diff.py` (new), `src/codeintel/storage/views/dependencies.py` | 2-3d | None |
+| Compiler upgrade gates (golden SQL + execution validation) | `tests/` (new) | 2-3d | Phase 2 |
 
 **Success Criteria**:
-- Large queries stream without OOM
-- Complex types queryable via Ibis
-- UDFs available in SQL
+- Fingerprints are stable across requests and incorporate schema hash + param bindings.
+- Serving emits cheap latency/rowcount telemetry by default; deep profiling remains opt-in.
+- View SQL changes produce a semantic diff artifact per build/run.
+- SQLGlot/Ibis upgrades are gated by golden snapshots + execution checks.
 
-### Phase 4: Observability & Governance (Weeks 7-8)
-**Goal**: Query analysis, lineage, and policy enforcement.
+### Phase 4: Governance + Deferred Experiments (Weeks 7-8+)
+**Goal**: Strengthen governance at SQL boundaries and explore complex types only after contracts support them.
 
 | Task | Files | Effort | Dependencies |
 |------|-------|--------|--------------|
-| Query Policy Enforcement | `storage/helpers/query_policy.py` | 3d | AST Access |
-| Semantic View Diffing | `storage/views/diff.py` | 2d | None |
-| Column Lineage Extraction | `ibis_adapter.py` | 2d | AST Access |
-| Query Profiling Integration | `storage/helpers/profiling.py` | 2d | None |
+| Snapshot-aware accessors for repository queries | `src/codeintel/storage/warehouse.py`, repository base classes | 2-3d | Phase 2 |
+| SQL perimeter validation for raw SQL ingress | `src/codeintel/storage/queries/safe.py` | 1-2d | AST hook |
+| DuckDB complex types pilot (v2 tables only) | `src/codeintel/core/schemas/`, `src/codeintel/storage/duckdb_policy_backend.py` | 1-2w | Contract extensions |
 
 **Success Criteria**:
-- Snapshot filtering automatic via policy
-- View changes generate semantic diff
-- Lineage extractable for any query
+- Most query paths stop hand-applying `repo/commit` filters.
+- Raw SQL ingress is validated against allowlists/safety policies.
+- Complex types are introduced only in isolated v2 tables with full contract support.
 
 ---
 
@@ -1240,64 +1113,54 @@ def profile_query(
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
-| Ibis/SQLGlot API drift | Breaking changes | Medium | Version pin, golden tests |
-| Schema migration complexity | Data loss | Low | v2 tables, gradual migration |
-| Arrow memory pressure | OOM in serving | Medium | Streaming + chunk size tuning |
-| UDF performance | Query slowdown | Low | Vectorized UDFs, selective use |
-| Query transformation bugs | Wrong results | Medium | Comprehensive test suite |
+| Serving export buffering regressions | OOM / latency | Medium | Add streaming-focused tests; avoid `list(...)`/`fetchall()` in export paths |
+| Client disconnect/backpressure | Resource leaks | Medium | Cancellation-aware streaming; context-managed cleanup for temp tables/registrations |
+| `LOAD` vs `INSTALL` misconfiguration | Missing features in prod | Medium | Explicit config flags; startup health check; serving defaults to `LOAD` only |
+| Upsert fast-lane semantic drift | Incorrect writes | Low-Med | Golden write-path tests comparing old/new; staged rollout; keep legacy path for small writes |
+| Cache correctness | Wrong results served | Medium | Fingerprint includes schema hash + params + query shape; disable cache for non-deterministic queries |
+| SQLGlot/Ibis compiler drift | Breaking changes | Medium | Compiler upgrade gates (golden SQL + execution validation) |
+| Complex types blast radius | Data/model incompatibility | Low | Defer; v2 tables only; extend contracts + validators first |
 
 ### Testing Strategy
 
-```python
-# Golden SQL tests for API stability
-def test_schema_roundtrip_produces_same_ddl():
-    """Ensure Ibis schema round-trip matches manual DDL."""
-    expected = "CREATE TABLE analytics.function_metrics (..."
-    actual = UnifiedSchema.from_columns(...).to_sqlglot_create_table().sql()
-    assert normalize_sql(actual) == normalize_sql(expected)
-
-def test_ast_transform_preserves_semantics():
-    """Ensure AST transforms don't change query results."""
-    original = build_query(...)
-    transformed = policy.enforce(gateway.to_sqlglot(original))
-    
-    # Both should return same results (modulo filtering)
-    assert set(execute(original)) >= set(execute(transformed))
-
-def test_parameter_binding_type_safety():
-    """Ensure parameters are correctly typed."""
-    template = QueryTemplate(...).param("score", "float64")
-    
-    with pytest.raises(TypeError):
-        template.bind(score="not a float")
-```
+- **Streaming/export tests**
+  - Ensure HTTP endpoints return `StreamingResponse` backed by generators (no pre-materialization).
+  - Cover NDJSON, Arrow IPC, and Parquet paths; assert no `list(kernel.export_rows(...))`.
+- **Write-path tests**
+  - Upsert-from-expression executes without pandas materialization for large inputs and preserves conflict semantics.
+  - Bulk Arrow writes use replacement scans and maintain schema/ordering guarantees.
+- **DDL/schema tests**
+  - TableSchema → Ibis schema → SQLGlot DDL round-trips produce stable, parseable SQL for DuckDB.
+- **Filter validation tests**
+  - Contract-driven operator/type compatibility errors are raised before execution.
+  - IN-list staging creates and cleans temp tables even on exceptions.
+- **Compiler upgrade gates**
+  - Golden SQL snapshots for representative expressions + view compiles.
+  - Execution validation in DuckDB for critical query paths to catch semantic changes.
 
 ---
 
 ## Part V: Summary
 
-### High-Value Opportunities (Implement First)
+### Implement First (Repo-Driven Priorities)
 
-1. **Schema Round-Trips** — Immediate 50+ line reduction, type-safe DDL
-2. **SQLGlot AST Access** — Foundation for all query intelligence
-3. **Typed Parameterization** — Type safety + caching + injection prevention
-4. **Arrow Data Pipeline** — Zero-copy, streaming, memory efficiency
-5. **Extension Bootstrap** — Deterministic startup, fail-fast
+1. **True Streaming Exports (NDJSON/Arrow)** — remove `list(...)` + `fetchall()` buffering (Opportunity 4)
+2. **Eliminate Pandas Write Fallbacks** — upsert-from-expression + bulk writes via Arrow/replacement scans (Opportunity 11)
+3. **Centralize Session Bootstrap** — deterministic `LOAD`/`INSTALL` + init SQL + secrets policy (Opportunity 6)
+4. **Typed Query Inputs** — `ibis.param` templates + contract-driven filter validation (Opportunities 3, 12, 9)
+5. **Schema Round-Trips for DDL** — keep `TableSchema` canonical; generate ColumnDefs via Ibis (Opportunity 1)
 
-### Medium-Value Opportunities (Phase 2-3)
+### Implement Next (Query Intelligence + Build Artifacts)
 
-6. **Query Policy Enforcement** — Centralized snapshot scoping
-7. **Complex Types** — Better data modeling (schema migration required)
-8. **Standard UDFs** — Reusable SQL functions
-9. **Large IN-List Handling** — Production robustness
-10. **Query Profiling** — Observability integration
+6. **SQLGlot AST Access + Fingerprints** — param-aware AST hook enabling caching/lineage (Opportunity 2)
+7. **Serving Telemetry + Profiling Alignment** — cheap metrics by default; reuse warehouse profiling artifacts (Opportunity 10)
+8. **Semantic View Diff Artifacts** — build-time compiled SQL diffs for changelogs/breaking changes (Opportunity 8)
+9. **Compiler Upgrade Gates** — golden SQL + execution validation for SQLGlot/Ibis bumps (Opportunity 13)
+10. **Snapshot Scoping Governance** — Ibis-first scoping + boundary validation for raw SQL (Opportunity 7)
 
-### Future Opportunities (Phase 4+)
+### Defer / Experiment
 
-11. **Semantic View Diffing** — Automated changelogs
-12. **Column Lineage** — Data governance, impact analysis
-13. **Cross-Dialect SQL Migration** — External SQL integration
-14. **Embedded SQL Executor (Testing)** — Faster unit tests
+11. **DuckDB Complex Types** — only after contract language + validators support them end-to-end (Opportunity 5)
 
 ---
 
@@ -1317,4 +1180,3 @@ def test_parameter_binding_type_safety():
 ---
 
 *This document consolidates findings from the separate DuckDB/SQLGlot and Ibis/SQLGlot assessments into a unified enhancement strategy. Implementation should proceed in phases, with each phase building on the previous to minimize risk and maximize value.*
-
