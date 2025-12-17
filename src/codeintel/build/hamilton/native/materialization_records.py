@@ -125,6 +125,119 @@ def record_from_duckdb_materialization(
     return record
 
 
+def record_from_duckdb_materializations(
+    *,
+    env: BuildEnv,
+    graph: TargetGraph,
+    target_name: str,
+    materializations: dict[str, Mapping[str, object]],
+) -> TargetRunRecord:
+    """Build a TargetRunRecord from multiple DuckDB saver metadata dicts.
+
+    Parameters
+    ----------
+    env
+        Build environment for manifest persistence and expected output refs.
+    graph
+        Target graph used to resolve the OutputTarget contract.
+    target_name
+        Target name for which the record is being produced.
+    materializations
+        Mapping of table_key to materialization metadata dict returned by saver nodes.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing succeeded/skipped/failed completion for the target.
+    """
+    target = graph.get(target_name)
+    if target is None:
+        msg = f"Target not found: {target_name}"
+        return TargetRunRecord(
+            target=target_name,
+            plugin_name=f"native:{target_name}",
+            status="failed",
+            input_hash="",
+            options_hash=None,
+            duration_ms=0.0,
+            row_counts={},
+            error=msg,
+            datasets=(),
+            artifacts=(),
+        )
+
+    parsed: dict[str, DuckDBMaterializationResult] = {}
+    for expected_table_key in target.contract.table_keys:
+        meta = materializations.get(expected_table_key)
+        if meta is None:
+            parsed[expected_table_key] = DuckDBMaterializationResult(
+                status="failed",
+                table_key=expected_table_key,
+                row_count=None,
+                duration_ms=0.0,
+                input_hash="",
+                error=f"Missing materialization metadata for table: {expected_table_key}",
+            )
+            continue
+        parsed[expected_table_key] = _parse_materialization(meta, default_table_key=expected_table_key)
+
+    statuses = {r.status for r in parsed.values()}
+    input_hash = next((r.input_hash for r in parsed.values() if r.input_hash), "")
+    duration_ms = sum(r.duration_ms for r in parsed.values())
+
+    if "failed" in statuses:
+        errors = [r.error for r in parsed.values() if r.status == "failed" and r.error]
+        message = errors[0] if errors else "One or more table writes failed"
+        run = NativeRunInfo(
+            input_hash=input_hash,
+            options_hash=None,
+            duration_ms=duration_ms,
+            row_counts=None,
+        )
+        return create_run_record(
+            target,
+            "failed",
+            input_hash,
+            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(message)),
+        )
+
+    if statuses == {"skipped"}:
+        run = NativeRunInfo(
+            input_hash=input_hash,
+            options_hash=None,
+            duration_ms=duration_ms,
+            row_counts=None,
+        )
+        return create_run_record(
+            target,
+            "skipped",
+            input_hash,
+            inputs=RunRecordInputs(env=env, run=run),
+        )
+
+    row_counts: dict[str, int] = {}
+    for table_key, result in parsed.items():
+        if result.status == "succeeded":
+            row_counts[table_key] = result.row_count or 0
+        else:
+            row_counts[table_key] = 0
+
+    run = NativeRunInfo(
+        input_hash=input_hash,
+        options_hash=None,
+        duration_ms=duration_ms,
+        row_counts=row_counts,
+    )
+    record = create_run_record(
+        target,
+        "succeeded",
+        input_hash,
+        inputs=RunRecordInputs(env=env, run=run),
+    )
+    save_manifest(env, record)
+    return record
+
+
 def _parse_materialization(
     materialization: Mapping[str, object],
     *,
@@ -166,4 +279,5 @@ __all__ = [
     "DuckDBMaterializationResult",
     "MaterializationStatus",
     "record_from_duckdb_materialization",
+    "record_from_duckdb_materializations",
 ]

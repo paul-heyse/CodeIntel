@@ -12,7 +12,10 @@ which return structured result containers. The materialize node uses
 
 from __future__ import annotations
 
-from hamilton.function_modifiers import tag
+from typing import Any
+
+from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.cfg_dfg.compute import (
     CfgMetricsResult,
@@ -30,18 +33,20 @@ from codeintel.analytics.cfg_dfg.materialize import (
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materializer import (
-    MaterializationContext,
-    materialize_rows,
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, CfgMetricsResult, DfgMetricsResult)
 
 
 @tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute")
-def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv) -> CfgMetricsResult:
+def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMetricsResult | None:
     """Compute CFG metrics for all functions in the snapshot.
 
     This is a pure compute node with no side effects. It reads CFG block
@@ -55,9 +60,10 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv) -> CfgMetricsResult:
 
     Returns
     -------
-    CfgMetricsResult
+    CfgMetricsResult | None
         Container with rows for cfg_function_metrics, cfg_block_metrics,
         and cfg_function_metrics_ext tables.
+        Returns None when manifest-skip indicates the target is current.
 
     Notes
     -----
@@ -70,6 +76,17 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv) -> CfgMetricsResult:
     - Loop analysis
     - Centrality measures (betweenness, closeness, eigenvector)
     """
+    target = graph.get("cfg_dfg_metrics")
+    if target is not None:
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            options_hash=None,
+            manifests=env.manifest_index,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
     return compute_cfg_metrics_pure(
         env.gateway,
         env.snapshot.repo,
@@ -78,7 +95,7 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv) -> CfgMetricsResult:
 
 
 @tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute")
-def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv) -> DfgMetricsResult:
+def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMetricsResult | None:
     """Compute DFG metrics for all functions in the snapshot.
 
     This is a pure compute node with no side effects. It reads DFG edge
@@ -92,9 +109,10 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv) -> DfgMetricsResult:
 
     Returns
     -------
-    DfgMetricsResult
+    DfgMetricsResult | None
         Container with rows for dfg_function_metrics, dfg_block_metrics,
         and dfg_function_metrics_ext tables.
+        Returns None when manifest-skip indicates the target is current.
 
     Notes
     -----
@@ -107,6 +125,17 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv) -> DfgMetricsResult:
     - Degree analysis (in/out)
     - Centrality measures (betweenness, closeness, eigenvector)
     """
+    target = graph.get("cfg_dfg_metrics")
+    if target is not None:
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            options_hash=None,
+            manifests=env.manifest_index,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
     return compute_dfg_metrics_pure(
         env.gateway,
         env.snapshot.repo,
@@ -114,12 +143,140 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv) -> DfgMetricsResult:
     )
 
 
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.cfg_function_metrics"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("cfg_dfg_metrics"),
+    table_key=value("analytics.cfg_function_metrics"),
+    columns=value(tuple(CFG_FUNCTION_METRICS_COLS)),
+)
+@tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute", target_="cfg_dfg_metrics__cfg_function_metrics_rows")
+def cfg_dfg_metrics__cfg_function_metrics_rows(
+    t__cfg_dfg_metrics__compute_cfg: CfgMetricsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.cfg_function_metrics."""
+    if t__cfg_dfg_metrics__compute_cfg is None:
+        return None
+    return tuple(t__cfg_dfg_metrics__compute_cfg.fn_rows)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.cfg_block_metrics"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("cfg_dfg_metrics"),
+    table_key=value("analytics.cfg_block_metrics"),
+    columns=value(tuple(CFG_BLOCK_METRICS_COLS)),
+)
+@tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute", target_="cfg_dfg_metrics__cfg_block_metrics_rows")
+def cfg_dfg_metrics__cfg_block_metrics_rows(
+    t__cfg_dfg_metrics__compute_cfg: CfgMetricsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.cfg_block_metrics."""
+    if t__cfg_dfg_metrics__compute_cfg is None:
+        return None
+    return tuple(t__cfg_dfg_metrics__compute_cfg.block_rows)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.cfg_function_metrics_ext"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("cfg_dfg_metrics"),
+    table_key=value("analytics.cfg_function_metrics_ext"),
+    columns=value(tuple(CFG_FUNCTION_METRICS_EXT_COLS)),
+)
+@tag(
+    domain="analytics",
+    target="cfg_dfg_metrics",
+    node_type="compute",
+    target_="cfg_dfg_metrics__cfg_function_metrics_ext_rows",
+)
+def cfg_dfg_metrics__cfg_function_metrics_ext_rows(
+    t__cfg_dfg_metrics__compute_cfg: CfgMetricsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.cfg_function_metrics_ext."""
+    if t__cfg_dfg_metrics__compute_cfg is None:
+        return None
+    return tuple(t__cfg_dfg_metrics__compute_cfg.ext_rows)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.dfg_function_metrics"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("cfg_dfg_metrics"),
+    table_key=value("analytics.dfg_function_metrics"),
+    columns=value(tuple(DFG_FUNCTION_METRICS_COLS)),
+)
+@tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute", target_="cfg_dfg_metrics__dfg_function_metrics_rows")
+def cfg_dfg_metrics__dfg_function_metrics_rows(
+    t__cfg_dfg_metrics__compute_dfg: DfgMetricsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.dfg_function_metrics."""
+    if t__cfg_dfg_metrics__compute_dfg is None:
+        return None
+    return tuple(t__cfg_dfg_metrics__compute_dfg.fn_rows)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.dfg_block_metrics"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("cfg_dfg_metrics"),
+    table_key=value("analytics.dfg_block_metrics"),
+    columns=value(tuple(DFG_BLOCK_METRICS_COLS)),
+)
+@tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute", target_="cfg_dfg_metrics__dfg_block_metrics_rows")
+def cfg_dfg_metrics__dfg_block_metrics_rows(
+    t__cfg_dfg_metrics__compute_dfg: DfgMetricsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.dfg_block_metrics."""
+    if t__cfg_dfg_metrics__compute_dfg is None:
+        return None
+    return tuple(t__cfg_dfg_metrics__compute_dfg.block_rows)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.dfg_function_metrics_ext"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("cfg_dfg_metrics"),
+    table_key=value("analytics.dfg_function_metrics_ext"),
+    columns=value(tuple(DFG_FUNCTION_METRICS_EXT_COLS)),
+)
+@tag(
+    domain="analytics",
+    target="cfg_dfg_metrics",
+    node_type="compute",
+    target_="cfg_dfg_metrics__dfg_function_metrics_ext_rows",
+)
+def cfg_dfg_metrics__dfg_function_metrics_ext_rows(
+    t__cfg_dfg_metrics__compute_dfg: DfgMetricsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.dfg_function_metrics_ext."""
+    if t__cfg_dfg_metrics__compute_dfg is None:
+        return None
+    return tuple(t__cfg_dfg_metrics__compute_dfg.ext_rows)
+
+
 @tag(domain="analytics", target="cfg_dfg_metrics", node_type="materialize")
 def t__cfg_dfg_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    t__cfg_dfg_metrics__compute_cfg: CfgMetricsResult,
-    t__cfg_dfg_metrics__compute_dfg: DfgMetricsResult,
+    m__analytics__cfg_function_metrics: dict[str, Any],
+    m__analytics__cfg_block_metrics: dict[str, Any],
+    m__analytics__cfg_function_metrics_ext: dict[str, Any],
+    m__analytics__dfg_function_metrics: dict[str, Any],
+    m__analytics__dfg_block_metrics: dict[str, Any],
+    m__analytics__dfg_function_metrics_ext: dict[str, Any],
 ) -> TargetRunRecord:
     """Materialize all 6 CFG/DFG tables to DuckDB.
 
@@ -152,56 +309,19 @@ def t__cfg_dfg_metrics(
     - analytics.dfg_block_metrics
     - analytics.dfg_function_metrics_ext
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "cfg_dfg_metrics")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        # Ensure tables exist
-        backend = env.gateway.policy
-        backend.ensure_table("analytics.cfg_function_metrics")
-        backend.ensure_table("analytics.cfg_block_metrics")
-        backend.ensure_table("analytics.cfg_function_metrics_ext")
-        backend.ensure_table("analytics.dfg_function_metrics")
-        backend.ensure_table("analytics.dfg_block_metrics")
-        backend.ensure_table("analytics.dfg_function_metrics_ext")
-
-        ctx = MaterializationContext(
-            gateway=env.gateway,
-            snapshot=env.snapshot,
-            validate=env.validate_outputs,
-            owner_target="cfg_dfg_metrics",
-            input_hash=executor.input_hash,
-        )
-
-        row_counts: dict[str, int] = {}
-
-        # Materialize CFG tables
-        cfg = t__cfg_dfg_metrics__compute_cfg
-        cfg_tables = [
-            ("analytics.cfg_function_metrics", cfg.fn_rows, CFG_FUNCTION_METRICS_COLS),
-            ("analytics.cfg_block_metrics", cfg.block_rows, CFG_BLOCK_METRICS_COLS),
-            ("analytics.cfg_function_metrics_ext", cfg.ext_rows, CFG_FUNCTION_METRICS_EXT_COLS),
-        ]
-        for table_key, rows, cols in cfg_tables:
-            ref = materialize_rows(ctx, table_key, rows, cols)
-            row_counts[table_key] = ref.row_count or 0
-
-        # Materialize DFG tables
-        dfg = t__cfg_dfg_metrics__compute_dfg
-        dfg_tables = [
-            ("analytics.dfg_function_metrics", dfg.fn_rows, DFG_FUNCTION_METRICS_COLS),
-            ("analytics.dfg_block_metrics", dfg.block_rows, DFG_BLOCK_METRICS_COLS),
-            ("analytics.dfg_function_metrics_ext", dfg.ext_rows, DFG_FUNCTION_METRICS_EXT_COLS),
-        ]
-        for table_key, rows, cols in dfg_tables:
-            ref = materialize_rows(ctx, table_key, rows, cols)
-            row_counts[table_key] = ref.row_count or 0
-
-        return row_counts
-
-    return executor.execute(compute)
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name="cfg_dfg_metrics",
+        materializations={
+            "analytics.cfg_function_metrics": m__analytics__cfg_function_metrics,
+            "analytics.cfg_block_metrics": m__analytics__cfg_block_metrics,
+            "analytics.cfg_function_metrics_ext": m__analytics__cfg_function_metrics_ext,
+            "analytics.dfg_function_metrics": m__analytics__dfg_function_metrics,
+            "analytics.dfg_block_metrics": m__analytics__dfg_block_metrics,
+            "analytics.dfg_function_metrics_ext": m__analytics__dfg_function_metrics_ext,
+        },
+    )
 
 
 # Export node names for Hamilton discovery

@@ -17,8 +17,8 @@
 | **PR1** | C0 (gofastmcp normalization) | ✅ Complete | Import shim, mount path, test patterns |
 | **PR2** | H1 + H2 + H7 (Tool signature modernization) | ✅ Complete | Async tools, Context, Annotations, ToolError |
 | **PR3** | H3 + H4 (Response envelope + Query limiter) | ✅ Complete | McpEnvelope models, QueryLimiter class |
-| **PR4** | H5 + H6 (Resources + EventStore) | 🔲 Pending | Large data delivery, SSE resumability |
-| **PR5** | M1-M4 (Uvicorn + Auth + Health) | 🔲 Pending | Production hardening |
+| **PR4** | H5 + H6 (Resources + EventStore) | ✅ Complete | ResourceStore, MCP resources, EventStore config |
+| **PR5** | M1-M4 (Uvicorn + Auth + Health) | ✅ Complete | Uvicorn settings, auth enforcement, health routes |
 | **PR6** | M5-M8 (Tags, Metrics, Feature flags) | 🔲 Pending | Observability and extensibility |
 | **PR7** | L1-L6 (Composition, Prompts, etc.) | 🔲 Pending | Optional enhancements |
 
@@ -42,12 +42,64 @@
    - Use `time.perf_counter()` for timing
    - Return `build_envelope(kernel, data, ...).model_dump(mode="json")`
 
+### Key Learnings from PR4-PR5 Implementation
+
+8. **FastMCP `auth` Parameter Uses AuthProvider**: The FastMCP constructor uses `auth` parameter (not `auth_token`), which expects an `AuthProvider` object. Use `StaticTokenVerifier` from `fastmcp.server.auth` for bearer token auth:
+   ```python
+   from fastmcp.server.auth import StaticTokenVerifier
+   
+   def create_bearer_auth(token: str | None) -> AuthProvider | None:
+       if not token:
+           return None
+       return StaticTokenVerifier({token: {}})
+   
+   mcp = FastMCP(..., auth=create_bearer_auth(settings.auth_token))
+   ```
+
+9. **Custom Routes Require Async Signature**: The `@mcp.custom_route()` decorator requires async functions even if they don't await anything. Add `# noqa: RUF029` comment to suppress the "async function without await" lint warning:
+   ```python
+   @mcp.custom_route("/health", methods=["GET"])
+   async def mcp_health(_request: Request) -> Response:  # noqa: RUF029
+       # async required by FastMCP decorator, even for sync operations
+       return JSONResponse({"status": "ok"})
+   ```
+
+10. **ResourceContent Not Available in fastmcp 2.14.1**: The `ResourceContent` class mentioned in fastmcp docs is not exported in v2.14.1. MCP resource handlers should return plain `dict`, `str`, or `bytes` instead. The `@mcp.resource()` decorator handles serialization automatically.
+
+11. **Test Assertion Pattern**: Use `expect_*` functions from `tests._helpers.assertions.expectation_assertions` instead of bare `assert` to avoid S101 lint errors:
+    ```python
+    from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+    expect_equal(settings.uvicorn_workers, 4)  # Not: assert settings.uvicorn_workers == 4
+    ```
+
+12. **Security Test Noqa Comments**: Tests for auth/security features need specific noqa comments:
+    - `# noqa: S104` for intentional binding to `0.0.0.0`
+    - `# noqa: S106` for test auth tokens like `auth_token="test-token"`
+
+13. **Environment Variable Context Manager**: Use `_set_env()` context manager pattern for isolated env var testing:
+    ```python
+    @contextlib.contextmanager
+    def _set_env(env: dict[str, str]) -> Iterator[None]:
+        previous = {key: os.environ.get(key) for key in env}
+        os.environ.update(env)
+        try:
+            yield
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+    ```
+
+14. **Uvicorn Config Dict Type Ignores**: When passing `uvicorn_config` dict to `uvicorn.run()`, use `# type: ignore[arg-type]` since the dict has mixed value types that don't match uvicorn's strict signatures.
+
 ### Quick Reference: Remaining PRs
 
 | PR | Duration | Items | Key Deliverables |
 |----|----------|-------|------------------|
-| **PR4** | 2 days | H5, H6 | `resource_store.py`, `resources.py`, EventStore config |
-| **PR5** | 2 days | M1-M4 | Uvicorn settings, auth enforcement, health endpoint |
+| **PR4** | 2 days | H5, H6 | ✅ `resource_store.py`, `resources.py`, EventStore config |
+| **PR5** | 2 days | M1-M4 | ✅ Uvicorn settings, `create_bearer_auth()`, health routes |
 | **PR6** | 1.5 days | M5-M7 | Tool tags, metrics emission, feature flags |
 | **PR7** | 2 days | M8, L1, L2, L6 | Unified lifespan, server composition, prompts |
 
@@ -57,10 +109,81 @@
 |-----------|---------------|------------|
 | `tests/serving/test_semantic_mcp_tools.py` | All 6 tools, envelope, annotations | PR2-3 ✅ |
 | `tests/serving/mcp/test_runtime.py` | QueryLimiter class | PR3 ✅ |
-| `tests/serving/mcp/test_resources.py` | MCP resources, resource store | PR4 🔲 |
-| `tests/serving/test_uvicorn_config.py` | Uvicorn settings application | PR5 🔲 |
-| `tests/serving/test_auth_enforcement.py` | Auth required for public bind | PR5 🔲 |
+| `tests/serving/mcp/test_resources.py` | MCP resources, resource store, export tool | PR4 ✅ |
+| `tests/serving/test_uvicorn_config.py` | Uvicorn settings defaults and env loading | PR5 ✅ |
+| `tests/serving/test_auth_enforcement.py` | Auth required for public bind, validate_auth_for_host() | PR5 ✅ |
+| `tests/serving/test_metrics.py` | MCP tool metrics emission | PR6 🔲 |
 | `tests/serving/http/test_mcp_mount.py` | Mount path contract | PR7 🔲 |
+
+### Implementation Learnings from PR4/PR5
+
+Key insights discovered during PR4/PR5 implementation that will accelerate PR6/PR7:
+
+#### FastMCP API Patterns
+
+| Pattern | Correct Approach | Notes |
+|---------|-----------------|-------|
+| Tool registration | `@mcp.tool(annotations=..., tags=[...])` | Tags added alongside annotations |
+| Tool signature | `async def name(..., *, ctx: Context) -> dict[str, object]` | `ctx` is keyword-only |
+| Blocking ops | `await limiter.run(kernel.method, request)` | Use capacity limiter |
+| Tool errors | `raise ToolError(_ERR_CODE, "message")` | Don't expose internals |
+| Response format | `build_envelope(...).model_dump(mode="json")` | Always use envelope |
+| Auth setup | `auth=create_bearer_auth(settings.auth_token)` | Pass to FastMCP constructor |
+| Health routes | `@mcp.custom_route("/health", methods=["GET"])` | Returns `Response` object |
+| Resource URIs | `codeintel://exports/{token}` | Custom scheme for resources |
+
+#### Settings Pattern (`ServingSettings`)
+
+```python
+# Add new setting with default:
+new_setting: bool = True
+
+# Load from environment in from_env():
+new_setting=os.environ.get("CODEINTEL_NEW_SETTING", "1") == "1",
+```
+
+#### Test Patterns
+
+```python
+# Environment context manager pattern (from test_auth_enforcement.py):
+@contextlib.contextmanager
+def _set_env(env: dict[str, str]) -> Iterator[None]:
+    previous = {key: os.environ.get(key) for key in env}
+    os.environ.update(env)
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+# Use in tests:
+def test_setting_from_env(tmp_path: Path) -> None:
+    with _set_env({"CODEINTEL_SERVE_DIR": str(tmp_path), "CODEINTEL_NEW_SETTING": "1"}):
+        settings = ServingSettings.from_env()
+    expect_true(settings.new_setting)
+```
+
+#### Key Files Reference
+
+| File | Purpose | Key Exports |
+|------|---------|-------------|
+| `mcp/_compat.py` | Import shim | `FastMCP`, `Context`, `ToolError`, `create_bearer_auth`, `HAS_EVENT_STORE` |
+| `mcp/app.py` | App builder | `build_mcp_app()`, tool registration |
+| `mcp/resource_store.py` | Export storage | `ResourceStore` class |
+| `mcp/resources.py` | MCP resources | `register_resources()` |
+| `settings.py` | Configuration | `ServingSettings` dataclass |
+| `http/app.py` | FastAPI factory | `create_serving_app()`, `_maybe_mount_mcp()` |
+
+#### Common Pitfalls Discovered
+
+1. **`ctx.session_id` access**: Use `getattr(ctx, "session_id", None)` - may not exist in streamable HTTP
+2. **Tool manager API**: Use `await mcp._tool_manager.get_tools()` (async, returns dict not list)
+3. **Auth parameter**: FastMCP uses `auth=AuthProvider`, not `auth_token=str`
+4. **Custom routes**: Must be `async def` and return `Response` (not `JSONResponse` directly in signature)
+5. **Ruff S104**: Suppress with `# noqa: S104` when intentionally binding to `0.0.0.0`
 
 ---
 
@@ -2125,13 +2248,14 @@ def build_mcp_app(
 ```python
 # src/codeintel/serving/mcp/app.py
 
-# Tag constants for consistency
+# Tag constants for consistency (add near top of file after imports)
 TAG_SEMANTIC = "semantic"
 TAG_SEARCH = "search"
 TAG_META = "meta"
 TAG_READ = "read"
 TAG_EXPORT = "export"
 
+# Apply to existing tools - example for semantic_catalog:
 @mcp.tool(
     annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
     tags=[TAG_SEMANTIC, TAG_READ],
@@ -2139,25 +2263,26 @@ TAG_EXPORT = "export"
 async def semantic_catalog(*, ctx: Context) -> dict[str, object]:
     ...
 
-@mcp.tool(
-    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-    tags=[TAG_SEMANTIC, TAG_READ],
-)
-async def semantic_query(..., *, ctx: Context) -> dict[str, object]:
-    ...
+# Tool tag mapping (all 7 tools):
+# - semantic_catalog:  [TAG_SEMANTIC, TAG_READ]
+# - semantic_describe: [TAG_SEMANTIC, TAG_READ]
+# - semantic_query:    [TAG_SEMANTIC, TAG_READ]
+# - semantic_explain:  [TAG_SEMANTIC, TAG_READ]
+# - semantic_meta:     [TAG_META, TAG_READ]
+# - code_search:       [TAG_SEARCH, TAG_READ]
+# - semantic_export:   [TAG_SEMANTIC, TAG_EXPORT]
+```
 
-@mcp.tool(
-    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-    tags=[TAG_SEARCH, TAG_READ],
-)
-async def code_search(..., *, ctx: Context) -> dict[str, object]:
-    ...
+**Implementation Pattern** (from PR4/PR5 learnings):
 
+The `@mcp.tool()` decorator accepts a `tags` parameter as a list of strings. Based on our PR4 implementation, the correct pattern is:
+
+```python
 @mcp.tool(
-    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-    tags=[TAG_SEMANTIC, TAG_EXPORT],
+    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,  # Existing annotation
+    tags=["semantic", "read"],                  # Add tags parameter
 )
-async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
+async def tool_name(..., *, ctx: Context) -> dict[str, object]:
     ...
 ```
 
@@ -2172,6 +2297,12 @@ async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
 - Current tags scheme: `semantic`, `search`, `meta` (functional) + `read`, `export` (operation type)
 - Tags appear in tool discovery response, helping LLMs choose appropriate tools
 - Very low effort - just add `tags=[...]` parameter to existing `@mcp.tool()` decorators
+- The `annotations` parameter already exists on all tools - just add `tags` alongside it
+
+**PR4/PR5 Insights Applied**:
+- Tool registration happens via inner functions inside `build_mcp_app()` or via helper registration functions (like `_register_export_tool`)
+- Tags should be added consistently to all 7 tools (6 original + 1 export tool added in PR4)
+- Verify tags are present by checking `mcp._tool_manager.get_tools()` returns tools with correct metadata
 
 ---
 
@@ -2231,21 +2362,69 @@ async def semantic_query(..., *, ctx: Context) -> dict[str, object]:
         ))
 ```
 
+**Implementation Pattern** (from PR4/PR5 learnings):
+
+Based on existing tool structure in `app.py`, the metrics wrapper should follow this pattern:
+
+```python
+@mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS, tags=[TAG_SEMANTIC, TAG_READ])
+async def semantic_query(
+    view_id: str,
+    filters: list[dict[str, object]] | None = None,
+    limit: int = 100,
+    *,
+    ctx: Context,
+) -> dict[str, object]:
+    """Query a semantic view with structured filters."""
+    start = time.perf_counter()
+    row_count = 0
+    truncated = False
+
+    try:
+        await ctx.info(f"Querying view: {view_id}")
+        request = SemanticQueryRequest(view_id=view_id, filters=filters, limit=limit)
+        result = await limiter.run(kernel.query, request)
+        row_count = len(result.rows)
+        truncated = result.truncated
+        return build_envelope(kernel, result.model_dump(mode="json")).model_dump(mode="json")
+
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_query_metrics(QueryMetrics(
+            endpoint="mcp:semantic_query",
+            view_id=view_id,
+            query=None,
+            row_count=row_count,
+            truncated=truncated,
+            duration_ms=duration_ms,
+            correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
+        ))
+```
+
+**Key Insight from PR4**: The `ctx: Context` parameter is from `fastmcp.Context`, and `session_id` may not be available in all contexts (e.g., streamable HTTP). Use `getattr()` for safe access.
+
 **Testing Requirements**:
 - Verify metrics are logged for MCP tool calls
 - Test correlation ID from ctx.session_id
 - Verify metrics format matches HTTP route metrics
+- Test metrics are logged even when tool raises `ToolError`
 
 **Key Callouts**:
 - Must import and reuse existing `QueryMetrics` / `log_query_metrics` from HTTP layer
-- The `ctx.session_id` may be `None` for streamable HTTP - handle gracefully
+- The `ctx.session_id` may be `None` for streamable HTTP - handle gracefully with `getattr(ctx, "session_id", None)`
 - Metrics logging should be in `finally` block to capture even on errors
 - Consider whether to use `ctx.info()` in addition to structured metrics logging
 - This item pairs naturally with M5 (tags) for filtering metrics by tag
+- All 7 tools (including `semantic_export` added in PR4) need the try/finally wrapper pattern
 
 **Dependencies**:
 - Requires no new files - reuses existing HTTP metrics infrastructure
-- All 6 tools in `app.py` need the try/finally wrapper pattern
+- All 7 tools in `app.py` need the try/finally wrapper pattern
+
+**PR4/PR5 Insights Applied**:
+- The `semantic_export` tool added in PR4 via `_register_export_tool()` also needs metrics
+- The tool pattern uses `await limiter.run(kernel.method, request)` for blocking operations
+- Error cases raise `ToolError` which should still trigger metrics logging via `finally`
 
 ---
 
@@ -2277,7 +2456,7 @@ async def semantic_query(..., *, ctx: Context) -> dict[str, object]:
 class ServingSettings:
     # ... existing fields ...
 
-    # MCP Tool Feature Flags
+    # MCP Tool Feature Flags (add after existing mcp_* fields)
     mcp_enable_search: bool = True
     mcp_enable_explain: bool = True
     mcp_enable_meta: bool = True
@@ -2286,7 +2465,7 @@ class ServingSettings:
     @classmethod
     def from_env(cls) -> ServingSettings:
         return cls(
-            # ... existing fields ...
+            # ... existing fields (see PR5 implementation for full list) ...
             mcp_enable_search=os.environ.get("CODEINTEL_MCP_ENABLE_SEARCH", "1") == "1",
             mcp_enable_explain=os.environ.get("CODEINTEL_MCP_ENABLE_EXPLAIN", "1") == "1",
             mcp_enable_meta=os.environ.get("CODEINTEL_MCP_ENABLE_META", "1") == "1",
@@ -2294,38 +2473,74 @@ class ServingSettings:
         )
 ```
 
+**Implementation Pattern** (from PR4/PR5 learnings):
+
+Based on the `ServingSettings` pattern established in PR5:
+
 ```python
-# src/codeintel/serving/mcp/app.py
+# src/codeintel/serving/settings.py - Add to existing fields:
 
-@mcp.tool(
-    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-    tags=[TAG_SEMANTIC, TAG_READ],
-    enabled=settings.mcp_enable_explain,
-)
-async def semantic_explain(..., *, ctx: Context) -> dict[str, object]:
-    ...
+# MCP Tool Feature Flags
+mcp_enable_search: bool = True
+mcp_enable_explain: bool = True
+mcp_enable_meta: bool = True
+mcp_enable_export: bool = True
 
-@mcp.tool(
-    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-    tags=[TAG_SEARCH, TAG_READ],
-    enabled=settings.mcp_enable_search,
-)
-async def code_search(..., *, ctx: Context) -> dict[str, object]:
-    ...
+# In from_env() method, add alongside existing loads:
+mcp_enable_search=os.environ.get("CODEINTEL_MCP_ENABLE_SEARCH", "1") == "1",
+mcp_enable_explain=os.environ.get("CODEINTEL_MCP_ENABLE_EXPLAIN", "1") == "1",
+mcp_enable_meta=os.environ.get("CODEINTEL_MCP_ENABLE_META", "1") == "1",
+mcp_enable_export=os.environ.get("CODEINTEL_MCP_ENABLE_EXPORT", "1") == "1",
+```
 
-@mcp.tool(
-    annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
-    tags=[TAG_SEMANTIC, TAG_EXPORT],
-    enabled=settings.mcp_enable_export,
-)
-async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
-    ...
+```python
+# src/codeintel/serving/mcp/app.py - Modify tool registration:
+
+# For helper-registered tools like semantic_export (PR4 pattern):
+def _register_export_tool(
+    mcp: FastMCP,
+    kernel: SemanticKernel,
+    limiter: anyio.CapacityLimiter,
+    store: ResourceStore,
+    settings: ServingSettings,
+) -> None:
+    """Register semantic_export tool."""
+    @mcp.tool(
+        annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
+        tags=[TAG_SEMANTIC, TAG_EXPORT],
+        enabled=settings.mcp_enable_export,  # Add this
+    )
+    async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
+        ...
+
+# For inline-registered tools (wrap with conditional):
+if settings.mcp_enable_search:
+    @mcp.tool(
+        annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
+        tags=[TAG_SEARCH, TAG_READ],
+    )
+    async def code_search(..., *, ctx: Context) -> dict[str, object]:
+        ...
+```
+
+**Important**: The `enabled` parameter may not work as expected with the decorator pattern. An alternative is to use conditional registration:
+
+```python
+# Alternative: Conditional registration (more reliable)
+def _register_search_tool(mcp: FastMCP, kernel: SemanticKernel, settings: ServingSettings) -> None:
+    if not settings.mcp_enable_search:
+        return  # Skip registration entirely
+
+    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS, tags=[TAG_SEARCH, TAG_READ])
+    async def code_search(..., *, ctx: Context) -> dict[str, object]:
+        ...
 ```
 
 **Testing Requirements**:
 - Test disabled tool returns "Unknown tool" error
 - Test enabled tools work normally
 - Verify tool list excludes disabled tools
+- Test environment variable loading for feature flags
 
 **Key Callouts**:
 - The `enabled` parameter on `@mcp.tool()` is evaluated at registration time, not at runtime
@@ -2333,6 +2548,12 @@ async def semantic_export(..., *, ctx: Context) -> dict[str, object]:
 - Only advanced/optional tools should have enable/disable flags
 - Environment variable naming convention: `CODEINTEL_MCP_ENABLE_<FEATURE>`
 - This is useful for gradual rollouts or disabling experimental features in production
+
+**PR4/PR5 Insights Applied**:
+- Follow the established `ServingSettings.from_env()` pattern with `os.environ.get(..., "1") == "1"` for boolean flags
+- The `semantic_export` tool uses a helper registration function `_register_export_tool()` - use conditional within that helper
+- Verify tool exclusion via `mcp._tool_manager.get_tools()` which returns a dict of tool names
+- Test pattern similar to `tests/serving/test_auth_enforcement.py` using `_set_env()` context manager
 
 **Implementation Note**:
 The `enabled=settings.mcp_enable_X` must be evaluated when the tool is registered:
@@ -2365,10 +2586,33 @@ async def code_search(...): ...
 |------|---------|
 | `src/codeintel/serving/mcp/server.py` | Accept optional db_manager injection |
 
+**Current Architecture** (from PR4/PR5 implementation):
+
+The current flow in `http/app.py`:
+```python
+# create_serving_app() creates:
+db_manager = ServingDBManager(...)  # Owns the lifecycle
+kernel = SemanticQueryKernel(db=db_manager, settings=cfg)
+# ...
+app = FastAPI(lifespan=_build_lifespan(db_manager))  # FastAPI manages db_manager
+
+# _maybe_mount_mcp() receives:
+def _maybe_mount_mcp(app: FastAPI, *, kernel: SemanticKernel, settings: ServingSettings, enabled: bool) -> None:
+    mcp = build_mcp_app(kernel=kernel, settings=settings)  # Kernel already connected to db_manager
+    # EventStore integration if available
+    app.mount("/mcp", mcp.http_app(...))
+```
+
+**Key Insight**: The `kernel` parameter already contains the `db` reference, so `build_mcp_app()` doesn't need to manage db lifecycle.
+
 **Detailed Implementation**:
 
 ```python
 # src/codeintel/serving/mcp/server.py
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from codeintel.serving.db_manager import ServingDBManager
 
 def create_mcp_server(
     settings: ServingSettings | None = None,
@@ -2384,6 +2628,7 @@ def create_mcp_server(
     db_manager
         Optional pre-configured database manager. If provided, the MCP server
         will not manage its lifecycle (caller is responsible for start/stop).
+        If None, creates and manages its own db_manager.
 
     Returns
     -------
@@ -2391,6 +2636,9 @@ def create_mcp_server(
         Configured MCP server.
     """
     cfg = settings or ServingSettings.from_env()
+    
+    # Fail-fast security check (from PR5)
+    cfg.validate_auth_for_host()
 
     # Use injected or create new
     if db_manager is None:
@@ -2423,20 +2671,39 @@ def create_mcp_server(
     )
 ```
 
+**Usage Patterns**:
+
+```python
+# Standalone MCP server (STDIO/SSE) - creates own db_manager
+mcp = create_mcp_server()  # Owns and manages db_manager lifecycle
+
+# Embedded in FastAPI (HTTP app owns db_manager)
+# In http/app.py - keep using build_mcp_app() directly:
+mcp = build_mcp_app(kernel=kernel, settings=cfg)  # kernel already has db reference
+```
+
 **Key Callouts**:
 - The `owns_db_manager` pattern is critical - prevents double-stop on shared resources
 - When HTTP app mounts MCP, the HTTP app owns `ServingDBManager` and MCP uses it
 - When MCP runs standalone (STDIO/SSE), MCP owns and manages the lifecycle
 - This enables clean embedding in FastAPI via `http/app.py` routing
+- Include `cfg.validate_auth_for_host()` call from PR5 for security
 
 **Testing Requirements**:
 - Test standalone MCP server starts and stops cleanly
-- Test MCP embedded in FastAPI shares db_manager
+- Test MCP embedded in FastAPI shares db_manager (no double lifecycle management)
 - Verify no double-close errors when shutting down composed app
+- Test with injected mock db_manager for unit testing
 
 **Dependencies**:
 - Pairs naturally with L1 (Server Composition) for full modularity
 - Must coordinate with existing `http/app.py` lifespan
+
+**PR4/PR5 Insights Applied**:
+- The `kernel` in `build_mcp_app()` already has `db` reference via `kernel.db`
+- The EventStore integration in `_maybe_mount_mcp()` passes `event_store` to `mcp.http_app()`
+- Bearer auth (PR5) should be applied in `create_mcp_server()` as well via `settings.auth_token`
+- The `_compat.py` module provides consistent imports for `FastMCP`, `Context`, `ToolError`, etc.
 
 ---
 
@@ -2458,29 +2725,67 @@ def create_mcp_server(
 
 | File | Changes |
 |------|---------|
+| `src/codeintel/serving/mcp/servers/__init__.py` | New: Package init |
 | `src/codeintel/serving/mcp/servers/semantic.py` | New: Semantic tools sub-server |
 | `src/codeintel/serving/mcp/servers/search.py` | New: Search tools sub-server |
 | `src/codeintel/serving/mcp/servers/meta.py` | New: Meta tools sub-server |
 | `src/codeintel/serving/mcp/app.py` | Compose sub-servers |
+
+**Current Tool Inventory** (from PR4 implementation):
+
+| Tool | Current Location | Target Sub-Server |
+|------|------------------|-------------------|
+| `semantic_catalog` | `app.py` inline | `servers/semantic.py` |
+| `semantic_describe` | `app.py` inline | `servers/semantic.py` |
+| `semantic_query` | `app.py` inline | `servers/semantic.py` |
+| `semantic_explain` | `app.py` inline | `servers/semantic.py` |
+| `semantic_meta` | `app.py` inline | `servers/meta.py` |
+| `code_search` | `app.py` inline | `servers/search.py` |
+| `semantic_export` | `_register_export_tool()` | `servers/semantic.py` |
 
 **Implementation Sketch**:
 
 ```python
 # src/codeintel/serving/mcp/servers/semantic.py
 
-from codeintel.serving.mcp._compat import FastMCP
+from __future__ import annotations
+from typing import TYPE_CHECKING
+from codeintel.serving.mcp._compat import Context, FastMCP, ToolError
 
-def build_semantic_server(kernel: SemanticKernel, settings: ServingSettings) -> FastMCP:
+if TYPE_CHECKING:
+    import anyio
+    from codeintel.serving.mcp.app import SemanticKernel
+    from codeintel.serving.mcp.resource_store import ResourceStore
+    from codeintel.serving.settings import ServingSettings
+
+def build_semantic_server(
+    kernel: SemanticKernel,
+    settings: ServingSettings,
+    limiter: anyio.CapacityLimiter,
+    store: ResourceStore,
+) -> FastMCP:
     """Build semantic-focused MCP sub-server."""
     mcp = FastMCP("CodeIntel-Semantic")
 
-    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
+    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS, tags=["semantic", "read"])
     async def catalog(*, ctx: Context) -> dict[str, object]:
-        ...
+        """List available semantic views."""
+        await ctx.info("Listing semantic catalog")
+        views = await limiter.run(kernel.catalog)
+        return build_envelope(kernel, views).model_dump(mode="json")
 
-    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS)
-    async def query(..., *, ctx: Context) -> dict[str, object]:
-        ...
+    @mcp.tool(annotations=_READ_ONLY_LOCAL_ANNOTATIONS, tags=["semantic", "read"])
+    async def query(
+        view_id: str,
+        filters: list[dict[str, object]] | None = None,
+        limit: int = 100,
+        *,
+        ctx: Context,
+    ) -> dict[str, object]:
+        """Query a semantic view."""
+        # ... implementation ...
+
+    # ... other semantic tools ...
 
     return mcp
 ```
@@ -2488,17 +2793,35 @@ def build_semantic_server(kernel: SemanticKernel, settings: ServingSettings) -> 
 ```python
 # src/codeintel/serving/mcp/app.py
 
-def build_mcp_app(...) -> FastMCP:
-    main = FastMCP("CodeIntel", ...)
+def build_mcp_app(
+    *,
+    kernel: SemanticKernel,
+    settings: ServingSettings,
+    lifespan: Callable[[FastMCP], AbstractAsyncContextManager[object]] | None = None,
+) -> FastMCP:
+    """Build composed MCP application."""
+    main = FastMCP(
+        "CodeIntel",
+        json_response=True,
+        mask_error_details=settings.mcp_mask_errors,
+        lifespan=lifespan,
+        auth=create_bearer_auth(settings.auth_token),  # From PR5
+    )
+
+    limiter = anyio.CapacityLimiter(settings.mcp_max_concurrent)
+    store = ResourceStore(settings.serve_dir / "exports")
 
     # Compose sub-servers
-    semantic = build_semantic_server(kernel, settings)
-    search = build_search_server(kernel, settings)
-    meta = build_meta_server(kernel, settings)
+    semantic = build_semantic_server(kernel, settings, limiter, store)
+    search = build_search_server(kernel, settings, limiter)
+    meta = build_meta_server(kernel, settings, limiter)
 
     main.mount(semantic, prefix="semantic")
     main.mount(search, prefix="search")
     main.mount(meta, prefix="meta")
+
+    # Register resources on main server (from PR4)
+    register_resources(main, kernel, store)
 
     return main
 ```
@@ -2508,11 +2831,26 @@ def build_mcp_app(...) -> FastMCP:
 - Prefix naming should be intuitive for LLM agents discovering tools
 - Sub-servers can have their own lifespan contexts if needed
 - This is a refactor - all existing tool functionality must be preserved
+- Resources stay on main server - they use `codeintel://` URI scheme
 
 **Testing Requirements**:
 - Verify all existing tool tests pass after composition
-- Test tool discovery returns prefixed names
+- Test tool discovery returns prefixed names (e.g., `semantic/catalog`)
 - Test calling prefixed tools works correctly
+- Verify `mcp._tool_manager.get_tools()` returns prefixed names
+
+**PR4/PR5 Insights Applied**:
+- The `limiter` and `store` need to be shared across sub-servers (created in `build_mcp_app()`)
+- Resources registered via `register_resources()` stay on main server
+- The `auth=create_bearer_auth(...)` from PR5 goes on main server only
+- Health routes via `@mcp.custom_route()` stay on main server
+- Consider whether sub-servers need the same `json_response=True` setting
+
+**Implementation Considerations**:
+- Tool names will change from `semantic_catalog` to `semantic/catalog` - this is a BREAKING CHANGE for clients
+- Consider providing aliases during migration period
+- Update any documentation/prompts that reference tool names
+- Test with Claude Desktop, Cursor, and other MCP clients
 
 **Note**: This is a structural refactor that doesn't change functionality. Consider implementing after M1-M8 are stable.
 
@@ -2538,14 +2876,26 @@ def build_mcp_app(...) -> FastMCP:
 | `src/codeintel/serving/mcp/app.py` | Register prompts |
 
 **Implementation Sketch**:
+
 ```python
 # src/codeintel/serving/mcp/prompts.py
 
+from __future__ import annotations
 from codeintel.serving.mcp._compat import FastMCP
 
 def register_prompts(mcp: FastMCP) -> None:
-    """Register guided prompts for common workflows."""
-    
+    """Register guided prompts for common workflows.
+
+    Parameters
+    ----------
+    mcp
+        FastMCP application to register prompts on.
+
+    Notes
+    -----
+    Prompts are discoverable via MCP protocol's `list_prompts()` method.
+    LLM clients can request them to get guided workflows.
+    """
     @mcp.prompt()
     def explore_codebase() -> str:
         """Guided workflow for exploring an unfamiliar codebase."""
@@ -2556,28 +2906,82 @@ def register_prompts(mcp: FastMCP) -> None:
         3. Use semantic_query(view_id=...) to fetch data
         4. Use code_search(query=...) to find specific code patterns
         """
-    
+
     @mcp.prompt()
     def find_function(name: str) -> str:
-        """Guided workflow for finding and understanding a function."""
+        """Guided workflow for finding and understanding a function.
+
+        Parameters
+        ----------
+        name
+            Name of the function to find.
+        """
         return f"""
         To find function '{name}':
         1. Use code_search(query="{name}") to locate it
         2. Get details via semantic_describe(view_id="functions")
         3. Check its callers via semantic_query(view_id="call_graph", filters=[...])
         """
+
+    @mcp.prompt()
+    def export_data(view_id: str) -> str:
+        """Guided workflow for exporting large datasets.
+
+        Parameters
+        ----------
+        view_id
+            The semantic view to export.
+        """
+        return f"""
+        To export data from '{view_id}':
+        1. First preview with semantic_query(view_id="{view_id}", limit=10)
+        2. For full export, call semantic_export(view_id="{view_id}", format="ndjson")
+        3. The response includes a resource URI - use it to download the data
+        4. NDJSON format is recommended for large datasets (streaming-friendly)
+        """
+```
+
+```python
+# src/codeintel/serving/mcp/app.py - Add to build_mcp_app():
+
+from codeintel.serving.mcp.prompts import register_prompts
+
+def build_mcp_app(...) -> FastMCP:
+    mcp = FastMCP(...)
+    # ... existing tool registration ...
+
+    # Register guided prompts
+    register_prompts(mcp)
+
+    return mcp
 ```
 
 **Key Callouts**:
 - Prompts are discoverable via MCP protocol - LLMs can request them
 - Prompts should encode "best practices" for using the tool suite
 - Keep prompts concise and actionable
-- Use templating (f-strings) for dynamic prompts
+- Use templating (f-strings) for dynamic prompts with parameters
+- If L1 (Server Composition) is implemented, update tool names to prefixed versions (e.g., `semantic/catalog`)
 
 **Testing Requirements**:
-- Verify prompts are listed via `list_prompts()`
+- Verify prompts are listed via `list_prompts()` or `mcp._prompt_manager.get_prompts()`
 - Test prompt rendering with arguments
 - Verify prompts are valid text (no rendering errors)
+- Test prompt discovery in integration test
+
+**PR4/PR5 Insights Applied**:
+- Follow the same registration pattern as resources: create `register_prompts(mcp)` helper
+- Call `register_prompts(mcp)` in `build_mcp_app()` after tool registration
+- The `@mcp.prompt()` decorator is simpler than `@mcp.tool()` - no annotations needed
+- Prompts with parameters use function arguments (e.g., `def find_function(name: str)`)
+- Add NumPy-style docstrings to prompt functions for clarity
+
+**Suggested Prompts** (based on tool inventory):
+1. `explore_codebase()` - Getting started workflow
+2. `find_function(name)` - Locate and understand a function
+3. `export_data(view_id)` - Export large datasets (uses PR4's `semantic_export`)
+4. `analyze_dependencies()` - Explore import/call graphs
+5. `review_metrics()` - Examine code quality metrics
 
 ---
 
@@ -2600,17 +3004,31 @@ def register_prompts(mcp: FastMCP) -> None:
 | `src/codeintel/serving/mcp/context.py` | New file for MCP context management |
 | `src/codeintel/serving/mcp/app.py` | Set correlation_id from ctx.session_id |
 
+**Current State** (from PR4/PR5):
+
+The `ctx: Context` parameter in MCP tools provides:
+- `ctx.session_id` - Session identifier (may be None for streamable HTTP)
+- `ctx.info()`, `ctx.warning()`, `ctx.error()` - Logging methods
+- Other context methods
+
 **Implementation Sketch**:
 ```python
 # src/codeintel/serving/mcp/context.py
 
+from __future__ import annotations
 from contextvars import ContextVar
 from uuid import uuid4
 
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
 
 def get_correlation_id() -> str:
-    """Get current correlation ID or generate one."""
+    """Get current correlation ID or generate one.
+
+    Returns
+    -------
+    str
+        Current correlation ID or newly generated UUID.
+    """
     cid = correlation_id_var.get()
     if not cid:
         cid = str(uuid4())
@@ -2618,8 +3036,44 @@ def get_correlation_id() -> str:
     return cid
 
 def set_correlation_id(cid: str) -> None:
-    """Set correlation ID for current context."""
+    """Set correlation ID for current context.
+
+    Parameters
+    ----------
+    cid
+        Correlation ID to set.
+    """
     correlation_id_var.set(cid)
+
+def correlation_id_from_ctx(ctx: Context) -> str:
+    """Extract or generate correlation ID from MCP context.
+
+    Parameters
+    ----------
+    ctx
+        FastMCP Context object.
+
+    Returns
+    -------
+    str
+        Correlation ID (session_id if available, else generated).
+    """
+    session_id = getattr(ctx, "session_id", None)
+    if session_id:
+        return session_id
+    return get_correlation_id()
+```
+
+**Integration with M6 (Metrics)**:
+```python
+# In tool implementation (from M6):
+finally:
+    duration_ms = (time.perf_counter() - start) * 1000
+    log_query_metrics(QueryMetrics(
+        endpoint="mcp:semantic_query",
+        # ... other fields ...
+        correlation_id=correlation_id_from_ctx(ctx),  # Use helper
+    ))
 ```
 
 **Key Callouts**:
@@ -2627,10 +3081,18 @@ def set_correlation_id(cid: str) -> None:
 - For HTTP-embedded MCP, the HTTP correlation ID middleware should set the contextvar
 - Logs and metrics should include the correlation ID for distributed tracing
 - This is optional because M6 (metrics) can use `ctx.session_id` directly
+- Use `getattr(ctx, "session_id", None)` for safe access (session_id may not exist)
 
 **Testing Requirements**:
 - Verify correlation ID flows from HTTP middleware to MCP tool logs
 - Test correlation ID is consistent across a single request
+- Test fallback to generated UUID when session_id is None
+
+**PR4/PR5 Insights Applied**:
+- The `ctx: Context` is from `fastmcp.Context` imported via `_compat.py`
+- Access `session_id` safely with `getattr()` - it may not be present in all contexts
+- The contextvar pattern allows propagation across async boundaries
+- Consider using `structlog` if structured logging is desired
 
 ---
 

@@ -12,8 +12,10 @@ which return structured result containers. The materialize node uses
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.testing.compute import (
     TestGraphMetricsResult,
@@ -25,11 +27,13 @@ from codeintel.analytics.testing.graph_metrics import (
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materializer import (
-    MaterializationContext,
-    materialize_rows,
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 
@@ -63,7 +67,7 @@ def _get_graph_runtime(env: BuildEnv) -> GraphRuntime:
 
 
 @tag(domain="analytics", target="test_graph_metrics", node_type="compute")
-def t__test_graph_metrics__compute(env: BuildEnv) -> TestGraphMetricsResult:
+def t__test_graph_metrics__compute(env: BuildEnv, graph: TargetGraph) -> TestGraphMetricsResult | None:
     """Compute test graph metrics for all tests and functions.
 
     This is a pure compute node with no side effects. It computes graph
@@ -87,15 +91,71 @@ def t__test_graph_metrics__compute(env: BuildEnv) -> TestGraphMetricsResult:
     - Projection metrics (clustering, betweenness)
     - Risk-weighted degree based on function risk scores
     """
+    target = graph.get("test_graph_metrics")
+    if target is not None:
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            options_hash=None,
+            manifests=env.manifest_index,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
+
     runtime = _get_graph_runtime(env)
     return compute_test_graph_metrics_pure(env.gateway, env.snapshot, runtime)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.test_graph_metrics_tests"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("test_graph_metrics"),
+    table_key=value("analytics.test_graph_metrics_tests"),
+    columns=value(tuple(TEST_GRAPH_METRICS_TESTS_COLS)),
+)
+@tag(domain="analytics", target="test_graph_metrics", node_type="compute", target_="test_graph_metrics__tests_rows")
+def test_graph_metrics__tests_rows(
+    t__test_graph_metrics__compute: TestGraphMetricsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.test_graph_metrics_tests."""
+    if t__test_graph_metrics__compute is None:
+        return None
+    return tuple(t__test_graph_metrics__compute.test_rows)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.test_graph_metrics_functions"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("test_graph_metrics"),
+    table_key=value("analytics.test_graph_metrics_functions"),
+    columns=value(tuple(TEST_GRAPH_METRICS_FUNCTIONS_COLS)),
+)
+@tag(
+    domain="analytics",
+    target="test_graph_metrics",
+    node_type="compute",
+    target_="test_graph_metrics__functions_rows",
+)
+def test_graph_metrics__functions_rows(
+    t__test_graph_metrics__compute: TestGraphMetricsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.test_graph_metrics_functions."""
+    if t__test_graph_metrics__compute is None:
+        return None
+    return tuple(t__test_graph_metrics__compute.function_rows)
 
 
 @tag(domain="analytics", target="test_graph_metrics", node_type="materialize")
 def t__test_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    t__test_graph_metrics__compute: TestGraphMetricsResult,
+    m__analytics__test_graph_metrics_tests: dict[str, Any],
+    m__analytics__test_graph_metrics_functions: dict[str, Any],
 ) -> TargetRunRecord:
     """Materialize both test graph metrics tables to DuckDB.
 
@@ -122,48 +182,15 @@ def t__test_graph_metrics(
     - analytics.test_graph_metrics_tests
     - analytics.test_graph_metrics_functions
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "test_graph_metrics")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        # Ensure tables exist
-        backend = env.gateway.policy
-        backend.ensure_table("analytics.test_graph_metrics_tests")
-        backend.ensure_table("analytics.test_graph_metrics_functions")
-
-        ctx = MaterializationContext(
-            gateway=env.gateway,
-            snapshot=env.snapshot,
-            validate=env.validate_outputs,
-            owner_target="test_graph_metrics",
-            input_hash=executor.input_hash,
-        )
-
-        row_counts: dict[str, int] = {}
-
-        # Materialize test metrics table
-        test_ref = materialize_rows(
-            ctx,
-            "analytics.test_graph_metrics_tests",
-            t__test_graph_metrics__compute.test_rows,
-            TEST_GRAPH_METRICS_TESTS_COLS,
-        )
-        row_counts["analytics.test_graph_metrics_tests"] = test_ref.row_count or 0
-
-        # Materialize function metrics table
-        func_ref = materialize_rows(
-            ctx,
-            "analytics.test_graph_metrics_functions",
-            t__test_graph_metrics__compute.function_rows,
-            TEST_GRAPH_METRICS_FUNCTIONS_COLS,
-        )
-        row_counts["analytics.test_graph_metrics_functions"] = func_ref.row_count or 0
-
-        return row_counts
-
-    return executor.execute(compute)
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name="test_graph_metrics",
+        materializations={
+            "analytics.test_graph_metrics_tests": m__analytics__test_graph_metrics_tests,
+            "analytics.test_graph_metrics_functions": m__analytics__test_graph_metrics_functions,
+        },
+    )
 
 
 # Export node names for Hamilton discovery
