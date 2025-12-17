@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.contracts import OutputContract
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.registry import get_target_graph
 from codeintel.build.state import BuildState, StateValidator, TargetState
-from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.build_manifest import OutputManifest

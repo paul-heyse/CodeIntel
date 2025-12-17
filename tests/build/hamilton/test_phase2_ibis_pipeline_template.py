@@ -1,7 +1,7 @@
 """Phase 2: Ibis subDAG template smoke test.
 
 This test validates that the reusable subDAG in
-``codeintel.build.hamilton.templates.ibis_pipeline`` can be instantiated via
+``codeintel.build.hamilton.templates.materialize_template`` can be instantiated via
 Hamilton's ``@subdag`` decorator and executed end-to-end.
 """
 
@@ -16,10 +16,10 @@ import ibis.expr.types as ir
 import pandas as pd
 from hamilton.function_modifiers import source, subdag, tag, value
 
-from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.templates import ibis_pipeline
 from codeintel.build.contracts import OutputContract
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.templates import materialize_template
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
@@ -69,7 +69,7 @@ def _make_graph() -> TargetGraph:
 
 def _build_module() -> ModuleType:
     mod = _EphemeralModule("tests.build.hamilton._phase2_ibis_pipeline_case")
-    mod.__doc__ = "Ephemeral module for testing ibis_pipeline via @subdag."
+    mod.__doc__ = "Ephemeral module for testing materialize_template via @subdag."
     sys.modules[mod.__name__] = mod
 
     # Inject types into the module namespace for Hamilton type resolution
@@ -90,7 +90,7 @@ def _build_module() -> ModuleType:
 
     @tag(domain="ingestion", target="modules", node_type="materialize")
     @subdag(
-        ibis_pipeline,
+        materialize_template,
         inputs={
             "env": source("env"),
             "graph": source("graph"),
@@ -99,7 +99,7 @@ def _build_module() -> ModuleType:
             "expr": source("t__modules__compute"),
         },
     )
-    def t__modules(record: TargetRunRecord) -> TargetRunRecord:
+    def t__modules(duckdb_record: TargetRunRecord) -> TargetRunRecord:
         """Return the subDAG-produced record.
 
         Returns
@@ -107,7 +107,7 @@ def _build_module() -> ModuleType:
         TargetRunRecord
             Target execution record produced by the subDAG pipeline.
         """
-        return record
+        return duckdb_record
 
     # Hamilton discovers callables from the module; ensure the functions appear to
     # originate from this ephemeral module (not the test module).
@@ -123,7 +123,7 @@ def test_phase2_ibis_pipeline_template_executes(
     fresh_gateway: StorageGateway,
     tmp_path: Path,
 ) -> None:
-    """Instantiate ibis_pipeline via @subdag and execute a simple materialization."""
+    """Instantiate materialize_template via @subdag and execute a simple materialization."""
     repo = "r"
     commit = "c"
     snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")

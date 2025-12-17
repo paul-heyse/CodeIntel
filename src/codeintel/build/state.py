@@ -4,8 +4,7 @@ This module provides the StateValidator class that determines the current
 state of all build targets by examining stored manifests and comparing
 input hashes.
 
-Note: This module now uses unified types from `codeintel.build.state_types`.
-The legacy `TargetState` and `DatabaseState` wrapper types have been removed.
+Note: This module uses unified types from `codeintel.build.state_types`.
 Import the unified types directly for new code.
 
 Integration Points

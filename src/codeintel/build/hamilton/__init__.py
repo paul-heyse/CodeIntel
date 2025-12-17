@@ -79,7 +79,6 @@ if TYPE_CHECKING:
     )
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
-    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
     from codeintel.build.hamilton.io import DatasetRef, IbisIOConfig, refs_from_target_result
     from codeintel.build.hamilton.metadata_bridge import CanonicalPluginMeta
     from codeintel.build.hamilton.naming import dataset_node, target_node, to_node_name
@@ -97,6 +96,7 @@ if TYPE_CHECKING:
         compute_plan,
         explain_plan,
     )
+    from codeintel.build.hamilton.run_records import TargetRunRecord
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "get_pandera_schema": ("codeintel.build.hamilton.contracts", "get_pandera_schema"),
@@ -113,7 +113,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "DatasetRef": ("codeintel.build.hamilton.io", "DatasetRef"),
     "IbisIOConfig": ("codeintel.build.hamilton.io", "IbisIOConfig"),
     "refs_from_target_result": ("codeintel.build.hamilton.io", "refs_from_target_result"),
-    "TargetRunRecord": ("codeintel.build.hamilton.hooks.manifest_hook", "TargetRunRecord"),
+    "TargetRunRecord": ("codeintel.build.hamilton.run_records", "TargetRunRecord"),
     "CanonicalPluginMeta": ("codeintel.build.hamilton.metadata_bridge", "CanonicalPluginMeta"),
     "dataset_node": ("codeintel.build.hamilton.naming", "dataset_node"),
     "target_node": ("codeintel.build.hamilton.naming", "target_node"),

@@ -22,7 +22,7 @@ True
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.core.providers.base import LazyProvider
@@ -68,9 +68,9 @@ def _load_module(name: str) -> ModuleType:
 
 
 # Module-level lazy providers (no global statements needed)
-_registry_provider: LazyProvider[ModuleType] = LazyProvider(
-    lambda: _load_module("codeintel.build.registry"),
-    name="registry_module",
+_target_system_provider: LazyProvider[ModuleType] = LazyProvider(
+    lambda: _load_module("codeintel.build.target_system"),
+    name="target_system_module",
 )
 _row_registry_provider: LazyProvider[ModuleType] = LazyProvider(
     lambda: _load_module("codeintel.build.schemas.row_registry"),
@@ -82,15 +82,15 @@ _composites_provider: LazyProvider[ModuleType] = LazyProvider(
 )
 
 
-def _registry_module() -> ModuleType:
-    """Get build registry module lazily.
+def _target_system_module() -> ModuleType:
+    """Get build target system module lazily.
 
     Returns
     -------
     ModuleType
-        The codeintel.build.registry module.
+        The codeintel.build.target_system module.
     """
-    return _registry_provider.get()
+    return _target_system_provider.get()
 
 
 def _row_registry_module() -> ModuleType:
@@ -167,7 +167,7 @@ def _table_name_from_key(table_key: str) -> str:
 def _exportable_by_default(table_key: str) -> bool:
     """Return True if a dataset should be exported by default.
 
-    This replaces legacy hand-maintained filename maps with deterministic rules. In the long-term,
+    Uses deterministic rules based on build schema taxonomy. In the long-term,
     export intent should be declared in the Hamilton graph (tags/metadata), but for now we
     keep the default export surface aligned with the current build schema taxonomy.
 
@@ -336,12 +336,8 @@ def _find_producing_target(table_key: str) -> OutputTarget | None:
     OutputTarget | None
         The target that produces this table, or None if no target found.
     """
-    registry = _registry_module()
-    graph = registry.get_target_graph()
-    for target in graph.all_targets:
-        if table_key in target.contract.table_keys:
-            return cast("OutputTarget", target)
-    return None
+    target_system = _target_system_module().load_target_system()
+    return target_system.target_for_table_key(table_key)
 
 
 def is_view(table_key: str) -> bool:

@@ -10,7 +10,7 @@ from collections.abc import Iterable
 import pytest
 
 from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.cli.core.result_types import BuildHistoryResult
 from codeintel.storage.tracking.build_tracking import BuildTracking
 

@@ -21,7 +21,6 @@ from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
@@ -31,6 +30,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.schemas import SchemaManifest, get_schema_provider
 from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
 from codeintel.build.serving.semantic_compile_hamilton import (

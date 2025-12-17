@@ -29,6 +29,9 @@ and it also reveals a few high-impact gaps that should be pulled forward:
 - **DDL typing is hand-maintained**: `_column_type_to_sqlglot()` and `_build_column_def()` are a recurring maintenance tax.
 - **Extension loading is split**: env-based installs at connect-time plus ad-hoc loads (FTS) rather than one policy surface.
 - **Typed parameterization not standardized**: no `ibis.param()` usage; most dynamic inputs are `ibis.literal()` or `.isin()`.
+- **Snapshot replace is not atomic**: snapshot-scoped replace does `delete_for_snapshot(...)` + write without an explicit transaction.
+- **Build exports can buffer**: JSONL export paths materialize to pandas + Python dicts (`rel.df()` → `to_dict(...)`) for large tables.
+- **Export lifecycle not fully specified**: true streaming holds a connection for the stream duration and needs cancellation + pool isolation.
 
 ### Strategic Insight: The Three-Layer Integration Model
 
@@ -73,6 +76,9 @@ and it also reveals a few high-impact gaps that should be pulled forward:
 5. **Write Paths**: Upsert-from-expression falls back to pandas materialization rather than staged temp tables + `INSERT..SELECT`
 6. **Temp Object Hygiene**: No shared lifecycle management for staged memtables/temp tables (risk of leaks in long-lived sessions)
 7. **Governance Hooks**: Diff/lineage/fingerprinting concepts exist but are not wired into build tracking or serving caching
+8. **Snapshot Safety**: Snapshot-scoped replace is multi-statement and not atomic (data loss risk on failure between delete and write)
+9. **Build Export Safety**: JSONL export materializes full results into pandas/dicts (OOM risk on large datasets)
+10. **Serving Pool Isolation**: Exports share the same read pool as interactive queries (pool starvation under long-running streams)
 
 ---
 
@@ -267,6 +273,17 @@ class IbisGateway:
 - `src/codeintel/build/contracts.py`: Extract lineage for dependency tracking
 - `src/codeintel/storage/views/`: Enable semantic diff for view evolution
 
+**Derived Lineage → Metadata Graph (Views)**: Use the same lineage/dependency extraction to keep the dataset graph accurate.
+
+- Derive view dependencies from compiled view SQL (or SQLGlot AST when available) and persist them as *derived edges*.
+- Store derived edges alongside contract edges (e.g., `edge_type="derived"`) so mismatches are discoverable.
+- Optionally add a mismatch check in strict mode (contract-declared lineage vs derived lineage) to flag unintended dependency creep.
+
+**Integration Points (Graph)**:
+- `src/codeintel/storage/views/dependencies.py`: Extract view → view/table dependencies deterministically.
+- `src/codeintel/storage/metadata/bootstrap.py`: Preserve contract edges and append/refresh derived edges per build/run.
+- `src/codeintel/storage/tracking/asset_tracking.py`: (Optional) also record version-level lineage edges for caching/invalidation.
+
 ---
 
 ### 3. Typed Parameterization System
@@ -406,6 +423,15 @@ def build_semantic_query_template() -> tuple[QueryTemplate, it.Table]:
 - `src/codeintel/serving/semantic/query_builder.py`: Replace literal injection
 - `src/codeintel/build/exports/exprs.py`: Template-based export queries
 
+**Dual-Mode Templating (Ibis params + DuckDB DB-API params)**: Add an explicit “hot path” mode without changing the default.
+
+- **Default mode (correctness + typing)**: Use `ibis.param(...)` + `compile(params=...)` / `execute(params=...)` to keep inputs typed,
+  safe, and compatible with AST fingerprinting/caching.
+- **Hot-path mode (plan reuse)**: For a small number of high-traffic endpoints, render a stable SQL template (placeholders preserved)
+  and execute via DuckDB DB-API parameters (`con.execute(sql, params)` / `execute_sql(sql, params)`).
+- **Sequencing to avoid rework**: Design `QueryTemplate`/`BoundQuery` so it can emit either (a) an Ibis param map or (b) a DB-API
+  parameter list; implement the DB-API mode after the core template system and AST hook are stable.
+
 ---
 
 ### 4. Arrow-Native Data Pipeline + True Streaming Exports
@@ -414,9 +440,10 @@ def build_semantic_query_template() -> tuple[QueryTemplate, it.Table]:
 export implementations often round-trip through pandas. This risks OOM on large views and delays time-to-first-byte.
 
 **Integrated Solution**: Arrow-first data flow with batch streaming end-to-end:
-- Use `to_pyarrow_batches()` for constant-memory iteration.
-- Build NDJSON streaming responses without collecting full result sets; Arrow/Parquet via streaming writer or spool-to-disk.
+- Use `to_pyarrow_batches()` for constant-memory iteration (PyArrow is guaranteed in this repo).
+- Build NDJSON streaming responses from Arrow batches without collecting full result sets; Arrow/Parquet via spool-to-disk.
 - Prefer Arrow registration/replacement scans for bulk writes (avoid Python tuple loops when large).
+- Extend the same Arrow-first approach to build-time exports (JSONL/Parquet) to eliminate pandas/dict materialization.
 
 ```python
 # PROPOSED: Add to IbisGateway
@@ -529,10 +556,24 @@ async def stream_query_results(
 - Faster time-to-first-byte
 - Native integration with ML frameworks (PyTorch, TensorFlow)
 
+**Streaming Lifecycle + Pool Isolation (Serving)**: True streaming introduces new operational requirements.
+
+- Acquire the warehouse/connection inside the generator and release it via `try/finally` even on client disconnect.
+- Add export isolation (dedicated export pool and/or explicit concurrency limits) so long-running exports do not starve interactive
+  queries.
+- Keep batch size bounded to preserve backpressure and avoid per-request memory spikes.
+
+**Arrow-First Build Exports (Build)**: Treat build exports as “data plane” operations with the same OOM constraints.
+
+- JSONL: iterate Arrow batches and write NDJSON incrementally (avoid `rel.df()` / `to_dict(...)`).
+- Parquet: prefer relation-level `write_parquet`; if unavailable, use Arrow `ParquetWriter` over record batches (no pandas fallback).
+
 **Integration Points**:
 - `src/codeintel/serving/http/routes/v1/export.py`: Remove list buffering; stream generator output directly
 - `src/codeintel/serving/semantic/kernel.py`: Avoid `fetchall()`; expose Arrow-batch export primitives
-- `src/codeintel/build/hamilton/io/`: Optional Arrow-based loaders/exports where pandas becomes a bottleneck
+- `src/codeintel/serving/db/manager.py`, `src/codeintel/storage/gateway/pool.py`: Export pool isolation + lifecycle-safe generators
+- `src/codeintel/build/exports/jsonl.py`: Replace pandas/dict materialization with Arrow-batch JSONL writing
+- `src/codeintel/build/exports/parquet.py`: Remove pandas fallback by writing Parquet from Arrow batches when needed
 
 ---
 
@@ -605,6 +646,8 @@ The enhancement should consolidate on *one* lifecycle owner: the session/connect
 - **Serving/read-only**: `LOAD` only, fail-fast if missing (no implicit installs).
 - **Build/write**: allow `INSTALL` + `LOAD` when explicitly enabled.
 - **Secrets/init SQL**: use a single init pipeline (e.g., `CODEINTEL_DUCKDB_INIT_SQL`) for `SET/PRAGMA/CREATE SECRET/ATTACH`.
+- **Tuning profiles**: apply deterministic build vs serving defaults (threads/memory/temp dir) at the same bootstrap surface.
+- **Determinism knobs**: explicitly set DuckDB extension autoload/autoinstall behavior in serving so prod behavior is predictable.
 
 ```python
 # PROPOSED: storage/backend/duckdb_session.py (capability bootstrap sketch)
@@ -639,6 +682,7 @@ has near-zero registered UDF usage, so start with extension/session unification 
 - Deterministic “capabilities on startup” for build + serving
 - Clear `LOAD` vs `INSTALL` policy (safe defaults in serving)
 - One place to wire secrets/session configuration for cloud access
+- One place to apply build/serving tuning profiles and record effective settings for observability
 
 ---
 
@@ -663,14 +707,16 @@ preserves Ibis typing and avoids SQL rewriting edge cases.
    - **table allowlists** (what does this SQL touch?)
    - **schema/column minimization** (what does this query select?)
    - **safety policies** (disallow writes, forbid unbounded scans in serving, etc.)
+   - **fail-fast parsing** (reject unsupported/unknown constructs at the boundary rather than “best effort”)
 
 ```python
 # PROPOSED: minimal perimeter validation using SQLGlot (allowlist example)
 from sqlglot import exp, parse_one
+from sqlglot.errors import ErrorLevel
 
 def referenced_tables(sql: str, *, dialect: str = "duckdb") -> set[str]:
-    root = parse_one(sql, dialect=dialect)
-    return {f\"{t.db}.{t.name}\" if t.db else t.name for t in root.find_all(exp.Table)}
+    root = parse_one(sql, read=dialect, error_level=ErrorLevel.RAISE)
+    return {f"{t.db}.{t.name}" if t.db else t.name for t in root.find_all(exp.Table)}
 ```
 
 **Impact**
@@ -947,6 +993,15 @@ path. The enhancement should extend and standardize this rather than introducing
 
    Gate heavier capture (EXPLAIN ANALYZE / DuckDB profiles) behind configuration and/or slow-query thresholds.
 
+3. **Environment stamping (build + serving)**  
+   Persist “what compiled/executed this snapshot” metadata so it’s diagnosable:
+   - DuckDB / Ibis / SQLGlot versions
+   - loaded extensions
+   - key DuckDB settings (threads, memory_limit, temp_directory)
+
+   Prefer extending existing run/environment tracking (e.g., `build.run_environments` and/or `metadata.pipeline_runs`) over creating
+   a parallel subsystem, and expose a serving-side health/meta endpoint for fast debugging.
+
 ```python
 # PROPOSED: lightweight query telemetry (serving)
 
@@ -973,6 +1028,7 @@ def timed_execute(con: "DuckDBPyConnection", *, sql: str, params: list[object] |
 - Consistent observability signals across build + serving
 - Faster diagnosis of slow queries and export bottlenecks
 - Clear separation between “cheap telemetry” and “expensive profiling”
+- Reproducible builds and debuggable serving environments (explicit version/config stamping)
 
 ---
 
@@ -1037,29 +1093,61 @@ substrate. This means dependency bumps can silently change compiled SQL, query p
 
 ---
 
+### 14. Transactional Materialization + Snapshot Safety (Atomic Snapshot Writes)
+
+**Current Pain Point**: Snapshot-scoped replace semantics are multi-statement (delete → write → record) but not explicitly
+transactional. A failure between delete and write can permanently remove a snapshot’s data.
+
+**Integrated Solution**: Add an explicit transaction boundary for snapshot writes:
+
+- Introduce a `transaction()` context manager (on `DuckDBSession` or the gateway/warehouse layer) that issues `BEGIN/COMMIT/ROLLBACK`.
+- Wrap the full snapshot write sequence in one transaction:
+  - `delete_for_snapshot(...)`
+  - staged temp writes (if needed)
+  - final insert/upsert
+  - asset/run metadata writes
+- Apply the same pattern to other multi-statement write operations (upsert fast lanes, bulk staging) to ensure rollback safety.
+
+**Tests (must-have)**
+- Replace snapshot + forced error mid-write → snapshot rows still exist afterward (rollback).
+- Replace snapshot success → all rows replaced and metadata recorded exactly once.
+
+**Impact**
+- Prevents “partial snapshot deletion” on failure
+- Makes build runs safe under retries and transient failures
+
+---
+
 ## Part III: Implementation Roadmap
 
 This roadmap is ordered by “repo reality” impact: first remove known OOM/buffering paths and pandas fallbacks, then
 standardize query inputs and DDL generation, and finally add governance/observability and upgrade gates.
 
 ### Phase 1: Operational Hardening (Weeks 1-2)
-**Goal**: Make serving exports truly streaming and remove pandas/materialization fallbacks in write paths.
+**Goal**: Fix the top production risks: non-atomic snapshot writes, non-streaming exports, and pandas/buffering fallbacks.
 
 | Task | Files | Effort | Dependencies |
 |------|-------|--------|--------------|
-| Stream `export_rows` without `fetchall()` | `src/codeintel/serving/semantic/kernel.py` | 1-2d | None |
-| NDJSON export without `list(...)` buffering | `src/codeintel/serving/http/routes/v1/export.py`, `src/codeintel/serving/http/streaming.py` | 1d | export_rows streaming |
-| Arrow/Parquet exports without row lists (spool-to-disk or streaming writer) | `src/codeintel/serving/http/routes/v1/export.py` | 2-3d | export_rows streaming |
-| Remove `list(kernel.export_rows(...))` buffering in MCP | `src/codeintel/serving/mcp/app.py`, `src/codeintel/serving/mcp/resources.py` | 0.5-1d | export_rows streaming |
+| Transactional snapshot writes (delete+write+record) | `src/codeintel/storage/warehouse.py`, `src/codeintel/storage/backend/duckdb_session.py` | 1-2d | None |
+| Stream `export_rows` without `fetchall()` (Arrow batches) | `src/codeintel/serving/semantic/kernel.py` | 1-2d | None |
+| NDJSON export streaming (Arrow batches; no `list(...)`) | `src/codeintel/serving/http/routes/v1/export.py`, `src/codeintel/serving/http/streaming.py` | 1d | export_rows streaming |
+| Export lifecycle + pool isolation (disconnect-safe) | `src/codeintel/serving/db/manager.py`, `src/codeintel/storage/gateway/pool.py`, `src/codeintel/serving/http/routes/v1/export.py` | 1-2d | export_rows streaming |
+| Arrow/Parquet exports without row lists (spool-to-disk) | `src/codeintel/serving/http/routes/v1/export.py` | 2-3d | export_rows streaming |
+| MCP export streaming writer (no `list(...)`) | `src/codeintel/serving/mcp/app.py`, `src/codeintel/serving/mcp/resource_store.py` | 1-2d | export_rows streaming |
+| Build JSONL exports via Arrow batches | `src/codeintel/build/exports/jsonl.py`, `src/codeintel/build/exports/common.py` | 1-2d | None |
+| Build Parquet export fallback without pandas | `src/codeintel/build/exports/parquet.py` | 1-2d | None |
 | Upsert-from-expression without pandas fallback | `src/codeintel/storage/ibis_adapter.py` | 2-3d | None |
 | Bulk writes via Arrow/replacement scans | `src/codeintel/storage/ibis_adapter.py` | 1-2d | Upsert fast lane |
-| Centralize `LOAD` vs `INSTALL` policy (+ init SQL) | `src/codeintel/storage/gateway/connection.py`, `src/codeintel/storage/backend/duckdb_session.py` | 1-2d | None |
+| Centralize DuckDB bootstrap (`LOAD`/`INSTALL`, init SQL, tuning) | `src/codeintel/storage/gateway/connection.py`, `src/codeintel/storage/backend/duckdb_session.py`, `src/codeintel/storage/serving/search_index.py` | 1-2d | None |
 
 **Success Criteria**:
 - NDJSON export starts streaming immediately and does not materialize `rows: list[...]`.
 - `SemanticQueryKernel.export_rows()` does not call `fetchall()` and maintains constant memory for large exports.
+- Export requests are cancellation-safe and do not starve the interactive query pool (export isolation enforced).
 - Upsert-from-expression does not materialize to pandas for large inputs and preserves current semantics.
 - Serving environments do not perform `INSTALL` implicitly (explicit opt-in only).
+- Snapshot replace is atomic: failures do not delete snapshot data (rollback test).
+- Build JSONL/Parquet exports handle large datasets without pandas/dict materialization.
 
 ### Phase 2: Safe Query Inputs + Schema Automation (Weeks 3-4)
 **Goal**: Make query inputs typed/validated and reduce DDL drift/boilerplate.
@@ -1069,6 +1157,7 @@ standardize query inputs and DDL generation, and finally add governance/observab
 | TableSchema → Ibis → SQLGlot DDL bridge | `src/codeintel/storage/duckdb_policy_backend.py`, `src/codeintel/storage/schema/ibis_roundtrip.py` (new) | 2-3d | None |
 | Param-aware SQLGlot AST hook (`to_sqlglot`) | `src/codeintel/storage/ibis_adapter.py` | 1-2d | None |
 | Typed QueryTemplate + param binding | `src/codeintel/serving/semantic/query_builder.py`, `src/codeintel/serving/semantic/templates.py` (new) | 2-3d | None |
+| Dual-mode templating API (Ibis params + DB-API params) | `src/codeintel/serving/semantic/templates.py` (new), `src/codeintel/serving/semantic/kernel.py` | 1-2d | QueryTemplate |
 | Contract-driven filter typing/validation | `src/codeintel/serving/semantic/models.py`, `src/codeintel/serving/semantic/query_builder.py` | 1-2d | QueryTemplate |
 | Large IN-list staging with cleanup | `src/codeintel/serving/semantic/in_list.py` (new), `src/codeintel/serving/semantic/query_builder.py` | 1-2d | Filter validation |
 
@@ -1076,6 +1165,7 @@ standardize query inputs and DDL generation, and finally add governance/observab
 - Dynamic inputs flow via validated specs + `params` (no SQL string interpolation; fewer ad-hoc `ibis.literal(...)` paths).
 - DDL generation no longer depends on hand-maintained `_column_type_to_sqlglot()` mappings.
 - Large IN-list queries succeed without placeholder limits and leave no temp tables behind.
+- Query templates can evolve toward DB-API param execution without redesigning the public template API.
 
 ### Phase 3: Caching, Telemetry, and Build Artifacts (Weeks 5-6)
 **Goal**: Make query execution observable and make upgrades predictable.
@@ -1084,13 +1174,18 @@ standardize query inputs and DDL generation, and finally add governance/observab
 |------|-------|--------|--------------|
 | Query fingerprinting integrated in serving | `src/codeintel/serving/semantic/kernel.py`, `src/codeintel/serving/mcp/response_models.py` | 1-2d | AST hook |
 | Lightweight serving telemetry (duration/rows/query hash) | `src/codeintel/serving/semantic/kernel.py` | 1d | None |
+| Environment stamping (versions/extensions/settings) | `src/codeintel/storage/tracking/asset_tracking.py`, `src/codeintel/storage/tracking/run_tracking.py`, `src/codeintel/storage/backend/duckdb_session.py`, `src/codeintel/serving/db/manager.py` | 1-2d | Phase 1 |
 | Semantic SQL diffs as build artifacts | `src/codeintel/storage/views/diff.py` (new), `src/codeintel/storage/views/dependencies.py` | 2-3d | None |
+| Derived lineage → metadata graph edges | `src/codeintel/storage/metadata/bootstrap.py`, `src/codeintel/storage/views/dependencies.py` | 1-2d | AST hook |
+| DB-API param hot-path execution (select endpoints) | `src/codeintel/serving/semantic/kernel.py`, `src/codeintel/serving/search/` | 1-2d | Phase 2 |
 | Compiler upgrade gates (golden SQL + execution validation) | `tests/` (new) | 2-3d | Phase 2 |
 
 **Success Criteria**:
 - Fingerprints are stable across requests and incorporate schema hash + param bindings.
 - Serving emits cheap latency/rowcount telemetry by default; deep profiling remains opt-in.
+- Build and serving record the effective DuckDB/Ibis/SQLGlot versions and bootstrap settings for each snapshot/run.
 - View SQL changes produce a semantic diff artifact per build/run.
+- Derived lineage edges are persisted and can be compared against contract edges for drift detection.
 - SQLGlot/Ibis upgrades are gated by golden snapshots + execution checks.
 
 ### Phase 4: Governance + Deferred Experiments (Weeks 7-8+)
@@ -1114,7 +1209,9 @@ standardize query inputs and DDL generation, and finally add governance/observab
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
 | Serving export buffering regressions | OOM / latency | Medium | Add streaming-focused tests; avoid `list(...)`/`fetchall()` in export paths |
-| Client disconnect/backpressure | Resource leaks | Medium | Cancellation-aware streaming; context-managed cleanup for temp tables/registrations |
+| Client disconnect/backpressure | Resource leaks / pool starvation | Medium | Cancellation-aware generators; `try/finally` cleanup; export pool isolation |
+| Non-atomic snapshot replace | Data loss | Medium | Wrap delete+write+record in a transaction; add rollback tests |
+| Build export buffering | OOM in build/export | Medium | Arrow-batch JSONL/Parquet writers; remove pandas/dict materialization |
 | `LOAD` vs `INSTALL` misconfiguration | Missing features in prod | Medium | Explicit config flags; startup health check; serving defaults to `LOAD` only |
 | Upsert fast-lane semantic drift | Incorrect writes | Low-Med | Golden write-path tests comparing old/new; staged rollout; keep legacy path for small writes |
 | Cache correctness | Wrong results served | Medium | Fingerprint includes schema hash + params + query shape; disable cache for non-deterministic queries |
@@ -1125,15 +1222,24 @@ standardize query inputs and DDL generation, and finally add governance/observab
 
 - **Streaming/export tests**
   - Ensure HTTP endpoints return `StreamingResponse` backed by generators (no pre-materialization).
-  - Cover NDJSON, Arrow IPC, and Parquet paths; assert no `list(kernel.export_rows(...))`.
+  - Cover NDJSON (Arrow batches), Arrow IPC, and Parquet paths; assert no `list(kernel.export_rows(...))`.
+  - Verify cancellation cleanup releases connections and does not starve interactive queries (export pool isolation).
+- **Transactional snapshot safety tests**
+  - Replace snapshot + forced error mid-write → snapshot rows still exist afterward (rollback).
+  - Replace snapshot success → snapshot rows replaced and metadata written once.
 - **Write-path tests**
   - Upsert-from-expression executes without pandas materialization for large inputs and preserves conflict semantics.
   - Bulk Arrow writes use replacement scans and maintain schema/ordering guarantees.
+- **Build export tests**
+  - JSONL export writes in constant memory (no `rel.df()` / `to_dict(...)` materialization).
+  - Parquet export avoids pandas fallback when relation-level writer is unavailable.
 - **DDL/schema tests**
   - TableSchema → Ibis schema → SQLGlot DDL round-trips produce stable, parseable SQL for DuckDB.
 - **Filter validation tests**
   - Contract-driven operator/type compatibility errors are raised before execution.
   - IN-list staging creates and cleans temp tables even on exceptions.
+- **Lineage tests**
+  - Derived view lineage edges are consistent with view dependency extraction and are persisted with deterministic ordering.
 - **Compiler upgrade gates**
   - Golden SQL snapshots for representative expressions + view compiles.
   - Execution validation in DuckDB for critical query paths to catch semantic changes.
@@ -1144,23 +1250,27 @@ standardize query inputs and DDL generation, and finally add governance/observab
 
 ### Implement First (Repo-Driven Priorities)
 
-1. **True Streaming Exports (NDJSON/Arrow)** — remove `list(...)` + `fetchall()` buffering (Opportunity 4)
-2. **Eliminate Pandas Write Fallbacks** — upsert-from-expression + bulk writes via Arrow/replacement scans (Opportunity 11)
-3. **Centralize Session Bootstrap** — deterministic `LOAD`/`INSTALL` + init SQL + secrets policy (Opportunity 6)
-4. **Typed Query Inputs** — `ibis.param` templates + contract-driven filter validation (Opportunities 3, 12, 9)
-5. **Schema Round-Trips for DDL** — keep `TableSchema` canonical; generate ColumnDefs via Ibis (Opportunity 1)
+1. **Transactional Snapshot Writes** — atomic delete+write+record for snapshot replace (Opportunity 14)
+2. **True Streaming Exports (NDJSON/Arrow)** — remove `list(...)` + `fetchall()` buffering (Opportunity 4)
+3. **Arrow-First Build Exports** — eliminate pandas/dict materialization in JSONL/Parquet exports (Opportunity 4)
+4. **Eliminate Pandas Write Fallbacks** — upsert-from-expression + bulk writes via Arrow/replacement scans (Opportunity 11)
+5. **Centralize Session Bootstrap** — deterministic `LOAD`/`INSTALL` + init SQL + tuning profiles (Opportunity 6)
+6. **Typed Query Inputs** — `ibis.param` templates + contract-driven filter validation (Opportunities 3, 12, 9)
+7. **Schema Round-Trips for DDL** — keep `TableSchema` canonical; generate ColumnDefs via Ibis (Opportunity 1)
 
 ### Implement Next (Query Intelligence + Build Artifacts)
 
-6. **SQLGlot AST Access + Fingerprints** — param-aware AST hook enabling caching/lineage (Opportunity 2)
-7. **Serving Telemetry + Profiling Alignment** — cheap metrics by default; reuse warehouse profiling artifacts (Opportunity 10)
-8. **Semantic View Diff Artifacts** — build-time compiled SQL diffs for changelogs/breaking changes (Opportunity 8)
-9. **Compiler Upgrade Gates** — golden SQL + execution validation for SQLGlot/Ibis bumps (Opportunity 13)
-10. **Snapshot Scoping Governance** — Ibis-first scoping + boundary validation for raw SQL (Opportunity 7)
+8. **SQLGlot AST Access + Fingerprints** — param-aware AST hook enabling caching/lineage (Opportunity 2)
+9. **Derived Lineage → Metadata Graph** — persist view dependencies as derived edges and detect drift (Opportunity 2)
+10. **Dual-Mode Templating** — add DB-API param execution for hot paths without redesign (Opportunity 3)
+11. **Serving Telemetry + Profiling Alignment** — cheap metrics by default; reuse warehouse profiling artifacts (Opportunity 10)
+12. **Semantic View Diff Artifacts** — build-time compiled SQL diffs for changelogs/breaking changes (Opportunity 8)
+13. **Compiler Upgrade Gates** — golden SQL + execution validation for SQLGlot/Ibis bumps (Opportunity 13)
+14. **Snapshot Scoping Governance** — Ibis-first scoping + strict boundary validation for raw SQL (Opportunity 7)
 
 ### Defer / Experiment
 
-11. **DuckDB Complex Types** — only after contract language + validators support them end-to-end (Opportunity 5)
+15. **DuckDB Complex Types** — only after contract language + validators support them end-to-end (Opportunity 5)
 
 ---
 

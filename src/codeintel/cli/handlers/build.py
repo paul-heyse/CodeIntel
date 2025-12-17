@@ -32,12 +32,12 @@ from codeintel.build.hamilton.observability import (
 )
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.providers import create_default_providers
-from codeintel.build.registry import get_target_graph
 from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
 from codeintel.build.state import BuildState, StateValidator
+from codeintel.build.target_system import load_target_system
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     BuildAssetsResult,
@@ -686,7 +686,7 @@ def build_status_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
 
     LOG.info(
         "build.status repo=%s commit=%s",
@@ -898,7 +898,7 @@ def build_run_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
     scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
 
     try:
@@ -1135,7 +1135,7 @@ def build_graph_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
 
     targets_list = ctx.params.get_list("targets")
     targets: list[str] | None = targets_list if targets_list else None
@@ -1204,7 +1204,7 @@ def build_plan_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
     plan_args = _parse_plan_args(ctx)
 
     try:
@@ -1360,7 +1360,7 @@ def build_explain_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
     params = _resolve_build_explain_params(ctx, graph=graph)
     if isinstance(params, CliResult):
         return params

@@ -17,8 +17,8 @@ from coverage import Coverage
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.graphs.call_graph import t__call_graph__extract
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.providers import create_default_providers
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.graphs.runtime import GraphMetricsOptions

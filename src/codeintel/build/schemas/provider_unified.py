@@ -54,10 +54,8 @@ def _get_target_graph() -> TargetGraph:
     TargetGraph
         The singleton target graph instance.
     """
-    # Deferred import to avoid circular dependency at module load time.
-    # This module is imported by registry.py, which also imports get_target_graph.
-    registry_mod = _get_module("codeintel.build.registry")
-    return registry_mod.get_target_graph()
+    target_system_mod = _get_module("codeintel.build.target_system")
+    return target_system_mod.load_target_system().graph
 
 
 def _find_producing_target(table_key: str) -> OutputTarget | None:
@@ -73,11 +71,8 @@ def _find_producing_target(table_key: str) -> OutputTarget | None:
     OutputTarget | None
         The target producing this table key, or None if not found.
     """
-    graph = _get_target_graph()
-    for target in graph.all_targets:
-        if table_key in target.contract.table_keys:
-            return target
-    return None
+    target_system_mod = _get_module("codeintel.build.target_system")
+    return target_system_mod.load_target_system().target_for_table_key(table_key)
 
 
 @dataclass
@@ -92,7 +87,7 @@ class UnifiedSchemaProvider:
 
     2. **Target-declared schemas**: For table keys produced by targets that
        declare their output schemas in OutputContract.tables (e.g., plugin
-       wrappers, legacy compute).
+       wrappers and compute targets).
 
     3. **Raw declared schemas**: Fall back to the declared_schema_provider()
        for source tables or tables not yet migrated to the target system.

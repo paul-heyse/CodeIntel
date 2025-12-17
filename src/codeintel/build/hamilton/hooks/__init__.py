@@ -11,7 +11,7 @@ Hooks are composable via Hamilton's Builder.with_adapters() pattern.
 Example
 -------
 >>> from codeintel.build.hamilton.hooks import build_hooks
->>> hooks = build_hooks(run_id, gateway, graph)
+>>> hooks = build_hooks(run_id, writer, graph)
 >>> driver = Builder().with_modules(modules).with_adapters(*hooks).build()
 >>> # After execution, get validation summary
 >>> contract_hook = next(h for h in hooks if isinstance(h, ContractEnforcementHook))
@@ -45,9 +45,14 @@ from codeintel.build.hamilton.hooks.lifecycle import (
     create_progress_hook,
 )
 
+# Re-export from telemetry hook
+from codeintel.build.hamilton.hooks.telemetry_hook import (
+    NodeExecutionRecord,
+    NodeTelemetryHook,
+)
+
 # Re-export from manifest hook
-from codeintel.build.hamilton.hooks.manifest_hook import (
-    ManifestSaveRequest,
+from codeintel.build.hamilton.run_records import (
     SkipCheckRequest,
     TargetRunRecord,
     compute_target_input_hash,
@@ -57,15 +62,9 @@ from codeintel.build.hamilton.hooks.manifest_hook import (
     should_skip,
 )
 
-# Re-export from telemetry hook
-from codeintel.build.hamilton.hooks.telemetry_hook import (
-    NodeExecutionRecord,
-    NodeTelemetryHook,
-)
-
 if TYPE_CHECKING:
+    from codeintel.build.hamilton.run_writer import BuildRunWriter
     from codeintel.build.targets import TargetGraph
-    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +81,7 @@ class HookOptions:
 
 def build_hooks(
     run_id: str,
-    gateway: StorageGateway,
+    writer: BuildRunWriter,
     graph: TargetGraph,
     *,
     options: HookOptions | None = None,
@@ -96,8 +95,8 @@ def build_hooks(
     ----------
     run_id
         Build run identifier for telemetry grouping.
-    gateway
-        Storage gateway for persistence operations.
+    writer
+        Build run writer used for persistence operations.
     graph
         Target graph for contract enforcement lookups.
     options
@@ -116,15 +115,15 @@ def build_hooks(
 
     Examples
     --------
-    >>> hooks = build_hooks("run-123", gateway, graph)
+    >>> hooks = build_hooks("run-123", writer, graph)
     >>> len(hooks)
     2  # telemetry + validation
 
-    >>> hooks = build_hooks("run-123", gateway, graph, options=HookOptions(strict_contracts=True))
+    >>> hooks = build_hooks("run-123", writer, graph, options=HookOptions(strict_contracts=True))
     >>> len(hooks)
     2  # telemetry + strict validation
 
-    >>> hooks = build_hooks("run-123", gateway, graph, options=HookOptions(enable_progress=True))
+    >>> hooks = build_hooks("run-123", writer, graph, options=HookOptions(enable_progress=True))
     >>> len(hooks)
     3  # telemetry + validation + progress
     """
@@ -133,7 +132,7 @@ def build_hooks(
     hooks: list[object] = []
 
     if options.enable_telemetry:
-        hooks.append(NodeTelemetryHook(run_id, gateway))
+        hooks.append(NodeTelemetryHook(run_id, writer))
 
     # Enable validation by default (captures @check_output_custom results)
     # Use strict mode if strict_contracts is True
@@ -154,7 +153,6 @@ __all__ = [
     "ConditionalHook",
     "ContractEnforcementHook",
     "HookOptions",
-    "ManifestSaveRequest",
     "NodeExecutionRecord",
     "NodeTelemetryHook",
     "NodeTimingRecord",

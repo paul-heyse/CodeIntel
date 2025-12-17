@@ -47,7 +47,6 @@ from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.context_base import BuildContext
 from codeintel.build.parameters import EMPTY_PARAMETERS
-from codeintel.build.targets import OutputTarget
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.plugins.execution.context import (
     ConfigProvider,
@@ -64,9 +63,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.analytics.resources.catalog import FunctionCatalogProvider
-    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+    from codeintel.build.hamilton.run_records import TargetRunRecord
     from codeintel.build.parameters import TargetParameters
     from codeintel.build.providers import Providers
+    from codeintel.build.targets import OutputTarget
     from codeintel.core.execution import RunContext
     from codeintel.graphs.runtime import GraphRuntime
     from codeintel.ingestion.tracker import ChangeTracker

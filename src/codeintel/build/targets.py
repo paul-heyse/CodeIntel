@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.contracts import EMPTY_CONTRACT, OutputContract
+from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.errors import CycleDetectedError
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.resources import (
@@ -33,7 +33,7 @@ from codeintel.build.resources import (
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
-    from codeintel.build.contracts import ArtifactSpec
+    from codeintel.build.contracts import OutputContract
     from codeintel.build.parameters import TargetParameters
     from codeintel.build.resources import (
         TargetExecution,
@@ -42,18 +42,6 @@ if TYPE_CHECKING:
 
 TargetModule = Literal["ingestion", "graphs", "analytics", "export"]
 """Classification of which target module produces an output."""
-
-
-@dataclass(frozen=True)
-class TargetOptions:
-    """Optional configuration overrides for OutputTarget factories."""
-
-    artifacts: tuple[ArtifactSpec, ...] = ()
-    dependencies: tuple[str, ...] = ()
-    resources: TargetResources = DEFAULT_RESOURCES
-    execution: TargetExecution = DEFAULT_EXECUTION
-    parameters: TargetParameters = EMPTY_PARAMETERS
-    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -75,8 +63,7 @@ class OutputTarget:
         Which target module produces this output.
     contract
         Output contract defining tables and artifacts produced.
-        This is authoritative; prefer `contract.table_keys` over legacy
-        shortcuts when referring to outputs.
+        This is authoritative; prefer `contract.table_keys` for output references.
     dependencies
         Other OutputTarget names that must be computed first.
         In Hamilton-first execution, these are populated at runtime from

@@ -38,7 +38,6 @@ from codeintel.analytics.compute.coverage.compute import (
 from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
@@ -48,8 +47,10 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
+from codeintel.build.storage_queries import count_rows_for_snapshot
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 
@@ -454,14 +455,11 @@ def t__behavioral_coverage__compute(
             llm_runner=None,
         )
 
-        row = env.gateway.execute(
-            """
-            SELECT COUNT(*) FROM analytics.behavioral_coverage
-            WHERE repo = ? AND commit = ?
-            """,
-            [env.snapshot.repo, env.snapshot.commit],
-        ).fetchone()
-        row_count = int(row[0]) if row else 0
+        row_count = count_rows_for_snapshot(
+            env.gateway,
+            table_key=BEHAVIORAL_COVERAGE_TABLE_KEY,
+            snapshot=env.snapshot,
+        )
 
         return BehavioralCoverageResult(
             success=True,

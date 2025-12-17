@@ -1,7 +1,7 @@
 """Executor pipeline template tests.
 
 This module validates that the reusable executor pipeline template in
-``codeintel.build.hamilton.templates.executor_pipeline`` can be instantiated via
+``codeintel.build.hamilton.templates.materialize_template`` can be instantiated via
 Hamilton's ``@subdag`` decorator and produces correct TargetRunRecords for
 success, failure, and skip scenarios.
 """
@@ -16,11 +16,11 @@ from typing import TYPE_CHECKING, cast
 import hamilton.driver as h_driver
 from hamilton.function_modifiers import source, subdag, tag, value
 
-from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.templates import executor_pipeline
-from codeintel.build.hamilton.templates.executor_pipeline import executor_materialize
 from codeintel.build.contracts import OutputContract
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.templates import materialize_template
+from codeintel.build.hamilton.templates.materialize_template import executor_materialize
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
@@ -192,7 +192,7 @@ def test_executor_materialize_failure_default_error(
 
 
 def _build_subdag_module(compute_result: MockComputeResult) -> ModuleType:
-    """Build an ephemeral Hamilton module using executor_pipeline via @subdag.
+    """Build an ephemeral Hamilton module using materialize_template via @subdag.
 
     Returns
     -------
@@ -200,7 +200,7 @@ def _build_subdag_module(compute_result: MockComputeResult) -> ModuleType:
         Ephemeral Hamilton module with executor_pipeline wired via @subdag.
     """
     mod = ModuleType("tests.build.hamilton._executor_pipeline_case")
-    mod.__doc__ = "Ephemeral module for testing executor_pipeline via @subdag."
+    mod.__doc__ = "Ephemeral module for testing materialize_template via @subdag."
     sys.modules[mod.__name__] = mod
 
     # Capture compute_result in closure
@@ -221,7 +221,7 @@ def _build_subdag_module(compute_result: MockComputeResult) -> ModuleType:
 
     @tag(domain="graphs", target="goids", node_type="materialize")
     @subdag(
-        executor_pipeline,
+        materialize_template,
         inputs={
             "env": source("env"),
             "graph": source("graph"),
@@ -229,7 +229,7 @@ def _build_subdag_module(compute_result: MockComputeResult) -> ModuleType:
             "compute_result": source("t__goids__extract"),
         },
     )
-    def t__goids(record: TargetRunRecord) -> TargetRunRecord:
+    def t__goids(executor_record: TargetRunRecord) -> TargetRunRecord:
         """Return the subDAG-produced record.
 
         Returns
@@ -237,7 +237,7 @@ def _build_subdag_module(compute_result: MockComputeResult) -> ModuleType:
         TargetRunRecord
             Target execution record produced by the executor pipeline.
         """
-        return record
+        return executor_record
 
     # Set module ownership for Hamilton discovery
     t__goids__extract.__module__ = mod.__name__
@@ -253,7 +253,7 @@ def test_executor_pipeline_via_subdag_success(
     fresh_gateway: StorageGateway,
     tmp_path: Path,
 ) -> None:
-    """Verify executor_pipeline works via @subdag with successful compute."""
+    """Verify materialize_template works via @subdag with successful compute."""
     repo = "test/repo"
     commit = "abc123"
     snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
@@ -283,7 +283,7 @@ def test_executor_pipeline_via_subdag_failure(
     fresh_gateway: StorageGateway,
     tmp_path: Path,
 ) -> None:
-    """Verify executor_pipeline works via @subdag with failed compute."""
+    """Verify materialize_template works via @subdag with failed compute."""
     repo = "test/repo"
     commit = "abc123"
     snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")

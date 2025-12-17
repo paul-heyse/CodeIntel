@@ -1,7 +1,6 @@
 """Shared helper utilities for Hamilton native modules.
 
 Provides common functionality used across multiple native Hamilton implementations.
-These helpers have been migrated from the legacy plugin infrastructure.
 """
 
 from __future__ import annotations

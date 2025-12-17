@@ -274,7 +274,6 @@ def minimal_target_graph() -> TargetGraph:
         OutputTarget(
             name="a",
             module="ingestion",
-            plugin="ingestion.a",
             description="Target A - no dependencies",
         )
     )
@@ -282,7 +281,6 @@ def minimal_target_graph() -> TargetGraph:
         OutputTarget(
             name="b",
             module="graphs",
-            plugin="graphs.b",
             dependencies=("a",),
             description="Target B - depends on A",
         )
@@ -291,7 +289,6 @@ def minimal_target_graph() -> TargetGraph:
         OutputTarget(
             name="c",
             module="analytics",
-            plugin="analytics.c",
             dependencies=("b",),
             description="Target C - depends on B",
         )
@@ -317,7 +314,6 @@ def diamond_target_graph() -> TargetGraph:
         OutputTarget(
             name="a",
             module="ingestion",
-            plugin="ingestion.a",
             description="Root target",
         )
     )
@@ -325,7 +321,6 @@ def diamond_target_graph() -> TargetGraph:
         OutputTarget(
             name="b",
             module="graphs",
-            plugin="graphs.b",
             dependencies=("a",),
             description="Left branch",
         )
@@ -334,7 +329,6 @@ def diamond_target_graph() -> TargetGraph:
         OutputTarget(
             name="c",
             module="graphs",
-            plugin="graphs.c",
             dependencies=("a",),
             description="Right branch",
         )
@@ -343,7 +337,6 @@ def diamond_target_graph() -> TargetGraph:
         OutputTarget(
             name="d",
             module="analytics",
-            plugin="analytics.d",
             dependencies=("b", "c"),
             description="Diamond tip",
         )

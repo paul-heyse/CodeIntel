@@ -53,7 +53,7 @@ def get_schema_provider() -> SchemaProvider:
 
     1. Hamilton-native inference (for Ibis compute nodes)
     2. Target-declared schemas (from OutputContract.tables)
-    3. Raw declared schemas (for source/legacy tables)
+    3. Raw declared schemas (for source tables)
 
     Returns
     -------

@@ -84,7 +84,6 @@ class TestStateComputer:
         target = OutputTarget(
             name="test_target",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -111,7 +110,6 @@ class TestStateComputer:
         target = OutputTarget(
             name="test_target",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -145,7 +143,6 @@ class TestStateComputer:
         target = OutputTarget(
             name="test_target",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -176,14 +173,12 @@ class TestStateComputer:
         dep_target = OutputTarget(
             name="dependency",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
         main_target = OutputTarget(
             name="main",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=("dependency",),
             contract=EMPTY_CONTRACT,
         )
@@ -217,14 +212,12 @@ class TestStateComputer:
         dep_target = OutputTarget(
             name="dependency",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
         main_target = OutputTarget(
             name="main",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=("dependency",),
             contract=EMPTY_CONTRACT,
         )
@@ -261,21 +254,18 @@ class TestStateComputer:
         t1 = OutputTarget(
             name="t1",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
         t2 = OutputTarget(
             name="t2",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
         t3 = OutputTarget(
             name="t3",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=("t1",),
             contract=EMPTY_CONTRACT,
         )
@@ -311,7 +301,6 @@ class TestStateComputer:
         target = OutputTarget(
             name="single",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -337,7 +326,6 @@ class TestStateComputer:
         target = OutputTarget(
             name="cached",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -373,7 +361,6 @@ class TestStateValidatorEquivalence:
         target = OutputTarget(
             name="equiv_test",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -404,7 +391,6 @@ class TestStateValidatorEquivalence:
         target = OutputTarget(
             name="equiv_current",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
@@ -441,14 +427,12 @@ class TestStateValidatorEquivalence:
         dep = OutputTarget(
             name="dep",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
         main = OutputTarget(
             name="main",
             module="ingestion",
-            plugin="test_plugin",
             dependencies=("dep",),
             contract=EMPTY_CONTRACT,
         )

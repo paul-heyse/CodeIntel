@@ -1,68 +1,207 @@
-"""Native target runner for Hamilton Phase 3.
+"""Run record, skip, and manifest utilities for Hamilton build execution.
 
-This module provides execution utilities for native Hamilton targets,
-including skip checks, manifest persistence, and TargetRunRecord creation.
+This module is the single source of truth for:
+
+- Target input hashing helpers used by planning and execution.
+- Manifest-based skip evaluation.
+- TargetRunRecord construction (succeeded/skipped/failed).
+- Manifest persistence for succeeded native targets.
+
+It intentionally consolidates logic that previously lived across:
+
+- ``codeintel.build.hamilton.hooks.manifest_hook``
+- ``codeintel.build.hamilton.native.runner``
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Self
 
-from codeintel.build.hamilton.hooks.manifest_hook import (
-    SkipCheckRequest,
-    TargetRunRecord,
-    should_skip,
-)
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
+from codeintel.build.hashing import (
+    compute_input_hash,
+    compute_input_hash_with_deps,
+    compute_options_hash,
+)
 from codeintel.core.build_manifest import OutputManifest
+from codeintel.hamilton.records import TargetRunRecord
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import OutputTarget
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.storage.gateway import StorageGateway
+
+log = logging.getLogger(__name__)
+
+def _validate_strict_row_counts(
+    *,
+    target: OutputTarget,
+    row_counts: dict[str, int] | None,
+) -> None:
+    if not target.table_keys:
+        if row_counts:
+            msg = (
+                "Strict contracts require empty row_counts for artifact-only targets: "
+                f"target={target.name} row_count_keys={sorted(row_counts)}"
+            )
+            raise ValueError(msg)
+        return
+
+    if row_counts is None:
+        msg = (
+            "Strict contracts require row_counts for table-producing targets: "
+            f"target={target.name} table_keys={target.table_keys}"
+        )
+        raise ValueError(msg)
+
+    expected_keys = set(target.table_keys)
+    actual_keys = set(row_counts)
+    if expected_keys != actual_keys:
+        missing = sorted(expected_keys - actual_keys)
+        extra = sorted(actual_keys - expected_keys)
+        msg = (
+            "Strict contracts require row_counts keys to exactly match contract table_keys: "
+            f"target={target.name} missing={missing} extra={extra}"
+        )
+        raise ValueError(msg)
+
+    for table_key, count in row_counts.items():
+        if count < 0:
+            msg = (
+                "Strict contracts require non-negative row counts: "
+                f"target={target.name} table_key={table_key} row_count={count}"
+            )
+            raise ValueError(msg)
 
 
-@dataclass(frozen=True)
-class NativeRunInfo:
-    """Execution metadata used to create a TargetRunRecord.
+def compute_target_input_hash(
+    *,
+    target: OutputTarget,
+    snapshot: SnapshotRef,
+    gateway: StorageGateway,
+    options_hash: str | None = None,
+    manifests: Mapping[str, OutputManifest] | None = None,
+) -> str:
+    """Compute input hash for a target using the build hashing infrastructure.
 
-    Attributes
+    Parameters
     ----------
-    input_hash
-        Computed input hash for this target execution.
+    target
+        Target to compute hash for.
+    snapshot
+        Repository snapshot reference.
+    gateway
+        Storage gateway for loading dependency manifests.
     options_hash
-        Optional options/config hash for this target.
-    duration_ms
-        Execution duration in milliseconds.
-    row_counts
-        Optional row counts per produced table key.
-    """
+        Optional hash of plugin options.
+    manifests
+        Optional pre-loaded manifest index to avoid per-dependency DB calls.
 
-    input_hash: str
-    options_hash: str | None
-    duration_ms: float
-    row_counts: dict[str, int] | None = None
+    Returns
+    -------
+    str
+        16-character hex hash string.
+    """
+    return compute_input_hash(target, snapshot, gateway, options_hash, manifests=manifests)
+
+
+def compute_target_input_hash_with_deps(
+    *,
+    target: OutputTarget,
+    snapshot: SnapshotRef,
+    gateway: StorageGateway,
+    options_hash: str | None = None,
+    manifests: Mapping[str, OutputManifest] | None = None,
+) -> tuple[str, dict[str, str]]:
+    """Compute input hash and dependency hash mapping.
+
+    Parameters
+    ----------
+    target
+        Target to compute hash for.
+    snapshot
+        Repository snapshot reference.
+    gateway
+        Storage gateway for loading dependency manifests.
+    options_hash
+        Optional hash of plugin options.
+    manifests
+        Optional pre-loaded manifest index to avoid per-dependency DB calls.
+
+    Returns
+    -------
+    tuple[str, dict[str, str]]
+        Tuple of (input_hash, dep_hashes) where dep_hashes maps dependency names to their input hashes
+        (or "MISSING" sentinel).
+    """
+    return compute_input_hash_with_deps(
+        target,
+        snapshot,
+        gateway,
+        options_hash,
+        manifests=manifests,
+    )
+
+
+def compute_target_options_hash(options: object | None) -> str | None:
+    """Compute hash of plugin configuration options.
+
+    Parameters
+    ----------
+    options
+        Plugin options object (must be JSON-serializable).
+
+    Returns
+    -------
+    str | None
+        16-character hex hash, or None if no options.
+    """
+    return compute_options_hash(options)
 
 
 @dataclass(frozen=True)
-class RunRecordInputs:
-    """Inputs required to build a TargetRunRecord.
+class SkipCheckRequest:
+    """Input parameters for manifest skip evaluation."""
 
-    Attributes
+    gateway: StorageGateway
+    target: str
+    repo: str
+    commit: str
+    input_hash: str
+    manifest_index: Mapping[str, OutputManifest] | None = None
+
+
+def should_skip(request: SkipCheckRequest) -> bool:
+    """Return True if the target can be skipped based on an existing manifest.
+
+    Parameters
     ----------
-    env
-        Build environment (required for succeeded/skipped).
-    run
-        Run metadata (required for succeeded/skipped).
-    error
-        Exception that caused failure (optional for failed).
-    """
+    request
+        SkipCheckRequest containing gateway, target, repo, commit, input hash, and optional manifest
+        index.
 
-    env: BuildEnv | None = None
-    run: NativeRunInfo | None = None
-    error: Exception | None = None
+    Returns
+    -------
+    bool
+        True if the target can be skipped (output is still valid).
+    """
+    prior = request.manifest_index.get(request.target) if request.manifest_index else None
+    if prior is None:
+        prior = request.gateway.build.load_manifest(
+            target=request.target,
+            repo=request.repo,
+            commit=request.commit,
+        )
+    if prior is None:
+        return False
+    return prior.input_hash == request.input_hash
 
 
 def should_skip_native_target(
@@ -70,7 +209,7 @@ def should_skip_native_target(
     target: OutputTarget,
     input_hash: str,
 ) -> bool:
-    """Check if a native target can be skipped based on manifest.
+    """Return True if a native target can be skipped based on manifest.
 
     Parameters
     ----------
@@ -85,19 +224,10 @@ def should_skip_native_target(
     -------
     bool
         True if target can be skipped (manifest matches), False otherwise.
-
-    Examples
-    --------
-    >>> # Assume env and target are set up
-    >>> can_skip = should_skip_native_target(env, target, "abc123")
-    >>> can_skip
-    False
     """
-    # Check forced targets
     if target.name in env.force_targets:
         return False
 
-    # Use skip check with manifest index
     request = SkipCheckRequest(
         gateway=env.gateway,
         target=target.name,
@@ -106,39 +236,31 @@ def should_skip_native_target(
         input_hash=input_hash,
         manifest_index=env.manifest_index,
     )
-
     return should_skip(request)
+
+
+@dataclass(frozen=True)
+class NativeRunInfo:
+    """Execution metadata used to create a TargetRunRecord."""
+
+    input_hash: str
+    options_hash: str | None
+    duration_ms: float
+    row_counts: dict[str, int] | None = None
+
+
+@dataclass(frozen=True)
+class RunRecordInputs:
+    """Inputs required to build a TargetRunRecord."""
+
+    env: BuildEnv | None = None
+    run: NativeRunInfo | None = None
+    error: Exception | None = None
 
 
 @dataclass
 class RunRecordBuilder:
-    """Builder for TargetRunRecord instances.
-
-    Provides a fluent interface for constructing run records, avoiding the need
-    for functions with many parameters. Use the status-specific class methods
-    to start building.
-
-    Attributes
-    ----------
-    target
-        Target that was executed.
-    status
-        Completion status: succeeded, skipped, or failed.
-    input_hash
-        Input hash for this execution.
-
-    Examples
-    --------
-    >>> record = (
-    ...     RunRecordBuilder.for_success(target, input_hash).with_env(env).with_run(run).build()
-    ... )
-    >>> record.status
-    'succeeded'
-
-    >>> record = RunRecordBuilder.for_failure(target, input_hash).with_error(exc).build()
-    >>> record.status
-    'failed'
-    """
+    """Builder for TargetRunRecord instances."""
 
     target: OutputTarget
     status: Literal["succeeded", "skipped", "failed"]
@@ -151,17 +273,10 @@ class RunRecordBuilder:
     def for_success(cls, target: OutputTarget, input_hash: str) -> Self:
         """Create a builder for a successful run.
 
-        Parameters
-        ----------
-        target
-            Target that was executed.
-        input_hash
-            Input hash for this execution.
-
         Returns
         -------
         Self
-            Builder instance configured for success status.
+            Builder instance configured for status="succeeded".
         """
         return cls(target=target, status="succeeded", input_hash=input_hash)
 
@@ -169,17 +284,10 @@ class RunRecordBuilder:
     def for_skipped(cls, target: OutputTarget, input_hash: str) -> Self:
         """Create a builder for a skipped run.
 
-        Parameters
-        ----------
-        target
-            Target that was checked but skipped.
-        input_hash
-            Input hash for this execution.
-
         Returns
         -------
         Self
-            Builder instance configured for skipped status.
+            Builder instance configured for status="skipped".
         """
         return cls(target=target, status="skipped", input_hash=input_hash)
 
@@ -187,29 +295,15 @@ class RunRecordBuilder:
     def for_failure(cls, target: OutputTarget, input_hash: str) -> Self:
         """Create a builder for a failed run.
 
-        Parameters
-        ----------
-        target
-            Target that failed.
-        input_hash
-            Input hash for this execution.
-
         Returns
         -------
         Self
-            Builder instance configured for failed status.
+            Builder instance configured for status="failed".
         """
         return cls(target=target, status="failed", input_hash=input_hash)
 
     def with_env(self, env: BuildEnv) -> Self:
-        """Set the build environment.
-
-        Required for succeeded and skipped statuses.
-
-        Parameters
-        ----------
-        env
-            Build environment with gateway and paths.
+        """Set the build environment (required for succeeded/skipped).
 
         Returns
         -------
@@ -220,14 +314,7 @@ class RunRecordBuilder:
         return self
 
     def with_run(self, run: NativeRunInfo) -> Self:
-        """Set the run metadata.
-
-        Required for succeeded and skipped statuses.
-
-        Parameters
-        ----------
-        run
-            Run metadata with timing and hashes.
+        """Set the run metadata (required for succeeded/skipped).
 
         Returns
         -------
@@ -238,14 +325,7 @@ class RunRecordBuilder:
         return self
 
     def with_error(self, error: Exception) -> Self:
-        """Set the exception that caused failure.
-
-        Required for failed status.
-
-        Parameters
-        ----------
-        error
-            The exception that caused the failure.
+        """Set the exception that caused failure (required for failed).
 
         Returns
         -------
@@ -261,12 +341,12 @@ class RunRecordBuilder:
         Returns
         -------
         TargetRunRecord
-            The constructed run record.
+            Run record for the configured status.
 
         Raises
         ------
         ValueError
-            If required fields for the given status are missing.
+            If required inputs for the configured status are missing.
         """
         if self.status == "failed":
             if self._error is None:
@@ -280,11 +360,7 @@ class RunRecordBuilder:
             self.target,
             self.status,
             self.input_hash,
-            inputs=RunRecordInputs(
-                env=self._env,
-                run=self._run,
-                error=self._error,
-            ),
+            inputs=RunRecordInputs(env=self._env, run=self._run, error=self._error),
         )
 
 
@@ -296,10 +372,6 @@ def create_run_record(
     inputs: RunRecordInputs | None = None,
 ) -> TargetRunRecord:
     """Create a TargetRunRecord for any completion status.
-
-    This is the unified factory function for creating run records. Use this
-    instead of the status-specific functions (create_success_record,
-    create_skipped_record, create_failed_record) for new code.
 
     Parameters
     ----------
@@ -321,38 +393,6 @@ def create_run_record(
     ------
     ValueError
         If required parameters for the given status are not provided.
-
-    Examples
-    --------
-    >>> # Success record
-    >>> record = create_run_record(
-    ...     target,
-    ...     "succeeded",
-    ...     run.input_hash,
-    ...     inputs=RunRecordInputs(env=env, run=run),
-    ... )
-    >>> record.status
-    'succeeded'
-
-    >>> # Skipped record
-    >>> record = create_run_record(
-    ...     target,
-    ...     "skipped",
-    ...     run.input_hash,
-    ...     inputs=RunRecordInputs(env=env, run=run),
-    ... )
-    >>> record.status
-    'skipped'
-
-    >>> # Failed record
-    >>> record = create_run_record(
-    ...     target,
-    ...     "failed",
-    ...     input_hash,
-    ...     inputs=RunRecordInputs(error=error),
-    ... )
-    >>> record.status
-    'failed'
     """
     resolved_inputs = inputs or RunRecordInputs()
     env = resolved_inputs.env
@@ -378,7 +418,9 @@ def create_run_record(
         msg = f"env and run are required for status '{status}'"
         raise ValueError(msg)
 
-    # Generate expected refs from contract
+    if env.strict_contracts and status == "succeeded":
+        _validate_strict_row_counts(target=target, row_counts=run.row_counts)
+
     datasets = expected_datasets(target, env.snapshot)
     artifacts = expected_artifacts(
         target,
@@ -391,7 +433,6 @@ def create_run_record(
         },
     )
 
-    # Update row counts for success
     if status == "succeeded" and run.row_counts:
         updated_datasets: list[DatasetRef] = []
         for ds in datasets:
@@ -424,7 +465,7 @@ def save_manifest(
     env: BuildEnv,
     record: TargetRunRecord,
 ) -> None:
-    """Persist a manifest for a completed native target execution.
+    """Persist an OutputManifest for a completed native target execution.
 
     Parameters
     ----------
@@ -432,10 +473,6 @@ def save_manifest(
         Build environment with gateway access.
     record
         Target run record to persist as manifest.
-
-    Examples
-    --------
-    >>> save_manifest(env, success_record)
     """
     manifest = OutputManifest(
         target=record.target,
@@ -450,13 +487,20 @@ def save_manifest(
     )
 
     env.gateway.build.save_manifest(manifest)
+    log.debug("build.hamilton.manifest.saved target=%s input_hash=%s", record.target, record.input_hash)
 
 
 __all__ = [
     "NativeRunInfo",
     "RunRecordBuilder",
     "RunRecordInputs",
+    "SkipCheckRequest",
+    "TargetRunRecord",
+    "compute_target_input_hash",
+    "compute_target_input_hash_with_deps",
+    "compute_target_options_hash",
     "create_run_record",
     "save_manifest",
+    "should_skip",
     "should_skip_native_target",
 ]

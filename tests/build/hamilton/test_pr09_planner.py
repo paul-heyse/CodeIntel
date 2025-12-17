@@ -274,7 +274,6 @@ class TestPlanStatusMatrix:
             OutputTarget(
                 name="downstream",
                 module="analytics",
-                plugin="analytics.downstream",
                 dependencies=("nonexistent",),
                 description="Has missing dep",
             )
@@ -339,7 +338,6 @@ class TestPlanClosure:
             OutputTarget(
                 name="with_tables",
                 module="analytics",
-                plugin="analytics.with_tables",
                 description="Has contract",
                 contract=OutputContract.simple(table_keys=("analytics.output_table",)),
             )

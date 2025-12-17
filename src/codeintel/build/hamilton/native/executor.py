@@ -30,21 +30,21 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.build.errors import TargetNotFoundError
-from codeintel.build.hamilton.native.runner import (
+from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
     RunRecordInputs,
+    compute_target_input_hash,
     create_run_record,
     save_manifest,
     should_skip_native_target,
 )
-from codeintel.build.hashing import compute_input_hash
 from codeintel.core.errors import CodeIntelError
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+    from codeintel.build.hamilton.run_records import TargetRunRecord
     from codeintel.build.targets import OutputTarget, TargetGraph
 
 
@@ -144,7 +144,7 @@ class NativeTargetExecutor:
         if target is None:
             raise TargetNotFoundError(target_name, list(graph))
 
-        input_hash = compute_input_hash(
+        input_hash = compute_target_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,

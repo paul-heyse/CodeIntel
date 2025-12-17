@@ -26,7 +26,7 @@ from codeintel.build.hamilton.contracts.schemas.constraints import (
     ConstraintKind,
     ConstraintSet,
 )
-from codeintel.build.registry import get_target_graph
+from codeintel.build.target_system import load_target_system
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -61,7 +61,7 @@ def _get_all_plugins_metadata() -> dict[str, CorePluginMetadata]:
         Mapping of target name to core metadata.
     """
     result: dict[str, CorePluginMetadata] = {}
-    graph = get_target_graph()
+    graph = load_target_system().graph
 
     for target in graph.all_targets:
         consumed: set[str] = set()

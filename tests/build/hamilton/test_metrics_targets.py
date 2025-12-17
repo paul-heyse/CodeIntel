@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.metrics_targets import (
     SubsystemAgreementResult,
@@ -18,7 +19,6 @@ from codeintel.build.hamilton.native.analytics.metrics_targets import (
     t__subsystem_graph_metrics,
     t__symbol_graph_metrics,
 )
-from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true

@@ -18,7 +18,7 @@ from codeintel.hamilton.records import NodeExecutionRecord
 if TYPE_CHECKING:
     from hamilton.node import Node
 
-    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.build.hamilton.run_writer import BuildRunWriter
 
 
 class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePostNodeExecute):
@@ -35,22 +35,22 @@ class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePo
     ----------
     run_id
         Build run identifier for grouping.
-    gateway
-        Storage gateway for persistence.
+    writer
+        Build run writer for persistence.
     """
 
-    def __init__(self, run_id: str, gateway: StorageGateway) -> None:
+    def __init__(self, run_id: str, writer: BuildRunWriter) -> None:
         """Initialize telemetry hook.
 
         Parameters
         ----------
         run_id
             Build run identifier for grouping.
-        gateway
-            Storage gateway for persistence.
+        writer
+            Build run writer for persistence.
         """
         self._run_id = run_id
-        self._gateway = gateway
+        self._writer = writer
         self._node_starts: dict[str, datetime] = {}
         self._records: list[NodeExecutionRecord] = []
         self._lock = threading.Lock()
@@ -141,7 +141,7 @@ class NodeTelemetryHook(lifecycle_base.BasePreNodeExecute, lifecycle_base.BasePo
             records = list(self._records)
             self._records.clear()
 
-        return self._gateway.build.save_run_nodes(self._run_id, records)
+        return self._writer.save_run_nodes(self._run_id, records)
 
 
 __all__ = [

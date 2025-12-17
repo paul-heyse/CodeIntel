@@ -18,13 +18,13 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.build.hamilton.hooks.manifest_hook import (
-    compute_target_input_hash_with_deps,
-    compute_target_options_hash,
-)
 from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hamilton.native.registry import is_native_target
+from codeintel.build.hamilton.run_records import (
+    compute_target_input_hash_with_deps,
+    compute_target_options_hash,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

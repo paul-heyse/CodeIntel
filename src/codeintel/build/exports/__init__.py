@@ -1,8 +1,7 @@
 """Build system export infrastructure for JSONL and Parquet artifacts.
 
-This package provides unified export functionality, replacing the legacy
-``codeintel.export`` module. Exports are now managed as build targets
-integrated with the Hamilton DAG.
+This package provides unified export functionality. Exports are managed as
+build targets integrated with the Hamilton DAG.
 
 Usage
 -----

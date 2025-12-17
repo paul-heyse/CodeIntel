@@ -15,18 +15,13 @@ whose dependency edges are derived from the Hamilton DAG.
 
 from __future__ import annotations
 
-import importlib
 import logging
 from functools import lru_cache
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from codeintel.build.target_catalog import load_target_catalog
+from codeintel.build.target_system import load_target_system
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-    from types import ModuleType
-
-    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.core.schemas.primitives import TableSchema
 
@@ -42,23 +37,8 @@ def get_target_graph() -> TargetGraph:
     TargetGraph
         The singleton target graph with Hamilton-derived dependencies.
 
-    Raises
-    ------
-    TypeError
-        If the Hamilton driver factory does not expose a callable
-        ``build_driver`` function.
     """
-    driver_factory_mod: ModuleType = importlib.import_module(
-        "codeintel.build.hamilton.driver_factory"
-    )
-    build_driver_fn_raw = getattr(driver_factory_mod, "build_driver", None)
-    if not callable(build_driver_fn_raw):
-        msg = "codeintel.build.hamilton.driver_factory.build_driver is missing or not callable"
-        raise TypeError(msg)
-
-    build_driver_fn = cast("Callable[[], HamiltonRuntime]", build_driver_fn_raw)
-    runtime = build_driver_fn()
-    return runtime.graph
+    return load_target_system().graph
 
 
 def derive_schemas_from_targets(
@@ -106,7 +86,7 @@ def get_all_target_table_keys(targets: tuple[OutputTarget, ...] | None = None) -
         Set of all table keys from target contracts.
     """
     if targets is None:
-        return load_target_catalog().all_table_keys
+        return load_target_system().all_table_keys
 
     keys: set[str] = set()
     for target in targets:
@@ -134,7 +114,7 @@ def get_target_by_table(
         Target that produces this table, or None.
     """
     if targets is None:
-        return load_target_catalog().target_for_table_key(table_key)
+        return load_target_system().target_for_table_key(table_key)
 
     for target in targets:
         if table_key in target.table_keys:

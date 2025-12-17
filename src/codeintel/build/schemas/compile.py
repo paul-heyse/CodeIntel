@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.hamilton.native.registry import native_target_names
-from codeintel.build.registry import get_target_graph
 from codeintel.build.schemas.contract_provider import iter_contracts
 from codeintel.build.schemas.infer_duckdb import infer_view_schema
 from codeintel.build.schemas.manifest import ExportArtifact, SchemaManifest
@@ -22,6 +21,7 @@ from codeintel.build.schemas.provider_hamilton import (
     infer_table_schemas,
     inferable_native_table_keys,
 )
+from codeintel.build.target_system import load_target_system
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
@@ -99,7 +99,7 @@ def _table_keys_for_selection(
     only_native: bool,
     stable: bool,
 ) -> tuple[str, ...]:
-    graph = get_target_graph()
+    graph = load_target_system().graph
 
     if targets:
         missing = sorted(t for t in targets if t not in graph)
@@ -302,7 +302,7 @@ def compile_schema_manifest(
         If include_views is True but no connection is provided.
     """
     req = request or SchemaManifestRequest()
-    graph = get_target_graph()
+    graph = load_target_system().graph
     table_keys = _table_keys_for_selection(
         targets=list(req.targets) if req.targets else None,
         module=req.module,

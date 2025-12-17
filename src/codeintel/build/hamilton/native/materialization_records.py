@@ -10,13 +10,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
-from codeintel.build.hamilton.native.runner import (
+from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
     RunRecordInputs,
+    TargetRunRecord,
     create_run_record,
     save_manifest,
 )
-from codeintel.hamilton.records import TargetRunRecord
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

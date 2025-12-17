@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Protocol
 
-    from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+    from codeintel.build.hamilton.run_records import TargetRunRecord
     from codeintel.storage.gateway import StorageGateway
 
     class _RunTargetFn(Protocol):
