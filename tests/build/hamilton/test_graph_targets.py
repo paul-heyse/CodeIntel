@@ -26,6 +26,7 @@ from codeintel.build.hamilton.native.graphs.graph_targets import (
     t__graph_validation,
     t__symbol_uses,
 )
+from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
@@ -98,34 +99,36 @@ def _make_graph() -> TargetGraph:
     """
     graph = TargetGraph()
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="goids",
             module="graphs",
-            tables=("core.goids", "core.goid_crosswalk"),
+            contract=OutputContract.simple(table_keys=("core.goids", "core.goid_crosswalk")),
         )
     )
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="symbol_uses",
             module="graphs",
-            tables=("graph.symbol_use_edges",),
+            contract=OutputContract.simple(table_keys=("graph.symbol_use_edges",)),
         )
     )
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="graph_metrics",
             module="graphs",
-            tables=(
-                "analytics.graph_metrics_functions",
-                "analytics.graph_metrics_modules",
+            contract=OutputContract.simple(
+                table_keys=(
+                    "analytics.graph_metrics_functions",
+                    "analytics.graph_metrics_modules",
+                )
             ),
         )
     )
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="graph_validation",
             module="graphs",
-            tables=("analytics.graph_validation",),
+            contract=OutputContract.simple(table_keys=("analytics.graph_validation",)),
         )
     )
     return graph

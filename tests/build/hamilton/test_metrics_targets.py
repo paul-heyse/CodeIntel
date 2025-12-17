@@ -18,6 +18,7 @@ from codeintel.build.hamilton.native.analytics.metrics_targets import (
     t__subsystem_graph_metrics,
     t__symbol_graph_metrics,
 )
+from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
@@ -77,27 +78,29 @@ def _make_graph() -> TargetGraph:
     """
     graph = TargetGraph()
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="subsystem_graph_metrics",
             module="analytics",
-            tables=("analytics.subsystem_graph_metrics",),
+            contract=OutputContract.simple(table_keys=("analytics.subsystem_graph_metrics",)),
         )
     )
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="symbol_graph_metrics",
             module="analytics",
-            tables=(
-                "analytics.symbol_graph_metrics_modules",
-                "analytics.symbol_graph_metrics_functions",
+            contract=OutputContract.simple(
+                table_keys=(
+                    "analytics.symbol_graph_metrics_modules",
+                    "analytics.symbol_graph_metrics_functions",
+                )
             ),
         )
     )
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="subsystem_agreement",
             module="analytics",
-            tables=("analytics.subsystem_agreement",),
+            contract=OutputContract.simple(table_keys=("analytics.subsystem_agreement",)),
         )
     )
     return graph

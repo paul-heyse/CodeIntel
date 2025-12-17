@@ -9,11 +9,7 @@ This module provides the canonical entry point for building execution contexts i
 - ``ExecutionContextBuilder`` - Fluent builder for PluginExecutionContext and
   TargetExecutionContext
 - ``RecordingGateway`` - SQL recording wrapper around real gateways
-- ``make_test_output_target`` - Create minimal OutputTarget for plugin testing
-- ``execute_plugin`` / ``execute_plugin_async`` - Execute plugin with builder (deprecated)
 
-Migration Guide
----------------
 **For new tests, use Hamilton-native helpers:**
 
 Preferred (Hamilton-native)::
@@ -25,25 +21,6 @@ Preferred (Hamilton-native)::
         builder = HamiltonTestBuilder.create(analytics_gateway, tmp_path)
         record = builder.execute_target("modules")
         assert record.status == "succeeded"
-
-**Legacy plugin-based execution (deprecated):**
-
-Before::
-
-    from tests._helpers.plugin_execution import PluginTestContext, execute_target_plugin
-
-
-    def test_plugin(plugin_ctx: PluginTestContext) -> None:
-        result = execute_target_plugin(MyPlugin(), plugin_ctx)
-
-After::
-
-    from tests._helpers.fakes.contexts import ExecutionContextBuilder
-
-
-    def test_plugin(tmp_path: Path) -> None:
-        builder = ExecutionContextBuilder.create(tmp_path)
-        result = builder.execute_plugin(MyPlugin())
 
 **From ingestion_context.py:**
 
@@ -63,15 +40,12 @@ After::
 
 from __future__ import annotations
 
-import asyncio
-import warnings
 from dataclasses import dataclass
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Protocol, Self, TypeVar, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from codeintel.build.context import ContextResources, TargetExecutionContext
 from codeintel.build.context_base import BuildContext
-from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.targets import OutputTarget
 from codeintel.config.primitives import BuildPaths, SnapshotRef
@@ -90,7 +64,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.analytics.resources.catalog import FunctionCatalogProvider
-    from codeintel.build.context import TargetResult
     from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
     from codeintel.build.parameters import TargetParameters
     from codeintel.build.providers import Providers
@@ -100,52 +73,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 T = TypeVar("T")
-
-
-@runtime_checkable
-class PluginLike(Protocol):
-    """Minimal protocol for legacy plugin test helpers.
-
-    This protocol defines the interface expected by plugin execution helpers.
-    New tests should use ``HamiltonTestBuilder.execute_target()`` instead.
-    """
-
-    @property
-    def plugin_name(self) -> str:
-        """Return the plugin name used as a target identifier."""
-        ...
-
-    @property
-    def plugin_description(self) -> str:
-        """Return a short human-readable description."""
-        ...
-
-    async def execute(self, ctx: TargetExecutionContext) -> TargetResult:
-        """Execute the plugin with the provided context."""
-        ...
-
-
-def make_test_output_target(plugin: PluginLike) -> OutputTarget:
-    """Create a minimal OutputTarget for testing a plugin.
-
-    Parameters
-    ----------
-    plugin
-        Plugin instance to create target for.
-
-    Returns
-    -------
-    OutputTarget
-        Minimal target suitable for test execution.
-    """
-    return OutputTarget(
-        name=plugin.plugin_name,
-        module="analytics",
-        plugin=plugin.plugin_name,
-        contract=EMPTY_CONTRACT,
-        dependencies=(),
-        description=plugin.plugin_description,
-    )
 
 
 @dataclass(frozen=True)
@@ -520,116 +447,6 @@ class ExecutionContextBuilder:
             parameters=parameters or EMPTY_PARAMETERS,
         )
 
-    def build_target_context_for_plugin(
-        self,
-        plugin: PluginLike,
-        *,
-        parameters: TargetParameters | None = None,
-        resources: TargetResourceOverrides | None = None,
-    ) -> TargetExecutionContext:
-        """Build a TargetExecutionContext using plugin metadata for target.
-
-        This convenience method creates an OutputTarget from the plugin's
-        metadata and builds the context in one step.
-
-        Parameters
-        ----------
-        plugin
-            Plugin to create context for.
-        parameters
-            Optional target parameters.
-        resources
-            Optional resource overrides.
-
-        Returns
-        -------
-        TargetExecutionContext
-            Configured target execution context.
-        """
-        target = make_test_output_target(plugin)
-        return self.build_target_context(
-            target=target,
-            parameters=parameters,
-            resources=resources,
-        )
-
-    async def execute_plugin_async(
-        self,
-        plugin: PluginLike,
-        *,
-        parameters: TargetParameters | None = None,
-        resources: TargetResourceOverrides | None = None,
-    ) -> TargetResult:
-        """Execute a TargetPlugin asynchronously.
-
-        This method builds the execution context and runs the plugin.
-        Use this in async test functions.
-
-        Parameters
-        ----------
-        plugin
-            Plugin instance to execute.
-        parameters
-            Optional target parameters.
-        resources
-            Optional resource overrides.
-
-        Returns
-        -------
-        TargetResult
-            Result of plugin execution.
-        """
-        ctx = self.build_target_context_for_plugin(
-            plugin,
-            parameters=parameters,
-            resources=resources,
-        )
-        return await plugin.execute(ctx)
-
-    def execute_plugin(
-        self,
-        plugin: PluginLike,
-        *,
-        parameters: TargetParameters | None = None,
-        resources: TargetResourceOverrides | None = None,
-    ) -> TargetResult:
-        """Execute a TargetPlugin synchronously.
-
-        This method wraps the async plugin.execute() and runs it using
-        asyncio.run() for use in synchronous test code.
-
-        .. deprecated::
-            Use ``HamiltonTestBuilder.execute_target()`` instead for
-            Hamilton-native execution.
-
-        Parameters
-        ----------
-        plugin
-            Plugin instance to execute.
-        parameters
-            Optional target parameters.
-        resources
-            Optional resource overrides.
-
-        Returns
-        -------
-        TargetResult
-            Result of plugin execution.
-        """
-        warnings.warn(
-            "execute_plugin() is deprecated. Use HamiltonTestBuilder.execute_target() "
-            "for Hamilton-native execution. See tests/_helpers/hamilton_execution.py",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return asyncio.run(
-            self.execute_plugin_async(
-                plugin,
-                parameters=parameters,
-                resources=resources,
-            )
-        )
-
     def execute_hamilton_target(self, target_name: str) -> TargetRunRecord:
         """Execute a Hamilton target by name.
 
@@ -768,11 +585,9 @@ __all__ = [
     "BuilderOptions",
     "EnvOverrides",
     "ExecutionContextBuilder",
-    "PluginLike",
     "RecordingGateway",
     "SqlCall",
     "TargetResourceOverrides",
     "build_plugin_execution_context",
     "build_target_execution_context",
-    "make_test_output_target",
 ]

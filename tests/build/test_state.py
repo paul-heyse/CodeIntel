@@ -10,7 +10,8 @@ import pytest
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.registry import get_target_graph
 from codeintel.build.state import BuildState, StateValidator, TargetState
-from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
+from codeintel.build.contracts import OutputContract
+from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.assertions import (
@@ -37,44 +38,43 @@ def _create_test_graph() -> TargetGraph:
     """
     graph = TargetGraph()
 
-    modules_target = OutputTarget.from_tables(
+    modules_target = OutputTarget(
         name="modules",
         module="ingestion",
-        plugin="repo_scan",
-        tables=("core.modules",),
-        options=TargetOptions(description="Repository module index"),
+        contract=OutputContract.simple(table_keys=("core.modules",)),
+        description="Repository module index",
     )
 
-    ast_target = OutputTarget.from_tables(
+    ast_target = OutputTarget(
         name="ast",
         module="ingestion",
-        plugin="ast_extract",
-        tables=("core.ast_nodes",),
-        options=TargetOptions(dependencies=("modules",), description="AST extraction"),
+        contract=OutputContract.simple(table_keys=("core.ast_nodes",)),
+        dependencies=("modules",),
+        description="AST extraction",
     )
 
-    goids_target = OutputTarget.from_tables(
+    goids_target = OutputTarget(
         name="goids",
         module="graphs",
-        plugin="goid_builder",
-        tables=("core.goids",),
-        options=TargetOptions(dependencies=("ast",), description="GOID construction"),
+        contract=OutputContract.simple(table_keys=("core.goids",)),
+        dependencies=("ast",),
+        description="GOID construction",
     )
 
-    typing_target = OutputTarget.from_tables(
+    typing_target = OutputTarget(
         name="typing",
         module="ingestion",
-        plugin="typing_ingest",
-        tables=("analytics.typedness",),
-        options=TargetOptions(dependencies=("modules",), description="Type analysis"),
+        contract=OutputContract.simple(table_keys=("analytics.typedness",)),
+        dependencies=("modules",),
+        description="Type analysis",
     )
 
-    metrics_target = OutputTarget.from_tables(
+    metrics_target = OutputTarget(
         name="function_metrics",
         module="analytics",
-        plugin="function_metrics",
-        tables=("analytics.function_metrics",),
-        options=TargetOptions(dependencies=("goids", "ast"), description="Function metrics"),
+        contract=OutputContract.simple(table_keys=("analytics.function_metrics",)),
+        dependencies=("goids", "ast"),
+        description="Function metrics",
     )
 
     graph.register(modules_target)
@@ -418,12 +418,11 @@ class TestStateValidatorInit:
     ) -> None:
         """Creating validator with invalid graph raises ValueError."""
         graph = TargetGraph()
-        target = OutputTarget.from_tables(
+        target = OutputTarget(
             name="target",
             module="ingestion",
-            plugin="plugin",
-            tables=("core.table",),
-            options=TargetOptions(dependencies=("nonexistent",)),
+            contract=OutputContract.simple(table_keys=("core.table",)),
+            dependencies=("nonexistent",),
         )
         graph.register(target)
 

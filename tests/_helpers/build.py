@@ -1,17 +1,7 @@
 """Helpers for build-system unit tests.
 
-Migration note
---------------
-Targets should be defined via contracts (``OutputContract`` / ``OutputTarget``
-factories like ``from_tables``) and referenced by ``table_keys``. Avoid adding
-new call sites that pass ``tables=`` directly; the contract is the source of
-truth for outputs.
-
-Note
-----
-The legacy BuildPlan, PlanStage, PlanStep, and StageExecutionResult types were
-removed in Phase 1 decommissioning. Use Hamilton build executor and planner
-for build orchestration.
+Use ``OutputContract`` / ``OutputTarget`` directly for defining targets in tests.
+The contract is the source of truth for outputs.
 """
 
 from __future__ import annotations
@@ -23,7 +13,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
-from codeintel.build.targets import OutputTarget, TargetGraph, TargetOptions
+from codeintel.build.contracts import OutputContract
+from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
@@ -227,33 +218,32 @@ def _format_toml_value(value: object) -> str:
 
 
 def _default_targets() -> tuple[OutputTarget, ...]:
-    ingestion_modules = OutputTarget.from_tables(
+    ingestion_modules = OutputTarget(
         name="modules",
         module="ingestion",
-        plugin="",
-        tables=("core.modules",),
-        options=TargetOptions(description="Repository module index"),
+        contract=OutputContract.simple(table_keys=("core.modules",)),
+        description="Repository module index",
     )
-    ast_target = OutputTarget.from_tables(
+    ast_target = OutputTarget(
         name="ast",
         module="ingestion",
-        plugin="",
-        tables=("core.ast_nodes",),
-        options=TargetOptions(dependencies=("modules",), description="AST extraction"),
+        contract=OutputContract.simple(table_keys=("core.ast_nodes",)),
+        dependencies=("modules",),
+        description="AST extraction",
     )
-    goids_target = OutputTarget.from_tables(
+    goids_target = OutputTarget(
         name="goids",
         module="graphs",
-        plugin="",
-        tables=("core.goids",),
-        options=TargetOptions(dependencies=("ast",), description="GOID construction"),
+        contract=OutputContract.simple(table_keys=("core.goids",)),
+        dependencies=("ast",),
+        description="GOID construction",
     )
-    metrics_target = OutputTarget.from_tables(
+    metrics_target = OutputTarget(
         name="function_metrics",
         module="analytics",
-        plugin="",
-        tables=("analytics.function_metrics",),
-        options=TargetOptions(dependencies=("goids",), description="Function metrics"),
+        contract=OutputContract.simple(table_keys=("analytics.function_metrics",)),
+        dependencies=("goids",),
+        description="Function metrics",
     )
     return (ingestion_modules, ast_target, goids_target, metrics_target)
 

@@ -61,12 +61,6 @@ def _validate_specs(specs: Iterable[OutputTarget]) -> tuple[OutputTarget, ...]:
                 f"truth. Found dependencies for {target.name}: {target.dependencies!r}"
             )
             raise ValueError(msg)
-        if target.plugin:
-            msg = (
-                "Target specs must not declare plugin implementations in Hamilton-first "
-                f"execution. Found plugin for {target.name}: {target.plugin!r}"
-            )
-            raise ValueError(msg)
         by_name[target.name] = target
 
     return tuple(by_name[name] for name in sorted(by_name))

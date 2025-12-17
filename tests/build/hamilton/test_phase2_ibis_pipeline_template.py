@@ -19,6 +19,7 @@ from hamilton.function_modifiers import source, subdag, tag, value
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.templates import ibis_pipeline
+from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
@@ -57,10 +58,10 @@ def _make_env(*, gateway: StorageGateway, snapshot: SnapshotRef) -> BuildEnv:
 def _make_graph() -> TargetGraph:
     graph = TargetGraph()
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="modules",
             module="ingestion",
-            tables=("core.modules",),
+            contract=OutputContract.simple(table_keys=("core.modules",)),
         )
     )
     return graph
