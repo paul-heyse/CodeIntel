@@ -10,25 +10,22 @@ from __future__ import annotations
 
 import io
 import logging
+from typing import Any
 
 import ibis.expr.types as ir
-from hamilton.function_modifiers import check_output_custom, schema, tag
+from hamilton.function_modifiers import check_output_custom, schema, source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.artifact_materializer import (
-    ArtifactMaterializationContext,
-    ArtifactMaterializationSpec,
-    materialize_artifact,
+from codeintel.build.hamilton.materializers import FileArtifactSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_file_artifact_materialization,
 )
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.runner import (
-    NativeRunInfo,
-    RunRecordInputs,
-    create_run_record,
-    save_manifest,
-)
+from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hamilton.validators import build_table_contract
+from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
@@ -93,11 +90,44 @@ def t__export_parquet__compute(
     return function_metrics
 
 
+@SaveToDecorator(
+    [FileArtifactSaver],
+    output_name_=materialize_node("artifact.parquet_export"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("export_parquet"),
+    artifact_name=value("parquet_export"),
+)
+@tag(domain="export", target="export_parquet", node_type="compute", target_="export_parquet__bytes")
+def export_parquet__bytes(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__export_parquet__compute: ir.Table,
+) -> bytes | None:
+    """Serialize the Parquet export payload for file materialization."""
+    target = graph.get("export_parquet")
+    if target is not None:
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            options_hash=None,
+            manifests=env.manifest_index,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
+
+    df = t__export_parquet__compute.execute()
+    buffer = io.BytesIO()
+    df.to_parquet(buffer, index=False, engine="pyarrow")
+    return buffer.getvalue()
+
+
 @tag(domain="export", target="export_parquet", node_type="materialize")
 def t__export_parquet(
     env: BuildEnv,
     graph: TargetGraph,
-    t__export_parquet__compute: ir.Table,
+    m__artifact__parquet_export: dict[str, Any],
 ) -> TargetRunRecord:
     """Write Parquet export artifact and return record with ArtifactRef.
 
@@ -123,72 +153,13 @@ def t__export_parquet(
     >>> # This node is executed by Hamilton after the compute node succeeds
     >>> # It materializes the Ibis expressions to Parquet files
     """
-    LOG.info("Materializing export_parquet to files")
-
-    executor = NativeTargetExecutor.for_target(env, graph, "export_parquet")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    output_file = env.paths.document_output_dir / "codeintel.parquet"
-
-    try:
-        df = t__export_parquet__compute.execute()
-        buffer = io.BytesIO()
-        df.to_parquet(buffer, index=False, engine="pyarrow")
-        parquet_bytes = buffer.getvalue()
-    except (OSError, ValueError, RuntimeError) as exc:
-        return executor.fail(exc)
-
-    try:
-        artifact_ref = materialize_artifact(
-            ArtifactMaterializationContext(
-                snapshot=env.snapshot,
-                gateway=env.gateway,
-                owner_target="export_parquet",
-                input_hash=executor.input_hash,
-            ),
-            ArtifactMaterializationSpec(
-                artifact_name="parquet_export",
-                artifact_type="file",
-                content=parquet_bytes,
-                output_path=output_file,
-                metadata={"format": "parquet", "rows": len(df), "bytes": len(parquet_bytes)},
-            ),
-        )
-    except (OSError, ValueError, RuntimeError) as exc:
-        return executor.fail(exc)
-
-    LOG.info("export_parquet materialization complete: %s", output_file)
-
-    # Create success record with artifact
-    run = NativeRunInfo(
-        input_hash=executor.input_hash,
-        options_hash=executor.options_hash,
-        duration_ms=0.0,
+    return record_from_file_artifact_materialization(
+        env=env,
+        graph=graph,
+        target_name="export_parquet",
+        expected_artifact_name="parquet_export",
+        materialization=m__artifact__parquet_export,
     )
-    record = create_run_record(
-        executor.target,
-        "succeeded",
-        executor.input_hash,
-        inputs=RunRecordInputs(env=env, run=run),
-    )
-
-    # Add artifact to record
-    record = TargetRunRecord(
-        target=record.target,
-        plugin_name=record.plugin_name,
-        status=record.status,
-        input_hash=record.input_hash,
-        options_hash=record.options_hash,
-        duration_ms=record.duration_ms,
-        row_counts=record.row_counts,
-        error=record.error,
-        datasets=record.datasets,
-        artifacts=(artifact_ref,),
-    )
-    save_manifest(env, record)
-    return record
 
 
 __all__ = ["t__export_parquet", "t__export_parquet__compute"]

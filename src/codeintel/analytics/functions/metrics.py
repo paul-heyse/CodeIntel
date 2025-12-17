@@ -666,6 +666,70 @@ def persist_function_analytics(
     }
 
 
+def compute_function_analytics_result(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    options: FunctionAnalyticsOptions | None = None,
+) -> FunctionAnalyticsResult:
+    """
+    Compute pure function analytics result without persisting.
+
+    This is the pure compute path for Hamilton DAG-visible I/O. It returns
+    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
+
+    Parameters
+    ----------
+    gateway
+        StorageGateway providing the DuckDB connection with `core.goids` table.
+    snapshot
+        Repository and commit identifiers.
+    options
+        Optional hooks for reusing parsed AST context and overriding the
+        validation reporter.
+
+    Returns
+    -------
+    FunctionAnalyticsResult
+        Container with metrics_rows, types_rows, and validation reporter.
+    """
+    goids_by_file = _load_goids(gateway, snapshot)
+    if not goids_by_file:
+        return FunctionAnalyticsResult(
+            metrics_rows=[],
+            types_rows=[],
+            reporter=FunctionValidationReporter(snapshot.repo, snapshot.commit),
+        )
+
+    now = datetime.now(UTC)
+    ctx = ProcessContext(snapshot=snapshot, now=now)
+
+    opts = options or FunctionAnalyticsOptions()
+    reporter = opts.validation_reporter or FunctionValidationReporter(
+        snapshot.repo, snapshot.commit
+    )
+    span_index = _build_span_index(goids_by_file, snapshot.repo_root)
+
+    if opts.has_ast_data():
+        return _build_function_analytics_from_ast_data(
+            goids_by_file=goids_by_file,
+            process_ctx=ctx,
+            ast_data=opts,
+            span_index=span_index,
+            reporter=reporter,
+        )
+
+    parsed_cache: dict[str, ParsedModule | None] = {}
+    state = ProcessState(
+        snapshot=snapshot,
+        cache=parsed_cache,
+        span_index=span_index,
+        reporter=reporter,
+        ctx=ctx,
+    )
+    return build_function_analytics(goids_by_file=goids_by_file, state=state)
+
+
 def compute_function_metrics_and_types(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
@@ -715,43 +779,15 @@ def compute_function_metrics_and_types(
     dict[str, int]
         Summary counts of emitted metrics/types and validation issues.
     """
-    goids_by_file = _load_goids(gateway, snapshot)
-    if not goids_by_file:
+    result = compute_function_analytics_result(gateway, snapshot, options=options)
+    if not result.metrics_rows and not result.types_rows:
         return {
             "metrics_rows": 0,
             "types_rows": 0,
-            "validation_total": 0,
-            "validation_parse_failed": 0,
-            "validation_span_not_found": 0,
+            "validation_total": result.validation_total,
+            "validation_parse_failed": result.parse_failed_count,
+            "validation_span_not_found": result.span_not_found_count,
         }
-
-    now = datetime.now(UTC)
-    ctx = ProcessContext(snapshot=snapshot, now=now)
-
-    opts = options or FunctionAnalyticsOptions()
-    reporter = opts.validation_reporter or FunctionValidationReporter(
-        snapshot.repo, snapshot.commit
-    )
-    span_index = _build_span_index(goids_by_file, snapshot.repo_root)
-
-    if opts.has_ast_data():
-        result = _build_function_analytics_from_ast_data(
-            goids_by_file=goids_by_file,
-            process_ctx=ctx,
-            ast_data=opts,
-            span_index=span_index,
-            reporter=reporter,
-        )
-    else:
-        parsed_cache: dict[str, ParsedModule | None] = {}
-        state = ProcessState(
-            snapshot=snapshot,
-            cache=parsed_cache,
-            span_index=span_index,
-            reporter=reporter,
-            ctx=ctx,
-        )
-        result = build_function_analytics(goids_by_file=goids_by_file, state=state)
 
     summary = persist_function_analytics(gateway, snapshot, result)
     if fail_on_missing_spans and result.validation_total:

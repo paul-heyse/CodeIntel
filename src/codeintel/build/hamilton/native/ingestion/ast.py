@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import cache, tag
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import paths_to_modules
@@ -50,6 +50,7 @@ class AstExtractResult:
     error: str | None = None
 
 
+@cache(format="memory")
 @tag(domain="ingestion", target="ast", node_type="compute")
 def t__ast__extract(
     env: BuildEnv,

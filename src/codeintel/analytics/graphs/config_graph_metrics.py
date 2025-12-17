@@ -30,6 +30,49 @@ if TYPE_CHECKING:
     from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
     from codeintel.storage.gateway import StorageGateway
 
+
+CONFIG_GRAPH_METRICS_KEYS_COLS = (
+    "repo",
+    "commit",
+    "config_key",
+    "degree",
+    "weighted_degree",
+    "betweenness",
+    "closeness",
+    "community_id",
+    "created_at",
+)
+
+CONFIG_GRAPH_METRICS_MODULES_COLS = (
+    "repo",
+    "commit",
+    "module_path",
+    "degree",
+    "weighted_degree",
+    "betweenness",
+    "closeness",
+    "community_id",
+    "created_at",
+)
+
+CONFIG_PROJECTION_KEY_EDGES_COLS = (
+    "repo",
+    "commit",
+    "src_config_key",
+    "dst_config_key",
+    "weight",
+    "created_at",
+)
+
+CONFIG_PROJECTION_MODULE_EDGES_COLS = (
+    "repo",
+    "commit",
+    "src_module_path",
+    "dst_module_path",
+    "weight",
+    "created_at",
+)
+
 NODE_ID_INDEX = 2
 
 
@@ -141,26 +184,55 @@ def _projection_payload(
     )
 
 
-def compute_config_graph_metrics(
+@dataclass(frozen=True)
+class ConfigGraphMetricsResult:
+    """Result from config graph metrics computation.
+
+    Attributes
+    ----------
+    key_rows
+        Tuple rows for analytics.config_graph_metrics_keys table, or None.
+    module_rows
+        Tuple rows for analytics.config_graph_metrics_modules table, or None.
+    key_edge_rows
+        Tuple rows for analytics.config_projection_key_edges table, or None.
+    module_edge_rows
+        Tuple rows for analytics.config_projection_module_edges table, or None.
+    """
+
+    key_rows: tuple[tuple[object, ...], ...] | None
+    module_rows: tuple[tuple[object, ...], ...] | None
+    key_edge_rows: tuple[tuple[object, ...], ...] | None
+    module_edge_rows: tuple[tuple[object, ...], ...] | None
+
+
+def compute_config_graph_metrics_result(
     gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
-) -> None:
-    """
-    Compute metrics for config keys/modules and their projections.
+) -> ConfigGraphMetricsResult:
+    """Compute config graph metrics rows without persisting.
+
+    This is the pure compute path for Hamilton DAG-visible I/O. It returns
+    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
 
     Parameters
     ----------
-    gateway :
-        Storage gateway used for reading graphs and writing metrics.
-    repo : str
+    gateway
+        Storage gateway used for reading graphs.
+    repo
         Repository identifier anchoring the metrics.
-    commit : str
+    commit
         Commit hash anchoring the metrics snapshot.
-    runtime : GraphRuntime | GraphRuntimeOptions | None
+    runtime
         Optional runtime supplying cached graphs and backend selection.
+
+    Returns
+    -------
+    ConfigGraphMetricsResult
+        Container with rows for all four config graph metrics tables.
     """
     runtime_opts = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
@@ -171,17 +243,13 @@ def compute_config_graph_metrics(
         snapshot,
         runtime_opts,
     )
-    backend = gateway.policy
-    backend.ensure_table("analytics.config_graph_metrics_keys")
-    backend.ensure_table("analytics.config_graph_metrics_modules")
-    backend.ensure_table("analytics.config_projection_key_edges")
-    backend.ensure_table("analytics.config_projection_module_edges")
 
     graph = resolved_runtime.ensure_config_module_bipartite()
     if graph.number_of_nodes() == 0:
         log_empty_graph("config_module_bipartite", graph)
-        _clear_config_tables(backend, repo, commit)
-        return
+        return ConfigGraphMetricsResult(
+            key_rows=None, module_rows=None, key_edge_rows=None, module_edge_rows=None
+        )
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -202,8 +270,9 @@ def compute_config_graph_metrics(
             nodes=0,
             graph_nodes=graph.number_of_nodes(),
         )
-        _clear_config_tables(backend, repo, commit)
-        return
+        return ConfigGraphMetricsResult(
+            key_rows=None, module_rows=None, key_edge_rows=None, module_edge_rows=None
+        )
 
     projection_ctx = ProjectionContext(
         repo=repo,
@@ -235,13 +304,56 @@ def compute_config_graph_metrics(
         targets=module_targets,
     )
 
+    return ConfigGraphMetricsResult(
+        key_rows=tuple(key_rows) if key_rows else None,
+        module_rows=tuple(module_rows) if module_rows else None,
+        key_edge_rows=tuple(key_edges) if key_edges else None,
+        module_edge_rows=tuple(module_edges) if module_edges else None,
+    )
+
+
+def compute_config_graph_metrics(
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+) -> None:
+    """Compute metrics for config keys/modules and their projections.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway used for reading graphs and writing metrics.
+    repo
+        Repository identifier anchoring the metrics.
+    commit
+        Commit hash anchoring the metrics snapshot.
+    runtime
+        Optional runtime supplying cached graphs and backend selection.
+    """
+    backend = gateway.policy
+    backend.ensure_table("analytics.config_graph_metrics_keys")
+    backend.ensure_table("analytics.config_graph_metrics_modules")
+    backend.ensure_table("analytics.config_projection_key_edges")
+    backend.ensure_table("analytics.config_projection_module_edges")
+
+    result = compute_config_graph_metrics_result(
+        gateway,
+        repo=repo,
+        commit=commit,
+        runtime=runtime,
+    )
+
     _clear_config_tables(backend, repo, commit)
 
-    if key_rows:
-        backend.bulk_insert("analytics.config_graph_metrics_keys", key_rows)
-    if module_rows:
-        backend.bulk_insert("analytics.config_graph_metrics_modules", module_rows)
-    if key_edges:
-        backend.bulk_insert("analytics.config_projection_key_edges", key_edges)
-    if module_edges:
-        backend.bulk_insert("analytics.config_projection_module_edges", module_edges)
+    if result.key_rows:
+        backend.bulk_insert("analytics.config_graph_metrics_keys", list(result.key_rows))
+    if result.module_rows:
+        backend.bulk_insert("analytics.config_graph_metrics_modules", list(result.module_rows))
+    if result.key_edge_rows:
+        backend.bulk_insert("analytics.config_projection_key_edges", list(result.key_edge_rows))
+    if result.module_edge_rows:
+        backend.bulk_insert(
+            "analytics.config_projection_module_edges", list(result.module_edge_rows)
+        )

@@ -12,9 +12,10 @@ which return structured result containers. The materialize node uses
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.entrypoints.compute import (
     EntrypointsResult,
@@ -28,11 +29,13 @@ from codeintel.analytics.entrypoints.core import (
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materializer import (
-    MaterializationContext,
-    materialize_rows,
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 from codeintel.storage.helpers.module_index import load_module_map
@@ -96,7 +99,7 @@ def _build_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
 
 
 @tag(domain="analytics", target="entrypoints", node_type="compute")
-def t__entrypoints__compute(env: BuildEnv) -> EntrypointsResult:
+def t__entrypoints__compute(env: BuildEnv, graph: TargetGraph) -> EntrypointsResult | None:
     """Compute entrypoints for all modules in the snapshot.
 
     This is a pure compute node with no side effects. It scans source files
@@ -109,8 +112,9 @@ def t__entrypoints__compute(env: BuildEnv) -> EntrypointsResult:
 
     Returns
     -------
-    EntrypointsResult
+    EntrypointsResult | None
         Container with rows for entrypoints and entrypoint_tests tables.
+        Returns None when manifest-skip indicates the target is current.
 
     Notes
     -----
@@ -120,6 +124,18 @@ def t__entrypoints__compute(env: BuildEnv) -> EntrypointsResult:
     - Scheduled jobs and background tasks
     - Event handlers and message consumers
     """
+    target = graph.get("entrypoints")
+    if target is not None:
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            options_hash=None,
+            manifests=env.manifest_index,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
+
     inputs = _build_inputs(env)
     if inputs is None:
         return EntrypointsResult(entrypoint_rows=(), test_rows=())
@@ -127,11 +143,50 @@ def t__entrypoints__compute(env: BuildEnv) -> EntrypointsResult:
     return compute_entrypoints_pure(env.gateway, env.snapshot, inputs)
 
 
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.entrypoints"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("entrypoints"),
+    table_key=value("analytics.entrypoints"),
+    columns=value(tuple(ENTRYPOINTS_COLS)),
+)
+@tag(domain="analytics", target="entrypoints", node_type="compute", target_="entrypoints__entrypoint_rows")
+def entrypoints__entrypoint_rows(
+    t__entrypoints__compute: EntrypointsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.entrypoints."""
+    if t__entrypoints__compute is None:
+        return None
+    return tuple(t__entrypoints__compute.entrypoint_rows)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.entrypoint_tests"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("entrypoints"),
+    table_key=value("analytics.entrypoint_tests"),
+    columns=value(tuple(ENTRYPOINT_TESTS_COLS)),
+)
+@tag(domain="analytics", target="entrypoints", node_type="compute", target_="entrypoints__test_rows")
+def entrypoints__test_rows(
+    t__entrypoints__compute: EntrypointsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.entrypoint_tests."""
+    if t__entrypoints__compute is None:
+        return None
+    return tuple(t__entrypoints__compute.test_rows)
+
+
 @tag(domain="analytics", target="entrypoints", node_type="materialize")
 def t__entrypoints(
     env: BuildEnv,
     graph: TargetGraph,
-    t__entrypoints__compute: EntrypointsResult,
+    m__analytics__entrypoints: dict[str, Any],
+    m__analytics__entrypoint_tests: dict[str, Any],
 ) -> TargetRunRecord:
     """Materialize both entrypoint tables to DuckDB.
 
@@ -158,48 +213,15 @@ def t__entrypoints(
     - analytics.entrypoints
     - analytics.entrypoint_tests
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "entrypoints")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        # Ensure tables exist
-        backend = env.gateway.policy
-        backend.ensure_table("analytics.entrypoints")
-        backend.ensure_table("analytics.entrypoint_tests")
-
-        ctx = MaterializationContext(
-            gateway=env.gateway,
-            snapshot=env.snapshot,
-            validate=env.validate_outputs,
-            owner_target="entrypoints",
-            input_hash=executor.input_hash,
-        )
-
-        row_counts: dict[str, int] = {}
-
-        # Materialize entrypoints table
-        ep_ref = materialize_rows(
-            ctx,
-            "analytics.entrypoints",
-            t__entrypoints__compute.entrypoint_rows,
-            ENTRYPOINTS_COLS,
-        )
-        row_counts["analytics.entrypoints"] = ep_ref.row_count or 0
-
-        # Materialize entrypoint_tests table
-        tests_ref = materialize_rows(
-            ctx,
-            "analytics.entrypoint_tests",
-            t__entrypoints__compute.test_rows,
-            ENTRYPOINT_TESTS_COLS,
-        )
-        row_counts["analytics.entrypoint_tests"] = tests_ref.row_count or 0
-
-        return row_counts
-
-    return executor.execute(compute)
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name="entrypoints",
+        materializations={
+            "analytics.entrypoints": m__analytics__entrypoints,
+            "analytics.entrypoint_tests": m__analytics__entrypoint_tests,
+        },
+    )
 
 
 # Export node names for Hamilton discovery

@@ -170,16 +170,35 @@ class ModuleRecord:
     tags: list[str]
 
 
-def compute_semantic_roles(
+@dataclass(frozen=True)
+class SemanticRolesResult:
+    """Result from semantic roles computation.
+
+    Attributes
+    ----------
+    function_rows
+        Rows for analytics.semantic_roles_functions table.
+    module_rows
+        Rows for analytics.semantic_roles_modules table.
+    """
+
+    function_rows: list[tuple[object, ...]]
+    module_rows: list[tuple[object, ...]]
+
+
+def build_semantic_roles_rows(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     module_by_path: dict[str, str],
     ast_map: dict[int, FunctionAst],
     features_map: dict[int, FunctionAstFeatures],
-) -> None:
+) -> SemanticRolesResult:
     """
-    Populate semantic role tables for functions and modules.
+    Build semantic role rows without persisting.
+
+    This is the pure compute path for Hamilton DAG-visible I/O. It returns
+    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
 
     Parameters
     ----------
@@ -193,11 +212,12 @@ def compute_semantic_roles(
         Mapping of function GOID to parsed AST data.
     features_map
         Mapping of function GOID to feature vector.
-    """
-    backend = gateway.policy
-    backend.ensure_table("analytics.semantic_roles_functions")
-    backend.ensure_table("analytics.semantic_roles_modules")
 
+    Returns
+    -------
+    SemanticRolesResult
+        Container with function and module rows.
+    """
     module_meta = _load_module_meta(gateway, repo=snapshot.repo, commit=snapshot.commit)
     function_rows = _load_function_rows(gateway, repo=snapshot.repo, commit=snapshot.commit)
     effects = _load_effects(gateway, repo=snapshot.repo, commit=snapshot.commit)
@@ -223,14 +243,6 @@ def compute_semantic_roles(
         now=now,
     )
 
-    backend.delete_for_snapshot(
-        "analytics.semantic_roles_functions",
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
-    if fn_rows:
-        backend.bulk_insert("analytics.semantic_roles_functions", fn_rows)
-
     module_rows = _classify_modules(
         module_meta=module_meta,
         roles_by_module=roles_by_module,
@@ -238,18 +250,69 @@ def compute_semantic_roles(
         commit=snapshot.commit,
         now=now,
     )
+
+    return SemanticRolesResult(
+        function_rows=fn_rows,
+        module_rows=module_rows,
+    )
+
+
+def compute_semantic_roles(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    module_by_path: dict[str, str],
+    ast_map: dict[int, FunctionAst],
+    features_map: dict[int, FunctionAstFeatures],
+) -> None:
+    """
+    Populate semantic role tables for functions and modules.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DuckDB access.
+    snapshot
+        Repository and commit identifiers.
+    module_by_path
+        Mapping of file path to module name.
+    ast_map
+        Mapping of function GOID to parsed AST data.
+    features_map
+        Mapping of function GOID to feature vector.
+    """
+    result = build_semantic_roles_rows(
+        gateway,
+        snapshot,
+        module_by_path=module_by_path,
+        ast_map=ast_map,
+        features_map=features_map,
+    )
+
+    backend = gateway.policy
+    backend.ensure_table("analytics.semantic_roles_functions")
+    backend.ensure_table("analytics.semantic_roles_modules")
+
+    backend.delete_for_snapshot(
+        "analytics.semantic_roles_functions",
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    if result.function_rows:
+        backend.bulk_insert("analytics.semantic_roles_functions", result.function_rows)
+
     backend.delete_for_snapshot(
         "analytics.semantic_roles_modules",
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
-    if module_rows:
-        backend.bulk_insert("analytics.semantic_roles_modules", module_rows)
+    if result.module_rows:
+        backend.bulk_insert("analytics.semantic_roles_modules", result.module_rows)
 
     log.info(
         "semantic_roles populated: %d functions, %d modules for %s@%s",
-        len(fn_rows),
-        len(module_rows),
+        len(result.function_rows),
+        len(result.module_rows),
         snapshot.repo,
         snapshot.commit,
     )

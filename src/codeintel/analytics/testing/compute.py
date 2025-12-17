@@ -2,7 +2,7 @@
 
 This module provides pure compute functions that return row data without
 performing any database writes. The materialization is handled by the
-Hamilton native module in `build/hamilton/native/analytics/test_graph_metrics.py`.
+Hamilton native module in `build/hamilton/native/analytics/graph_metrics_pipeline.py`.
 
 The functions compute graph metrics from the test-function bipartite graph,
 returning structured result containers that can be materialized to DuckDB

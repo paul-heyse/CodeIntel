@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "a6ad8a8abd6c3cf52b417a809d04dd8a2907d1865c92da8f6a363da3eb2d4f72",
+  "buildspec_hash": "93191278500d4bfb42c88542e8d732b990fbfa7a88745e79cf6b92d90ced8e6e",
   "datasets": [
     {
       "schema_hash": "4fea3b6c5a5a27bc4a5461a3f75e27173887f4605159c550eac43dd3e5d0d0cb",
@@ -502,10 +502,7 @@
           "path_template": "{export_dir}/codeintel.jsonl"
         }
       ],
-      "deps": [
-        "function_metrics",
-        "modules"
-      ],
+      "deps": [],
       "domain": "export",
       "impl_kind": "native",
       "name": "export_jsonl",
@@ -519,9 +516,7 @@
           "path_template": "{export_dir}/codeintel.parquet"
         }
       ],
-      "deps": [
-        "function_metrics"
-      ],
+      "deps": [],
       "domain": "export",
       "impl_kind": "native",
       "name": "export_parquet",

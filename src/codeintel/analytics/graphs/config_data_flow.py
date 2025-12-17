@@ -23,6 +23,20 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
+
+CONFIG_DATA_FLOW_COLS = (
+    "repo",
+    "commit",
+    "config_key",
+    "config_path",
+    "function_goid_h128",
+    "usage_kind",
+    "evidence",
+    "call_chain_id",
+    "call_chain",
+    "created_at",
+)
+
 log = logging.getLogger(__name__)
 
 LOGGER_METHODS = {
@@ -289,16 +303,31 @@ def _call_chain_id(
     return hashlib.sha256(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
 
-def compute_config_data_flow(
+@dataclass(frozen=True)
+class ConfigDataFlowResult:
+    """Result from config data flow computation.
+
+    Attributes
+    ----------
+    rows
+        Tuple rows for analytics.config_data_flow table, or None if skipped.
+    """
+
+    rows: tuple[tuple[object, ...], ...] | None
+
+
+def compute_config_data_flow_result(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     call_graph: nx.DiGraph,
     ast_by_goid: dict[int, FunctionAst],
     missing_goids: set[int] | None = None,
-) -> None:
-    """
-    Populate analytics.config_data_flow with config usage per function.
+) -> ConfigDataFlowResult:
+    """Compute config data flow rows without persisting.
+
+    This is the pure compute path for Hamilton DAG-visible I/O. It returns
+    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
 
     Parameters
     ----------
@@ -312,14 +341,13 @@ def compute_config_data_flow(
         Mapping of function GOID to parsed AST data.
     missing_goids
         Optional set of function GOIDs that could not be parsed.
-    """
-    backend = gateway.policy
-    backend.ensure_table("analytics.config_data_flow")
-    con = gateway.con
-    backend.delete_for_snapshot(
-        "analytics.config_data_flow", repo=snapshot.repo, commit=snapshot.commit
-    )
 
+    Returns
+    -------
+    ConfigDataFlowResult
+        Container with config data flow rows.
+    """
+    con = gateway.con
     refs_by_path = _config_references(con, snapshot.repo, snapshot.commit)
     if not refs_by_path:
         log.info(
@@ -327,7 +355,7 @@ def compute_config_data_flow(
             snapshot.repo,
             snapshot.commit,
         )
-        return
+        return ConfigDataFlowResult(rows=None)
 
     entrypoints = _entrypoints(con, snapshot.repo, snapshot.commit)
     missing = missing_goids or set()
@@ -349,12 +377,51 @@ def compute_config_data_flow(
         snapshot=snapshot,
         now=now,
     )
+    return ConfigDataFlowResult(rows=tuple(rows_to_insert) if rows_to_insert else None)
 
-    if rows_to_insert:
-        backend.bulk_insert("analytics.config_data_flow", rows_to_insert)
+
+def compute_config_data_flow(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    call_graph: nx.DiGraph,
+    ast_by_goid: dict[int, FunctionAst],
+    missing_goids: set[int] | None = None,
+) -> None:
+    """Populate analytics.config_data_flow with config usage per function.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DuckDB access.
+    snapshot
+        Repository and commit identifiers.
+    call_graph
+        Call graph for the repository snapshot.
+    ast_by_goid
+        Mapping of function GOID to parsed AST data.
+    missing_goids
+        Optional set of function GOIDs that could not be parsed.
+    """
+    backend = gateway.policy
+    backend.ensure_table("analytics.config_data_flow")
+    backend.delete_for_snapshot(
+        "analytics.config_data_flow", repo=snapshot.repo, commit=snapshot.commit
+    )
+
+    result = compute_config_data_flow_result(
+        gateway,
+        snapshot,
+        call_graph=call_graph,
+        ast_by_goid=ast_by_goid,
+        missing_goids=missing_goids,
+    )
+
+    if result.rows:
+        backend.bulk_insert("analytics.config_data_flow", list(result.rows))
     log.info(
         "config_data_flow populated: %d rows for %s@%s",
-        len(rows_to_insert),
+        len(result.rows) if result.rows else 0,
         snapshot.repo,
         snapshot.commit,
     )

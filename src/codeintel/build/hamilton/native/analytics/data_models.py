@@ -12,8 +12,10 @@ which return structured result containers. The materialize node uses
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.compute.data_models import (
     DATA_MODEL_USAGE_COLS,
@@ -28,11 +30,14 @@ from codeintel.analytics.data_models.core import (
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materializer import (
-    MaterializationContext,
-    materialize_rows,
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materialization,
+    record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.helpers.module_index import load_module_map
 
@@ -42,7 +47,7 @@ LOG = logging.getLogger(__name__)
 
 
 @tag(domain="analytics", target="data_models", node_type="compute")
-def t__data_models__compute(env: BuildEnv) -> DataModelsResult:
+def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResult | None:
     """Compute data models for all classes in the snapshot.
 
     This is a pure compute node with no side effects. It reads class
@@ -56,9 +61,10 @@ def t__data_models__compute(env: BuildEnv) -> DataModelsResult:
 
     Returns
     -------
-    DataModelsResult
+    DataModelsResult | None
         Container with rows for data_models, data_model_fields,
         and data_model_relationships tables.
+        Returns None when manifest-skip indicates the target is current.
 
     Notes
     -----
@@ -68,14 +74,89 @@ def t__data_models__compute(env: BuildEnv) -> DataModelsResult:
     - Field types, constraints, and defaults
     - Relationships between models
     """
+    target = graph.get("data_models")
+    if target is not None:
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            options_hash=None,
+            manifests=env.manifest_index,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
     return compute_data_models_pure(env.gateway, env.snapshot)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.data_models"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("data_models"),
+    table_key=value("analytics.data_models"),
+    columns=value(tuple(DATA_MODELS_COLS)),
+)
+@tag(domain="analytics", target="data_models", node_type="compute", target_="data_models__model_rows")
+def data_models__model_rows(
+    t__data_models__compute: DataModelsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.data_models."""
+    if t__data_models__compute is None:
+        return None
+    return tuple(t__data_models__compute.model_rows)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.data_model_fields"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("data_models"),
+    table_key=value("analytics.data_model_fields"),
+    columns=value(tuple(DATA_MODEL_FIELDS_COLS)),
+)
+@tag(domain="analytics", target="data_models", node_type="compute", target_="data_models__field_rows")
+def data_models__field_rows(
+    t__data_models__compute: DataModelsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.data_model_fields."""
+    if t__data_models__compute is None:
+        return None
+    return tuple(t__data_models__compute.field_rows)
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.data_model_relationships"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("data_models"),
+    table_key=value("analytics.data_model_relationships"),
+    columns=value(tuple(DATA_MODEL_RELATIONSHIPS_COLS)),
+)
+@tag(
+    domain="analytics",
+    target="data_models",
+    node_type="compute",
+    target_="data_models__relationship_rows",
+)
+def data_models__relationship_rows(
+    t__data_models__compute: DataModelsResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.data_model_relationships."""
+    if t__data_models__compute is None:
+        return None
+    return tuple(t__data_models__compute.relationship_rows)
 
 
 @tag(domain="analytics", target="data_models", node_type="materialize")
 def t__data_models(
     env: BuildEnv,
     graph: TargetGraph,
-    t__data_models__compute: DataModelsResult,
+    m__analytics__data_models: dict[str, Any],
+    m__analytics__data_model_fields: dict[str, Any],
+    m__analytics__data_model_relationships: dict[str, Any],
 ) -> TargetRunRecord:
     """Materialize all 3 data model tables to DuckDB.
 
@@ -103,50 +184,37 @@ def t__data_models(
     - analytics.data_model_fields
     - analytics.data_model_relationships
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "data_models")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        # Ensure tables exist
-        backend = env.gateway.policy
-        backend.ensure_table("analytics.data_models")
-        backend.ensure_table("analytics.data_model_fields")
-        backend.ensure_table("analytics.data_model_relationships")
-
-        ctx = MaterializationContext(
-            gateway=env.gateway,
-            snapshot=env.snapshot,
-            validate=env.validate_outputs,
-            owner_target="data_models",
-            input_hash=executor.input_hash,
-        )
-
-        row_counts: dict[str, int] = {}
-
-        # Materialize all 3 tables
-        result = t__data_models__compute
-        tables = [
-            ("analytics.data_models", result.model_rows, DATA_MODELS_COLS),
-            ("analytics.data_model_fields", result.field_rows, DATA_MODEL_FIELDS_COLS),
-            (
-                "analytics.data_model_relationships",
-                result.relationship_rows,
-                DATA_MODEL_RELATIONSHIPS_COLS,
-            ),
-        ]
-        for table_key, rows, cols in tables:
-            ref = materialize_rows(ctx, table_key, rows, cols)
-            row_counts[table_key] = ref.row_count or 0
-
-        return row_counts
-
-    return executor.execute(compute)
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name="data_models",
+        materializations={
+            "analytics.data_models": m__analytics__data_models,
+            "analytics.data_model_fields": m__analytics__data_model_fields,
+            "analytics.data_model_relationships": m__analytics__data_model_relationships,
+        },
+    )
 
 
-@tag(domain="analytics", target="data_model_usage", node_type="compute")
-def t__data_model_usage__compute(env: BuildEnv) -> tuple[tuple[object, ...], ...]:
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.data_model_usage"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("data_model_usage"),
+    table_key=value("analytics.data_model_usage"),
+    columns=value(tuple(DATA_MODEL_USAGE_COLS)),
+)
+@tag(
+    domain="analytics",
+    target="data_model_usage",
+    node_type="compute",
+    target_="t__data_model_usage__compute",
+)
+def t__data_model_usage__compute(
+    env: BuildEnv,
+    graph: TargetGraph,
+) -> tuple[tuple[object, ...], ...] | None:
     """Compute rows for analytics.data_model_usage.
 
     Parameters
@@ -156,9 +224,22 @@ def t__data_model_usage__compute(env: BuildEnv) -> tuple[tuple[object, ...], ...
 
     Returns
     -------
-    tuple[tuple[object, ...], ...]
+    tuple[tuple[object, ...], ...] | None
         Row tuples for analytics.data_model_usage in DATA_MODEL_USAGE_COLS order.
+        Returns None when manifest-skip indicates the target is current.
     """
+    target = graph.get("data_model_usage")
+    if target is not None:
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            options_hash=None,
+            manifests=env.manifest_index,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
+
     module_map = load_module_map(
         env.gateway,
         repo=env.snapshot.repo,
@@ -188,7 +269,7 @@ def t__data_model_usage__compute(env: BuildEnv) -> tuple[tuple[object, ...], ...
 def t__data_model_usage(
     env: BuildEnv,
     graph: TargetGraph,
-    t__data_model_usage__compute: tuple[tuple[object, ...], ...],
+    m__analytics__data_model_usage: dict[str, Any],
 ) -> TargetRunRecord:
     """Materialize analytics.data_model_usage rows to DuckDB.
 
@@ -206,32 +287,13 @@ def t__data_model_usage(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "data_model_usage")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        backend = env.gateway.policy
-        backend.ensure_table("analytics.data_model_usage")
-
-        ctx = MaterializationContext(
-            gateway=env.gateway,
-            snapshot=env.snapshot,
-            validate=env.validate_outputs,
-            owner_target="data_model_usage",
-            input_hash=executor.input_hash,
-        )
-
-        ref = materialize_rows(
-            ctx,
-            "analytics.data_model_usage",
-            t__data_model_usage__compute,
-            DATA_MODEL_USAGE_COLS,
-        )
-        return {ref.table_key: ref.row_count or 0}
-
-    return executor.execute(compute)
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name="data_model_usage",
+        expected_table_key="analytics.data_model_usage",
+        materialization=m__analytics__data_model_usage,
+    )
 
 
 # Export node names for Hamilton discovery

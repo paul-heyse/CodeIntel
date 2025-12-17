@@ -45,11 +45,6 @@ from codeintel.build.hamilton.native.analytics.ast_features import (
     t__function_ast_features,
     t__function_ast_features__compute,
 )
-from codeintel.build.hamilton.native.analytics.behavioral_coverage import (
-    BehavioralCoverageResult,
-    t__behavioral_coverage,
-    t__behavioral_coverage__compute,
-)
 from codeintel.build.hamilton.native.analytics.cfg_dfg import (
     t__cfg_dfg_metrics,
     t__cfg_dfg_metrics__compute_cfg,
@@ -64,8 +59,11 @@ from codeintel.build.hamilton.native.analytics.coverage_functions import (
     t__coverage_functions,
     t__coverage_functions__compute,
 )
-from codeintel.build.hamilton.native.analytics.coverage_test_edges import (
+from codeintel.build.hamilton.native.analytics.coverage_pipeline import (
+    BehavioralCoverageResult,
     CoverageTestEdgesResult,
+    t__behavioral_coverage,
+    t__behavioral_coverage__compute,
     t__coverage_test_edges,
     t__coverage_test_edges__compute,
 )
@@ -84,12 +82,16 @@ from codeintel.build.hamilton.native.analytics.entrypoints import (
     t__entrypoints__compute,
 )
 from codeintel.build.hamilton.native.analytics.function_contracts import (
+    FUNCTION_CONTRACTS_COLS,
     FunctionContractsResult,
+    function_contracts__rows,
     t__function_contracts,
     t__function_contracts__compute,
 )
 from codeintel.build.hamilton.native.analytics.function_effects import (
+    FUNCTION_EFFECTS_COLS,
     FunctionEffectsResult,
+    function_effects__rows,
     t__function_effects,
     t__function_effects__compute,
 )
@@ -98,9 +100,26 @@ from codeintel.build.hamilton.native.analytics.function_history import (
     t__function_history__compute,
 )
 from codeintel.build.hamilton.native.analytics.function_metrics import (
-    FunctionMetricsResult,
+    FUNCTION_METRICS_COLS,
+    FUNCTION_TYPES_COLS,
+    FunctionAnalyticsResult,
+    function_metrics__metrics_rows,
+    function_metrics__types_rows,
+    function_metrics__validation_rows,
     t__function_metrics,
     t__function_metrics__compute,
+)
+from codeintel.build.hamilton.native.analytics.graph_metrics_pipeline import (
+    SubsystemGraphMetricsResult,
+    SymbolGraphMetricsResult,
+    t__subsystem_graph_metrics,
+    t__subsystem_graph_metrics__compute,
+    t__symbol_graph_metrics,
+    t__symbol_graph_metrics__compute,
+    t__test_graph_metrics,
+    t__test_graph_metrics__compute,
+    test_graph_metrics__functions_rows,
+    test_graph_metrics__tests_rows,
 )
 from codeintel.build.hamilton.native.analytics.history_timeseries import (
     t__history_timeseries,
@@ -123,7 +142,11 @@ from codeintel.build.hamilton.native.analytics.risk_factors import (
     t__risk_factors__compute,
 )
 from codeintel.build.hamilton.native.analytics.semantic_roles import (
+    SEMANTIC_ROLES_FUNCTIONS_COLS,
+    SEMANTIC_ROLES_MODULES_COLS,
     SemanticRolesResult,
+    semantic_roles__functions_rows,
+    semantic_roles__modules_rows,
     t__semantic_roles,
     t__semantic_roles__compute,
 )
@@ -132,47 +155,49 @@ from codeintel.build.hamilton.native.analytics.subsystem_agreement import (
     t__subsystem_agreement,
     t__subsystem_agreement__compute,
 )
-from codeintel.build.hamilton.native.analytics.subsystem_graph_metrics import (
-    SubsystemGraphMetricsResult,
-    t__subsystem_graph_metrics,
-    t__subsystem_graph_metrics__compute,
-)
 from codeintel.build.hamilton.native.analytics.subsystems import (
     t__subsystems,
     t__subsystems__compute,
 )
-from codeintel.build.hamilton.native.analytics.symbol_graph_metrics import (
-    SymbolGraphMetricsResult,
-    t__symbol_graph_metrics,
-    t__symbol_graph_metrics__compute,
-)
-from codeintel.build.hamilton.native.analytics.test_graph_metrics import (
-    t__test_graph_metrics,
-    t__test_graph_metrics__compute,
-)
 from codeintel.build.hamilton.native.analytics.test_profile import (
-    TestProfileResult,
+    TEST_PROFILE_COLS,
+    TestProfileComputeResult,
     t__test_profile,
     t__test_profile__compute,
+    test_profile__rows,
 )
 
 __all__ = [
+    "FUNCTION_CONTRACTS_COLS",
+    "FUNCTION_EFFECTS_COLS",
+    "FUNCTION_METRICS_COLS",
+    "FUNCTION_TYPES_COLS",
+    "SEMANTIC_ROLES_FUNCTIONS_COLS",
+    "SEMANTIC_ROLES_MODULES_COLS",
+    "TEST_PROFILE_COLS",
     "AstFeaturesResult",
     "BehavioralCoverageResult",
     "ConfigDataFlowResult",
     "CoverageTestEdgesResult",
+    "FunctionAnalyticsResult",
     "FunctionContractsResult",
     "FunctionEffectsResult",
-    "FunctionMetricsResult",
     "ProfilesResult",
     "SemanticRolesResult",
     "SubsystemAgreementResult",
     "SubsystemGraphMetricsResult",
     "SymbolGraphMetricsResult",
-    "TestProfileResult",
+    "TestProfileComputeResult",
+    "function_contracts__rows",
+    "function_effects__rows",
+    "function_metrics__metrics_rows",
+    "function_metrics__types_rows",
+    "function_metrics__validation_rows",
     "hotspots__modules_complexity",
     "risk_factors__fan_in",
     "risk_factors__fan_out",
+    "semantic_roles__functions_rows",
+    "semantic_roles__modules_rows",
     "t__behavioral_coverage",
     "t__behavioral_coverage__compute",
     "t__cfg_dfg_metrics",
@@ -224,4 +249,7 @@ __all__ = [
     "t__test_graph_metrics__compute",
     "t__test_profile",
     "t__test_profile__compute",
+    "test_graph_metrics__functions_rows",
+    "test_graph_metrics__tests_rows",
+    "test_profile__rows",
 ]

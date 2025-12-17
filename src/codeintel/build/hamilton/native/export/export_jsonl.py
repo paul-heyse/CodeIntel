@@ -15,22 +15,18 @@ from typing import Any, cast
 
 import ibis.expr.types as ir
 import pandas as pd
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.artifact_materializer import (
-    ArtifactMaterializationContext,
-    ArtifactMaterializationSpec,
-    materialize_artifact,
+from codeintel.build.hamilton.materializers import FileArtifactSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_file_artifact_materialization,
 )
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.runner import (
-    NativeRunInfo,
-    RunRecordInputs,
-    create_run_record,
-    save_manifest,
-)
+from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
@@ -60,9 +56,10 @@ class ExportJsonlComputeResult:
 @tag(domain="export", target="export_jsonl", node_type="compute")
 def t__export_jsonl__compute(
     env: BuildEnv,
+    graph: TargetGraph,
     q__core__modules: ir.Table,
     q__analytics__function_metrics: ir.Table,
-) -> ExportJsonlComputeResult:
+) -> ExportJsonlComputeResult | None:
     """Compute export manifest and gather data for JSONL export.
 
     This node collects data from multiple analytics tables and prepares
@@ -89,6 +86,18 @@ def t__export_jsonl__compute(
     >>> # This node is executed by Hamilton as part of the export_jsonl target
     >>> # It produces a result that is consumed by t__export_jsonl materializer
     """
+    target = graph.get("export_jsonl")
+    if target is not None:
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            options_hash=None,
+            manifests=env.manifest_index,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
+
     LOG.info("Computing export_jsonl: gathering data for export")
 
     # Filter to current snapshot
@@ -136,11 +145,43 @@ def t__export_jsonl__compute(
     )
 
 
+@SaveToDecorator(
+    [FileArtifactSaver],
+    output_name_=materialize_node("artifact.jsonl_export"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("export_jsonl"),
+    artifact_name=value("jsonl_export"),
+)
+@tag(domain="export", target="export_jsonl", node_type="compute", target_="export_jsonl__content")
+def export_jsonl__content(t__export_jsonl__compute: ExportJsonlComputeResult | None) -> str | None:
+    """Build JSONL content for export_jsonl artifact."""
+    if t__export_jsonl__compute is None:
+        return None
+
+    modules_data = t__export_jsonl__compute.modules_data
+    function_metrics_data = t__export_jsonl__compute.function_metrics_data
+    metadata = t__export_jsonl__compute.metadata
+
+    jsonl_lines: list[str] = []
+    jsonl_lines.append(json.dumps({"_metadata": metadata}, ensure_ascii=False))
+    jsonl_lines.extend(
+        [json.dumps({"_type": "module", **module}, ensure_ascii=False) for module in modules_data]
+    )
+    jsonl_lines.extend(
+        [
+            json.dumps({"_type": "function_metric", **metric}, ensure_ascii=False)
+            for metric in function_metrics_data
+        ]
+    )
+    return "\n".join(jsonl_lines) + "\n"
+
+
 @tag(domain="export", target="export_jsonl", node_type="materialize")
 def t__export_jsonl(
     env: BuildEnv,
     graph: TargetGraph,
-    t__export_jsonl__compute: ExportJsonlComputeResult,
+    m__artifact__jsonl_export: dict[str, Any],
 ) -> TargetRunRecord:
     """Write JSONL export artifact and return record with ArtifactRef.
 
@@ -166,93 +207,18 @@ def t__export_jsonl(
     >>> # This node is executed by Hamilton after the compute node succeeds
     >>> # It materializes the export data to a JSONL file
     """
-    LOG.info("Materializing export_jsonl to file")
-
-    executor = NativeTargetExecutor.for_target(env, graph, "export_jsonl")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    output_file = env.paths.document_output_dir / "codeintel.jsonl"
-
-    # Extract data from compute result (now a dataclass)
-    modules_data = t__export_jsonl__compute.modules_data
-    function_metrics_data = t__export_jsonl__compute.function_metrics_data
-    metadata = t__export_jsonl__compute.metadata
-
-    # Format as JSONL (one JSON object per line)
-    jsonl_lines: list[str] = []
-
-    # Add metadata as first line
-    jsonl_lines.append(json.dumps({"_metadata": metadata}, ensure_ascii=False))
-
-    jsonl_lines.extend(
-        [json.dumps({"_type": "module", **module}, ensure_ascii=False) for module in modules_data]
-    )
-    jsonl_lines.extend(
-        [
-            json.dumps({"_type": "function_metric", **metric}, ensure_ascii=False)
-            for metric in function_metrics_data
-        ]
+    return record_from_file_artifact_materialization(
+        env=env,
+        graph=graph,
+        target_name="export_jsonl",
+        expected_artifact_name="jsonl_export",
+        materialization=m__artifact__jsonl_export,
     )
 
-    jsonl_content = "\n".join(jsonl_lines) + "\n"
 
-    # Materialize artifact
-    try:
-        artifact_ref = materialize_artifact(
-            ArtifactMaterializationContext(
-                snapshot=env.snapshot,
-                gateway=env.gateway,
-                owner_target="export_jsonl",
-                input_hash=executor.input_hash,
-            ),
-            ArtifactMaterializationSpec(
-                artifact_name="jsonl_export",
-                artifact_type="file",
-                content=jsonl_content,
-                output_path=output_file,
-                metadata={
-                    "format": "jsonl",
-                    "lines": len(jsonl_lines),
-                    "modules_count": len(modules_data),
-                    "function_metrics_count": len(function_metrics_data),
-                },
-            ),
-        )
-    except (OSError, ValueError, RuntimeError) as exc:
-        return executor.fail(exc)
-
-    LOG.info("export_jsonl materialization complete: %s", output_file)
-
-    # Create success record with artifact
-    run = NativeRunInfo(
-        input_hash=executor.input_hash,
-        options_hash=executor.options_hash,
-        duration_ms=0.0,
-    )
-    record = create_run_record(
-        executor.target,
-        "succeeded",
-        executor.input_hash,
-        inputs=RunRecordInputs(env=env, run=run),
-    )
-
-    # Add artifact to record
-    record = TargetRunRecord(
-        target=record.target,
-        plugin_name=record.plugin_name,
-        status=record.status,
-        input_hash=record.input_hash,
-        options_hash=record.options_hash,
-        duration_ms=record.duration_ms,
-        row_counts=record.row_counts,
-        error=record.error,
-        datasets=record.datasets,
-        artifacts=(artifact_ref,),
-    )
-    save_manifest(env, record)
-    return record
-
-
-__all__ = ["ExportJsonlComputeResult", "t__export_jsonl", "t__export_jsonl__compute"]
+__all__ = [
+    "ExportJsonlComputeResult",
+    "export_jsonl__content",
+    "t__export_jsonl",
+    "t__export_jsonl__compute",
+]
