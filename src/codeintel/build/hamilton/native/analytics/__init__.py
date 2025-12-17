@@ -40,20 +40,22 @@ Newly Migrated (Phase 4):
 
 from __future__ import annotations
 
-from codeintel.build.hamilton.native.analytics.metadata_targets import (
-    AstFeaturesResult,
-    ProfilesResult,
-    t__data_model_usage,
-    t__data_model_usage__compute,
-    t__data_models,
-    t__data_models__compute,
-    t__function_ast_features,
-    t__function_ast_features__compute,
-    t__profiles,
-    t__profiles__compute,
+from codeintel.build.hamilton.native.analytics.classification_targets import (
+    SEMANTIC_ROLES_FUNCTIONS_COLS,
+    SEMANTIC_ROLES_MODULES_COLS,
+    TEST_PROFILE_COLS,
+    SemanticRolesResult,
+    TestProfileComputeResult,
+    semantic_roles__functions_rows,
+    semantic_roles__modules_rows,
+    t__semantic_roles,
+    t__semantic_roles__compute,
+    t__test_profile,
+    t__test_profile__compute,
+    test_profile__rows,
 )
 from codeintel.build.hamilton.native.analytics.config_graph_targets import (
-    ConfigDataFlowResult,
+    ConfigDataFlowComputeResult,
     t__cfg_dfg_metrics,
     t__cfg_dfg_metrics__compute_cfg,
     t__cfg_dfg_metrics__compute_dfg,
@@ -63,10 +65,10 @@ from codeintel.build.hamilton.native.analytics.config_graph_targets import (
 from codeintel.build.hamilton.native.analytics.coverage_pipeline import (
     BehavioralCoverageResult,
     CoverageTestEdgesResult,
-    t__coverage_functions,
-    t__coverage_functions__compute,
     t__behavioral_coverage,
     t__behavioral_coverage__compute,
+    t__coverage_functions,
+    t__coverage_functions__compute,
     t__coverage_test_edges,
     t__coverage_test_edges__compute,
 )
@@ -87,12 +89,6 @@ from codeintel.build.hamilton.native.analytics.function_detail_targets import (
     t__function_contracts__compute,
     t__function_effects,
     t__function_effects__compute,
-)
-from codeintel.build.hamilton.native.analytics.history_targets import (
-    t__function_history,
-    t__function_history__compute,
-    t__history_timeseries,
-    t__history_timeseries__compute,
 )
 from codeintel.build.hamilton.native.analytics.function_metrics import (
     FUNCTION_METRICS_COLS,
@@ -116,30 +112,34 @@ from codeintel.build.hamilton.native.analytics.graph_metrics_pipeline import (
     test_graph_metrics__functions_rows,
     test_graph_metrics__tests_rows,
 )
+from codeintel.build.hamilton.native.analytics.history_targets import (
+    t__function_history,
+    t__function_history__compute,
+    t__history_timeseries,
+    t__history_timeseries__compute,
+)
 from codeintel.build.hamilton.native.analytics.hotspots import (
     hotspots__modules_complexity,
     t__hotspots,
     t__hotspots__compute,
+)
+from codeintel.build.hamilton.native.analytics.metadata_targets import (
+    AstFeaturesResult,
+    ProfilesResult,
+    t__data_model_usage,
+    t__data_model_usage__compute,
+    t__data_models,
+    t__data_models__compute,
+    t__function_ast_features,
+    t__function_ast_features__compute,
+    t__profiles,
+    t__profiles__compute,
 )
 from codeintel.build.hamilton.native.analytics.risk_factors import (
     risk_factors__fan_in,
     risk_factors__fan_out,
     t__risk_factors,
     t__risk_factors__compute,
-)
-from codeintel.build.hamilton.native.analytics.classification_targets import (
-    SEMANTIC_ROLES_FUNCTIONS_COLS,
-    SEMANTIC_ROLES_MODULES_COLS,
-    TEST_PROFILE_COLS,
-    SemanticRolesResult,
-    TestProfileComputeResult,
-    semantic_roles__functions_rows,
-    semantic_roles__modules_rows,
-    t__semantic_roles,
-    t__semantic_roles__compute,
-    t__test_profile,
-    t__test_profile__compute,
-    test_profile__rows,
 )
 from codeintel.build.hamilton.native.analytics.subsystem_targets import (
     SubsystemAgreementResult,
@@ -148,6 +148,7 @@ from codeintel.build.hamilton.native.analytics.subsystem_targets import (
     t__subsystems,
     t__subsystems__compute,
 )
+
 __all__ = [
     "FUNCTION_CONTRACTS_COLS",
     "FUNCTION_EFFECTS_COLS",
@@ -158,7 +159,7 @@ __all__ = [
     "TEST_PROFILE_COLS",
     "AstFeaturesResult",
     "BehavioralCoverageResult",
-    "ConfigDataFlowResult",
+    "ConfigDataFlowComputeResult",
     "CoverageTestEdgesResult",
     "FunctionAnalyticsResult",
     "FunctionContractsResult",

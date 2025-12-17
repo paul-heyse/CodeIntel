@@ -59,11 +59,13 @@ def t__function_history__compute(env: BuildEnv, graph: TargetGraph) -> tuple[tup
     ----------
     env
         Build environment with gateway and snapshot info.
+    graph
+        Target graph for manifest-driven skip checks.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...]
-        Row tuples matching FUNCTION_HISTORY_COLS schema.
+    tuple[tuple[object, ...], ...] | None
+        Row tuples matching FUNCTION_HISTORY_COLS schema, or None when skipped.
 
     Notes
     -----
@@ -104,8 +106,8 @@ def t__function_history(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    t__function_history__compute
-        Computed function history rows from the compute node.
+    m__analytics__function_history
+        Materialization metadata for analytics.function_history.
 
     Returns
     -------
@@ -146,6 +148,11 @@ def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], .
 
     Full multi-commit functionality is not yet wired into ``BuildEnv``, so this
     node currently returns an empty result set and succeeds.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...]
+        Empty row set until multi-commit configuration is available.
     """
     _ = env
     log.info(
@@ -161,7 +168,13 @@ def t__history_timeseries(
     graph: TargetGraph,
     m__analytics__history_timeseries: dict[str, Any],
 ) -> TargetRunRecord:
-    """Materialize history timeseries table to DuckDB."""
+    """Materialize history timeseries table to DuckDB.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,

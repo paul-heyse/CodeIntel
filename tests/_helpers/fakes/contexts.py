@@ -89,11 +89,12 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
+    from codeintel.build.plugin import TargetPlugin
+
     from codeintel.analytics.resources.catalog import FunctionCatalogProvider
     from codeintel.build.context import TargetResult
     from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
     from codeintel.build.parameters import TargetParameters
-    from codeintel.build.plugin import TargetPlugin
     from codeintel.build.providers import Providers
     from codeintel.core.execution import RunContext
     from codeintel.graphs.runtime import GraphRuntime

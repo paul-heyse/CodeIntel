@@ -214,11 +214,15 @@ class UnifiedSchemaProvider:
         """
         seen: set[str] = set()
 
-        # 1. Yield inferred schemas first (highest priority)
+        # 1. Yield cached inferred schemas first (highest priority).
+        #
+        # We intentionally do *not* trigger inference here. Iteration should be
+        # side-effect free; inference happens only when a caller explicitly asks
+        # for a table schema via `get_table_schema()` / `require_table_schema()`.
         for table_key in sorted(self.inferable_table_keys):
             if table_key in seen:
                 continue
-            schema = self.get_table_schema(table_key)
+            schema = self._cache.get(table_key)
             if schema is not None:
                 seen.add(table_key)
                 yield schema
@@ -262,7 +266,16 @@ def unified_schema_provider() -> UnifiedSchemaProvider:
 
     declared = declared_schema_provider()
     graph = _get_target_graph()
-    inferable = hamilton_mod.inferable_native_table_keys(graph=graph)
+
+    declared_keys = {schema.table_key for schema in declared.iter_table_schemas()}
+    target_declared_keys = {
+        schema.table_key for target in graph.all_targets for schema in target.contract.tables
+    }
+    inferable = frozenset(
+        key
+        for key in hamilton_mod.inferable_native_table_keys(graph=graph)
+        if key not in declared_keys and key not in target_declared_keys
+    )
 
     return UnifiedSchemaProvider(
         declared=declared,

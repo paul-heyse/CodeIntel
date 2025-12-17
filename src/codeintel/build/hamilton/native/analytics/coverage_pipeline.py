@@ -38,7 +38,7 @@ from codeintel.core.catalog import CatalogService
 
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
 # -----------------------------------------------------------------------------
@@ -81,7 +81,13 @@ def t__coverage_functions__compute(
     q__core__goids: ir.Table,
     q__analytics__coverage_lines: ir.Table,
 ) -> ir.Table:
-    """Compute per-function coverage metrics from GOIDs and coverage lines."""
+    """Compute per-function coverage metrics from GOIDs and coverage lines.
+
+    Returns
+    -------
+    ir.Table
+        Ibis expression producing coverage functions rows.
+    """
     return build_coverage_functions_expr_from_tables(
         q__core__goids,
         q__analytics__coverage_lines,
@@ -95,7 +101,13 @@ def t__coverage_functions(
     graph: TargetGraph,
     m__analytics__coverage_functions: dict[str, Any],
 ) -> TargetRunRecord:
-    """Convert materialization metadata to a TargetRunRecord."""
+    """Convert materialization metadata to a TargetRunRecord.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,
@@ -308,10 +320,10 @@ def t__behavioral_coverage(
 __all__ = [
     "BehavioralCoverageResult",
     "CoverageTestEdgesResult",
-    "t__coverage_functions",
-    "t__coverage_functions__compute",
     "t__behavioral_coverage",
     "t__behavioral_coverage__compute",
+    "t__coverage_functions",
+    "t__coverage_functions__compute",
     "t__coverage_test_edges",
     "t__coverage_test_edges__compute",
 ]

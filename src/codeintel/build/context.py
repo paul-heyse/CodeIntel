@@ -28,22 +28,22 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from pandera.errors import SchemaError, SchemaErrors
 
 from codeintel.build.errors import ColumnCountMismatchError, SchemaNotFoundError
-from codeintel.build.context_base import BuildContext
 from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.result import TargetResult
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from pathlib import Path
 
     import pandas as pd
 
+    from codeintel.build.context_base import BuildContext
     from codeintel.build.contracts import OutputContract, TableSchema
     from codeintel.build.parameters import TargetParameters
     from codeintel.build.protocols import (
@@ -459,7 +459,7 @@ class TargetExecutionContext:
             "Writing %d rows to %s (gateway=%s)",
             len(rows),
             table_key,
-            True,
+            type(self.gateway).__name__,
         )
 
     def write_validated_table(

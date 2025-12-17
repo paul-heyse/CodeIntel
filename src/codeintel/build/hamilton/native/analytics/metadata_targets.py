@@ -25,19 +25,19 @@ from codeintel.analytics.compute.data_models import (
     DATA_MODEL_USAGE_COLS,
     build_data_model_usage_rows,
 )
-from codeintel.analytics.profiles import (
-    build_file_profile,
-    build_function_profile,
-    build_module_profile,
-)
 from codeintel.analytics.data_models.compute import DataModelsResult, compute_data_models_pure
 from codeintel.analytics.data_models.core import (
     DATA_MODEL_FIELDS_COLS,
     DATA_MODEL_RELATIONSHIPS_COLS,
     DATA_MODELS_COLS,
 )
-from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.analytics.profiles import (
+    build_file_profile,
+    build_function_profile,
+    build_module_profile,
+)
+from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.utilities.datasets import (
     get_function_ast_features_contract,
     insert_analytics_rows,
@@ -47,11 +47,11 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -79,6 +79,8 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
     ----------
     env
         Build environment with gateway and snapshot info.
+    graph
+        Target graph for manifest-driven skip checks.
 
     Returns
     -------
@@ -122,7 +124,13 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
 def data_models__model_rows(
     t__data_models__compute: DataModelsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.data_models."""
+    """Extract rows for analytics.data_models.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when skipped.
+    """
     if t__data_models__compute is None:
         return None
     return tuple(t__data_models__compute.model_rows)
@@ -141,7 +149,13 @@ def data_models__model_rows(
 def data_models__field_rows(
     t__data_models__compute: DataModelsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.data_model_fields."""
+    """Extract rows for analytics.data_model_fields.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when skipped.
+    """
     if t__data_models__compute is None:
         return None
     return tuple(t__data_models__compute.field_rows)
@@ -165,7 +179,13 @@ def data_models__field_rows(
 def data_models__relationship_rows(
     t__data_models__compute: DataModelsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.data_model_relationships."""
+    """Extract rows for analytics.data_model_relationships.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when skipped.
+    """
     if t__data_models__compute is None:
         return None
     return tuple(t__data_models__compute.relationship_rows)
@@ -190,8 +210,12 @@ def t__data_models(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    t__data_models__compute
-        Computed data models from the compute node.
+    m__analytics__data_models
+        Materialization metadata for analytics.data_models.
+    m__analytics__data_model_fields
+        Materialization metadata for analytics.data_model_fields.
+    m__analytics__data_model_relationships
+        Materialization metadata for analytics.data_model_relationships.
 
     Returns
     -------
@@ -242,6 +266,8 @@ def t__data_model_usage__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
+    graph
+        Target graph for manifest-driven skip checks.
 
     Returns
     -------
@@ -300,8 +326,8 @@ def t__data_model_usage(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    t__data_model_usage__compute
-        Computed row tuples for analytics.data_model_usage.
+    m__analytics__data_model_usage
+        Materialization metadata for analytics.data_model_usage.
 
     Returns
     -------
@@ -332,7 +358,13 @@ class AstFeaturesResult:
 
 @tag(domain="analytics", target="function_ast_features", node_type="compute")
 def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
-    """Compute AST-derived semantic features for functions."""
+    """Compute AST-derived semantic features for functions.
+
+    Returns
+    -------
+    AstFeaturesResult
+        Feature map and optional error message.
+    """
     try:
         catalog = CatalogService.from_db(
             env.gateway,
@@ -363,7 +395,13 @@ def t__function_ast_features(
     graph: TargetGraph,
     t__function_ast_features__compute: AstFeaturesResult,
 ) -> TargetRunRecord:
-    """Materialize function AST features to DuckDB."""
+    """Materialize function AST features to DuckDB.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "function_ast_features")
 
     if executor.should_skip():
@@ -425,7 +463,13 @@ def t__profiles__compute(
     t__call_graph: TargetRunRecord,
     t__symbol_uses: TargetRunRecord,
 ) -> ProfilesResult:
-    """Build aggregated profiles for functions, files, and modules."""
+    """Build aggregated profiles for functions, files, and modules.
+
+    Returns
+    -------
+    ProfilesResult
+        Status indicator and optional error message.
+    """
     if t__call_graph.status != "succeeded":
         return ProfilesResult(
             success=False,
@@ -478,7 +522,13 @@ def t__profiles(
     graph: TargetGraph,
     t__profiles__compute: ProfilesResult,
 ) -> TargetRunRecord:
-    """Materialize profiles target."""
+    """Materialize profiles target.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "profiles")
 
     if executor.should_skip():

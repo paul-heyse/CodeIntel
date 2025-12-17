@@ -18,6 +18,21 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from codeintel.serving.semantic.models import SemanticQueryResponse
 
+
+def _pydantic_runtime_types() -> tuple[type[object], ...]:
+    """Return runtime types used in Pydantic annotations.
+
+    This helper ensures types like ``datetime`` and ``SemanticQueryResponse`` are
+    treated as runtime dependencies (not type-checking-only) so that Pydantic
+    can resolve annotations without requiring explicit model rebuild calls.
+
+    Returns
+    -------
+    tuple[type[object], ...]
+        Runtime types referenced by model annotations.
+    """
+    return (datetime, SemanticQueryResponse)
+
 # =============================================================================
 # URI / ID Primitives (Annotated types with validation + documentation)
 # =============================================================================

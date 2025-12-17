@@ -11,7 +11,6 @@ Both targets use DAG-visible I/O via Hamilton saver nodes.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -19,10 +18,7 @@ from hamilton.function_modifiers import source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.semantic_roles import SemanticRolesResult, build_semantic_roles_rows
-from codeintel.analytics.testing.profiles.builder import (
-    TestProfileBuildResult,
-    build_test_profile_result,
-)
+from codeintel.analytics.testing.profiles.builder import build_test_profile_result
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
@@ -37,8 +33,11 @@ from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.parsing.ast_cache import FunctionAst
+    from codeintel.analytics.testing.profiles.builder import TestProfileBuildResult
 
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, SemanticRolesResult)
@@ -266,8 +265,8 @@ def t__semantic_roles(
 __all__ = [
     "SEMANTIC_ROLES_FUNCTIONS_COLS",
     "SEMANTIC_ROLES_MODULES_COLS",
-    "SemanticRolesResult",
     "TEST_PROFILE_COLS",
+    "SemanticRolesResult",
     "TestProfileComputeResult",
     "semantic_roles__functions_rows",
     "semantic_roles__modules_rows",
@@ -345,7 +344,13 @@ def t__test_profile__compute(
     env: BuildEnv,
     t__coverage_test_edges: TargetRunRecord,
 ) -> TestProfileComputeResult:
-    """Build per-test profiles with coverage and subsystem context."""
+    """Build per-test profiles with coverage and subsystem context.
+
+    Returns
+    -------
+    TestProfileComputeResult
+        Computed profile rows and optional error message.
+    """
     if t__coverage_test_edges.status != "succeeded":
         return TestProfileComputeResult(
             result=None,
@@ -376,7 +381,13 @@ def t__test_profile__compute(
 def test_profile__rows(
     t__test_profile__compute: TestProfileComputeResult,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.test_profile table."""
+    """Extract rows for analytics.test_profile table.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when computation produced no rows.
+    """
     if t__test_profile__compute.result is None:
         return None
     if t__test_profile__compute.result.rows is None:
@@ -394,7 +405,13 @@ def t__test_profile(
     t__test_profile__compute: TestProfileComputeResult,
     m__analytics__test_profile: dict[str, Any],
 ) -> TargetRunRecord:
-    """Materialize test profile target."""
+    """Materialize test profile target.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     if t__test_profile__compute.error:
         return TargetRunRecord(
             target="test_profile",

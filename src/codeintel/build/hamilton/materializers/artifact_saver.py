@@ -55,6 +55,8 @@ class FileArtifactSaver(DataSaver):
     target_name: str
     artifact_name: str
 
+    _hamilton_runtime_types = (BuildEnv, TargetGraph)
+
     @classmethod
     def name(cls) -> str:
         """Return a stable name for this saver adapter.
@@ -163,8 +165,12 @@ class FileArtifactSaver(DataSaver):
                         self.env, self.graph, self.target_name, self.artifact_name
                     )
                     if output_path is None:
-                        msg = f"Artifact path could not be resolved: {self.artifact_name}"
-                        raise ValueError(msg)
+                        return _failed(
+                            artifact_name=self.artifact_name,
+                            duration_ms=_duration_ms(start),
+                            input_hash=input_hash,
+                            error=f"Artifact path could not be resolved: {self.artifact_name}",
+                        )
 
                     # Validate contract if strict mode is enabled
                     ContractEnforcer.validate_artifact_write(self.artifact_name)
@@ -173,11 +179,19 @@ class FileArtifactSaver(DataSaver):
                         size_bytes = output_path.stat().st_size
                         _record_asset(
                             env=self.env,
-                            artifact_name=self.artifact_name,
-                            owner_target=self.target_name,
-                            input_hash=input_hash,
-                            size_bytes=size_bytes,
-                            path=output_path,
+                            record=AssetRecord(
+                                asset_key=self.artifact_name,
+                                asset_type="artifact",
+                                repo=self.env.snapshot.repo,
+                                commit=self.env.snapshot.commit,
+                                owner_target=self.target_name,
+                                file_size_bytes=size_bytes,
+                                input_hash=input_hash,
+                                metadata={
+                                    "path": str(output_path),
+                                    "size_bytes": size_bytes,
+                                },
+                            ),
                         )
                         result = _succeeded(
                             artifact_name=self.artifact_name,
@@ -191,11 +205,19 @@ class FileArtifactSaver(DataSaver):
                         _atomic_write(output_path, content_bytes)
                         _record_asset(
                             env=self.env,
-                            artifact_name=self.artifact_name,
-                            owner_target=self.target_name,
-                            input_hash=input_hash,
-                            size_bytes=len(content_bytes),
-                            path=output_path,
+                            record=AssetRecord(
+                                asset_key=self.artifact_name,
+                                asset_type="artifact",
+                                repo=self.env.snapshot.repo,
+                                commit=self.env.snapshot.commit,
+                                owner_target=self.target_name,
+                                file_size_bytes=len(content_bytes),
+                                input_hash=input_hash,
+                                metadata={
+                                    "path": str(output_path),
+                                    "size_bytes": len(content_bytes),
+                                },
+                            ),
                         )
 
                         result = _succeeded(
@@ -348,27 +370,9 @@ def _atomic_write(output_path: Path, content: bytes) -> None:
 def _record_asset(
     *,
     env: BuildEnv,
-    artifact_name: str,
-    owner_target: str,
-    input_hash: str,
-    size_bytes: int,
-    path: Path,
+    record: AssetRecord,
 ) -> None:
-    env.gateway.assets.record_asset(
-        AssetRecord(
-            asset_key=artifact_name,
-            asset_type="artifact",
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-            owner_target=owner_target,
-            file_size_bytes=size_bytes,
-            input_hash=input_hash,
-            metadata={
-                "path": str(path),
-                "size_bytes": size_bytes,
-            },
-        )
-    )
+    env.gateway.assets.record_asset(record)
 
 
 __all__ = [

@@ -1,5 +1,4 @@
-"""Central parsing and span resolution utilities for analytics.
-"""
+"""Central parsing and span resolution utilities for analytics."""
 
 from __future__ import annotations
 

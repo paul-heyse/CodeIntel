@@ -17,10 +17,9 @@ Phase 4: Analytics domain migration with Hamilton-native DAG-visible I/O.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from hamilton.function_modifiers import source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
@@ -44,6 +43,9 @@ from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 from codeintel.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
@@ -330,7 +332,13 @@ def t__function_effects__compute(
     graph: TargetGraph,
     t__call_graph: TargetRunRecord,
 ) -> FunctionEffectsResult:
-    """Compute side effects classification for functions."""
+    """Compute side effects classification for functions.
+
+    Returns
+    -------
+    FunctionEffectsResult
+        Computed rows and optional error message.
+    """
     if t__call_graph.status != "succeeded":
         return FunctionEffectsResult(
             rows=None,
@@ -412,7 +420,13 @@ def t__function_effects__compute(
 def function_effects__rows(
     t__function_effects__compute: FunctionEffectsResult,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.function_effects."""
+    """Extract rows for analytics.function_effects.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when computation produced no rows.
+    """
     if t__function_effects__compute.rows is None:
         return None
     return tuple(
@@ -427,7 +441,13 @@ def t__function_effects(
     graph: TargetGraph,
     m__analytics__function_effects: dict[str, Any],
 ) -> TargetRunRecord:
-    """Materialize function effects target."""
+    """Materialize function effects target.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     return record_from_duckdb_materialization(
         env=env,
         graph=graph,

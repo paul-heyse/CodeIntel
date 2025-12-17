@@ -8,12 +8,10 @@ Hamilton's ``@subdag`` decorator and executed end-to-end.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, cast
 
 import hamilton.driver as h_driver
-import ibis.expr.types as ir
 import pandas as pd
 from hamilton.function_modifiers import source, subdag, tag, value
 
@@ -21,13 +19,23 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.templates import ibis_pipeline
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
-from codeintel.hamilton.records import TargetRunRecord
+from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.build import make_build_config, make_build_paths
 from tests._helpers.fakes.fake_providers import FakeProviders
 
 if TYPE_CHECKING:
+    from pathlib import Path
+    from typing import Protocol
+
+    import ibis.expr.types as ir
+
     from codeintel.build.providers import Providers
+    from codeintel.hamilton.records import TargetRunRecord
     from codeintel.storage.gateway import StorageGateway
+
+    class _EphemeralModule(Protocol):
+        t__modules__compute: object
+        t__modules: object
 
 
 def _make_env(*, gateway: StorageGateway, snapshot: SnapshotRef) -> BuildEnv:
@@ -63,7 +71,13 @@ def _build_module() -> ModuleType:
 
     @tag(domain="ingestion", target="modules", node_type="compute")
     def t__modules__compute(env: BuildEnv) -> ir.Table:
-        """Return a temporary Ibis table expression for materialization."""
+        """Return a temporary Ibis table expression for materialization.
+
+        Returns
+        -------
+        ir.Table
+            Ibis expression backed by the registered ``tmp_modules`` relation.
+        """
         return env.gateway.ibis.con.table("tmp_modules")
 
     @tag(domain="ingestion", target="modules", node_type="materialize")
@@ -78,7 +92,13 @@ def _build_module() -> ModuleType:
         },
     )
     def t__modules(record: TargetRunRecord) -> TargetRunRecord:
-        """Return the subDAG-produced record."""
+        """Return the subDAG-produced record.
+
+        Returns
+        -------
+        TargetRunRecord
+            Target execution record produced by the subDAG pipeline.
+        """
         return record
 
     # Hamilton discovers callables from the module; ensure the functions appear to
@@ -86,8 +106,9 @@ def _build_module() -> ModuleType:
     t__modules__compute.__module__ = mod.__name__
     t__modules.__module__ = mod.__name__
 
-    mod.t__modules__compute = t__modules__compute
-    mod.t__modules = t__modules
+    module_namespace = cast("_EphemeralModule", mod)
+    module_namespace.t__modules__compute = t__modules__compute
+    module_namespace.t__modules = t__modules
     return mod
 
 
@@ -126,21 +147,19 @@ def test_phase2_ibis_pipeline_template_executes(
         ]
     )
     fresh_gateway.con.register("tmp_modules", df)
+    expected_row_count = len(df)
 
     driver = h_driver.Builder().with_modules(module).build()
     results = driver.execute(["t__modules"], inputs={"env": env, "graph": graph})
     record = cast("TargetRunRecord", results["t__modules"])
 
-    if record.status != "succeeded":
-        raise AssertionError(f"Expected succeeded record, got {record.status}: {record.error}")
-    if record.row_counts.get("core.modules") != 2:
-        raise AssertionError(f"Expected row count 2, got {record.row_counts}")
+    expect_equal(record.status, expected="succeeded", label=f"record.error={record.error}")
+    expect_equal(record.row_counts.get("core.modules"), expected=expected_row_count)
 
     row = fresh_gateway.con.execute(
         "SELECT COUNT(*) FROM core.modules WHERE repo=? AND commit=?",
         [repo, commit],
     ).fetchone()
-    if row is None:
-        raise AssertionError("Expected COUNT(*) query to return a row")
-    if int(row[0]) != 2:
-        raise AssertionError(f"Expected 2 rows in core.modules, got {row[0]}")
+    expect_true(row is not None, message="Expected COUNT(*) query to return a row")
+    row_tuple = cast("tuple[int, ...]", row)
+    expect_equal(row_tuple[0], expected_row_count)

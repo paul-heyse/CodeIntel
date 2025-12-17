@@ -18,9 +18,22 @@ import networkx as nx
 from hamilton.function_modifiers import source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
+from codeintel.analytics.cfg_dfg.compute import (
+    CfgMetricsResult,
+    DfgMetricsResult,
+    compute_cfg_metrics_pure,
+    compute_dfg_metrics_pure,
+)
+from codeintel.analytics.cfg_dfg.materialize import (
+    CFG_BLOCK_METRICS_COLS,
+    CFG_FUNCTION_METRICS_COLS,
+    CFG_FUNCTION_METRICS_EXT_COLS,
+    DFG_BLOCK_METRICS_COLS,
+    DFG_FUNCTION_METRICS_COLS,
+    DFG_FUNCTION_METRICS_EXT_COLS,
+)
 from codeintel.analytics.graphs.config_data_flow import (
     CONFIG_DATA_FLOW_COLS,
-    ConfigDataFlowResult,
     compute_config_data_flow_result,
 )
 from codeintel.analytics.graphs.config_graph_metrics import (
@@ -28,7 +41,6 @@ from codeintel.analytics.graphs.config_graph_metrics import (
     CONFIG_GRAPH_METRICS_MODULES_COLS,
     CONFIG_PROJECTION_KEY_EDGES_COLS,
     CONFIG_PROJECTION_MODULE_EDGES_COLS,
-    ConfigGraphMetricsResult,
     compute_config_graph_metrics_result,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
@@ -44,22 +56,10 @@ from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 from codeintel.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.hamilton.records import TargetRunRecord
-from codeintel.analytics.cfg_dfg.compute import (
-    CfgMetricsResult,
-    DfgMetricsResult,
-    compute_cfg_metrics_pure,
-    compute_dfg_metrics_pure,
-)
-from codeintel.analytics.cfg_dfg.materialize import (
-    CFG_BLOCK_METRICS_COLS,
-    CFG_FUNCTION_METRICS_COLS,
-    CFG_FUNCTION_METRICS_EXT_COLS,
-    DFG_BLOCK_METRICS_COLS,
-    DFG_FUNCTION_METRICS_COLS,
-    DFG_FUNCTION_METRICS_EXT_COLS,
-)
 
 if TYPE_CHECKING:
+    from codeintel.analytics.graphs.config_data_flow import ConfigDataFlowResult
+    from codeintel.analytics.graphs.config_graph_metrics import ConfigGraphMetricsResult
     from codeintel.analytics.parsing.ast_cache import FunctionAst
 
 log = logging.getLogger(__name__)
@@ -463,7 +463,13 @@ _CFG_DFG_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, CfgMetricsResult,
 
 @tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute")
 def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMetricsResult | None:
-    """Compute CFG metrics for all functions in the snapshot."""
+    """Compute CFG metrics for all functions in the snapshot.
+
+    Returns
+    -------
+    CfgMetricsResult | None
+        Computed metrics, or None when the target is skipped.
+    """
     target = graph.get("cfg_dfg_metrics")
     if target is not None:
         input_hash = compute_input_hash(
@@ -484,7 +490,13 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMet
 
 @tag(domain="analytics", target="cfg_dfg_metrics", node_type="compute")
 def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMetricsResult | None:
-    """Compute DFG metrics for all functions in the snapshot."""
+    """Compute DFG metrics for all functions in the snapshot.
+
+    Returns
+    -------
+    DfgMetricsResult | None
+        Computed metrics, or None when the target is skipped.
+    """
     target = graph.get("cfg_dfg_metrics")
     if target is not None:
         input_hash = compute_input_hash(
@@ -516,7 +528,13 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMet
 def cfg_function_metrics__rows(
     t__cfg_dfg_metrics__compute_cfg: CfgMetricsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.cfg_function_metrics."""
+    """Extract rows for analytics.cfg_function_metrics.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when the target is skipped.
+    """
     if t__cfg_dfg_metrics__compute_cfg is None:
         return None
     return tuple(t__cfg_dfg_metrics__compute_cfg.fn_rows)
@@ -535,7 +553,13 @@ def cfg_function_metrics__rows(
 def cfg_block_metrics__rows(
     t__cfg_dfg_metrics__compute_cfg: CfgMetricsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.cfg_block_metrics."""
+    """Extract rows for analytics.cfg_block_metrics.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when the target is skipped.
+    """
     if t__cfg_dfg_metrics__compute_cfg is None:
         return None
     return tuple(t__cfg_dfg_metrics__compute_cfg.block_rows)
@@ -559,7 +583,13 @@ def cfg_block_metrics__rows(
 def cfg_function_metrics_ext__rows(
     t__cfg_dfg_metrics__compute_cfg: CfgMetricsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.cfg_function_metrics_ext."""
+    """Extract rows for analytics.cfg_function_metrics_ext.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when the target is skipped.
+    """
     if t__cfg_dfg_metrics__compute_cfg is None:
         return None
     return tuple(t__cfg_dfg_metrics__compute_cfg.ext_rows)
@@ -578,7 +608,13 @@ def cfg_function_metrics_ext__rows(
 def dfg_function_metrics__rows(
     t__cfg_dfg_metrics__compute_dfg: DfgMetricsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.dfg_function_metrics."""
+    """Extract rows for analytics.dfg_function_metrics.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when the target is skipped.
+    """
     if t__cfg_dfg_metrics__compute_dfg is None:
         return None
     return tuple(t__cfg_dfg_metrics__compute_dfg.fn_rows)
@@ -597,7 +633,13 @@ def dfg_function_metrics__rows(
 def dfg_block_metrics__rows(
     t__cfg_dfg_metrics__compute_dfg: DfgMetricsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.dfg_block_metrics."""
+    """Extract rows for analytics.dfg_block_metrics.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when the target is skipped.
+    """
     if t__cfg_dfg_metrics__compute_dfg is None:
         return None
     return tuple(t__cfg_dfg_metrics__compute_dfg.block_rows)
@@ -621,36 +663,93 @@ def dfg_block_metrics__rows(
 def dfg_function_metrics_ext__rows(
     t__cfg_dfg_metrics__compute_dfg: DfgMetricsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.dfg_function_metrics_ext."""
+    """Extract rows for analytics.dfg_function_metrics_ext.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples to materialize, or None when the target is skipped.
+    """
     if t__cfg_dfg_metrics__compute_dfg is None:
         return None
     return tuple(t__cfg_dfg_metrics__compute_dfg.ext_rows)
+
+
+@tag(domain="analytics", target="cfg_dfg_metrics", node_type="helper")
+def cfg_dfg_metrics__cfg_materializations(
+    m__analytics__cfg_function_metrics: dict[str, Any],
+    m__analytics__cfg_block_metrics: dict[str, Any],
+    m__analytics__cfg_function_metrics_ext: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Collect CFG materialization payloads for cfg_dfg_metrics.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Materialization metadata keyed by table key.
+    """
+    return {
+        "analytics.cfg_function_metrics": m__analytics__cfg_function_metrics,
+        "analytics.cfg_block_metrics": m__analytics__cfg_block_metrics,
+        "analytics.cfg_function_metrics_ext": m__analytics__cfg_function_metrics_ext,
+    }
+
+
+@tag(domain="analytics", target="cfg_dfg_metrics", node_type="helper")
+def cfg_dfg_metrics__dfg_materializations(
+    m__analytics__dfg_function_metrics: dict[str, Any],
+    m__analytics__dfg_block_metrics: dict[str, Any],
+    m__analytics__dfg_function_metrics_ext: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Collect DFG materialization payloads for cfg_dfg_metrics.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Materialization metadata keyed by table key.
+    """
+    return {
+        "analytics.dfg_function_metrics": m__analytics__dfg_function_metrics,
+        "analytics.dfg_block_metrics": m__analytics__dfg_block_metrics,
+        "analytics.dfg_function_metrics_ext": m__analytics__dfg_function_metrics_ext,
+    }
+
+
+@tag(domain="analytics", target="cfg_dfg_metrics", node_type="helper")
+def cfg_dfg_metrics__materializations(
+    cfg_dfg_metrics__cfg_materializations: dict[str, dict[str, Any]],
+    cfg_dfg_metrics__dfg_materializations: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Collect cfg_dfg_metrics materialization payloads into a single mapping.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Materialization metadata keyed by table key.
+    """
+    materializations = dict(cfg_dfg_metrics__cfg_materializations)
+    materializations.update(cfg_dfg_metrics__dfg_materializations)
+    return materializations
 
 
 @tag(domain="analytics", target="cfg_dfg_metrics", node_type="materialize")
 def t__cfg_dfg_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__cfg_function_metrics: dict[str, Any],
-    m__analytics__cfg_block_metrics: dict[str, Any],
-    m__analytics__cfg_function_metrics_ext: dict[str, Any],
-    m__analytics__dfg_function_metrics: dict[str, Any],
-    m__analytics__dfg_block_metrics: dict[str, Any],
-    m__analytics__dfg_function_metrics_ext: dict[str, Any],
+    cfg_dfg_metrics__materializations: dict[str, dict[str, Any]],
 ) -> TargetRunRecord:
-    """Materialize cfg_dfg_metrics tables to DuckDB."""
+    """Materialize cfg_dfg_metrics tables to DuckDB.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     return record_from_duckdb_materializations(
         env=env,
         graph=graph,
         target_name="cfg_dfg_metrics",
-        materializations={
-            "analytics.cfg_function_metrics": m__analytics__cfg_function_metrics,
-            "analytics.cfg_block_metrics": m__analytics__cfg_block_metrics,
-            "analytics.cfg_function_metrics_ext": m__analytics__cfg_function_metrics_ext,
-            "analytics.dfg_function_metrics": m__analytics__dfg_function_metrics,
-            "analytics.dfg_block_metrics": m__analytics__dfg_block_metrics,
-            "analytics.dfg_function_metrics_ext": m__analytics__dfg_function_metrics_ext,
-        },
+        materializations=cfg_dfg_metrics__materializations,
     )
 
 

@@ -9,18 +9,21 @@ from __future__ import annotations
 import asyncio
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.serving.http.routes import router as http_router
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.search.models import SearchQueryResponse
 from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryResponse
+from codeintel.serving.settings import ServingSettings
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Iterator, Mapping
 
+    from codeintel.serving.db.manager import ServingDBManager
     from codeintel.serving.search.models import SearchQueryRequest
-    from codeintel.serving.semantic.models import SemanticQueryRequest
+    from codeintel.serving.semantic.models import SemanticExportRequest, SemanticQueryRequest
 
 
 EXPECTED_MCP_TOOL_NAMES: frozenset[str] = frozenset(
@@ -29,6 +32,7 @@ EXPECTED_MCP_TOOL_NAMES: frozenset[str] = frozenset(
         "semantic_catalog",
         "semantic_describe",
         "semantic_explain",
+        "semantic_export",
         "semantic_query",
         "serving_meta",
     }
@@ -60,6 +64,11 @@ class OperationContractsError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class _DummyKernel:
+    @property
+    def db(self) -> ServingDBManager:
+        msg = "_DummyKernel has no ServingDBManager"
+        raise RuntimeError(msg)
+
     @staticmethod
     def catalog() -> dict[str, object]:
         return {"version": "v1", "snapshot": {}, "views": []}
@@ -101,6 +110,11 @@ class _DummyKernel:
     def meta() -> dict[str, object]:
         return {"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"}
 
+    @staticmethod
+    def export_rows(request: SemanticExportRequest) -> Iterator[dict[str, object]]:
+        _ = request
+        return iter(())
+
 
 def _check_semantic_http_routes() -> list[str]:
     issues: list[str] = []
@@ -135,16 +149,28 @@ def _get_required_fields(schema: Mapping[str, object]) -> frozenset[str]:
     return frozenset(item for item in raw if isinstance(item, str))
 
 
+def _get_tool_input_schema(tool: object) -> Mapping[str, object] | None:
+    schema = getattr(tool, "inputSchema", None)
+    if isinstance(schema, dict):
+        return schema
+
+    schema = getattr(tool, "parameters", None)
+    if isinstance(schema, dict):
+        return schema
+
+    return None
+
+
 def _check_mcp_tool_schema(tool: object, *, name: str) -> list[str]:
     issues: list[str] = []
-    schema = getattr(tool, "inputSchema", None)
-    if not isinstance(schema, dict):
-        issues.append(f"MCP tool {name} has no inputSchema dict")
+    schema = _get_tool_input_schema(tool)
+    if schema is None:
+        issues.append(f"MCP tool {name} has no JSON schema for parameters")
         return issues
 
     required = _get_required_fields(schema)
     if (
-        name in {"semantic_describe", "semantic_explain", "semantic_query"}
+        name in {"semantic_describe", "semantic_explain", "semantic_export", "semantic_query"}
         and "view_id" not in required
     ):
         issues.append(f"MCP tool {name} must require view_id")
@@ -168,9 +194,14 @@ def _check_mcp_tool_schema(tool: object, *, name: str) -> list[str]:
 
 async def _check_mcp_tools() -> list[str]:
     issues: list[str] = []
-    mcp = build_mcp_app(kernel=_DummyKernel())
-    tools = await mcp.list_tools()
-    tool_names = {tool.name for tool in tools}
+    settings = ServingSettings(serve_dir=Path.cwd() / "build" / "operation-contracts")
+    mcp = build_mcp_app(
+        kernel=_DummyKernel(),
+        settings=settings,
+    )
+    tool_map = await mcp.get_tools()
+    tools = list(tool_map.values())
+    tool_names = set(tool_map)
 
     missing = EXPECTED_MCP_TOOL_NAMES - tool_names
     if missing:
@@ -181,8 +212,9 @@ async def _check_mcp_tools() -> list[str]:
         issues.append(f"Unexpected MCP tools: {sorted(extra)}")
 
     for tool in tools:
-        if tool.name in EXPECTED_MCP_TOOL_NAMES:
-            issues.extend(_check_mcp_tool_schema(tool, name=tool.name))
+        name = getattr(tool, "name", None)
+        if isinstance(name, str) and name in EXPECTED_MCP_TOOL_NAMES:
+            issues.extend(_check_mcp_tool_schema(tool, name=name))
 
     return issues
 

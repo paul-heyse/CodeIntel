@@ -24,9 +24,9 @@ from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import (
-    filter_mapping,
     filter_paths,
     get_source_root,
+    is_test_path,
     persist_rows,
 )
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 LOG = log
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
 @dataclass(frozen=True)
@@ -510,7 +510,13 @@ def _load_symbol_occurrences(
     repo: str,
     commit: str,
 ) -> list[symbols_compute.SymbolOccurrence]:
-    """Load SCIP symbol occurrences from database."""
+    """Load SCIP symbol occurrences from database.
+
+    Returns
+    -------
+    list[symbols_compute.SymbolOccurrence]
+        Parsed symbol occurrences for the snapshot.
+    """
     try:
         scip_tbl = gateway.ibis.table("core.scip_occurrences")
         expr = scip_tbl.filter(
@@ -537,7 +543,13 @@ def _load_module_map(
     repo: str,
     commit: str,
 ) -> dict[str, str]:
-    """Load module name by path mapping."""
+    """Load module name by path mapping.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of normalized relative paths to module names.
+    """
     try:
         modules_tbl = gateway.ibis.table("core.modules")
         expr = modules_tbl.filter(
@@ -558,7 +570,13 @@ def _load_path_to_goid_map(
     repo: str,
     commit: str,
 ) -> dict[str, int]:
-    """Load GOID by path mapping."""
+    """Load GOID by path mapping.
+
+    Returns
+    -------
+    dict[str, int]
+        Mapping of normalized relative paths to module GOIDs.
+    """
     try:
         goids_tbl = gateway.ibis.table("core.goids")
         expr = goids_tbl.filter(
@@ -580,7 +598,13 @@ def _enrich_edges_with_goids(
     edges: list[symbols_compute.SymbolUseEdge],
     path_to_goid: dict[str, int],
 ) -> list[symbols_compute.SymbolUseEdge]:
-    """Enrich symbol use edges with GOIDs."""
+    """Enrich symbol use edges with GOIDs.
+
+    Returns
+    -------
+    list[symbols_compute.SymbolUseEdge]
+        New edges with GOID fields populated when available.
+    """
     enriched: list[symbols_compute.SymbolUseEdge] = []
     for edge in edges:
         def_goid = path_to_goid.get(edge.def_path)
@@ -599,6 +623,31 @@ def _enrich_edges_with_goids(
     return enriched
 
 
+@tag(node_type="helper")
+def _filter_symbol_occurrences(
+    occurrences: list[symbols_compute.SymbolOccurrence],
+    *,
+    options: SymbolUsesOptions,
+) -> list[symbols_compute.SymbolOccurrence]:
+    """Filter symbol occurrences by scope and test inclusion.
+
+    Returns
+    -------
+    list[symbols_compute.SymbolOccurrence]
+        Filtered occurrences.
+    """
+    filtered = list(occurrences)
+
+    if options.scope_paths:
+        prefixes = tuple(options.scope_paths)
+        filtered = [occ for occ in filtered if occ.rel_path.startswith(prefixes)]
+
+    if not options.include_tests:
+        filtered = [occ for occ in filtered if not is_test_path(occ.rel_path)]
+
+    return filtered
+
+
 @tag(domain="graphs", target="symbol_uses", node_type="compute")
 def t__symbol_uses__extract(
     env: BuildEnv,
@@ -606,7 +655,13 @@ def t__symbol_uses__extract(
     t__modules: TargetRunRecord,
     t__goids: TargetRunRecord,
 ) -> SymbolUsesExtractResult:
-    """Execute symbol use extraction from SCIP data."""
+    """Execute symbol use extraction from SCIP data.
+
+    Returns
+    -------
+    SymbolUsesExtractResult
+        Status and per-table row counts for extracted edges.
+    """
     for name, record in [("scip", t__scip), ("modules", t__modules), ("goids", t__goids)]:
         if record.status != "succeeded":
             return SymbolUsesExtractResult(
@@ -626,32 +681,21 @@ def t__symbol_uses__extract(
             log.info("symbol_uses: No SCIP occurrences found, skipping")
             return SymbolUsesExtractResult(success=True, edge_count=0, table_counts={})
 
-        occurrences = filter_mapping(
-            occurrences,
-            max_items=opts.max_occurrences,
-            sample=opts.sample_occurrences,
-        )
+        occurrences = _filter_symbol_occurrences(occurrences, options=opts)
 
         module_map = _load_module_map(gateway, repo, commit)
         path_to_goid = _load_path_to_goid_map(gateway, repo, commit)
 
-        edges = symbols_compute.build_symbol_use_edges(
+        def_map = symbols_compute.build_def_map(occurrences)
+        edges = symbols_compute.build_use_edges(
             occurrences,
-            module_map=module_map,
-            max_edges=opts.max_edges,
+            def_map=def_map,
+            module_by_path=module_map,
         )
 
         enriched_edges = _enrich_edges_with_goids(edges, path_to_goid)
-        rows = [edge.to_row(repo, commit) for edge in enriched_edges]
-
-        persist_rows(
-            env.gateway,
-            "graph.symbol_use_edges",
-            rows,
-            replace=True,
-        )
-
-        row_count = len(rows)
+        rows = symbols_compute.edges_to_rows(enriched_edges)
+        row_count = persist_rows(env.gateway, "graph.symbol_use_edges", rows, repo=repo, commit=commit)
         return SymbolUsesExtractResult(
             success=True,
             edge_count=row_count,
@@ -668,7 +712,13 @@ def t__symbol_uses(
     graph: TargetGraph,
     t__symbol_uses__extract: SymbolUsesExtractResult,
 ) -> TargetRunRecord:
-    """Materialize symbol_uses target."""
+    """Materialize symbol_uses target.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "symbol_uses")
 
     if executor.should_skip():
@@ -731,7 +781,13 @@ def call_graph_function_call_counts(
     env: BuildEnv,
     q__graph__call_graph_edges: ir.Table,
 ) -> ir.Table:
-    """Compute per-function call count statistics from call graph edges."""
+    """Compute per-function call count statistics from call graph edges.
+
+    Returns
+    -------
+    ir.Table
+        Ibis expression producing call count view rows.
+    """
     LOG.info("Computing function call counts from call graph")
 
     edges = q__graph__call_graph_edges.filter(
@@ -819,7 +875,13 @@ def call_graph_depth_stats(
     env: BuildEnv,
     q__graph__call_graph_edges: ir.Table,
 ) -> ir.Table:
-    """Compute call depth statistics (simplified version)."""
+    """Compute call depth statistics (simplified version).
+
+    Returns
+    -------
+    ir.Table
+        Ibis expression producing call depth view rows.
+    """
     LOG.info("Computing call depth stats from call graph")
 
     edges = q__graph__call_graph_edges.filter(
@@ -872,7 +934,13 @@ def t__call_graph_views(
     m__graph__v_function_call_counts: dict[str, Any],
     m__graph__v_call_depth_stats: dict[str, Any],
 ) -> TargetRunRecord:
-    """Materialize call graph view expressions to DuckDB."""
+    """Materialize call graph view expressions to DuckDB.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     LOG.info("Materializing call_graph_views to DuckDB")
 
     return record_from_duckdb_materializations(

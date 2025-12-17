@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetGraph
+    from codeintel.build.targets import OutputTarget, TargetGraph
 
 MaterializationStatus = Literal["succeeded", "skipped", "failed"]
 _MATERIALIZATION_STATUS: dict[str, MaterializationStatus] = {
@@ -254,7 +254,7 @@ def record_from_duckdb_materializations(
     env: BuildEnv,
     graph: TargetGraph,
     target_name: str,
-    materializations: dict[str, Mapping[str, object]],
+    materializations: Mapping[str, Mapping[str, object]],
 ) -> TargetRunRecord:
     """Build a TargetRunRecord from multiple DuckDB saver metadata dicts.
 
@@ -367,7 +367,7 @@ def record_from_file_artifact_materializations(
     env: BuildEnv,
     graph: TargetGraph,
     target_name: str,
-    materializations: dict[str, Mapping[str, object]],
+    materializations: Mapping[str, Mapping[str, object]],
 ) -> TargetRunRecord:
     """Build a TargetRunRecord from multiple file artifact saver metadata dicts.
 
@@ -403,31 +403,11 @@ def record_from_file_artifact_materializations(
             artifacts=(),
         )
 
-    parsed: dict[str, FileArtifactMaterializationResult] = {}
-    for expected_artifact_name in target.contract.artifact_names:
-        meta = materializations.get(expected_artifact_name)
-        if meta is None:
-            parsed[expected_artifact_name] = FileArtifactMaterializationResult(
-                status="failed",
-                artifact_name=expected_artifact_name,
-                path=None,
-                size_bytes=None,
-                duration_ms=0.0,
-                input_hash="",
-                error=f"Missing materialization metadata for artifact: {expected_artifact_name}",
-            )
-            continue
-        parsed[expected_artifact_name] = _parse_file_artifact_materialization(
-            meta,
-            default_artifact_name=expected_artifact_name,
-        )
-
-    statuses = {result.status for result in parsed.values()}
-    input_hash = next((result.input_hash for result in parsed.values() if result.input_hash), "")
-    duration_ms = sum(result.duration_ms for result in parsed.values())
+    parsed = _parse_expected_artifact_materializations(target, materializations)
+    statuses, input_hash, duration_ms = _summarize_file_artifact_results(parsed)
 
     if "failed" in statuses:
-        errors = [r.error for r in parsed.values() if r.status == "failed" and r.error]
+        errors = [result.error for result in parsed.values() if result.status == "failed" and result.error]
         message = errors[0] if errors else "One or more artifact writes failed"
         run = NativeRunInfo(
             input_hash=input_hash,
@@ -468,9 +448,54 @@ def record_from_file_artifact_materializations(
         input_hash,
         inputs=RunRecordInputs(env=env, run=run),
     )
+    record = _apply_file_artifact_results(record, parsed)
 
+    save_manifest(env, record)
+    return record
+
+
+def _parse_expected_artifact_materializations(
+    target: OutputTarget,
+    materializations: Mapping[str, Mapping[str, object]],
+) -> dict[str, FileArtifactMaterializationResult]:
+    parsed: dict[str, FileArtifactMaterializationResult] = {}
+    for expected_artifact_name in target.contract.artifact_names:
+        meta = materializations.get(expected_artifact_name)
+        if meta is None:
+            parsed[expected_artifact_name] = FileArtifactMaterializationResult(
+                status="failed",
+                artifact_name=expected_artifact_name,
+                path=None,
+                size_bytes=None,
+                duration_ms=0.0,
+                input_hash="",
+                error=f"Missing materialization metadata for artifact: {expected_artifact_name}",
+            )
+            continue
+
+        parsed[expected_artifact_name] = _parse_file_artifact_materialization(
+            meta,
+            default_artifact_name=expected_artifact_name,
+        )
+    return parsed
+
+
+def _summarize_file_artifact_results(
+    parsed: Mapping[str, FileArtifactMaterializationResult],
+) -> tuple[set[MaterializationStatus], str, float]:
+    statuses: set[MaterializationStatus] = {result.status for result in parsed.values()}
+    input_hash = next((result.input_hash for result in parsed.values() if result.input_hash), "")
+    duration_ms = sum((result.duration_ms for result in parsed.values()), 0.0)
+    return statuses, input_hash, duration_ms
+
+
+def _apply_file_artifact_results(
+    record: TargetRunRecord,
+    parsed: Mapping[str, FileArtifactMaterializationResult],
+) -> TargetRunRecord:
+    parsed_by_name = {result.artifact_name: result for result in parsed.values()}
     updated_artifacts: list[ArtifactRef] = []
-    parsed_by_name = {r.artifact_name: r for r in parsed.values()}
+
     for artifact in record.artifacts:
         if not isinstance(artifact, ArtifactRef):
             continue
@@ -487,22 +512,21 @@ def record_from_file_artifact_materializations(
             updated = updated.with_metadata("size_bytes", result.size_bytes)
         updated_artifacts.append(updated)
 
-    if updated_artifacts:
-        record = TargetRunRecord(
-            target=record.target,
-            plugin_name=record.plugin_name,
-            status=record.status,
-            input_hash=record.input_hash,
-            options_hash=record.options_hash,
-            duration_ms=record.duration_ms,
-            row_counts=record.row_counts,
-            error=record.error,
-            datasets=record.datasets,
-            artifacts=tuple(updated_artifacts),
-        )
+    if not updated_artifacts:
+        return record
 
-    save_manifest(env, record)
-    return record
+    return TargetRunRecord(
+        target=record.target,
+        plugin_name=record.plugin_name,
+        status=record.status,
+        input_hash=record.input_hash,
+        options_hash=record.options_hash,
+        duration_ms=record.duration_ms,
+        row_counts=record.row_counts,
+        error=record.error,
+        datasets=record.datasets,
+        artifacts=tuple(updated_artifacts),
+    )
 
 
 def _parse_materialization(
@@ -589,6 +613,6 @@ __all__ = [
     "MaterializationStatus",
     "record_from_duckdb_materialization",
     "record_from_duckdb_materializations",
-    "record_from_file_artifact_materializations",
     "record_from_file_artifact_materialization",
+    "record_from_file_artifact_materializations",
 ]
