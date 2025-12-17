@@ -22,6 +22,11 @@ from codeintel.build.hamilton.native.graphs.cfg_dfg import (
     t__dfg,
     t__dfg__extract,
 )
+from codeintel.build.hamilton.native.graphs.import_graph import (
+    ImportGraphExtractResult,
+    t__import_graph,
+    t__import_graph__extract,
+)
 from codeintel.build.hamilton.native.graphs.metrics_targets import (
     GraphMetricsComputeResult,
     GraphValidationResult,
@@ -29,11 +34,6 @@ from codeintel.build.hamilton.native.graphs.metrics_targets import (
     t__graph_metrics__compute,
     t__graph_validation,
     t__graph_validation__check,
-)
-from codeintel.build.hamilton.native.graphs.import_graph import (
-    ImportGraphExtractResult,
-    t__import_graph,
-    t__import_graph__extract,
 )
 from codeintel.build.hamilton.native.graphs.support_targets import (
     GoidExtractionInputs,

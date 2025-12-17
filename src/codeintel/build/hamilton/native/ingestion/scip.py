@@ -33,7 +33,7 @@ from codeintel.ingestion.engine.service import ToolService
 
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph)
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, Path, TargetRunRecord)
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,13 @@ def t__scip__run(
     graph: TargetGraph,
     t__modules: TargetRunRecord,
 ) -> ScipRunResult:
-    """Execute scip-python + scip print to produce SCIP artifacts."""
+    """Execute scip-python + scip print to produce SCIP artifacts.
+
+    Returns
+    -------
+    ScipRunResult
+        Run outcome including output paths or error details.
+    """
     if t__modules.status != "succeeded":
         return ScipRunResult(
             success=False,
@@ -118,7 +124,13 @@ def t__scip__run(
 )
 @tag(domain="ingestion", target="scip", node_type="compute", target_="scip__index_artifact")
 def scip__index_artifact(t__scip__run: ScipRunResult) -> Path | None:
-    """Return the Path to index.scip for materialization."""
+    """Return the Path to index.scip for materialization.
+
+    Returns
+    -------
+    Path | None
+        Artifact path, or None when the run was skipped/failed.
+    """
     if not t__scip__run.success or t__scip__run.skipped:
         return None
     return t__scip__run.index_path
@@ -134,10 +146,34 @@ def scip__index_artifact(t__scip__run: ScipRunResult) -> Path | None:
 )
 @tag(domain="ingestion", target="scip", node_type="compute", target_="scip__json_artifact")
 def scip__json_artifact(t__scip__run: ScipRunResult) -> Path | None:
-    """Return the Path to index.json for materialization."""
+    """Return the Path to index.json for materialization.
+
+    Returns
+    -------
+    Path | None
+        Artifact path, or None when the run was skipped/failed.
+    """
     if not t__scip__run.success or t__scip__run.skipped:
         return None
     return t__scip__run.json_path
+
+
+@tag(domain="ingestion", target="scip", node_type="helper")
+def scip__materializations(
+    m__artifact__scip_index: dict[str, Any],
+    m__artifact__scip_json: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Collect scip artifact materialization payloads into a single mapping.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Materialization metadata keyed by artifact name.
+    """
+    return {
+        "scip_index": m__artifact__scip_index,
+        "scip_json": m__artifact__scip_json,
+    }
 
 
 @tag(domain="ingestion", target="scip", node_type="materialize")
@@ -146,10 +182,15 @@ def t__scip(
     graph: TargetGraph,
     t__scip__run: ScipRunResult,
     t__modules: TargetRunRecord,
-    m__artifact__scip_index: dict[str, Any],
-    m__artifact__scip_json: dict[str, Any],
+    scip__materializations: dict[str, dict[str, Any]],
 ) -> TargetRunRecord:
-    """Finalize scip target from artifact materialization metadata."""
+    """Finalize scip target from artifact materialization metadata.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "scip")
     if executor.should_skip():
         return executor.skip()
@@ -162,10 +203,7 @@ def t__scip(
         env=env,
         graph=graph,
         target_name="scip",
-        materializations={
-            "scip_index": m__artifact__scip_index,
-            "scip_json": m__artifact__scip_json,
-        },
+        materializations=scip__materializations,
     )
 
 

@@ -17,7 +17,6 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import cache, tag
@@ -55,12 +54,13 @@ from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from codeintel.ingestion.ports.change_detection import ChangeSet
 
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ModuleRecord)
 
 
 @dataclass(frozen=True)
@@ -389,6 +389,11 @@ def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
 
     This compute node scans the repository for configuration files
     (YAML, JSON, TOML, INI) using the default config profile.
+
+    Returns
+    -------
+    ConfigScanResult
+        Discovery status and discovered config file records.
     """
     try:
         profile = default_config_profile(env.snapshot.repo_root)
@@ -408,7 +413,13 @@ def t__config_ingest__ingest(
     env: BuildEnv,
     t__config_ingest__scan: ConfigScanResult,
 ) -> ConfigIngestResult:
-    """Ingest discovered config files into structured tables."""
+    """Ingest discovered config files into structured tables.
+
+    Returns
+    -------
+    ConfigIngestResult
+        Ingestion status and per-table row counts.
+    """
     if not t__config_ingest__scan.success:
         return ConfigIngestResult(
             success=False,
@@ -456,7 +467,13 @@ def t__config_ingest(
     graph: TargetGraph,
     t__config_ingest__ingest: ConfigIngestResult,
 ) -> TargetRunRecord:
-    """Finalize config_ingest execution and persist manifest."""
+    """Finalize config_ingest execution and persist manifest.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the execution outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "config_ingest")
     if executor.should_skip():
         return executor.skip()
@@ -505,7 +522,13 @@ async def t__coverage_ingest__ingest(
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
 ) -> CoverageIngestResult:
-    """Execute coverage data ingestion from coverage.py output."""
+    """Execute coverage data ingestion from coverage.py output.
+
+    Returns
+    -------
+    CoverageIngestResult
+        Ingestion status and per-table row counts.
+    """
     if t__modules.status != "succeeded":
         return CoverageIngestResult(
             success=False,
@@ -557,7 +580,13 @@ def t__coverage_ingest(
     graph: TargetGraph,
     t__coverage_ingest__ingest: CoverageIngestResult,
 ) -> TargetRunRecord:
-    """Finalize coverage_ingest execution and persist manifest."""
+    """Finalize coverage_ingest execution and persist manifest.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the execution outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "coverage_ingest")
     if executor.should_skip():
         return executor.skip()
@@ -610,7 +639,13 @@ def t__tests_ingest__ingest(
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
 ) -> TestsIngestResult:
-    """Execute pytest report ingestion into analytics tables."""
+    """Execute pytest report ingestion into analytics tables.
+
+    Returns
+    -------
+    TestsIngestResult
+        Ingestion status and per-table row counts.
+    """
     if t__modules.status != "succeeded":
         return TestsIngestResult(
             success=False,
@@ -657,7 +692,13 @@ def t__tests_ingest(
     graph: TargetGraph,
     t__tests_ingest__ingest: TestsIngestResult,
 ) -> TargetRunRecord:
-    """Finalize tests_ingest execution and persist manifest."""
+    """Finalize tests_ingest execution and persist manifest.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the execution outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "tests_ingest")
     if executor.should_skip():
         return executor.skip()
@@ -689,7 +730,13 @@ def t__typing__ingest(
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
 ) -> TypingIngestResult:
-    """Execute typing analysis and persist typedness + diagnostics tables."""
+    """Execute typing analysis and persist typedness + diagnostics tables.
+
+    Returns
+    -------
+    TypingIngestResult
+        Ingestion status and per-table row counts.
+    """
     if t__modules.status != "succeeded":
         return TypingIngestResult(
             success=False,
@@ -748,7 +795,13 @@ def t__typing(
     graph: TargetGraph,
     t__typing__ingest: TypingIngestResult,
 ) -> TargetRunRecord:
-    """Finalize typing target execution and persist manifest."""
+    """Finalize typing target execution and persist manifest.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the execution outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "typing")
     if executor.should_skip():
         return executor.skip()

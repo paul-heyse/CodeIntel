@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import ibis.expr.types as ir
 
@@ -28,21 +29,22 @@ from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import compute_node
-from codeintel.build.providers import Providers, create_default_providers
+from codeintel.build.providers import create_default_providers
 from codeintel.build.schemas.infer_duckdb import infer_table_schema_from_ibis
 from codeintel.build.schemas.seed_harness import MiniSeedHarness
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
-from codeintel.storage.gateway.ephemeral import ephemeral_gateway
-from codeintel.storage.gateway.protocol import StorageGateway
+from codeintel.storage.gateway import open_memory_gateway
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Iterator, Mapping
 
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
+    from codeintel.build.providers import Providers
     from codeintel.build.targets import TargetGraph
+    from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
@@ -82,6 +84,15 @@ def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
 @lru_cache(maxsize=1)
 def _runtime_auto() -> HamiltonRuntime:
     return build_driver(enable_cache=False)
+
+
+@contextmanager
+def _schema_inference_gateway() -> Iterator[StorageGateway]:
+    gateway = open_memory_gateway(apply_schema=True, ensure_views=False, validate_schema=False)
+    try:
+        yield gateway
+    finally:
+        gateway.close()
 
 
 @lru_cache(maxsize=1)
@@ -266,12 +277,12 @@ def _infer_table_schema_for_compute(
     declared_provider: SchemaProvider,
     job: _ComputeInferenceJob,
 ) -> TableSchema:
-    with ephemeral_gateway(schema_provider=declared_provider) as gateway:
+    with _schema_inference_gateway() as gateway:
         harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
         inputs: dict[str, object] = dict(harness.build_inputs(set(job.qparams)))
         if job.requires_env:
             inputs["env"] = _inference_env(
-                gateway=cast(StorageGateway, gateway),
+                gateway=gateway,
                 force_targets=frozenset({job.target_name}),
             )
         if job.requires_graph:
@@ -427,11 +438,8 @@ class HamiltonSchemaProvider(SchemaProvider):
         tuple[TableSchema, ...]
             Deterministic tuple of schemas keyed by table_key.
         """
-        seen: dict[str, TableSchema] = {}
-        for schema in self.declared.iter_table_schemas():
-            seen[schema.table_key] = schema
-        for table_key, inferred in self._cache.items():
-            seen[table_key] = inferred
+        seen = {schema.table_key: schema for schema in self.declared.iter_table_schemas()}
+        seen.update(self._cache)
         return tuple(seen[key] for key in sorted(seen))
 
     def prefill_cache(self, schemas: Mapping[str, TableSchema]) -> None:
@@ -573,11 +581,11 @@ def infer_table_schemas(
     jobs = _build_inference_jobs(runtime=runtime, table_keys=unique_keys)
     union_qparams = _union_qparams(jobs)
 
-    with ephemeral_gateway(schema_provider=declared_provider) as gateway:
+    with _schema_inference_gateway() as gateway:
         harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
         base_inputs: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
         env = _inference_env(
-            gateway=cast(StorageGateway, gateway),
+            gateway=gateway,
             force_targets=frozenset({job.target_name for job in jobs}),
         )
 

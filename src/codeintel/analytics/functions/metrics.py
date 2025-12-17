@@ -780,15 +780,6 @@ def compute_function_metrics_and_types(
         Summary counts of emitted metrics/types and validation issues.
     """
     result = compute_function_analytics_result(gateway, snapshot, options=options)
-    if not result.metrics_rows and not result.types_rows:
-        return {
-            "metrics_rows": 0,
-            "types_rows": 0,
-            "validation_total": result.validation_total,
-            "validation_parse_failed": result.parse_failed_count,
-            "validation_span_not_found": result.span_not_found_count,
-        }
-
     summary = persist_function_analytics(gateway, snapshot, result)
     if fail_on_missing_spans and result.validation_total:
         message = (

@@ -24,6 +24,7 @@ from codeintel.analytics.functions.function_history import (
     FUNCTION_HISTORY_COLS,
     build_function_history_rows,
 )
+from codeintel.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.analytics.utilities.lazy_module import make_lazy_getattr
 
 if TYPE_CHECKING:
@@ -32,9 +33,6 @@ if TYPE_CHECKING:
     from codeintel.analytics.functions.function_effects import (
         FunctionEffectsInputs,
         FunctionEffectsOptions,
-    )
-    from codeintel.analytics.functions.metrics import (
-        FunctionAnalyticsResult as _FunctionAnalyticsResult,
     )
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
@@ -52,6 +50,8 @@ __all__ = [
     "compute_function_metrics_and_types",
 ]
 
+_EXPORTED_TYPES = (FunctionAnalyticsResult,)
+
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "compute_function_analytics_result": (
         "codeintel.analytics.functions.metrics",
@@ -68,10 +68,6 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "compute_function_metrics_and_types": (
         "codeintel.analytics.functions.metrics",
         "compute_function_metrics_and_types",
-    ),
-    "FunctionAnalyticsResult": (
-        "codeintel.analytics.functions.metrics",
-        "FunctionAnalyticsResult",
     ),
 }
 
@@ -149,7 +145,7 @@ def compute_function_analytics_result(
     snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
-) -> _FunctionAnalyticsResult:
+) -> FunctionAnalyticsResult:
     """Compute pure function analytics result without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
@@ -170,7 +166,7 @@ def compute_function_analytics_result(
         Container with metrics_rows, types_rows, and validation reporter.
     """
     func = cast(
-        "Callable[..., _FunctionAnalyticsResult]",
+        "Callable[..., FunctionAnalyticsResult]",
         _load("compute_function_analytics_result"),
     )
     return func(gateway, snapshot, options=options)

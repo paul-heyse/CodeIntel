@@ -8,8 +8,7 @@ from datetime import UTC, datetime
 from importlib.metadata import version as get_package_version
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
-from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse
 
 from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.mcp._compat import Context, FastMCP, ToolError, create_bearer_auth
@@ -39,18 +38,36 @@ from codeintel.serving.semantic.models import (
     SemanticQueryResponse,
     SemanticViewDescriptionResponse,
 )
-from codeintel.serving.settings import ServingSettings
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from contextlib import AbstractAsyncContextManager
 
+    from starlette.requests import Request
+    from starlette.responses import Response
+
     from codeintel.serving.db.manager import ServingDBManager
+    from codeintel.serving.settings import ServingSettings
 
 LOG = logging.getLogger(__name__)
 
 # Server start time captured at module load (used in serving_meta)
 _SERVER_STARTED_AT = datetime.now(UTC)
+
+
+def _fastmcp_type_globals() -> tuple[type[object], ...]:
+    """Return runtime types referenced in FastMCP tool signatures.
+
+    FastMCP builds JSON Schemas by evaluating Python type annotations. Since
+    this module uses postponed evaluation (``from __future__ import annotations``),
+    these names must be present at runtime for evaluation.
+
+    Returns
+    -------
+    tuple[type[object], ...]
+        Runtime types referenced by tool annotations.
+    """
+    return (Context, SearchQueryResponse, SemanticExplainResponse, SemanticQueryResponse)
 
 # Reusable annotation sets for tool categories
 _READ_ONLY_LOCAL_ANNOTATIONS = {

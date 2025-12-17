@@ -17,19 +17,22 @@ the public target node (e.g., ``t__scip``) remains a stable identifier.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from hamilton.function_modifiers import source, tag
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
-from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materialization,
 )
-from codeintel.build.targets import TargetGraph
-from codeintel.hamilton.records import TargetRunRecord
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.build.targets import TargetGraph
+    from codeintel.hamilton.records import TargetRunRecord
 
 
 @SaveToDecorator(

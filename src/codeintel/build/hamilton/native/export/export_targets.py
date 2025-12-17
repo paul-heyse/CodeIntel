@@ -64,7 +64,13 @@ def t__export_jsonl__compute(
     q__core__modules: ir.Table,
     q__analytics__function_metrics: ir.Table,
 ) -> ExportJsonlComputeResult | None:
-    """Compute export manifest and gather data for JSONL export."""
+    """Compute export manifest and gather data for JSONL export.
+
+    Returns
+    -------
+    ExportJsonlComputeResult | None
+        Export payload components, or None when the target is skipped.
+    """
     target = graph.get("export_jsonl")
     if target is not None:
         input_hash = compute_input_hash(
@@ -123,7 +129,13 @@ def t__export_jsonl__compute(
 )
 @tag(domain="export", target="export_jsonl", node_type="compute", target_="export_jsonl__content")
 def export_jsonl__content(t__export_jsonl__compute: ExportJsonlComputeResult | None) -> str | None:
-    """Build JSONL content for export_jsonl artifact."""
+    """Build JSONL content for export_jsonl artifact.
+
+    Returns
+    -------
+    str | None
+        JSONL content, or None when the target is skipped.
+    """
     if t__export_jsonl__compute is None:
         return None
 
@@ -148,7 +160,13 @@ def t__export_jsonl(
     graph: TargetGraph,
     m__artifact__jsonl_export: dict[str, Any],
 ) -> TargetRunRecord:
-    """Write JSONL export artifact and return record with ArtifactRef."""
+    """Write JSONL export artifact and return record with ArtifactRef.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     return record_from_file_artifact_materialization(
         env=env,
         graph=graph,
@@ -179,7 +197,13 @@ def t__export_parquet__compute(
     env: BuildEnv,
     q__analytics__function_metrics: ir.Table,
 ) -> ir.Table:
-    """Compute the Parquet export table expression."""
+    """Compute the Parquet export table expression.
+
+    Returns
+    -------
+    ir.Table
+        Ibis expression producing rows for the Parquet export artifact.
+    """
     return q__analytics__function_metrics.filter(
         and_predicates(
             q__analytics__function_metrics.repo == env.snapshot.repo,
@@ -202,7 +226,13 @@ def export_parquet__bytes(
     graph: TargetGraph,
     t__export_parquet__compute: ir.Table,
 ) -> bytes | None:
-    """Serialize the Parquet export payload for file materialization."""
+    """Serialize the Parquet export payload for file materialization.
+
+    Returns
+    -------
+    bytes | None
+        Serialized Parquet bytes, or None when the target is skipped.
+    """
     target = graph.get("export_parquet")
     if target is not None:
         input_hash = compute_input_hash(
@@ -227,7 +257,13 @@ def t__export_parquet(
     graph: TargetGraph,
     m__artifact__parquet_export: dict[str, Any],
 ) -> TargetRunRecord:
-    """Write Parquet export artifact and return record with ArtifactRef."""
+    """Write Parquet export artifact and return record with ArtifactRef.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     return record_from_file_artifact_materialization(
         env=env,
         graph=graph,
@@ -245,4 +281,3 @@ __all__ = [
     "t__export_parquet",
     "t__export_parquet__compute",
 ]
-

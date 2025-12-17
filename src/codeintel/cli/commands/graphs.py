@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated
 
 from cyclopts import App, Parameter
@@ -119,6 +120,20 @@ class GraphPlanResult:
 
     stages: list[GraphPlanStage]
     total_targets: int
+
+
+class SelectionPolicy(StrEnum):
+    """Policy for handling unknown plugin names."""
+
+    LENIENT = "lenient"
+    STRICT = "strict"
+
+
+class DependencyPolicy(StrEnum):
+    """Policy for handling missing/implicit dependencies."""
+
+    LENIENT = "lenient"
+    STRICT = "strict"
 
 
 @cli_command("graph.targets.list", require_storage=False)
@@ -239,6 +254,117 @@ class GraphTargetsPlan(Command[GraphPlanResult]):
         )
 
 
+@cli_command("graph.plugins", require_storage=False)
+@graphs_app.command(name="plugins")
+@dataclass(frozen=True)
+class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
+    """List graph plugins or show an execution plan; use --plan for ordering."""
+
+    __operation_id__ = "graph.plugins"
+
+    plan: Annotated[
+        bool,
+        Parameter(
+            name="--plan",
+            help="Display execution plan instead of listing.",
+            negative=("--no-plan",),
+        ),
+    ] = False
+    names: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--names",
+            help="Explicit plugin (target) names to filter or plan (repeatable).",
+        ),
+    ] = None
+    selection_policy: Annotated[
+        SelectionPolicy,
+        Parameter(
+            name="--selection-policy",
+            help="How to handle unknown plugin names.",
+            show_choices=True,
+        ),
+    ] = SelectionPolicy.LENIENT
+    dependency_policy: Annotated[
+        DependencyPolicy,
+        Parameter(
+            name="--dependency-policy",
+            help="How to handle missing plugin dependencies.",
+            show_choices=True,
+        ),
+    ] = DependencyPolicy.STRICT
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+    def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
+        """List plugins or show plan.
+
+        Parameters
+        ----------
+        ctx
+            Command context (unused).
+
+        Raises
+        ------
+        ValueError
+            When ``selection_policy`` is strict and unknown plugin names are provided.
+
+        Returns
+        -------
+        CliResult[GraphPlanResult | GraphTargetsResult]
+            Either the planned execution order or the plugin list.
+        """
+        _ = ctx
+        names_set = set(self.names) if self.names else None
+
+        graph = get_target_graph()
+        graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
+
+        available_names = {t.name for t in graph_targets}
+
+        if names_set:
+            unknown = sorted(names_set - available_names)
+            if unknown and self.selection_policy == SelectionPolicy.STRICT:
+                msg = f"Unknown graph plugins: {unknown}"
+                raise ValueError(msg)
+            graph_targets = [t for t in graph_targets if t.name in names_set]
+
+        if self.plan:
+            target_names = [t.name for t in graph_targets]
+            ordered = graph.topological_order(target_names) if target_names else ()
+
+            if self.dependency_policy == DependencyPolicy.LENIENT:
+                ordered = tuple(name for name in ordered if name in available_names)
+
+            stages = [
+                GraphPlanStage(
+                    stage=1,
+                    targets=list(ordered),
+                )
+            ]
+            return CliResult.ok(
+                GraphPlanResult(
+                    stages=stages,
+                    total_targets=len(ordered),
+                )
+            )
+
+        target_infos = [
+            GraphTargetInfo(
+                name=t.name,
+                description=t.description or f"Graph plugin: {t.name}",
+                dependencies=list(t.dependencies),
+                tables=list(t.table_keys),
+            )
+            for t in graph_targets
+        ]
+        return CliResult.ok(
+            GraphTargetsResult(
+                targets=target_infos,
+                count=len(target_infos),
+            )
+        )
+
+
 @cli_command("graph.targets", require_storage=False)
 @graphs_app.command(name="targets")
 @dataclass(frozen=True)
@@ -320,12 +446,15 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
 
 
 __all__ = [
+    "DependencyPolicy",
     "GraphPlanResult",
     "GraphPlanStage",
+    "GraphPlugins",
     "GraphTargetInfo",
     "GraphTargets",
     "GraphTargetsList",
     "GraphTargetsPlan",
     "GraphTargetsResult",
+    "SelectionPolicy",
     "graphs_app",
 ]

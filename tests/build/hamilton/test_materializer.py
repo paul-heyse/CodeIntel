@@ -6,7 +6,6 @@ DAG-visible I/O, replacing the legacy ``native.materializer`` utilities.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pandas as pd
@@ -23,6 +22,8 @@ from tests._helpers.build import make_build_config, make_build_paths
 from tests._helpers.fakes.fake_providers import FakeProviders
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.build.providers import Providers
     from codeintel.storage.gateway import StorageGateway
 
@@ -44,7 +45,13 @@ def _modules_rows(*, repo: str, commit: str, count: int) -> pd.DataFrame:
 
 
 def _make_env(*, gateway: StorageGateway, snapshot: SnapshotRef) -> BuildEnv:
-    """Create a minimal BuildEnv suitable for saver execution in tests."""
+    """Create a minimal BuildEnv suitable for saver execution in tests.
+
+    Returns
+    -------
+    BuildEnv
+        Build environment for saver execution.
+    """
     tmp_path = snapshot.repo_root
     paths = make_build_paths(tmp_path)
     config = make_build_config()
@@ -60,7 +67,13 @@ def _make_env(*, gateway: StorageGateway, snapshot: SnapshotRef) -> BuildEnv:
 
 
 def _make_graph() -> TargetGraph:
-    """Create a minimal TargetGraph that contains a modules target."""
+    """Create a minimal TargetGraph that contains a modules target.
+
+    Returns
+    -------
+    TargetGraph
+        Target graph containing only the modules target.
+    """
     graph = TargetGraph()
     graph.register(
         OutputTarget.from_tables(
@@ -108,7 +121,8 @@ def test_materialize_table_uses_policy_and_insert_select(
         [repo, commit],
     ).fetchone()
     expect_true(row is not None, message="Expected COUNT(*) query to return a row")
-    expect_equal(int(row[0]), 2)
+    row_tuple = cast("tuple[int, ...]", row)
+    expect_equal(row_tuple[0], expected=2)
 
 
 def test_materialize_table_validates_when_schema_available(

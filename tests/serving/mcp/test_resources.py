@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, cast
 import duckdb
 import pytest
 from fastmcp.client import Client
-from mcp.types import TextResourceContents
 
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.db.pool import DuckDBPoolConfig
@@ -21,6 +20,8 @@ from tests._helpers.assertions.expectation_assertions import expect_equal, expec
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from mcp.types import TextResourceContents
 
 # Expected minimum number of resource templates in canonical taxonomy
 _MIN_RESOURCE_TEMPLATES = 8

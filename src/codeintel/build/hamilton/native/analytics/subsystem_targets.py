@@ -27,6 +27,7 @@ from hamilton.function_modifiers import (
 )
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
+from codeintel.analytics.graphs.subsystem_agreement import compute_subsystem_agreement
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
@@ -37,7 +38,6 @@ from codeintel.build.hamilton.native.materialization_records import (
 )
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
-from codeintel.analytics.graphs.subsystem_agreement import compute_subsystem_agreement
 from codeintel.storage.ibis_types import and_predicates
 
 LOG = logging.getLogger(__name__)
@@ -286,7 +286,13 @@ def t__subsystem_agreement__compute(
     env: BuildEnv,
     t__subsystems: TargetRunRecord,
 ) -> SubsystemAgreementResult:
-    """Compare subsystem assignments with import community labels."""
+    """Compare subsystem assignments with import community labels.
+
+    Returns
+    -------
+    SubsystemAgreementResult
+        Status indicator, row count, and optional error message.
+    """
     if t__subsystems.status != "succeeded":
         return SubsystemAgreementResult(
             success=False,
@@ -294,7 +300,7 @@ def t__subsystem_agreement__compute(
         )
 
     try:
-        log.info(
+        LOG.info(
             "Computing subsystem agreement for %s@%s",
             env.snapshot.repo,
             env.snapshot.commit,
@@ -316,7 +322,7 @@ def t__subsystem_agreement__compute(
 
         return SubsystemAgreementResult(success=True, row_count=row_count)
     except Exception as exc:
-        log.exception("Subsystem agreement computation failed")
+        LOG.exception("Subsystem agreement computation failed")
         return SubsystemAgreementResult(success=False, error=str(exc))
 
 
@@ -326,7 +332,13 @@ def t__subsystem_agreement(
     graph: TargetGraph,
     t__subsystem_agreement__compute: SubsystemAgreementResult,
 ) -> TargetRunRecord:
-    """Materialize subsystem agreement target."""
+    """Materialize subsystem agreement target.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "subsystem_agreement")
 
     if executor.should_skip():

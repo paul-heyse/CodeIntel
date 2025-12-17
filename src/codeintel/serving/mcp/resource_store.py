@@ -11,8 +11,10 @@ import json
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _JSON_SUFFIX: Final = ".json"
 _NDJSON_SUFFIX: Final = ".ndjson"

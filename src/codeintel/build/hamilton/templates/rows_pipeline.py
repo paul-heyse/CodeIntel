@@ -17,19 +17,22 @@ the public target node (e.g., ``t__coverage_test_edges``) remains a stable ident
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from hamilton.function_modifiers import source, tag
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
-from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.targets import TargetGraph
-from codeintel.hamilton.records import TargetRunRecord
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.build.targets import TargetGraph
+    from codeintel.hamilton.records import TargetRunRecord
 
 
 @SaveToDecorator(

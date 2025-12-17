@@ -7,6 +7,7 @@ and serialize/deserialize to JSON properly.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import ValidationError
@@ -14,13 +15,11 @@ from pydantic import ValidationError
 from codeintel.serving.mcp.response_models import (
     DEFAULT_RESOURCE_TEMPLATES,
     BuildSpecInfo,
-    ExportFormat,
     ExportHandleResponse,
     ExportMetaResponse,
     ExportQuerySpec,
     ExportSchemaSummary,
     ExportSnapshot,
-    ExportStatus,
     ExportURIs,
     QueryLimits,
     QueryPreview,
@@ -38,6 +37,9 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
+
+if TYPE_CHECKING:
+    from codeintel.serving.mcp.response_models import ExportFormat, ExportStatus
 
 # =============================================================================
 # Fixtures

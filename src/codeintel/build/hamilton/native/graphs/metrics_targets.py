@@ -199,7 +199,13 @@ def t__graph_metrics(
     graph: TargetGraph,
     t__graph_metrics__compute: GraphMetricsComputeResult,
 ) -> TargetRunRecord:
-    """Materialize graph metrics target with validation."""
+    """Materialize graph metrics target with validation.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "graph_metrics")
 
     if executor.should_skip():
@@ -247,7 +253,13 @@ def _validate_call_graph_integrity(
     repo: str,
     commit: str,
 ) -> list[str]:
-    """Validate call graph edge integrity."""
+    """Validate call graph edge integrity.
+
+    Returns
+    -------
+    list[str]
+        Validation error messages.
+    """
     errors: list[str] = []
 
     try:
@@ -288,7 +300,13 @@ def _validate_import_graph_integrity(
     repo: str,
     commit: str,
 ) -> list[str]:
-    """Validate import graph integrity."""
+    """Validate import graph integrity.
+
+    Returns
+    -------
+    list[str]
+        Validation error messages.
+    """
     errors: list[str] = []
 
     try:
@@ -321,7 +339,13 @@ def _validate_cfg_integrity(
     _repo: str,
     _commit: str,
 ) -> list[str]:
-    """Validate CFG integrity."""
+    """Validate CFG integrity.
+
+    Returns
+    -------
+    list[str]
+        Validation error messages.
+    """
     errors: list[str] = []
 
     try:
@@ -353,7 +377,13 @@ def t__graph_validation__check(
     t__import_graph: TargetRunRecord,
     t__cfg: TargetRunRecord,
 ) -> GraphValidationResult:
-    """Run validation checks on all graph data."""
+    """Run validation checks on all graph data.
+
+    Returns
+    -------
+    GraphValidationResult
+        Validation status and any discovered issues.
+    """
     deps = [("call_graph", t__call_graph), ("import_graph", t__import_graph), ("cfg", t__cfg)]
     for name, record in deps:
         if record.status != "succeeded":
@@ -409,7 +439,13 @@ def t__graph_validation(
     graph: TargetGraph,
     t__graph_validation__check: GraphValidationResult,
 ) -> TargetRunRecord:
-    """Materialize graph validation target."""
+    """Materialize graph validation target.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "graph_validation")
 
     if executor.should_skip():
@@ -436,4 +472,3 @@ __all__ = [
     "t__graph_validation",
     "t__graph_validation__check",
 ]
-

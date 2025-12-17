@@ -6,6 +6,17 @@ with @check_output_custom validators and @schema.output documentation.
 
 from __future__ import annotations
 
+from codeintel.build.hamilton.native.ingestion.extraction_targets import (
+    AstExtractResult,
+    CstExtractResult,
+    DocstringsExtractResult,
+    t__ast,
+    t__ast__extract,
+    t__cst,
+    t__cst__extract,
+    t__docstrings,
+    t__docstrings__extract,
+)
 from codeintel.build.hamilton.native.ingestion.ingest_targets import (
     ConfigIngestResult,
     ConfigScanResult,
@@ -26,17 +37,6 @@ from codeintel.build.hamilton.native.ingestion.ingest_targets import (
     t__tests_ingest__ingest,
     t__typing,
     t__typing__ingest,
-)
-from codeintel.build.hamilton.native.ingestion.extraction_targets import (
-    AstExtractResult,
-    CstExtractResult,
-    DocstringsExtractResult,
-    t__ast,
-    t__ast__extract,
-    t__cst,
-    t__cst__extract,
-    t__docstrings,
-    t__docstrings__extract,
 )
 from codeintel.build.hamilton.native.ingestion.scip import (
     ScipRunResult,

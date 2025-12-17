@@ -16,12 +16,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import cache, tag
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.helpers import get_module_paths_from_env, paths_to_modules
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.targets import TargetGraph
@@ -31,10 +29,8 @@ from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ModuleRecord)
 
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass(frozen=True)
@@ -110,7 +106,13 @@ def t__ast__extract(
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
 ) -> AstExtractResult:
-    """Execute AST extraction on repository modules."""
+    """Execute AST extraction on repository modules.
+
+    Returns
+    -------
+    AstExtractResult
+        Extraction status and per-table row counts.
+    """
     if t__modules.status != "succeeded":
         return AstExtractResult(
             success=False,
@@ -146,7 +148,13 @@ def t__ast(
     graph: TargetGraph,
     t__ast__extract: AstExtractResult,
 ) -> TargetRunRecord:
-    """Materialize AST target with validation."""
+    """Materialize AST target with validation.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "ast")
     if executor.should_skip():
         return executor.skip()
@@ -166,7 +174,13 @@ def t__cst__extract(
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
 ) -> CstExtractResult:
-    """Execute CST extraction on repository modules."""
+    """Execute CST extraction on repository modules.
+
+    Returns
+    -------
+    CstExtractResult
+        Extraction status and per-table row counts.
+    """
     if t__modules.status != "succeeded":
         return CstExtractResult(
             success=False,
@@ -202,7 +216,13 @@ def t__cst(
     graph: TargetGraph,
     t__cst__extract: CstExtractResult,
 ) -> TargetRunRecord:
-    """Materialize CST target with validation."""
+    """Materialize CST target with validation.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "cst")
     if executor.should_skip():
         return executor.skip()
@@ -222,7 +242,13 @@ def t__docstrings__extract(
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
 ) -> DocstringsExtractResult:
-    """Execute docstring extraction on repository modules."""
+    """Execute docstring extraction on repository modules.
+
+    Returns
+    -------
+    DocstringsExtractResult
+        Extraction status and per-table row counts.
+    """
     if t__modules.status != "succeeded":
         return DocstringsExtractResult(
             success=False,
@@ -258,7 +284,13 @@ def t__docstrings(
     graph: TargetGraph,
     t__docstrings__extract: DocstringsExtractResult,
 ) -> TargetRunRecord:
-    """Materialize docstrings target with validation."""
+    """Materialize docstrings target with validation.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing the materialization outcome.
+    """
     executor = NativeTargetExecutor.for_target(env, graph, "docstrings")
     if executor.should_skip():
         return executor.skip()

@@ -37,9 +37,6 @@ from codeintel.analytics.testing.profiles.types import (
 )
 from codeintel.analytics.utilities.ast import resolve_call_target
 from codeintel.core.paths import path_to_module
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsTestProfileRow as ProfileRowModel,
-)
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
@@ -49,6 +46,9 @@ if TYPE_CHECKING:
         BehavioralLLMRunner,
     )
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsTestProfileRow as ProfileRowModel,
+    )
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
