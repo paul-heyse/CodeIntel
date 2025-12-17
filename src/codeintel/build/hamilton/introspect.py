@@ -321,7 +321,6 @@ def _clone_target_with_dependencies(target: OutputTarget, *, deps: Iterable[str]
     return OutputTarget(
         name=target.name,
         module=target.module,
-        plugin=target.plugin,
         contract=target.contract,
         dependencies=tuple(deps),
         resources=target.resources,

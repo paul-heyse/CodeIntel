@@ -15,6 +15,7 @@ from codeintel.build.hamilton.templates.multi_table_pipeline import (
     create_row_extractor,
     multi_table_record,
 )
+from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import (
@@ -68,13 +69,15 @@ def _make_graph() -> TargetGraph:
     """
     graph = TargetGraph()
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="function_metrics",
             module="analytics",
-            tables=(
-                "analytics.function_metrics",
-                "analytics.function_types",
-                "analytics.function_validation",
+            contract=OutputContract.simple(
+                table_keys=(
+                    "analytics.function_metrics",
+                    "analytics.function_types",
+                    "analytics.function_validation",
+                )
             ),
         )
     )

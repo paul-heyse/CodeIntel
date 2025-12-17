@@ -15,6 +15,7 @@ from codeintel.build.errors import (
     SchemaNotFoundError,
 )
 from codeintel.build.parameters import TargetParameters
+from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget
 from codeintel.config.datasets.primitives import Column, TableSchema
 from tests._helpers import build_test_gateway, make_build_paths, make_snapshot

@@ -12,6 +12,7 @@ import pandas as pd
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
+from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import (
@@ -76,10 +77,10 @@ def _make_graph() -> TargetGraph:
     """
     graph = TargetGraph()
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="modules",
             module="ingestion",
-            tables=("core.modules",),
+            contract=OutputContract.simple(table_keys=("core.modules",)),
         )
     )
     return graph

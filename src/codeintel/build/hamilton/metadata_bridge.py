@@ -105,7 +105,6 @@ def from_target(target: OutputTarget) -> CanonicalPluginMeta:
     >>> target = OutputTarget(
     ...     name="function_metrics",
     ...     module="analytics",
-    ...     plugin="function_metrics_plugin",
     ...     dependencies=("goids", "ast"),
     ... )
     >>> meta = from_target(target)

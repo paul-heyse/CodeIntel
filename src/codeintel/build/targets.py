@@ -5,14 +5,10 @@ the build system can produce and their interdependencies.
 
 Architecture Note (Hamilton-First)
 ----------------------------------
-In the Hamilton-first architecture, dependencies should be derived from the
-Hamilton DAG rather than statically declared. Use `target_graph_from_hamilton()`
-from `codeintel.build.hamilton.introspect` to get a TargetGraph with
-Hamilton-derived dependencies.
-
-The static `dependencies` field on OutputTarget remains for compatibility with
-historical tooling, but Hamilton is the source of truth for actual execution
-dependencies.
+In the Hamilton-first architecture, dependencies are derived from the Hamilton
+DAG rather than statically declared. Use `target_graph_from_hamilton()` from
+`codeintel.build.hamilton.introspect` to get a TargetGraph with Hamilton-derived
+dependencies populated on each OutputTarget.
 
 The OutputTarget is the single source of truth for:
 - What tables/artifacts a target produces (contract)
@@ -77,14 +73,14 @@ class OutputTarget:
         Canonical target identifier (e.g., "function_metrics").
     module
         Which target module produces this output.
-    plugin
-        Legacy implementation identifier (empty in Hamilton-first execution).
     contract
         Output contract defining tables and artifacts produced.
         This is authoritative; prefer `contract.table_keys` over legacy
         shortcuts when referring to outputs.
     dependencies
         Other OutputTarget names that must be computed first.
+        In Hamilton-first execution, these are populated at runtime from
+        the Hamilton DAG via `target_graph_from_hamilton()`.
     resources
         Resources required for execution (tracker, tools, etc.).
     execution
@@ -102,7 +98,6 @@ class OutputTarget:
     >>> target = OutputTarget(
     ...     name="scip",
     ...     module="ingestion",
-    ...     plugin="scip_ingest",
     ...     contract=OutputContract(
     ...         tables=(TableSchema("core", "goids", [Column("goid_h128", "DECIMAL(38,0)")]),),
     ...         artifacts=(ArtifactSpec("scip_index", "{scip_dir}/index.scip"),),
@@ -116,7 +111,6 @@ class OutputTarget:
 
     name: str
     module: TargetModule
-    plugin: str = ""
 
     contract: OutputContract = field(default_factory=lambda: EMPTY_CONTRACT)
     dependencies: tuple[str, ...] = ()
@@ -140,39 +134,6 @@ class OutputTarget:
         if errors:
             message = "; ".join(errors)
             raise ValueError(message)
-
-    @classmethod
-    def from_tables(
-        cls,
-        *,
-        name: str,
-        module: TargetModule,
-        plugin: str = "",
-        tables: Iterable[str],
-        options: TargetOptions | None = None,
-    ) -> OutputTarget:
-        """Create an OutputTarget from table keys and optional artifacts.
-
-        This factory provides compatibility for legacy call sites that
-        previously passed ``tables=...`` directly to the constructor.
-
-        Returns
-        -------
-        OutputTarget
-            Target configured with a simple contract derived from table keys.
-        """
-        opts = options or TargetOptions()
-        return cls(
-            name=name,
-            module=module,
-            plugin=plugin,
-            contract=OutputContract.simple(table_keys=tables, artifacts=opts.artifacts),
-            dependencies=opts.dependencies,
-            resources=opts.resources,
-            execution=opts.execution,
-            parameters=opts.parameters,
-            description=opts.description,
-        )
 
     @property
     def table_keys(self) -> tuple[str, ...]:

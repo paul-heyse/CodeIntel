@@ -16,6 +16,7 @@ from codeintel.build.hamilton.native.analytics.coverage_targets import (
     t__behavioral_coverage,
     t__coverage_test_edges,
 )
+from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
@@ -74,17 +75,17 @@ def _make_graph() -> TargetGraph:
     """
     graph = TargetGraph()
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="coverage_test_edges",
             module="analytics",
-            tables=("analytics.test_coverage_edges",),
+            contract=OutputContract.simple(table_keys=("analytics.test_coverage_edges",)),
         )
     )
     graph.register(
-        OutputTarget.from_tables(
+        OutputTarget(
             name="behavioral_coverage",
             module="analytics",
-            tables=("analytics.behavioral_coverage",),
+            contract=OutputContract.simple(table_keys=("analytics.behavioral_coverage",)),
         )
     )
     return graph

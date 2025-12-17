@@ -135,7 +135,6 @@ def get_dag_info(
             "name": target_name,
             "node_name": node_name,
             "module": target.module,
-            "plugin": target.plugin,
             "tables": list(target.table_keys),
             "dependencies": list(target.dependencies),
         }
