@@ -1,8 +1,9 @@
-"""Native Hamilton implementation for function_history target.
+"""Native Hamilton implementations for history-derived analytics targets.
 
-This module provides the Hamilton native nodes for function history metrics:
-- `t__function_history__compute`: Pure compute node for function history
-- `t__function_history`: Materialize node that writes the table
+This module consolidates targets that derive analytics from git history:
+
+- ``function_history``: Per-function creation/modification/churn metrics.
+- ``history_timeseries``: Multi-commit timeseries analytics (currently stubbed).
 
 The compute node calls `build_function_history_rows` from
 `codeintel.analytics.functions.function_history` which returns row tuples.
@@ -22,6 +23,7 @@ from codeintel.analytics.functions.function_history import (
     FUNCTION_HISTORY_COLS,
     build_function_history_rows,
 )
+from codeintel.analytics.history.history_timeseries import HISTORY_TIMESERIES_COLS
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
@@ -124,8 +126,55 @@ def t__function_history(
     )
 
 
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.history_timeseries"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("history_timeseries"),
+    table_key=value("analytics.history_timeseries"),
+    columns=value(tuple(HISTORY_TIMESERIES_COLS)),
+)
+@tag(
+    domain="analytics",
+    target="history_timeseries",
+    node_type="compute",
+    target_="t__history_timeseries__compute",
+)
+def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], ...]:
+    """Compute history timeseries metrics across commits.
+
+    Full multi-commit functionality is not yet wired into ``BuildEnv``, so this
+    node currently returns an empty result set and succeeds.
+    """
+    _ = env
+    log.info(
+        "history_timeseries: Multi-commit configuration not available via BuildEnv; "
+        "returning empty result set."
+    )
+    return ()
+
+
+@tag(domain="analytics", target="history_timeseries", node_type="materialize")
+def t__history_timeseries(
+    env: BuildEnv,
+    graph: TargetGraph,
+    m__analytics__history_timeseries: dict[str, Any],
+) -> TargetRunRecord:
+    """Materialize history timeseries table to DuckDB."""
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name="history_timeseries",
+        expected_table_key="analytics.history_timeseries",
+        materialization=m__analytics__history_timeseries,
+    )
+
+
 # Export node names for Hamilton discovery
 __all__ = [
     "t__function_history",
     "t__function_history__compute",
+    "t__history_timeseries",
+    "t__history_timeseries__compute",
 ]

@@ -1,13 +1,15 @@
-"""Native Hamilton implementation for export_jsonl target.
+"""Native Hamilton implementations for export targets.
 
-This module implements the export_jsonl target as a pure Hamilton DAG,
-exporting analytics data to JSONL format for external consumption.
+This module consolidates file-artifact export targets:
+- ``export_jsonl``: JSONL export of selected analytics datasets
+- ``export_parquet``: Parquet export of selected analytics datasets
 
-Phase 5: Export domain migration with Hamilton-native validation.
+Both targets use DAG-visible artifact I/O via ``FileArtifactSaver``.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 from dataclasses import dataclass, field
@@ -15,7 +17,7 @@ from typing import Any, cast
 
 import ibis.expr.types as ir
 import pandas as pd
-from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers import check_output_custom, schema, source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.hamilton.env import BuildEnv
@@ -26,11 +28,13 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materialization,
 )
 from codeintel.build.hamilton.native.runner import should_skip_native_target
+from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
 
-LOG = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
+
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table, pd.DataFrame)
 
 
@@ -60,32 +64,7 @@ def t__export_jsonl__compute(
     q__core__modules: ir.Table,
     q__analytics__function_metrics: ir.Table,
 ) -> ExportJsonlComputeResult | None:
-    """Compute export manifest and gather data for JSONL export.
-
-    This node collects data from multiple analytics tables and prepares
-    it for export to JSONL format. The export includes modules and
-    function metrics with full snapshot context.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway, snapshot, and config.
-    q__core__modules
-        Ibis table expression for core.modules.
-    q__analytics__function_metrics
-        Ibis table expression for analytics.function_metrics.
-
-    Returns
-    -------
-    ExportJsonlComputeResult
-        Export specification with modules data, function metrics data,
-        and export metadata.
-
-    Examples
-    --------
-    >>> # This node is executed by Hamilton as part of the export_jsonl target
-    >>> # It produces a result that is consumed by t__export_jsonl materializer
-    """
+    """Compute export manifest and gather data for JSONL export."""
     target = graph.get("export_jsonl")
     if target is not None:
         input_hash = compute_input_hash(
@@ -98,9 +77,6 @@ def t__export_jsonl__compute(
         if should_skip_native_target(env, target, input_hash):
             return None
 
-    LOG.info("Computing export_jsonl: gathering data for export")
-
-    # Filter to current snapshot
     modules = q__core__modules.filter(
         and_predicates(
             q__core__modules.repo == env.snapshot.repo,
@@ -115,7 +91,6 @@ def t__export_jsonl__compute(
         )
     )
 
-    # Execute queries and convert to Python lists
     modules_df = cast("pd.DataFrame", modules.execute())
     function_metrics_df = cast("pd.DataFrame", function_metrics.execute())
     modules_data = tuple(cast("list[dict[str, Any]]", modules_df.to_dict(orient="records")))
@@ -123,7 +98,6 @@ def t__export_jsonl__compute(
         cast("list[dict[str, Any]]", function_metrics_df.to_dict(orient="records"))
     )
 
-    # Build export metadata
     metadata = {
         "repo": env.snapshot.repo,
         "commit": env.snapshot.commit,
@@ -131,12 +105,6 @@ def t__export_jsonl__compute(
         "modules_count": len(modules_data),
         "function_metrics_count": len(function_metrics_data),
     }
-
-    LOG.info(
-        "export_jsonl compute complete: %d modules, %d function metrics",
-        len(modules_data),
-        len(function_metrics_data),
-    )
 
     return ExportJsonlComputeResult(
         modules_data=modules_data,
@@ -163,16 +131,13 @@ def export_jsonl__content(t__export_jsonl__compute: ExportJsonlComputeResult | N
     function_metrics_data = t__export_jsonl__compute.function_metrics_data
     metadata = t__export_jsonl__compute.metadata
 
-    jsonl_lines: list[str] = []
-    jsonl_lines.append(json.dumps({"_metadata": metadata}, ensure_ascii=False))
+    jsonl_lines: list[str] = [json.dumps({"_metadata": metadata}, ensure_ascii=False)]
     jsonl_lines.extend(
-        [json.dumps({"_type": "module", **module}, ensure_ascii=False) for module in modules_data]
+        json.dumps({"_type": "module", **module}, ensure_ascii=False) for module in modules_data
     )
     jsonl_lines.extend(
-        [
-            json.dumps({"_type": "function_metric", **metric}, ensure_ascii=False)
-            for metric in function_metrics_data
-        ]
+        json.dumps({"_type": "function_metric", **metric}, ensure_ascii=False)
+        for metric in function_metrics_data
     )
     return "\n".join(jsonl_lines) + "\n"
 
@@ -183,30 +148,7 @@ def t__export_jsonl(
     graph: TargetGraph,
     m__artifact__jsonl_export: dict[str, Any],
 ) -> TargetRunRecord:
-    """Write JSONL export artifact and return record with ArtifactRef.
-
-    This node takes the computed export data and writes it to a JSONL file
-    in the export directory, using atomic file write semantics.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway, snapshot, and config.
-    graph
-        Target graph for accessing OutputTarget contract.
-    t__export_jsonl__compute
-        Export data from compute node.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record capturing execution status, duration, and artifact references.
-
-    Examples
-    --------
-    >>> # This node is executed by Hamilton after the compute node succeeds
-    >>> # It materializes the export data to a JSONL file
-    """
+    """Write JSONL export artifact and return record with ArtifactRef."""
     return record_from_file_artifact_materialization(
         env=env,
         graph=graph,
@@ -216,9 +158,91 @@ def t__export_jsonl(
     )
 
 
+@tag(domain="export", target="export_parquet", node_type="compute")
+@check_output_custom(
+    *build_table_contract(
+        required_columns=["function_goid_h128", "repo", "commit"],
+        no_nulls=["function_goid_h128", "repo", "commit"],
+    ),
+)
+@schema.output(
+    ("function_goid_h128", "string"),
+    ("repo", "string"),
+    ("commit", "string"),
+    ("loc", "int"),
+    ("complexity", "int"),
+    ("parameter_count", "int"),
+    ("return_count", "int"),
+    ("has_docstring", "bool"),
+)
+def t__export_parquet__compute(
+    env: BuildEnv,
+    q__analytics__function_metrics: ir.Table,
+) -> ir.Table:
+    """Compute the Parquet export table expression."""
+    return q__analytics__function_metrics.filter(
+        and_predicates(
+            q__analytics__function_metrics.repo == env.snapshot.repo,
+            q__analytics__function_metrics.commit == env.snapshot.commit,
+        )
+    )
+
+
+@SaveToDecorator(
+    [FileArtifactSaver],
+    output_name_=materialize_node("artifact.parquet_export"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("export_parquet"),
+    artifact_name=value("parquet_export"),
+)
+@tag(domain="export", target="export_parquet", node_type="compute", target_="export_parquet__bytes")
+def export_parquet__bytes(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__export_parquet__compute: ir.Table,
+) -> bytes | None:
+    """Serialize the Parquet export payload for file materialization."""
+    target = graph.get("export_parquet")
+    if target is not None:
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            options_hash=None,
+            manifests=env.manifest_index,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
+
+    df = cast("pd.DataFrame", t__export_parquet__compute.execute())
+    buffer = io.BytesIO()
+    df.to_parquet(buffer, index=False, engine="pyarrow")
+    return buffer.getvalue()
+
+
+@tag(domain="export", target="export_parquet", node_type="materialize")
+def t__export_parquet(
+    env: BuildEnv,
+    graph: TargetGraph,
+    m__artifact__parquet_export: dict[str, Any],
+) -> TargetRunRecord:
+    """Write Parquet export artifact and return record with ArtifactRef."""
+    return record_from_file_artifact_materialization(
+        env=env,
+        graph=graph,
+        target_name="export_parquet",
+        expected_artifact_name="parquet_export",
+        materialization=m__artifact__parquet_export,
+    )
+
+
 __all__ = [
     "ExportJsonlComputeResult",
     "export_jsonl__content",
     "t__export_jsonl",
     "t__export_jsonl__compute",
+    "t__export_parquet",
+    "t__export_parquet__compute",
 ]
+

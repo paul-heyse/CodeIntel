@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.context import ContextResources, TargetExecutionContext
+from codeintel.build.context_base import BuildContext
 from codeintel.build.contracts import ArtifactSpec, OutputContract
 from codeintel.build.errors import (
     BuildErrorCollection,
@@ -16,7 +17,7 @@ from codeintel.build.errors import (
 from codeintel.build.parameters import TargetParameters
 from codeintel.build.targets import OutputTarget
 from codeintel.config.datasets.primitives import Column, TableSchema
-from tests._helpers import make_build_paths, make_snapshot
+from tests._helpers import build_test_gateway, make_build_paths, make_snapshot
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 
 if TYPE_CHECKING:
@@ -30,10 +31,15 @@ def _context_with_contract(contract: OutputContract, tmp_path: Path) -> TargetEx
         plugin="demo_plugin",
         contract=contract,
     )
-    return TargetExecutionContext(
-        target=target,
-        snapshot=make_snapshot(tmp_path),
+    snapshot = make_snapshot(tmp_path)
+    build_ctx = BuildContext(
+        gateway=build_test_gateway(),
+        snapshot=snapshot,
         paths=make_build_paths(tmp_path),
+    )
+    return TargetExecutionContext(
+        build_ctx=build_ctx,
+        target=target,
         resources=ContextResources(),
         parameters=TargetParameters({"limit": 5}),
     )
@@ -74,10 +80,14 @@ def test_write_table_requires_contract_schema(tmp_path: Path) -> None:
         plugin="demo_plugin",
         tables=("core.declared",),
     )
+    snapshot = make_snapshot(tmp_path)
     ctx = TargetExecutionContext(
+        build_ctx=BuildContext(
+            gateway=build_test_gateway(),
+            snapshot=snapshot,
+            paths=make_build_paths(tmp_path),
+        ),
         target=target,
-        snapshot=make_snapshot(tmp_path),
-        paths=make_build_paths(tmp_path),
         resources=ContextResources(),
         parameters=TargetParameters.empty(),
     )
@@ -117,24 +127,28 @@ def test_write_table_column_mismatch_raises(tmp_path: Path) -> None:
     expect_equal(exc_info.value.expected, 2)
 
 
-def test_gateway_property_requires_resource(tmp_path: Path) -> None:
-    """Gateway property enforces presence of configured gateway."""
+def test_gateway_property_returns_build_ctx_gateway(tmp_path: Path) -> None:
+    """Gateway property delegates to build context gateway."""
     contract = OutputContract()
+    gateway = build_test_gateway()
+    snapshot = make_snapshot(tmp_path)
     ctx = TargetExecutionContext(
+        build_ctx=BuildContext(
+            gateway=gateway,
+            snapshot=snapshot,
+            paths=make_build_paths(tmp_path),
+        ),
         target=OutputTarget(
             name="noop",
             module="analytics",
             plugin="noop",
             contract=contract,
         ),
-        snapshot=make_snapshot(tmp_path),
-        paths=make_build_paths(tmp_path),
         resources=ContextResources(),
         parameters=TargetParameters.empty(),
     )
 
-    with pytest.raises(RuntimeError):
-        _ = ctx.gateway
+    expect_equal(ctx.gateway, gateway)
 
 
 def test_contract_validation_reports_duplicates() -> None:

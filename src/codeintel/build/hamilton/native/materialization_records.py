@@ -362,6 +362,149 @@ def record_from_duckdb_materializations(
     return record
 
 
+def record_from_file_artifact_materializations(
+    *,
+    env: BuildEnv,
+    graph: TargetGraph,
+    target_name: str,
+    materializations: dict[str, Mapping[str, object]],
+) -> TargetRunRecord:
+    """Build a TargetRunRecord from multiple file artifact saver metadata dicts.
+
+    Parameters
+    ----------
+    env
+        Build environment for manifest persistence and expected output refs.
+    graph
+        Target graph used to resolve the OutputTarget contract.
+    target_name
+        Target name for which the record is being produced.
+    materializations
+        Mapping of artifact_name to materialization metadata dict returned by saver nodes.
+
+    Returns
+    -------
+    TargetRunRecord
+        Record describing succeeded/skipped/failed completion for the target.
+    """
+    target = graph.get(target_name)
+    if target is None:
+        msg = f"Target not found: {target_name}"
+        return TargetRunRecord(
+            target=target_name,
+            plugin_name=f"native:{target_name}",
+            status="failed",
+            input_hash="",
+            options_hash=None,
+            duration_ms=0.0,
+            row_counts={},
+            error=msg,
+            datasets=(),
+            artifacts=(),
+        )
+
+    parsed: dict[str, FileArtifactMaterializationResult] = {}
+    for expected_artifact_name in target.contract.artifact_names:
+        meta = materializations.get(expected_artifact_name)
+        if meta is None:
+            parsed[expected_artifact_name] = FileArtifactMaterializationResult(
+                status="failed",
+                artifact_name=expected_artifact_name,
+                path=None,
+                size_bytes=None,
+                duration_ms=0.0,
+                input_hash="",
+                error=f"Missing materialization metadata for artifact: {expected_artifact_name}",
+            )
+            continue
+        parsed[expected_artifact_name] = _parse_file_artifact_materialization(
+            meta,
+            default_artifact_name=expected_artifact_name,
+        )
+
+    statuses = {result.status for result in parsed.values()}
+    input_hash = next((result.input_hash for result in parsed.values() if result.input_hash), "")
+    duration_ms = sum(result.duration_ms for result in parsed.values())
+
+    if "failed" in statuses:
+        errors = [r.error for r in parsed.values() if r.status == "failed" and r.error]
+        message = errors[0] if errors else "One or more artifact writes failed"
+        run = NativeRunInfo(
+            input_hash=input_hash,
+            options_hash=None,
+            duration_ms=duration_ms,
+            row_counts=None,
+        )
+        return create_run_record(
+            target,
+            "failed",
+            input_hash,
+            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(message)),
+        )
+
+    if statuses == {"skipped"}:
+        run = NativeRunInfo(
+            input_hash=input_hash,
+            options_hash=None,
+            duration_ms=duration_ms,
+            row_counts=None,
+        )
+        return create_run_record(
+            target,
+            "skipped",
+            input_hash,
+            inputs=RunRecordInputs(env=env, run=run),
+        )
+
+    run = NativeRunInfo(
+        input_hash=input_hash,
+        options_hash=None,
+        duration_ms=duration_ms,
+        row_counts=None,
+    )
+    record = create_run_record(
+        target,
+        "succeeded",
+        input_hash,
+        inputs=RunRecordInputs(env=env, run=run),
+    )
+
+    updated_artifacts: list[ArtifactRef] = []
+    parsed_by_name = {r.artifact_name: r for r in parsed.values()}
+    for artifact in record.artifacts:
+        if not isinstance(artifact, ArtifactRef):
+            continue
+
+        result = parsed_by_name.get(artifact.name)
+        if result is None:
+            updated_artifacts.append(artifact)
+            continue
+
+        updated = artifact
+        if result.path is not None:
+            updated = updated.with_path(result.path)
+        if result.size_bytes is not None:
+            updated = updated.with_metadata("size_bytes", result.size_bytes)
+        updated_artifacts.append(updated)
+
+    if updated_artifacts:
+        record = TargetRunRecord(
+            target=record.target,
+            plugin_name=record.plugin_name,
+            status=record.status,
+            input_hash=record.input_hash,
+            options_hash=record.options_hash,
+            duration_ms=record.duration_ms,
+            row_counts=record.row_counts,
+            error=record.error,
+            datasets=record.datasets,
+            artifacts=tuple(updated_artifacts),
+        )
+
+    save_manifest(env, record)
+    return record
+
+
 def _parse_materialization(
     materialization: Mapping[str, object],
     *,
@@ -446,5 +589,6 @@ __all__ = [
     "MaterializationStatus",
     "record_from_duckdb_materialization",
     "record_from_duckdb_materializations",
+    "record_from_file_artifact_materializations",
     "record_from_file_artifact_materialization",
 ]

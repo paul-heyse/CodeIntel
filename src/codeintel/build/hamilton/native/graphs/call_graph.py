@@ -80,8 +80,8 @@ class CallGraphExtractResult:
 
 
 @dataclass(frozen=True)
-class _EdgeCollectionContext:
-    """Context for edge collection across files.
+class _EdgeCollectionState:
+    """State for edge collection across files.
 
     Attributes
     ----------
@@ -454,7 +454,7 @@ def _persist_edges(
 @tag(node_type="helper")
 def _collect_all_edges(
     paths: list[str],
-    ctx: _EdgeCollectionContext,
+    ctx: _EdgeCollectionState,
 ) -> list[CallGraphEdgeRow]:
     """Collect edges from all files with functions.
 
@@ -569,7 +569,7 @@ def t__call_graph__extract(
 
         source_root = snapshot.repo_root or get_source_root(gateway, repo, commit)
 
-        collection_ctx = _EdgeCollectionContext(
+        collection_ctx = _EdgeCollectionState(
             function_index=function_index,
             global_callees=global_callees,
             def_goids_by_path=def_goids,

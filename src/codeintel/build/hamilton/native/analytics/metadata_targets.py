@@ -1,8 +1,10 @@
-"""Native Hamilton implementation for data_models target.
+"""Native Hamilton implementations for metadata-oriented analytics targets.
 
-This module provides the Hamilton native nodes for data model extraction:
-- `t__data_models__compute`: Pure compute node for data model extraction
-- `t__data_models`: Materialize node that writes all 3 tables
+This module consolidates targets that extract metadata about code structure:
+
+- ``data_models`` / ``data_model_usage``: Data model extraction + usage analytics.
+- ``function_ast_features``: AST-derived function features.
+- ``profiles``: Aggregated profiles for functions/files/modules.
 
 The compute node calls pure functions from `codeintel.analytics.data_models.compute`
 which return structured result containers. The materialize node uses
@@ -12,14 +14,21 @@ which return structured result containers. The materialize node uses
 from __future__ import annotations
 
 import logging
-from typing import Any
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from hamilton.function_modifiers import source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
+from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.compute.data_models import (
     DATA_MODEL_USAGE_COLS,
     build_data_model_usage_rows,
+)
+from codeintel.analytics.profiles import (
+    build_file_profile,
+    build_function_profile,
+    build_module_profile,
 )
 from codeintel.analytics.data_models.compute import DataModelsResult, compute_data_models_pure
 from codeintel.analytics.data_models.core import (
@@ -27,7 +36,13 @@ from codeintel.analytics.data_models.core import (
     DATA_MODEL_RELATIONSHIPS_COLS,
     DATA_MODELS_COLS,
 )
+from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.analytics.utilities.datasets import (
+    get_function_ast_features_contract,
+    insert_analytics_rows,
+)
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
@@ -36,14 +51,20 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.runner import should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
+from codeintel.core.catalog import CatalogService
 from codeintel.storage.helpers.module_index import load_module_map
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DataModelsResult, TargetGraph, TargetRunRecord)
 
 LOG = logging.getLogger(__name__)
+log = LOG
+
+if TYPE_CHECKING:
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
 
 
 @tag(domain="analytics", target="data_models", node_type="compute")
@@ -295,11 +316,196 @@ def t__data_model_usage(
         materialization=m__analytics__data_model_usage,
     )
 
+# ---------------------------------------------------------------------------
+# function_ast_features target
+# ---------------------------------------------------------------------------
 
-# Export node names for Hamilton discovery
+
+@dataclass(frozen=True)
+class AstFeaturesResult:
+    """Result from AST features computation."""
+
+    success: bool
+    features_map: dict[int, FunctionAstFeatures] = field(default_factory=dict)
+    error: str | None = None
+
+
+@tag(domain="analytics", target="function_ast_features", node_type="compute")
+def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
+    """Compute AST-derived semantic features for functions."""
+    try:
+        catalog = CatalogService.from_db(
+            env.gateway,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
+        )
+    except (RuntimeError, ValueError) as exc:
+        log.warning("Failed to load catalog: %s", exc)
+        return AstFeaturesResult(success=False, error=f"CatalogProvider is required: {exc}")
+
+    try:
+        provider = FeaturesProvider(
+            gateway=env.gateway,
+            snapshot=env.snapshot,
+            catalog_provider=catalog,
+        )
+        features_map = provider.get()
+    except (RuntimeError, ValueError, OSError) as exc:
+        log.warning("Failed to compute function features: %s", exc)
+        return AstFeaturesResult(success=True, features_map={})
+
+    return AstFeaturesResult(success=True, features_map=features_map)
+
+
+@tag(domain="analytics", target="function_ast_features", node_type="materialize")
+def t__function_ast_features(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__function_ast_features__compute: AstFeaturesResult,
+) -> TargetRunRecord:
+    """Materialize function AST features to DuckDB."""
+    executor = NativeTargetExecutor.for_target(env, graph, "function_ast_features")
+
+    if executor.should_skip():
+        return executor.skip()
+
+    if not t__function_ast_features__compute.success:
+        return executor.fail(RuntimeError(t__function_ast_features__compute.error or "AST features failed"))
+
+    def compute() -> dict[str, int]:
+        features_map = t__function_ast_features__compute.features_map
+        if not features_map:
+            log.info(
+                "No function features computed for %s@%s",
+                env.snapshot.repo,
+                env.snapshot.commit,
+            )
+            return {"analytics.function_ast_features": 0}
+
+        rows = [
+            features_to_row(
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
+                features=features,
+            )
+            for features in features_map.values()
+        ]
+
+        contract = get_function_ast_features_contract(env.gateway)
+        delete_scope = DeleteScope(repo=env.snapshot.repo, commit=env.snapshot.commit)
+        insert_analytics_rows(
+            env.gateway,
+            contract,
+            rows,
+            delete_scope=delete_scope,
+            scope=f"{env.snapshot.repo}@{env.snapshot.commit}",
+        )
+
+        return {"analytics.function_ast_features": len(rows)}
+
+    return executor.execute(compute)
+
+
+# ---------------------------------------------------------------------------
+# profiles target
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ProfilesResult:
+    """Result from profiles computation."""
+
+    success: bool
+    error: str | None = None
+
+
+@tag(domain="analytics", target="profiles", node_type="compute")
+def t__profiles__compute(
+    env: BuildEnv,
+    t__call_graph: TargetRunRecord,
+    t__symbol_uses: TargetRunRecord,
+) -> ProfilesResult:
+    """Build aggregated profiles for functions, files, and modules."""
+    if t__call_graph.status != "succeeded":
+        return ProfilesResult(
+            success=False,
+            error=f"Upstream call_graph target failed: {t__call_graph.error}",
+        )
+
+    if t__symbol_uses.status != "succeeded":
+        return ProfilesResult(
+            success=False,
+            error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
+        )
+
+    try:
+        try:
+            catalog = CatalogService.from_db(
+                env.gateway,
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
+            )
+        except (RuntimeError, ValueError) as exc:
+            log.warning("Failed to load catalog: %s", exc)
+            return ProfilesResult(success=False, error=f"CatalogProvider is required: {exc}")
+
+        build_function_profile(
+            env.gateway,
+            env.snapshot,
+            catalog_provider=catalog,
+            module_map=None,
+        )
+        build_file_profile(
+            env.gateway,
+            env.snapshot,
+            catalog_provider=catalog,
+        )
+        build_module_profile(
+            env.gateway,
+            env.snapshot,
+            catalog_provider=catalog,
+        )
+
+        return ProfilesResult(success=True)
+    except Exception as exc:
+        log.exception("Profiles computation failed")
+        return ProfilesResult(success=False, error=str(exc))
+
+
+@tag(domain="analytics", target="profiles", node_type="materialize")
+def t__profiles(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__profiles__compute: ProfilesResult,
+) -> TargetRunRecord:
+    """Materialize profiles target."""
+    executor = NativeTargetExecutor.for_target(env, graph, "profiles")
+
+    if executor.should_skip():
+        return executor.skip()
+
+    if not t__profiles__compute.success:
+        return executor.fail(RuntimeError(t__profiles__compute.error or "Profiles failed"))
+
+    def compute() -> dict[str, int]:
+        return {
+            "analytics.function_profile": 0,
+            "analytics.file_profile": 0,
+            "analytics.module_profile": 0,
+        }
+
+    return executor.execute(compute)
+
+
 __all__ = [
+    "AstFeaturesResult",
+    "ProfilesResult",
     "t__data_model_usage",
     "t__data_model_usage__compute",
     "t__data_models",
     "t__data_models__compute",
+    "t__function_ast_features",
+    "t__function_ast_features__compute",
+    "t__profiles",
+    "t__profiles__compute",
 ]

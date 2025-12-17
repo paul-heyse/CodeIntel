@@ -75,6 +75,7 @@ def build_driver(
     *,
     config: dict[str, Any] | None = None,
     adapters: Sequence[LifecycleAdapter] | None = None,
+    enable_cache: bool = True,
 ) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.
 
@@ -90,6 +91,10 @@ def build_driver(
         Optional Hamilton adapter (or iterable of adapters) to attach to the
         Driver. This is the primary seam for telemetry, contract enforcement,
         and parallel execution.
+    enable_cache
+        When True, enable Hamilton's caching adapter for nodes decorated with
+        ``@cache``. Disable this for schema inference and other workflows that
+        pass unhashable inputs like Ibis expressions.
 
     Returns
     -------
@@ -118,15 +123,19 @@ def build_driver(
 
     adapter_list = list(adapters) if adapters else []
 
-    dr = (
+    builder = (
         h_driver.Builder()
         .with_config(config or {})
         .with_modules(template_mod, *native_mods)
         .allow_module_overrides()
-        .with_cache()
-        .with_adapters(*adapter_list)
-        .build()
     )
+    if enable_cache:
+        builder = builder.with_cache(
+            default_behavior="disable",
+            default_loader_behavior="disable",
+            default_saver_behavior="disable",
+        )
+    dr = builder.with_adapters(*adapter_list).build()
 
     t2n = {t.name: target_node(t.name) for t in graph.all_targets}
     n2t = {v: k for k, v in t2n.items()}

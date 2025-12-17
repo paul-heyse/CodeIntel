@@ -1,10 +1,12 @@
-"""Native Hamilton implementation for graph_validation target.
+"""Native Hamilton implementations for graph_metrics and graph_validation targets.
 
-This module implements graph validation as a native Hamilton pipeline with:
-- t__graph_validation__check: Run validation checks on all graphs
-- t__graph_validation: Materialize and return TargetRunRecord
+This module consolidates the graph metrics and validation targets into a single
+Hamilton-native module to reduce boilerplate and improve discoverability.
 
-Phase 3: Graphs domain migration with Hamilton-native validation.
+Targets
+-------
+- ``graph_metrics``: Computes graph-derived analytics tables.
+- ``graph_validation``: Runs integrity checks on graph tables.
 """
 
 from __future__ import annotations
@@ -15,12 +17,25 @@ from typing import TYPE_CHECKING, SupportsInt, cast
 
 from hamilton.function_modifiers import tag
 
+from codeintel.analytics.graphs import (
+    compute_graph_metrics,
+    compute_graph_metrics_functions_ext,
+    compute_graph_metrics_modules_ext,
+    compute_graph_stats,
+)
+from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.targets import TargetGraph
+from codeintel.config.primitives import GraphBackendConfig
+from codeintel.graphs.runtime import (
+    GraphMetricsOptions,
+    GraphRuntimeOptions,
+    build_graph_runtime,
+)
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import filter_by, ibis_bool
+from codeintel.storage.ibis_types import and_predicates, filter_by, ibis_bool
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -28,6 +43,177 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+
+_GRAPH_METRICS_OUTPUT_TABLES = (
+    "analytics.graph_metrics_functions",
+    "analytics.graph_metrics_modules",
+    "analytics.graph_metrics_functions_ext",
+    "analytics.graph_metrics_modules_ext",
+    "analytics.graph_stats",
+)
+
+
+@dataclass(frozen=True)
+class GraphMetricsComputeResult:
+    """Result from graph metrics computation.
+
+    Attributes
+    ----------
+    success
+        Whether computation completed successfully.
+    table_counts
+        Row counts per produced table.
+    error
+        Fatal error message if computation failed.
+    """
+
+    success: bool
+    table_counts: dict[str, int] = field(default_factory=dict)
+    error: str | None = None
+
+
+@tag(node_type="helper")
+def _count_rows(
+    gateway: StorageGateway,
+    table: str,
+    repo: str,
+    commit: str,
+) -> int:
+    """Count rows in a table for the given snapshot.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    table
+        Table name.
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+
+    Returns
+    -------
+    int
+        Row count.
+    """
+    try:
+        tbl = gateway.ibis.table(table)
+        filtered = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
+        result_df = filtered.aggregate(row_count=tbl.repo.count()).execute()
+        return int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
+    except (RuntimeError, ValueError, OSError, KeyError):
+        return 0
+
+
+@tag(domain="graphs", target="graph_metrics", node_type="compute")
+def t__graph_metrics__compute(
+    env: BuildEnv,
+    t__call_graph: TargetRunRecord,
+) -> GraphMetricsComputeResult:
+    """Compute graph metrics from call graph data.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway and snapshot.
+    t__call_graph
+        Upstream call_graph target result (for dependency).
+
+    Returns
+    -------
+    GraphMetricsComputeResult
+        Result containing table row counts.
+    """
+    if t__call_graph.status != "succeeded":
+        return GraphMetricsComputeResult(
+            success=False,
+            error=f"Upstream call_graph target failed: {t__call_graph.error}",
+        )
+
+    try:
+        gateway = env.gateway
+        snapshot = env.snapshot
+        repo, commit = snapshot.repo, snapshot.commit
+
+        log.info(
+            "graph_metrics: Computing metrics for repo=%s commit=%s",
+            repo,
+            commit,
+        )
+
+        backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
+        runtime_options = GraphRuntimeOptions(snapshot=snapshot, backend=backend_config)
+        runtime = build_graph_runtime(gateway, runtime_options)
+
+        options = GraphMetricsOptions()
+        deps = GraphMetricsDeps(
+            catalog_provider=None,
+            runtime=runtime,
+        )
+        compute_graph_metrics(gateway, snapshot, options=options, deps=deps)
+
+        compute_graph_metrics_functions_ext(
+            gateway,
+            repo=repo,
+            commit=commit,
+            runtime=runtime,
+        )
+
+        compute_graph_metrics_modules_ext(
+            gateway,
+            repo=repo,
+            commit=commit,
+            runtime=runtime,
+        )
+
+        compute_graph_stats(
+            gateway,
+            repo=repo,
+            commit=commit,
+            runtime=runtime,
+        )
+
+        row_counts: dict[str, int] = {}
+        for table in _GRAPH_METRICS_OUTPUT_TABLES:
+            row_counts[table] = _count_rows(gateway, table, repo, commit)
+
+        log.info("graph_metrics: Computed metrics row_counts=%s", row_counts)
+
+        return GraphMetricsComputeResult(
+            success=True,
+            table_counts=row_counts,
+        )
+
+    except (RuntimeError, ValueError, OSError) as exc:
+        log.exception("Graph metrics computation failed")
+        return GraphMetricsComputeResult(
+            success=False,
+            error=str(exc),
+        )
+
+
+@tag(domain="graphs", target="graph_metrics", node_type="materialize")
+def t__graph_metrics(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__graph_metrics__compute: GraphMetricsComputeResult,
+) -> TargetRunRecord:
+    """Materialize graph metrics target with validation."""
+    executor = NativeTargetExecutor.for_target(env, graph, "graph_metrics")
+
+    if executor.should_skip():
+        return executor.skip()
+
+    if not t__graph_metrics__compute.success:
+        return executor.fail(
+            RuntimeError(t__graph_metrics__compute.error or "Graph metrics computation failed")
+        )
+
+    def compute() -> dict[str, int]:
+        return dict(t__graph_metrics__compute.table_counts)
+
+    return executor.execute(compute)
 
 
 @dataclass(frozen=True)
@@ -61,22 +247,7 @@ def _validate_call_graph_integrity(
     repo: str,
     commit: str,
 ) -> list[str]:
-    """Validate call graph edge integrity.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    list[str]
-        List of validation errors.
-    """
+    """Validate call graph edge integrity."""
     errors: list[str] = []
 
     try:
@@ -117,22 +288,7 @@ def _validate_import_graph_integrity(
     repo: str,
     commit: str,
 ) -> list[str]:
-    """Validate import graph integrity.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    list[str]
-        List of validation errors.
-    """
+    """Validate import graph integrity."""
     errors: list[str] = []
 
     try:
@@ -165,22 +321,7 @@ def _validate_cfg_integrity(
     _repo: str,
     _commit: str,
 ) -> list[str]:
-    """Validate CFG integrity.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    _repo
-        Repository identifier (unused, CFG tables don't scope by repo).
-    _commit
-        Commit SHA (unused, CFG tables don't scope by commit).
-
-    Returns
-    -------
-    list[str]
-        List of validation errors.
-    """
+    """Validate CFG integrity."""
     errors: list[str] = []
 
     try:
@@ -212,31 +353,7 @@ def t__graph_validation__check(
     t__import_graph: TargetRunRecord,
     t__cfg: TargetRunRecord,
 ) -> GraphValidationResult:
-    """Run validation checks on all graph data.
-
-    This is the compute node for the graph_validation target. It validates
-    the integrity of call graph, import graph, and CFG data.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    t__call_graph
-        Upstream call_graph target result (for dependency).
-    t__import_graph
-        Upstream import_graph target result (for dependency).
-    t__cfg
-        Upstream cfg target result (for dependency).
-
-    Returns
-    -------
-    GraphValidationResult
-        Result containing validation errors.
-
-    Notes
-    -----
-    This target produces no tables - it only logs validation errors.
-    """
+    """Run validation checks on all graph data."""
     deps = [("call_graph", t__call_graph), ("import_graph", t__import_graph), ("cfg", t__cfg)]
     for name, record in deps:
         if record.status != "succeeded":
@@ -292,25 +409,7 @@ def t__graph_validation(
     graph: TargetGraph,
     t__graph_validation__check: GraphValidationResult,
 ) -> TargetRunRecord:
-    """Materialize graph validation target.
-
-    This is the entry point for the graph_validation target. It orchestrates
-    validation checks and returns a TargetRunRecord.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    graph
-        Target graph for metadata lookup.
-    t__graph_validation__check
-        Validation result from upstream compute node.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record with status, datasets, and execution metadata.
-    """
+    """Materialize graph validation target."""
     executor = NativeTargetExecutor.for_target(env, graph, "graph_validation")
 
     if executor.should_skip():
@@ -330,7 +429,11 @@ def t__graph_validation(
 
 
 __all__ = [
+    "GraphMetricsComputeResult",
     "GraphValidationResult",
+    "t__graph_metrics",
+    "t__graph_metrics__compute",
     "t__graph_validation",
     "t__graph_validation__check",
 ]
+

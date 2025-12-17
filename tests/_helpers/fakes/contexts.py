@@ -70,6 +70,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from codeintel.build.context import ContextResources, TargetExecutionContext
+from codeintel.build.context_base import BuildContext
 from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.targets import OutputTarget
@@ -478,18 +479,21 @@ class ExecutionContextBuilder:
             Configured target execution context.
         """
         overrides = resources or TargetResourceOverrides()
+        build_ctx = BuildContext(
+            gateway=cast("StorageGateway", self._gateway),
+            snapshot=self.snapshot,
+            paths=self._paths or BuildPaths.from_repo_root(self.snapshot.repo_root),
+        )
         ctx_resources = ContextResources(
             providers=overrides.providers,
-            gateway=cast("StorageGateway", self._gateway),
             modules=overrides.modules,
             change_tracker=overrides.change_tracker,
             graph_runtime=overrides.graph_runtime,
             catalog=overrides.catalog,
         )
         return TargetExecutionContext(
+            build_ctx=build_ctx,
             target=target,
-            snapshot=self.snapshot,
-            paths=self._paths or BuildPaths.from_repo_root(self.snapshot.repo_root),
             resources=ctx_resources,
             parameters=parameters or EMPTY_PARAMETERS,
         )

@@ -6,56 +6,44 @@ with @check_output_custom validators and @schema.output documentation.
 
 from __future__ import annotations
 
-from codeintel.build.hamilton.native.ingestion.ast import (
-    AstExtractResult,
-    t__ast,
-    t__ast__extract,
-)
-from codeintel.build.hamilton.native.ingestion.config import (
+from codeintel.build.hamilton.native.ingestion.ingest_targets import (
     ConfigIngestResult,
     ConfigScanResult,
+    CoverageIngestResult,
+    ModuleScanResult,
+    RepoMapWriteResult,
+    TestsIngestResult,
+    TypingIngestResult,
     t__config_ingest,
     t__config_ingest__ingest,
     t__config_ingest__scan,
-)
-from codeintel.build.hamilton.native.ingestion.coverage import (
-    CoverageIngestResult,
     t__coverage_ingest,
     t__coverage_ingest__ingest,
-)
-from codeintel.build.hamilton.native.ingestion.cst import (
-    CstExtractResult,
-    t__cst,
-    t__cst__extract,
-)
-from codeintel.build.hamilton.native.ingestion.docstrings import (
-    DocstringsExtractResult,
-    t__docstrings,
-    t__docstrings__extract,
-)
-from codeintel.build.hamilton.native.ingestion.modules import (
-    ModuleScanResult,
-    RepoMapWriteResult,
     t__modules,
     t__modules__scan,
     t__modules__write_repo_map,
-)
-from codeintel.build.hamilton.native.ingestion.scip import (
-    parse__scip,
-    t__scip,
-    tool__scip,
-)
-from codeintel.build.hamilton.native.ingestion.tests import (
-    TestsIngestResult,
     t__tests_ingest,
     t__tests_ingest__ingest,
-)
-from codeintel.build.hamilton.native.ingestion.typing import (
-    parse__typing,
     t__typing,
-    tool__typing__pyrefly,
-    tool__typing__pyright,
-    tool__typing__ruff,
+    t__typing__ingest,
+)
+from codeintel.build.hamilton.native.ingestion.extraction_targets import (
+    AstExtractResult,
+    CstExtractResult,
+    DocstringsExtractResult,
+    t__ast,
+    t__ast__extract,
+    t__cst,
+    t__cst__extract,
+    t__docstrings,
+    t__docstrings__extract,
+)
+from codeintel.build.hamilton.native.ingestion.scip import (
+    ScipRunResult,
+    scip__index_artifact,
+    scip__json_artifact,
+    t__scip,
+    t__scip__run,
 )
 
 __all__: list[str] = [
@@ -67,9 +55,11 @@ __all__: list[str] = [
     "DocstringsExtractResult",
     "ModuleScanResult",
     "RepoMapWriteResult",
+    "ScipRunResult",
     "TestsIngestResult",
-    "parse__scip",
-    "parse__typing",
+    "TypingIngestResult",
+    "scip__index_artifact",
+    "scip__json_artifact",
     "t__ast",
     "t__ast__extract",
     "t__config_ingest",
@@ -85,11 +75,9 @@ __all__: list[str] = [
     "t__modules__scan",
     "t__modules__write_repo_map",
     "t__scip",
+    "t__scip__run",
     "t__tests_ingest",
     "t__tests_ingest__ingest",
     "t__typing",
-    "tool__scip",
-    "tool__typing__pyrefly",
-    "tool__typing__pyright",
-    "tool__typing__ruff",
+    "t__typing__ingest",
 ]

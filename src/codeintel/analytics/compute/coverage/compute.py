@@ -89,6 +89,31 @@ def build_coverage_functions_expr(
         LOG.warning("coverage_functions: failed to access tables: %s", exc)
         return None
 
+    return build_coverage_functions_expr_from_tables(goids, coverage, snapshot=snapshot)
+
+
+def build_coverage_functions_expr_from_tables(
+    goids: ir.Table,
+    coverage: ir.Table,
+    *,
+    snapshot: SnapshotRef,
+) -> ir.Table:
+    """Build Ibis expression for coverage_functions from pre-loaded tables.
+
+    Parameters
+    ----------
+    goids
+        Ibis table expression for ``core.goids``.
+    coverage
+        Ibis table expression for ``analytics.coverage_lines``.
+    snapshot
+        Repository and commit identifiers that scope the aggregation.
+
+    Returns
+    -------
+    ir.Table
+        Ibis table expression for ``analytics.coverage_functions``.
+    """
     goids_filtered = _filter_goids(goids, snapshot)
     coverage_filtered = _filter_coverage_lines(coverage, snapshot)
     joined = _join_goids_with_coverage(goids_filtered, coverage_filtered)
@@ -256,4 +281,5 @@ def _enrich_coverage_results(aggregated: ir.Table) -> ir.Table:
 
 __all__ = [
     "build_coverage_functions_expr",
+    "build_coverage_functions_expr_from_tables",
 ]
