@@ -89,7 +89,7 @@ def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
 
 @lru_cache(maxsize=1)
 def _runtime_auto() -> HamiltonRuntime:
-    return build_driver(mode="auto")
+    return build_driver()
 
 
 def _producers_by_table_key(graph: TargetGraph) -> dict[str, list[str]]:

@@ -60,28 +60,6 @@ def _get_module(name: str) -> ModuleType:
     return importlib.import_module(name)
 
 
-def _analytics_plugins() -> ModuleType:
-    """Get the analytics plugins module.
-
-    Returns
-    -------
-    ModuleType
-        The codeintel.build.plugins.analytics module.
-    """
-    return _get_module("codeintel.build.plugins.analytics")
-
-
-def _graphs_plugins() -> ModuleType:
-    """Get the graphs plugins module.
-
-    Returns
-    -------
-    ModuleType
-        The codeintel.build.plugins.graphs module.
-    """
-    return _get_module("codeintel.build.plugins.graphs")
-
-
 def _build_registry() -> ModuleType:
     """Get the build registry module.
 
@@ -145,43 +123,20 @@ def register_ingestion_targets(registry: UnifiedRegistry) -> None:
     # Get modules lazily
     targets = _build_registry()
 
-    # Native targets (migrated to Hamilton pipelines in Phase 2)
-    registry.register(
+    native_module = "codeintel.build.hamilton.native.ingestion"
+    native_targets = (
         targets.MODULES_TARGET,
-        native_module="codeintel.build.hamilton.native.ingestion.modules",
-    )
-    registry.register(
         targets.AST_TARGET,
-        native_module="codeintel.build.hamilton.native.ingestion.ast",
-    )
-    registry.register(
         targets.CST_TARGET,
-        native_module="codeintel.build.hamilton.native.ingestion.cst",
-    )
-    registry.register(
         targets.COVERAGE_INGEST_TARGET,
-        native_module="codeintel.build.hamilton.native.ingestion.coverage",
-    )
-    registry.register(
         targets.TESTS_INGEST_TARGET,
-        native_module="codeintel.build.hamilton.native.ingestion.tests",
-    )
-    registry.register(
         targets.DOCSTRINGS_TARGET,
-        native_module="codeintel.build.hamilton.native.ingestion.docstrings",
-    )
-    registry.register(
         targets.CONFIG_INGEST_TARGET,
-        native_module="codeintel.build.hamilton.native.ingestion.config",
-    )
-    registry.register(
         targets.SCIP_TARGET,
-        native_module="codeintel.build.hamilton.native.ingestion.scip",
-    )
-    registry.register(
         targets.TYPING_TARGET,
-        native_module="codeintel.build.hamilton.native.ingestion.typing",
     )
+    for target in native_targets:
+        registry.register(target, native_module=native_module)
 
 
 def register_graph_targets(registry: UnifiedRegistry) -> None:
@@ -199,60 +154,30 @@ def register_graph_targets(registry: UnifiedRegistry) -> None:
     # Get modules lazily
     targets = _build_registry()
 
-    # Native targets (migrated from plugin to Hamilton pipeline in Phase 3)
-    registry.register(
-        targets.GOIDS_TARGET,
-        native_module="codeintel.build.hamilton.native.graphs.goids",
-    )
-    registry.register(
-        targets.CALL_GRAPH_TARGET,
-        native_module="codeintel.build.hamilton.native.graphs.call_graph",
-    )
-    registry.register(
-        targets.IMPORT_GRAPH_TARGET,
-        native_module="codeintel.build.hamilton.native.graphs.import_graph",
-    )
-    registry.register(
-        targets.CFG_TARGET,
-        native_module="codeintel.build.hamilton.native.graphs.cfg_dfg",
-    )
-    registry.register(
-        targets.DFG_TARGET,
-        native_module="codeintel.build.hamilton.native.graphs.cfg_dfg",
-    )
-    # Native target (migrated from plugin to Hamilton pipeline)
-    registry.register(
-        targets.CFG_DFG_METRICS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.cfg_dfg",
-    )
-    registry.register(
-        targets.SYMBOL_USES_TARGET,
-        native_module="codeintel.build.hamilton.native.graphs.symbol_uses",
-    )
-    registry.register(
-        targets.GRAPH_VALIDATION_TARGET,
-        native_module="codeintel.build.hamilton.native.graphs.graph_validation",
-    )
-    registry.register(
-        targets.GRAPH_METRICS_TARGET,
-        native_module="codeintel.build.hamilton.native.graphs.graph_metrics",
-    )
-    # Native target (migrated from plugin to Hamilton pipeline in Phase 4)
-    registry.register(
-        targets.SYMBOL_GRAPH_METRICS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.symbol_graph_metrics",
-    )
-    # Native target (migrated from plugin to Hamilton pipeline)
-    registry.register(
-        targets.TEST_GRAPH_METRICS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.test_graph_metrics",
-    )
+    graphs_module = "codeintel.build.hamilton.native.graphs"
+    analytics_module = "codeintel.build.hamilton.native.analytics"
 
-    # Native targets (migrated to Hamilton pipelines)
-    registry.register(
+    graphs_targets = (
+        targets.GOIDS_TARGET,
+        targets.CALL_GRAPH_TARGET,
+        targets.IMPORT_GRAPH_TARGET,
+        targets.CFG_TARGET,
+        targets.DFG_TARGET,
+        targets.SYMBOL_USES_TARGET,
+        targets.GRAPH_VALIDATION_TARGET,
+        targets.GRAPH_METRICS_TARGET,
         targets.CALL_GRAPH_VIEWS_TARGET,
-        native_module="codeintel.build.hamilton.native.graphs.call_graph_views",
     )
+    for target in graphs_targets:
+        registry.register(target, native_module=graphs_module)
+
+    analytics_graph_targets = (
+        targets.CFG_DFG_METRICS_TARGET,
+        targets.SYMBOL_GRAPH_METRICS_TARGET,
+        targets.TEST_GRAPH_METRICS_TARGET,
+    )
+    for target in analytics_graph_targets:
+        registry.register(target, native_module=analytics_module)
 
 
 def register_analytics_targets(registry: UnifiedRegistry) -> None:
@@ -270,105 +195,33 @@ def register_analytics_targets(registry: UnifiedRegistry) -> None:
     # Get modules lazily
     targets = _build_registry()
 
-    # Native targets (migrated from plugin to Hamilton pipeline in Phase 4)
-    registry.register(
+    native_module = "codeintel.build.hamilton.native.analytics"
+    native_targets = (
         targets.FUNCTION_METRICS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.function_metrics",
-    )
-    registry.register(
         targets.FUNCTION_EFFECTS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.function_effects",
-    )
-    registry.register(
         targets.FUNCTION_CONTRACTS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.function_contracts",
-    )
-    # Native target (migrated from plugin to Hamilton pipeline)
-    registry.register(
         targets.FUNCTION_HISTORY_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.function_history",
-    )
-    # Native target (migrated from plugin to Hamilton pipeline)
-    registry.register(
         targets.HISTORY_TIMESERIES_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.history_timeseries",
-    )
-    # Native target (migrated from plugin to Hamilton pipeline in Phase 4)
-    registry.register(
         targets.COVERAGE_TEST_EDGES_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.coverage_test_edges",
-    )
-    # Native target (migrated from plugin to Hamilton pipeline)
-    registry.register(
         targets.DATA_MODELS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.data_models",
-    )
-    # Native target (migrated from plugin to Hamilton pipeline)
-    registry.register(
         targets.DATA_MODEL_USAGE_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.data_models",
-    )
-    # Native targets (migrated from plugin to Hamilton pipeline in Phase 4)
-    registry.register(
         targets.CONFIG_DATA_FLOW_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.config_data_flow",
-    )
-    registry.register(
         targets.SEMANTIC_ROLES_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.semantic_roles",
-    )
-    registry.register(
         targets.SUBSYSTEM_GRAPH_METRICS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.subsystem_graph_metrics",
-    )
-    registry.register(
         targets.SUBSYSTEM_AGREEMENT_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.subsystem_agreement",
-    )
-    registry.register(
         targets.TEST_PROFILE_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.test_profile",
-    )
-    registry.register(
         targets.BEHAVIORAL_COVERAGE_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.behavioral_coverage",
-    )
-    # Native targets (migrated from plugin to Hamilton pipeline)
-    registry.register(
         targets.ENTRYPOINTS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.entrypoints",
-    )
-    registry.register(
         targets.EXTERNAL_DEPS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.dependencies",
-    )
-    # Native targets (migrated from plugin to Hamilton pipeline in Phase 4)
-    registry.register(
         targets.PROFILES_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.profiles",
-    )
-    registry.register(
         targets.FUNCTION_AST_FEATURES_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.ast_features",
-    )
-
-    # Native targets (migrated to Hamilton pipelines - Phase 1.5 + Phase 4)
-    registry.register(
         targets.RISK_FACTORS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.risk_factors",
-    )
-    registry.register(
         targets.COVERAGE_FUNCTIONS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.coverage_functions",
-    )
-    registry.register(
         targets.HOTSPOTS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.hotspots",
-    )
-    registry.register(
         targets.SUBSYSTEMS_TARGET,
-        native_module="codeintel.build.hamilton.native.analytics.subsystems",
     )
+    for target in native_targets:
+        registry.register(target, native_module=native_module)
 
 
 def register_export_targets(registry: UnifiedRegistry) -> None:
@@ -384,12 +237,10 @@ def register_export_targets(registry: UnifiedRegistry) -> None:
     # Get modules lazily
     targets = _build_registry()
 
-    # Native targets (migrated to Hamilton pipelines)
-    registry.register(
+    native_module = "codeintel.build.hamilton.native.export"
+    native_targets = (
         targets.EXPORT_JSONL_TARGET,
-        native_module="codeintel.build.hamilton.native.export.export_jsonl",
-    )
-    registry.register(
         targets.EXPORT_PARQUET_TARGET,
-        native_module="codeintel.build.hamilton.native.export.export_parquet",
     )
+    for target in native_targets:
+        registry.register(target, native_module=native_module)

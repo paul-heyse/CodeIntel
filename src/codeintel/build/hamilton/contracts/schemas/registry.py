@@ -22,7 +22,7 @@ from functools import cache
 from typing import TYPE_CHECKING, get_args, get_origin, get_type_hints
 
 from codeintel.build.hamilton.contracts.schemas.builder import build_all_schemas
-from codeintel.build.hamilton.native.loader import get_loader
+from codeintel.build.hamilton.native.registry import load_native_modules
 
 if TYPE_CHECKING:
     from collections.abc import ItemsView, Iterator, ValuesView
@@ -183,8 +183,7 @@ def _get_hamilton_target_metadata() -> dict[str, dict[str, list[str]]]:
         Mapping of target names to dict with 'produces', 'consumes', and 'schema' info.
     """
     result: dict[str, dict[str, list[str]]] = {}
-    loader = get_loader()
-    modules = loader.discover_modules()
+    modules = load_native_modules()
 
     for module in modules:
         for func in _iter_module_callables(module):
@@ -253,8 +252,7 @@ def get_hamilton_dataclass_schemas() -> dict[str, dict[str, str]]:
         Mapping of target name to field schema (field name -> type string).
     """
     result: dict[str, dict[str, str]] = {}
-    loader = get_loader()
-    modules = loader.discover_modules()
+    modules = load_native_modules()
 
     for module in modules:
         for func in _iter_module_callables(module):

@@ -47,6 +47,27 @@ _SEARCH_TABLE_SCHEMA = "docs"
 _SEARCH_TABLE_NAME = "search_documents"
 _SEARCH_TABLE_KEY = "docs.search_documents"
 
+
+class UnknownViewIdError(KeyError):
+    """Raise when a semantic view identifier cannot be resolved."""
+
+    def __init__(self, view_id: str) -> None:
+        super().__init__(view_id)
+        self.view_id = view_id
+
+
+class UnknownColumnsError(ValueError):
+    """Raise when a request selects columns not allowed by a semantic view."""
+
+    def __init__(self, *, unknown: tuple[str, ...], allowed: tuple[str, ...]) -> None:
+        unknown_list = list(unknown)
+        allowed_sorted = sorted(allowed)
+        message = f"Unknown columns requested: {unknown_list}. Allowed columns: {allowed_sorted}"
+        super().__init__(message)
+        self.unknown = unknown
+        self.allowed = allowed
+
+
 _SQL_SEARCH_FTS = """
 SELECT kind, name, module, rel_path, ref_goid_h128, score
 FROM (
@@ -540,18 +561,28 @@ class SemanticQueryKernel:
 
         Raises
         ------
-        KeyError
+        UnknownViewIdError
             If the view_id does not exist.
-        ValueError
+        UnknownColumnsError
             If the request specifies unknown columns.
         """
         with self.db.connect() as (warehouse, pointer):
             context = self._snapshot_context(pointer)
-            view = context.registry.by_id(request.view_id)
-            allowed_columns = self._resolve_allowed_columns(
-                view=view, inventory=context.inventory
-            )
-            columns = request.select if request.select else allowed_columns
+            try:
+                view = context.registry.by_id(request.view_id)
+            except KeyError as exc:
+                raise UnknownViewIdError(request.view_id) from exc
+            allowed_columns = self._resolve_allowed_columns(view=view, inventory=context.inventory)
+            if request.select:
+                unknown = [col for col in request.select if col not in allowed_columns]
+                if unknown:
+                    raise UnknownColumnsError(
+                        unknown=tuple(unknown),
+                        allowed=tuple(allowed_columns),
+                    )
+                columns = request.select
+            else:
+                columns = allowed_columns
 
             plan = SemanticQueryPlan(
                 table_key=view.table_key,

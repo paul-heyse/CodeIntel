@@ -32,7 +32,11 @@ from codeintel.build.hamilton.naming import (
     target_node,
     to_node_name,
 )
-from codeintel.build.hamilton.nodes.node_factory import get_generated_module
+from codeintel.build.hamilton.nodes.support_factory import (
+    SupportGenerationOptions,
+    build_support_module,
+    clear_support_module_cache,
+)
 from codeintel.build.registry import get_target_graph
 from tests._helpers import assert_frozen
 
@@ -187,7 +191,15 @@ class TestDriverFactory:
     def test_driver_node_dependencies() -> None:
         """Verify DAG has correct dependency structure via function signatures."""
         runtime = build_driver()
-        generated_module = get_generated_module()
+        clear_support_module_cache()
+        support_module = build_support_module(
+            options=SupportGenerationOptions(
+                include_target_stubs=True,
+                include_dataset_nodes=False,
+                include_loader_nodes=False,
+                include_artifact_nodes=False,
+            )
+        )
 
         all_vars = runtime.dr.list_available_variables()
         var_by_name = {v.name: v for v in all_vars}
@@ -199,17 +211,17 @@ class TestDriverFactory:
         if "t__goids" not in var_by_name:
             pytest.fail("t__goids not found in driver")
 
-        modules_sig = inspect.signature(cast("Any", generated_module.t__modules))
+        modules_sig = inspect.signature(cast("Any", support_module.t__modules))
         modules_params = [p for p in modules_sig.parameters if p.startswith("t__")]
         if modules_params:
             pytest.fail(f"modules should have no target dependencies, got: {modules_params}")
 
-        scip_sig = inspect.signature(cast("Any", generated_module.t__scip))
+        scip_sig = inspect.signature(cast("Any", support_module.t__scip))
         scip_params = list(scip_sig.parameters.keys())
         if "t__modules" not in scip_params:
             pytest.fail("scip missing dependency on modules")
 
-        goids_sig = inspect.signature(cast("Any", generated_module.t__goids))
+        goids_sig = inspect.signature(cast("Any", support_module.t__goids))
         goids_params = list(goids_sig.parameters.keys())
         if "t__scip" not in goids_params:
             pytest.fail("goids missing dependency on scip")

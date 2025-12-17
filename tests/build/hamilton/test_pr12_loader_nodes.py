@@ -13,10 +13,10 @@ import pytest
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.naming import dataframe_node, query_node
-from codeintel.build.hamilton.nodes.node_factory import (
-    GenerationOptions,
-    build_target_module,
-    clear_generated_module_cache,
+from codeintel.build.hamilton.nodes.support_factory import (
+    SupportGenerationOptions,
+    build_support_module,
+    clear_support_module_cache,
 )
 from codeintel.cli.commands.build import BuildRunCommand
 
@@ -58,9 +58,9 @@ class TestGeneratedModuleLoaderNodes:
     @staticmethod
     def test_generated_module_has_query_nodes() -> None:
         """Verify generated module includes q__* nodes."""
-        clear_generated_module_cache()
-        module = build_target_module(
-            options=GenerationOptions(include_loader_nodes=True),
+        clear_support_module_cache()
+        module = build_support_module(
+            options=SupportGenerationOptions(include_loader_nodes=True),
         )
 
         if not hasattr(module, "QUERY_TO_NODE"):
@@ -73,9 +73,9 @@ class TestGeneratedModuleLoaderNodes:
     @staticmethod
     def test_generated_module_has_dataframe_nodes() -> None:
         """Verify generated module includes df__* nodes."""
-        clear_generated_module_cache()
-        module = build_target_module(
-            options=GenerationOptions(include_loader_nodes=True),
+        clear_support_module_cache()
+        module = build_support_module(
+            options=SupportGenerationOptions(include_loader_nodes=True),
         )
 
         if not hasattr(module, "DATAFRAME_TO_NODE"):
@@ -88,9 +88,9 @@ class TestGeneratedModuleLoaderNodes:
     @staticmethod
     def test_loader_nodes_disabled_by_default() -> None:
         """Verify loader nodes are not generated when flag is False."""
-        clear_generated_module_cache()
-        module = build_target_module(
-            options=GenerationOptions(include_loader_nodes=False),
+        clear_support_module_cache()
+        module = build_support_module(
+            options=SupportGenerationOptions(include_loader_nodes=False),
         )
 
         query_map = getattr(module, "QUERY_TO_NODE", {})

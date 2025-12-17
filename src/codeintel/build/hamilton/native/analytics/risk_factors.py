@@ -14,12 +14,24 @@ from typing import Any, cast
 
 import ibis
 import ibis.expr.types as ir
-from hamilton.function_modifiers import check_output_custom, schema, tag
+from hamilton.function_modifiers import (
+    check_output_custom,
+    pipe_input,
+    schema,
+    source,
+    step,
+    tag,
+    value,
+)
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
+from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materialization,
+)
 from codeintel.build.hamilton.validators import (
     build_enum_column_contract,
     build_table_contract,
@@ -38,6 +50,177 @@ RISK_LEVEL_HIGH_THRESHOLD = 5
 RISK_LEVEL_MEDIUM_THRESHOLD = 3
 
 
+@tag(domain="analytics", target="risk_factors", node_type="compute")
+def risk_factors__fan_in(q__graph__call_graph_edges: ir.Table) -> ir.Table:
+    """Compute fan-in counts per callee function.
+
+    Parameters
+    ----------
+    q__graph__call_graph_edges
+        Ibis table expression for graph.call_graph_edges.
+
+    Returns
+    -------
+    ir.Table
+        Ibis expression with columns:
+        - function_goid_h128
+        - fan_in_count
+    """
+    return (
+        q__graph__call_graph_edges.group_by("callee_goid_h128")
+        .aggregate(fan_in_count=ibis._.count())
+        .rename({"callee_goid_h128": "function_goid_h128"})
+    )
+
+
+@tag(domain="analytics", target="risk_factors", node_type="compute")
+def risk_factors__fan_out(q__graph__call_graph_edges: ir.Table) -> ir.Table:
+    """Compute fan-out counts per caller function.
+
+    Parameters
+    ----------
+    q__graph__call_graph_edges
+        Ibis table expression for graph.call_graph_edges.
+
+    Returns
+    -------
+    ir.Table
+        Ibis expression with columns:
+        - function_goid_h128
+        - fan_out_count
+    """
+    return (
+        q__graph__call_graph_edges.group_by("caller_goid_h128")
+        .aggregate(fan_out_count=ibis._.count())
+        .rename({"caller_goid_h128": "function_goid_h128"})
+    )
+
+
+def _risk_factors_join_metrics(metrics: ir.Table, fan_in: ir.Table, fan_out: ir.Table) -> ir.Table:
+    """Join function metrics with fan-in and fan-out counts.
+
+    Parameters
+    ----------
+    metrics
+        Ibis table expression for analytics.function_metrics.
+    fan_in
+        Ibis table expression with per-function fan-in counts.
+    fan_out
+        Ibis table expression with per-function fan-out counts.
+
+    Returns
+    -------
+    ir.Table
+        Joined Ibis expression with metrics and centrality columns.
+    """
+    risk = metrics.select(
+        "function_goid_h128",
+        "repo",
+        "commit",
+        "cyclomatic_complexity",
+        "has_tests",
+    )
+
+    risk = risk.left_join(
+        fan_in, cast("Any", risk.function_goid_h128 == fan_in.function_goid_h128)
+    ).select(
+        risk.function_goid_h128,
+        risk.repo,
+        risk.commit,
+        risk.cyclomatic_complexity,
+        risk.has_tests,
+        fan_in_count=ibis.coalesce(fan_in.fan_in_count, 0),
+    )
+
+    return risk.left_join(
+        fan_out, cast("Any", risk.function_goid_h128 == fan_out.function_goid_h128)
+    ).select(
+        risk.function_goid_h128,
+        risk.repo,
+        risk.commit,
+        risk.cyclomatic_complexity,
+        risk.has_tests,
+        risk.fan_in_count,
+        fan_out_count=ibis.coalesce(fan_out.fan_out_count, 0),
+    )
+
+
+def _risk_factors_score(risk: ir.Table) -> ir.Table:
+    """Compute the risk_score column from complexity and centrality signals.
+
+    Parameters
+    ----------
+    risk
+        Joined metrics table with fan-in and fan-out counts.
+
+    Returns
+    -------
+    ir.Table
+        Ibis expression with an additional ``risk_score`` column.
+    """
+    risk_score = ibis.cases(
+        (gt(risk.cyclomatic_complexity, COMPLEXITY_THRESHOLD), 2),
+        else_=0,
+    )
+    risk_score += cast("Any", cast("Any", risk.fan_in_count) / FAN_IN_BUCKET_SIZE).cast("int64")
+    risk_score += cast("Any", cast("Any", risk.fan_out_count) / FAN_OUT_BUCKET_SIZE).cast("int64")
+    risk_score = ibis.cases(
+        (risk.has_tests, risk_score),
+        else_=risk_score + NO_TESTS_PENALTY,
+    )
+
+    return risk.mutate(risk_score=risk_score)
+
+
+def _risk_factors_finalize(risk: ir.Table) -> ir.Table:
+    """Select final columns and categorize the risk_level.
+
+    Parameters
+    ----------
+    risk
+        Metrics table with ``risk_score`` computed.
+
+    Returns
+    -------
+    ir.Table
+        Final Ibis expression for analytics.goid_risk_factors.
+    """
+    return risk.select(
+        "function_goid_h128",
+        "repo",
+        "commit",
+        "risk_score",
+        risk_level=ibis.cases(
+            (ge(risk.risk_score, RISK_LEVEL_HIGH_THRESHOLD), "high"),
+            (ge(risk.risk_score, RISK_LEVEL_MEDIUM_THRESHOLD), "medium"),
+            else_="low",
+        ),
+        cyclomatic_complexity=risk.cyclomatic_complexity,
+        fan_in_count=risk.fan_in_count,
+        fan_out_count=risk.fan_out_count,
+        has_tests=risk.has_tests,
+    )
+
+
+@SaveToDecorator(
+    [DuckDBIbisTableSaver],
+    output_name_=materialize_node("analytics.goid_risk_factors"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("risk_factors"),
+    table_key=value("analytics.goid_risk_factors"),
+)
+@pipe_input(
+    step(
+        _risk_factors_join_metrics,
+        fan_in=source("risk_factors__fan_in"),
+        fan_out=source("risk_factors__fan_out"),
+    ),
+    step(_risk_factors_score),
+    step(_risk_factors_finalize),
+    namespace=None,
+    on_input="q__analytics__function_metrics",
+)
 @tag(domain="analytics", target="risk_factors", node_type="compute")
 @check_output_custom(
     *build_table_contract(
@@ -69,10 +252,10 @@ RISK_LEVEL_MEDIUM_THRESHOLD = 3
     ("fan_in_count", "int"),
     ("fan_out_count", "int"),
     ("has_tests", "bool"),
+    target_="t__risk_factors__compute",
 )
 def t__risk_factors__compute(
     q__analytics__function_metrics: ir.Table,
-    q__graph__call_graph_edges: ir.Table,
 ) -> ir.Table:
     """Compute risk factors from function metrics and call graph.
 
@@ -84,8 +267,6 @@ def t__risk_factors__compute(
     ----------
     q__analytics__function_metrics
         Ibis table expression for function metrics.
-    q__graph__call_graph_edges
-        Ibis table expression for call graph edges.
 
     Returns
     -------
@@ -100,93 +281,24 @@ def t__risk_factors__compute(
     - High fan-out (calls many): +1 point per 10 callees
     - No tests: +3 points
     """
-    # Compute fan-in (how many functions call this one)
-    fan_in = (
-        q__graph__call_graph_edges.group_by("callee_goid_h128")
-        .aggregate(fan_in_count=ibis._.count())
-        .rename({"callee_goid_h128": "function_goid_h128"})
-    )
-
-    # Compute fan-out (how many functions this one calls)
-    fan_out = (
-        q__graph__call_graph_edges.group_by("caller_goid_h128")
-        .aggregate(fan_out_count=ibis._.count())
-        .rename({"caller_goid_h128": "function_goid_h128"})
-    )
-
-    # Start with function metrics
-    risk = q__analytics__function_metrics.select(
-        "function_goid_h128",
-        "repo",
-        "commit",
-        "cyclomatic_complexity",
-        "has_tests",
-    )
-
-    # Join fan-in and fan-out
-    risk = risk.left_join(
-        fan_in, cast("Any", risk.function_goid_h128 == fan_in.function_goid_h128)
-    ).select(
-        risk.function_goid_h128,
-        risk.repo,
-        risk.commit,
-        risk.cyclomatic_complexity,
-        risk.has_tests,
-        fan_in_count=ibis.coalesce(fan_in.fan_in_count, 0),
-    )
-
-    risk = risk.left_join(
-        fan_out, cast("Any", risk.function_goid_h128 == fan_out.function_goid_h128)
-    ).select(
-        risk.function_goid_h128,
-        risk.repo,
-        risk.commit,
-        risk.cyclomatic_complexity,
-        risk.has_tests,
-        risk.fan_in_count,
-        fan_out_count=ibis.coalesce(fan_out.fan_out_count, 0),
-    )
-
-    # Calculate risk score
-    risk_score = ibis.cases(
-        (gt(risk.cyclomatic_complexity, COMPLEXITY_THRESHOLD), 2),
-        else_=0,
-    )
-    risk_score += cast("Any", cast("Any", risk.fan_in_count) / FAN_IN_BUCKET_SIZE).cast("int64")
-    risk_score += cast("Any", cast("Any", risk.fan_out_count) / FAN_OUT_BUCKET_SIZE).cast("int64")
-    risk_score = ibis.cases(
-        (risk.has_tests, risk_score),
-        else_=risk_score + NO_TESTS_PENALTY,
-    )
-
-    # Final selection with risk_level categorization
-    return risk.select(
-        "function_goid_h128",
-        "repo",
-        "commit",
-        risk_score=risk_score,
-        risk_level=ibis.cases(
-            (ge(risk_score, RISK_LEVEL_HIGH_THRESHOLD), "high"),
-            (ge(risk_score, RISK_LEVEL_MEDIUM_THRESHOLD), "medium"),
-            else_="low",
-        ),
-        cyclomatic_complexity=risk.cyclomatic_complexity,
-        fan_in_count=risk.fan_in_count,
-        fan_out_count=risk.fan_out_count,
-        has_tests=risk.has_tests,
-    )
+    # NOTE: The @pipe_input chain transforms q__analytics__function_metrics into
+    # the final result; returning it keeps the function body minimal and ensures
+    # the intermediate steps are DAG-visible.
+    return q__analytics__function_metrics
 
 
 @tag(domain="analytics", target="risk_factors", node_type="materialize")
 def t__risk_factors(
     env: BuildEnv,
     graph: TargetGraph,
-    t__risk_factors__compute: ir.Table,
+    m__analytics__goid_risk_factors: dict[str, Any],
 ) -> TargetRunRecord:
-    """Materialize risk_factors compute result to DuckDB.
+    """Finalize risk_factors execution from DAG-visible DuckDB materialization.
 
-    This is the only side-effect boundary for this target. It writes
-    the computed Ibis expression to DuckDB and returns a TargetRunRecord.
+    The actual DuckDB write is performed by a Hamilton materializer node
+    (``m__analytics__goid_risk_factors``). This target node converts the
+    materialization metadata into a TargetRunRecord and persists the manifest
+    on success.
 
     Parameters
     ----------
@@ -194,32 +306,21 @@ def t__risk_factors(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    t__risk_factors__compute
-        Computed Ibis expression from the compute node.
+    m__analytics__goid_risk_factors
+        Materialization metadata dict produced by the DuckDB saver node.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "risk_factors")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        ref = materialize_table(
-            MaterializationContext(
-                gateway=env.gateway,
-                snapshot=env.snapshot,
-                validate=env.validate_outputs,
-            ),
-            "analytics.goid_risk_factors",
-            t__risk_factors__compute,
-        )
-        return {ref.table_key: ref.row_count or 0}
-
-    return executor.execute(compute)
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name="risk_factors",
+        expected_table_key="analytics.goid_risk_factors",
+        materialization=m__analytics__goid_risk_factors,
+    )
 
 
 # Export node names for Hamilton discovery

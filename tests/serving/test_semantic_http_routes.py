@@ -220,7 +220,9 @@ def test_semantic_routes_support_correlation_id_and_v1_alias(tmp_path: Path) -> 
         expect_equal(views_v1.status_code, status.HTTP_200_OK)
         expect_equal(views_v1.headers.get("X-Correlation-ID"), correlation_id)
 
-        missing = client.get("/semantic/views/nope.view", headers={"X-Correlation-ID": correlation_id})
+        missing = client.get(
+            "/semantic/views/nope.view", headers={"X-Correlation-ID": correlation_id}
+        )
         expect_equal(missing.status_code, status.HTTP_404_NOT_FOUND)
         payload = missing.json()
         expect_equal(payload.get("correlation_id"), correlation_id)

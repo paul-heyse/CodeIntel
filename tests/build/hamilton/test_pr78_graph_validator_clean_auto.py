@@ -11,7 +11,7 @@ _MAX_ISSUES: int = 25
 
 def test_pr78_graph_validator_clean_auto() -> None:
     """Verify the auto-mode Hamilton graph satisfies validator invariants."""
-    result = validate_graph(mode="auto")
+    result = validate_graph()
     if result.errors:
         issues = "\n".join(f"- {e.code}: {e.message}" for e in result.errors[:_MAX_ISSUES])
         more = (

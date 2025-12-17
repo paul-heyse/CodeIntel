@@ -75,7 +75,7 @@ def test_pr78_graph_validator_finds_duplicate_producers() -> None:
         dataset_from_b.name: dataset_from_b,
     }
 
-    result = validate_nodes(nodes, mode="auto")
+    result = validate_nodes(nodes)
     codes = {e.code for e in result.errors}
     if "duplicate_table_key" not in codes:
         pytest.fail(f"Expected duplicate_table_key error, got: {sorted(codes)}")

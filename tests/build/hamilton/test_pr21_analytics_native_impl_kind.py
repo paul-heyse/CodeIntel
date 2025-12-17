@@ -73,7 +73,7 @@ def test_native_analytics_marked_in_plan(tmp_path: Path) -> None:
     native_targets = ["coverage_functions", "hotspots", "subsystems"]
 
     for target_name in native_targets:
-        plan = compute_plan(env=env, graph=graph, requested=(target_name,), mode="auto")
+        plan = compute_plan(env=env, graph=graph, requested=(target_name,))
 
         # Find the entry for this target in the plan
         target_entry = next((e for e in plan.entries if e.target == target_name), None)
@@ -109,7 +109,7 @@ def test_function_metrics_now_native_after_phase4(tmp_path: Path) -> None:
     if graph.get(target_name) is None:
         pytest.skip(f"Target '{target_name}' not in graph")
 
-    plan = compute_plan(env=env, graph=graph, requested=(target_name,), mode="auto")
+    plan = compute_plan(env=env, graph=graph, requested=(target_name,))
 
     # Find the entry for this target in the plan
     target_entry = next((e for e in plan.entries if e.target == target_name), None)
@@ -134,7 +134,7 @@ def test_risk_factors_still_native_after_wave2(tmp_path: Path) -> None:
 
     graph = get_target_graph()
 
-    plan = compute_plan(env=env, graph=graph, requested=("risk_factors",), mode="auto")
+    plan = compute_plan(env=env, graph=graph, requested=("risk_factors",))
 
     # Find the entry for risk_factors
     target_entry = next((e for e in plan.entries if e.target == "risk_factors"), None)

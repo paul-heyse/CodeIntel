@@ -39,11 +39,11 @@ from codeintel.build.hamilton.io.dataset_ref import (
 )
 from codeintel.build.hamilton.io.ibis_adapter import IbisIOConfig
 from codeintel.build.hamilton.naming import dataset_node, target_node
-from codeintel.build.hamilton.nodes.node_factory import (
-    GenerationOptions,
-    build_target_module,
-    clear_generated_module_cache,
-    get_generated_module,
+from codeintel.build.hamilton.nodes.support_factory import (
+    SupportGenerationOptions,
+    build_support_module,
+    clear_support_module_cache,
+    get_support_module,
 )
 from codeintel.build.hamilton.observability import (
     export_dag_json,
@@ -60,21 +60,13 @@ CLOSURE_LENGTH_PHASE0 = 5
 SAMPLE_DURATION_MS = 1234.5
 
 
-class TestHamiltonNodeMode:
-    """Tests for PR-01: HamiltonNodeMode and mappings."""
-
-    @staticmethod
-    def test_build_driver_generated_mode() -> None:
-        """Verify build_driver works with generated mode."""
-        clear_generated_module_cache()
-        runtime = build_driver(mode="generated")
-        if runtime.mode != "generated":
-            pytest.fail(f"Expected mode='generated', got '{runtime.mode}'")
+class TestHamiltonDriverMappings:
+    """Tests for PR-01: target/node mappings remain stable."""
 
     @staticmethod
     def test_runtime_has_target_to_node_mapping() -> None:
         """Verify runtime carries target_to_node mapping."""
-        runtime = build_driver(mode="generated")
+        runtime = build_driver()
         if not runtime.target_to_node:
             pytest.fail("Runtime missing target_to_node mapping")
         if "modules" not in runtime.target_to_node:
@@ -83,7 +75,7 @@ class TestHamiltonNodeMode:
     @staticmethod
     def test_runtime_has_node_to_target_mapping() -> None:
         """Verify runtime carries node_to_target mapping."""
-        runtime = build_driver(mode="generated")
+        runtime = build_driver()
         if not runtime.node_to_target:
             pytest.fail("Runtime missing node_to_target mapping")
         if "t__modules" not in runtime.node_to_target:
@@ -92,7 +84,7 @@ class TestHamiltonNodeMode:
     @staticmethod
     def test_target_to_node_name_with_runtime() -> None:
         """Verify target_to_node_name uses runtime mapping when provided."""
-        runtime = build_driver(mode="generated")
+        runtime = build_driver()
         node_name = target_to_node_name("modules", runtime=runtime)
         if node_name != "t__modules":
             pytest.fail(f"Expected 't__modules', got '{node_name}'")
@@ -100,24 +92,16 @@ class TestHamiltonNodeMode:
     @staticmethod
     def test_target_to_node_name_without_runtime() -> None:
         """Verify target_to_node_name works without runtime."""
-        node_name = target_to_node_name("modules", runtime=build_driver(mode="generated"))
+        node_name = target_to_node_name("modules", runtime=build_driver())
         if node_name != "t__modules":
             pytest.fail(f"Expected 't__modules', got '{node_name}'")
 
     @staticmethod
     def test_list_available_nodes() -> None:
-        """Verify list_available_nodes returns generated nodes."""
-        nodes = list_available_nodes(mode="generated")
+        """Verify list_available_nodes returns nodes."""
+        nodes = list_available_nodes()
         if "t__modules" not in nodes:
-            pytest.fail("Generated nodes should include t__modules")
-
-    @staticmethod
-    def test_generated_mode_has_nodes() -> None:
-        """Verify generated mode includes all targets."""
-        clear_generated_module_cache()
-        runtime = build_driver(mode="generated")
-        if len(runtime.target_to_node) == 0:
-            pytest.fail("Generated mode should have target mappings")
+            pytest.fail("Expected nodes to include t__modules")
 
 
 class TestHamiltonBuildResult:
@@ -367,7 +351,7 @@ class TestObservability:
     @staticmethod
     def test_list_execution_targets() -> None:
         """Verify list_execution_targets returns target names."""
-        runtime = build_driver(mode="generated")
+        runtime = build_driver()
         targets = list_execution_targets(runtime, ["modules"])
         if "modules" not in targets:
             pytest.fail("modules should be in execution targets")
@@ -375,7 +359,7 @@ class TestObservability:
     @staticmethod
     def test_list_execution_order() -> None:
         """Verify list_execution_order returns node names."""
-        runtime = build_driver(mode="generated")
+        runtime = build_driver()
         order = list_execution_order(runtime, ["modules"])
         if "t__modules" not in order:
             pytest.fail("t__modules should be in execution order")
@@ -383,7 +367,7 @@ class TestObservability:
     @staticmethod
     def test_get_dag_info_structure() -> None:
         """Verify get_dag_info returns expected structure."""
-        runtime = build_driver(mode="generated")
+        runtime = build_driver()
         info = get_dag_info(runtime, ["modules"])
         if "nodes" not in info:
             pytest.fail("DAG info missing 'nodes' field")
@@ -395,7 +379,7 @@ class TestObservability:
     @staticmethod
     def test_export_dag_json_valid() -> None:
         """Verify export_dag_json returns valid JSON."""
-        runtime = build_driver(mode="generated")
+        runtime = build_driver()
         json_str = export_dag_json(runtime, ["modules"])
         try:
             data = json.loads(json_str)
@@ -405,67 +389,63 @@ class TestObservability:
             pytest.fail("JSON missing 'nodes' field")
 
 
-class TestNodeFactory:
-    """Tests for dynamic node generation."""
+class TestSupportFactory:
+    """Tests for support-node module generation."""
 
     @staticmethod
-    def test_build_target_module_creates_module() -> None:
-        """Verify build_target_module returns a module with nodes."""
-        clear_generated_module_cache()
-        module = build_target_module()
-        if module is None:
-            pytest.fail("build_target_module returned None")
+    def test_build_support_module_creates_module() -> None:
+        """Verify build_support_module returns a module with nodes."""
+        clear_support_module_cache()
+        module = build_support_module()
         if not hasattr(module, "__doc__"):
             pytest.fail("Module missing __doc__")
 
     @staticmethod
-    def test_build_target_module_has_target_to_node() -> None:
-        """Verify generated module has TARGET_TO_NODE mapping."""
-        clear_generated_module_cache()
-        module = build_target_module()
+    def test_build_support_module_has_target_to_node() -> None:
+        """Verify support module has TARGET_TO_NODE mapping."""
+        clear_support_module_cache()
+        module = build_support_module()
         if not hasattr(module, "TARGET_TO_NODE"):
             pytest.fail("Module missing TARGET_TO_NODE")
 
     @staticmethod
-    def test_build_target_module_has_dataset_to_node() -> None:
-        """Verify generated module has DATASET_TO_NODE mapping."""
-        clear_generated_module_cache()
-        module = build_target_module()
+    def test_build_support_module_has_dataset_to_node() -> None:
+        """Verify support module has DATASET_TO_NODE mapping."""
+        clear_support_module_cache()
+        module = build_support_module()
         if not hasattr(module, "DATASET_TO_NODE"):
             pytest.fail("Module missing DATASET_TO_NODE mapping")
 
     @staticmethod
-    def test_build_target_module_respects_exclude() -> None:
+    def test_build_support_module_respects_exclude() -> None:
         """Verify exclude_targets filters out targets."""
-        clear_generated_module_cache()
-        module = build_target_module(
-            options=GenerationOptions(exclude_targets={"modules"}),
+        clear_support_module_cache()
+        module = build_support_module(
+            options=SupportGenerationOptions(exclude_targets=frozenset({"modules"})),
         )
         if hasattr(module, target_node("modules")):
             pytest.fail("Excluded target should not be in module")
 
     @staticmethod
-    def test_get_generated_module_caches() -> None:
-        """Verify get_generated_module returns cached instance."""
-        clear_generated_module_cache()
-        module1 = get_generated_module()
-        module2 = get_generated_module()
+    def test_get_support_module_caches() -> None:
+        """Verify get_support_module returns cached instance."""
+        clear_support_module_cache()
+        module1 = get_support_module()
+        module2 = get_support_module()
         if module1 is not module2:
-            pytest.fail("get_generated_module should return cached instance")
+            pytest.fail("get_support_module should return cached instance")
 
 
-class TestDriverWithGeneratedNodes:
-    """Tests for driver construction with generated nodes."""
+class TestDriverConstruction:
+    """Tests for driver construction with the unified module set."""
 
     @staticmethod
-    def test_build_driver_with_generated_mode() -> None:
-        """Verify build_driver supports mode='generated'."""
-        clear_generated_module_cache()
-        runtime = build_driver(mode="generated")
+    def test_build_driver_constructs_driver() -> None:
+        """Verify build_driver constructs a Driver."""
+        clear_support_module_cache()
+        runtime = build_driver()
         if runtime.dr is None:
             pytest.fail("Driver runtime missing dr")
-        if runtime.mode != "generated":
-            pytest.fail(f"Expected mode='generated', got {runtime.mode}")
 
 
 class TestDatasetNodeNaming:

@@ -26,7 +26,6 @@ from codeintel.build.schemas import get_schema_provider
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from codeintel.build.hamilton.driver_factory import HamiltonNodeMode
     from codeintel.build.targets import TargetGraph
     from codeintel.core.schemas.provider import SchemaProvider
 
@@ -70,7 +69,6 @@ class GraphValidationIssue:
 class GraphValidationResult:
     """Validation result for a Hamilton graph."""
 
-    mode: HamiltonNodeMode
     errors: tuple[GraphValidationIssue, ...]
     warnings: tuple[GraphValidationIssue, ...]
 
@@ -117,7 +115,6 @@ def validation_result_to_json(
         Newline-terminated JSON payload.
     """
     obj: dict[str, object] = {
-        "mode": result.mode,
         "errors": [_issue_to_obj(i) for i in result.errors],
         "warnings": [_issue_to_obj(i) for i in result.warnings],
         "summary": {
@@ -128,21 +125,16 @@ def validation_result_to_json(
     return json.dumps(obj, indent=indent, sort_keys=True, ensure_ascii=False) + "\n"
 
 
-def validate_graph(*, mode: HamiltonNodeMode = "auto") -> GraphValidationResult:
-    """Validate the Hamilton graph for the selected mode.
-
-    Parameters
-    ----------
-    mode
-        Node generation mode.
+def validate_graph() -> GraphValidationResult:
+    """Validate the Hamilton graph for build invariants.
 
     Returns
     -------
     GraphValidationResult
         Validation result for the constructed graph.
     """
-    runtime = build_driver(mode=mode)
-    return validate_nodes(runtime.dr.graph.nodes, mode=mode, base_graph=runtime.graph)
+    runtime = build_driver()
+    return validate_nodes(runtime.dr.graph.nodes, base_graph=runtime.graph)
 
 
 def _tags_mapping(node: NodeLike) -> Mapping[str, object] | None:
@@ -385,7 +377,6 @@ def _deps_mismatch_warnings(
 def validate_nodes(
     nodes: Mapping[str, NodeLike],
     *,
-    mode: HamiltonNodeMode,
     base_graph: TargetGraph | None = None,
     schema_provider: SchemaProvider | None = None,
 ) -> GraphValidationResult:
@@ -395,8 +386,6 @@ def validate_nodes(
     ----------
     nodes
         Mapping of Hamilton node name to node-like objects.
-    mode
-        Node mode used to construct the graph.
     base_graph
         Optional TargetGraph used for warn-only dependency parity checks.
     schema_provider
@@ -446,7 +435,7 @@ def validate_nodes(
 
     errors_sorted = tuple(sorted(errors, key=lambda i: (i.code, i.message, i.node or "")))
     warnings_sorted = tuple(sorted(warnings, key=lambda i: (i.code, i.message, i.node or "")))
-    return GraphValidationResult(mode=mode, errors=errors_sorted, warnings=warnings_sorted)
+    return GraphValidationResult(errors=errors_sorted, warnings=warnings_sorted)
 
 
 def _derive_target_dependencies(

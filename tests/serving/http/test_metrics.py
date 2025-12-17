@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
+    expect_false,
     expect_in,
     expect_true,
 )
@@ -31,7 +32,7 @@ def test_query_metrics_dataclass_is_frozen() -> None:
     expect_equal(metrics.endpoint, "/semantic/query")
     expect_equal(metrics.view_id, "demo.view")
     expect_equal(metrics.row_count, 10)
-    expect_equal(metrics.truncated, False)
+    expect_false(metrics.truncated)
     expect_equal(metrics.duration_ms, 5.5)
     expect_equal(metrics.correlation_id, "cid-123")
     expect_equal(metrics.engine, "polars")
@@ -73,14 +74,14 @@ def test_log_query_metrics_logs_structured_data(caplog: LogCaptureFixture) -> No
     expect_equal(record.levelname, "INFO")
     expect_in("query_executed", record.message)
 
-    expect_equal(record.endpoint, "/semantic/query")
-    expect_equal(record.view_id, "function.summary")
-    expect_equal(record.query, None)
-    expect_equal(record.row_count, 100)
-    expect_equal(record.truncated, True)
-    expect_equal(record.duration_ms, 15.123)
-    expect_equal(record.correlation_id, "cid-789")
-    expect_equal(record.engine, "polars")
+    expect_equal(getattr(record, "endpoint", None), "/semantic/query")
+    expect_equal(getattr(record, "view_id", None), "function.summary")
+    expect_equal(getattr(record, "query", None), None)
+    expect_equal(getattr(record, "row_count", None), 100)
+    expect_true(getattr(record, "truncated", False))
+    expect_equal(getattr(record, "duration_ms", None), 15.123)
+    expect_equal(getattr(record, "correlation_id", None), "cid-789")
+    expect_equal(getattr(record, "engine", None), "polars")
 
 
 def test_log_query_metrics_rounds_duration(caplog: LogCaptureFixture) -> None:
@@ -99,7 +100,7 @@ def test_log_query_metrics_rounds_duration(caplog: LogCaptureFixture) -> None:
         log_query_metrics(metrics)
 
     record = caplog.records[0]
-    expect_equal(record.duration_ms, 1.235)
+    expect_equal(getattr(record, "duration_ms", None), 1.235)
 
 
 def test_log_query_metrics_search_endpoint(caplog: LogCaptureFixture) -> None:
@@ -119,7 +120,6 @@ def test_log_query_metrics_search_endpoint(caplog: LogCaptureFixture) -> None:
         log_query_metrics(metrics)
 
     record = caplog.records[0]
-    expect_equal(record.query, "authentication handler")
-    expect_equal(record.engine, "pandas")
-    expect_true(record.view_id is None)
-
+    expect_equal(getattr(record, "query", None), "authentication handler")
+    expect_equal(getattr(record, "engine", None), "pandas")
+    expect_true(getattr(record, "view_id", None) is None)

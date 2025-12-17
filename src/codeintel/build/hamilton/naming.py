@@ -214,6 +214,30 @@ def dataframe_node(table_key: str) -> str:
     return to_node_name(table_key, prefix="df")
 
 
+def materialize_node(table_key: str) -> str:
+    """Convert a table key to a DuckDB materialization node identifier.
+
+    Materialization nodes use the "m" prefix and represent an explicit I/O
+    boundary that persists an upstream compute node output to DuckDB.
+
+    Parameters
+    ----------
+    table_key
+        The table key (e.g., "analytics.function_metrics").
+
+    Returns
+    -------
+    str
+        Hamilton node name with "m__" prefix.
+
+    Examples
+    --------
+    >>> materialize_node("analytics.function_metrics")
+    'm__analytics__function_metrics'
+    """
+    return to_node_name(table_key, prefix="m")
+
+
 def node_to_target(node_name: str) -> str | None:
     """Extract the original target name from a Hamilton node identifier.
 
@@ -247,6 +271,7 @@ __all__ = [
     "compute_node",
     "dataframe_node",
     "dataset_node",
+    "materialize_node",
     "node_to_target",
     "query_node",
     "target_node",

@@ -12,15 +12,20 @@ Includes Hamilton-native validation via @check_output_custom (Phase 6).
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import ibis.expr.types as ir
-from hamilton.function_modifiers import check_output_custom, tag
+from hamilton.function_modifiers import check_output_custom, source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.compute.coverage.compute import build_coverage_functions_expr
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materializer import MaterializationContext, materialize_table
+from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materialization,
+)
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 
@@ -28,6 +33,14 @@ LOG = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 
+@SaveToDecorator(
+    [DuckDBIbisTableSaver],
+    output_name_=materialize_node("analytics.coverage_functions"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("coverage_functions"),
+    table_key=value("analytics.coverage_functions"),
+)
 @tag(domain="analytics", target="coverage_functions", node_type="compute")
 @check_output_custom(
     *build_table_contract(
@@ -86,12 +99,13 @@ def t__coverage_functions__compute(env: BuildEnv) -> ir.Table | None:
 def t__coverage_functions(
     env: BuildEnv,
     graph: TargetGraph,
-    t__coverage_functions__compute: ir.Table | None,
+    m__analytics__coverage_functions: dict[str, Any],
 ) -> TargetRunRecord:
-    """Materialize coverage_functions compute result to DuckDB.
+    """Finalize coverage_functions execution from DAG-visible DuckDB materialization.
 
-    Write the Ibis expression from the compute node to analytics.coverage_functions,
-    creating a DatasetRef for lineage tracking.
+    The DuckDB write is performed by a Hamilton materializer node
+    (``m__analytics__coverage_functions``). This target node converts the saver
+    metadata into a TargetRunRecord and persists the manifest on success.
 
     Parameters
     ----------
@@ -99,39 +113,21 @@ def t__coverage_functions(
         Build environment with gateway, snapshot, and config.
     graph
         Target graph for accessing OutputTarget contract.
-    t__coverage_functions__compute
-        Ibis expression for coverage_functions from compute node, or None.
+    m__analytics__coverage_functions
+        Materialization metadata dict produced by the DuckDB saver node.
 
     Returns
     -------
     TargetRunRecord
         Record capturing execution status, duration, and output references.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "coverage_functions")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    if t__coverage_functions__compute is None:
-        LOG.warning("coverage_functions: skipping - no expression to materialize")
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        ctx = MaterializationContext(
-            gateway=env.gateway,
-            snapshot=env.snapshot,
-            validate=env.validate_outputs,
-            owner_target="coverage_functions",
-            input_hash=executor.input_hash,
-        )
-        ref = materialize_table(
-            ctx,
-            "analytics.coverage_functions",
-            t__coverage_functions__compute,
-        )
-        return {ref.table_key: ref.row_count or 0}
-
-    return executor.execute(compute)
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name="coverage_functions",
+        expected_table_key="analytics.coverage_functions",
+        materialization=m__analytics__coverage_functions,
+    )
 
 
 __all__ = ["t__coverage_functions", "t__coverage_functions__compute"]

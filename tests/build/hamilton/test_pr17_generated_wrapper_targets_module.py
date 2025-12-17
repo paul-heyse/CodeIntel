@@ -12,23 +12,23 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.nodes.node_factory import (
-    GenerationOptions,
-    build_target_module,
-    clear_generated_module_cache,
+from codeintel.build.hamilton.nodes.support_factory import (
+    SupportGenerationOptions,
+    build_support_module,
+    clear_support_module_cache,
 )
 
 
 def test_wrapper_module_has_target_nodes() -> None:
     """Verify wrapper module contains target nodes."""
-    clear_generated_module_cache()
-    options = GenerationOptions(
-        include_target_nodes=True,
+    clear_support_module_cache()
+    options = SupportGenerationOptions(
+        include_target_stubs=True,
         include_dataset_nodes=False,
         include_loader_nodes=False,
         include_artifact_nodes=False,
     )
-    module = build_target_module(options=options)
+    module = build_support_module(options=options)
 
     # Should have target nodes (t__*)
     target_nodes = [name for name in dir(module) if name.startswith("t__")]
@@ -44,14 +44,14 @@ def test_wrapper_module_has_target_nodes() -> None:
 
 def test_wrapper_module_no_asset_nodes() -> None:
     """Verify wrapper module does NOT contain asset nodes."""
-    clear_generated_module_cache()
-    options = GenerationOptions(
-        include_target_nodes=True,
+    clear_support_module_cache()
+    options = SupportGenerationOptions(
+        include_target_stubs=True,
         include_dataset_nodes=False,
         include_loader_nodes=False,
         include_artifact_nodes=False,
     )
-    module = build_target_module(options=options)
+    module = build_support_module(options=options)
 
     # Should NOT have dataset nodes (d__*)
     dataset_nodes = [name for name in dir(module) if name.startswith("d__")]
@@ -76,17 +76,17 @@ def test_wrapper_module_no_asset_nodes() -> None:
 
 def test_wrapper_module_respects_exclude_targets() -> None:
     """Verify wrapper module excludes native targets when specified."""
-    clear_generated_module_cache()
+    clear_support_module_cache()
 
     # Exclude risk_factors as if it were a native target
-    options = GenerationOptions(
-        include_target_nodes=True,
+    options = SupportGenerationOptions(
+        include_target_stubs=True,
         include_dataset_nodes=False,
         include_loader_nodes=False,
         include_artifact_nodes=False,
-        exclude_targets={"risk_factors"},
+        exclude_targets=frozenset({"risk_factors"}),
     )
-    module = build_target_module(options=options)
+    module = build_support_module(options=options)
 
     # Should NOT have t__risk_factors
     if hasattr(module, "t__risk_factors"):
@@ -99,17 +99,17 @@ def test_wrapper_module_respects_exclude_targets() -> None:
 
 def test_wrapper_module_respects_include_targets() -> None:
     """Verify wrapper module includes only specified targets when given."""
-    clear_generated_module_cache()
+    clear_support_module_cache()
 
     # Include only modules and ast targets
-    options = GenerationOptions(
-        include_target_nodes=True,
+    options = SupportGenerationOptions(
+        include_target_stubs=True,
         include_dataset_nodes=False,
         include_loader_nodes=False,
         include_artifact_nodes=False,
-        include_targets={"modules", "ast"},
+        include_targets=frozenset({"modules", "ast"}),
     )
-    module = build_target_module(options=options)
+    module = build_support_module(options=options)
 
     # Should have t__modules and t__ast
     if not hasattr(module, "t__modules"):
@@ -132,14 +132,14 @@ def test_wrapper_module_respects_include_targets() -> None:
 
 def test_wrapper_module_all_targets_by_default() -> None:
     """Verify wrapper module includes all targets when no filters specified."""
-    clear_generated_module_cache()
-    options = GenerationOptions(
-        include_target_nodes=True,
+    clear_support_module_cache()
+    options = SupportGenerationOptions(
+        include_target_stubs=True,
         include_dataset_nodes=False,
         include_loader_nodes=False,
         include_artifact_nodes=False,
     )
-    module = build_target_module(options=options)
+    module = build_support_module(options=options)
 
     # Should have many target nodes (at least 20 from the registry)
     target_count = len(module.TARGET_TO_NODE)

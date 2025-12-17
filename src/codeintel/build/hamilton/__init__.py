@@ -7,10 +7,12 @@ Hamilton is the orchestration layer for CodeIntel's build graph. This package pr
 - Planning (``compute_plan`` / ``explain_plan``) and DAG observability exports
 - Contract enforcement hooks for datasets and artifacts
 
-Node modes
-----------
-- ``"generated"``: Dynamic wrapper nodes for all targets
-- ``"auto"``: Native Hamilton modules where available, generated wrappers otherwise
+Driver construction
+-------------------
+The build DAG is composed using **templates + native overrides**:
+
+- A template module provides fallback nodes for all targets.
+- Native modules override templates via Hamilton module override semantics.
 
 Observability
 -------------
@@ -19,7 +21,7 @@ This package uses Hamilton lifecycle adapters for telemetry and contract enforce
 Example
 -------
 >>> from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
->>> executor = HamiltonBuildExecutor(profile="default", mode="generated")
+>>> executor = HamiltonBuildExecutor(profile="default")
 >>> result = executor.run(env=env, targets=["risk_factors"])
 >>> result.success
 True
@@ -37,7 +39,6 @@ __all__ = [
     "HamiltonBuildExecutor",
     "HamiltonBuildPlan",
     "HamiltonBuildResult",
-    "HamiltonNodeMode",
     "HamiltonRuntime",
     "IbisIOConfig",
     "PlanEntry",
@@ -71,7 +72,6 @@ if TYPE_CHECKING:
         with_contract,
     )
     from codeintel.build.hamilton.driver_factory import (
-        HamiltonNodeMode,
         HamiltonRuntime,
         build_driver,
         list_available_nodes,
@@ -103,7 +103,6 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "validate_dataframe": ("codeintel.build.hamilton.contracts", "validate_dataframe"),
     "validate_dataset_ref": ("codeintel.build.hamilton.contracts", "validate_dataset_ref"),
     "with_contract": ("codeintel.build.hamilton.contracts", "with_contract"),
-    "HamiltonNodeMode": ("codeintel.build.hamilton.driver_factory", "HamiltonNodeMode"),
     "HamiltonRuntime": ("codeintel.build.hamilton.driver_factory", "HamiltonRuntime"),
     "build_driver": ("codeintel.build.hamilton.driver_factory", "build_driver"),
     "list_available_nodes": ("codeintel.build.hamilton.driver_factory", "list_available_nodes"),
@@ -114,7 +113,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "DatasetRef": ("codeintel.build.hamilton.io", "DatasetRef"),
     "IbisIOConfig": ("codeintel.build.hamilton.io", "IbisIOConfig"),
     "refs_from_target_result": ("codeintel.build.hamilton.io", "refs_from_target_result"),
-    "TargetRunRecord": ("codeintel.build.hamilton.manifest_hook", "TargetRunRecord"),
+    "TargetRunRecord": ("codeintel.build.hamilton.hooks.manifest_hook", "TargetRunRecord"),
     "CanonicalPluginMeta": ("codeintel.build.hamilton.metadata_bridge", "CanonicalPluginMeta"),
     "dataset_node": ("codeintel.build.hamilton.naming", "dataset_node"),
     "target_node": ("codeintel.build.hamilton.naming", "target_node"),

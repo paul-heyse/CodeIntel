@@ -13,9 +13,10 @@ from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
-from codeintel.serving.http.dependencies import Kernel, require_api_key
+from codeintel.serving.http.dependencies import get_kernel, require_api_key
 from codeintel.serving.http.errors import ProblemType, ServingError
 from codeintel.serving.http.streaming import ndjson_response
+from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.semantic.models import SemanticExportRequest
 
 if TYPE_CHECKING:
@@ -27,12 +28,14 @@ router = APIRouter(
     dependencies=[Depends(require_api_key)],
 )
 
+_KERNEL_DEPENDENCY = Depends(get_kernel)
+
 
 @router.post("/semantic/{view_id}")
 async def export_view(
     view_id: str,
     payload: SemanticExportRequest,
-    kernel: Kernel,
+    kernel: SemanticQueryKernel = _KERNEL_DEPENDENCY,
 ) -> Response:
     """Export semantic view data as JSON, NDJSON, Parquet, or Arrow.
 
@@ -58,15 +61,21 @@ async def export_view(
     ------
     ServingError
         When the view is not found or export format is unavailable.
+    TypeError
+        When FastAPI fails to inject required dependencies.
     """
+    if not isinstance(payload, SemanticExportRequest):
+        msg = "FastAPI did not provide a SemanticExportRequest model"
+        raise TypeError(msg)
+    if not isinstance(kernel, SemanticQueryKernel):
+        msg = "FastAPI did not provide a SemanticQueryKernel instance"
+        raise TypeError(msg)
     if payload.view_id != view_id:
         payload = payload.model_copy(update={"view_id": view_id})
 
     try:
         if payload.format == "ndjson":
-            rows = await run_in_threadpool(
-                lambda: list(kernel.export_rows(payload))
-            )
+            rows = await run_in_threadpool(lambda: list(kernel.export_rows(payload)))
             return ndjson_response(rows, filename=f"{view_id}.ndjson")
 
         if payload.format == "parquet":
@@ -76,9 +85,7 @@ async def export_view(
             return await _arrow_response(kernel, payload, view_id)
 
         # Default: JSON format (same as /query but with higher limit)
-        rows = await run_in_threadpool(
-            lambda: list(kernel.export_rows(payload))
-        )
+        rows = await run_in_threadpool(lambda: list(kernel.export_rows(payload)))
         return _json_dict_response(view_id, rows)
 
     except KeyError as exc:
@@ -121,7 +128,7 @@ def _json_dict_response(view_id: str, rows: list[dict[str, object]]) -> Response
 
 
 async def _parquet_response(
-    kernel: Kernel,
+    kernel: SemanticQueryKernel,
     payload: SemanticExportRequest,
     view_id: str,
 ) -> StreamingResponse:
@@ -167,14 +174,12 @@ async def _parquet_response(
     return StreamingResponse(
         buffer,
         media_type="application/vnd.apache.parquet",
-        headers={
-            "Content-Disposition": f'attachment; filename="{view_id}.parquet"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{view_id}.parquet"'},
     )
 
 
 async def _arrow_response(
-    kernel: Kernel,
+    kernel: SemanticQueryKernel,
     payload: SemanticExportRequest,
     view_id: str,
 ) -> StreamingResponse:
@@ -220,9 +225,7 @@ async def _arrow_response(
     return StreamingResponse(
         buffer,
         media_type="application/vnd.apache.arrow.file",
-        headers={
-            "Content-Disposition": f'attachment; filename="{view_id}.arrow"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{view_id}.arrow"'},
     )
 
 

@@ -11,23 +11,23 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.nodes.node_factory import (
-    GenerationOptions,
-    build_target_module,
-    clear_generated_module_cache,
+from codeintel.build.hamilton.nodes.support_factory import (
+    SupportGenerationOptions,
+    build_support_module,
+    clear_support_module_cache,
 )
 
 
 def test_assets_module_has_dataset_nodes() -> None:
     """Verify assets module contains dataset nodes."""
-    clear_generated_module_cache()
-    options = GenerationOptions(
-        include_target_nodes=False,
+    clear_support_module_cache()
+    options = SupportGenerationOptions(
+        include_target_stubs=False,
         include_dataset_nodes=True,
         include_loader_nodes=True,
         include_artifact_nodes=True,
     )
-    module = build_target_module(options=options)
+    module = build_support_module(options=options)
 
     # Should have at least one dataset node
     dataset_nodes = [name for name in dir(module) if name.startswith("d__")]
@@ -43,14 +43,14 @@ def test_assets_module_has_dataset_nodes() -> None:
 
 def test_assets_module_has_loader_nodes() -> None:
     """Verify assets module contains query and dataframe loader nodes."""
-    clear_generated_module_cache()
-    options = GenerationOptions(
-        include_target_nodes=False,
+    clear_support_module_cache()
+    options = SupportGenerationOptions(
+        include_target_stubs=False,
         include_dataset_nodes=True,
         include_loader_nodes=True,
         include_artifact_nodes=True,
     )
-    module = build_target_module(options=options)
+    module = build_support_module(options=options)
 
     # Should have query nodes (q__*)
     query_nodes = [name for name in dir(module) if name.startswith("q__")]
@@ -75,14 +75,14 @@ def test_assets_module_has_loader_nodes() -> None:
 
 def test_assets_module_has_artifact_nodes() -> None:
     """Verify assets module contains artifact nodes for SCIP/exports."""
-    clear_generated_module_cache()
-    options = GenerationOptions(
-        include_target_nodes=False,
+    clear_support_module_cache()
+    options = SupportGenerationOptions(
+        include_target_stubs=False,
         include_dataset_nodes=True,
         include_loader_nodes=True,
         include_artifact_nodes=True,
     )
-    module = build_target_module(options=options)
+    module = build_support_module(options=options)
 
     # Should have artifact nodes (a__*)
     artifact_nodes = [name for name in dir(module) if name.startswith("a__")]
@@ -98,14 +98,14 @@ def test_assets_module_has_artifact_nodes() -> None:
 
 def test_assets_module_no_target_nodes() -> None:
     """Verify assets module does NOT contain target nodes."""
-    clear_generated_module_cache()
-    options = GenerationOptions(
-        include_target_nodes=False,
+    clear_support_module_cache()
+    options = SupportGenerationOptions(
+        include_target_stubs=False,
         include_dataset_nodes=True,
         include_loader_nodes=True,
         include_artifact_nodes=True,
     )
-    module = build_target_module(options=options)
+    module = build_support_module(options=options)
 
     # Should NOT have target nodes (t__*)
     target_nodes = [name for name in dir(module) if name.startswith("t__")]
@@ -122,14 +122,14 @@ def test_assets_module_no_target_nodes() -> None:
 
 def test_assets_module_all_node_types_independent() -> None:
     """Verify assets module generation works with all node types enabled."""
-    clear_generated_module_cache()
-    options = GenerationOptions(
-        include_target_nodes=False,
+    clear_support_module_cache()
+    options = SupportGenerationOptions(
+        include_target_stubs=False,
         include_dataset_nodes=True,
         include_loader_nodes=True,
         include_artifact_nodes=True,
     )
-    module = build_target_module(options=options)
+    module = build_support_module(options=options)
 
     # Should have all asset types
     has_datasets = any(name.startswith("d__") for name in dir(module))

@@ -209,7 +209,6 @@ class TestPlanStatusMatrix:
             env=env,
             graph=minimal_target_graph,
             requested=("a",),
-            mode="generated",
         )
 
         entry = plan.get_entry("a")
@@ -250,7 +249,6 @@ class TestPlanStatusMatrix:
             env=env,
             graph=minimal_target_graph,
             requested=("a",),
-            mode="generated",
         )
 
         entry = plan.get_entry("a")
@@ -289,7 +287,6 @@ class TestPlanStatusMatrix:
                 env=env,
                 graph=graph,
                 requested=("downstream",),
-                mode="generated",
             )
 
             entry = plan.get_entry("downstream")
@@ -317,7 +314,6 @@ class TestPlanClosure:
             env=env,
             graph=minimal_target_graph,
             requested=("c",),
-            mode="generated",
         )
 
         if len(plan.closure) != EXPECTED_LINEAR_CLOSURE:
@@ -355,7 +351,6 @@ class TestPlanClosure:
             env=env,
             graph=graph,
             requested=("with_tables",),
-            mode="generated",
         )
 
         entry = plan.get_entry("with_tables")
@@ -385,7 +380,6 @@ class TestDryRunParity:
             env=env,
             graph=minimal_target_graph,
             requested=("c",),
-            mode="generated",
         )
 
         plan_dict = plan.to_dict()
@@ -417,7 +411,6 @@ class TestDryRunParity:
             env=env,
             graph=minimal_target_graph,
             requested=("c",),
-            mode="generated",
         )
 
         entry_targets = [e.target for e in plan.entries]
@@ -443,14 +436,12 @@ class TestDryRunParity:
             env=env,
             graph=minimal_target_graph,
             requested=("c",),
-            mode="generated",
         )
 
         plan2 = compute_plan(
             env=env,
             graph=minimal_target_graph,
             requested=("c",),
-            mode="generated",
         )
 
         if plan1.closure != plan2.closure:

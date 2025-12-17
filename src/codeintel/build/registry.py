@@ -663,7 +663,7 @@ def get_target_graph() -> TargetGraph:
     >>> "scip" in deps
     True
     """
-    runtime = build_driver(mode="auto")
+    runtime = build_driver()
     return target_graph_from_hamilton(runtime)
 
 
