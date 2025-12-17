@@ -1,208 +1,176 @@
-"""Native SCIP ingestion with Hamilton subgraph.
+"""Native Hamilton implementation for scip target.
 
-This module implements SCIP indexing as a native Hamilton pipeline with:
-- tool__scip: Execute scip-python to generate index
-- parse__scip: Parse SCIP index into tables
-- t__scip: Orchestrate execution and return TargetRunRecord
+This target produces the SCIP artifacts declared in the build contract:
+- ``scip_index``: ``{scip_dir}/index.scip``
+- ``scip_json``: ``{scip_dir}/index.json``
 
-Phase 2: Enhanced with Hamilton-native validation via @check_output_custom
-and @schema.output documentation.
+Tool execution is delegated to the ingestion tool runtime (ToolService),
+while persistence is DAG-visible via ``FileArtifactSaver``.
 """
 
 from __future__ import annotations
 
-from hamilton.function_modifiers import tag
+import asyncio
+import logging
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.materializers import FileArtifactSaver
+from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.outputs import expected_artifacts
-from codeintel.build.hamilton.native.runner import (
-    NativeRunInfo,
-    RunRecordInputs,
-    create_run_record,
-    save_manifest,
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_file_artifact_materializations,
 )
-from codeintel.build.hamilton.native.tools import ToolExecutionResult, ToolExecutionSpec
-from codeintel.build.hamilton.native.tools.executor import execute_tool
 from codeintel.build.targets import TargetGraph
+from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.service import ToolService
+
+log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph)
 
 
-@tag(domain="ingestion", target="scip", node_type="tool")
-def tool__scip(
-    env: BuildEnv,
-    t__modules: TargetRunRecord,
-) -> ToolExecutionResult:
-    """Execute scip-python tool to generate SCIP index.
+@dataclass(frozen=True)
+class ScipRunResult:
+    """Result from running SCIP tooling.
 
-    Parameters
+    Attributes
     ----------
-    env
-        Build environment with paths and snapshot.
-    t__modules
-        Upstream modules target result (for dependency).
-
-    Returns
-    -------
-    ToolExecutionResult
-        Tool execution result with artifact reference.
+    success
+        Whether execution completed successfully.
+    skipped
+        Whether execution was skipped due to manifest match.
+    index_path
+        Path to the generated index.scip.
+    json_path
+        Path to the generated index.json.
+    error
+        Error message on failure.
     """
-    if t__modules.status != "succeeded":
-        return ToolExecutionResult(
-            success=False,
-            artifact=None,
-            duration_ms=0.0,
-            stdout="",
-            stderr="Upstream modules target failed",
-            return_code=-1,
-        )
 
-    output_path = env.paths.scip_dir / "index.scip"
+    success: bool
+    skipped: bool = False
+    index_path: Path | None = None
+    json_path: Path | None = None
+    error: str | None = None
 
-    spec = ToolExecutionSpec(
-        tool_name="scip-python",
-        command_args=(
-            "index",
-            "--project-name",
-            env.snapshot.repo,
-            "--output",
-            str(output_path),
-            str(env.snapshot.repo_root),
-        ),
-        output_path=output_path,
-        timeout_seconds=600.0,
+
+def _tool_service(env: BuildEnv) -> ToolService:
+    runner = ToolRunner(
+        tools_config=env.providers.tool_runner.tools_config,
+        cache_dir=env.paths.build_dir / ".tool_cache",
     )
-
-    return execute_tool(spec, env)
+    return ToolService(runner)
 
 
 @tag(domain="ingestion", target="scip", node_type="compute")
-def parse__scip(
+def t__scip__run(
     env: BuildEnv,
-    tool__scip: ToolExecutionResult,
-) -> dict[str, object]:
-    """Parse SCIP index into structured data.
+    graph: TargetGraph,
+    t__modules: TargetRunRecord,
+) -> ScipRunResult:
+    """Execute scip-python + scip print to produce SCIP artifacts."""
+    if t__modules.status != "succeeded":
+        return ScipRunResult(
+            success=False,
+            error=f"Upstream modules target failed: {t__modules.error}",
+        )
 
-    Parameters
-    ----------
-    env
-        Build environment.
-    tool__scip
-        Tool execution result with SCIP index artifact.
+    executor = NativeTargetExecutor.for_target(env, graph, "scip")
+    if executor.should_skip():
+        return ScipRunResult(success=True, skipped=True)
 
-    Returns
-    -------
-    dict[str, object]
-        Parsed SCIP data for downstream processing. Contains "success" key
-        and either "data" (on success) or "error" (on failure).
-    """
-    if not tool__scip.success or tool__scip.artifact is None:
-        return {"success": False, "error": tool__scip.stderr}
+    output_scip = env.paths.scip_dir / "index.scip"
+    output_json = env.paths.scip_dir / "index.json"
 
-    scip_path = tool__scip.artifact.path
-    if scip_path is None:
-        return {"success": False, "error": "SCIP artifact path is None"}
+    try:
+        service = _tool_service(env)
+        asyncio.run(
+            service.run_scip_full(
+                env.snapshot.repo_root,
+                output_scip=output_scip,
+                output_json=output_json,
+            )
+        )
+        return ScipRunResult(
+            success=True,
+            index_path=output_scip,
+            json_path=output_json,
+        )
+    except Exception as exc:
+        log.exception("SCIP execution failed")
+        return ScipRunResult(success=False, error=str(exc))
 
-    return {
-        "success": True,
-        "data": {
-            "scip_path": scip_path,
-            "repo": env.snapshot.repo,
-            "commit": env.snapshot.commit,
-        },
-    }
+
+@SaveToDecorator(
+    [FileArtifactSaver],
+    output_name_=materialize_node("artifact.scip_index"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("scip"),
+    artifact_name=value("scip_index"),
+)
+@tag(domain="ingestion", target="scip", node_type="compute", target_="scip__index_artifact")
+def scip__index_artifact(t__scip__run: ScipRunResult) -> Path | None:
+    """Return the Path to index.scip for materialization."""
+    if not t__scip__run.success or t__scip__run.skipped:
+        return None
+    return t__scip__run.index_path
+
+
+@SaveToDecorator(
+    [FileArtifactSaver],
+    output_name_=materialize_node("artifact.scip_json"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("scip"),
+    artifact_name=value("scip_json"),
+)
+@tag(domain="ingestion", target="scip", node_type="compute", target_="scip__json_artifact")
+def scip__json_artifact(t__scip__run: ScipRunResult) -> Path | None:
+    """Return the Path to index.json for materialization."""
+    if not t__scip__run.success or t__scip__run.skipped:
+        return None
+    return t__scip__run.json_path
 
 
 @tag(domain="ingestion", target="scip", node_type="materialize")
 def t__scip(
     env: BuildEnv,
     graph: TargetGraph,
-    tool__scip: ToolExecutionResult,
-    parse__scip: dict[str, object],
+    t__scip__run: ScipRunResult,
     t__modules: TargetRunRecord,
+    m__artifact__scip_index: dict[str, Any],
+    m__artifact__scip_json: dict[str, Any],
 ) -> TargetRunRecord:
-    """Orchestrate SCIP target execution.
-
-    Parameters
-    ----------
-    env
-        Build environment.
-    graph
-        Target graph for metadata.
-    tool__scip
-        Tool execution result.
-    parse__scip
-        Parsed SCIP data.
-    t__modules
-        Upstream modules result.
-
-    Returns
-    -------
-    TargetRunRecord
-        Complete target execution record.
-    """
-    target = graph.get("scip")
-
-    # Check for upstream failure
-    if t__modules.status != "succeeded":
-        return TargetRunRecord(
-            target="scip",
-            plugin_name="native:scip",
-            status="skipped",
-            input_hash=None,
-            options_hash=None,
-            duration_ms=0.0,
-            row_counts={},
-            error="upstream_failed",
-            datasets=(),
-            artifacts=expected_artifacts(
-                target,
-                env.snapshot,
-                path_formatter={
-                    "build_dir": str(env.paths.build_dir),
-                    "scip_dir": str(env.paths.scip_dir),
-                    "repo_root": str(env.snapshot.repo_root),
-                },
-            )
-            if target
-            else (),
-        )
-
+    """Finalize scip target from artifact materialization metadata."""
     executor = NativeTargetExecutor.for_target(env, graph, "scip")
-
-    # Check skip logic
     if executor.should_skip():
         return executor.skip()
+    if t__modules.status != "succeeded":
+        return executor.fail(RuntimeError(t__modules.error or "Upstream modules target failed"))
+    if not t__scip__run.success:
+        return executor.fail(RuntimeError(t__scip__run.error or "SCIP execution failed"))
 
-    # Check tool execution
-    if not tool__scip.success:
-        return executor.fail(RuntimeError(tool__scip.stderr or "Tool execution failed"))
-
-    # Check parsing
-    if not parse__scip.get("success"):
-        return executor.fail(RuntimeError(str(parse__scip.get("error", "Parse failed"))))
-
-    # Success case - materialization would happen here in full implementation
-    run = NativeRunInfo(
-        input_hash=executor.input_hash,
-        options_hash=executor.options_hash,
-        duration_ms=0.0,
+    return record_from_file_artifact_materializations(
+        env=env,
+        graph=graph,
+        target_name="scip",
+        materializations={
+            "scip_index": m__artifact__scip_index,
+            "scip_json": m__artifact__scip_json,
+        },
     )
-    record = create_run_record(
-        executor.target,
-        "succeeded",
-        executor.input_hash,
-        inputs=RunRecordInputs(env=env, run=run),
-    )
-
-    save_manifest(env, record)
-    return record
 
 
 __all__ = [
-    "parse__scip",
+    "ScipRunResult",
     "t__scip",
-    "tool__scip",
+    "t__scip__run",
 ]

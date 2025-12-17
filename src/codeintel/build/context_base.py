@@ -1,41 +1,19 @@
 """Unified context hierarchy for build operations.
 
-This module defines the base context types for all build operations,
-creating a coherent hierarchy that replaces overlapping context types:
+This module defines the base context types for all build operations:
 
-- **ContextPropertiesMixin**: Common properties shared by all contexts
+- **ContextPropertiesProtocol**: Common properties shared by all contexts
 - **BuildContext**: Base for all build operations (materialization, queries)
-- **ExecutionContext**: Extended for target plugin execution
+- **PathResolver**: Centralized path resolution for build artifacts
 
-The hierarchy enables code reuse while preserving the specific needs
-of different build phases:
-
-```
-ContextPropertiesMixin (shared properties)
-    │
-    ├── BuildContext (base)
-    │       ├── gateway, snapshot, paths, session
-    │       └── materialization options
-    │
-    └── ExecutionContext (target-specific)
-            ├── target, contract, parameters
-            └── resources
-```
+Target-specific execution context is provided by `TargetExecutionContext`
+in `codeintel.build.context`, which composes `BuildContext` via delegation.
 
 Usage
 -----
 >>> ctx = BuildContext(gateway=gateway, snapshot=snapshot, paths=paths)
 >>> ctx.repo  # Convenient property access
 'my-org/my-repo'
-
->>> exec_ctx = ExecutionContext(
-...     gateway=gateway,
-...     snapshot=snapshot,
-...     paths=paths,
-...     target=my_target,
-... )
->>> exec_ctx.target_name
-'my_target'
 """
 
 from __future__ import annotations
@@ -47,16 +25,12 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from codeintel.build.session import BuildSession
 
 if TYPE_CHECKING:
-    from codeintel.build.contracts import OutputContract
-    from codeintel.build.parameters import TargetParameters
-    from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
     "BuildContext",
     "ContextPropertiesProtocol",
-    "ExecutionContext",
     "PathResolver",
 ]
 
@@ -65,8 +39,8 @@ __all__ = [
 class ContextPropertiesProtocol(Protocol):
     """Protocol for common context properties.
 
-    This protocol defines the shared interface between BuildContext and
-    ExecutionContext, enabling code that works with either context type.
+    This protocol defines the shared interface for build contexts,
+    enabling code that works with any context type.
     """
 
     @property
@@ -255,8 +229,6 @@ class BuildContext:
     build operations. It provides access to storage, paths, and
     session-scoped caching.
 
-    Extended by ExecutionContext for target plugin execution.
-
     This class also supports materialization options (validate_schemas,
     owner_target, input_hash) that were previously only in MaterializationContext.
     Both can now be used interchangeably for materialization operations.
@@ -381,224 +353,3 @@ class BuildContext:
         PosixPath('/export/analytics/function_metrics.parquet')
         """
         return PathResolver(paths=self.paths, snapshot=self.snapshot)
-
-
-@dataclass
-class ExecutionContext:
-    """Extended context for target plugin execution.
-
-    Adds target-specific information and resources needed by plugin
-    execute() methods. This is the recommended base for plugin contexts.
-
-    Unlike BuildContext, this is mutable to allow subclasses like
-    TargetExecutionContext to track write operations.
-
-    Attributes
-    ----------
-    gateway
-        Storage gateway for database access.
-    snapshot
-        Repository snapshot reference.
-    paths
-        Build paths for directory resolution.
-    target
-        The OutputTarget being executed.
-    parameters
-        Tuning parameters for this target.
-    session
-        Optional build session for caching.
-    validate_schemas
-        When True, validate materialized outputs against Pandera schemas.
-    input_hash
-        Optional input hash from manifest (for asset catalog).
-
-    Examples
-    --------
-    >>> exec_ctx = ExecutionContext(
-    ...     gateway=gateway,
-    ...     snapshot=snapshot,
-    ...     paths=paths,
-    ...     target=my_target,
-    ... )
-    >>> exec_ctx.target_name
-    'my_target'
-    >>> exec_ctx.contract.table_keys
-    ('analytics.function_metrics',)
-    """
-
-    gateway: StorageGateway
-    snapshot: SnapshotRef
-    paths: BuildPaths
-    target: OutputTarget
-    parameters: TargetParameters | None = field(default=None)
-    session: BuildSession | None = field(default=None)
-    # Materialization options
-    validate_schemas: bool = field(default=False)
-    input_hash: str | None = field(default=None)
-
-    @property
-    def repo(self) -> str:
-        """Return the repository slug.
-
-        Returns
-        -------
-        str
-            Repository identifier.
-        """
-        return self.snapshot.repo
-
-    @property
-    def commit(self) -> str:
-        """Return the commit SHA.
-
-        Returns
-        -------
-        str
-            Commit identifier.
-        """
-        return self.snapshot.commit
-
-    @property
-    def repo_root(self) -> Path:
-        """Return the repository root path.
-
-        Returns
-        -------
-        Path
-            Repository root directory.
-        """
-        return self.snapshot.repo_root
-
-    @property
-    def build_dir(self) -> Path:
-        """Return the build directory.
-
-        Returns
-        -------
-        Path
-            Build output directory.
-        """
-        return self.paths.build_dir
-
-    @property
-    def scip_dir(self) -> Path:
-        """Return the SCIP artifacts directory.
-
-        Returns
-        -------
-        Path
-            Directory for SCIP index files.
-        """
-        return self.paths.scip_dir
-
-    @property
-    def contract(self) -> OutputContract:
-        """Return the target's output contract.
-
-        Returns
-        -------
-        OutputContract
-            Tables and artifacts this target produces.
-        """
-        return self.target.contract
-
-    @property
-    def target_name(self) -> str:
-        """Return the target name.
-
-        Returns
-        -------
-        str
-            Target identifier.
-        """
-        return self.target.name
-
-    def get_session(self) -> BuildSession:
-        """Get or create a build session for caching.
-
-        Returns
-        -------
-        BuildSession
-            Session for caching hashes and manifests.
-        """
-        if self.session is not None:
-            return self.session
-        return BuildSession(snapshot=self.snapshot, gateway=self.gateway)
-
-    def artifact_path(self, artifact_name: str) -> Path:
-        """Resolve an artifact path from the contract.
-
-        Parameters
-        ----------
-        artifact_name
-            Name of the artifact in the contract.
-
-        Returns
-        -------
-        Path
-            Resolved file path.
-
-        Raises
-        ------
-        KeyError
-            If artifact is not in the contract.
-        """
-        spec = self.contract.get_artifact(artifact_name)
-        if spec is None:
-            available = ", ".join(self.contract.artifact_names)
-            msg = f"Artifact '{artifact_name}' not in contract. Available: {available}"
-            raise KeyError(msg)
-
-        template = spec.path_template
-        resolved = template.format(
-            build_dir=self.build_dir,
-            scip_dir=self.scip_dir,
-            export_dir=self.paths.document_output_dir,
-            repo_root=self.repo_root,
-        )
-        return Path(resolved)
-
-    @property
-    def owner_target(self) -> str | None:
-        """Return the target name as owner for asset tracking.
-
-        Returns
-        -------
-        str | None
-            Target name for asset catalog ownership.
-        """
-        return self.target.name
-
-    @property
-    def path_resolver(self) -> PathResolver:
-        """Return a path resolver for this context.
-
-        Returns
-        -------
-        PathResolver
-            Utility for resolving artifact paths.
-
-        Examples
-        --------
-        >>> ctx.path_resolver.table_export_path("analytics.function_metrics")
-        PosixPath('/export/analytics/function_metrics.parquet')
-        """
-        return PathResolver(paths=self.paths, snapshot=self.snapshot)
-
-    def to_build_context(self) -> BuildContext:
-        """Create a BuildContext from this execution context.
-
-        Returns
-        -------
-        BuildContext
-            Immutable build context with same gateway/snapshot/paths.
-        """
-        return BuildContext(
-            gateway=self.gateway,
-            snapshot=self.snapshot,
-            paths=self.paths,
-            session=self.session,
-            validate_schemas=self.validate_schemas,
-            owner_target=self.target.name,
-            input_hash=self.input_hash,
-        )

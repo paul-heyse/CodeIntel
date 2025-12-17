@@ -13,11 +13,6 @@ from codeintel.build.hamilton.native.graphs.call_graph import (
     t__call_graph,
     t__call_graph__extract,
 )
-from codeintel.build.hamilton.native.graphs.call_graph_views import (
-    call_graph_depth_stats,
-    call_graph_function_call_counts,
-    t__call_graph_views,
-)
 from codeintel.build.hamilton.native.graphs.cfg_dfg import (
     CFGExtractResult,
     DFGExtractResult,
@@ -27,19 +22,11 @@ from codeintel.build.hamilton.native.graphs.cfg_dfg import (
     t__dfg,
     t__dfg__extract,
 )
-from codeintel.build.hamilton.native.graphs.goids import (
-    GoidExtractionContext,
-    GoidExtractResult,
-    t__goids,
-    t__goids__extract,
-)
-from codeintel.build.hamilton.native.graphs.graph_metrics import (
+from codeintel.build.hamilton.native.graphs.metrics_targets import (
     GraphMetricsComputeResult,
+    GraphValidationResult,
     t__graph_metrics,
     t__graph_metrics__compute,
-)
-from codeintel.build.hamilton.native.graphs.graph_validation import (
-    GraphValidationResult,
     t__graph_validation,
     t__graph_validation__check,
 )
@@ -48,8 +35,15 @@ from codeintel.build.hamilton.native.graphs.import_graph import (
     t__import_graph,
     t__import_graph__extract,
 )
-from codeintel.build.hamilton.native.graphs.symbol_uses import (
+from codeintel.build.hamilton.native.graphs.support_targets import (
+    GoidExtractionInputs,
+    GoidExtractResult,
     SymbolUsesExtractResult,
+    call_graph_depth_stats,
+    call_graph_function_call_counts,
+    t__call_graph_views,
+    t__goids,
+    t__goids__extract,
     t__symbol_uses,
     t__symbol_uses__extract,
 )
@@ -60,7 +54,7 @@ __all__ = [
     "DFGExtractResult",
     "FunctionInfo",
     "GoidExtractResult",
-    "GoidExtractionContext",
+    "GoidExtractionInputs",
     "GraphMetricsComputeResult",
     "GraphValidationResult",
     "ImportGraphExtractResult",

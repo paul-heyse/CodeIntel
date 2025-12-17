@@ -20,18 +20,23 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import ibis.expr.types as ir
 
+from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import compute_node
+from codeintel.build.providers import Providers, create_default_providers
 from codeintel.build.schemas.infer_duckdb import infer_table_schema_from_ibis
 from codeintel.build.schemas.seed_harness import MiniSeedHarness
-from codeintel.config.primitives import SnapshotRef
+from codeintel.config.models import ToolsConfig
+from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.storage.gateway.ephemeral import ephemeral_gateway
+from codeintel.storage.gateway.protocol import StorageGateway
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -42,24 +47,13 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class SchemaInferenceEnv:
-    """Minimal env object for schema compilation execution.
-
-    Native compute nodes commonly reference ``env.snapshot`` and occasionally
-    ``env.gateway``. This object provides those attributes without requiring
-    a full BuildEnv instance.
-    """
-
-    gateway: object
-    snapshot: SnapshotRef
-
-
-@dataclass(frozen=True)
 class _ComputeInferenceJob:
+    target_name: str
     compute_name: str
     table_key: str
     qparams: frozenset[str]
     requires_env: bool
+    requires_graph: bool
 
 
 def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
@@ -87,7 +81,12 @@ def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
 
 @lru_cache(maxsize=1)
 def _runtime_auto() -> HamiltonRuntime:
-    return build_driver()
+    return build_driver(enable_cache=False)
+
+
+@lru_cache(maxsize=1)
+def _schema_inference_providers() -> Providers:
+    return create_default_providers(ToolsConfig.default())
 
 
 def _producers_by_table_key(graph: TargetGraph) -> dict[str, list[str]]:
@@ -161,7 +160,7 @@ def _inference_requirements(
     *,
     runtime: HamiltonRuntime,
     compute_name: str,
-) -> tuple[set[str], bool]:
+) -> tuple[set[str], bool, bool]:
     """Return q__ inputs and env requirement for executing a compute node.
 
     This is derived from the *actual* Hamilton dependency graph for the compute
@@ -177,8 +176,9 @@ def _inference_requirements(
 
     Returns
     -------
-    tuple[set[str], bool]
-        Pair of (q__ node names required, whether an ``env`` input is required).
+    tuple[set[str], bool, bool]
+        Tuple of (q__ node names required, whether an ``env`` input is required,
+        whether a ``graph`` input is required).
 
     Raises
     ------
@@ -194,6 +194,7 @@ def _inference_requirements(
 
     qparams: set[str] = set()
     requires_env = False
+    requires_graph = False
     visited: set[str] = set()
     stack = list(node.dependencies)
 
@@ -207,9 +208,20 @@ def _inference_requirements(
             requires_env = True
             continue
 
+        if dep.name == "graph":
+            requires_graph = True
+            continue
+
         if dep.name.startswith("q__"):
             qparams.add(dep.name)
             continue  # q__ inputs are injected directly; stop traversal.
+
+        if dep.user_defined:
+            msg = (
+                f"Compute node {compute_name} depends on unsupported input {dep.name}; "
+                "schema inference supports only env, graph, and q__ inputs."
+            )
+            raise ValueError(msg)
 
         if dep.name.startswith("t__") and not dep.name.endswith("__compute"):
             msg = (
@@ -228,16 +240,24 @@ def _inference_requirements(
 
         stack.extend(dep.dependencies)
 
-    return qparams, requires_env
+    return qparams, requires_env, requires_graph
 
 
-def _inference_env(*, gateway: object) -> SchemaInferenceEnv:
+def _inference_env(*, gateway: StorageGateway, force_targets: frozenset[str]) -> BuildEnv:
     snapshot = SnapshotRef.from_args(
         repo="demo/repo",
         commit="deadbeef",
         repo_root=Path.cwd(),
     )
-    return SchemaInferenceEnv(gateway=gateway, snapshot=snapshot)
+    return BuildEnv(
+        gateway=gateway,
+        snapshot=snapshot,
+        paths=BuildPaths.from_repo_root(snapshot.repo_root),
+        providers=_schema_inference_providers(),
+        config=BuildConfig.empty(),
+        profile="schema_inference",
+        force_targets=force_targets,
+    )
 
 
 def _infer_table_schema_for_compute(
@@ -250,7 +270,12 @@ def _infer_table_schema_for_compute(
         harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
         inputs: dict[str, object] = dict(harness.build_inputs(set(job.qparams)))
         if job.requires_env:
-            inputs["env"] = _inference_env(gateway=gateway)
+            inputs["env"] = _inference_env(
+                gateway=cast(StorageGateway, gateway),
+                force_targets=frozenset({job.target_name}),
+            )
+        if job.requires_graph:
+            inputs["graph"] = runtime.graph
 
         out = runtime.dr.execute([job.compute_name], inputs=inputs)
         expr_obj = out[job.compute_name]
@@ -303,12 +328,17 @@ def infer_schema_for_table_key(
         compute_name = compute_node(target_name)
 
         _ = compute_fn
-        qparams, requires_env = _inference_requirements(runtime=runtime, compute_name=compute_name)
+        qparams, requires_env, requires_graph = _inference_requirements(
+            runtime=runtime,
+            compute_name=compute_name,
+        )
         job = _ComputeInferenceJob(
+            target_name=target_name,
             compute_name=compute_name,
             table_key=table_key,
             qparams=frozenset(qparams),
             requires_env=requires_env,
+            requires_graph=requires_graph,
         )
         return _infer_table_schema_for_compute(
             runtime=runtime,
@@ -400,10 +430,8 @@ class HamiltonSchemaProvider(SchemaProvider):
         seen: dict[str, TableSchema] = {}
         for schema in self.declared.iter_table_schemas():
             seen[schema.table_key] = schema
-        for table_key in self.inferable_table_keys:
-            inferred = self.get_table_schema(table_key)
-            if inferred is not None:
-                seen[table_key] = inferred
+        for table_key, inferred in self._cache.items():
+            seen[table_key] = inferred
         return tuple(seen[key] for key in sorted(seen))
 
     def prefill_cache(self, schemas: Mapping[str, TableSchema]) -> None:
@@ -470,13 +498,18 @@ def _build_inference_jobs(
         target_name, compute_fn = candidates[0]
         compute_name = compute_node(target_name)
         _ = compute_fn
-        qparams, requires_env = _inference_requirements(runtime=runtime, compute_name=compute_name)
+        qparams, requires_env, requires_graph = _inference_requirements(
+            runtime=runtime,
+            compute_name=compute_name,
+        )
         jobs.append(
             _ComputeInferenceJob(
+                target_name=target_name,
                 compute_name=compute_name,
                 table_key=table_key,
                 qparams=frozenset(qparams),
                 requires_env=requires_env,
+                requires_graph=requires_graph,
             )
         )
     return jobs
@@ -491,12 +524,14 @@ def _infer_job_schema(
     runtime: HamiltonRuntime,
     job: _ComputeInferenceJob,
     base_inputs: Mapping[str, object],
-    env: SchemaInferenceEnv,
+    env: BuildEnv,
     con: DuckDBConnection,
 ) -> TableSchema:
     inputs = dict(base_inputs)
     if job.requires_env:
         inputs["env"] = env
+    if job.requires_graph:
+        inputs["graph"] = runtime.graph
 
     out = runtime.dr.execute([job.compute_name], inputs=inputs)
     expr_obj = out[job.compute_name]
@@ -541,7 +576,10 @@ def infer_table_schemas(
     with ephemeral_gateway(schema_provider=declared_provider) as gateway:
         harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
         base_inputs: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
-        env = _inference_env(gateway=gateway)
+        env = _inference_env(
+            gateway=cast(StorageGateway, gateway),
+            force_targets=frozenset({job.target_name for job in jobs}),
+        )
 
         inferred: dict[str, TableSchema] = {}
         for job in jobs:

@@ -139,7 +139,12 @@ class FileArtifactSaver(DataSaver):
                 )
 
                 if should_skip_native_target(self.env, target, input_hash):
-                    resolved = _resolve_artifact_path(self.env, self.graph, self.target_name, self.artifact_name)
+                    resolved = _resolve_artifact_path(
+                        self.env,
+                        self.graph,
+                        self.target_name,
+                        self.artifact_name,
+                    )
                     result = _skipped(
                         artifact_name=self.artifact_name,
                         duration_ms=_duration_ms(start),
@@ -160,28 +165,46 @@ class FileArtifactSaver(DataSaver):
                     if output_path is None:
                         msg = f"Artifact path could not be resolved: {self.artifact_name}"
                         raise ValueError(msg)
-                    content_bytes = _coerce_bytes(data)
 
                     # Validate contract if strict mode is enabled
                     ContractEnforcer.validate_artifact_write(self.artifact_name)
 
-                    _atomic_write(output_path, content_bytes)
-                    _record_asset(
-                        env=self.env,
-                        artifact_name=self.artifact_name,
-                        owner_target=self.target_name,
-                        input_hash=input_hash,
-                        size_bytes=len(content_bytes),
-                        path=output_path,
-                    )
+                    if isinstance(data, Path) and _same_path(data, output_path):
+                        size_bytes = output_path.stat().st_size
+                        _record_asset(
+                            env=self.env,
+                            artifact_name=self.artifact_name,
+                            owner_target=self.target_name,
+                            input_hash=input_hash,
+                            size_bytes=size_bytes,
+                            path=output_path,
+                        )
+                        result = _succeeded(
+                            artifact_name=self.artifact_name,
+                            duration_ms=_duration_ms(start),
+                            input_hash=input_hash,
+                            path=str(output_path),
+                            size_bytes=size_bytes,
+                        )
+                    else:
+                        content_bytes = _coerce_bytes(data)
+                        _atomic_write(output_path, content_bytes)
+                        _record_asset(
+                            env=self.env,
+                            artifact_name=self.artifact_name,
+                            owner_target=self.target_name,
+                            input_hash=input_hash,
+                            size_bytes=len(content_bytes),
+                            path=output_path,
+                        )
 
-                    result = _succeeded(
-                        artifact_name=self.artifact_name,
-                        duration_ms=_duration_ms(start),
-                        input_hash=input_hash,
-                        path=str(output_path),
-                        size_bytes=len(content_bytes),
-                    )
+                        result = _succeeded(
+                            artifact_name=self.artifact_name,
+                            duration_ms=_duration_ms(start),
+                            input_hash=input_hash,
+                            path=str(output_path),
+                            size_bytes=len(content_bytes),
+                        )
 
         except _RECOVERABLE_EXCEPTIONS as exc:
             result = _failed(
@@ -204,6 +227,13 @@ class FileArtifactSaver(DataSaver):
 
 def _duration_ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000
+
+
+def _same_path(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return a == b
 
 
 def _succeeded(

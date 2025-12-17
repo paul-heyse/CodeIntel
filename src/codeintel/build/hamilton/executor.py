@@ -48,8 +48,8 @@ log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class _RunContext:
-    """Execution context shared across run steps."""
+class _RunState:
+    """Execution state shared across run steps."""
 
     env: BuildEnv
     targets: tuple[str, ...]
@@ -356,7 +356,7 @@ class HamiltonBuildExecutor:
         )
         graph = target_graph_from_hamilton(runtime)
 
-        context = _RunContext(
+        context = _RunState(
             env=env,
             targets=tuple(targets),
             runtime=runtime,
@@ -501,7 +501,7 @@ class HamiltonBuildExecutor:
 
     @staticmethod
     def _make_error_result(
-        context: _RunContext,
+        context: _RunState,
         error: str,
     ) -> HamiltonBuildResult:
         """Create error result for closure computation failure.
@@ -523,7 +523,7 @@ class HamiltonBuildExecutor:
 
     @staticmethod
     def _make_missing_result(
-        context: _RunContext,
+        context: _RunState,
         closure: tuple[str, ...],
         missing: list[str],
     ) -> HamiltonBuildResult:

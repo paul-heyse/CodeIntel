@@ -1,34 +1,108 @@
 """Consolidated Hamilton implementation for coverage-related analytics targets.
 
 This module provides Hamilton native nodes for coverage analytics targets:
+- `coverage_functions`: Per-function coverage aggregation (Ibis -> DuckDB)
 - `coverage_test_edges`: Test-to-function coverage edge computation
 - `behavioral_coverage`: Heuristic behavior tag assignment for tests
 
 Both targets use the NativeTargetExecutor pattern where persistence is
 handled internally by the compute functions.
 
-Note: coverage_functions is kept separate as it uses the ideal SaveToDecorator
-pattern with Ibis expressions.
+coverage_functions uses DAG-visible I/O via ``DuckDBIbisTableSaver``.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
-from hamilton.function_modifiers import tag
+import ibis.expr.types as ir
+from hamilton.function_modifiers import check_output_custom, source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
+from codeintel.analytics.compute.coverage.compute import build_coverage_functions_expr_from_tables
 from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
+from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
+from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materialization,
+)
+from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+
+
+# -----------------------------------------------------------------------------
+# Coverage functions (Ibis -> DuckDB)
+# -----------------------------------------------------------------------------
+
+
+@SaveToDecorator(
+    [DuckDBIbisTableSaver],
+    output_name_=materialize_node("analytics.coverage_functions"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("coverage_functions"),
+    table_key=value("analytics.coverage_functions"),
+)
+@check_output_custom(
+    *build_table_contract(
+        required_columns=[
+            "function_goid_h128",
+            "urn",
+            "repo",
+            "commit",
+            "rel_path",
+            "language",
+            "kind",
+            "qualname",
+            "start_line",
+            "end_line",
+            "executable_lines",
+            "covered_lines",
+            "coverage_ratio",
+            "tested",
+        ],
+        no_nulls=["function_goid_h128", "repo", "commit"],
+    ),
+)
+@tag(domain="analytics", target="coverage_functions", node_type="compute")
+def t__coverage_functions__compute(
+    env: BuildEnv,
+    q__core__goids: ir.Table,
+    q__analytics__coverage_lines: ir.Table,
+) -> ir.Table:
+    """Compute per-function coverage metrics from GOIDs and coverage lines."""
+    return build_coverage_functions_expr_from_tables(
+        q__core__goids,
+        q__analytics__coverage_lines,
+        snapshot=env.snapshot,
+    )
+
+
+@tag(domain="analytics", target="coverage_functions", node_type="materialize")
+def t__coverage_functions(
+    env: BuildEnv,
+    graph: TargetGraph,
+    m__analytics__coverage_functions: dict[str, Any],
+) -> TargetRunRecord:
+    """Convert materialization metadata to a TargetRunRecord."""
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name="coverage_functions",
+        expected_table_key="analytics.coverage_functions",
+        materialization=m__analytics__coverage_functions,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -234,6 +308,8 @@ def t__behavioral_coverage(
 __all__ = [
     "BehavioralCoverageResult",
     "CoverageTestEdgesResult",
+    "t__coverage_functions",
+    "t__coverage_functions__compute",
     "t__behavioral_coverage",
     "t__behavioral_coverage__compute",
     "t__coverage_test_edges",

@@ -53,8 +53,8 @@ class _AssetVersionKey:
 
 
 @dataclass(frozen=True)
-class _VersionContext:
-    """Context for computing asset versions in a build run."""
+class _VersionState:
+    """State for computing asset versions in a build run."""
 
     env: BuildEnv
     run_id: str
@@ -115,7 +115,7 @@ def _try_artifact_size_bytes(ref: ArtifactRefProtocol) -> int | None:
 
 
 def _dataset_version_record(
-    ctx: _VersionContext,
+    ctx: _VersionState,
     record: TargetRunRecord,
     dataset: DatasetRefProtocol,
     upstream_versions: Sequence[str],
@@ -180,7 +180,7 @@ def _dataset_version_record(
 
 
 def _artifact_version_record(
-    ctx: _VersionContext,
+    ctx: _VersionState,
     record: TargetRunRecord,
     artifact: ArtifactRefProtocol,
     upstream_versions: Sequence[str],
@@ -263,7 +263,7 @@ def _compute_upstream_versions(
 
 
 def _process_target_record(
-    ctx: _VersionContext,
+    ctx: _VersionState,
     rec: TargetRunRecord,
     upstream_versions: Sequence[str],
 ) -> tuple[list[AssetVersionRecord], list[RunAssetVersionRecord], list[_AssetVersionKey]]:
@@ -294,7 +294,7 @@ def _process_target_record(
 
 
 def _collect_versions_for_run(
-    ctx: _VersionContext,
+    ctx: _VersionState,
     graph: TargetGraph,
     records: Sequence[TargetRunRecord],
 ) -> tuple[
@@ -394,7 +394,7 @@ def persist_asset_catalog_for_run(
     records: Sequence[TargetRunRecord],
 ) -> None:
     """Persist asset versions, run mappings, and lineage edges for a build run."""
-    ctx = _VersionContext(env=env, run_id=run_id, policy=env.fingerprint_policy)
+    ctx = _VersionState(env=env, run_id=run_id, policy=env.fingerprint_policy)
     versions, run_maps, target_outputs = _collect_versions_for_run(ctx, graph, records)
     edges = _collect_lineage_edges(graph=graph, target_outputs=target_outputs)
 

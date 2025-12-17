@@ -21,10 +21,31 @@ if TYPE_CHECKING:
 
 
 _NATIVE_MODULE_PATHS: tuple[str, ...] = (
-    "codeintel.build.hamilton.native.ingestion",
-    "codeintel.build.hamilton.native.graphs",
-    "codeintel.build.hamilton.native.analytics",
-    "codeintel.build.hamilton.native.export",
+    # Ingestion domain
+    "codeintel.build.hamilton.native.ingestion.extraction_targets",
+    "codeintel.build.hamilton.native.ingestion.ingest_targets",
+    "codeintel.build.hamilton.native.ingestion.scip",
+    # Graphs domain
+    "codeintel.build.hamilton.native.graphs.call_graph",
+    "codeintel.build.hamilton.native.graphs.cfg_dfg",
+    "codeintel.build.hamilton.native.graphs.import_graph",
+    "codeintel.build.hamilton.native.graphs.metrics_targets",
+    "codeintel.build.hamilton.native.graphs.support_targets",
+    # Analytics domain
+    "codeintel.build.hamilton.native.analytics.classification_targets",
+    "codeintel.build.hamilton.native.analytics.config_graph_targets",
+    "codeintel.build.hamilton.native.analytics.coverage_pipeline",
+    "codeintel.build.hamilton.native.analytics.dependency_targets",
+    "codeintel.build.hamilton.native.analytics.function_detail_targets",
+    "codeintel.build.hamilton.native.analytics.function_metrics",
+    "codeintel.build.hamilton.native.analytics.graph_metrics_pipeline",
+    "codeintel.build.hamilton.native.analytics.history_targets",
+    "codeintel.build.hamilton.native.analytics.hotspots",
+    "codeintel.build.hamilton.native.analytics.metadata_targets",
+    "codeintel.build.hamilton.native.analytics.risk_factors",
+    "codeintel.build.hamilton.native.analytics.subsystem_targets",
+    # Export domain
+    "codeintel.build.hamilton.native.export.export_targets",
 )
 
 

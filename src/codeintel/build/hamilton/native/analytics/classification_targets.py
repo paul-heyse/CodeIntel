@@ -1,34 +1,34 @@
-"""Native Hamilton implementation for semantic_roles target.
+"""Native Hamilton implementations for code classification targets.
 
-This module provides the Hamilton native nodes for semantic roles computation
-with DAG-visible I/O via SaveToDecorator/DuckDBRowsSaver:
+This module consolidates targets that classify code and tests:
 
-- `t__semantic_roles__compute`: Pure compute node returning role rows
-- `semantic_roles__functions_rows`: Extract function rows for materialization
-- `semantic_roles__modules_rows`: Extract module rows for materialization
-- `t__semantic_roles`: Materialize node combining table writes
+- ``semantic_roles``: Function/module semantic role classification.
+- ``test_profile``: Per-test profiling with coverage context.
 
-The compute node calls `build_semantic_roles_rows` which returns pure rows
-without persistence. Persistence is handled by DuckDBRowsSaver via SaveToDecorator,
-making I/O visible in the Hamilton DAG for caching and observability.
-
-Phase 4: Analytics domain migration with Hamilton-native DAG-visible I/O.
+Both targets use DAG-visible I/O via Hamilton saver nodes.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from hamilton.function_modifiers import source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.semantic_roles import SemanticRolesResult, build_semantic_roles_rows
+from codeintel.analytics.testing.profiles.builder import (
+    TestProfileBuildResult,
+    build_test_profile_result,
+)
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
 from codeintel.build.hamilton.native.runner import should_skip_native_target
@@ -267,8 +267,152 @@ __all__ = [
     "SEMANTIC_ROLES_FUNCTIONS_COLS",
     "SEMANTIC_ROLES_MODULES_COLS",
     "SemanticRolesResult",
+    "TEST_PROFILE_COLS",
+    "TestProfileComputeResult",
     "semantic_roles__functions_rows",
     "semantic_roles__modules_rows",
     "t__semantic_roles",
     "t__semantic_roles__compute",
+    "t__test_profile",
+    "t__test_profile__compute",
+    "test_profile__rows",
 ]
+
+
+# ---------------------------------------------------------------------------
+# test_profile target
+# ---------------------------------------------------------------------------
+
+
+TEST_PROFILE_COLS = (
+    "repo",
+    "commit",
+    "test_id",
+    "test_goid_h128",
+    "urn",
+    "rel_path",
+    "module",
+    "qualname",
+    "language",
+    "kind",
+    "status",
+    "duration_ms",
+    "markers",
+    "flaky",
+    "last_run_at",
+    "functions_covered",
+    "functions_covered_count",
+    "primary_function_goids",
+    "subsystems_covered",
+    "subsystems_covered_count",
+    "primary_subsystem_id",
+    "assert_count",
+    "raise_count",
+    "uses_parametrize",
+    "uses_fixtures",
+    "io_bound",
+    "uses_network",
+    "uses_db",
+    "uses_filesystem",
+    "uses_subprocess",
+    "flakiness_score",
+    "importance_score",
+    "notes",
+    "tg_degree",
+    "tg_weighted_degree",
+    "tg_proj_degree",
+    "tg_proj_weight",
+    "tg_proj_clustering",
+    "tg_proj_betweenness",
+    "created_at",
+)
+
+
+@dataclass(frozen=True)
+class TestProfileComputeResult:
+    """Result from test profile computation."""
+
+    result: TestProfileBuildResult | None
+    error: str | None = None
+
+
+def _test_profile_row_to_tuple(row: Mapping[str, object], cols: tuple[str, ...]) -> tuple[object, ...]:
+    return tuple(row.get(col) for col in cols)
+
+
+@tag(domain="analytics", target="test_profile", node_type="compute")
+def t__test_profile__compute(
+    env: BuildEnv,
+    t__coverage_test_edges: TargetRunRecord,
+) -> TestProfileComputeResult:
+    """Build per-test profiles with coverage and subsystem context."""
+    if t__coverage_test_edges.status != "succeeded":
+        return TestProfileComputeResult(
+            result=None,
+            error=(
+                "Upstream coverage_test_edges target failed: "
+                f"{t__coverage_test_edges.error}"
+            ),
+        )
+
+    try:
+        build_result = build_test_profile_result(env.gateway, env.snapshot)
+        return TestProfileComputeResult(result=build_result)
+    except Exception as exc:
+        log.exception("Test profile computation failed")
+        return TestProfileComputeResult(result=None, error=str(exc))
+
+
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.test_profile"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("test_profile"),
+    table_key=value("analytics.test_profile"),
+    columns=value(TEST_PROFILE_COLS),
+)
+@tag(domain="analytics", target="test_profile", node_type="compute", target_="test_profile__rows")
+def test_profile__rows(
+    t__test_profile__compute: TestProfileComputeResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.test_profile table."""
+    if t__test_profile__compute.result is None:
+        return None
+    if t__test_profile__compute.result.rows is None:
+        return None
+    return tuple(
+        _test_profile_row_to_tuple(row, TEST_PROFILE_COLS)
+        for row in t__test_profile__compute.result.rows
+    )
+
+
+@tag(domain="analytics", target="test_profile", node_type="materialize")
+def t__test_profile(
+    env: BuildEnv,
+    graph: TargetGraph,
+    t__test_profile__compute: TestProfileComputeResult,
+    m__analytics__test_profile: dict[str, Any],
+) -> TargetRunRecord:
+    """Materialize test profile target."""
+    if t__test_profile__compute.error:
+        return TargetRunRecord(
+            target="test_profile",
+            plugin_name="native:test_profile",
+            status="failed",
+            input_hash="",
+            options_hash=None,
+            duration_ms=0.0,
+            row_counts={},
+            error=t__test_profile__compute.error,
+            datasets=(),
+            artifacts=(),
+        )
+
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name="test_profile",
+        expected_table_key="analytics.test_profile",
+        materialization=m__analytics__test_profile,
+    )

@@ -4,15 +4,12 @@ This module defines TargetExecutionContext, which is the single object
 passed to plugin execute() methods. It provides:
 
 1. Target information (name, contract, parameters)
-2. Resources (tool runners, gateway, modules)
+2. Resources (tool runners, modules)
 3. Path resolution (artifacts, build directories)
 4. Write validation (against contract schemas)
 
 Plugins receive everything they need via context, eliminating the need
 for config classes and scattered ClassVars.
-
-TargetExecutionContext extends ExecutionContext from the unified context
-hierarchy, adding write tracking and validation capabilities.
 
 Example
 -------
@@ -36,8 +33,8 @@ from typing import TYPE_CHECKING, Any
 
 from pandera.errors import SchemaError, SchemaErrors
 
-from codeintel.build.context_base import ExecutionContext
 from codeintel.build.errors import ColumnCountMismatchError, SchemaNotFoundError
+from codeintel.build.context_base import BuildContext
 from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.result import TargetResult
@@ -101,14 +98,12 @@ class ContextResources:
     """Resources available to a target during execution.
 
     This wraps the Providers and adds target-specific resources
-    like the gateway and module list.
+    like the module list.
 
     Attributes
     ----------
     providers
         DI providers for external tools.
-    gateway
-        Storage gateway for database access.
     modules
         Module list (if target requires it).
     change_tracker
@@ -120,7 +115,6 @@ class ContextResources:
     """
 
     providers: Providers | None = None
-    gateway: StorageGateway | None = None
     modules: tuple[str, ...] = ()
     change_tracker: ChangeTracker | None = None
     graph_runtime: GraphRuntime | None = None
@@ -206,17 +200,15 @@ class TargetExecutionContext:
     - Path helpers (repo_root, build_dir, artifact paths)
     - Write methods (with contract validation)
 
-    This class provides the same interface as ExecutionContext but with
-    additional resource handling and write tracking capabilities.
+    This class provides resource handling and write tracking capabilities
+    for target execution.
 
     Attributes
     ----------
+    build_ctx
+        Shared build context (gateway, snapshot, paths).
     target
         The OutputTarget being executed.
-    snapshot
-        Repository snapshot reference.
-    paths
-        Build paths for directory resolution.
     resources
         Resources available for execution.
     parameters
@@ -225,12 +217,21 @@ class TargetExecutionContext:
         Internal record of tables written (for testing).
     """
 
+    build_ctx: BuildContext
     target: OutputTarget
-    snapshot: SnapshotRef
-    paths: BuildPaths
     resources: ContextResources = field(default_factory=ContextResources)
     parameters: TargetParameters = field(default_factory=lambda: EMPTY_PARAMETERS)
     _written_tables: dict[str, WriteRecord] = field(default_factory=dict)
+
+    @property
+    def snapshot(self) -> SnapshotRef:
+        """Return the snapshot reference."""
+        return self.build_ctx.snapshot
+
+    @property
+    def paths(self) -> BuildPaths:
+        """Return build paths configuration."""
+        return self.build_ctx.paths
 
     @property
     def target_name(self) -> str:
@@ -263,7 +264,7 @@ class TargetExecutionContext:
         str
             Repository identifier.
         """
-        return self.snapshot.repo
+        return self.build_ctx.repo
 
     @property
     def commit(self) -> str:
@@ -274,7 +275,7 @@ class TargetExecutionContext:
         str
             Commit identifier.
         """
-        return self.snapshot.commit
+        return self.build_ctx.commit
 
     @property
     def repo_root(self) -> Path:
@@ -285,7 +286,7 @@ class TargetExecutionContext:
         Path
             Repository root directory.
         """
-        return self.snapshot.repo_root
+        return self.build_ctx.repo_root
 
     @property
     def build_dir(self) -> Path:
@@ -296,7 +297,7 @@ class TargetExecutionContext:
         Path
             Build output directory.
         """
-        return self.paths.build_dir
+        return self.build_ctx.build_dir
 
     @property
     def scip_dir(self) -> Path:
@@ -307,7 +308,7 @@ class TargetExecutionContext:
         Path
             Directory for SCIP index files.
         """
-        return self.paths.scip_dir
+        return self.build_ctx.scip_dir
 
     @property
     def export_dir(self) -> Path:
@@ -318,7 +319,7 @@ class TargetExecutionContext:
         Path
             Directory for document output exports.
         """
-        return self.paths.document_output_dir
+        return self.build_ctx.paths.document_output_dir
 
     def artifact_path(self, artifact_name: str) -> Path:
         """Resolve an artifact path from the contract.
@@ -344,49 +345,12 @@ class TargetExecutionContext:
             msg = f"Artifact '{artifact_name}' not in contract. Available: {available}"
             raise KeyError(msg)
 
-        template = spec.path_template
-        resolved = template.format(
-            build_dir=self.build_dir,
-            scip_dir=self.scip_dir,
-            export_dir=self.export_dir,
-            repo_root=self.repo_root,
-        )
-        return Path(resolved)
+        return self.build_ctx.path_resolver.artifact_path_from_template(spec.path_template)
 
     @property
     def gateway(self) -> StorageGateway:
-        """Return the storage gateway.
-
-        Returns
-        -------
-        StorageGateway
-            Database access gateway.
-
-        Raises
-        ------
-        RuntimeError
-            If gateway is not available.
-        """
-        if self.resources.gateway is None:
-            msg = "Gateway not available in execution context"
-            raise RuntimeError(msg)
-        return self.resources.gateway
-
-    def to_execution_context(self) -> ExecutionContext:
-        """Convert to an ExecutionContext.
-
-        Returns
-        -------
-        ExecutionContext
-            Execution context with same target/snapshot/paths.
-        """
-        return ExecutionContext(
-            gateway=self.resources.gateway or self.gateway,
-            snapshot=self.snapshot,
-            paths=self.paths,
-            target=self.target,
-            parameters=self.parameters,
-        )
+        """Return the storage gateway."""
+        return self.build_ctx.gateway
 
     def write_table(
         self,
@@ -437,8 +401,7 @@ class TargetExecutionContext:
         record.rows.extend(rows)
         record.validated = validate
 
-        if self.resources.gateway is not None:
-            self._persist_rows(table_key, rows)
+        self._persist_rows(table_key, rows)
 
         return len(rows)
 
@@ -496,7 +459,7 @@ class TargetExecutionContext:
             "Writing %d rows to %s (gateway=%s)",
             len(rows),
             table_key,
-            self.resources.gateway is not None,
+            True,
         )
 
     def write_validated_table(
