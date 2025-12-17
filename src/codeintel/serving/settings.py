@@ -89,6 +89,14 @@ class ServingSettings:
         Comma-separated list of IPs allowed to set proxy headers.
     auth_required_for_remote
         Require authentication when binding to non-localhost interfaces.
+    mcp_enable_search
+        Enable the code_search MCP tool.
+    mcp_enable_explain
+        Enable the semantic_explain MCP tool.
+    mcp_enable_meta
+        Enable the serving_meta MCP tool.
+    mcp_enable_export
+        Enable the semantic_export MCP tool.
     """
 
     serve_dir: Path
@@ -139,6 +147,12 @@ class ServingSettings:
 
     # Security: Auth Enforcement
     auth_required_for_remote: bool = True
+
+    # MCP Tool Feature Flags
+    mcp_enable_search: bool = True
+    mcp_enable_explain: bool = True
+    mcp_enable_meta: bool = True
+    mcp_enable_export: bool = True
 
     @classmethod
     def from_env(cls) -> ServingSettings:
@@ -206,6 +220,11 @@ class ServingSettings:
             # Security: Auth Enforcement
             auth_required_for_remote=os.environ.get("CODEINTEL_AUTH_REQUIRED_FOR_REMOTE", "1")
             == "1",
+            # MCP Tool Feature Flags
+            mcp_enable_search=os.environ.get("CODEINTEL_MCP_ENABLE_SEARCH", "1") == "1",
+            mcp_enable_explain=os.environ.get("CODEINTEL_MCP_ENABLE_EXPLAIN", "1") == "1",
+            mcp_enable_meta=os.environ.get("CODEINTEL_MCP_ENABLE_META", "1") == "1",
+            mcp_enable_export=os.environ.get("CODEINTEL_MCP_ENABLE_EXPORT", "1") == "1",
         )
 
     def validate_auth_for_host(self) -> None:
@@ -222,15 +241,14 @@ class ServingSettings:
         if not self.auth_required_for_remote:
             return
 
-        public_hosts = {"0.0.0.0", "::", ""}
-        if self.host in public_hosts:
-            if not self.auth_token and not self.api_key:
-                msg = (
-                    f"Security error: Binding to {self.host!r} requires authentication. "
-                    f"Set CODEINTEL_AUTH_TOKEN or CODEINTEL_SERVE_API_KEY, "
-                    f"or set CODEINTEL_AUTH_REQUIRED_FOR_REMOTE=0 to disable this check."
-                )
-                raise ValueError(msg)
+        public_hosts = {"0.0.0.0", "::", ""}  # noqa: S104
+        if self.host in public_hosts and not self.auth_token and not self.api_key:
+            msg = (
+                f"Security error: Binding to {self.host!r} requires authentication. "
+                f"Set CODEINTEL_AUTH_TOKEN or CODEINTEL_SERVE_API_KEY, "
+                f"or set CODEINTEL_AUTH_REQUIRED_FOR_REMOTE=0 to disable this check."
+            )
+            raise ValueError(msg)
 
 
 __all__ = ["ServingSettings"]
@@ -266,6 +284,6 @@ def _parse_optional_int(value: str | None) -> int | None:
     int | None
         Parsed integer or None if input was None/empty.
     """
-    if value is None or value.strip() == "":
+    if value is None or not value.strip():
         return None
     return int(value)

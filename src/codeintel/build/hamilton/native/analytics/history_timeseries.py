@@ -8,26 +8,28 @@ The history_timeseries target is a special multi-commit analysis feature that
 requires explicit configuration (snapshot resolver and commit list). When these
 are not available, the target returns empty results gracefully.
 
-For full functionality, this target typically runs via the HistoryTimeseriesPlugin
-which receives configuration through the plugin parameter mechanism.
+This target requires multi-commit configuration that is not yet wired into
+``BuildEnv``. Until that is implemented, this target returns an empty result
+set (zero rows) and succeeds.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-from hamilton.function_modifiers import tag
+from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.history.history_timeseries import (
     HISTORY_TIMESERIES_COLS,
-    build_history_timeseries_rows,
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materializer import (
-    MaterializationContext,
-    materialize_rows,
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materialization,
 )
 from codeintel.build.targets import TargetGraph
 
@@ -35,7 +37,21 @@ log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
 
-@tag(domain="analytics", target="history_timeseries", node_type="compute")
+@SaveToDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node("analytics.history_timeseries"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value("history_timeseries"),
+    table_key=value("analytics.history_timeseries"),
+    columns=value(tuple(HISTORY_TIMESERIES_COLS)),
+)
+@tag(
+    domain="analytics",
+    target="history_timeseries",
+    node_type="compute",
+    target_="t__history_timeseries__compute",
+)
 def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], ...]:
     """Compute history timeseries metrics across commits.
 
@@ -61,19 +77,18 @@ def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], .
     When these are not configured, this node returns an empty tuple and
     the target completes successfully with zero rows.
 
-    For full history timeseries functionality, use the HistoryTimeseriesPlugin
-    which receives configuration through the plugin parameter mechanism.
+    Full multi-commit functionality will be enabled when BuildEnv is extended
+    with a commit list and a snapshot resolver.
     """
     # History timeseries requires multi-commit configuration that is typically
     # provided via plugin parameters. When running through Hamilton native,
     # we would need commits and a db_resolver, which aren't available in BuildEnv.
     #
-    # In the standard Hamilton flow, we return empty since the full configuration
-    # isn't available. The HistoryTimeseriesPlugin handles the configured case.
+    # We return empty since the full configuration isn't available yet.
     _ = env  # env would be used if multi-commit configuration were available
     log.info(
-        "history_timeseries: Multi-commit configuration not available via BuildEnv. "
-        "For full functionality, use HistoryTimeseriesPlugin with explicit configuration."
+        "history_timeseries: Multi-commit configuration not available via BuildEnv; "
+        "returning empty result set."
     )
     return ()
 
@@ -82,7 +97,7 @@ def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], .
 def t__history_timeseries(
     env: BuildEnv,
     graph: TargetGraph,
-    t__history_timeseries__compute: tuple[tuple[object, ...], ...],
+    m__analytics__history_timeseries: dict[str, Any],
 ) -> TargetRunRecord:
     """Materialize history timeseries table to DuckDB.
 
@@ -108,41 +123,18 @@ def t__history_timeseries(
     This node materializes the following table:
     - analytics.history_timeseries
     """
-    executor = NativeTargetExecutor.for_target(env, graph, "history_timeseries")
-
-    if executor.should_skip():
-        return executor.skip()
-
-    def compute() -> dict[str, int]:
-        # Ensure table exists
-        backend = env.gateway.policy
-        backend.ensure_table("analytics.history_timeseries")
-
-        ctx = MaterializationContext(
-            gateway=env.gateway,
-            snapshot=env.snapshot,
-            validate=env.validate_outputs,
-            owner_target="history_timeseries",
-            input_hash=executor.input_hash,
-        )
-
-        # Materialize history timeseries table
-        ref = materialize_rows(
-            ctx,
-            "analytics.history_timeseries",
-            t__history_timeseries__compute,
-            HISTORY_TIMESERIES_COLS,
-        )
-
-        return {"analytics.history_timeseries": ref.row_count or 0}
-
-    return executor.execute(compute)
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name="history_timeseries",
+        expected_table_key="analytics.history_timeseries",
+        materialization=m__analytics__history_timeseries,
+    )
 
 
 # Export node names for Hamilton discovery
 __all__ = [
     "HISTORY_TIMESERIES_COLS",
-    "build_history_timeseries_rows",
     "t__history_timeseries",
     "t__history_timeseries__compute",
 ]
