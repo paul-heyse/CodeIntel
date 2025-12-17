@@ -69,6 +69,7 @@ def _fastmcp_type_globals() -> tuple[type[object], ...]:
     """
     return (Context, SearchQueryResponse, SemanticExplainResponse, SemanticQueryResponse)
 
+
 # Reusable annotation sets for tool categories
 _READ_ONLY_LOCAL_ANNOTATIONS = {
     "readOnlyHint": True,  # No data modification

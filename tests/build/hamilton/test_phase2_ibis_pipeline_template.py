@@ -27,14 +27,17 @@ from tests._helpers.fakes.fake_providers import FakeProviders
 
 if TYPE_CHECKING:
     from pathlib import Path
-    from typing import Protocol
 
     from codeintel.build.providers import Providers
     from codeintel.storage.gateway import StorageGateway
 
-    class _EphemeralModule(Protocol):
-        t__modules__compute: object
-        t__modules: object
+
+class _EphemeralModule(ModuleType):
+    ir: ModuleType
+    BuildEnv: type[BuildEnv]
+    TargetRunRecord: type[TargetRunRecord]
+    t__modules__compute: object
+    t__modules: object
 
 
 def _make_env(*, gateway: StorageGateway, snapshot: SnapshotRef) -> BuildEnv:
@@ -64,7 +67,7 @@ def _make_graph() -> TargetGraph:
 
 
 def _build_module() -> ModuleType:
-    mod = ModuleType("tests.build.hamilton._phase2_ibis_pipeline_case")
+    mod = _EphemeralModule("tests.build.hamilton._phase2_ibis_pipeline_case")
     mod.__doc__ = "Ephemeral module for testing ibis_pipeline via @subdag."
     sys.modules[mod.__name__] = mod
 
@@ -110,9 +113,8 @@ def _build_module() -> ModuleType:
     t__modules__compute.__module__ = mod.__name__
     t__modules.__module__ = mod.__name__
 
-    module_namespace = cast("_EphemeralModule", mod)
-    module_namespace.t__modules__compute = t__modules__compute
-    module_namespace.t__modules = t__modules
+    mod.t__modules__compute = t__modules__compute
+    mod.t__modules = t__modules
     return mod
 
 

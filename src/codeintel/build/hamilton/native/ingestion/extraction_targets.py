@@ -32,7 +32,6 @@ log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ModuleRecord)
 
 
-
 @dataclass(frozen=True)
 class AstExtractResult:
     """Result from AST extraction.

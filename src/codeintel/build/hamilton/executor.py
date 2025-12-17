@@ -31,7 +31,6 @@ from codeintel.build.hamilton.contracts.enforcement_hook import ContractEnforcem
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
 from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.hooks.telemetry_hook import NodeTelemetryHook
-from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.manifest import BuildRunRecord
 from codeintel.build.registry import ALL_TARGETS
 from codeintel.build.targets import TargetGraph
@@ -364,7 +363,7 @@ class HamiltonBuildExecutor:
             env=env,
             telemetry_hook=telemetry_hook,
         )
-        graph = target_graph_from_hamilton(runtime)
+        graph = runtime.graph
 
         context = _RunState(
             env=env,

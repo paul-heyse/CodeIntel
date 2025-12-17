@@ -26,6 +26,9 @@ from codeintel.build.hamilton.hooks.manifest_hook import TargetRunRecord
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.targets import TargetGraph
 
+# Keep types available for Hamilton's runtime type resolution
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+
 # Note: Using Any instead of Protocol for compute_result parameter because:
 # 1. Python 3.13 Protocol doesn't support issubclass() for data-only protocols
 # 2. Hamilton internally uses issubclass() for type matching

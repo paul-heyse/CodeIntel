@@ -15,8 +15,6 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from codeintel.build.hamilton.introspect import target_graph_from_hamilton
-
 if TYPE_CHECKING:
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
@@ -56,8 +54,7 @@ def list_execution_order(
     True
     """
     _ = graph_source
-    graph = target_graph_from_hamilton(runtime)
-    closure = graph.topological_order(targets)
+    closure = runtime.graph.topological_order(targets)
     return [runtime.target_to_node[t] for t in closure if t in runtime.target_to_node]
 
 
@@ -91,8 +88,7 @@ def list_execution_targets(
     True
     """
     _ = graph_source
-    graph = target_graph_from_hamilton(runtime)
-    return list(graph.topological_order(targets))
+    return list(runtime.graph.topological_order(targets))
 
 
 def get_dag_info(
@@ -125,7 +121,7 @@ def get_dag_info(
     True
     """
     _ = graph_source
-    graph = target_graph_from_hamilton(runtime)
+    graph = runtime.graph
     closure = graph.topological_order(targets)
 
     nodes: list[dict[str, Any]] = []

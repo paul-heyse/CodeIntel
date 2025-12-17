@@ -37,6 +37,9 @@ if TYPE_CHECKING:
         t__goids__extract: object
         t__goids: object
 
+# Keep types available for Hamilton's runtime type resolution
+_HAMILTON_TYPE_HINTS = (TargetRunRecord,)
+
 
 @dataclass
 class MockComputeResult:
@@ -98,7 +101,9 @@ def test_compute_result_protocol() -> None:
     # Can't use isinstance with Protocol that has non-method members
     # Instead, verify the attributes exist
     expect_true(hasattr(result, "success"), message="MockComputeResult should have success attr")
-    expect_true(hasattr(result, "table_counts"), message="MockComputeResult should have table_counts attr")
+    expect_true(
+        hasattr(result, "table_counts"), message="MockComputeResult should have table_counts attr"
+    )
     expect_true(hasattr(result, "error"), message="MockComputeResult should have error attr")
 
 

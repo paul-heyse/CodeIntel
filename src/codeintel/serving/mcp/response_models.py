@@ -33,6 +33,7 @@ def _pydantic_runtime_types() -> tuple[type[object], ...]:
     """
     return (datetime, SemanticQueryResponse)
 
+
 # =============================================================================
 # URI / ID Primitives (Annotated types with validation + documentation)
 # =============================================================================

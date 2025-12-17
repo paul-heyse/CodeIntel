@@ -114,14 +114,14 @@ def build_coverage_functions_expr_from_tables(
     ir.Table
         Ibis table expression for ``analytics.coverage_functions``.
     """
-    goids_filtered = _filter_goids(goids, snapshot)
-    coverage_filtered = _filter_coverage_lines(coverage, snapshot)
-    joined = _join_goids_with_coverage(goids_filtered, coverage_filtered)
-    aggregated = _aggregate_coverage(joined, goids_filtered)
-    return _enrich_coverage_results(aggregated)
+    goids_filtered = filter_goids_for_snapshot(goids, snapshot)
+    coverage_filtered = filter_coverage_lines_for_snapshot(coverage, snapshot)
+    joined = join_goids_with_coverage_lines(goids_filtered, coverage_filtered)
+    aggregated = aggregate_coverage_lines(joined, goids_filtered)
+    return enrich_coverage_results(aggregated)
 
 
-def _filter_goids(table: ir.Table, snapshot: SnapshotRef) -> ir.Table:
+def filter_goids_for_snapshot(table: ir.Table, snapshot: SnapshotRef) -> ir.Table:
     """Filter GOIDs to functions/methods for the given snapshot.
 
     Parameters
@@ -144,7 +144,7 @@ def _filter_goids(table: ir.Table, snapshot: SnapshotRef) -> ir.Table:
     return table.filter(predicate)
 
 
-def _filter_coverage_lines(table: ir.Table, snapshot: SnapshotRef) -> ir.Table:
+def filter_coverage_lines_for_snapshot(table: ir.Table, snapshot: SnapshotRef) -> ir.Table:
     """Filter coverage lines for the given snapshot.
 
     Parameters
@@ -166,7 +166,7 @@ def _filter_coverage_lines(table: ir.Table, snapshot: SnapshotRef) -> ir.Table:
     return table.filter(predicate)
 
 
-def _join_goids_with_coverage(goids: ir.Table, coverage: ir.Table) -> ir.Table:
+def join_goids_with_coverage_lines(goids: ir.Table, coverage: ir.Table) -> ir.Table:
     """Join GOIDs with coverage lines based on file path and line ranges.
 
     Parameters
@@ -198,7 +198,7 @@ def _join_goids_with_coverage(goids: ir.Table, coverage: ir.Table) -> ir.Table:
     return goids.left_join(coverage, join_predicates)
 
 
-def _aggregate_coverage(joined: ir.Table, goids: ir.Table) -> ir.Table:
+def aggregate_coverage_lines(joined: ir.Table, goids: ir.Table) -> ir.Table:
     """Aggregate coverage metrics per function.
 
     Parameters
@@ -235,7 +235,7 @@ def _aggregate_coverage(joined: ir.Table, goids: ir.Table) -> ir.Table:
     )
 
 
-def _enrich_coverage_results(aggregated: ir.Table) -> ir.Table:
+def enrich_coverage_results(aggregated: ir.Table) -> ir.Table:
     """Enrich aggregated coverage with derived metrics.
 
     Parameters
@@ -280,6 +280,11 @@ def _enrich_coverage_results(aggregated: ir.Table) -> ir.Table:
 
 
 __all__ = [
+    "aggregate_coverage_lines",
     "build_coverage_functions_expr",
     "build_coverage_functions_expr_from_tables",
+    "enrich_coverage_results",
+    "filter_coverage_lines_for_snapshot",
+    "filter_goids_for_snapshot",
+    "join_goids_with_coverage_lines",
 ]

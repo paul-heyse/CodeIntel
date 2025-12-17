@@ -26,7 +26,15 @@ from typing import TYPE_CHECKING, Any, SupportsInt, cast
 
 import ibis
 import ibis.expr.types as ir
-from hamilton.function_modifiers import check_output_custom, schema, source, tag, value
+from hamilton.function_modifiers import (
+    check_output_custom,
+    pipe_input,
+    schema,
+    source,
+    step,
+    tag,
+    value,
+)
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.graphs import (
@@ -992,6 +1000,183 @@ def t__symbol_uses(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class CallGraphCallCountStats:
+    """Intermediate aggregations for function call count view.
+
+    Attributes
+    ----------
+    callee_stats
+        Aggregation keyed by caller function, including callee counts.
+    caller_stats
+        Aggregation keyed by callee function, including caller counts.
+    """
+
+    callee_stats: ir.Table
+    caller_stats: ir.Table
+
+
+@dataclass(frozen=True)
+class CallGraphDepthTables:
+    """Intermediate tables for call depth view.
+
+    Attributes
+    ----------
+    all_funcs
+        Distinct set of all functions participating in the call graph.
+    caller_funcs
+        Distinct set of caller functions (used to mark leaf nodes).
+    """
+
+    all_funcs: ir.Table
+    caller_funcs: ir.Table
+
+
+def _call_graph_views_filter_edges(edges: ir.Table, env: BuildEnv) -> ir.Table:
+    """Filter call graph edges to the current snapshot.
+
+    Parameters
+    ----------
+    edges
+        Ibis table expression for graph.call_graph_edges.
+    env
+        Build environment providing the snapshot filter.
+
+    Returns
+    -------
+    ir.Table
+        Filtered call graph edges scoped to the current snapshot.
+    """
+    return filter_by(edges, edges.repo == env.snapshot.repo, edges.commit == env.snapshot.commit)
+
+
+def _call_graph_views_build_call_count_stats(edges: ir.Table) -> CallGraphCallCountStats:
+    """Build per-function call count aggregations from filtered call graph edges.
+
+    Parameters
+    ----------
+    edges
+        Filtered call graph edges scoped to the current snapshot.
+
+    Returns
+    -------
+    CallGraphCallCountStats
+        Aggregations used to build the call count view.
+    """
+    callee_stats: ir.Table = edges.group_by(
+        function_goid_h128=edges.caller_goid_h128,
+    ).aggregate(
+        num_callees=ibis._.count(),
+        num_unique_callees=cast("Any", edges.callee_goid_h128).nunique(),
+    )
+
+    caller_stats: ir.Table = (
+        edges.filter(cast("Any", edges.callee_goid_h128.notnull()))
+        .group_by(
+            function_goid_h128=edges.callee_goid_h128,
+        )
+        .aggregate(num_callers=ibis._.count())
+    )
+
+    return CallGraphCallCountStats(callee_stats=callee_stats, caller_stats=caller_stats)
+
+
+def _call_graph_views_finalize_call_counts(
+    stats: CallGraphCallCountStats, env: BuildEnv
+) -> ir.Table:
+    """Join call count aggregations and emit final view expression.
+
+    Parameters
+    ----------
+    stats
+        Intermediate call count aggregations.
+    env
+        Build environment providing the snapshot to embed in output rows.
+
+    Returns
+    -------
+    ir.Table
+        Final call count view expression.
+    """
+    result = stats.callee_stats.join(
+        stats.caller_stats,
+        predicates=[
+            stats.callee_stats.function_goid_h128 == stats.caller_stats.function_goid_h128,
+        ],
+        how="outer",
+    )
+    return result.select(
+        repo=ibis.literal(env.snapshot.repo),
+        commit=ibis.literal(env.snapshot.commit),
+        function_goid_h128=cast("Any", result.function_goid_h128),
+        num_callees=cast("Any", result.num_callees).fillna(ibis.literal(0)),
+        num_unique_callees=cast("Any", result.num_unique_callees).fillna(ibis.literal(0)),
+        num_callers=cast("Any", result.num_callers).fillna(ibis.literal(0)),
+    )
+
+
+def _call_graph_views_prepare_depth_tables(edges: ir.Table) -> CallGraphDepthTables:
+    """Prepare intermediate tables for depth stats computation.
+
+    Parameters
+    ----------
+    edges
+        Filtered call graph edges scoped to the current snapshot.
+
+    Returns
+    -------
+    CallGraphDepthTables
+        Intermediate tables required to compute depth stats.
+    """
+    caller_funcs: ir.Table = edges.select(
+        caller_function_goid_h128=edges.caller_goid_h128,
+    ).distinct()
+    callee_funcs: ir.Table = (
+        edges.filter(cast("Any", edges.callee_goid_h128.notnull()))
+        .select(
+            function_goid_h128=edges.callee_goid_h128,
+        )
+        .distinct()
+    )
+    all_funcs: ir.Table = (
+        caller_funcs.select(function_goid_h128=caller_funcs.caller_function_goid_h128)
+        .union(callee_funcs)
+        .distinct()
+    )
+    return CallGraphDepthTables(all_funcs=all_funcs, caller_funcs=caller_funcs)
+
+
+def _call_graph_views_finalize_depth_stats(tables: CallGraphDepthTables, env: BuildEnv) -> ir.Table:
+    """Compute final call depth stats view expression.
+
+    Parameters
+    ----------
+    tables
+        Intermediate tables prepared from filtered call graph edges.
+    env
+        Build environment providing the snapshot to embed in output rows.
+
+    Returns
+    -------
+    ir.Table
+        Final call depth stats view expression.
+    """
+    joined = tables.all_funcs.left_join(
+        tables.caller_funcs,
+        predicates=[
+            tables.all_funcs.function_goid_h128 == tables.caller_funcs.caller_function_goid_h128,
+        ],
+    )
+    is_leaf = cast("Any", joined.caller_function_goid_h128).isnull()
+    return joined.select(
+        repo=ibis.literal(env.snapshot.repo),
+        commit=ibis.literal(env.snapshot.commit),
+        function_goid_h128=joined.function_goid_h128,
+        max_call_depth=ibis.ifelse(is_leaf, ibis.literal(0), ibis.literal(1)),
+        is_leaf=is_leaf,
+    )
+
+
 @SaveToDecorator(
     [DuckDBIbisTableSaver],
     output_name_=materialize_node("graph.v_function_call_counts"),
@@ -999,6 +1184,13 @@ def t__symbol_uses(
     graph=source("graph"),
     target_name=value("call_graph_views"),
     table_key=value("graph.v_function_call_counts"),
+)
+@pipe_input(
+    step(_call_graph_views_filter_edges, env=source("env")),
+    step(_call_graph_views_build_call_count_stats),
+    step(_call_graph_views_finalize_call_counts, env=source("env")),
+    namespace=None,
+    on_input="q__graph__call_graph_edges",
 )
 @tag(
     domain="graphs",
@@ -1030,7 +1222,6 @@ def t__symbol_uses(
     target_="call_graph_function_call_counts",
 )
 def call_graph_function_call_counts(
-    env: BuildEnv,
     q__graph__call_graph_edges: ir.Table,
 ) -> ir.Table:
     """Compute per-function call count statistics from call graph edges.
@@ -1040,52 +1231,7 @@ def call_graph_function_call_counts(
     ir.Table
         Ibis expression producing call count view rows.
     """
-    LOG.info("Computing function call counts from call graph")
-
-    edges = q__graph__call_graph_edges.filter(
-        cast(
-            "Any",
-            and_predicates(
-                q__graph__call_graph_edges.repo == env.snapshot.repo,
-                q__graph__call_graph_edges.commit == env.snapshot.commit,
-            ),
-        )
-    )
-
-    callee_stats: ir.Table = edges.group_by(
-        function_goid_h128=edges.caller_goid_h128,
-    ).aggregate(
-        num_callees=ibis._.count(),
-        num_unique_callees=cast("Any", edges.callee_goid_h128).nunique(),
-    )
-
-    caller_stats: ir.Table = (
-        edges.filter(cast("Any", edges.callee_goid_h128.notnull()))
-        .group_by(
-            function_goid_h128=edges.callee_goid_h128,
-        )
-        .aggregate(
-            num_callers=ibis._.count(),
-        )
-    )
-
-    result = callee_stats.join(
-        caller_stats,
-        predicates=[callee_stats.function_goid_h128 == caller_stats.function_goid_h128],
-        how="outer",
-    )
-
-    call_counts = result.select(
-        repo=ibis.literal(env.snapshot.repo),
-        commit=ibis.literal(env.snapshot.commit),
-        function_goid_h128=cast("Any", result.function_goid_h128),
-        num_callees=cast("Any", result.num_callees).fillna(ibis.literal(0)),
-        num_unique_callees=cast("Any", result.num_unique_callees).fillna(ibis.literal(0)),
-        num_callers=cast("Any", result.num_callers).fillna(ibis.literal(0)),
-    )
-
-    LOG.info("function_call_counts compute complete")
-    return call_counts
+    return q__graph__call_graph_edges
 
 
 @SaveToDecorator(
@@ -1095,6 +1241,13 @@ def call_graph_function_call_counts(
     graph=source("graph"),
     target_name=value("call_graph_views"),
     table_key=value("graph.v_call_depth_stats"),
+)
+@pipe_input(
+    step(_call_graph_views_filter_edges, env=source("env")),
+    step(_call_graph_views_prepare_depth_tables),
+    step(_call_graph_views_finalize_depth_stats, env=source("env")),
+    namespace=None,
+    on_input="q__graph__call_graph_edges",
 )
 @tag(
     domain="graphs",
@@ -1124,7 +1277,6 @@ def call_graph_function_call_counts(
     target_="call_graph_depth_stats",
 )
 def call_graph_depth_stats(
-    env: BuildEnv,
     q__graph__call_graph_edges: ir.Table,
 ) -> ir.Table:
     """Compute call depth statistics (simplified version).
@@ -1134,49 +1286,7 @@ def call_graph_depth_stats(
     ir.Table
         Ibis expression producing call depth view rows.
     """
-    LOG.info("Computing call depth stats from call graph")
-
-    edges = q__graph__call_graph_edges.filter(
-        cast(
-            "Any",
-            and_predicates(
-                q__graph__call_graph_edges.repo == env.snapshot.repo,
-                q__graph__call_graph_edges.commit == env.snapshot.commit,
-            ),
-        )
-    )
-
-    caller_funcs: ir.Table = edges.select(
-        caller_function_goid_h128=edges.caller_goid_h128,
-    ).distinct()
-    callee_funcs: ir.Table = (
-        edges.filter(cast("Any", edges.callee_goid_h128.notnull()))
-        .select(
-            function_goid_h128=edges.callee_goid_h128,
-        )
-        .distinct()
-    )
-    all_funcs: ir.Table = (
-        caller_funcs.select(function_goid_h128=caller_funcs.caller_function_goid_h128)
-        .union(callee_funcs)
-        .distinct()
-    )
-
-    joined = all_funcs.left_join(
-        caller_funcs,
-        predicates=[all_funcs.function_goid_h128 == caller_funcs.caller_function_goid_h128],
-    )
-    is_leaf = cast("Any", joined.caller_function_goid_h128).isnull()
-    depth_stats = joined.select(
-        repo=ibis.literal(env.snapshot.repo),
-        commit=ibis.literal(env.snapshot.commit),
-        function_goid_h128=joined.function_goid_h128,
-        max_call_depth=ibis.ifelse(is_leaf, ibis.literal(0), ibis.literal(1)),
-        is_leaf=is_leaf,
-    )
-
-    LOG.info("call_depth_stats compute complete")
-    return depth_stats
+    return q__graph__call_graph_edges
 
 
 @tag(domain="graphs", target="call_graph_views", node_type="materialize")

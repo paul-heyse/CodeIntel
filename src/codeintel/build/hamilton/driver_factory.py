@@ -23,6 +23,7 @@ from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hamilton.native.registry import load_native_modules
 from codeintel.build.hamilton.templates import get_template_module
 from codeintel.build.registry import ALL_TARGETS
+from codeintel.build.target_registry import TargetRegistry
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -120,9 +121,9 @@ def build_driver(
     >>> len(runtime.target_to_node) > 0
     True
     """
-    graph = TargetGraph()
+    base_graph = TargetGraph()
     for target in ALL_TARGETS:
-        graph.register(target)
+        base_graph.register(target)
 
     template_mod = get_template_module()
     native_mods = load_native_modules()
@@ -144,6 +145,11 @@ def build_driver(
             default_saver_behavior="disable",
         )
     dr = builder.with_adapters(*adapter_list).build()
+
+    runtime_pre = HamiltonRuntime(dr=dr, graph=base_graph)
+    registry = TargetRegistry.from_hamilton(runtime_pre, base_graph=base_graph, strict=True)
+
+    graph = registry.graph
 
     t2n = {t.name: target_node(t.name) for t in graph.all_targets}
     n2t = {v: k for k, v in t2n.items()}
