@@ -46,6 +46,10 @@ EXPORT_FORMATS: Final[dict[ExportFormat, ExportFormatSpec]] = {
     ),
 }
 
+_EXPORT_FORMAT_ORDER: Final[tuple[ExportFormat, ...]] = ("ndjson", "json", "parquet", "arrow")
+_TEXT_EXPORT_FORMATS: Final[frozenset[ExportFormat]] = frozenset({"json", "ndjson"})
+_BINARY_EXPORT_FORMATS: Final[frozenset[ExportFormat]] = frozenset({"parquet", "arrow"})
+
 
 def mime_type_for_export_format(fmt: ExportFormat) -> str:
     """Return the MIME type for an export format.
@@ -104,11 +108,58 @@ def normalize_export_format(fmt: str) -> ExportFormat:
     raise ValueError(msg)
 
 
+def export_format_choices() -> tuple[ExportFormat, ...]:
+    """Return supported export formats in a stable, UX-friendly order."""
+    return _EXPORT_FORMAT_ORDER
+
+
+def default_export_format() -> ExportFormat:
+    """Return the default export format for interactive clients."""
+    return "ndjson"
+
+
+def is_text_export_format(fmt: ExportFormat) -> bool:
+    """Return True when the export format is a text payload (JSON/NDJSON)."""
+    return fmt in _TEXT_EXPORT_FORMATS
+
+
+def supports_preview(fmt: ExportFormat) -> bool:
+    """Return True when `codeintel://exports/{id}/preview` is supported for the format."""
+    return is_text_export_format(fmt)
+
+
+def supports_line_chunks(fmt: ExportFormat) -> bool:
+    """Return True when line-chunk resources are supported for the format.
+
+    Notes
+    -----
+    Line chunking is row-based and therefore only supported for NDJSON.
+    """
+    return fmt == "ndjson"
+
+
+def supports_byte_chunks(fmt: ExportFormat) -> bool:
+    """Return True when byte-range chunk resources are supported for the format."""
+    return fmt in _BINARY_EXPORT_FORMATS
+
+
+def is_binary_export_format(fmt: ExportFormat) -> bool:
+    """Return True when the export format is binary (Parquet/Arrow)."""
+    return fmt in _BINARY_EXPORT_FORMATS
+
+
 __all__ = [
     "EXPORT_FORMATS",
     "ExportFormat",
     "ExportFormatSpec",
+    "default_export_format",
+    "export_format_choices",
+    "is_binary_export_format",
+    "is_text_export_format",
     "mime_type_for_export_format",
     "normalize_export_format",
     "suffix_for_export_format",
+    "supports_byte_chunks",
+    "supports_line_chunks",
+    "supports_preview",
 ]

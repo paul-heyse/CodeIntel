@@ -108,8 +108,8 @@ class ServingKernelProtocol(Protocol):
         """Return query hash and optional schema hash for the export request."""
         ...
 
-    def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> None:
-        """Write an export payload as Parquet to the provided path."""
+    def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> int:
+        """Write an export payload as Parquet and return rows written."""
         ...
 
     def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int:

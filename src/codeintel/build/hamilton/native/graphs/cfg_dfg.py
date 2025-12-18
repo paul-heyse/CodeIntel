@@ -17,25 +17,25 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import tag
-
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
-from codeintel.build.hamilton.helpers import filter_paths, get_source_root, persist_rows
+from codeintel.build.hamilton.helpers import filter_paths, get_source_root
+from codeintel.build.hamilton.materialize_options import materialize_options
+from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by, isin_values
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.gateway import ibis_facade
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -153,7 +153,7 @@ class DFGExtractResult:
     error: str | None = None
 
 
-@tag(node_type="helper")
+@tag_helper()
 def cfg__execution_result(t__cfg__extract: CFGExtractResult) -> ExecutionResult:
     """Convert cfg extract result to the executor boundary type.
 
@@ -165,7 +165,7 @@ def cfg__execution_result(t__cfg__extract: CFGExtractResult) -> ExecutionResult:
     return to_execution_result(t__cfg__extract, default_error="CFG extraction failed")
 
 
-@tag(node_type="helper")
+@tag_helper()
 def dfg__execution_result(t__dfg__extract: DFGExtractResult) -> ExecutionResult:
     """Convert dfg extract result to the executor boundary type.
 
@@ -177,7 +177,7 @@ def dfg__execution_result(t__dfg__extract: DFGExtractResult) -> ExecutionResult:
     return to_execution_result(t__dfg__extract, default_error="DFG extraction failed")
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _load_functions(
     gateway: StorageGateway,
     repo: str,
@@ -232,7 +232,7 @@ def _load_functions(
         return []
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _parse_file_functions(
     file_path: Path,
 ) -> list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]:
@@ -279,7 +279,7 @@ def _parse_file_functions(
     return functions
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _build_cfg_dfg_for_function(
     goid: int,
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -312,7 +312,7 @@ def _build_cfg_dfg_for_function(
     return cfg_result, list(block_rows), list(edge_rows)
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _process_all_files(
     functions: list[FunctionInfo],
     source_root: Path,
@@ -372,7 +372,45 @@ def _process_all_files(
     return all_cfg_results, all_block_rows, all_edge_rows
 
 
-@tag(domain="graphs", target=CFG_TARGET_NAME, node_type="tool")
+def _filter_functions_for_scope(
+    functions: list[FunctionInfo],
+    *,
+    scope_paths: list[str] | None,
+) -> list[FunctionInfo]:
+    paths = list({f.rel_path for f in functions})
+    filtered_paths = set(filter_paths(paths, scope_paths=scope_paths))
+    return [function for function in functions if function.rel_path in filtered_paths]
+
+
+def _materialize_cfg_outputs(
+    env: BuildEnv,
+    *,
+    block_rows: list[CFGBlockRow],
+    edge_rows: list[CFGEdgeRow],
+) -> tuple[int, int]:
+    options = materialize_options(env, owner_target=CFG_TARGET_NAME, mode="replace")
+    block_count = int(
+        env.warehouse.materialize_rows(
+            CFG_BLOCKS_TABLE_KEY,
+            [row.to_tuple() for row in block_rows],
+            columns=None,
+            options=options,
+        ).rows_written
+        or 0
+    )
+    edge_count = int(
+        env.warehouse.materialize_rows(
+            CFG_EDGES_TABLE_KEY,
+            [row.to_tuple() for row in edge_rows],
+            columns=None,
+            options=options,
+        ).rows_written
+        or 0
+    )
+    return block_count, edge_count
+
+
+@tag_tool(domain="graphs", target=CFG_TARGET_NAME)
 def t__cfg__extract(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -407,15 +445,13 @@ def t__cfg__extract(
         )
 
     try:
-        gateway = env.gateway
-        repo = env.snapshot.repo
-        commit = env.snapshot.commit
-        opts = CfgDfgOptions()
+        snapshot = env.snapshot
+        opts = load_target_options(env, target_name=CFG_TARGET_NAME, options_type=CfgDfgOptions)
 
-        functions = _load_functions(gateway, repo, commit)
-        paths = list({f.rel_path for f in functions})
-        filtered_paths = set(filter_paths(paths, scope_paths=opts.scope_paths))
-        functions = [f for f in functions if f.rel_path in filtered_paths]
+        functions = _filter_functions_for_scope(
+            _load_functions(env.gateway, snapshot.repo, snapshot.commit),
+            scope_paths=opts.scope_paths,
+        )
 
         if not functions:
             log.info("cfg: No functions found, skipping")
@@ -430,7 +466,11 @@ def t__cfg__extract(
                 },
             )
 
-        source_root = env.snapshot.repo_root or get_source_root(gateway, repo, commit)
+        source_root = snapshot.repo_root or get_source_root(
+            env.gateway,
+            snapshot.repo,
+            snapshot.commit,
+        )
         cfg_results, block_rows, edge_rows = _process_all_files(functions, source_root)
 
         log.info(
@@ -440,19 +480,10 @@ def t__cfg__extract(
             len(functions),
         )
 
-        block_count = persist_rows(
-            gateway,
-            CFG_BLOCKS_TABLE_KEY,
-            block_rows,
-            repo=repo,
-            commit=commit,
-        )
-        edge_count = persist_rows(
-            gateway,
-            CFG_EDGES_TABLE_KEY,
-            edge_rows,
-            repo=repo,
-            commit=commit,
+        block_count, edge_count = _materialize_cfg_outputs(
+            env,
+            block_rows=block_rows,
+            edge_rows=edge_rows,
         )
 
         log.info("cfg: Persisted %d blocks and %d edges", block_count, edge_count)
@@ -476,7 +507,7 @@ def t__cfg__extract(
         )
 
 
-@tag(domain="graphs", target=CFG_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="graphs", target=CFG_TARGET_NAME)
 def t__cfg(
     env: BuildEnv,
     graph: TargetGraph,
@@ -504,7 +535,7 @@ def t__cfg(
     return executor_materialize(env, graph, CFG_TARGET_NAME, cfg__execution_result)
 
 
-@tag(domain="graphs", target=DFG_TARGET_NAME, node_type="tool")
+@tag_tool(domain="graphs", target=DFG_TARGET_NAME)
 def t__dfg__extract(
     env: BuildEnv,
     t__cfg__extract: CFGExtractResult,
@@ -538,10 +569,6 @@ def t__dfg__extract(
         )
 
     try:
-        gateway = env.gateway
-        repo = env.snapshot.repo
-        commit = env.snapshot.commit
-
         cfg_results = t__cfg__extract.cfg_results
 
         if not cfg_results:
@@ -563,13 +590,13 @@ def t__dfg__extract(
 
         log.info("dfg: Built %d edges from %d CFGs", len(all_dfg_rows), len(cfg_results))
 
-        edge_count = persist_rows(
-            gateway,
+        edge_result = env.warehouse.materialize_rows(
             DFG_EDGES_TABLE_KEY,
-            all_dfg_rows,
-            repo=repo,
-            commit=commit,
+            [row.to_tuple() for row in all_dfg_rows],
+            columns=None,
+            options=MaterializeOptions(snapshot=env.snapshot, mode="replace", owner_target=DFG_TARGET_NAME),
         )
+        edge_count = int(edge_result.rows_written or 0)
 
         log.info("dfg: Persisted %d edges", edge_count)
 
@@ -587,7 +614,7 @@ def t__dfg__extract(
         )
 
 
-@tag(domain="graphs", target=DFG_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="graphs", target=DFG_TARGET_NAME)
 def t__dfg(
     env: BuildEnv,
     graph: TargetGraph,

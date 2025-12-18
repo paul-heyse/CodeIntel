@@ -14,24 +14,24 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import tag
-
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
-from codeintel.build.hamilton.helpers import filter_mapping, get_source_root, persist_rows
+from codeintel.build.hamilton.helpers import filter_mapping, get_source_root
+from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.native.options.graphs import ImportGraphOptions
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import imports as imports_compute
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.gateway import ibis_facade
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -87,7 +87,7 @@ class ImportGraphExtractResult:
     error: str | None = None
 
 
-@tag(node_type="helper")
+@tag_helper()
 def import_graph__execution_result(
     t__import_graph__extract: ImportGraphExtractResult,
 ) -> ExecutionResult:
@@ -103,7 +103,7 @@ def import_graph__execution_result(
     )
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _load_modules(
     gateway: StorageGateway,
     repo: str,
@@ -139,7 +139,7 @@ def _load_modules(
         return {}
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _extract_imports_from_file(file_path: Path) -> list[tuple[str, tuple[str, ...]]]:
     """Extract imports from a Python file.
 
@@ -176,7 +176,52 @@ def _extract_imports_from_file(file_path: Path) -> list[tuple[str, tuple[str, ..
     return imports
 
 
-@tag(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, node_type="tool")
+def _collect_import_edges(
+    *,
+    source_root: Path,
+    module_by_path: dict[str, str],
+) -> list[imports_compute.ImportEdge]:
+    edges: list[imports_compute.ImportEdge] = []
+    for rel_path, module_name in module_by_path.items():
+        edges.extend(
+            imports_compute.collect_import_edges(
+                module_name,
+                _extract_imports_from_file(source_root / rel_path),
+            )
+        )
+    return edges
+
+
+def _materialize_import_graph(
+    env: BuildEnv,
+    *,
+    repo: str,
+    commit: str,
+    analysis: imports_compute.ImportAnalysisResult,
+) -> tuple[int, int]:
+    options = materialize_options(env, owner_target=IMPORT_GRAPH_TARGET_NAME, mode="replace")
+    module_count = int(
+        env.warehouse.materialize_rows(
+            IMPORT_MODULES_TABLE_KEY,
+            [row.to_tuple() for row in imports_compute.build_import_module_rows(repo, commit, analysis)],
+            columns=None,
+            options=options,
+        ).rows_written
+        or 0
+    )
+    edge_count = int(
+        env.warehouse.materialize_rows(
+            IMPORT_GRAPH_EDGES_TABLE_KEY,
+            [row.to_tuple() for row in imports_compute.build_import_edge_rows(repo, commit, analysis)],
+            columns=None,
+            options=options,
+        ).rows_written
+        or 0
+    )
+    return module_count, edge_count
+
+
+@tag_tool(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def t__import_graph__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -212,14 +257,20 @@ def t__import_graph__extract(
         )
 
     try:
-        gateway = env.gateway
-        repo = env.snapshot.repo
-        commit = env.snapshot.commit
-        opts = ImportGraphOptions()
+        snapshot = env.snapshot
+        opts = load_target_options(
+            env,
+            target_name=IMPORT_GRAPH_TARGET_NAME,
+            options_type=ImportGraphOptions,
+        )
 
-        source_root = env.snapshot.repo_root or get_source_root(gateway, repo, commit)
+        source_root = snapshot.repo_root or get_source_root(
+            env.gateway,
+            snapshot.repo,
+            snapshot.commit,
+        )
         module_by_path = filter_mapping(
-            _load_modules(gateway, repo, commit),
+            _load_modules(env.gateway, snapshot.repo, snapshot.commit),
             scope_paths=opts.scope_paths,
         )
 
@@ -235,42 +286,29 @@ def t__import_graph__extract(
                 },
             )
 
-        edges: list[imports_compute.ImportEdge] = []
-        for rel_path, module_name in module_by_path.items():
-            edges.extend(
-                imports_compute.collect_import_edges(
-                    module_name, _extract_imports_from_file(source_root / rel_path)
-                )
-            )
-
-        modules = set(module_by_path.values())
-        result = imports_compute.analyze_imports(edges, modules)
-        log.info("import_graph: %d edges, %d SCCs", len(edges), len(set(result.scc_map.values())))
-
-        mc = persist_rows(
-            gateway,
-            IMPORT_MODULES_TABLE_KEY,
-            imports_compute.build_import_module_rows(repo, commit, result),
-            repo=repo,
-            commit=commit,
+        edges = _collect_import_edges(source_root=source_root, module_by_path=module_by_path)
+        analysis = imports_compute.analyze_imports(edges, set(module_by_path.values()))
+        log.info(
+            "import_graph: %d edges, %d SCCs",
+            len(edges),
+            len(set(analysis.scc_map.values())),
         )
-        ec = persist_rows(
-            gateway,
-            IMPORT_GRAPH_EDGES_TABLE_KEY,
-            imports_compute.build_import_edge_rows(repo, commit, result),
-            repo=repo,
-            commit=commit,
+        module_count, edge_count = _materialize_import_graph(
+            env,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            analysis=analysis,
         )
 
-        log.info("import_graph: Persisted %d modules, %d edges", mc, ec)
+        log.info("import_graph: Persisted %d modules, %d edges", module_count, edge_count)
 
         return ImportGraphExtractResult(
             success=True,
-            module_count=mc,
-            edge_count=ec,
+            module_count=module_count,
+            edge_count=edge_count,
             table_counts={
-                IMPORT_MODULES_TABLE_KEY: mc,
-                IMPORT_GRAPH_EDGES_TABLE_KEY: ec,
+                IMPORT_MODULES_TABLE_KEY: module_count,
+                IMPORT_GRAPH_EDGES_TABLE_KEY: edge_count,
             },
         )
 
@@ -282,7 +320,7 @@ def t__import_graph__extract(
         )
 
 
-@tag(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def t__import_graph(
     env: BuildEnv,
     graph: TargetGraph,

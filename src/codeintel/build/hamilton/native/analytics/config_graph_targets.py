@@ -59,8 +59,8 @@ from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
+from codeintel.core.hamilton.records import TargetRunRecord
 from codeintel.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime
-from codeintel.hamilton.records import TargetRunRecord
 
 if TYPE_CHECKING:
     from codeintel.analytics.graphs.config_data_flow import ConfigDataFlowResult

@@ -14,18 +14,13 @@ through context managers.
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.cli.services.jobs import JobService
     from codeintel.cli.services.params import ParamService
     from codeintel.cli.services.runtime import RuntimeService
     from codeintel.cli.services.storage import StorageService
-else:
-    JobService = cast("Any", None)
-    ParamService = cast("Any", None)
-    RuntimeService = cast("Any", None)
-    StorageService = cast("Any", None)
 
 __all__ = [
     "JobService",

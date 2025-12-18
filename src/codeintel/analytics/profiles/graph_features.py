@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import ibis
 
 from codeintel.analytics.profiles.types import FunctionGraphFeatures
-from codeintel.core.ibis_typing import filter_by
-from codeintel.storage.gateway import DuckDBError
+from codeintel.core.ibis_typing import and_predicates, eq, filter_by, gt
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -31,9 +31,8 @@ def summarize_graph_for_function_profile(
         Mapping keyed by function GOID containing call graph metrics.
     """
     try:
-        ibis_api = cast("Any", inputs.gateway.ibis)
-        edges = ibis_api.table("graph.call_graph_edges")
-        nodes = ibis_api.table("graph.call_graph_nodes")
+        edges = ibis_facade.table(inputs.gateway, "graph.call_graph_edges")
+        nodes = ibis_facade.table(inputs.gateway, "graph.call_graph_nodes")
     except DuckDBError:
         return {}
 
@@ -86,8 +85,10 @@ def summarize_graph_for_function_profile(
     call_fan_out = joined.call_fan_out.fill_null(zero)
     call_edge_in_count = joined.call_edge_in_count.fill_null(zero)
     call_edge_out_count = joined.call_edge_out_count.fill_null(zero)
-    call_is_leaf = (call_fan_out == 0).name("call_is_leaf")
-    call_is_entrypoint = ((call_fan_in == 0) & (call_fan_out > 0)).name("call_is_entrypoint")
+    call_is_leaf = eq(call_fan_out, 0).name("call_is_leaf")
+    call_is_entrypoint = and_predicates(eq(call_fan_in, 0), gt(call_fan_out, 0)).name(
+        "call_is_entrypoint"
+    )
     selected = joined.select(
         function_goid_h128,
         call_fan_in,

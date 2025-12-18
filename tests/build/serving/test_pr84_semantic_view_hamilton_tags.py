@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 from hamilton.driver import Driver
 
-from codeintel.hamilton import tags as ht
+from codeintel.core.hamilton import tags as ht
 from codeintel.storage.views import ibis_views
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 

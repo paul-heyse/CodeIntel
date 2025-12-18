@@ -57,7 +57,7 @@ from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.storage.warehouse import MaterializeOptions, Warehouse
+from codeintel.storage.warehouse import MaterializeOptions
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -334,7 +334,7 @@ def t__modules__write_repo_map(
         modules_json = json.dumps(module_entries)
         overlays_json = json.dumps({})
 
-        warehouse = Warehouse(env.gateway)
+        warehouse = env.warehouse
         warehouse.materialize_mappings(
             REPO_MAP_TABLE_KEY,
             [

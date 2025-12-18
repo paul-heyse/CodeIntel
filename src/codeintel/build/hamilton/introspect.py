@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.targets import OutputTarget, TargetGraph
-from codeintel.hamilton.tags import (
+from codeintel.core.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
     NODE_TYPE_DATASET,
     NODE_TYPE_MATERIALIZE,

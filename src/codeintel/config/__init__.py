@@ -1,10 +1,11 @@
 """Configuration models and helpers for normalizing project settings consumed by CodeIntel.
 
 This package provides:
-- **Primitives** (`primitives.py`): Core types like `SnapshotRef`, `BuildPaths`, `ToolBinaries`
+- **Primitives** (`primitives.py`): Core types like `SnapshotRef`, `BuildPaths`
 - **Builder** (`builder.py`): `ConfigBuilder` for constructing pipeline contexts
 - **CLI Models** (`models.py`): Pydantic models for CLI argument parsing and validation
-- **Serving** (`serving_models.py`): API server configuration models
+- **Serving Identity** (`codeintel.serving.config`): Repo/db identity models for serving/CLI integration
+  (tool configuration lives under `codeintel.core.tools`).
 
 Import Patterns
 ---------------
@@ -42,13 +43,10 @@ from codeintel.config.primitives import (
     BuildLayoutOptions,
     BuildPathOverrides,
     BuildPaths,
-    EntryPointToggles,
     GraphBackendConfig,
     GraphFeatureFlags,
-    ScanProfiles,
     SnapshotInit,
     SnapshotRef,
-    ToolBinaries,
 )
 
 __all__ = [
@@ -59,13 +57,10 @@ __all__ = [
     "CliPathsInput",
     "CodeIntelConfig",
     "ConfigBuilder",
-    "EntryPointToggles",
     "GraphBackendConfig",
     "GraphFeatureFlags",
     "RepoConfig",
-    "ScanProfiles",
     "SnapshotInit",
     "SnapshotRef",
-    "ToolBinaries",
     "ToolsConfig",
 ]

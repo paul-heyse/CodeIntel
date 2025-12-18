@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import TargetGraph
-    from codeintel.hamilton.records import NodeExecutionRecord, TargetRunRecord
+    from codeintel.core.hamilton.records import NodeExecutionRecord, TargetRunRecord
     from codeintel.storage.gateway.protocol import StorageGateway
 
 log = logging.getLogger(__name__)

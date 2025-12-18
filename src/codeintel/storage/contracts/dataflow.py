@@ -1,12 +1,6 @@
 """Dataflow graph types and builders for dataset lineage visualization.
 
-This module provides:
-- DataflowNode: Represents a dataset, view, operation, or graph runtime
-- DataflowEdge: Represents a directional relationship between nodes
-- Graph building functions to construct the dataflow graph from contracts
-
-The dataflow graph connects datasets through their dependencies, showing
-how data flows from source tables through profile compositions to views.
+This module is storage-owned so config does not import storage (avoids cycles).
 """
 
 from __future__ import annotations
@@ -22,7 +16,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
     from codeintel.core.schemas.contract_primitives import DatasetContract
-
 
 NodeKind = Literal["table", "view", "operation", "graph"]
 EdgeType = Literal["builds", "reads", "exposes", "depends_on"]
@@ -128,7 +121,6 @@ def iter_dependency_edges() -> Iterator[DataflowEdge]:
     DataflowEdge
         Edge from each declared upstream dependency to the dataset table_key.
     """
-    # Build a name-to-contract mapping for upstream resolution
     contracts_by_name: dict[str, DatasetContract] = {}
     for contract in iter_contracts():
         contracts_by_name[contract.name] = contract
@@ -153,9 +145,6 @@ def iter_dependency_edges() -> Iterator[DataflowEdge]:
 @lru_cache(maxsize=1)
 def _alias_docs_views() -> dict[str, str]:
     """Derive docs alias views for select analytics tables.
-
-    Alias views are created for a narrow set of analytics tables (e.g. profile/config surfaces)
-    to provide stable docs-facing names without duplicating view builder logic.
 
     Returns
     -------

@@ -10,7 +10,6 @@ optional features are unavailable.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 # Canonical import from gofastmcp 2.x
@@ -20,18 +19,18 @@ from fastmcp.server.auth import StaticTokenVerifier
 
 if TYPE_CHECKING:
     from fastmcp.server.auth import AuthProvider
-
-LOG = logging.getLogger(__name__)
+    from fastmcp.server.event_store import EventStore as FastMCPEventStore
 
 # Feature detection for EventStore (v2.14.0+)
+EventStore: type[FastMCPEventStore] | None
 try:
-    from fastmcp.server.event_store import EventStore
-
-    HAS_EVENT_STORE = True
+    from fastmcp.server.event_store import EventStore as _FastMCPEventStore
 except ImportError:
-    EventStore = None  # type: ignore[assignment,misc]
+    EventStore = None
     HAS_EVENT_STORE = False
-    LOG.warning("EventStore not available - SSE resumability disabled")
+else:
+    EventStore = _FastMCPEventStore
+    HAS_EVENT_STORE = True
 
 
 def create_bearer_auth(token: str | None) -> AuthProvider | None:

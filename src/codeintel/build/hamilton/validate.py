@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.schemas import get_schema_provider
-from codeintel.hamilton.tags import (
+from codeintel.core.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
     NODE_TYPE_COMPUTE,
     NODE_TYPE_DATASET,

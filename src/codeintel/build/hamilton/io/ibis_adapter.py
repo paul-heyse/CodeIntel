@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.storage.gateway import ibis_facade
+from codeintel.storage.warehouse import MaterializeOptions, UpsertConfig, Warehouse
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -27,7 +28,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.io.dataset_ref import DatasetRef
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.ibis_adapter import WriteResult
 
 __all__ = [
     "IbisIOConfig",
@@ -172,16 +172,17 @@ def save_ibis_expression(
     >>> result["saved_to"]
     'duckdb'
     """
-    result: WriteResult = io_config.gateway.ibis.write(
+    result = Warehouse(io_config.gateway).materialize_table(
         dataset_ref.table_key,
         output,
+        options=MaterializeOptions(mode="append"),
     )
 
     return {
         "saved_to": "duckdb",
         "table_key": dataset_ref.table_key,
-        "row_count": result.rows_affected,
-        "method": result.method,
+        "row_count": result.rows_written,
+        "method": "warehouse_materialize_table",
     }
 
 
@@ -215,16 +216,17 @@ def save_dataframe(
     >>> result["operation"]
     'insert_values'
     """
-    result: WriteResult = io_config.gateway.ibis.write(
+    result = Warehouse(io_config.gateway).materialize_dataframe(
         dataset_ref.table_key,
         df,
+        options=MaterializeOptions(mode="append"),
     )
 
     return {
         "operation": "insert_values",
         "table_key": dataset_ref.table_key,
-        "row_count": result.rows_affected,
-        "method": result.method,
+        "row_count": result.rows_written,
+        "method": "warehouse_materialize_dataframe",
     }
 
 
@@ -263,17 +265,18 @@ def save_rows(
     >>> result["operation"]
     'insert_values'
     """
-    result: WriteResult = io_config.gateway.ibis.write(
+    result = Warehouse(io_config.gateway).materialize_rows(
         dataset_ref.table_key,
         rows,
         columns=columns,
+        options=MaterializeOptions(mode="append"),
     )
 
     return {
         "operation": "insert_values",
         "table_key": dataset_ref.table_key,
-        "row_count": result.rows_affected,
-        "method": result.method,
+        "row_count": result.rows_written,
+        "method": "warehouse_materialize_rows",
     }
 
 
@@ -319,19 +322,23 @@ def upsert_dataframe(
     >>> result["operation"]
     'upsert'
     """
-    result: WriteResult = io_config.gateway.ibis.upsert(
+    result = Warehouse(io_config.gateway).materialize_dataframe(
         dataset_ref.table_key,
         df,
-        columns=list(df.columns),
-        conflict_columns=conflict_columns,
-        update_columns=update_columns,
+        options=MaterializeOptions(
+            mode="upsert",
+            upsert=UpsertConfig(
+                conflict_columns=tuple(conflict_columns),
+                update_columns=tuple(update_columns),
+            ),
+        ),
     )
 
     return {
         "operation": "upsert",
         "table_key": dataset_ref.table_key,
-        "row_count": result.rows_affected,
-        "method": result.method,
+        "row_count": result.rows_written,
+        "method": "warehouse_materialize_dataframe",
     }
 
 

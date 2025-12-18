@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ibis.common.exceptions import IbisError, TableNotFound
 
@@ -32,7 +32,6 @@ __all__ = [
     "get_source_root",
     "is_test_path",
     "paths_to_modules",
-    "persist_rows",
 ]
 
 log = logging.getLogger(__name__)
@@ -261,63 +260,6 @@ def get_module_paths_from_env(env: BuildEnv) -> list[str]:
     except (RuntimeError, OSError, IbisError, TableNotFound) as exc:
         log.warning("gateway error fetching module paths: %s", exc)
         return []
-
-
-# -----------------------------------------------------------------------------
-# Persistence Utilities
-# -----------------------------------------------------------------------------
-
-
-def persist_rows(
-    gateway: StorageGateway,
-    table_key: str,
-    rows: Sequence[Any],
-    *,
-    repo: str,
-    commit: str,
-) -> int:
-    """Persist rows to a table with snapshot cleanup.
-
-    Implement the standard persistence pattern:
-    1. Return 0 for empty input
-    2. Ensure table exists
-    3. Delete existing snapshot data
-    4. Bulk insert new rows
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    table_key
-        Fully-qualified table name (e.g., "graph.cfg_blocks").
-    rows
-        Rows to persist. Each row must have a ``to_tuple()`` method.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Number of rows persisted.
-
-    Examples
-    --------
-    Persist CFG blocks:
-
-    >>> blocks = [CFGBlockRow(...), CFGBlockRow(...)]
-    >>> count = persist_rows(gateway, "graph.cfg_blocks", blocks, repo="org/repo", commit="abc123")
-    >>> print(f"Persisted {count} blocks")
-    Persisted 2 blocks
-    """
-    if not rows:
-        return 0
-
-    gateway.policy.ensure_table(table_key)
-    gateway.policy.delete_for_snapshot(table_key, repo=repo, commit=commit)
-    gateway.policy.bulk_insert(table_key, [row.to_tuple() for row in rows])
-    return len(rows)
 
 
 # -----------------------------------------------------------------------------

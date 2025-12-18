@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.semantic_roles import SemanticRolesResult, build_semantic_roles_rows
 from codeintel.analytics.testing.profiles.builder import build_test_profile_result
@@ -32,6 +32,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -96,7 +97,7 @@ SEMANTIC_ROLES_MODULES_COLS: tuple[str, ...] = (
 )
 
 
-@tag(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
 def t__semantic_roles__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -193,10 +194,9 @@ def t__semantic_roles__compute(
     table_key=value(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
     columns=value(SEMANTIC_ROLES_FUNCTIONS_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=SEMANTIC_ROLES_TARGET_NAME,
-    node_type="compute",
     target_="semantic_roles__functions_rows",
 )
 def semantic_roles__functions_rows(
@@ -229,10 +229,9 @@ def semantic_roles__functions_rows(
     table_key=value(SEMANTIC_ROLES_MODULES_TABLE_KEY),
     columns=value(SEMANTIC_ROLES_MODULES_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=SEMANTIC_ROLES_TARGET_NAME,
-    node_type="compute",
     target_="semantic_roles__modules_rows",
 )
 def semantic_roles__modules_rows(
@@ -256,7 +255,7 @@ def semantic_roles__modules_rows(
     return tuple(t__semantic_roles__compute.module_rows)
 
 
-@tag(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
 def t__semantic_roles(
     env: BuildEnv,
     graph: TargetGraph,
@@ -374,7 +373,7 @@ def _test_profile_row_to_tuple(
     return tuple(row.get(col) for col in cols)
 
 
-@tag(domain="analytics", target=TEST_PROFILE_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
 def t__test_profile__compute(
     env: BuildEnv,
     t__coverage_test_edges: TargetRunRecord,
@@ -409,10 +408,9 @@ def t__test_profile__compute(
     table_key=value(TEST_PROFILE_TABLE_KEY),
     columns=value(TEST_PROFILE_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=TEST_PROFILE_TARGET_NAME,
-    node_type="compute",
     target_="test_profile__rows",
 )
 def test_profile__rows(
@@ -435,7 +433,7 @@ def test_profile__rows(
     )
 
 
-@tag(domain="analytics", target=TEST_PROFILE_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
 def t__test_profile(
     env: BuildEnv,
     graph: TargetGraph,

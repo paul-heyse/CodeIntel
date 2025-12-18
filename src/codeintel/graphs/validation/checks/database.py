@@ -8,13 +8,13 @@ Check classes implement CheckProtocol from core/validation.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 import ibis
 
 from codeintel.core.ibis_typing import filter_by, ibis_bool, isin_values
 from codeintel.graphs.validation.base import GraphCheckBase
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     import logging
@@ -126,8 +126,8 @@ def _warn_missing_function_goids_impl(
         Findings for files with missing function GOIDs.
     """
     try:
-        ast_nodes = cast("Any", gateway.ibis.table("core.ast_nodes"))
-        goids = cast("Any", gateway.ibis.table("core.goids"))
+        ast_nodes = ibis_facade.table(gateway, "core.ast_nodes")
+        goids = ibis_facade.table(gateway, "core.goids")
 
         funcs = (
             filter_by(
@@ -210,7 +210,7 @@ def _warn_callsite_span_mismatches_impl(
     """
     spans_by_goid = {span.goid: span for span in catalog.function_spans}
     try:
-        edges = cast("Any", gateway.ibis.table("graph.call_graph_edges"))
+        edges = ibis_facade.table(gateway, "graph.call_graph_edges")
         rows = (
             filter_by(
                 edges,
@@ -270,8 +270,8 @@ def _warn_orphan_modules_impl(
     """
     query_failed = False
     try:
-        modules = cast("Any", gateway.ibis.table("core.modules"))
-        goids = cast("Any", gateway.ibis.table("core.goids"))
+        modules = ibis_facade.table(gateway, "core.modules")
+        goids = ibis_facade.table(gateway, "core.goids")
         module_rows = filter_by(modules, modules.repo == repo, modules.commit == commit)
 
         module_goids = (

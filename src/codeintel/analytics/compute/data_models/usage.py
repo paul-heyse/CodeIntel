@@ -20,6 +20,7 @@ from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.paths import normalize_path
+from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.repositories import fetch_models
 
 if TYPE_CHECKING:
@@ -425,8 +426,8 @@ def _load_models(gateway: StorageGateway, repo: str, commit: str) -> list[ModelI
 def _subsystem_by_module(
     gateway: StorageGateway, repo: str, commit: str
 ) -> dict[str, tuple[str, str]]:
-    modules = gateway.ibis.table("analytics.subsystem_modules")
-    subsystems = gateway.ibis.table("analytics.subsystems")
+    modules = ibis_facade.table(gateway, "analytics.subsystem_modules")
+    subsystems = ibis_facade.table(gateway, "analytics.subsystems")
     joined = modules.left_join(
         subsystems,
         predicates=[
@@ -532,7 +533,7 @@ def build_data_model_usage_rows(
             len(missing),
         )
 
-    function_types = gateway.ibis.table("analytics.function_types")
+    function_types = ibis_facade.table(gateway, "analytics.function_types")
     param_rows = (
         function_types.filter(
             and_predicates(

@@ -13,8 +13,8 @@ from typing import Protocol, cast
 import ibis
 import ibis.expr.types as it
 
+from codeintel.core.hamilton.semantic_tags import semantic_view
 from codeintel.core.ibis_typing import ibis_bool, ne, or_predicates
-from codeintel.hamilton.semantic_tags import semantic_view
 from codeintel.storage.queries.safe import assert_single_select_statement
 from codeintel.storage.views.protocol import IbisViewGateway
 from codeintel.storage.views.view_tags import ibis_view

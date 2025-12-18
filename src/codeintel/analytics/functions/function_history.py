@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.history.git_history import iter_file_history
 from codeintel.core.ibis_typing import and_predicates
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -276,8 +277,8 @@ def _load_function_spans(
     repo: str,
     commit: str,
 ) -> dict[str, list[FuncSpan]]:
-    metrics = gateway.ibis.table("analytics.function_metrics")
-    modules = gateway.ibis.table("core.modules")
+    metrics = ibis_facade.table(gateway, "analytics.function_metrics")
+    modules = ibis_facade.table(gateway, "core.modules")
     join_expr = metrics.left_join(
         modules,
         [

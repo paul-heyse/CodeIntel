@@ -25,7 +25,7 @@ from codeintel.analytics.compute.ibis_utils import (
     zero_if_null,
 )
 from codeintel.core.ibis_typing import and_predicates, gt, ibis_bool
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     import ibis.expr.types as ir
@@ -83,8 +83,8 @@ def build_coverage_functions_expr(
     )
 
     try:
-        goids = gateway.ibis.table("core.goids")
-        coverage = gateway.ibis.table("analytics.coverage_lines")
+        goids = ibis_facade.table(gateway, "core.goids")
+        coverage = ibis_facade.table(gateway, "analytics.coverage_lines")
     except DuckDBError as exc:
         LOG.warning("coverage_functions: failed to access tables: %s", exc)
         return None

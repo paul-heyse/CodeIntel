@@ -1,4 +1,4 @@
-"""Shared Hamilton integration primitives.
+"""Shared Hamilton integration primitives (core-owned).
 
 This package contains small, dependency-light utilities shared across build,
 storage, and serving that relate to Hamilton tagging and execution records.

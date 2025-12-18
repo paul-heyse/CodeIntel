@@ -15,11 +15,16 @@ from mcp import McpError
 from starlette.responses import JSONResponse, PlainTextResponse
 
 from codeintel.serving.export.formats import (
+    is_text_export_format,
+    suffix_for_export_format,
+    supports_preview,
+)
+from codeintel.serving.export.formats import (
     normalize_export_format as normalize_export_format_value,
 )
 from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.mcp._compat import Context, FastMCP, create_bearer_auth
-from codeintel.serving.mcp.errors import ExportTooLargeError
+from codeintel.serving.mcp.export_dispatch import write_export_to_store
 from codeintel.serving.mcp.middleware_stack import build_mcp_middleware
 from codeintel.serving.mcp.prompts import register_prompts
 from codeintel.serving.mcp.protocols import SemanticKernelProtocol, ServingSnapshotPointerProtocol
@@ -30,7 +35,6 @@ from codeintel.serving.mcp.response_models import (
     BuildSpecInfo,
     ExportHandleResponse,
     ExportSnapshot,
-    QueryLimits,
     QueryPreview,
     SemanticLayerInfo,
     SemanticQueryToolResponse,
@@ -39,7 +43,7 @@ from codeintel.serving.mcp.response_models import (
 )
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.sql_fingerprint import sqlglot_canonical_sha256
-from codeintel.serving.mcp.tooling_meta import runtime_versions, tooling_mismatch_warnings
+from codeintel.serving.meta.service import build_serving_meta_payload
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
 from codeintel.serving.semantic.models import (
@@ -50,6 +54,7 @@ from codeintel.serving.semantic.models import (
     SemanticQueryRequest,
     SemanticViewDescriptionResponse,
 )
+from codeintel.serving.snapshot.identity import export_snapshot_dict, snapshot_ref_dict
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
@@ -175,14 +180,7 @@ def _normalize_export_format(export_format: str) -> ExportFormat:
 
 
 def _export_snapshot_dict(ptr: ServingSnapshotPointerProtocol) -> dict[str, str]:
-    return {
-        "repo": ptr.repo,
-        "commit": ptr.commit,
-        "run_id": ptr.run_id,
-        "published_at": ptr.published_at.isoformat(),
-        "semantic_layer_hash": ptr.semantic_layer_version,
-        "buildspec_hash": "unknown",
-    }
+    return export_snapshot_dict(ptr) | {"buildspec_hash": "unknown"}
 
 
 def _safe_column_types(ops: ServingOperations, view_id: str) -> dict[str, str]:
@@ -285,7 +283,7 @@ def build_mcp_app(
     FastMCP
         Configured MCP server.
     """
-    ops = ServingOperations(kernel)
+    ops = ServingOperations(kernel=kernel, settings=settings)
     store = ResourceStore(
         settings.serve_dir / "exports",
         ttl_seconds=settings.mcp_export_ttl_seconds,
@@ -720,26 +718,24 @@ def _register_meta_tool(
         """
         start = time.perf_counter()
         await ctx.info("Retrieving serving metadata")
-        result = await limiter.run(ops.meta)
-        data = result if isinstance(result, dict) else {}
-
-        ptr = ops.db.current_pointer()
-        snapshot = SnapshotRef(
-            repo=ptr.repo,
-            commit=ptr.commit,
-            run_id=ptr.run_id,
-            published_at=ptr.published_at,
-        )
 
         view_count = await _catalog_view_count(ops, limiter)
-        semantic_layer = _semantic_layer_info(data, view_count=view_count)
-        buildspec = _buildspec_info(data, compiled_at=ptr.published_at)
-
-        limits = QueryLimits(export_max_rows=settings.export_max_rows)
-        runtime = runtime_versions()
-        env_obj = data.get("environment")
-        environment = env_obj if isinstance(env_obj, dict) else {}
-        warnings = tooling_mismatch_warnings(environment, runtime=runtime)
+        features = {
+            "supports_explain": settings.mcp_enable_explain,
+            "supports_export": settings.mcp_enable_export,
+            "supports_export_tasks": settings.mcp_export_enable_tasks,
+            "supports_search": settings.mcp_enable_search,
+            "supports_resources": True,
+            "supports_sampling": settings.mcp_enable_sampling,
+        }
+        payload = build_serving_meta_payload(
+            ops,
+            settings=settings,
+            started_at=_SERVER_STARTED_AT,
+            features=features,
+            inventories={"views": view_count},
+            resource_templates=DEFAULT_RESOURCE_TEMPLATES,
+        )
 
         duration_ms = (time.perf_counter() - start) * 1000
         log_query_metrics(
@@ -754,26 +750,7 @@ def _register_meta_tool(
             )
         )
 
-        return ServingMetaResponse(
-            server_version=runtime.get("codeintel", "not-installed"),
-            started_at=_SERVER_STARTED_AT,
-            snapshot=snapshot,
-            semantic_layer=semantic_layer,
-            buildspec=buildspec,
-            read_only=True,
-            features={
-                "supports_explain": settings.mcp_enable_explain,
-                "supports_export": settings.mcp_enable_export,
-                "supports_export_tasks": settings.mcp_export_enable_tasks,
-                "supports_search": settings.mcp_enable_search,
-                "supports_resources": True,
-                "supports_sampling": settings.mcp_enable_sampling,
-            },
-            limits=limits,
-            resource_templates=DEFAULT_RESOURCE_TEMPLATES,
-            inventories={"views": view_count},
-            warnings=warnings,
-        )
+        return ServingMetaResponse.model_validate(payload)
 
 
 def _register_search_tool(
@@ -892,8 +869,6 @@ def _register_export_tool(
 
         Raises
         ------
-        ExportTooLargeError
-            If the requested export exceeds the configured maximum rows.
         InvalidExportFormatError
             If ``export_format`` is not supported.
         """
@@ -903,8 +878,6 @@ def _register_export_tool(
         await _maybe_report_progress(ctx, settings=settings, progress=10, total=100)
 
         format_type = _normalize_export_format(export_format)
-        if limit > settings.export_max_rows:
-            raise ExportTooLargeError(row_count=limit)
 
         request = SemanticExportRequest(
             view_id=view_id,
@@ -939,50 +912,30 @@ def _register_export_tool(
         cancel_exc = anyio.get_cancelled_exc_class()
         export_id = secrets.token_urlsafe(16)
         try:
-            if format_type in {"ndjson", "json"}:
-                token, artifact, stored_meta = await limiter.run(
-                    lambda: _write_text_export(
-                        ops=ops,
-                        store=store,
-                        request=request,
-                        spec=spec,
-                        export_id=export_id,
-                    )
+            token, artifact, stored_meta = await limiter.run(
+                lambda: write_export_to_store(
+                    ops=ops,
+                    store=store,
+                    request=request,
+                    spec=spec,
+                    export_id=export_id,
                 )
-            elif format_type == "parquet":
-                token, artifact, stored_meta = await limiter.run(
-                    lambda: store.put_generated_file_with_metadata(
-                        spec=spec,
-                        export_id=export_id,
-                        write_fn=lambda path: ops.export_to_parquet(request, output_path=path),
-                    )
-                )
-            elif format_type == "arrow":
-                token, artifact, stored_meta = await limiter.run(
-                    lambda: store.put_generated_file_with_metadata(
-                        spec=spec,
-                        export_id=export_id,
-                        write_fn=lambda path: ops.export_to_arrow_ipc(request, output_path=path),
-                    )
-                )
-            else:
-                raise InvalidExportFormatError(export_format)
+            )
         except cancel_exc:
             if ctx is not None:
                 await ctx.info("Export cancelled; cleaning up partial artifacts")
             store.mark_cancelled(export_id)
             store.delete(export_id, include_cancel_marker=False)
             raise
+        except ValueError as exc:
+            raise InvalidExportFormatError(export_format) from exc
 
         await _maybe_report_progress(ctx, settings=settings, progress=100, total=100)
         if ctx is not None:
             await ctx.info(f"Export complete: {stored_meta.row_count} rows")
 
         snapshot_ref = SnapshotRef(
-            repo=ptr.repo,
-            commit=ptr.commit,
-            run_id=ptr.run_id,
-            published_at=ptr.published_at,
+            **snapshot_ref_dict(ptr),
         )
         export_snapshot = ExportSnapshot(
             snapshot=snapshot_ref,
@@ -1009,10 +962,10 @@ def _register_export_tool(
             export_id=token,
             format=format_type,
             mime_type=artifact.mime_type,
-            filename=f"{view_id}.{format_type}",
+            filename=f"{view_id}{suffix_for_export_format(format_type)}",
             uri=f"codeintel://exports/{token}",
             meta_uri=f"codeintel://exports/{token}/meta",
-            preview_uri=f"codeintel://exports/{token}/preview" if format_type in {"ndjson", "json"} else None,
+            preview_uri=f"codeintel://exports/{token}/preview" if supports_preview(format_type) else None,
             sql_uri=f"codeintel://exports/{token}/sql",
             created_at=stored_meta.created_at,
             expires_at=stored_meta.expires_at,
@@ -1021,40 +974,4 @@ def _register_export_tool(
             snapshot=export_snapshot,
             note="Use codeintel://exports/{export_id}/meta to discover safe retrieval URIs.",
         )
-
-
-def _write_text_export(
-    *,
-    ops: ServingOperations,
-    store: ResourceStore,
-    request: SemanticExportRequest,
-    spec: ExportArtifactSpec,
-    export_id: str,
-) -> tuple[str, StoredArtifact, StoredMetadata]:
-    """Write a JSON/NDJSON export to the ResourceStore.
-
-    Parameters
-    ----------
-    ops
-        Serving operations façade used to stream export rows.
-    store
-        Resource store for persisting exports and metadata.
-    request
-        Export request to execute.
-    spec
-        Metadata/specification describing the artifact.
-    export_id
-        Caller-provided export identifier for stable cancellation cleanup.
-
-    Returns
-    -------
-    tuple[str, StoredArtifact, StoredMetadata]
-        Export token, artifact metadata, and stored metadata.
-    """
-    if spec.format == "ndjson":
-        return store.put_with_metadata_stream(ops.export_rows(request), spec=spec, export_id=export_id)
-    rows = list(ops.export_rows(request))
-    return store.put_with_metadata(rows, spec=spec, export_id=export_id)
-
-
 __all__ = ["build_mcp_app"]

@@ -6,16 +6,17 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-import ibis
 from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.utilities.dataframe import to_records
+from codeintel.core.ibis_typing import and_predicates, filter_by, ne, not_null
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
 )
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -113,11 +114,9 @@ def component_metadata_from_import_table(
         Cached component metadata when present; otherwise ``None``.
     """
     try:
-        tbl = gateway.ibis.table("graph.import_modules")
-        expr = tbl.filter(cast("Any", (tbl.repo == repo) & (tbl.commit == commit))).select(
-            "module", "scc_id", "component_size", "layer"
-        )
-        df = cast("pd.DataFrame", expr.execute())
+        tbl = ibis_facade.table(gateway, "graph.import_modules")
+        scoped = filter_by(tbl, tbl.repo == repo, tbl.commit == commit)
+        df = cast("pd.DataFrame", scoped.select("module", "scc_id", "component_size", "layer").execute())
     except IbisError:
         return None
     if df.empty:
@@ -191,43 +190,53 @@ def load_symbol_module_edges(
     tuple[set[str], dict[str, set[str]], dict[str, set[str]]]
         Modules involved plus inbound/outbound adjacency keyed by module.
     """
+    if module_by_path is None:
+        return _load_symbol_module_edges_from_db(gateway)
+    return _load_symbol_module_edges_from_mapping(gateway, module_by_path)
+
+
+def _load_symbol_module_edges_from_db(
+    gateway: StorageGateway,
+) -> tuple[set[str], dict[str, set[str]], dict[str, set[str]]]:
     modules: set[str] = set()
     inbound: dict[str, set[str]] = defaultdict(set)
     outbound: dict[str, set[str]] = defaultdict(set)
 
-    if module_by_path is None:
-        su = gateway.ibis.table("graph.symbol_use_edges")
-        m_def = gateway.ibis.table("core.modules").view()
-        m_use = gateway.ibis.table("core.modules").view()
+    edges = ibis_facade.table(gateway, "graph.symbol_use_edges")
+    module_defs = ibis_facade.table(gateway, "core.modules").view()
+    module_uses = ibis_facade.table(gateway, "core.modules").view()
 
-        def_module_present = cast("Any", ibis.coalesce(m_def.module, "")).length() > 0
-        use_module_present = cast("Any", ibis.coalesce(m_use.module, "")).length() > 0
-        joined = (
-            su.left_join(m_def, cast("Any", su.def_path == m_def.path))
-            .left_join(m_use, cast("Any", su.use_path == m_use.path))
-            .filter(
-                cast(
-                    "Any",
-                    def_module_present & use_module_present,
-                )
-            )
-            .select(
-                use_module=m_use.module,
-                def_module=m_def.module,
-            )
-        )
-        df = cast("pd.DataFrame", joined.execute())
+    def_module_present = and_predicates(not_null(module_defs.module), ne(module_defs.module, ""))
+    use_module_present = and_predicates(not_null(module_uses.module), ne(module_uses.module, ""))
 
-        for record in to_records(df):
-            src = str(record["use_module"])
-            dst = str(record["def_module"])
-            modules.update((src, dst))
-            outbound[src].add(dst)
-            inbound[dst].add(src)
-        return modules, inbound, outbound
+    joined = edges.left_join(module_defs, predicates=[(edges.def_path, module_defs.path)]).left_join(
+        module_uses, predicates=[(edges.use_path, module_uses.path)]
+    )
+    selected = filter_by(joined, def_module_present, use_module_present).select(
+        use_module=module_uses.module,
+        def_module=module_defs.module,
+    )
+    df = cast("pd.DataFrame", selected.execute())
 
-    su = gateway.ibis.table("graph.symbol_use_edges")
-    expr = su.select("def_path", "use_path")
+    for record in to_records(df):
+        src = str(record["use_module"])
+        dst = str(record["def_module"])
+        modules.update((src, dst))
+        outbound[src].add(dst)
+        inbound[dst].add(src)
+    return modules, inbound, outbound
+
+
+def _load_symbol_module_edges_from_mapping(
+    gateway: StorageGateway,
+    module_by_path: dict[str, str],
+) -> tuple[set[str], dict[str, set[str]], dict[str, set[str]]]:
+    modules: set[str] = set()
+    inbound: dict[str, set[str]] = defaultdict(set)
+    outbound: dict[str, set[str]] = defaultdict(set)
+
+    edges = ibis_facade.table(gateway, "graph.symbol_use_edges")
+    expr = edges.select("def_path", "use_path")
     df = cast("pd.DataFrame", expr.execute())
 
     for record in to_records(df):

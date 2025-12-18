@@ -73,14 +73,15 @@ uv run pytest -q tests/storage
 **Objective**: eliminate `cast("Any", ...)` at call sites by providing a complete set of typed predicate
 and helper APIs.
 
-**Current seam**: `src/codeintel/storage/ibis_types.py`
+**Current seam**: `src/codeintel/core/ibis_typing.py`
 
 **Design**
 
-- Treat `codeintel.storage.ibis_types` as the *only* location where we:
+- Treat `codeintel.core.ibis_typing` as the *only* location where we:
   - cast from “operator overload returns object/bool per stubs” → `it.BooleanValue` / `it.Value`
   - normalize predicate composition
   - handle the two `.isin(...)` shapes (values vs column/subquery)
+  - (followup) provide minimal helpers for operator friction (arithmetic/aggregations)
 
 **Implementation tasks**
 
@@ -101,7 +102,7 @@ and helper APIs.
 
 **Acceptance criteria**
 
-- No `cast("Any", ...)` remains outside `src/codeintel/storage/ibis_types.py`.
+- No `cast("Any", ...)` remains outside `src/codeintel/core/ibis_typing.py`.
 - Call sites express intent with a small, consistent vocabulary (`filter_by`, `and_predicates`, `isin_values`, etc.).
 
 **Tests to add**
@@ -284,4 +285,3 @@ Recommended order is W1 → W2 → W3 (Option A) → W4 → W5 → W6.
   - `src/codeintel/storage/views/ibis_views.py` (no raw casts)
 - Tests:
   - New `tests/storage/test_*` suites covering predicate typing, scalar coercion, and query IR.
-

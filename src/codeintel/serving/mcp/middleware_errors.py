@@ -3,7 +3,7 @@
 This module converts arbitrary exceptions raised by tools/resources/prompts into:
 
 - protocol-level `mcp.McpError(mcp.types.ErrorData(..., data=<ErrorResponse>))`
-- stable machine codes and safe details from `codeintel.serving.mcp.errors`
+- stable machine codes and safe details from `codeintel.serving.errors`
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from mcp import McpError
 from mcp.types import ErrorData
 from pydantic import ValidationError
 
-from codeintel.serving.mcp.errors import (
+from codeintel.serving.errors import (
     CodeIntelDomainError,
     ErrorContext,
     ErrorKind,

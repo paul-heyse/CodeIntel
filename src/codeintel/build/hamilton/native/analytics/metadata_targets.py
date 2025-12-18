@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.compute.data_models import (
@@ -57,6 +57,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -128,7 +129,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
 
 
-@tag(domain="analytics", target=DATA_MODELS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=DATA_MODELS_TARGET_NAME)
 def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResult | None:
     """Compute data models for all classes in the snapshot.
 
@@ -181,10 +182,9 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
     table_key=value(DATA_MODELS_TABLE_KEY),
     columns=value(tuple(DATA_MODELS_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=DATA_MODELS_TARGET_NAME,
-    node_type="compute",
     target_="data_models__model_rows",
 )
 def data_models__model_rows(
@@ -211,10 +211,9 @@ def data_models__model_rows(
     table_key=value(DATA_MODEL_FIELDS_TABLE_KEY),
     columns=value(tuple(DATA_MODEL_FIELDS_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=DATA_MODELS_TARGET_NAME,
-    node_type="compute",
     target_="data_models__field_rows",
 )
 def data_models__field_rows(
@@ -241,10 +240,9 @@ def data_models__field_rows(
     table_key=value(DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
     columns=value(tuple(DATA_MODEL_RELATIONSHIPS_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=DATA_MODELS_TARGET_NAME,
-    node_type="compute",
     target_="data_models__relationship_rows",
 )
 def data_models__relationship_rows(
@@ -262,7 +260,7 @@ def data_models__relationship_rows(
     return tuple(t__data_models__compute.relationship_rows)
 
 
-@tag(domain="analytics", target=DATA_MODELS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=DATA_MODELS_TARGET_NAME)
 def t__data_models(
     env: BuildEnv,
     graph: TargetGraph,
@@ -321,10 +319,9 @@ def t__data_models(
     table_key=value(DATA_MODEL_USAGE_TABLE_KEY),
     columns=value(tuple(DATA_MODEL_USAGE_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=DATA_MODEL_USAGE_TARGET_NAME,
-    node_type="compute",
     target_="t__data_model_usage__compute",
 )
 def t__data_model_usage__compute(
@@ -383,7 +380,7 @@ def t__data_model_usage__compute(
     )
 
 
-@tag(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
 def t__data_model_usage(
     env: BuildEnv,
     graph: TargetGraph,
@@ -428,7 +425,7 @@ class AstFeaturesResult:
     error: str | None = None
 
 
-@tag(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
 def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
     """Compute AST-derived semantic features for functions.
 
@@ -461,7 +458,7 @@ def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
     return AstFeaturesResult(success=True, features_map=features_map)
 
 
-@tag(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
 def t__function_ast_features(
     env: BuildEnv,
     graph: TargetGraph,
@@ -531,7 +528,7 @@ class ProfilesResult:
     error: str | None = None
 
 
-@tag(domain="analytics", target=PROFILES_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=PROFILES_TARGET_NAME)
 def t__profiles__compute(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
@@ -590,7 +587,7 @@ def t__profiles__compute(
         return ProfilesResult(success=False, error=str(exc))
 
 
-@tag(domain="analytics", target=PROFILES_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=PROFILES_TARGET_NAME)
 def t__profiles(
     env: BuildEnv,
     graph: TargetGraph,

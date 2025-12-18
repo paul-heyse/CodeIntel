@@ -15,9 +15,11 @@ Example
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict, cast
 
 from codeintel.analytics.utilities.dataframe import to_records
+from codeintel.core.ibis_typing import eq, filter_by, get_column, isin_values
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -155,11 +157,14 @@ class FunctionGoidLoader:
         FunctionGoid
             Each function GOID in the snapshot.
         """
-        tbl = self._gateway.ibis.table("core.goids")
-        repo_filter = cast("Any", tbl.repo == self._snapshot.repo)
-        commit_filter = cast("Any", tbl.commit == self._snapshot.commit)
-        kind_filter = cast("Any", tbl.kind.isin(cast("Any", ["function", "method"])))
-        expr = tbl.filter(repo_filter & commit_filter & kind_filter).select(
+        tbl = ibis_facade.table(self._gateway, "core.goids")
+        filtered = filter_by(
+            tbl,
+            eq(get_column(tbl, "repo"), self._snapshot.repo),
+            eq(get_column(tbl, "commit"), self._snapshot.commit),
+            isin_values(get_column(tbl, "kind"), ["function", "method"]),
+        )
+        expr = filtered.select(
             "goid_h128",
             "urn",
             "repo",

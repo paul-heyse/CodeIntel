@@ -181,7 +181,7 @@ class DuckDBIbisTableSaver(DataSaver):
                         # Validate contract if strict mode is enabled
                         ContractEnforcer.validate_table_write(self.table_key)
 
-                        warehouse = Warehouse(self.env.gateway)
+                        warehouse = self.env.warehouse
                         row_count = _materialize_table(
                             warehouse,
                             table_key=self.table_key,

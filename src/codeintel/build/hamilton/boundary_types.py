@@ -8,11 +8,14 @@ matching to fail graph compilation.
 
 from __future__ import annotations
 
-type MaterializationMetadata = dict[str, object]
-type RowCounts = dict[str, int]
+from typing import TypeAlias
 
-type TableKey = str
-type TargetName = str
+from codeintel.storage.helpers.table_key import TableKey
+
+MaterializationMetadata: TypeAlias = dict[str, object]
+RowCounts: TypeAlias = dict[str, int]
+
+TargetName: TypeAlias = str
 
 __all__ = [
     "MaterializationMetadata",

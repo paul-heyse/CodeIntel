@@ -16,7 +16,8 @@ if TYPE_CHECKING:
     from codeintel.cli.project import ProjectConfig
     from codeintel.config.models import CodeIntelConfig, ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef
-    from codeintel.config.serving_models import ServingConfig
+    from codeintel.core.runtime import RuntimePrimitives
+    from codeintel.serving.config import ServingConfig
 
 
 @dataclass(frozen=True)
@@ -34,10 +35,8 @@ class ResolvedRuntime:
         Project root directory.
     project
         Project configuration from codeintel.yaml or constructed from params.
-    snapshot
-        Repository snapshot reference (repo, commit, repo_root).
-    paths
-        Resolved build paths (db_path, build_dir, etc.).
+    primitives
+        Canonical runtime primitive bundle (snapshot/paths/tools/graph config).
     config
         Full CodeIntel configuration.
     serving
@@ -55,10 +54,31 @@ class ResolvedRuntime:
 
     root: Path
     project: ProjectConfig
-    snapshot: SnapshotRef
-    paths: BuildPaths
+    primitives: RuntimePrimitives
     config: CodeIntelConfig
     serving: ServingConfig
+
+    @property
+    def snapshot(self) -> SnapshotRef:
+        """Return snapshot identity for this runtime.
+
+        Returns
+        -------
+        SnapshotRef
+            Repository snapshot reference.
+        """
+        return self.primitives.snapshot
+
+    @property
+    def paths(self) -> BuildPaths:
+        """Return build paths for this runtime.
+
+        Returns
+        -------
+        BuildPaths
+            Derived build path bundle.
+        """
+        return self.primitives.paths
 
     @property
     def db_path(self) -> Path:

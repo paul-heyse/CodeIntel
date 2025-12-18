@@ -53,11 +53,15 @@ Plugin registration is handled by the build registry in codeintel.build.unified_
 
 from __future__ import annotations
 
-from codeintel.core.catalog import CatalogService, FunctionSpan
-from codeintel.core.resources import ResourceRegistry
-from codeintel.graphs import compute, ports, resources
-from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
-from codeintel.graphs.resources import ResourceProvider
+import importlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codeintel.core.catalog import CatalogService, FunctionSpan
+    from codeintel.core.resources import ResourceRegistry
+    from codeintel.graphs import compute, ports, resources
+    from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
+    from codeintel.graphs.resources import ResourceProvider
 
 __all__ = [
     "CatalogService",
@@ -71,3 +75,52 @@ __all__ = [
     "ports",
     "resources",
 ]
+
+_LAZY_ATTRS: dict[str, tuple[str, str]] = {
+    "CatalogService": ("codeintel.core.catalog", "CatalogService"),
+    "FunctionSpan": ("codeintel.core.catalog", "FunctionSpan"),
+    "GraphEngine": ("codeintel.graphs.engine", "GraphEngine"),
+    "GraphKind": ("codeintel.graphs.engine", "GraphKind"),
+    "NxGraphEngine": ("codeintel.graphs.engine", "NxGraphEngine"),
+    "ResourceProvider": ("codeintel.graphs.resources", "ResourceProvider"),
+    "ResourceRegistry": ("codeintel.core.resources", "ResourceRegistry"),
+}
+
+
+def __getattr__(name: str) -> object:
+    """Lazily resolve package exports without importing heavy submodules at import time.
+
+    Parameters
+    ----------
+    name
+        Attribute name requested by the caller.
+
+    Returns
+    -------
+    object
+        The resolved module attribute.
+
+    Raises
+    ------
+    AttributeError
+        If the attribute is not supported by this package.
+    """
+    if name in {"compute", "ports", "resources"}:
+        return importlib.import_module(f"{__name__}.{name}")
+    lazy = _LAZY_ATTRS.get(name)
+    if lazy is None:
+        msg = f"module {__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)
+    module_path, attr_name = lazy
+    return getattr(importlib.import_module(module_path), attr_name)
+
+
+def __dir__() -> list[str]:
+    """Return module attributes including lazy exports.
+
+    Returns
+    -------
+    list[str]
+        Attribute names visible on the module.
+    """
+    return sorted({*globals().keys(), *__all__})

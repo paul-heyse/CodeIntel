@@ -18,9 +18,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.impl_kind import ImplKind, native_target_names
 from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.hamilton.naming import target_node
-from codeintel.build.hamilton.native.registry import is_native_target
 from codeintel.build.hamilton.run_records import (
     compute_target_input_hash_with_deps,
     compute_target_options_hash,
@@ -46,10 +46,6 @@ PlanReason = Literal[
     "upstream_missing",
     "no_plugin",
 ]
-
-
-ImplKind = Literal["wrapper", "native"]
-
 
 @dataclass(frozen=True)
 class PlanEntry:
@@ -419,6 +415,8 @@ def _compute_entry_for_target(
     env: BuildEnv,
     manifests: Mapping[str, OutputManifest],
     upstream_status: dict[str, PlanStatus],
+    *,
+    native_names: frozenset[str],
 ) -> PlanEntry:
     """Compute plan entry for a single target.
 
@@ -446,7 +444,7 @@ def _compute_entry_for_target(
     blocked_deps = [
         dep for dep in target.dependencies if upstream_status.get(dep) in {"missing", "blocked"}
     ]
-    impl_kind: ImplKind = "native" if is_native_target(target_name) else "wrapper"
+    impl_kind: ImplKind = "native" if target_name in native_names else "wrapper"
 
     if blocked_deps:
         return PlanEntry(
@@ -583,6 +581,7 @@ def compute_plan(
     """
     _ = graph_source
     runtime = build_driver()
+    native_names = native_target_names(runtime)
     if graph is None:
         graph = runtime.graph
     else:
@@ -622,7 +621,7 @@ def compute_plan(
             upstream_status[target_name] = "missing"
             continue
 
-        entry = _compute_entry_for_target(target, env, manifests, upstream_status)
+        entry = _compute_entry_for_target(target, env, manifests, upstream_status, native_names=native_names)
         entries.append(entry)
         upstream_status[target_name] = entry.status
 

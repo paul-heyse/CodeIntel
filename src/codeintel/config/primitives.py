@@ -17,6 +17,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Self
 
+from codeintel.core.env import get_bool, get_int, is_set
+from codeintel.core.tools.config import ToolBinaries
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -423,71 +426,6 @@ class BuildPaths:
 
 
 @dataclass(frozen=True)
-class ToolBinaries:
-    """Frozen configuration for external tool binary paths.
-
-    This is the internal representation of tool paths. Pydantic ToolsConfig
-    at CLI boundaries converts to this type via `.to_binaries()`.
-
-    Attributes
-    ----------
-    scip_python_bin : str
-        Path or name of scip-python binary.
-    scip_bin : str
-        Path or name of scip binary.
-    pyright_bin : str
-        Path or name of pyright binary.
-    pyrefly_bin : str
-        Path or name of pyrefly binary.
-    ruff_bin : str
-        Path or name of ruff binary.
-    coverage_bin : str
-        Path or name of coverage.py CLI.
-    pytest_bin : str
-        Path or name of pytest binary.
-    git_bin : str
-        Path or name of git binary.
-    default_timeout_s : float
-        Default timeout in seconds for tool invocations.
-    """
-
-    scip_python_bin: str = "scip-python"
-    scip_bin: str = "scip"
-    pyright_bin: str = "pyright"
-    pyrefly_bin: str = "pyrefly"
-    ruff_bin: str = "ruff"
-    coverage_bin: str = "coverage"
-    pytest_bin: str = "pytest"
-    git_bin: str = "git"
-    default_timeout_s: float = 300.0
-
-    def resolve_path(self, tool: str) -> str:
-        """Return the configured path for a tool name.
-
-        Parameters
-        ----------
-        tool
-            Tool identifier (e.g., "scip-python", "pyright").
-
-        Returns
-        -------
-        str
-            Configured path or the tool name as fallback.
-        """
-        mapping = {
-            "scip-python": self.scip_python_bin,
-            "scip": self.scip_bin,
-            "pyright": self.pyright_bin,
-            "pyrefly": self.pyrefly_bin,
-            "coverage": self.coverage_bin,
-            "pytest": self.pytest_bin,
-            "ruff": self.ruff_bin,
-            "git": self.git_bin,
-        }
-        return mapping.get(tool, tool)
-
-
-@dataclass(frozen=True)
 class ScanProfiles:
     """Bundle of code and config scan profiles for a build run.
 
@@ -529,6 +467,46 @@ class GraphFeatureFlags:
     eager_hydration: bool | None = None
     community_detection_limit: int | None = None
     validation_strict: bool | None = None
+
+    @classmethod
+    def from_env(cls) -> Self:
+        """Construct GraphFeatureFlags from CODEINTEL_GRAPH_* environment variables.
+
+        Returns
+        -------
+        Self
+            Parsed feature flags derived from environment variables.
+
+        Raises
+        ------
+        ValueError
+            If an environment value is invalid (for example, a non-integer limit).
+        """
+        try:
+            eager = (
+                get_bool("CODEINTEL_GRAPH_EAGER", default=None)
+                if is_set("CODEINTEL_GRAPH_EAGER")
+                else None
+            )
+            community_limit = (
+                get_int("CODEINTEL_GRAPH_COMMUNITY_LIMIT", default=None, min_value=1)
+                if is_set("CODEINTEL_GRAPH_COMMUNITY_LIMIT")
+                else None
+            )
+            validation_strict = (
+                get_bool("CODEINTEL_GRAPH_VALIDATION_STRICT", default=None)
+                if is_set("CODEINTEL_GRAPH_VALIDATION_STRICT")
+                else None
+            )
+        except ValueError as exc:
+            message = "Invalid graph feature flag environment configuration"
+            raise ValueError(message) from exc
+
+        return cls(
+            eager_hydration=eager,
+            community_detection_limit=community_limit,
+            validation_strict=validation_strict,
+        )
 
     def validate(self) -> None:
         """

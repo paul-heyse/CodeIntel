@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from codeintel.core.plugins.execution.context import PluginExecutionContext
-    from codeintel.core.plugins.types.protocol import PluginMetadata, ValidationResult
+    from codeintel.core.plugins.types.protocol import PluginMetadata, ValidationOutcome
     from codeintel.core.plugins.types.result import PluginResult
 
 
@@ -98,7 +98,7 @@ class AsyncPluginProtocol(Protocol):
         """
         ...
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
+    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationOutcome:
         """Validate that required inputs are available.
 
         Parameters
@@ -108,7 +108,7 @@ class AsyncPluginProtocol(Protocol):
 
         Returns
         -------
-        ValidationResult
+        ValidationOutcome
             Validation outcome with any errors or warnings.
 
         Notes

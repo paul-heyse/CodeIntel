@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from codeintel.core.build_manifest import BuildStatus
-    from codeintel.hamilton.records import NodeExecutionRecord, TargetRunRecord
+    from codeintel.core.hamilton.records import NodeExecutionRecord, TargetRunRecord
     from codeintel.storage.gateway.protocol import StorageGateway
 
 

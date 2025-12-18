@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 
 from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.impl_kind import native_target_names
 from codeintel.build.hamilton.naming import artifact_node, dataset_node, query_node
-from codeintel.build.hamilton.native.registry import native_target_names
 
 _MAX_MISSING_LINES: int = 100
 
@@ -22,7 +22,7 @@ def test_auto_mode_native_outputs_have_helpers() -> None:
     node_names = set(runtime.dr.graph.nodes.keys())
 
     missing: list[str] = []
-    for target_name in sorted(native_target_names()):
+    for target_name in sorted(native_target_names(runtime)):
         target = runtime.graph.get(target_name)
         if target is None:
             pytest.fail(f"Target not found in runtime graph: {target_name}")

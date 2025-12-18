@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.schemas import (
-    get_composite_schemas,
-    iter_contracts,
-    iter_contracts_by_table_key,
-)
-from codeintel.config.datasets.dataflow import alias_docs_views, build_contract_dataflow_graph
+from codeintel.config.datasets.composites import get_composite_schemas
+from codeintel.storage.contracts.dataflow import alias_docs_views, build_contract_dataflow_graph
+from codeintel.storage.contracts.provider import iter_contracts, iter_contracts_by_table_key
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from tests._helpers.gateway import GatewayFactory
 

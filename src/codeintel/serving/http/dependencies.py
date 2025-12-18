@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from codeintel.serving.http.errors import ProblemType, ServingError
+from codeintel.serving.errors import AuthForbiddenError
 from codeintel.serving.http.state import ServingState
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
@@ -59,7 +59,6 @@ def get_ops(state: State) -> ServingOperations:
     ServingOperations
         Operations facade for transport adapters.
     """
-
     return state.ops
 
 
@@ -78,7 +77,7 @@ def require_api_key(request: Request, state: State) -> None:
 
     Raises
     ------
-    ServingError
+    AuthForbiddenError
         When an API key is configured and missing/invalid.
     """
     expected = state.settings.api_key
@@ -89,12 +88,7 @@ def require_api_key(request: Request, state: State) -> None:
     if provided == expected:
         return
 
-    raise ServingError(
-        problem_type=ProblemType.UNAUTHORIZED,
-        title="Unauthorized",
-        status=401,
-        detail="Invalid or missing API key.",
-    )
+    raise AuthForbiddenError(reason="Invalid or missing API key.")
 
 
 __all__ = ["Kernel", "Ops", "State", "get_kernel", "get_ops", "require_api_key"]

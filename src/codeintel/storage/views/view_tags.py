@@ -12,7 +12,7 @@ from typing import TypeVar, cast
 
 from hamilton.function_modifiers import tag as h_tag
 
-from codeintel.hamilton import tags as ht
+from codeintel.core.hamilton import tags as ht
 
 _TFunc = TypeVar("_TFunc", bound=Callable[..., object])
 

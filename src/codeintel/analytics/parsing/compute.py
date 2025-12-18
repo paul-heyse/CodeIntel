@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class ValidationResult:
+class ValidationRows:
     """Result container for validation reporters.
 
     Contains row data for both function and graph validation tables without
@@ -40,7 +40,7 @@ class ValidationResult:
 def get_validation_rows(
     function_reporter: FunctionValidationReporter | None,
     graph_reporter: GraphValidationReporter | None,
-) -> ValidationResult:
+) -> ValidationRows:
     """Extract rows from validation reporters without writing.
 
     Use this function to get accumulated validation rows from reporters
@@ -55,16 +55,16 @@ def get_validation_rows(
 
     Returns
     -------
-    ValidationResult
+    ValidationRows
         Container with rows for both validation tables.
     """
-    return ValidationResult(
+    return ValidationRows(
         function_rows=function_reporter.to_rows() if function_reporter else (),
         graph_rows=graph_reporter.to_rows() if graph_reporter else (),
     )
 
 
 __all__ = [
-    "ValidationResult",
+    "ValidationRows",
     "get_validation_rows",
 ]

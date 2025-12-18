@@ -16,6 +16,7 @@ from codeintel.analytics.utilities.ast import safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.paths import normalize_path
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -375,7 +376,7 @@ def _build_function_role_rows(
 def _load_function_rows(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> list[tuple[int, str, str, int | None]]:
-    table = gateway.ibis.table("analytics.function_metrics")
+    table = ibis_facade.table(gateway, "analytics.function_metrics")
     expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
         "function_goid_h128",
         "rel_path",
@@ -395,7 +396,7 @@ def _load_function_rows(
 def _load_effects(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    table = gateway.ibis.table("analytics.function_effects")
+    table = ibis_facade.table(gateway, "analytics.function_effects")
     expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
         "function_goid_h128",
         "touches_db",
@@ -436,7 +437,7 @@ def _load_effects(
 def _load_contracts(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    table = gateway.ibis.table("analytics.function_contracts")
+    table = ibis_facade.table(gateway, "analytics.function_contracts")
     expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
         "function_goid_h128",
         "preconditions_json",
@@ -460,7 +461,7 @@ def _load_contracts(
 def _load_graph_metrics(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, int]]:
-    table = gateway.ibis.table("analytics.graph_metrics_functions")
+    table = ibis_facade.table(gateway, "analytics.graph_metrics_functions")
     expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
         "function_goid_h128",
         "call_fan_in",
@@ -482,7 +483,7 @@ def _load_graph_metrics(
 def _load_module_meta(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[str, ModuleRecord]:
-    table = gateway.ibis.table("core.modules")
+    table = ibis_facade.table(gateway, "core.modules")
     expr = table.filter(
         and_predicates(
             table["repo"].coalesce(ibis.literal(repo)) == repo,

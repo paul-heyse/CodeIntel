@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 from hamilton.lifecycle import base as lifecycle_base
 
-from codeintel.hamilton import tags as ht
-from codeintel.hamilton.records import NodeExecutionRecord
+from codeintel.core.hamilton import tags as ht
+from codeintel.core.hamilton.records import NodeExecutionRecord
 
 if TYPE_CHECKING:
     from hamilton.node import Node

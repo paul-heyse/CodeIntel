@@ -8,9 +8,8 @@ import logging
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
-import ibis
 from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
@@ -21,8 +20,9 @@ from codeintel.analytics.parsing.ast_cache import (
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.ibis_typing import and_predicates
+from codeintel.core.ibis_typing import and_predicates, eq, is_null, or_predicates
 from codeintel.graphs.runtime import resolve_graph_runtime
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -419,15 +419,14 @@ def _compute_transitive_effects(
 def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> dict[int, int]:
     counts: dict[int, int] = {}
     try:
-        edges = gateway.ibis.table("graph.call_graph_edges")
-        sentinel = cast("Any", ibis.literal(-1)).cast(cast("Any", edges.callee_goid_h128.type()))
-        callee_is_null = ibis.coalesce(edges.callee_goid_h128, sentinel) == sentinel
+        edges = ibis_facade.table(gateway, "graph.call_graph_edges")
+        callee_is_unresolved = or_predicates(is_null(edges.callee_goid_h128), eq(edges.callee_goid_h128, -1))
         expr = (
             edges.filter(
                 and_predicates(
                     edges.repo == repo,
                     edges.commit == commit,
-                    callee_is_null,
+                    callee_is_unresolved,
                 )
             )
             .group_by(edges.caller_goid_h128)

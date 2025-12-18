@@ -186,10 +186,7 @@ class DuckDBRowsSaver(DataSaver):
                         # Validate contract if strict mode is enabled
                         ContractEnforcer.validate_table_write(self.table_key)
 
-                        # Ensure table exists before writing.
-                        self.env.gateway.policy.ensure_table(self.table_key)
-
-                        warehouse = Warehouse(self.env.gateway)
+                        warehouse = self.env.warehouse
                         row_count = _materialize_rows(
                             warehouse,
                             _RowsMaterializationRequest(

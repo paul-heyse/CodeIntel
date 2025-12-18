@@ -13,14 +13,13 @@ Preferred:
     builder = ConfigBuilder.from_snapshot(
         snapshot=SnapshotInit(repo="r", commit="c", repo_root=Path(".")),
     )
-    cfg = builder.graph_metrics()
+    primitives = builder.runtime_primitives()
 
 See `codeintel.config.builder` for the ConfigBuilder API.
 """
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -33,11 +32,10 @@ from codeintel.config.primitives import (
     GraphBackendConfig,
     GraphFeatureFlags,
 )
+from codeintel.core.tools import ToolBinaries, ToolName, build_tool_env
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-
-    from codeintel.ingestion.engine.infrastructure import ToolName
 
 
 DEFAULT_TOOL_TIMEOUT_S = 300.0
@@ -323,18 +321,27 @@ class ToolsConfig(BaseModel):
         str
             Executable path or name to invoke.
         """
-        name = str(tool)
-        mapping = {
-            "scip-python": self.scip_python_bin,
-            "scip": self.scip_bin,
-            "pyright": self.pyright_bin,
-            "pyrefly": self.pyrefly_bin,
-            "coverage": self.coverage_bin,
-            "pytest": self.pytest_bin,
-            "ruff": self.ruff_bin,
-            "git": self.git_bin,
-        }
-        return str(mapping.get(name, name))
+        return self.to_binaries().resolve_path(tool)
+
+    def to_binaries(self) -> ToolBinaries:
+        """Convert the boundary ToolsConfig into the canonical ToolBinaries.
+
+        Returns
+        -------
+        ToolBinaries
+            Immutable tool configuration used by internal components.
+        """
+        return ToolBinaries(
+            scip_python_bin=self.scip_python_bin,
+            scip_bin=self.scip_bin,
+            pyright_bin=self.pyright_bin,
+            pyrefly_bin=self.pyrefly_bin,
+            ruff_bin=self.ruff_bin,
+            coverage_bin=self.coverage_bin,
+            pytest_bin=self.pytest_bin,
+            git_bin=self.git_bin,
+            default_timeout_s=self.default_timeout_s,
+        )
 
     def build_env(
         self,
@@ -362,14 +369,7 @@ class ToolsConfig(BaseModel):
         dict[str, str]
             Environment variables to supply to the subprocess call.
         """
-        _ = tool
-
-        env: dict[str, str] = dict(os.environ)
-
-        if base_env:
-            env.update(base_env)
-        env.setdefault("CODEINTEL_TOOL_TIMEOUT", str(int(self.default_timeout_s)))
-        return env
+        return build_tool_env(self.to_binaries(), tool, base_env=base_env)
 
 
 class CodeIntelConfig(BaseModel):

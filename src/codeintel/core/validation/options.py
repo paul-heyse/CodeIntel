@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Self
 
-from codeintel.core.options import BaseOptions, ValidationResult
+from codeintel.core.options import BaseOptions, ValidationOutcome
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -50,12 +50,12 @@ class BaseValidationOptions(BaseOptions):
     hard_fail: bool = False
     max_findings_per_rule: int | None = None
 
-    def validate(self) -> ValidationResult:
+    def validate(self) -> ValidationOutcome:
         """Validate the options.
 
         Returns
         -------
-        ValidationResult
+        ValidationOutcome
             Validation result with any errors/warnings.
         """
         errors: list[str] = []
@@ -73,8 +73,8 @@ class BaseValidationOptions(BaseOptions):
                     )
 
         if errors:
-            return ValidationResult.failure(*errors)
-        return ValidationResult.success()
+            return ValidationOutcome.failure(*errors)
+        return ValidationOutcome.success()
 
     def with_defaults(self, defaults: Self) -> Self:
         """Merge with default values, preferring self's non-None values.

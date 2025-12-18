@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from codeintel.build.hamilton.native.registry import native_target_names
+from codeintel.build.hamilton.impl_kind import native_target_names
 from codeintel.build.schemas.contract_provider import iter_contracts
 from codeintel.build.schemas.infer_duckdb import infer_view_schema
 from codeintel.build.schemas.manifest import ExportArtifact, SchemaManifest
@@ -99,7 +99,8 @@ def _table_keys_for_selection(
     only_native: bool,
     stable: bool,
 ) -> tuple[str, ...]:
-    graph = load_target_system().graph
+    target_system = load_target_system()
+    graph = target_system.graph
 
     if targets:
         missing = sorted(t for t in targets if t not in graph)
@@ -113,7 +114,7 @@ def _table_keys_for_selection(
         selected = list(graph.all_targets) if all_targets or not (targets or module) else []
 
     if only_native:
-        native_names = native_target_names()
+        native_names = native_target_names(target_system.runtime)
         selected = [t for t in selected if t.name in native_names]
         if not selected:
             msg = "No native targets matched selection"

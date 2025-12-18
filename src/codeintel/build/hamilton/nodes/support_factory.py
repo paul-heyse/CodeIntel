@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 import ibis.expr.types as ir
 import pandas as pd
-from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
@@ -37,15 +36,15 @@ from codeintel.build.hamilton.naming import (
     target_node,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import (
+    tag_artifact,
+    tag_dataset,
+    tag_loader_dataframe,
+    tag_loader_query,
+    tag_materialize,
+)
 from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.targets import TargetGraph
-from codeintel.hamilton.tags import (
-    NODE_TYPE_ARTIFACT,
-    NODE_TYPE_DATASET,
-    NODE_TYPE_LOADER_DATAFRAME,
-    NODE_TYPE_LOADER_QUERY,
-    NODE_TYPE_MATERIALIZE,
-)
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
@@ -225,7 +224,7 @@ def _create_stub_target_node_function(
     node_fn.__name__ = target_node(target_name)
     node_fn.__doc__ = f"Stub target node for {target_name}. Native implementation missing."
 
-    return tag(domain=domain, target=target_name, node_type=NODE_TYPE_MATERIALIZE)(node_fn)
+    return tag_materialize(domain=domain, target=target_name)(node_fn)
 
 
 def _create_dataset_node_function(
@@ -277,12 +276,13 @@ def _create_dataset_node_function(
     dataset_fn.__doc__ = f"Extract {table_key} dataset from {target_name} target."
 
     domain = split_table_key(table_key)[0] if "." in table_key else "main"
-    return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_DATASET)(dataset_fn)
+    return tag_dataset(domain=domain, target=target_name, table_key=table_key)(dataset_fn)
 
 
 def _create_query_node_function(
     *,
     table_key: str,
+    target_name: str,
 ) -> Callable[..., ir.Table]:
     """Create a `q__*` node that loads an Ibis expression for a DatasetRef.
 
@@ -318,12 +318,13 @@ def _create_query_node_function(
     query_fn.__doc__ = f"Load {table_key} as Ibis expression."
 
     domain = split_table_key(table_key)[0] if "." in table_key else "main"
-    return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_LOADER_QUERY)(query_fn)
+    return tag_loader_query(domain=domain, target=target_name, table_key=table_key)(query_fn)
 
 
 def _create_dataframe_node_function(
     *,
     table_key: str,
+    target_name: str,
 ) -> Callable[..., pd.DataFrame]:
     """Create a `df__*` node that loads a pandas DataFrame for a DatasetRef.
 
@@ -359,7 +360,7 @@ def _create_dataframe_node_function(
     dataframe_fn.__doc__ = f"Load {table_key} as pandas DataFrame."
 
     domain = split_table_key(table_key)[0] if "." in table_key else "main"
-    return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_LOADER_DATAFRAME)(
+    return tag_loader_dataframe(domain=domain, target=target_name, table_key=table_key)(
         dataframe_fn
     )
 
@@ -420,7 +421,7 @@ def _create_artifact_node_function(
     artifact_fn.__doc__ = f"Access {artifact_name} artifact from {target_name} target."
 
     domain = artifact_name.split(".", 1)[0] if "." in artifact_name else "main"
-    return tag(domain=domain, artifact=artifact_name, node_type=NODE_TYPE_ARTIFACT)(artifact_fn)
+    return tag_artifact(domain=domain, target=target_name, artifact=artifact_name)(artifact_fn)
 
 
 def _build_contract_graph() -> TargetGraph:
@@ -505,7 +506,7 @@ def _populate_for_target(
                 _attach_node(
                     module,
                     node_name=q_name,
-                    fn=_create_query_node_function(table_key=table_key),
+                    fn=_create_query_node_function(table_key=table_key, target_name=target.name),
                 )
 
                 df_name = dataframe_node(table_key)
@@ -513,7 +514,10 @@ def _populate_for_target(
                 _attach_node(
                     module,
                     node_name=df_name,
-                    fn=_create_dataframe_node_function(table_key=table_key),
+                    fn=_create_dataframe_node_function(
+                        table_key=table_key,
+                        target_name=target.name,
+                    ),
                 )
 
     if options.include_artifact_nodes:

@@ -33,12 +33,12 @@ if TYPE_CHECKING:
     )
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import TargetGraph
-    from codeintel.core.schemas.provider import SchemaProvider
-    from codeintel.hamilton.records import (
+    from codeintel.core.hamilton.records import (
         ArtifactRefProtocol,
         DatasetRefProtocol,
         TargetRunRecord,
     )
+    from codeintel.core.schemas.provider import SchemaProvider
 
 log = logging.getLogger(__name__)
 

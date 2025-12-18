@@ -50,7 +50,6 @@ from codeintel.build.hamilton.helpers import (
     filter_paths,
     get_source_root,
     is_test_path,
-    persist_rows,
 )
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -85,7 +84,8 @@ from codeintel.graphs.runtime import (
     GraphRuntimeOptions,
     build_graph_runtime,
 )
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.warehouse import MaterializeOptions
 
 if TYPE_CHECKING:
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
@@ -330,7 +330,7 @@ def _get_tracked_files(gateway: StorageGateway, repo: str, commit: str) -> list[
         List of relative paths to Python files.
     """
     try:
-        modules = gateway.ibis.table("core.modules")
+        modules = ibis_facade.table(gateway, "core.modules")
         expr = (
             filter_by(modules, modules.repo == repo, modules.commit == commit)
             .select(modules.path)
@@ -541,7 +541,7 @@ def _load_symbol_occurrences(
         Parsed symbol occurrences for the snapshot.
     """
     try:
-        scip_tbl = gateway.ibis.table("core.scip_occurrences")
+        scip_tbl = ibis_facade.table(gateway, "core.scip_occurrences")
         expr = filter_by(scip_tbl, scip_tbl.repo == repo, scip_tbl.commit == commit).select(
             scip_tbl.symbol, scip_tbl.rel_path, scip_tbl.line, scip_tbl.roles
         )
@@ -574,7 +574,7 @@ def _load_module_map(
         Mapping of normalized relative paths to module names.
     """
     try:
-        modules_tbl = gateway.ibis.table("core.modules")
+        modules_tbl = ibis_facade.table(gateway, "core.modules")
         expr = filter_by(modules_tbl, modules_tbl.repo == repo, modules_tbl.commit == commit).select(
             modules_tbl.path, modules_tbl.module
         )
@@ -601,7 +601,7 @@ def _load_path_to_goid_map(
         Mapping of normalized relative paths to module GOIDs.
     """
     try:
-        goids_tbl = gateway.ibis.table(GOIDS_GOIDS_TABLE_KEY)
+        goids_tbl = ibis_facade.table(gateway, GOIDS_GOIDS_TABLE_KEY)
         expr = filter_by(
             goids_tbl,
             goids_tbl.repo == repo,
@@ -703,7 +703,7 @@ def _count_rows(
         Row count.
     """
     try:
-        tbl = gateway.ibis.table(table)
+        tbl = ibis_facade.table(gateway, table)
         filtered = filter_by(tbl, tbl.repo == repo, tbl.commit == commit)
         result_df = filtered.aggregate(row_count=tbl.repo.count()).execute()
         return int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
@@ -732,8 +732,8 @@ def _validate_call_graph_integrity(
     errors: list[str] = []
 
     try:
-        edges = gateway.ibis.table("graph.call_graph_edges")
-        nodes = gateway.ibis.table("graph.call_graph_nodes")
+        edges = ibis_facade.table(gateway, "graph.call_graph_edges")
+        nodes = ibis_facade.table(gateway, "graph.call_graph_nodes")
 
         scoped_edges = filter_by(edges, edges.repo == repo, edges.commit == commit)
 
@@ -779,8 +779,8 @@ def _validate_import_graph_integrity(
     errors: list[str] = []
 
     try:
-        edges = gateway.ibis.table("graph.import_graph_edges")
-        modules = gateway.ibis.table("graph.import_modules")
+        edges = ibis_facade.table(gateway, "graph.import_graph_edges")
+        modules = ibis_facade.table(gateway, "graph.import_modules")
         scoped_edges = filter_by(edges, edges.repo == repo, edges.commit == commit)
 
         joined = scoped_edges.left_join(
@@ -818,8 +818,8 @@ def _validate_cfg_integrity(
     errors: list[str] = []
 
     try:
-        edges = gateway.ibis.table("graph.cfg_edges")
-        blocks = gateway.ibis.table("graph.cfg_blocks")
+        edges = ibis_facade.table(gateway, "graph.cfg_edges")
+        blocks = ibis_facade.table(gateway, "graph.cfg_blocks")
 
         joined = edges.left_join(
             blocks,
@@ -930,20 +930,21 @@ def t__goids__extract(
             len(tracked_files),
         )
 
-        goid_count = persist_rows(
-            env.gateway,
+        options = MaterializeOptions(snapshot=env.snapshot, mode="replace", owner_target=GOIDS_TARGET_NAME)
+        goid_result = env.warehouse.materialize_rows(
             GOIDS_GOIDS_TABLE_KEY,
-            all_goid_rows,
-            repo=repo,
-            commit=commit,
+            [row.to_tuple() for row in all_goid_rows],
+            columns=None,
+            options=options,
         )
-        crosswalk_count = persist_rows(
-            env.gateway,
+        crosswalk_result = env.warehouse.materialize_rows(
             GOIDS_CROSSWALK_TABLE_KEY,
-            all_crosswalk_rows,
-            repo=repo,
-            commit=commit,
+            [row.to_tuple() for row in all_crosswalk_rows],
+            columns=None,
+            options=options,
         )
+        goid_count = int(goid_result.rows_written or 0)
+        crosswalk_count = int(crosswalk_result.rows_written or 0)
 
         log.info(
             "goids: Persisted %d GOIDs and %d crosswalk entries",
@@ -1053,13 +1054,17 @@ def t__symbol_uses__extract(
 
         enriched_edges = _enrich_edges_with_goids(edges, path_to_goid)
         rows = symbols_compute.edges_to_rows(enriched_edges)
-        row_count = persist_rows(
-            env.gateway,
+        row_result = env.warehouse.materialize_rows(
             SYMBOL_USE_EDGES_TABLE_KEY,
-            rows,
-            repo=repo,
-            commit=commit,
+            [row.to_tuple() for row in rows],
+            columns=None,
+            options=MaterializeOptions(
+                snapshot=env.snapshot,
+                mode="replace",
+                owner_target=SYMBOL_USES_TARGET_NAME,
+            ),
         )
+        row_count = int(row_result.rows_written or 0)
         return SymbolUsesExtractResult(
             success=True,
             edge_count=row_count,

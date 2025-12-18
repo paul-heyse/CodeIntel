@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from codeintel.serving.snapshot.models import ServingSnapshotIdentity
+
 
 class SearchQueryRequest(BaseModel):
     """Request payload for code metadata search."""
@@ -45,7 +47,7 @@ class SearchQueryResponse(BaseModel):
     query: str
     results: list[SearchResult]
     truncated: bool
-    snapshot: dict[str, str]
+    snapshot: ServingSnapshotIdentity
     engine: str
     query_hash: str | None = None
 

@@ -13,9 +13,11 @@ from typing import TYPE_CHECKING, Self
 from codeintel.config.primitives import (
     BuildLayoutOptions,
     GraphBackendConfig,
+    GraphFeatureFlags,
     ScanProfiles,
     ToolBinaries,
 )
+from codeintel.core.runtime import RuntimePrimitives
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,19 +36,23 @@ class BuilderDependencies:
     binaries: ToolBinaries | None = None
     profiles: ScanProfiles | None = None
     graph_backend: GraphBackendConfig | None = None
+    graph_features: GraphFeatureFlags | None = None
 
-    def resolved(self) -> tuple[ToolBinaries, ScanProfiles | None, GraphBackendConfig]:
+    def resolved(
+        self,
+    ) -> tuple[ToolBinaries, ScanProfiles | None, GraphBackendConfig, GraphFeatureFlags]:
         """Return dependency instances with defaults applied.
 
         Returns
         -------
-        tuple[ToolBinaries, ScanProfiles | None, GraphBackendConfig]
-            Concrete binaries, scan profiles, and graph backend configuration.
+        tuple[ToolBinaries, ScanProfiles | None, GraphBackendConfig, GraphFeatureFlags]
+            Concrete binaries, scan profiles, graph backend config, and graph feature flags.
         """
         return (
             self.binaries or ToolBinaries(),
             self.profiles,
             self.graph_backend or GraphBackendConfig(),
+            self.graph_features or GraphFeatureFlags(),
         )
 
 
@@ -64,6 +70,7 @@ class ConfigBuilder:
     binaries: ToolBinaries = field(default_factory=ToolBinaries)
     profiles: ScanProfiles | None = None
     graph_backend: GraphBackendConfig = field(default_factory=GraphBackendConfig)
+    graph_features: GraphFeatureFlags = field(default_factory=GraphFeatureFlags)
 
     @classmethod
     def from_snapshot(
@@ -105,7 +112,7 @@ class ConfigBuilder:
             snapshot_ref.repo_root,
             check_collisions=has_layout_overrides,
         )
-        binaries, profiles, graph_backend = dependencies.resolved()
+        binaries, profiles, graph_backend, graph_features = dependencies.resolved()
         profiles = cls._ensure_profiles(profiles)
         return cls(
             snapshot=snapshot_ref,
@@ -113,6 +120,7 @@ class ConfigBuilder:
             binaries=binaries,
             profiles=profiles,
             graph_backend=graph_backend,
+            graph_features=graph_features,
         )
 
     @classmethod
@@ -151,6 +159,7 @@ class ConfigBuilder:
             binaries=binaries or ToolBinaries(),
             profiles=cls._ensure_profiles(profiles),
             graph_backend=graph_backend or GraphBackendConfig(),
+            graph_features=GraphFeatureFlags(),
         )
 
     @staticmethod
@@ -183,6 +192,23 @@ class ConfigBuilder:
             message = "profiles must include both code and config scan profiles"
             raise ValueError(message)
         return profiles
+
+    def runtime_primitives(self) -> RuntimePrimitives:
+        """Return the canonical runtime primitive bundle for this builder.
+
+        Returns
+        -------
+        RuntimePrimitives
+            Snapshot/paths/tools/graph configuration bundle.
+        """
+        return RuntimePrimitives(
+            snapshot=self.snapshot,
+            paths=self.paths,
+            tools=self.binaries,
+            graph_backend=self.graph_backend,
+            graph_features=self.graph_features,
+            profiles=self.profiles,
+        )
 
     def prepare_filesystem(self, *, create_missing_only: bool = True) -> tuple[Path, ...]:
         """Ensure build-related directories exist.

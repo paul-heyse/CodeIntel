@@ -13,7 +13,7 @@ from typing import Literal, Required, TypedDict, TypeVar, Unpack, cast
 
 from hamilton.function_modifiers import tag as h_tag
 
-from codeintel.hamilton import tags as ht
+from codeintel.core.hamilton import tags as ht
 
 SEMANTIC_VIEW_TAG_ATTR = "__codeintel_semantic_view_tags__"
 
