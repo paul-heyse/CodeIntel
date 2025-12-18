@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
+from codeintel.serving.auth.policy import require_http_auth
 from codeintel.serving.errors import AuthForbiddenError
 from codeintel.serving.http.state import ServingState
 from codeintel.serving.operations.ops import ServingOperations
@@ -80,15 +81,10 @@ def require_api_key(request: Request, state: State) -> None:
     AuthForbiddenError
         When an API key is configured and missing/invalid.
     """
-    expected = state.settings.api_key
-    if expected is None:
-        return
-
-    provided = request.headers.get("X-API-Key")
-    if provided == expected:
-        return
-
-    raise AuthForbiddenError(reason="Invalid or missing API key.")
+    try:
+        require_http_auth(headers=request.headers, settings=state.settings)
+    except AuthForbiddenError as exc:
+        raise AuthForbiddenError(reason=exc.details.get("reason")) from exc
 
 
 __all__ = ["Kernel", "Ops", "State", "get_kernel", "get_ops", "require_api_key"]

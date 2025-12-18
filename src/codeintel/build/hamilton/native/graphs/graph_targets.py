@@ -32,7 +32,6 @@ from hamilton.function_modifiers import (
     schema,
     source,
     step,
-    tag,
     value,
 )
 
@@ -46,11 +45,13 @@ from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
+from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
 from codeintel.build.hamilton.helpers import (
     filter_paths,
     get_source_root,
     is_test_path,
 )
+from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
@@ -62,8 +63,10 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
@@ -85,7 +88,6 @@ from codeintel.graphs.runtime import (
     build_graph_runtime,
 )
 from codeintel.storage.gateway import DuckDBError, ibis_facade
-from codeintel.storage.warehouse import MaterializeOptions
 
 if TYPE_CHECKING:
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
@@ -252,7 +254,7 @@ class SymbolUsesExtractResult:
     error: str | None = None
 
 
-@tag(node_type="helper")
+@tag_helper()
 def goids__execution_result(t__goids__extract: GoidExtractResult) -> ExecutionResult:
     """Convert goids extract result to the executor boundary type.
 
@@ -264,8 +266,10 @@ def goids__execution_result(t__goids__extract: GoidExtractResult) -> ExecutionRe
     return to_execution_result(t__goids__extract, default_error="GOID extraction failed")
 
 
-@tag(node_type="helper")
-def symbol_uses__execution_result(t__symbol_uses__extract: SymbolUsesExtractResult) -> ExecutionResult:
+@tag_helper()
+def symbol_uses__execution_result(
+    t__symbol_uses__extract: SymbolUsesExtractResult,
+) -> ExecutionResult:
     """Convert symbol_uses extract result to the executor boundary type.
 
     Returns
@@ -273,7 +277,9 @@ def symbol_uses__execution_result(t__symbol_uses__extract: SymbolUsesExtractResu
     ExecutionResult
         Canonical execution result.
     """
-    return to_execution_result(t__symbol_uses__extract, default_error="Symbol uses extraction failed")
+    return to_execution_result(
+        t__symbol_uses__extract, default_error="Symbol uses extraction failed"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +317,7 @@ class GraphValidationResult:
 # ---------------------------------------------------------------------------
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _get_tracked_files(gateway: StorageGateway, repo: str, commit: str) -> list[str]:
     """Get list of tracked Python files from core.modules.
 
@@ -343,7 +349,7 @@ def _get_tracked_files(gateway: StorageGateway, repo: str, commit: str) -> list[
         return []
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _path_to_module_name(rel_path: str) -> str:
     """Convert relative path to module name.
 
@@ -366,7 +372,7 @@ def _path_to_module_name(rel_path: str) -> str:
     return ".".join(parts)
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _process_ast_node(
     node: ast.AST,
     parent_qualname: str | None,
@@ -454,7 +460,7 @@ def _process_ast_node(
             )
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _extract_entities_from_file(
     file_path: Path,
     context: GoidExtractionInputs,
@@ -527,7 +533,7 @@ def _extract_entities_from_file(
 # ---------------------------------------------------------------------------
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _load_symbol_occurrences(
     gateway: StorageGateway,
     repo: str,
@@ -560,7 +566,7 @@ def _load_symbol_occurrences(
         return []
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _load_module_map(
     gateway: StorageGateway,
     repo: str,
@@ -575,9 +581,9 @@ def _load_module_map(
     """
     try:
         modules_tbl = ibis_facade.table(gateway, "core.modules")
-        expr = filter_by(modules_tbl, modules_tbl.repo == repo, modules_tbl.commit == commit).select(
-            modules_tbl.path, modules_tbl.module
-        )
+        expr = filter_by(
+            modules_tbl, modules_tbl.repo == repo, modules_tbl.commit == commit
+        ).select(modules_tbl.path, modules_tbl.module)
         rows = expr.execute()
         return {
             normalize_path(str(path)): str(module)
@@ -587,7 +593,7 @@ def _load_module_map(
         return {}
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _load_path_to_goid_map(
     gateway: StorageGateway,
     repo: str,
@@ -617,7 +623,7 @@ def _load_path_to_goid_map(
         return {}
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _enrich_edges_with_goids(
     edges: list[symbols_compute.SymbolUseEdge],
     path_to_goid: dict[str, int],
@@ -647,7 +653,7 @@ def _enrich_edges_with_goids(
     return enriched
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _filter_symbol_occurrences(
     occurrences: list[symbols_compute.SymbolOccurrence],
     *,
@@ -677,7 +683,7 @@ def _filter_symbol_occurrences(
 # ---------------------------------------------------------------------------
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _count_rows(
     gateway: StorageGateway,
     table: str,
@@ -716,7 +722,7 @@ def _count_rows(
 # ---------------------------------------------------------------------------
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _validate_call_graph_integrity(
     gateway: StorageGateway,
     repo: str,
@@ -763,7 +769,7 @@ def _validate_call_graph_integrity(
     return errors
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _validate_import_graph_integrity(
     gateway: StorageGateway,
     repo: str,
@@ -802,7 +808,7 @@ def _validate_import_graph_integrity(
     return errors
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _validate_cfg_integrity(
     gateway: StorageGateway,
     _repo: str,
@@ -844,7 +850,7 @@ def _validate_cfg_integrity(
 # ---------------------------------------------------------------------------
 
 
-@tag(domain="graphs", target=GOIDS_TARGET_NAME, node_type="tool")
+@tag_tool(domain="graphs", target=GOIDS_TARGET_NAME)
 def t__goids__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -882,7 +888,11 @@ def t__goids__extract(
     try:
         repo = env.snapshot.repo
         commit = env.snapshot.commit
-        opts = GoidBuilderOptions()
+        opts = load_target_options(
+            env,
+            target_name=GOIDS_TARGET_NAME,
+            options_type=GoidBuilderOptions,
+        )
 
         source_root = env.snapshot.repo_root or get_source_root(env.gateway, repo, commit)
 
@@ -930,7 +940,7 @@ def t__goids__extract(
             len(tracked_files),
         )
 
-        options = MaterializeOptions(snapshot=env.snapshot, mode="replace", owner_target=GOIDS_TARGET_NAME)
+        options = materialize_options(env, owner_target=GOIDS_TARGET_NAME, mode="replace")
         goid_result = env.warehouse.materialize_rows(
             GOIDS_GOIDS_TABLE_KEY,
             [row.to_tuple() for row in all_goid_rows],
@@ -970,7 +980,7 @@ def t__goids__extract(
         )
 
 
-@tag(domain="graphs", target=GOIDS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="graphs", target=GOIDS_TARGET_NAME)
 def t__goids(
     env: BuildEnv,
     graph: TargetGraph,
@@ -1003,7 +1013,7 @@ def t__goids(
 # ---------------------------------------------------------------------------
 
 
-@tag(domain="graphs", target=SYMBOL_USES_TARGET_NAME, node_type="tool")
+@tag_tool(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
 def t__symbol_uses__extract(
     env: BuildEnv,
     t__scip: TargetRunRecord,
@@ -1028,7 +1038,11 @@ def t__symbol_uses__extract(
         gateway = env.gateway
         repo = env.snapshot.repo
         commit = env.snapshot.commit
-        opts = SymbolUsesOptions()
+        opts = load_target_options(
+            env,
+            target_name=SYMBOL_USES_TARGET_NAME,
+            options_type=SymbolUsesOptions,
+        )
 
         occurrences = _load_symbol_occurrences(gateway, repo, commit)
 
@@ -1058,10 +1072,10 @@ def t__symbol_uses__extract(
             SYMBOL_USE_EDGES_TABLE_KEY,
             [row.to_tuple() for row in rows],
             columns=None,
-            options=MaterializeOptions(
-                snapshot=env.snapshot,
-                mode="replace",
+            options=materialize_options(
+                env,
                 owner_target=SYMBOL_USES_TARGET_NAME,
+                mode="replace",
             ),
         )
         row_count = int(row_result.rows_written or 0)
@@ -1075,7 +1089,7 @@ def t__symbol_uses__extract(
         return SymbolUsesExtractResult(success=False, error=str(exc))
 
 
-@tag(domain="graphs", target=SYMBOL_USES_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
 def t__symbol_uses(
     env: BuildEnv,
     graph: TargetGraph,
@@ -1088,9 +1102,7 @@ def t__symbol_uses(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return executor_materialize(
-        env, graph, SYMBOL_USES_TARGET_NAME, symbol_uses__execution_result
-    )
+    return executor_materialize(env, graph, SYMBOL_USES_TARGET_NAME, symbol_uses__execution_result)
 
 
 # ---------------------------------------------------------------------------
@@ -1290,12 +1302,11 @@ def _call_graph_views_finalize_depth_stats(tables: CallGraphDepthTables, env: Bu
     namespace=None,
     on_input="q__graph__call_graph_edges",
 )
-@tag(
+@tag_compute(
     domain="graphs",
     target=CALL_GRAPH_VIEWS_TARGET_NAME,
-    node_type="compute",
-    view="function_call_counts",
     target_="call_graph_function_call_counts",
+    extra_tags={"output_kind": "view"},
 )
 @check_output_custom(
     *build_table_contract(
@@ -1347,12 +1358,11 @@ def call_graph_function_call_counts(
     namespace=None,
     on_input="q__graph__call_graph_edges",
 )
-@tag(
+@tag_compute(
     domain="graphs",
     target=CALL_GRAPH_VIEWS_TARGET_NAME,
-    node_type="compute",
-    view="call_depth_stats",
     target_="call_graph_depth_stats",
+    extra_tags={"output_kind": "view"},
 )
 @check_output_custom(
     *build_table_contract(
@@ -1387,7 +1397,7 @@ def call_graph_depth_stats(
     return q__graph__call_graph_edges
 
 
-@tag(domain="graphs", target=CALL_GRAPH_VIEWS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="graphs", target=CALL_GRAPH_VIEWS_TARGET_NAME)
 def t__call_graph_views(
     env: BuildEnv,
     graph: TargetGraph,
@@ -1419,7 +1429,7 @@ def t__call_graph_views(
 # ---------------------------------------------------------------------------
 
 
-@tag(domain="graphs", target=GRAPH_METRICS_TARGET_NAME, node_type="tool")
+@tag_tool(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
 def t__graph_metrics__compute(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
@@ -1453,10 +1463,25 @@ def t__graph_metrics__compute(
         )
 
         backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
-        runtime_options = GraphRuntimeOptions(snapshot=snapshot, backend=backend_config)
+        base_runtime_options = load_graph_runtime_options(env, target_name=GRAPH_METRICS_TARGET_NAME)
+        runtime_options = GraphRuntimeOptions(
+            snapshot=snapshot,
+            backend=backend_config,
+            graphs=base_runtime_options.graphs,
+            eager=base_runtime_options.eager,
+            validate=base_runtime_options.validate,
+            cache_key=base_runtime_options.cache_key,
+            engine=base_runtime_options.engine,
+            graph_cache_dir=base_runtime_options.graph_cache_dir,
+            features=base_runtime_options.features,
+        )
         runtime = build_graph_runtime(gateway, runtime_options)
 
-        options = GraphMetricsOptions()
+        options = load_target_options(
+            env,
+            target_name=GRAPH_METRICS_TARGET_NAME,
+            options_type=GraphMetricsOptions,
+        )
         deps = GraphMetricsDeps(
             catalog_provider=None,
             runtime=runtime,
@@ -1497,7 +1522,7 @@ def t__graph_metrics__compute(
         return ExecutionResult.failed(str(exc))
 
 
-@tag(domain="graphs", target=GRAPH_METRICS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
 def t__graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -1518,7 +1543,7 @@ def t__graph_metrics(
 # ---------------------------------------------------------------------------
 
 
-@tag(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME, node_type="tool")
+@tag_tool(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
 def t__graph_validation__check(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
@@ -1581,7 +1606,7 @@ def t__graph_validation__check(
         )
 
 
-@tag(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
 def t__graph_validation(
     env: BuildEnv,
     graph: TargetGraph,

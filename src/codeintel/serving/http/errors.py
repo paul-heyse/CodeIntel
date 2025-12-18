@@ -45,7 +45,9 @@ class ProblemDetail(BaseModel):
     errors: list[dict[str, Any]] | None = None
 
 
-def problem_response(problem: ProblemDetail, *, headers: dict[str, str] | None = None) -> JSONResponse:
+def problem_response(
+    problem: ProblemDetail, *, headers: dict[str, str] | None = None
+) -> JSONResponse:
     """Return a Problem Details JSON response.
 
     Parameters

@@ -24,12 +24,8 @@ from cyclopts.exceptions import (
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
-from codeintel.storage.exceptions import (
-    QueryError as StorageQueryError,
-)
-from codeintel.storage.exceptions import (
-    SchemaError as StorageSchemaError,
-)
+from codeintel.core.errors.schema import SchemaError as StorageSchemaError
+from codeintel.core.errors.storage import StorageQueryError
 from codeintel.storage.exceptions import (
     StorageConnectionError,
     StorageError,

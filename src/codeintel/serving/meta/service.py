@@ -6,12 +6,16 @@ both HTTP and FastMCP surfaces.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.meta.tooling import runtime_versions, tooling_mismatch_warnings
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.settings import ServingSettings
+
+if TYPE_CHECKING:
+    from codeintel.serving.db.manager import ServingDBManager
 
 
 def build_resource_templates_payload(
@@ -20,7 +24,13 @@ def build_resource_templates_payload(
     templates: object,
     generated_at: datetime,
 ) -> dict[str, object]:
-    """Build the canonical resource-templates payload for discovery resources."""
+    """Build the canonical resource-templates payload for discovery resources.
+
+    Returns
+    -------
+    dict[str, object]
+        Serialized payload for resource template discovery.
+    """
     pointer = ops.db.current_pointer()
     return {
         "uri": "codeintel://meta/resources",
@@ -40,6 +50,11 @@ def build_kernel_meta_payload(db: ServingDBManager) -> dict[str, object]:
 
     This is a refactor of the legacy `SemanticQueryKernel.meta()` implementation into
     a reusable service function to keep adapters thin.
+
+    Returns
+    -------
+    dict[str, object]
+        Serialized kernel metadata payload.
     """
     pointer = db.current_pointer()
     context = db.snapshot_context(pointer)
@@ -65,7 +80,10 @@ def build_kernel_meta_payload(db: ServingDBManager) -> dict[str, object]:
             for v in registry.views
             if not v.deprecated
         ],
-        "datasets": [{"table_key": dataset.table_key, "schema_hash": dataset.schema_hash} for dataset in spec.datasets],
+        "datasets": [
+            {"table_key": dataset.table_key, "schema_hash": dataset.schema_hash}
+            for dataset in spec.datasets
+        ],
         "targets": [
             {
                 "name": t.name,
@@ -73,7 +91,9 @@ def build_kernel_meta_payload(db: ServingDBManager) -> dict[str, object]:
                 "impl_kind": t.impl_kind,
                 "deps": list(t.deps),
                 "outputs": list(t.outputs),
-                "artifacts": [{"name": artifact.name, "kind": artifact.kind} for artifact in t.artifacts],
+                "artifacts": [
+                    {"name": artifact.name, "kind": artifact.kind} for artifact in t.artifacts
+                ],
             }
             for t in spec.targets
         ],
@@ -86,7 +106,13 @@ def build_environment_meta_payload(
     *,
     settings: ServingSettings,
 ) -> dict[str, object]:
-    """Build environment/tooling payload for `codeintel://meta/environment`."""
+    """Build environment/tooling payload for `codeintel://meta/environment`.
+
+    Returns
+    -------
+    dict[str, object]
+        Environment payload including runtime versions and export limits.
+    """
     meta = ops.meta()
     env_obj = meta.get("environment")
     environment = env_obj if isinstance(env_obj, dict) else {}
@@ -111,16 +137,29 @@ def build_environment_meta_payload(
     }
 
 
+@dataclass(frozen=True, slots=True)
+class ServingMetaExtras:
+    """Extra data needed to build the MCP `serving_meta` payload."""
+
+    features: dict[str, bool]
+    inventories: dict[str, int]
+    resource_templates: object
+
+
 def build_serving_meta_payload(
     ops: ServingOperations,
     *,
     settings: ServingSettings,
     started_at: datetime,
-    features: dict[str, bool],
-    inventories: dict[str, int],
-    resource_templates: object,
+    extras: ServingMetaExtras,
 ) -> dict[str, object]:
-    """Build the canonical payload consumed by the FastMCP `serving_meta` tool."""
+    """Build the canonical payload consumed by the FastMCP `serving_meta` tool.
+
+    Returns
+    -------
+    dict[str, object]
+        Serving meta payload combining snapshot info, features, and limits.
+    """
     pointer = ops.db.current_pointer()
     meta = ops.meta()
 
@@ -141,7 +180,7 @@ def build_serving_meta_payload(
         "semantic_layer": {
             "version": str(meta.get("semantic_layer_version", "unknown")),
             "hash": str(meta.get("semantic_layer_hash", "unknown")),
-            "view_count": inventories.get("views", 0),
+            "view_count": extras.inventories.get("views", 0),
             "schema_manifest_hash": str(meta.get("schema_manifest_hash"))
             if meta.get("schema_manifest_hash") is not None
             else None,
@@ -152,18 +191,19 @@ def build_serving_meta_payload(
             "compiled_at": pointer.published_at.isoformat(),
         },
         "read_only": True,
-        "features": features,
+        "features": extras.features,
         "limits": {
             "export_max_rows": settings.export_max_rows,
             "export_ttl_seconds": settings.mcp_export_ttl_seconds,
         },
-        "resource_templates": resource_templates,
-        "inventories": inventories,
+        "resource_templates": extras.resource_templates,
+        "inventories": extras.inventories,
         "warnings": list(warnings),
     }
 
 
 __all__ = [
+    "ServingMetaExtras",
     "build_environment_meta_payload",
     "build_kernel_meta_payload",
     "build_resource_templates_payload",

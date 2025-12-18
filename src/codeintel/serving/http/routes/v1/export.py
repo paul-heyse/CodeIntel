@@ -17,8 +17,8 @@ from codeintel.serving.http.export_dispatch import (
     dispatch_semantic_export,
     export_hash_headers,
 )
-from codeintel.serving.http.route_utils import schedule_query_metrics
 from codeintel.serving.http.middleware import get_correlation_id
+from codeintel.serving.http.route_utils import schedule_query_metrics
 from codeintel.serving.semantic.models import SemanticExportRequest
 
 if TYPE_CHECKING:

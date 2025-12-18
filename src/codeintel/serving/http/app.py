@@ -41,7 +41,6 @@ if TYPE_CHECKING:
     from fastapi.responses import JSONResponse
 
     from codeintel.serving.db.manager import ServingDBManager
-    from codeintel.serving.operations.ops import ServingOperations
     from codeintel.serving.operations.protocols import ServingKernelProtocol
 
 LOG = logging.getLogger(__name__)
@@ -96,7 +95,7 @@ def create_serving_app(
     _install_exception_handlers(app)
     _install_middlewares(app, cfg)
     app.include_router(api_router)
-    _install_observability_routes(app, db_manager=runtime.db_manager, ops=runtime.ops)
+    _install_observability_routes(app, db_manager=runtime.db_manager)
     _maybe_mount_mcp(app, kernel=runtime.kernel, settings=cfg, enabled=mount_mcp)
 
     app.openapi = lambda: _custom_openapi(app)
@@ -172,7 +171,7 @@ def _install_middlewares(app: FastAPI, cfg: ServingSettings) -> None:
 
 
 def _install_observability_routes(
-    app: FastAPI, *, db_manager: ServingDBManager, ops: ServingOperations
+    app: FastAPI, *, db_manager: ServingDBManager
 ) -> None:
     @app.get("/health")
     async def health() -> dict[str, str]:

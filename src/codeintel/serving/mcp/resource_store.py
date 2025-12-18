@@ -499,7 +499,9 @@ class ResourceStore:
             If ``spec.format`` is not a binary export format.
         """
         if not is_binary_export_format(spec.format):
-            msg = "put_generated_file_with_metadata only supports format='parquet' or format='arrow'"
+            msg = (
+                "put_generated_file_with_metadata only supports format='parquet' or format='arrow'"
+            )
             raise ValueError(msg)
 
         token = export_id or secrets.token_urlsafe(16)
@@ -602,7 +604,9 @@ class ResourceStore:
         created_at_str = meta_dict.get("created_at", "")
         created_at = datetime.fromisoformat(created_at_str) if created_at_str else datetime.now(UTC)
         expires_at_str = meta_dict.get("expires_at")
-        expires_at = datetime.fromisoformat(expires_at_str) if isinstance(expires_at_str, str) else None
+        expires_at = (
+            datetime.fromisoformat(expires_at_str) if isinstance(expires_at_str, str) else None
+        )
 
         raw_format = meta_dict.get("format", "ndjson")
         if not isinstance(raw_format, str):

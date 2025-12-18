@@ -30,6 +30,7 @@ from codeintel.build.targets import TargetGraph
 # Keep types available for Hamilton's runtime type resolution
 _HAMILTON_TYPE_HINTS = (BuildEnv, ExecutionResult, TargetGraph, TargetRunRecord, ir.Table)
 
+
 @tag_materialize()
 def executor_materialize(
     env: BuildEnv,
@@ -74,6 +75,7 @@ def executor_record(
         Execution record for the target.
     """
     return executor_materialize(env, graph, target_name, compute_result)
+
 
 @SaveToObjectMetadataDecorator(
     [DuckDBIbisTableSaver],

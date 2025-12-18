@@ -208,6 +208,46 @@ class BuildConfig:
 
         result_values: dict[str, Any] = {}
 
+        def merge_nested_sections(*, prefix: str) -> None:
+            """Merge nested section values under a target section into dict parameters.
+
+            For example, given a TOML structure like:
+
+            [analytics.function_metrics.features]
+            eager_hydration = true
+
+            the nested section name ``analytics.function_metrics.features`` is merged into:
+            ``{"features": {"eager_hydration": True}}``.
+            """
+            base_prefix = f"{prefix}."
+            nested_sections = sorted(
+                (name, section)
+                for name, section in self.sections.items()
+                if name.startswith(base_prefix)
+            )
+            for name, section in nested_sections:
+                remainder = name[len(base_prefix) :]
+                if not remainder:
+                    continue
+                parts = remainder.split(".")
+
+                cursor: dict[str, Any] = result_values
+                for part in parts[:-1]:
+                    existing = cursor.get(part)
+                    if not isinstance(existing, dict):
+                        nested: dict[str, Any] = {}
+                        cursor[part] = nested
+                        cursor = nested
+                    else:
+                        cursor = existing
+
+                leaf_key = parts[-1]
+                existing_leaf = cursor.get(leaf_key)
+                if not isinstance(existing_leaf, dict):
+                    cursor[leaf_key] = dict(section.values)
+                else:
+                    existing_leaf.update(section.values)
+
         for module in modules:
             module_section = self.sections.get(module)
             if module_section:
@@ -216,6 +256,7 @@ class BuildConfig:
             target_section = self.sections.get(f"{module}.{target_name}")
             if target_section:
                 result_values.update(target_section.values)
+                merge_nested_sections(prefix=f"{module}.{target_name}")
 
         return TargetParameters(result_values)
 

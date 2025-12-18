@@ -824,8 +824,7 @@ def seed_modules_and_repo_map(
         ],
     )
     modules_json = {
-        record.module_name: record.file_path.relative_to(repo_root).as_posix()
-        for record in records
+        record.module_name: record.file_path.relative_to(repo_root).as_posix() for record in records
     }
     con.execute(
         """
@@ -871,8 +870,7 @@ def seed_inventory_from_paths(
         ],
     )
     modules_json = {
-        record.module_name: record.file_path.relative_to(repo_root).as_posix()
-        for record in records
+        record.module_name: record.file_path.relative_to(repo_root).as_posix() for record in records
     }
     con.execute(
         """

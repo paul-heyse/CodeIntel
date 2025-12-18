@@ -240,7 +240,9 @@ async def test_manager_export_pool_isolated_from_query_pool(tmp_path: Path) -> N
                     value = warehouse.gateway.con.execute("SELECT value FROM kv").fetchone()
                     return id(warehouse.gateway.con), value
 
-            query_con_id, value = await asyncio.wait_for(asyncio.to_thread(_query_from_pool), timeout=1.0)
+            query_con_id, value = await asyncio.wait_for(
+                asyncio.to_thread(_query_from_pool), timeout=1.0
+            )
             expect_true(query_con_id != export_con_id)
             expect_equal(value, (1,))
     finally:

@@ -18,7 +18,6 @@ from hamilton.function_modifiers import (
     schema,
     source,
     step,
-    tag,
     value,
 )
 
@@ -35,6 +34,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hamilton.validators import (
     build_enum_column_contract,
     build_table_contract,
@@ -65,7 +65,7 @@ RISK_LEVEL_HIGH_THRESHOLD = 5
 RISK_LEVEL_MEDIUM_THRESHOLD = 3
 
 
-@tag(domain="analytics", target=RISK_FACTORS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=RISK_FACTORS_TARGET_NAME)
 def risk_factors__fan_in(q__graph__call_graph_edges: ir.Table) -> ir.Table:
     """Compute fan-in counts per callee function.
 
@@ -88,7 +88,7 @@ def risk_factors__fan_in(q__graph__call_graph_edges: ir.Table) -> ir.Table:
     )
 
 
-@tag(domain="analytics", target=RISK_FACTORS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=RISK_FACTORS_TARGET_NAME)
 def risk_factors__fan_out(q__graph__call_graph_edges: ir.Table) -> ir.Table:
     """Compute fan-out counts per caller function.
 
@@ -262,10 +262,9 @@ def _risk_factors_finalize(risk: ir.Table) -> ir.Table:
         allowed_values={"high", "medium", "low"},
     ),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=RISK_FACTORS_TARGET_NAME,
-    node_type="compute",
     target_="t__risk_factors__compute",
 )
 @schema.output(
@@ -313,7 +312,7 @@ def t__risk_factors__compute(
     return q__analytics__function_metrics
 
 
-@tag(domain="analytics", target=RISK_FACTORS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=RISK_FACTORS_TARGET_NAME)
 def t__risk_factors(
     env: BuildEnv,
     graph: TargetGraph,

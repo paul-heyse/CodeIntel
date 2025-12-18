@@ -23,7 +23,8 @@ def load_columns_by_table() -> dict[str, list[str]]:
         Mapping of table key to column names.
     """
     return {
-        table_key: [col.name for col in schema.columns] for table_key, schema in TABLE_SCHEMAS.items()
+        table_key: [col.name for col in schema.columns]
+        for table_key, schema in TABLE_SCHEMAS.items()
     }
 
 

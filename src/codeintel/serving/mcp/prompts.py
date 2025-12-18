@@ -107,7 +107,7 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
         if not _supports_elicitation(ctx):
             messages = no_elicitation
         else:
-            format_choices = list(export_format_choices())
+            format_choices = [str(fmt) for fmt in export_format_choices()]
             accepted_view = await _try_elicit(
                 ctx,
                 "Which view_id do you want to export?",
@@ -396,7 +396,9 @@ async def _maybe_elicit_filter(
     if not raw:
         return None
 
-    return _FilterDraft(column=column, op=op, value=parse_filter_value(dtype, op=cast("Op", op), raw=raw))
+    return _FilterDraft(
+        column=column, op=op, value=parse_filter_value(dtype, op=cast("Op", op), raw=raw)
+    )
 
 
 def _maybe_get_column_types(
@@ -414,4 +416,6 @@ def _maybe_get_column_types(
     if not isinstance(types_obj, dict):
         return None
     return {str(k): str(v) for k, v in types_obj.items()}
+
+
 __all__ = ["register_prompts"]

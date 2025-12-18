@@ -16,7 +16,14 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from codeintel.core.schemas.hashing import schema_hash
+from codeintel.serving.errors import SemanticColumnNotFoundError
 from codeintel.serving.meta.service import build_kernel_meta_payload
+from codeintel.serving.search.engine import (
+    SEARCH_TABLE_NAME,
+    SEARCH_TABLE_SCHEMA,
+    build_search_query,
+    is_fts_available,
+)
 from codeintel.serving.search.models import SearchQueryResponse, SearchResult
 from codeintel.serving.semantic.fingerprints import (
     SemanticQueryFingerprintInput,
@@ -28,10 +35,8 @@ from codeintel.serving.semantic.models import (
     SemanticQueryResponse,
 )
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
-from codeintel.serving.semantic.templates import DbApiTemplate
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 from codeintel.storage.queries.safe import UnsafeSqlError, assert_single_select_statement
-from codeintel.storage.serving.search_index import fts_index_available
 
 try:
     import polars as pl
@@ -59,10 +64,6 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
-_SEARCH_TABLE_SCHEMA = "docs"
-_SEARCH_TABLE_NAME = "search_documents"
-_SEARCH_TABLE_KEY = "docs.search_documents"
-
 
 class UnknownViewIdError(KeyError):
     """Raise when a semantic view identifier cannot be resolved."""
@@ -70,18 +71,6 @@ class UnknownViewIdError(KeyError):
     def __init__(self, view_id: str) -> None:
         super().__init__(view_id)
         self.view_id = view_id
-
-
-class UnknownColumnsError(ValueError):
-    """Raise when a request selects columns not allowed by a semantic view."""
-
-    def __init__(self, *, unknown: tuple[str, ...], allowed: tuple[str, ...]) -> None:
-        unknown_list = list(unknown)
-        allowed_sorted = sorted(allowed)
-        message = f"Unknown columns requested: {unknown_list}. Allowed columns: {allowed_sorted}"
-        super().__init__(message)
-        self.unknown = unknown
-        self.allowed = allowed
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,73 +88,6 @@ class _PlanInputs:
     filters: list[FilterSpec]
     order_by: list[str]
     offset: int
-
-
-_SQL_SEARCH_FTS = """
-	SELECT kind, name, module, rel_path, ref_goid_h128, score
-	FROM (
-	    SELECT
-        kind,
-        name,
-        module,
-        rel_path,
-        ref_goid_h128,
-        fts_docs_search_documents.match_bm25(doc_id, ?) AS score
-    FROM docs.search_documents
-) ranked
-WHERE score IS NOT NULL
-ORDER BY score DESC
-LIMIT ? OFFSET ?
-"""
-
-_SQL_SEARCH_FTS_KINDS = """
-SELECT kind, name, module, rel_path, ref_goid_h128, score
-FROM (
-    SELECT
-        kind,
-        name,
-        module,
-        rel_path,
-        ref_goid_h128,
-        fts_docs_search_documents.match_bm25(doc_id, ?) AS score
-    FROM docs.search_documents
-    WHERE kind = ANY(?)
-) ranked
-WHERE score IS NOT NULL
-ORDER BY score DESC
-LIMIT ? OFFSET ?
-"""
-
-_SQL_SEARCH_LIKE = """
-SELECT kind, name, module, rel_path, ref_goid_h128, NULL AS score
-FROM docs.search_documents
-WHERE (
-    COALESCE(text, '') ILIKE '%' || ? || '%'
-    OR COALESCE(name, '') ILIKE '%' || ? || '%'
-    OR COALESCE(module, '') ILIKE '%' || ? || '%'
-)
-ORDER BY kind, name
-LIMIT ? OFFSET ?
-"""
-
-_SQL_SEARCH_LIKE_KINDS = """
-SELECT kind, name, module, rel_path, ref_goid_h128, NULL AS score
-FROM docs.search_documents
-WHERE (
-    COALESCE(text, '') ILIKE '%' || ? || '%'
-    OR COALESCE(name, '') ILIKE '%' || ? || '%'
-    OR COALESCE(module, '') ILIKE '%' || ? || '%'
-)
-AND kind = ANY(?)
-ORDER BY kind, name
-LIMIT ? OFFSET ?
-"""
-
-_SEARCH_QUERY_FTS = DbApiTemplate(sql=_SQL_SEARCH_FTS)
-_SEARCH_QUERY_FTS_KINDS = DbApiTemplate(sql=_SQL_SEARCH_FTS_KINDS)
-_SEARCH_QUERY_LIKE = DbApiTemplate(sql=_SQL_SEARCH_LIKE)
-_SEARCH_QUERY_LIKE_KINDS = DbApiTemplate(sql=_SQL_SEARCH_LIKE_KINDS)
-
 
 def _sanitize_float_nan(value: object) -> object:
     if isinstance(value, float) and math.isnan(value):
@@ -319,7 +241,9 @@ class SemanticQueryKernel:
         inventory: SchemaInventory,
     ) -> tuple[str, str | None]:
         filter_dicts = [f.model_dump(mode="json") for f in plan.filters]
-        schema_hash_value = self._schema_hash_for_table_key(inventory=inventory, table_key=plan.table_key)
+        schema_hash_value = self._schema_hash_for_table_key(
+            inventory=inventory, table_key=plan.table_key
+        )
         inputs = SemanticQueryFingerprintInput(
             snapshot=self._snapshot_dict(pointer).model_dump(mode="json"),
             view_id=view_id,
@@ -345,7 +269,9 @@ class SemanticQueryKernel:
         built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
         return self._execute_bound_query(warehouse=warehouse, query=built)
 
-    def _execute_bound_query(self, *, warehouse: Warehouse, query: BoundQuery) -> list[dict[str, object]]:
+    def _execute_bound_query(
+        self, *, warehouse: Warehouse, query: BoundQuery
+    ) -> list[dict[str, object]]:
         ibis_con = warehouse.gateway.ibis.con
         try:
             sql = query.compile_sql(ibis_con)
@@ -356,14 +282,18 @@ class SemanticQueryKernel:
         finally:
             _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=query.temp_tables)
 
-    def _execute_dbapi_query(self, *, warehouse: Warehouse, query: DbApiQuery) -> list[dict[str, object]]:
+    def _execute_dbapi_query(
+        self, *, warehouse: Warehouse, query: DbApiQuery
+    ) -> list[dict[str, object]]:
         try:
             assert_single_select_statement(query.sql)
         except UnsafeSqlError as exc:
             raise ValueError(str(exc)) from exc
         return self._execute_sql(warehouse=warehouse, sql=query.sql, params=query.params)
 
-    def _resolve_view_context(self, *, pointer: ServingSnapshotPointer, view_id: str) -> _ResolvedViewContext:
+    def _resolve_view_context(
+        self, *, pointer: ServingSnapshotPointer, view_id: str
+    ) -> _ResolvedViewContext:
         context = self._snapshot_context(pointer)
         inventory = context.inventory
         view = context.registry.by_id(view_id)
@@ -386,7 +316,9 @@ class SemanticQueryKernel:
             raise UnknownViewIdError(view_id) from exc
 
     @staticmethod
-    def _plan_from_inputs(*, ctx: _ResolvedViewContext, inputs: _PlanInputs, limit: int) -> SemanticQueryPlan:
+    def _plan_from_inputs(
+        *, ctx: _ResolvedViewContext, inputs: _PlanInputs, limit: int
+    ) -> SemanticQueryPlan:
         return SemanticQueryPlan(
             table_key=ctx.view.table_key,
             columns=inputs.columns,
@@ -398,8 +330,16 @@ class SemanticQueryKernel:
         )
 
     @staticmethod
-    def _query_plan_inputs(*, ctx: _ResolvedViewContext, request: SemanticQueryRequest) -> tuple[_PlanInputs, int]:
-        columns = request.select if request.select else ctx.allowed_columns
+    def _query_plan_inputs(
+        *, ctx: _ResolvedViewContext, request: SemanticQueryRequest
+    ) -> tuple[_PlanInputs, int]:
+        if request.select:
+            unknown = sorted(set(request.select) - set(ctx.allowed_columns))
+            if unknown:
+                raise SemanticColumnNotFoundError(ctx.view.id, unknown[0])
+            columns = list(request.select)
+        else:
+            columns = ctx.allowed_columns
         effective_limit = request.limit if request.limit else ctx.view.defaults.limit
         effective_order = request.order_by if request.order_by else ctx.view.defaults.order_by
         inputs = _PlanInputs(
@@ -411,14 +351,13 @@ class SemanticQueryKernel:
         return inputs, effective_limit
 
     @staticmethod
-    def _export_plan_inputs(*, ctx: _ResolvedViewContext, request: SemanticExportRequest) -> tuple[_PlanInputs, int]:
+    def _export_plan_inputs(
+        *, ctx: _ResolvedViewContext, request: SemanticExportRequest
+    ) -> tuple[_PlanInputs, int]:
         if request.select:
-            unknown = [col for col in request.select if col not in ctx.allowed_columns]
+            unknown = sorted(set(request.select) - set(ctx.allowed_columns))
             if unknown:
-                raise UnknownColumnsError(
-                    unknown=tuple(unknown),
-                    allowed=tuple(ctx.allowed_columns),
-                )
+                raise SemanticColumnNotFoundError(ctx.view.id, unknown[0])
             columns = list(request.select)
         else:
             columns = ctx.allowed_columns
@@ -554,7 +493,9 @@ class SemanticQueryKernel:
         if truncated:
             rows = rows[:effective_limit]
 
-        fingerprint_plan = self._plan_from_inputs(ctx=resolved, inputs=inputs, limit=effective_limit)
+        fingerprint_plan = self._plan_from_inputs(
+            ctx=resolved, inputs=inputs, limit=effective_limit
+        )
         query_hash, schema_hash_value = self._fingerprint_semantic_plan(
             pointer=resolved.pointer,
             view_id=resolved.view.id,
@@ -658,7 +599,7 @@ class SemanticQueryKernel:
 
         with self.db.connect() as (warehouse, pointer):
             backend = warehouse.gateway.policy
-            if not backend.table_exists(schema=_SEARCH_TABLE_SCHEMA, table=_SEARCH_TABLE_NAME):
+            if not backend.table_exists(schema=SEARCH_TABLE_SCHEMA, table=SEARCH_TABLE_NAME):
                 return SearchQueryResponse(
                     query=request.query,
                     results=[],
@@ -673,31 +614,7 @@ class SemanticQueryKernel:
                         offset=request.offset,
                     ),
                 )
-
-            fts_available = fts_index_available(warehouse.gateway.con, table_key=_SEARCH_TABLE_KEY)
-
-            query_limit = request.limit + 1
-            if fts_available and request.kinds:
-                query = _SEARCH_QUERY_FTS_KINDS.bind(
-                    [request.query, request.kinds, query_limit, request.offset]
-                )
-            elif fts_available:
-                query = _SEARCH_QUERY_FTS.bind([request.query, query_limit, request.offset])
-            elif request.kinds:
-                query = _SEARCH_QUERY_LIKE_KINDS.bind(
-                    [
-                        request.query,
-                        request.query,
-                        request.query,
-                        request.kinds,
-                        query_limit,
-                        request.offset,
-                    ]
-                )
-            else:
-                query = _SEARCH_QUERY_LIKE.bind(
-                    [request.query, request.query, request.query, query_limit, request.offset]
-                )
+            query = build_search_query(request, fts_available=is_fts_available(warehouse.gateway.con))
 
             rows = self._execute_dbapi_query(warehouse=warehouse, query=query)
 
@@ -738,7 +655,9 @@ class SemanticQueryKernel:
         pointer = self.db.current_pointer()
         resolved = self._resolve_view_context_for_export(pointer=pointer, view_id=request.view_id)
         inputs, effective_limit = self._export_plan_inputs(ctx=resolved, request=request)
-        fingerprint_plan = self._plan_from_inputs(ctx=resolved, inputs=inputs, limit=effective_limit)
+        fingerprint_plan = self._plan_from_inputs(
+            ctx=resolved, inputs=inputs, limit=effective_limit
+        )
         return self._fingerprint_semantic_plan(
             pointer=pointer,
             view_id=resolved.view.id,
@@ -851,10 +770,13 @@ class SemanticQueryKernel:
                 result = warehouse.gateway.policy.execute_sql(sql)
                 reader = result.fetch_record_batch(self.settings.export_batch_size)
                 rows_written = 0
-                with output_path.open("wb") as handle, pa.ipc.new_file(
-                    handle,
-                    reader.schema,
-                ) as writer:
+                with (
+                    output_path.open("wb") as handle,
+                    pa.ipc.new_file(
+                        handle,
+                        reader.schema,
+                    ) as writer,
+                ):
                     for batch in reader:
                         rows_written += batch.num_rows
                         writer.write_batch(batch)

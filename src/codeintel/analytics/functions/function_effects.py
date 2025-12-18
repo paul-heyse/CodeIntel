@@ -420,7 +420,9 @@ def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> 
     counts: dict[int, int] = {}
     try:
         edges = ibis_facade.table(gateway, "graph.call_graph_edges")
-        callee_is_unresolved = or_predicates(is_null(edges.callee_goid_h128), eq(edges.callee_goid_h128, -1))
+        callee_is_unresolved = or_predicates(
+            is_null(edges.callee_goid_h128), eq(edges.callee_goid_h128, -1)
+        )
         expr = (
             edges.filter(
                 and_predicates(

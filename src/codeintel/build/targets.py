@@ -19,6 +19,7 @@ The OutputTarget is the single source of truth for:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
@@ -39,6 +40,9 @@ if TYPE_CHECKING:
         TargetExecution,
         TargetResources,
     )
+    from codeintel.config.datasets.primitives import TableSchema
+
+log = logging.getLogger(__name__)
 
 TargetModule = Literal["ingestion", "graphs", "analytics", "export"]
 """Classification of which target module produces an output."""
@@ -156,11 +160,11 @@ class TargetGraph:
 
     How to Obtain a TargetGraph
     ---------------------------
-    Use `get_target_graph()` from `codeintel.build.registry` to get the
+    Use ``load_target_system().graph`` from `codeintel.build.target_system` to get the
     singleton graph with Hamilton-derived dependencies:
 
-    >>> from codeintel.build.registry import get_target_graph
-    >>> graph = get_target_graph()
+    >>> from codeintel.build.target_system import load_target_system
+    >>> graph = load_target_system().graph
     >>> "modules" in graph
     True
     >>> deps = graph.dependencies_of("goids")
@@ -424,8 +428,60 @@ class TargetGraph:
         return tuple(errors)
 
 
+def derive_schemas_from_targets(
+    targets: Iterable[OutputTarget],
+) -> dict[str, TableSchema]:
+    """Derive a table schema mapping from OutputTarget contracts.
+
+    Parameters
+    ----------
+    targets
+        Targets to extract schemas from.
+
+    Returns
+    -------
+    dict[str, TableSchema]
+        Mapping of ``schema.table`` keys to their corresponding schema declarations.
+    """
+    schemas: dict[str, TableSchema] = {}
+    for target in targets:
+        for table in target.contract.tables:
+            key = table.fq_name
+            if key in schemas:
+                log.warning("Duplicate schema for %s from targets %s", key, target.name)
+            schemas[key] = table
+    return schemas
+
+
+def get_target_by_table(
+    table_key: str,
+    *,
+    targets: Iterable[OutputTarget],
+) -> OutputTarget | None:
+    """Return the first target producing a given table key.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified table key (schema.table).
+    targets
+        Targets to search.
+
+    Returns
+    -------
+    OutputTarget | None
+        Producing target if present, otherwise None.
+    """
+    for target in targets:
+        if table_key in target.table_keys:
+            return target
+    return None
+
+
 __all__ = [
     "OutputTarget",
     "TargetGraph",
     "TargetModule",
+    "derive_schemas_from_targets",
+    "get_target_by_table",
 ]

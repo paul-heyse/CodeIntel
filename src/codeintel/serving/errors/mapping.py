@@ -42,6 +42,13 @@ def error_from_code(
     params: Mapping[str, Any] | None = None,
     details: Mapping[str, Any] | None = None,
 ) -> ErrorResponse:
+    """Render an error response from a catalog code and optional context.
+
+    Returns
+    -------
+    ErrorResponse
+        Serialized error payload for clients.
+    """
     tmpl = ERROR_CODE_CATALOG.get(code)
     if tmpl is None:
         tmpl = ERROR_CODE_CATALOG["CODEINTEL_SEMANTIC_INTERNAL_ERROR"]
@@ -63,6 +70,13 @@ def error_from_code(
 
 
 def exception_to_error_response(exc: Exception, *, context: ErrorContext) -> ErrorResponse:
+    """Map an arbitrary exception to a canonical error response.
+
+    Returns
+    -------
+    ErrorResponse
+        Canonical error response derived from the exception.
+    """
     domain_mapper = getattr(exc, "to_error_response", None)
     if callable(domain_mapper):
         mapped = domain_mapper(context=context)
@@ -70,7 +84,8 @@ def exception_to_error_response(exc: Exception, *, context: ErrorContext) -> Err
             return mapped
 
     is_export = context.tool_name == "semantic_export" or (
-        isinstance(context.resource_uri, str) and context.resource_uri.startswith("codeintel://exports/")
+        isinstance(context.resource_uri, str)
+        and context.resource_uri.startswith("codeintel://exports/")
     )
     is_meta_views_sql = isinstance(context.resource_uri, str) and context.resource_uri.startswith(
         "codeintel://meta/views_sql"
@@ -81,7 +96,9 @@ def exception_to_error_response(exc: Exception, *, context: ErrorContext) -> Err
     details: dict[str, Any] | None = None
 
     if isinstance(exc, ValidationError):
-        code = "CODEINTEL_EXPORT_INVALID_REQUEST" if is_export else "CODEINTEL_SEMANTIC_INVALID_QUERY"
+        code = (
+            "CODEINTEL_EXPORT_INVALID_REQUEST" if is_export else "CODEINTEL_SEMANTIC_INVALID_QUERY"
+        )
         details = {"validation_errors": exc.errors()[:10]}
     elif isinstance(exc, TimeoutError):
         code = "CODEINTEL_EXPORT_UNAVAILABLE" if is_export else "CODEINTEL_SEMANTIC_QUERY_TIMEOUT"
@@ -97,7 +114,9 @@ def exception_to_error_response(exc: Exception, *, context: ErrorContext) -> Err
         else:
             code = "CODEINTEL_SEMANTIC_INVALID_QUERY"
     else:
-        code = "CODEINTEL_EXPORT_INTERNAL_ERROR" if is_export else "CODEINTEL_SEMANTIC_INTERNAL_ERROR"
+        code = (
+            "CODEINTEL_EXPORT_INTERNAL_ERROR" if is_export else "CODEINTEL_SEMANTIC_INTERNAL_ERROR"
+        )
         details = {"exception_type": type(exc).__name__}
 
     return error_from_code(code, context=context, params=params, details=details)

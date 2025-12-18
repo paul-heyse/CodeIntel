@@ -203,7 +203,10 @@ def _materialize_import_graph(
     module_count = int(
         env.warehouse.materialize_rows(
             IMPORT_MODULES_TABLE_KEY,
-            [row.to_tuple() for row in imports_compute.build_import_module_rows(repo, commit, analysis)],
+            [
+                row.to_tuple()
+                for row in imports_compute.build_import_module_rows(repo, commit, analysis)
+            ],
             columns=None,
             options=options,
         ).rows_written
@@ -212,7 +215,10 @@ def _materialize_import_graph(
     edge_count = int(
         env.warehouse.materialize_rows(
             IMPORT_GRAPH_EDGES_TABLE_KEY,
-            [row.to_tuple() for row in imports_compute.build_import_edge_rows(repo, commit, analysis)],
+            [
+                row.to_tuple()
+                for row in imports_compute.build_import_edge_rows(repo, commit, analysis)
+            ],
             columns=None,
             options=options,
         ).rows_written
@@ -345,7 +351,9 @@ def t__import_graph(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, IMPORT_GRAPH_TARGET_NAME, import_graph__execution_result)
+    return executor_materialize(
+        env, graph, IMPORT_GRAPH_TARGET_NAME, import_graph__execution_result
+    )
 
 
 __all__ = [

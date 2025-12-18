@@ -37,6 +37,7 @@ class ScalarExecution(Protocol):
         """Execute the scalar expression and return a Python value."""
         ...
 
+
 class ScalarCoercionError(TypeError):
     """Raised when a scalar query result cannot be coerced to the expected type."""
 

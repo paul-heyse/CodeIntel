@@ -265,4 +265,6 @@ class BuildRunWriter:
                 records=sorted_records,
             )
         except StorageError as exc:
-            log.warning("build.hamilton.writer.asset_catalog_failed run_id=%s error=%s", run_id, exc)
+            log.warning(
+                "build.hamilton.writer.asset_catalog_failed run_id=%s error=%s", run_id, exc
+            )

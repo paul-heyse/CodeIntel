@@ -9,13 +9,13 @@ import pytest
 
 from codeintel.build.schemas import get_schema_provider
 from codeintel.storage.repositories import (
+    DataModelsRepository,
     DatasetReadRepository,
     FunctionRepository,
     GraphRepository,
     ModuleRepository,
     SubsystemRepository,
     TestRepository,
-    fetch_models_normalized,
 )
 from codeintel.storage.warehouse import Warehouse
 from tests._helpers.rows import (
@@ -276,7 +276,7 @@ def test_data_model_accessors(docs_export_gateway: TestContext) -> None:
         [_as_mapping(relationship_row, "analytics.data_model_relationships")],
     )
 
-    normalized = fetch_models_normalized(gateway, repo, commit)
+    normalized = DataModelsRepository(gateway, repo, commit).list_models_normalized()
     _expect_equal(len(normalized), 1, "normalized model count mismatch")
     model = normalized[0]
     _expect_equal(model.model_id, "ModelA", "model id mismatch")

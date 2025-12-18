@@ -20,6 +20,7 @@ Example
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import TypeVar, overload
 
@@ -69,7 +70,7 @@ class ParameterError(ValueError):
 
 
 @dataclass(frozen=True)
-class TargetParameters:
+class TargetParameters(Mapping[str, object]):
     """Type-safe parameter container for target execution.
 
     Parameters are stored as a frozen dict and accessed via the get()
@@ -91,6 +92,29 @@ class TargetParameters:
     """
 
     _values: dict[str, object] = field(default_factory=dict)
+
+    def __getitem__(self, key: str) -> object:
+        """Return a raw parameter value.
+
+        Parameters
+        ----------
+        key
+            Parameter name.
+
+        Returns
+        -------
+        object
+            Raw parameter value.
+        """
+        return self._values[key]
+
+    def __iter__(self) -> Iterator[str]:
+        """Iterate over parameter keys."""
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        """Return the number of parameters."""
+        return len(self._values)
 
     @overload
     def get(self, key: str, type_: type[T]) -> T: ...
@@ -195,6 +219,16 @@ class TargetParameters:
             Set of all parameter names.
         """
         return frozenset(self._values.keys())
+
+    def as_dict(self) -> dict[str, object]:
+        """Return a copy of parameters as a dict.
+
+        Returns
+        -------
+        dict[str, object]
+            Copy of the underlying mapping.
+        """
+        return dict(self._values)
 
     def merge(self, other: TargetParameters) -> TargetParameters:
         """Create new parameters with values from other merged in.

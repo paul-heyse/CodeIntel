@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.registry import get_target_graph
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
 from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.target_system import load_target_system
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -54,7 +54,7 @@ def test_pr80_schema_compile_uses_batch_inference() -> None:
     if spy.calls != 1:
         pytest.fail(f"Expected batch inferer to be called once, got {spy.calls}")
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
     risk_table_keys = set(graph.get("risk_factors").contract.table_keys)
     hotspot_table_keys = set(graph.get("hotspots").contract.table_keys)
     expected_keys = sorted(risk_table_keys | hotspot_table_keys)

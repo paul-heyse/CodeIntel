@@ -7,7 +7,7 @@ remain thin adapters.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from codeintel.serving.errors import (
     CodeIntelDomainError,
@@ -36,17 +36,6 @@ class ServingOperations:
 
     kernel: ServingKernelProtocol
     settings: ServingSettings
-
-    @staticmethod
-    def _invalid_query_details(exc: Exception) -> dict[str, Any]:
-        details: dict[str, Any] = {"reason": str(exc)}
-        unknown = getattr(exc, "unknown", None)
-        allowed = getattr(exc, "allowed", None)
-        if isinstance(unknown, tuple):
-            details["unknown_columns"] = list(unknown)
-        if isinstance(allowed, tuple):
-            details["allowed_columns"] = list(allowed)
-        return details
 
     def _export_limit_exceeded(self, *, limit: int) -> bool:
         return limit > self.settings.export_max_rows
@@ -122,7 +111,7 @@ class ServingOperations:
         except ValueError as exc:
             raise CodeIntelDomainError(
                 code="CODEINTEL_SEMANTIC_INVALID_QUERY",
-                details=self._invalid_query_details(exc),
+                details={"reason": str(exc)},
             ) from exc
 
     def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:
@@ -152,7 +141,7 @@ class ServingOperations:
         except ValueError as exc:
             raise CodeIntelDomainError(
                 code="CODEINTEL_SEMANTIC_INVALID_QUERY",
-                details=self._invalid_query_details(exc),
+                details={"reason": str(exc)},
             ) from exc
 
     def compile_query_sql(self, request: SemanticQueryRequest) -> str:
@@ -182,7 +171,7 @@ class ServingOperations:
         except ValueError as exc:
             raise CodeIntelDomainError(
                 code="CODEINTEL_SEMANTIC_INVALID_QUERY",
-                details=self._invalid_query_details(exc),
+                details={"reason": str(exc)},
             ) from exc
 
     def search(self, request: SearchQueryRequest) -> SearchQueryResponse:
@@ -208,7 +197,7 @@ class ServingOperations:
         except ValueError as exc:
             raise CodeIntelDomainError(
                 code="CODEINTEL_SEMANTIC_INVALID_QUERY",
-                details=self._invalid_query_details(exc),
+                details={"reason": str(exc)},
             ) from exc
 
     def meta(self) -> dict[str, object]:
@@ -252,7 +241,7 @@ class ServingOperations:
         except ValueError as exc:
             raise CodeIntelDomainError(
                 code="CODEINTEL_EXPORT_INVALID_REQUEST",
-                details=self._invalid_query_details(exc),
+                details={"reason": str(exc)},
             ) from exc
 
     def export_sql(self, request: SemanticExportRequest) -> str:
@@ -286,7 +275,7 @@ class ServingOperations:
         except ValueError as exc:
             raise CodeIntelDomainError(
                 code="CODEINTEL_EXPORT_INVALID_REQUEST",
-                details=self._invalid_query_details(exc),
+                details={"reason": str(exc)},
             ) from exc
 
     def export_fingerprint(self, request: SemanticExportRequest) -> tuple[str, str | None]:
@@ -320,7 +309,7 @@ class ServingOperations:
         except ValueError as exc:
             raise CodeIntelDomainError(
                 code="CODEINTEL_EXPORT_INVALID_REQUEST",
-                details=self._invalid_query_details(exc),
+                details={"reason": str(exc)},
             ) from exc
 
     def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> int:
@@ -341,6 +330,7 @@ class ServingOperations:
             When the requested view cannot be resolved.
         CodeIntelDomainError
             When the request is invalid.
+
         Returns
         -------
         int
@@ -356,7 +346,7 @@ class ServingOperations:
         except ValueError as exc:
             raise CodeIntelDomainError(
                 code="CODEINTEL_EXPORT_INVALID_REQUEST",
-                details=self._invalid_query_details(exc),
+                details={"reason": str(exc)},
             ) from exc
 
     def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int:
@@ -392,7 +382,7 @@ class ServingOperations:
         except ValueError as exc:
             raise CodeIntelDomainError(
                 code="CODEINTEL_EXPORT_INVALID_REQUEST",
-                details=self._invalid_query_details(exc),
+                details={"reason": str(exc)},
             ) from exc
 
 

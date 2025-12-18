@@ -10,6 +10,7 @@ import duckdb
 
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.duckdb_policy_backend import duckdb_schema_exists
+from codeintel.storage.gateway.extensions import require_extension
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
 DuckDBConnection = duckdb.DuckDBPyConnection
@@ -179,8 +180,6 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
     ------
     ValueError
         If ``table_key`` is not schema-qualified or the target table does not exist.
-    RuntimeError
-        If DuckDB does not have the ``fts`` extension available.
     """
     if "." not in table_key:
         msg = f"Expected schema-qualified table_key, got: {table_key}"
@@ -196,6 +195,7 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
     if duckdb_schema_exists(con, schema=fts_schema):
         return fts_schema
 
+    require_extension(con, "fts", allow_install=True)
     create_sql = f"""
     PRAGMA create_fts_index(
         '{table_key}',
@@ -205,9 +205,5 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
         'module'
     )
     """
-    try:
-        backend.execute_sql(create_sql)
-    except duckdb.Error as exc:
-        msg = "DuckDB extension 'fts' is required (set CODEINTEL_DUCKDB_EXTENSIONS=fts)"
-        raise RuntimeError(msg) from exc
+    backend.execute_sql(create_sql)
     return fts_schema

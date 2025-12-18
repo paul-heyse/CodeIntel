@@ -127,12 +127,8 @@ def test_target_graph_validation_and_topology() -> None:
     expect_equal(order[0], "a")
 
     cyclic_graph = TargetGraph()
-    cyclic_graph.register(
-        OutputTarget(name="cycle1", module="export", dependencies=("cycle2",))
-    )
-    cyclic_graph.register(
-        OutputTarget(name="cycle2", module="export", dependencies=("cycle1",))
-    )
+    cyclic_graph.register(OutputTarget(name="cycle1", module="export", dependencies=("cycle2",)))
+    cyclic_graph.register(OutputTarget(name="cycle2", module="export", dependencies=("cycle1",)))
     errors_cycle = cyclic_graph.validate()
     expect_true(any("Dependency cycle detected" in err for err in errors_cycle))
     with pytest.raises(CycleDetectedError, match="cycle"):

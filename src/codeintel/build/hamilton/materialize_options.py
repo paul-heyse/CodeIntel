@@ -42,4 +42,3 @@ def materialize_options(
 __all__ = [
     "materialize_options",
 ]
-

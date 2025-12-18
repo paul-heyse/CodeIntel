@@ -226,12 +226,12 @@ async def test_mcp_get_prompt_wizard_query_view_uses_elicitation(tmp_path: Path)
             texts = [_message_text(m) for m in messages]
 
             invocation_texts = [
-                text for text in texts if "\"tool\"" in text and "\"arguments\"" in text
+                text for text in texts if '"tool"' in text and '"arguments"' in text
             ]
             if len(invocation_texts) < _MIN_TOOL_INVOCATIONS:
                 pytest.fail("Expected wizard prompt to include tool invocation JSON messages")
 
-            query_call = next((t for t in invocation_texts if "\"semantic_query\"" in t), None)
+            query_call = next((t for t in invocation_texts if '"semantic_query"' in t), None)
             if query_call is None:
                 pytest.fail("Expected wizard prompt to include semantic_query invocation")
             parsed = json.loads(query_call)

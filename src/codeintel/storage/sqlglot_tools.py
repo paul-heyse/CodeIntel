@@ -108,9 +108,7 @@ def extract_table_refs(root: exp.Expression) -> tuple[exp.Table, ...]:
     """
     tables: list[exp.Table] = []
     for scope in traverse_scope(root):
-        tables.extend(
-            source for source in scope.sources.values() if isinstance(source, exp.Table)
-        )
+        tables.extend(source for source in scope.sources.values() if isinstance(source, exp.Table))
     return tuple(tables)
 
 

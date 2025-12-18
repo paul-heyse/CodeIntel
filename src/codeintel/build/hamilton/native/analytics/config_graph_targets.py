@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import networkx as nx
-from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.cfg_dfg.compute import (
     CfgMetricsResult,
@@ -45,6 +45,7 @@ from codeintel.analytics.graphs.config_graph_metrics import (
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
@@ -54,13 +55,14 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
-from codeintel.build.hamilton.run_records import should_skip_native_target
+from codeintel.build.hamilton.run_records import options_hash_for_target, should_skip_native_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 from codeintel.core.hamilton.records import TargetRunRecord
-from codeintel.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.graphs.runtime import resolve_graph_runtime
 
 if TYPE_CHECKING:
     from codeintel.analytics.graphs.config_data_flow import ConfigDataFlowResult
@@ -136,7 +138,7 @@ class ConfigDataFlowComputeResult:
     error: str | None = None
 
 
-@tag(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
 def t__config_data_flow__compute(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
@@ -190,7 +192,7 @@ def t__config_data_flow__compute(
             graph_runtime = resolve_graph_runtime(
                 env.gateway,
                 env.snapshot,
-                GraphRuntimeOptions(),
+                load_graph_runtime_options(env, target_name=CONFIG_DATA_FLOW_TARGET_NAME),
             )
             if graph_runtime is not None:
                 call_graph = graph_runtime.ensure_call_graph()
@@ -259,10 +261,9 @@ def t__config_data_flow__compute(
     table_key=value(CONFIG_DATA_FLOW_TABLE_KEY),
     columns=value(tuple(CONFIG_DATA_FLOW_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CONFIG_DATA_FLOW_TARGET_NAME,
-    node_type="compute",
     target_="config_data_flow__rows",
 )
 def config_data_flow__rows(
@@ -289,10 +290,9 @@ def config_data_flow__rows(
     table_key=value(CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY),
     columns=value(CONFIG_GRAPH_METRICS_KEYS_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CONFIG_DATA_FLOW_TARGET_NAME,
-    node_type="compute",
     target_="config_graph_metrics_keys__rows",
 )
 def config_graph_metrics_keys__rows(
@@ -319,10 +319,9 @@ def config_graph_metrics_keys__rows(
     table_key=value(CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY),
     columns=value(CONFIG_GRAPH_METRICS_MODULES_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CONFIG_DATA_FLOW_TARGET_NAME,
-    node_type="compute",
     target_="config_graph_metrics_modules__rows",
 )
 def config_graph_metrics_modules__rows(
@@ -349,10 +348,9 @@ def config_graph_metrics_modules__rows(
     table_key=value(CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY),
     columns=value(CONFIG_PROJECTION_KEY_EDGES_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CONFIG_DATA_FLOW_TARGET_NAME,
-    node_type="compute",
     target_="config_projection_key_edges__rows",
 )
 def config_projection_key_edges__rows(
@@ -379,10 +377,9 @@ def config_projection_key_edges__rows(
     table_key=value(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY),
     columns=value(CONFIG_PROJECTION_MODULE_EDGES_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CONFIG_DATA_FLOW_TARGET_NAME,
-    node_type="compute",
     target_="config_projection_module_edges__rows",
 )
 def config_projection_module_edges__rows(
@@ -411,7 +408,7 @@ class _ConfigMaterializations:
     module_edges: MaterializationMetadata
 
 
-@tag(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME, node_type="compute")
+@tag_helper(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
 def config_data_flow__materializations(
     m__analytics__config_data_flow: MaterializationMetadata,
     m__analytics__config_graph_metrics_keys: MaterializationMetadata,
@@ -448,7 +445,7 @@ def config_data_flow__materializations(
     )
 
 
-@tag(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
 def t__config_data_flow(
     env: BuildEnv,
     graph: TargetGraph,
@@ -512,7 +509,7 @@ def t__config_data_flow(
 _CFG_DFG_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, CfgMetricsResult, DfgMetricsResult)
 
 
-@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
 def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMetricsResult | None:
     """Compute CFG metrics for all functions in the snapshot.
 
@@ -523,11 +520,12 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMet
     """
     target = graph.get(CFG_DFG_METRICS_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, CFG_DFG_METRICS_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -539,7 +537,7 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMet
     )
 
 
-@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
 def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMetricsResult | None:
     """Compute DFG metrics for all functions in the snapshot.
 
@@ -550,11 +548,12 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMet
     """
     target = graph.get(CFG_DFG_METRICS_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, CFG_DFG_METRICS_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -575,10 +574,9 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMet
     table_key=value(CFG_FUNCTION_METRICS_TABLE_KEY),
     columns=value(tuple(CFG_FUNCTION_METRICS_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CFG_DFG_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="cfg_function_metrics__rows",
 )
 def cfg_function_metrics__rows(
@@ -605,10 +603,9 @@ def cfg_function_metrics__rows(
     table_key=value(CFG_BLOCK_METRICS_TABLE_KEY),
     columns=value(tuple(CFG_BLOCK_METRICS_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CFG_DFG_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="cfg_block_metrics__rows",
 )
 def cfg_block_metrics__rows(
@@ -635,10 +632,9 @@ def cfg_block_metrics__rows(
     table_key=value(CFG_FUNCTION_METRICS_EXT_TABLE_KEY),
     columns=value(tuple(CFG_FUNCTION_METRICS_EXT_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CFG_DFG_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="cfg_function_metrics_ext__rows",
 )
 def cfg_function_metrics_ext__rows(
@@ -665,10 +661,9 @@ def cfg_function_metrics_ext__rows(
     table_key=value(DFG_FUNCTION_METRICS_TABLE_KEY),
     columns=value(tuple(DFG_FUNCTION_METRICS_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CFG_DFG_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="dfg_function_metrics__rows",
 )
 def dfg_function_metrics__rows(
@@ -695,10 +690,9 @@ def dfg_function_metrics__rows(
     table_key=value(DFG_BLOCK_METRICS_TABLE_KEY),
     columns=value(tuple(DFG_BLOCK_METRICS_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CFG_DFG_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="dfg_block_metrics__rows",
 )
 def dfg_block_metrics__rows(
@@ -725,10 +719,9 @@ def dfg_block_metrics__rows(
     table_key=value(DFG_FUNCTION_METRICS_EXT_TABLE_KEY),
     columns=value(tuple(DFG_FUNCTION_METRICS_EXT_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=CFG_DFG_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="dfg_function_metrics_ext__rows",
 )
 def dfg_function_metrics_ext__rows(
@@ -746,7 +739,7 @@ def dfg_function_metrics_ext__rows(
     return tuple(t__cfg_dfg_metrics__compute_dfg.ext_rows)
 
 
-@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="helper")
+@tag_helper(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
 def cfg_dfg_metrics__cfg_materializations(
     m__analytics__cfg_function_metrics: MaterializationMetadata,
     m__analytics__cfg_block_metrics: MaterializationMetadata,
@@ -766,7 +759,7 @@ def cfg_dfg_metrics__cfg_materializations(
     }
 
 
-@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="helper")
+@tag_helper(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
 def cfg_dfg_metrics__dfg_materializations(
     m__analytics__dfg_function_metrics: MaterializationMetadata,
     m__analytics__dfg_block_metrics: MaterializationMetadata,
@@ -786,7 +779,7 @@ def cfg_dfg_metrics__dfg_materializations(
     }
 
 
-@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="helper")
+@tag_helper(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
 def cfg_dfg_metrics__materializations(
     cfg_dfg_metrics__cfg_materializations: dict[str, MaterializationMetadata],
     cfg_dfg_metrics__dfg_materializations: dict[str, MaterializationMetadata],
@@ -803,7 +796,7 @@ def cfg_dfg_metrics__materializations(
     return materializations
 
 
-@tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
 def t__cfg_dfg_metrics(
     env: BuildEnv,
     graph: TargetGraph,

@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import time
-
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
-from fastapi.concurrency import run_in_threadpool
 
 from codeintel.serving.http.dependencies import Ops, require_api_key
 from codeintel.serving.http.metrics import QueryMetrics
-from codeintel.serving.http.middleware import get_correlation_id
-from codeintel.serving.http.route_utils import schedule_query_metrics
+from codeintel.serving.http.route_utils import run_in_threadpool_with_metrics
 from codeintel.serving.semantic.models import (
     SemanticCatalogResponse,
     SemanticExplainResponse,
@@ -44,41 +40,32 @@ async def list_views(
     SemanticCatalogResponse
         Catalog response payload.
     """
-    correlation_id = get_correlation_id(request)
-    start = time.perf_counter()
-    try:
-        payload = await run_in_threadpool(ops.catalog)
-    except Exception:
-        duration_ms = (time.perf_counter() - start) * 1000
-        schedule_query_metrics(
-            background,
-            QueryMetrics(
-                endpoint="/semantic/views",
-                correlation_id=correlation_id,
-                duration_ms=duration_ms,
-                view_id=None,
-                query=None,
-                row_count=0,
-                truncated=False,
-            ),
-        )
-        raise
-
-    response = SemanticCatalogResponse.model_validate(payload)
-    duration_ms = (time.perf_counter() - start) * 1000
-    schedule_query_metrics(
-        background,
-        QueryMetrics(
+    def _success(payload: dict[str, object], duration_ms: float, correlation_id: str) -> QueryMetrics:
+        views_obj = payload.get("views")
+        views = views_obj if isinstance(views_obj, list) else []
+        return QueryMetrics(
             endpoint="/semantic/views",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=None,
             query=None,
-            row_count=len(response.views),
+            row_count=len(views),
             truncated=False,
-        ),
-    )
-    return response
+        )
+
+    def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
+        return QueryMetrics(
+            endpoint="/semantic/views",
+            correlation_id=correlation_id,
+            duration_ms=duration_ms,
+            view_id=None,
+            query=None,
+            row_count=0,
+            truncated=False,
+        )
+
+    payload = await run_in_threadpool_with_metrics(background, request, ops.catalog, _success, _error)
+    return SemanticCatalogResponse.model_validate(payload)
 
 
 @router.get("/views/{view_id}", response_model=SemanticViewDescriptionResponse)
@@ -106,30 +93,8 @@ async def describe_view(
     SemanticViewDescriptionResponse
         View description payload.
     """
-    correlation_id = get_correlation_id(request)
-    start = time.perf_counter()
-    try:
-        payload = await run_in_threadpool(ops.describe, view_id)
-    except Exception:
-        duration_ms = (time.perf_counter() - start) * 1000
-        schedule_query_metrics(
-            background,
-            QueryMetrics(
-                endpoint=f"/semantic/views/{view_id}",
-                correlation_id=correlation_id,
-                duration_ms=duration_ms,
-                view_id=view_id,
-                query=None,
-                row_count=0,
-                truncated=False,
-            ),
-        )
-        raise
-
-    duration_ms = (time.perf_counter() - start) * 1000
-    schedule_query_metrics(
-        background,
-        QueryMetrics(
+    def _success(_payload: dict[str, object], duration_ms: float, correlation_id: str) -> QueryMetrics:
+        return QueryMetrics(
             endpoint=f"/semantic/views/{view_id}",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
@@ -137,8 +102,20 @@ async def describe_view(
             query=None,
             row_count=1,
             truncated=False,
-        ),
-    )
+        )
+
+    def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
+        return QueryMetrics(
+            endpoint=f"/semantic/views/{view_id}",
+            correlation_id=correlation_id,
+            duration_ms=duration_ms,
+            view_id=view_id,
+            query=None,
+            row_count=0,
+            truncated=False,
+        )
+
+    payload = await run_in_threadpool_with_metrics(background, request, ops.describe, _success, _error, view_id)
     return SemanticViewDescriptionResponse.model_validate(payload)
 
 
@@ -167,30 +144,8 @@ async def query_view(
     SemanticQueryResponse
         Query results.
     """
-    correlation_id = get_correlation_id(request)
-    start = time.perf_counter()
-    try:
-        response = await run_in_threadpool(ops.query, payload)
-    except Exception:
-        duration_ms = (time.perf_counter() - start) * 1000
-        schedule_query_metrics(
-            background,
-            QueryMetrics(
-                endpoint="/semantic/query",
-                correlation_id=correlation_id,
-                duration_ms=duration_ms,
-                view_id=payload.view_id,
-                query=None,
-                row_count=0,
-                truncated=False,
-            ),
-        )
-        raise
-
-    duration_ms = (time.perf_counter() - start) * 1000
-    schedule_query_metrics(
-        background,
-        QueryMetrics(
+    def _success(response: SemanticQueryResponse, duration_ms: float, correlation_id: str) -> QueryMetrics:
+        return QueryMetrics(
             endpoint="/semantic/query",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
@@ -200,9 +155,20 @@ async def query_view(
             truncated=response.truncated,
             query_hash=response.query_hash,
             schema_hash=response.schema_hash,
-        ),
-    )
-    return response
+        )
+
+    def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
+        return QueryMetrics(
+            endpoint="/semantic/query",
+            correlation_id=correlation_id,
+            duration_ms=duration_ms,
+            view_id=payload.view_id,
+            query=None,
+            row_count=0,
+            truncated=False,
+        )
+
+    return await run_in_threadpool_with_metrics(background, request, ops.query, _success, _error, payload)
 
 
 @router.post("/explain", response_model=SemanticExplainResponse)
@@ -230,30 +196,8 @@ async def explain_view(
     SemanticExplainResponse
         Compiled SQL plus plan text for the query.
     """
-    correlation_id = get_correlation_id(request)
-    start = time.perf_counter()
-    try:
-        response = await run_in_threadpool(ops.explain, payload)
-    except Exception:
-        duration_ms = (time.perf_counter() - start) * 1000
-        schedule_query_metrics(
-            background,
-            QueryMetrics(
-                endpoint="/semantic/explain",
-                correlation_id=correlation_id,
-                duration_ms=duration_ms,
-                view_id=payload.view_id,
-                query=None,
-                row_count=0,
-                truncated=False,
-            ),
-        )
-        raise
-
-    duration_ms = (time.perf_counter() - start) * 1000
-    schedule_query_metrics(
-        background,
-        QueryMetrics(
+    def _success(_response: SemanticExplainResponse, duration_ms: float, correlation_id: str) -> QueryMetrics:
+        return QueryMetrics(
             endpoint="/semantic/explain",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
@@ -261,9 +205,20 @@ async def explain_view(
             query=None,
             row_count=0,
             truncated=False,
-        ),
-    )
-    return response
+        )
+
+    def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
+        return QueryMetrics(
+            endpoint="/semantic/explain",
+            correlation_id=correlation_id,
+            duration_ms=duration_ms,
+            view_id=payload.view_id,
+            query=None,
+            row_count=0,
+            truncated=False,
+        )
+
+    return await run_in_threadpool_with_metrics(background, request, ops.explain, _success, _error, payload)
 
 
 __all__ = ["router"]

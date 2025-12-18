@@ -37,6 +37,25 @@ Across the scope below:
 
 ---
 
+## Status (as of 2025-12-18)
+- Overall: Workstream C is largely complete; A/D/E are partially complete; B/F/G/H are pending.
+- Verification: build-scoped `ruff`/`pyright`/`pyrefly` are clean; full `pytest` is currently blocked by a
+  storage import cycle (outside the build-only scope for this plan).
+
+### Status summary
+| Workstream | Status | Notes |
+|---|---|---|
+| A — Target metadata entrypoints | Partially complete | Legacy `codeintel.build.registry` still widely referenced. |
+| B — Canonical target patterns | Not started | Templates exist; refactors not yet rolled out. |
+| C — Tagging + guardrails | Largely complete | Native modules migrated; guardrail added. |
+| D — Materialization boundary | Partially complete | Options helper + metadata typing fixed; remaining direct `MaterializeOptions(...)` call sites. |
+| E — Options loading | Partially complete | Loader added + several migrations; remaining `GraphRuntimeOptions()` call sites. |
+| F — Plan/state/observability | Not started | Requires design decision + refactor of `state*`/`planner`/`observability`. |
+| G — Export consolidation | Not started | Both `build/exports/*` and `hamilton/native/export/*` still exist. |
+| H — support_factory refactor | Not started | `support_factory.py` still monolithic. |
+
+---
+
 ## Workstream A — Consolidate target metadata entrypoints (one canonical API)
 
 ### Goal
@@ -72,6 +91,15 @@ Multiple entrypoints overlap in responsibilities:
      `TargetSystem.target_for_table_key(...)`, `TargetSystem.target_for_artifact(...)`
 3. Migrate call sites to `TargetSystem` and delete/replace duplicates.
 4. Add a guardrail to prevent reintroducing non-canonical imports.
+
+### Status
+- [x] Deleted `src/codeintel/build/hamilton/native/registry.py`.
+- [x] Added `src/codeintel/build/hamilton/impl_kind.py` and migrated build call sites off the deleted native registry.
+- [x] Simplified `src/codeintel/build/target_catalog.py` to specs-only (`load_target_specs()`), removing the unused
+  `TargetCatalog`/`load_target_catalog()` surfaces.
+- [ ] Migrate remaining imports of `codeintel.build.registry.get_target_graph` to `codeintel.build.target_system.load_target_system().graph`.
+- [ ] Decommission and delete `src/codeintel/build/registry.py` once downstream imports are removed (tools/tests/docs).
+- [ ] Add a guardrail banning `codeintel.build.registry` imports after migration is complete (to prevent drift).
 
 ### Acceptance gates
 - `load_target_system()` is used by all core consumers (CLI, schema provider, validation, planner).
@@ -126,6 +154,12 @@ Native modules sometimes implement their own variants of “skip+record+save” 
    - No ad-hoc “record building” in native modules when a template exists.
    - No duplication of skip-check logic outside `NativeTargetExecutor`/templates.
 
+### Status
+- [ ] Define/export a canonical templates index (and update call sites to use it).
+- [ ] Roll out pattern refactors across `src/codeintel/build/hamilton/native/*` (domain-by-domain).
+- [ ] Delete bespoke “skip+record+save” glue once each module is migrated.
+- [ ] Add guardrails to prevent bespoke orchestration logic reappearing in native modules.
+
 ### Acceptance gates
 - Every target module has clear pattern adherence.
 - Reduced boilerplate in `src/codeintel/build/hamilton/native/*`.
@@ -157,6 +191,14 @@ Mixed usage:
      `codeintel.build.hamilton.tagging`.
 3. Add/extend unit tests that scan `src/codeintel/build/hamilton/native` for forbidden patterns.
 
+### Status
+- [x] Migrated native build DAG modules to `codeintel.build.hamilton.tagging` wrapper helpers.
+- [x] Updated `src/codeintel/build/hamilton/nodes/support_factory.py` to use tagging wrappers (and expanded loader tagging).
+- [x] Added guardrail banning `from hamilton.function_modifiers import ... tag ...` under `src/codeintel/build/`.
+- [ ] Optional: add a small scan unit test that asserts the forbidden tag-import pattern does not exist under
+  `src/codeintel/build/hamilton/native` (guardrails already enforce this in CI/quality gates).
+- [ ] Optional: ban raw tag string keys outside `codeintel.core.hamilton.tags`/`codeintel.build.hamilton.tagging`.
+
 ### Acceptance gates
 - Tag discovery in `build/hamilton/validate.py` and semantic compilation remains stable.
 - Guardrails reject drift immediately.
@@ -185,6 +227,19 @@ Ensure “write paths” are consistent, auditable, and safe:
    - Ban `.policy.(delete_for_snapshot|bulk_insert*|delete)(` under `src/codeintel/build`.
    - Ban `.ibis.table(` under `src/codeintel/build` except approved seams.
 4. Add tests enforcing these invariants (fast regex scan).
+
+### Status
+- [x] Added canonical options builder `src/codeintel/build/hamilton/materialize_options.py`.
+- [x] Hardened saver/DAG metadata boundary typing by ensuring saver metadata is a concrete `dict[str, object]`
+  (Hamilton strict-type-safe) and by standardizing on `boundary_types.MaterializationMetadata`.
+- [~] Migrated several native modules to use `materialize_options(...)`; remaining direct `MaterializeOptions(...)`
+  call sites still exist (notably in adapters/materializers).
+- [x] Added guardrails that enforce build/storage boundaries (e.g., banning build calls to `gateway.policy.*` writes
+  and banning direct `.ibis.table(...)` except approved seams).
+- [ ] Finish migrating remaining `MaterializeOptions(...)` construction to `materialize_options(...)` in build-owned
+  code where the option shape impacts dispatch/boundaries.
+- [ ] Add/extend a fast unit test scanning build native modules for forbidden `.policy.*` and `.ibis.table(...)`
+  calls (guardrails already enforce this globally).
 
 ### Acceptance gates
 - A code reviewer can answer “how does data get written?” by reading Warehouse + savers only.
@@ -215,6 +270,14 @@ consume config → options at runtime. This risks:
 4. Ensure planner hashes exactly what execution consumes.
 5. Guardrails:
    - Ban direct `Options()` instantiation in native modules (allow in tests).
+
+### Status
+- [x] Added canonical options loader `src/codeintel/build/hamilton/options_loading.py`.
+- [~] Migrated a number of native targets to use `load_target_options(...)` (not yet exhaustive).
+- [ ] Migrate remaining direct options instantiations to `load_target_options(...)`, including remaining
+  `GraphRuntimeOptions()` call sites in analytics/graphs modules.
+- [ ] Ensure planner hashing (`options_hash`) exactly reflects the options consumed at execution for all targets.
+- [ ] Add guardrail banning direct `Options()` instantiation in native modules (if still needed after migrations).
 
 ### Acceptance gates
 - Changing `codeintel.build.toml` yields predictable recompute behavior.
@@ -247,6 +310,13 @@ and internal tools use consistently.
    - “missing/stale/current/blocked” classification
    - staleness explanation (`dep_hashes` diffs)
 
+### Status
+- [ ] Pick the canonical model (planner-first is still the recommended direction).
+- [ ] Refactor `src/codeintel/build/state.py` and `src/codeintel/build/state_computer.py` to become thin views over the canonical plan model.
+- [ ] Refactor `src/codeintel/build/hamilton/observability.py` to attach to the canonical plan model (or merge it).
+- [ ] Update CLI codepaths to use the canonical plan/state model consistently.
+- [ ] Add regression tests for classification + staleness explanations.
+
 ### Acceptance gates
 - CLI output is consistent across “status”, “plan”, and “why”.
 - No duplication of hash/manifest logic across modules.
@@ -270,6 +340,13 @@ Avoid “two export systems” drifting:
 2. Route all “export entrypoints” through that approach.
 3. Delete the unused path (and update docs).
 4. Add guardrails ensuring there is only one supported export invocation path.
+
+### Status
+- [ ] Decide whether `src/codeintel/build/hamilton/native/export/*` is canonical, or whether it should call into
+  `src/codeintel/build/exports/*` as the single implementation.
+- [ ] Route CLI/export entrypoints through the chosen approach.
+- [ ] Delete the deprecated export path after migration.
+- [ ] Add a guardrail that prevents “two export systems” from reappearing.
 
 ### Acceptance gates
 - Exports behave identically regardless of entrypoint.
@@ -302,6 +379,12 @@ Lower maintenance cost of dynamic node generation while keeping determinism and 
 2. Add focused unit tests for each helper and a small integration test for module generation.
 3. Ensure table_key validation/parsing uses the shared contract everywhere.
 4. Remove any now-unused duplicated helper logic.
+
+### Status
+- [ ] Extract internals from `src/codeintel/build/hamilton/nodes/support_factory.py` into focused helper modules.
+- [ ] Add focused unit tests for each extracted helper module.
+- [ ] Add a small integration test for generated-module determinism.
+- [ ] Remove duplicated helper logic once extracted.
 
 ### Acceptance gates
 - Smaller `support_factory.py`
@@ -342,6 +425,16 @@ Lower maintenance cost of dynamic node generation while keeping determinism and 
 ### Phase 7 — support_factory refactor (Workstream H)
 - Safer after the rest is stable; mostly internal re-organization + tests.
 
+### Phase status
+- [x] Phase 0 — Inventory + guardrails scaffolding (infrastructure largely in place; continue extending as needed).
+- [~] Phase 1 — Options loading unification (partially migrated; remaining call sites listed in Workstream E).
+- [x] Phase 2 — Tagging/naming unification (native modules migrated + guardrail in place).
+- [ ] Phase 3 — Canonical patterns rollout
+- [~] Phase 4 — Target system entrypoint consolidation (native registry/catalog dedup done; main registry shim remains).
+- [ ] Phase 5 — Plan/state/observability unification
+- [ ] Phase 6 — Export consolidation
+- [ ] Phase 7 — support_factory refactor
+
 ---
 
 ## Validation / Quality Gates (run after each phase)
@@ -361,6 +454,11 @@ uv run python -m tools.guardrails
 uv run pytest -q tests/test_build_storage_architecture_invariants.py
 ```
 
+### Current validation note
+At the time of the status update above (2025-12-18), full `pytest` is blocked by an import-time error originating in
+`src/codeintel/storage/*` (outside this plan’s build-only scope). Build-scoped static checks were used instead during
+the refactor iterations.
+
 ---
 
 ## Legacy Code Decommissioning Checklist
@@ -371,3 +469,9 @@ For every workstream that introduces a new canonical surface:
 - Delete the forwarder once downstream references are gone.
 
 This prevents “half-migrated” ambiguity, which is particularly costly in DAG-centric systems.
+
+### Decommissioning status (as of 2025-12-18)
+- [x] Removed legacy `src/codeintel/build/hamilton/native/registry.py`.
+- [x] Removed legacy `TargetCatalog`/`load_target_catalog()` surface in `src/codeintel/build/target_catalog.py`.
+- [ ] Remove the remaining `src/codeintel/build/registry.py` compatibility shim after downstream imports are migrated
+  to `TargetSystem` (this is the largest remaining “legacy entrypoint”).

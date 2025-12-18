@@ -163,7 +163,9 @@ def assert_select_perimeter(sql: str, *, policy: SqlIngressPolicy) -> exp.Expres
 def _validate_ingress_tables(root: exp.Expression, *, policy: SqlIngressPolicy) -> None:
     reason = "policy_violation"
     tables = extract_table_refs(root)
-    allowed_schemas = {s.lower() for s in policy.allowed_schemas} if policy.allowed_schemas else None
+    allowed_schemas = (
+        {s.lower() for s in policy.allowed_schemas} if policy.allowed_schemas else None
+    )
     allowed_tables = {t.lower() for t in policy.allowed_tables} if policy.allowed_tables else None
 
     for table in tables:
@@ -765,7 +767,9 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
         if not fk.allow_null:
             orphans = filter_by(orphans, not_null(src_col))
 
-        return execute_int(orphans.count(), ctx=f"{fk.source_table}.{fk.source_column}.orphan_count")
+        return execute_int(
+            orphans.count(), ctx=f"{fk.source_table}.{fk.source_column}.orphan_count"
+        )
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug(
             "Count orphan refs failed for %s.%s -> %s.%s: %s",

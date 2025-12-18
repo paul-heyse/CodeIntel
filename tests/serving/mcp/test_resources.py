@@ -12,8 +12,8 @@ import pytest
 from fastmcp.client import Client
 
 from codeintel.serving.db.manager import ServingDBManager
+from codeintel.serving.errors import ExportNotFoundError
 from codeintel.serving.mcp.app import build_mcp_app
-from codeintel.serving.mcp.errors import ExportNotFoundError
 from codeintel.serving.mcp.resource_store import (
     ExportArtifactSpec,
     ResourceStore,
@@ -216,7 +216,7 @@ def test_resource_store_put_and_get_json(tmp_path: Path) -> None:
     """Verify JSON artifact storage and retrieval."""
     store = ResourceStore(tmp_path / "exports")
 
-    rows = [{"id": 1}, {"id": 2}]
+    rows: list[dict[str, object]] = [{"id": 1}, {"id": 2}]
     token, artifact, _meta = store.put_with_metadata(
         rows,
         spec=ExportArtifactSpec(view_id="demo.view", format="json"),
@@ -1014,7 +1014,9 @@ async def test_mcp_resource_export_lines_chunk(tmp_path: Path) -> None:
             )
             export_id = export_result["export_id"]
 
-            chunk = await client.read_resource(f"codeintel://exports/{export_id}/lines?offset=0&limit=2")
+            chunk = await client.read_resource(
+                f"codeintel://exports/{export_id}/lines?offset=0&limit=2"
+            )
             content_item = cast("TextResourceContents", chunk[0])
             lines = [line for line in content_item.text.splitlines() if line.strip()]
             expect_equal(len(lines), 2)
@@ -1105,13 +1107,14 @@ async def test_mcp_resource_export_bytes_chunk_for_arrow(tmp_path: Path) -> None
             )
             export_id = export_result["export_id"]
 
-            chunk = await client.read_resource(f"codeintel://exports/{export_id}/bytes?offset=0&limit=128")
+            chunk = await client.read_resource(
+                f"codeintel://exports/{export_id}/bytes?offset=0&limit=128"
+            )
             blob_item = cast("BlobResourceContents", chunk[0])
             payload = base64.b64decode(blob_item.blob)
             expect_true(len(payload) > 0, message="Should return some bytes")
     finally:
         await manager.stop()
-
 
 
 @pytest.mark.anyio

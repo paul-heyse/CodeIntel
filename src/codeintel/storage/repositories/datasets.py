@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.storage.contracts.validation import validate_df
 from codeintel.storage.repositories.base import BaseRepository
+from codeintel.storage.validation.pandera_df import validate_df
 
 if TYPE_CHECKING:
     from codeintel.storage.repositories.base import RowDict

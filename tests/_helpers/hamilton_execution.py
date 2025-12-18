@@ -33,7 +33,7 @@ from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.providers import create_default_providers
-from codeintel.build.registry import get_target_graph
+from codeintel.build.target_system import load_target_system
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
@@ -364,7 +364,7 @@ class HamiltonTestBuilder:
             Target graph for looking up targets.
         """
         if self._graph is None:
-            self._graph = get_target_graph()
+            self._graph = load_target_system().graph
         return self._graph
 
     def build_env(self) -> BuildEnv:

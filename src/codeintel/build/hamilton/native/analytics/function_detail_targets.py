@@ -21,7 +21,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.functions.function_contracts import build_function_contracts_rows
 from codeintel.analytics.functions.function_effects import (
@@ -32,6 +32,7 @@ from codeintel.analytics.functions.function_effects import (
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
@@ -41,12 +42,17 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
-from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.run_records import (
+    TargetRunRecord,
+    options_hash_for_target,
+    should_skip_native_target,
+)
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
-from codeintel.graphs.runtime import GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.graphs.runtime import resolve_graph_runtime
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -135,7 +141,7 @@ def _row_to_tuple(row: Mapping[str, object], cols: tuple[str, ...]) -> tuple[obj
     return tuple(row.get(col) for col in cols)
 
 
-@tag(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
 def t__function_contracts__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -175,11 +181,12 @@ def t__function_contracts__compute(
 
     target = graph.get(FUNCTION_CONTRACTS_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, FUNCTION_CONTRACTS_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -242,10 +249,9 @@ def t__function_contracts__compute(
     table_key=value(FUNCTION_CONTRACTS_TABLE_KEY),
     columns=value(FUNCTION_CONTRACTS_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=FUNCTION_CONTRACTS_TARGET_NAME,
-    node_type="compute",
     target_="function_contracts__rows",
 )
 def function_contracts__rows(
@@ -271,7 +277,7 @@ def function_contracts__rows(
     )
 
 
-@tag(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
 def t__function_contracts(
     env: BuildEnv,
     graph: TargetGraph,
@@ -350,7 +356,7 @@ class FunctionEffectsResult:
         return self.error is None
 
 
-@tag(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
 def t__function_effects__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -371,11 +377,12 @@ def t__function_effects__compute(
 
     target = graph.get(FUNCTION_EFFECTS_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, FUNCTION_EFFECTS_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -396,7 +403,7 @@ def t__function_effects__compute(
             graph_runtime = resolve_graph_runtime(
                 env.gateway,
                 env.snapshot,
-                GraphRuntimeOptions(),
+                load_graph_runtime_options(env, target_name=FUNCTION_EFFECTS_TARGET_NAME),
             )
         except (RuntimeError, ValueError) as exc:
             log.warning("Failed to resolve graph runtime: %s", exc)
@@ -435,10 +442,9 @@ def t__function_effects__compute(
     table_key=value(FUNCTION_EFFECTS_TABLE_KEY),
     columns=value(FUNCTION_EFFECTS_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=FUNCTION_EFFECTS_TARGET_NAME,
-    node_type="compute",
     target_="function_effects__rows",
 )
 def function_effects__rows(
@@ -458,7 +464,7 @@ def function_effects__rows(
     )
 
 
-@tag(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
 def t__function_effects(
     env: BuildEnv,
     graph: TargetGraph,

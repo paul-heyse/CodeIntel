@@ -14,7 +14,7 @@ import pytest
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.planner import compute_plan
-from codeintel.build.registry import get_target_graph
+from codeintel.build.target_system import load_target_system
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.storage.gateway import open_memory_gateway
 
@@ -67,7 +67,7 @@ def test_native_analytics_marked_in_plan(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path)
     env = _make_env(tmp_path, config, snapshot)
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
 
     # Compute plan for each migrated target
     native_targets = ["coverage_functions", "hotspots", "subsystems"]
@@ -100,7 +100,7 @@ def test_function_metrics_now_native_after_phase4(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path)
     env = _make_env(tmp_path, config, snapshot)
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
 
     # function_metrics was migrated in Phase 4
     target_name = "function_metrics"
@@ -132,7 +132,7 @@ def test_risk_factors_still_native_after_wave2(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path)
     env = _make_env(tmp_path, config, snapshot)
 
-    graph = get_target_graph()
+    graph = load_target_system().graph
 
     plan = compute_plan(env=env, graph=graph, requested=("risk_factors",))
 

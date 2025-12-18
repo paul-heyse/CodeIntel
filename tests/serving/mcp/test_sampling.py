@@ -28,9 +28,7 @@ def _make_db(db_path: Path) -> None:
     con = duckdb.connect(str(db_path))
     con.execute("CREATE SCHEMA docs")
     con.execute("CREATE TABLE docs.v_demo (id INTEGER, label VARCHAR)")
-    con.execute(
-        "INSERT INTO docs.v_demo SELECT i, 'label-' || i::VARCHAR FROM range(0, 30) t(i)"
-    )
+    con.execute("INSERT INTO docs.v_demo SELECT i, 'label-' || i::VARCHAR FROM range(0, 30) t(i)")
     con.close()
 
 

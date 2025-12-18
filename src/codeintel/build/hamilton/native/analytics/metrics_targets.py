@@ -48,6 +48,7 @@ from codeintel.analytics.testing.graph_metrics import (
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
@@ -58,13 +59,17 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
-from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.run_records import (
+    TargetRunRecord,
+    options_hash_for_target,
+    should_skip_native_target,
+)
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
-from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.graphs.runtime import GraphRuntime, resolve_graph_runtime
 from codeintel.storage.queries.safe import count_rows_for_snapshot
 
 log = logging.getLogger(__name__)
@@ -148,7 +153,7 @@ TARGET_SPECS = (
 # -----------------------------------------------------------------------------
 
 
-def _get_graph_runtime(env: BuildEnv) -> GraphRuntime | None:
+def _get_graph_runtime(env: BuildEnv, *, target_name: str) -> GraphRuntime | None:
     """Resolve graph runtime from build environment.
 
     Parameters
@@ -162,7 +167,8 @@ def _get_graph_runtime(env: BuildEnv) -> GraphRuntime | None:
         Resolved graph runtime, or None if resolution fails.
     """
     try:
-        return resolve_graph_runtime(env.gateway, env.snapshot, GraphRuntimeOptions())
+        options = load_graph_runtime_options(env, target_name=target_name)
+        return resolve_graph_runtime(env.gateway, env.snapshot, options)
     except (RuntimeError, ValueError) as exc:
         log.warning("Failed to resolve graph runtime: %s", exc)
         return None
@@ -218,11 +224,12 @@ def t__function_history__compute(
     """
     target = graph.get(FUNCTION_HISTORY_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, FUNCTION_HISTORY_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -363,7 +370,7 @@ def t__subsystem_graph_metrics__compute(
         return ExecutionResult.failed(f"Upstream subsystems target failed: {t__subsystems.error}")
 
     try:
-        graph_runtime = _get_graph_runtime(env)
+        graph_runtime = _get_graph_runtime(env, target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
         log.info(
             "Computing subsystem graph metrics for %s@%s",
             env.snapshot.repo,
@@ -454,7 +461,7 @@ def t__symbol_graph_metrics__compute(
     errors: list[str] = []
 
     try:
-        graph_runtime = _get_graph_runtime(env)
+        graph_runtime = _get_graph_runtime(env, target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME)
         repo = env.snapshot.repo
         commit = env.snapshot.commit
 
@@ -642,17 +649,18 @@ def t__test_graph_metrics__compute(
     """
     target = graph.get(TEST_GRAPH_METRICS_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, TEST_GRAPH_METRICS_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):
             return None
 
-    runtime = _get_graph_runtime(env)
+    runtime = _get_graph_runtime(env, target_name=TEST_GRAPH_METRICS_TARGET_NAME)
     if runtime is None:
         return TestGraphMetricsResult(test_rows=(), function_rows=())
     return compute_test_graph_metrics_pure(env.gateway, env.snapshot, runtime)

@@ -212,17 +212,11 @@ class SubsystemRepository(BaseRepository):
         cache_table = "analytics.subsystem_profile_cache"
         if self._has_cache(cache_table):
             table = self._ibis_table(cache_table)
-            expr = (
-                table.order_by([table.module_count.desc(), table.subsystem_id])
-                .limit(limit)
-            )
+            expr = table.order_by([table.module_count.desc(), table.subsystem_id]).limit(limit)
             return self._ibis_to_dicts(expr, cache_table)
 
         table = self._ibis_table("docs.v_subsystem_profile")
-        expr = (
-            table.order_by([table.module_count.desc(), table.subsystem_id])
-            .limit(limit)
-        )
+        expr = table.order_by([table.module_count.desc(), table.subsystem_id]).limit(limit)
         return self._ibis_to_dicts(expr, "docs.v_subsystem_profile")
 
     def list_subsystem_coverage(self, *, limit: int) -> list[RowDict]:
@@ -242,25 +236,19 @@ class SubsystemRepository(BaseRepository):
         cache_table = "analytics.subsystem_coverage_cache"
         if self._has_cache(cache_table):
             table = self._ibis_table(cache_table)
-            expr = (
-                table.order_by(
-                    [
-                        table.test_count.desc(nulls_first=False),
-                        table.subsystem_id,
-                    ]
-                )
-                .limit(limit)
-            )
-            return self._ibis_to_dicts(expr, cache_table)
-
-        table = self._ibis_table("docs.v_subsystem_coverage")
-        expr = (
-            table.order_by(
+            expr = table.order_by(
                 [
                     table.test_count.desc(nulls_first=False),
                     table.subsystem_id,
                 ]
-            )
-            .limit(limit)
-        )
+            ).limit(limit)
+            return self._ibis_to_dicts(expr, cache_table)
+
+        table = self._ibis_table("docs.v_subsystem_coverage")
+        expr = table.order_by(
+            [
+                table.test_count.desc(nulls_first=False),
+                table.subsystem_id,
+            ]
+        ).limit(limit)
         return self._ibis_to_dicts(expr, "docs.v_subsystem_coverage")

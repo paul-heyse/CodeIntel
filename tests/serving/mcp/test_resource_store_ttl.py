@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.serving.mcp.errors import ExportNotFoundError
+from codeintel.serving.errors import ExportNotFoundError
 from codeintel.serving.mcp.resource_store import ExportArtifactSpec, ResourceStore
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 

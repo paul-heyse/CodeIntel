@@ -18,7 +18,10 @@ from fastapi.responses import JSONResponse
 from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 
-from codeintel.serving.export.formats import ExportFormat, mime_type_for_export_format, suffix_for_export_format
+from codeintel.serving.export.formats import (
+    mime_type_for_export_format,
+    suffix_for_export_format,
+)
 from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.http.streaming import ndjson_response
 from codeintel.serving.operations.ops import ServingOperations
@@ -48,6 +51,13 @@ class ExportMetricsContext:
     schema_hash: str | None
 
     def to_metrics(self, *, row_count: int, duration_ms: float) -> QueryMetrics:
+        """Build QueryMetrics record for the export response.
+
+        Returns
+        -------
+        QueryMetrics
+            Structured metrics payload for logging.
+        """
         return QueryMetrics(
             endpoint="/export/semantic",
             view_id=self.view_id,
@@ -62,6 +72,13 @@ class ExportMetricsContext:
 
 
 def export_hash_headers(*, query_hash: str, schema_hash: str | None) -> dict[str, str]:
+    """Return stable hash headers used for export caching.
+
+    Returns
+    -------
+    dict[str, str]
+        Headers carrying query/schema hash identifiers.
+    """
     headers: dict[str, str] = {"X-CodeIntel-Query-Hash": query_hash}
     if schema_hash is not None:
         headers["X-CodeIntel-Schema-Hash"] = schema_hash
@@ -92,7 +109,13 @@ async def dispatch_semantic_export(
     *,
     headers: dict[str, str],
 ) -> ExportDispatchResult:
-    """Dispatch a semantic export request to an HTTP response builder."""
+    """Dispatch a semantic export request to an HTTP response builder.
+
+    Returns
+    -------
+    ExportDispatchResult
+        Response payload and optional metrics row count.
+    """
     if payload.format == "ndjson":
         response = ndjson_response(
             _iter_rows_with_metrics(ops=ops, payload=payload, metrics=metrics),
@@ -204,5 +227,9 @@ def _unlink_best_effort(path: str) -> None:
         return
 
 
-__all__ = ["ExportDispatchResult", "ExportMetricsContext", "dispatch_semantic_export", "export_hash_headers"]
-
+__all__ = [
+    "ExportDispatchResult",
+    "ExportMetricsContext",
+    "dispatch_semantic_export",
+    "export_hash_headers",
+]

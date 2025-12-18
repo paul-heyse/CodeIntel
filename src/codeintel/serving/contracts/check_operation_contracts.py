@@ -29,6 +29,7 @@ from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.search.models import SearchQueryResponse
 from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryResponse
 from codeintel.serving.settings import ServingSettings
+from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
@@ -98,7 +99,7 @@ class _DummyKernel:
             columns=[],
             rows=[],
             truncated=False,
-            snapshot={"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"},
+            snapshot=ServingSnapshotIdentity(repo="demo/repo", commit="deadbeef", run_id="run-1"),
         )
 
     @staticmethod
@@ -107,7 +108,7 @@ class _DummyKernel:
             view_id=request.view_id,
             sql="SELECT 1",
             plan="demo plan",
-            snapshot={"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"},
+            snapshot=ServingSnapshotIdentity(repo="demo/repo", commit="deadbeef", run_id="run-1"),
         )
 
     @staticmethod
@@ -121,7 +122,7 @@ class _DummyKernel:
             query=request.query,
             results=[],
             truncated=False,
-            snapshot={"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"},
+            snapshot=ServingSnapshotIdentity(repo="demo/repo", commit="deadbeef", run_id="run-1"),
             engine="pandas",
         )
 
@@ -145,7 +146,7 @@ class _DummyKernel:
         return ("q_dummy", None)
 
     @staticmethod
-    def export_to_parquet(request: SemanticExportRequest, *, output_path: Path) -> None:
+    def export_to_parquet(request: SemanticExportRequest, *, output_path: Path) -> int:
         _ = request
         _ = output_path
         msg = "_DummyKernel does not support parquet exports"
@@ -212,10 +213,16 @@ def _check_error_parity() -> list[str]:
 
     samples: list[tuple[str, Exception]] = [
         ("CODEINTEL_SEMANTIC_VIEW_NOT_FOUND", SemanticViewNotFoundError("demo.view")),
-        ("CODEINTEL_SEMANTIC_INVALID_QUERY", CodeIntelDomainError(code="CODEINTEL_SEMANTIC_INVALID_QUERY")),
+        (
+            "CODEINTEL_SEMANTIC_INVALID_QUERY",
+            CodeIntelDomainError(code="CODEINTEL_SEMANTIC_INVALID_QUERY"),
+        ),
         ("CODEINTEL_AUTH_FORBIDDEN", AuthForbiddenError(reason="missing api key")),
         ("CODEINTEL_EXPORT_TOO_LARGE", ExportTooLargeError(row_count=10_000_000)),
-        ("CODEINTEL_EXPORT_INVALID_REQUEST", CodeIntelDomainError(code="CODEINTEL_EXPORT_INVALID_REQUEST")),
+        (
+            "CODEINTEL_EXPORT_INVALID_REQUEST",
+            CodeIntelDomainError(code="CODEINTEL_EXPORT_INVALID_REQUEST"),
+        ),
     ]
 
     for expected_code, exc in samples:
@@ -285,7 +292,9 @@ def _tool_properties(schema: Mapping[str, object]) -> Mapping[str, object] | Non
     return None
 
 
-def _check_mcp_tool_properties(schema: Mapping[str, object], *, name: str, expected: frozenset[str]) -> list[str]:
+def _check_mcp_tool_properties(
+    schema: Mapping[str, object], *, name: str, expected: frozenset[str]
+) -> list[str]:
     issues: list[str] = []
     props = _tool_properties(schema)
     if props is None:

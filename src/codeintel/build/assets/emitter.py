@@ -81,7 +81,9 @@ def _try_table_row_count_for_snapshot(
 ) -> int | None:
     try:
         table = ibis_facade.table(env.gateway, table_key)
-        filtered = filter_by(table, table.repo == env.snapshot.repo, table.commit == env.snapshot.commit)
+        filtered = filter_by(
+            table, table.repo == env.snapshot.repo, table.commit == env.snapshot.commit
+        )
         raw = filtered.count().execute()
         value: object
         if isinstance(raw, pd.DataFrame):

@@ -32,19 +32,9 @@ class StorageConnectionError(StorageError):
     """Error establishing or maintaining a database connection."""
 
 
-class SchemaError(StorageError):
-    """Error with database schema (tables, views, macros)."""
-
-
-class QueryError(StorageError):
-    """Error executing a database query."""
-
-
 __all__ = [
     "DUCKDB_ERRORS",
     "DuckDBError",
-    "QueryError",
-    "SchemaError",
     "StorageConnectionError",
     "StorageError",
 ]

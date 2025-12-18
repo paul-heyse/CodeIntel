@@ -16,6 +16,7 @@ from tests._helpers.assertions.expectation_assertions import expect_equal, expec
 
 
 def test_export_format_choices_are_supported_and_stable() -> None:
+    """Ensure export format choices are stable and registered."""
     formats = export_format_choices()
     expect_true(formats, message="Expected at least one export format")
     expect_equal(tuple(dict.fromkeys(formats)), formats)  # no duplicates
@@ -24,11 +25,13 @@ def test_export_format_choices_are_supported_and_stable() -> None:
 
 
 def test_default_export_format_is_registered() -> None:
+    """Ensure the default export format is part of the registry."""
     fmt = default_export_format()
     expect_true(fmt in EXPORT_FORMATS, message="Expected default export format to be registered")
 
 
 def test_export_format_capability_classification() -> None:
+    """Validate capability helpers for each export format."""
     for fmt in export_format_choices():
         if fmt in {"json", "ndjson"}:
             expect_true(is_text_export_format(fmt))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import duckdb
 
-from codeintel.storage.metadata.bootstrap import apply_metadata_ddl
+from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.schema import METADATA_TABLES
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 

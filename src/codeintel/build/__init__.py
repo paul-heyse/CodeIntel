@@ -15,7 +15,7 @@ Key concepts:
 Import patterns::
 
 
-    from codeintel.build import get_target_graph, OutputTarget, TargetGraph
+    from codeintel.build import load_target_system, OutputTarget, TargetGraph
 
 
     from codeintel.build.contracts import OutputContract, ArtifactSpec, TableSchema
@@ -41,7 +41,7 @@ CLI usage::
     codeintel build status
     codeintel build history
 
-Use ``get_target_graph()`` to access the singleton target graph instance.
+Use ``load_target_system().graph`` to access the singleton target graph instance.
 """
 
 from __future__ import annotations
@@ -67,9 +67,10 @@ __all__ = [
     "TargetModule",
     "TargetParameters",
     "TargetResources",
+    "TargetSystem",
     "compute_input_hash",
     "compute_options_hash",
-    "get_target_graph",
+    "load_target_system",
 ]
 
 if TYPE_CHECKING:
@@ -77,7 +78,6 @@ if TYPE_CHECKING:
     from codeintel.build.errors import BuildError, BuildErrorCollection
     from codeintel.build.hashing import compute_input_hash, compute_options_hash
     from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
-    from codeintel.build.registry import get_target_graph
     from codeintel.build.resources import (
         DEFAULT_EXECUTION,
         DEFAULT_RESOURCES,
@@ -85,6 +85,7 @@ if TYPE_CHECKING:
         TargetResources,
     )
     from codeintel.build.run_config import BuildRunConfig
+    from codeintel.build.target_system import TargetSystem, load_target_system
     from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
     from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 
@@ -108,7 +109,8 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "TargetResources": ("codeintel.build.resources", "TargetResources"),
     "compute_input_hash": ("codeintel.build.hashing", "compute_input_hash"),
     "compute_options_hash": ("codeintel.build.hashing", "compute_options_hash"),
-    "get_target_graph": ("codeintel.build.registry", "get_target_graph"),
+    "TargetSystem": ("codeintel.build.target_system", "TargetSystem"),
+    "load_target_system": ("codeintel.build.target_system", "load_target_system"),
 }
 
 

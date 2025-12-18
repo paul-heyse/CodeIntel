@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 # and function-level imports (PLC0415).
 # -----------------------------------------------------------------------------
 
+
 def _load_module(name: str) -> ModuleType:
     """Load a module by name using importlib.
 
@@ -95,7 +96,9 @@ def _row_registry_module() -> ModuleType:
     ModuleType
         The codeintel.build.schemas.row_registry module.
     """
-    return _RowRegistryModuleHolder.get(lambda: _load_module("codeintel.build.schemas.row_registry"))
+    return _RowRegistryModuleHolder.get(
+        lambda: _load_module("codeintel.build.schemas.row_registry")
+    )
 
 
 def _composites_module() -> ModuleType:

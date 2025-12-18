@@ -19,7 +19,6 @@ from hamilton.function_modifiers import (
     schema,
     source,
     step,
-    tag,
     value,
 )
 
@@ -36,6 +35,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import (
@@ -66,7 +66,7 @@ TARGET_SPECS = (
 )
 
 
-@tag(domain="analytics", target=HOTSPOTS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=HOTSPOTS_TARGET_NAME)
 def hotspots__modules_complexity(env: BuildEnv, q__core__modules: ir.Table) -> ir.Table:
     """Compute per-file complexity proxy from core.modules.
 
@@ -249,10 +249,9 @@ def _hotspots_select(hotspots: ir.Table) -> ir.Table:
         no_nulls=["rel_path"],
     )
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=HOTSPOTS_TARGET_NAME,
-    node_type="compute",
     target_="t__hotspots__compute",
 )
 @schema.output(
@@ -300,7 +299,7 @@ def t__hotspots__compute(
     return q__core__file_state
 
 
-@tag(domain="analytics", target=HOTSPOTS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=HOTSPOTS_TARGET_NAME)
 def t__hotspots(
     env: BuildEnv,
     graph: TargetGraph,

@@ -22,6 +22,13 @@ class CodeIntelDomainError(Exception):
     details: dict[str, Any] = field(default_factory=dict)
 
     def to_error_response(self, *, context: ErrorContext) -> ErrorResponse:
+        """Convert the domain error into a transport-agnostic response payload.
+
+        Returns
+        -------
+        ErrorResponse
+            Canonical error response for transport adapters.
+        """
         return error_from_code(
             self.code,
             context=context,
@@ -31,11 +38,15 @@ class CodeIntelDomainError(Exception):
 
 
 class SemanticViewNotFoundError(CodeIntelDomainError):
+    """Raised when a semantic view identifier is unknown."""
+
     def __init__(self, view_id: str) -> None:
         super().__init__(code="CODEINTEL_SEMANTIC_VIEW_NOT_FOUND", params={"view_id": view_id})
 
 
 class SemanticColumnNotFoundError(CodeIntelDomainError):
+    """Raised when a semantic column identifier is unknown."""
+
     def __init__(self, view_id: str, column: str) -> None:
         super().__init__(
             code="CODEINTEL_SEMANTIC_COLUMN_NOT_FOUND",
@@ -44,6 +55,8 @@ class SemanticColumnNotFoundError(CodeIntelDomainError):
 
 
 class SemanticInvalidFilterError(CodeIntelDomainError):
+    """Raised when a filter predicate cannot be validated."""
+
     def __init__(self, *, reason: str | None = None) -> None:
         super().__init__(
             code="CODEINTEL_SEMANTIC_INVALID_FILTER",
@@ -52,6 +65,8 @@ class SemanticInvalidFilterError(CodeIntelDomainError):
 
 
 class SemanticLimitExceededError(CodeIntelDomainError):
+    """Raised when an export or query exceeds enforced limits."""
+
     def __init__(self, limit: int, max_limit: int) -> None:
         super().__init__(
             code="CODEINTEL_SEMANTIC_LIMIT_EXCEEDED",
@@ -60,11 +75,15 @@ class SemanticLimitExceededError(CodeIntelDomainError):
 
 
 class ExportNotFoundError(CodeIntelDomainError):
+    """Raised when an export artifact cannot be located."""
+
     def __init__(self, export_id: str) -> None:
         super().__init__(code="CODEINTEL_EXPORT_NOT_FOUND", params={"export_id": export_id})
 
 
 class ExportExpiredError(CodeIntelDomainError):
+    """Raised when an export artifact has exceeded its TTL."""
+
     def __init__(self, export_id: str, *, expires_at: str | None = None) -> None:
         super().__init__(
             code="CODEINTEL_EXPORT_EXPIRED",
@@ -74,11 +93,15 @@ class ExportExpiredError(CodeIntelDomainError):
 
 
 class ExportCorruptError(CodeIntelDomainError):
+    """Raised when an export artifact fails integrity checks."""
+
     def __init__(self, export_id: str) -> None:
         super().__init__(code="CODEINTEL_EXPORT_CORRUPT", params={"export_id": export_id})
 
 
 class ExportTooLargeError(CodeIntelDomainError):
+    """Raised when an export exceeds configured size limits."""
+
     def __init__(self, *, row_count: int | None = None) -> None:
         super().__init__(
             code="CODEINTEL_EXPORT_TOO_LARGE",
@@ -87,16 +110,22 @@ class ExportTooLargeError(CodeIntelDomainError):
 
 
 class ServingSnapshotNotMountedError(CodeIntelDomainError):
+    """Raised when no snapshot is currently mounted for serving."""
+
     def __init__(self) -> None:
         super().__init__(code="CODEINTEL_SERVING_SNAPSHOT_NOT_MOUNTED")
 
 
 class ServingDBLockedError(CodeIntelDomainError):
+    """Raised when the serving DuckDB instance is locked."""
+
     def __init__(self) -> None:
         super().__init__(code="CODEINTEL_SERVING_DB_LOCKED")
 
 
 class AuthForbiddenError(CodeIntelDomainError):
+    """Raised when a request is denied due to authorization failures."""
+
     def __init__(self, *, reason: str | None = None) -> None:
         super().__init__(
             code="CODEINTEL_AUTH_FORBIDDEN",
@@ -105,11 +134,15 @@ class AuthForbiddenError(CodeIntelDomainError):
 
 
 class MetaArtifactNotFoundError(CodeIntelDomainError):
+    """Raised when a requested meta artifact is missing from storage."""
+
     def __init__(self, artifact: str) -> None:
         super().__init__(code="CODEINTEL_META_ARTIFACT_NOT_FOUND", params={"artifact": artifact})
 
 
 class MetaSqlUnsafeError(CodeIntelDomainError):
+    """Raised when SQL provided to meta endpoints fails safety checks."""
+
     def __init__(self, view_id: str) -> None:
         super().__init__(code="CODEINTEL_META_SQL_UNSAFE", params={"view_id": view_id})
 

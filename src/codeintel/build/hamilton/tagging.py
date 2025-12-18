@@ -48,6 +48,7 @@ TagKey = Literal[
     "mcp_visible",
 ]
 
+
 class _HamiltonTagKwargs(TypedDict, total=False):
     domain: TagValue
     target: TagValue

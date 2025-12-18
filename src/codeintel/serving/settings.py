@@ -257,7 +257,9 @@ class ServingSettings:
             enable_gzip=get_required_bool("CODEINTEL_SERVE_GZIP", default=True),
             export_max_rows=get_required_int("CODEINTEL_SERVE_EXPORT_MAX_ROWS", default=100_000),
             export_batch_size=get_required_int("CODEINTEL_SERVE_EXPORT_BATCH_SIZE", default=10_000),
-            enable_export_endpoints=get_required_bool("CODEINTEL_SERVE_ENABLE_EXPORT", default=True),
+            enable_export_endpoints=get_required_bool(
+                "CODEINTEL_SERVE_ENABLE_EXPORT", default=True
+            ),
             # MCP Context Features
             mcp_enable_sampling=get_required_bool("CODEINTEL_MCP_ENABLE_SAMPLING", default=False),
             mcp_sample_threshold=get_required_int("CODEINTEL_MCP_SAMPLE_THRESHOLD", default=500),
@@ -265,8 +267,12 @@ class ServingSettings:
             # MCP Error Handling
             mcp_mask_errors=get_required_bool("CODEINTEL_MCP_MASK_ERRORS", default=True),
             # MCP Query Concurrency Control
-            mcp_max_concurrent_queries=get_required_int("CODEINTEL_MCP_MAX_CONCURRENT_QUERIES", default=2),
-            mcp_max_concurrent_exports=get_required_int("CODEINTEL_MCP_MAX_CONCURRENT_EXPORTS", default=1),
+            mcp_max_concurrent_queries=get_required_int(
+                "CODEINTEL_MCP_MAX_CONCURRENT_QUERIES", default=2
+            ),
+            mcp_max_concurrent_exports=get_required_int(
+                "CODEINTEL_MCP_MAX_CONCURRENT_EXPORTS", default=1
+            ),
             # MCP EventStore for SSE Resumability
             mcp_enable_event_store=get_required_bool("CODEINTEL_MCP_EVENT_STORE", default=True),
             mcp_retry_interval_ms=get_required_int("CODEINTEL_MCP_RETRY_INTERVAL", default=1000),
@@ -283,7 +289,9 @@ class ServingSettings:
                 default=5,
             ),
             # MCP Export Lifecycle
-            mcp_export_enable_tasks=get_required_bool("CODEINTEL_MCP_EXPORT_ENABLE_TASKS", default=True),
+            mcp_export_enable_tasks=get_required_bool(
+                "CODEINTEL_MCP_EXPORT_ENABLE_TASKS", default=True
+            ),
             mcp_export_ttl_seconds=get_optional_int(
                 "CODEINTEL_MCP_EXPORT_TTL_SECONDS",
                 default_when_unset=3600,
@@ -316,15 +324,21 @@ class ServingSettings:
             ),
             uvicorn_backlog=get_required_int("CODEINTEL_UVICORN_BACKLOG", default=2048),
             uvicorn_access_log=get_required_bool("CODEINTEL_UVICORN_ACCESS_LOG", default=True),
-            uvicorn_server_header=get_required_bool("CODEINTEL_UVICORN_SERVER_HEADER", default=False),
-            uvicorn_proxy_headers=get_required_bool("CODEINTEL_UVICORN_PROXY_HEADERS", default=False),
+            uvicorn_server_header=get_required_bool(
+                "CODEINTEL_UVICORN_SERVER_HEADER", default=False
+            ),
+            uvicorn_proxy_headers=get_required_bool(
+                "CODEINTEL_UVICORN_PROXY_HEADERS", default=False
+            ),
             uvicorn_forwarded_allow_ips=get_str(
                 "CODEINTEL_UVICORN_FORWARDED_ALLOW_IPS",
                 default="127.0.0.1",
             )
             or "127.0.0.1",
             # Security: Auth Enforcement
-            auth_required_for_remote=get_required_bool("CODEINTEL_AUTH_REQUIRED_FOR_REMOTE", default=True),
+            auth_required_for_remote=get_required_bool(
+                "CODEINTEL_AUTH_REQUIRED_FOR_REMOTE", default=True
+            ),
             # MCP Tool Feature Flags
             mcp_enable_search=get_required_bool("CODEINTEL_MCP_ENABLE_SEARCH", default=True),
             mcp_enable_explain=get_required_bool("CODEINTEL_MCP_ENABLE_EXPLAIN", default=True),

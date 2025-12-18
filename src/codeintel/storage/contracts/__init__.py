@@ -23,11 +23,9 @@ from codeintel.storage.contracts.schema_provider import (
     iter_table_schemas,
     require_table_schema,
 )
-from codeintel.storage.contracts.validation import ValidationMode, validate_df
 
 __all__ = [
     "ContractProvider",
-    "ValidationMode",
     "clear_contract_cache",
     "clear_schema_provider_cache",
     "get_contract_for_table_key",
@@ -39,5 +37,4 @@ __all__ = [
     "iter_contracts_by_table_key",
     "iter_table_schemas",
     "require_table_schema",
-    "validate_df",
 ]
