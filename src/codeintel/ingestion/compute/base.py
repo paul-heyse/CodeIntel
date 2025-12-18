@@ -198,7 +198,7 @@ class BaseExtractStep:
             return {}
         scope = f"{repo}@{commit}"
         result = self._storage.write_batch(table_key, list(rows), scope=scope)
-        return {table_key: result.rows_written}
+        return {table_key: result.rows_affected}
 
     def _finalize_result(
         self,
@@ -233,8 +233,8 @@ class BaseExtractStep:
         for table_key, rows in table_rows.items():
             if rows:
                 result = self._storage.write_batch(table_key, list(rows), scope=scope)
-                table_counts[table_key] = result.rows_written
-                total_rows += result.rows_written
+                table_counts[table_key] = result.rows_affected
+                total_rows += result.rows_affected
 
         return StepResult(
             rows_written=total_rows,

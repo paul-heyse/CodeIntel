@@ -7,16 +7,12 @@ and ast_metric_row. Prefer these over ad hoc tuples to keep schemas consistent i
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, TypedDict
 
-from codeintel.config.datasets.dependencies import (
-    DependencyAggregateRow,
-    DependencyCallRow,
-    compute_dep_id,
-)
 from codeintel.core.catalog import FunctionSpan
 from tests._helpers.builders import FunctionMetricsRow, ModuleRow
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
@@ -240,7 +236,61 @@ def dependency_call_row(seed: DependencyCallSeed) -> tuple[object, ...]:
     )
 
 
-@dataclass
+def compute_dep_id(repo: str, commit: str, library: str) -> str:
+    """Compute unique dependency identifier used in analytics dependency tables.
+
+    Returns
+    -------
+    str
+        SHA-1 hash prefix as dependency ID.
+    """
+    raw = f"{repo}:{commit}:{library}"
+    return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
+
+
+@dataclass(frozen=True)
+class DependencyCallRow:
+    """Row model for analytics.external_dependency_calls."""
+
+    repo: str
+    commit: str
+    dep_id: str
+    library: str
+    service_name: str
+    function_goid_h128: Decimal
+    function_urn: str
+    rel_path: str
+    module: str
+    qualname: str
+    callsite_count: int
+    modes: list[str]
+    evidence_json: list[dict[str, object]]
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class DependencyAggregateRow:
+    """Row model for analytics.external_dependencies."""
+
+    repo: str
+    commit: str
+    dep_id: str
+    library: str
+    service_name: str
+    category: str | None
+    language: str
+    severity: str | None
+    criticality: float | None
+    risk_score: float | None
+    function_count: int
+    callsite_count: int
+    modules_json: list[str]
+    usage_modes: list[str]
+    config_keys: list[str]
+    risk_level: str
+    created_at: datetime
+
+
 @dataclass
 class DependencyCallPayloadSeed:
     library: str

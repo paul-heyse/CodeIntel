@@ -98,11 +98,6 @@ from codeintel.core.errors.taxonomy import (
     ValidationErrorCode,
 )
 
-# Status code lookup - re-export from core
-from codeintel.core.errors.taxonomy import STATUS_CODES as _CORE_STATUS_CODES
-
-_STATUS_CODES: dict[str, int] = _CORE_STATUS_CODES
-
 
 def make_error_type(category: ErrorCategory, code: str) -> str:
     """Construct a CLI-scoped error type URN.
@@ -123,7 +118,7 @@ def make_error_type(category: ErrorCategory, code: str) -> str:
 
 
 def validation_error(
-    code: ValidationErrorCode,
+    code: ErrorCode,
     field_name: str,
     message: str,
     *,
@@ -135,7 +130,7 @@ def validation_error(
     Parameters
     ----------
     code
-        Validation error code.
+        Validation error code descriptor.
     field_name
         Field that failed validation.
     message
@@ -157,16 +152,16 @@ def validation_error(
         extensions["suggestion"] = suggestion
 
     return ProblemDetail(
-        type=make_error_type(ErrorCategory.VALIDATION, code.value),
+        type=make_error_type(code.category, code.code),
         title="Validation Error",
         detail=message,
-        status=_STATUS_CODES.get(code.value, 400),
+        status=code.status,
         extensions=extensions,
     )
 
 
 def operation_error(
-    code: OperationErrorCode,
+    code: ErrorCode,
     operation_id: str,
     message: str,
     *,
@@ -178,7 +173,7 @@ def operation_error(
     Parameters
     ----------
     code
-        Operation error code.
+        Operation error code descriptor.
     operation_id
         The operation that failed.
     message
@@ -200,17 +195,17 @@ def operation_error(
         extensions["debug"] = debug_info
 
     return ProblemDetail(
-        type=make_error_type(ErrorCategory.OPERATION, code.value),
+        type=make_error_type(code.category, code.code),
         title="Operation Error",
         detail=message,
-        status=_STATUS_CODES.get(code.value, 500),
+        status=code.status,
         instance=f"/operations/{operation_id}",
         extensions=extensions,
     )
 
 
 def storage_error(
-    code: StorageErrorCode,
+    code: ErrorCode,
     message: str,
     *,
     query: str | None = None,
@@ -221,7 +216,7 @@ def storage_error(
     Parameters
     ----------
     code
-        Storage error code.
+        Storage error code descriptor.
     message
         Error message.
     query
@@ -241,16 +236,16 @@ def storage_error(
         extensions["table"] = table
 
     return ProblemDetail(
-        type=make_error_type(ErrorCategory.STORAGE, code.value),
+        type=make_error_type(code.category, code.code),
         title="Storage Error",
         detail=message,
-        status=_STATUS_CODES.get(code.value, 500),
+        status=code.status,
         extensions=extensions if extensions else {},
     )
 
 
 def config_error(
-    code: ConfigErrorCode,
+    code: ErrorCode,
     message: str,
     *,
     path: str | None = None,
@@ -261,7 +256,7 @@ def config_error(
     Parameters
     ----------
     code
-        Config error code.
+        Configuration error code descriptor.
     message
         Error message.
     path
@@ -281,16 +276,16 @@ def config_error(
         extensions["key"] = key
 
     return ProblemDetail(
-        type=make_error_type(ErrorCategory.CONFIG, code.value),
+        type=make_error_type(code.category, code.code),
         title="Configuration Error",
         detail=message,
-        status=_STATUS_CODES.get(code.value, 400),
+        status=code.status,
         extensions=extensions if extensions else {},
     )
 
 
 def service_error(
-    code: ServiceErrorCode,
+    code: ErrorCode,
     service: str,
     message: str,
     *,
@@ -301,7 +296,7 @@ def service_error(
     Parameters
     ----------
     code
-        Service error code.
+        Service error code descriptor.
     service
         Name of the failing service.
     message
@@ -319,10 +314,10 @@ def service_error(
         extensions["retry_after_seconds"] = retry_after
 
     return ProblemDetail(
-        type=make_error_type(ErrorCategory.SERVICE, code.value),
+        type=make_error_type(code.category, code.code),
         title="Service Error",
         detail=message,
-        status=_STATUS_CODES.get(code.value, 503),
+        status=code.status,
         extensions=extensions,
     )
 

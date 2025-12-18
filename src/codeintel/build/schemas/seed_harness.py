@@ -10,6 +10,8 @@ import inspect
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from codeintel.storage.gateway import ibis_facade
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from types import ModuleType
@@ -131,7 +133,7 @@ class MiniSeedHarness:
         """
         table_key = qparam_to_table_key(qparam)
         self.ensure_seeded_table(table_key)
-        return self.gateway.ibis.table(table_key)
+        return ibis_facade.table(self.gateway, table_key)
 
     def build_inputs(self, qparams: set[str]) -> Mapping[str, ir.Table]:
         """Build a deterministic mapping of q__ inputs for compute execution.

@@ -7,14 +7,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from ibis.common.exceptions import IbisError, TableNotFound
 
+from codeintel.core.ibis_typing import filter_by
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import ibis_bool
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -218,10 +218,12 @@ def get_source_root(
         Absolute path to the source root.
     """
     try:
-        snapshots = gateway.ibis.table("core.snapshots")
-        repo_filter = cast("Any", snapshots.repo == repo)
-        commit_filter = cast("Any", snapshots.commit == commit)
-        expr = snapshots.filter(repo_filter & commit_filter).select(snapshots.source_root).limit(1)
+        snapshots = ibis_facade.table(gateway, "core.snapshots")
+        expr = (
+            filter_by(snapshots, snapshots.repo == repo, snapshots.commit == commit)
+            .select(snapshots.source_root)
+            .limit(1)
+        )
         df = expr.execute()
         if not getattr(df, "empty", True):
             value = df.iloc[0][0]
@@ -249,17 +251,12 @@ def get_module_paths_from_env(env: BuildEnv) -> list[str]:
         Module paths from storage; empty when unavailable.
     """
     try:
-        table = env.gateway.ibis.table("core.modules")
-        df = (
-            table.filter(
-                [
-                    ibis_bool(table.repo == env.snapshot.repo),
-                    ibis_bool(table.commit == env.snapshot.commit),
-                ]
-            )
-            .select("path")
-            .execute()
-        )
+        table = ibis_facade.table(env.gateway, "core.modules")
+        df = filter_by(
+            table,
+            table.repo == env.snapshot.repo,
+            table.commit == env.snapshot.commit,
+        ).select("path").execute()
         return [str(path) for path in df["path"].tolist()]
     except (RuntimeError, OSError, IbisError, TableNotFound) as exc:
         log.warning("gateway error fetching module paths: %s", exc)

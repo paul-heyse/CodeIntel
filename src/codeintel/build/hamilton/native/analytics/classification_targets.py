@@ -18,6 +18,7 @@ from hamilton.function_modifiers import source, tag, value
 
 from codeintel.analytics.semantic_roles import SemanticRolesResult, build_semantic_roles_rows
 from codeintel.analytics.testing.profiles.builder import build_test_profile_result
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -259,8 +260,8 @@ def semantic_roles__modules_rows(
 def t__semantic_roles(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__semantic_roles_functions: dict[str, object],
-    m__analytics__semantic_roles_modules: dict[str, object],
+    m__analytics__semantic_roles_functions: MaterializationMetadata,
+    m__analytics__semantic_roles_modules: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize semantic roles target.
 
@@ -439,7 +440,7 @@ def t__test_profile(
     env: BuildEnv,
     graph: TargetGraph,
     t__test_profile__compute: TestProfileComputeResult,
-    m__analytics__test_profile: dict[str, object],
+    m__analytics__test_profile: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize test profile target.
 

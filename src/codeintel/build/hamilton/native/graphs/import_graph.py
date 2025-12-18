@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
-from codeintel.build.ibis_typing import filter_by
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_mapping, get_source_root, persist_rows
 from codeintel.build.hamilton.native.options.graphs import ImportGraphOptions
 from codeintel.build.hamilton.native.target_spec_helpers import (
@@ -27,9 +27,11 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
+from codeintel.core.ibis_typing import filter_by
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import imports as imports_compute
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -86,6 +88,22 @@ class ImportGraphExtractResult:
 
 
 @tag(node_type="helper")
+def import_graph__execution_result(
+    t__import_graph__extract: ImportGraphExtractResult,
+) -> ExecutionResult:
+    """Convert import_graph extract result to the executor boundary type.
+
+    Returns
+    -------
+    ExecutionResult
+        Canonical execution result.
+    """
+    return to_execution_result(
+        t__import_graph__extract, default_error="Import graph extraction failed"
+    )
+
+
+@tag(node_type="helper")
 def _load_modules(
     gateway: StorageGateway,
     repo: str,
@@ -108,7 +126,7 @@ def _load_modules(
         Mapping of relative path to module name.
     """
     try:
-        modules = gateway.ibis.table("core.modules")
+        modules = ibis_facade.table(gateway, "core.modules")
         expr = filter_by(modules, modules.repo == repo, modules.commit == commit).select(
             modules.path, modules.module
         )
@@ -268,7 +286,7 @@ def t__import_graph__extract(
 def t__import_graph(
     env: BuildEnv,
     graph: TargetGraph,
-    t__import_graph__extract: ImportGraphExtractResult,
+    import_graph__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize import graph target with validation.
 
@@ -281,15 +299,15 @@ def t__import_graph(
         Build environment with gateway and snapshot.
     graph
         Target graph for metadata lookup.
-    t__import_graph__extract
-        Extraction result from upstream compute node.
+    import_graph__execution_result
+        Execution result derived from upstream extract node.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, IMPORT_GRAPH_TARGET_NAME, t__import_graph__extract)
+    return executor_materialize(env, graph, IMPORT_GRAPH_TARGET_NAME, import_graph__execution_result)
 
 
 __all__ = [

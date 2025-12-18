@@ -8,22 +8,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
 
 from fastmcp.prompts import Message
 from mcp import McpError
+from mcp.types import PromptMessage
 
-if TYPE_CHECKING:
-    from fastmcp.prompts import PromptMessage
-
-    from codeintel.serving.mcp._compat import Context, FastMCP
-    from codeintel.serving.settings import ServingSettings
-
-
-class _KernelProtocol(Protocol):
-    def catalog(self) -> dict[str, object]: ...
-
-    def describe(self, view_id: str) -> dict[str, object]: ...
+from codeintel.serving.mcp._compat import Context, FastMCP
+from codeintel.serving.operations.ops import ServingOperations
+from codeintel.serving.settings import ServingSettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +29,7 @@ def register_prompts(
     mcp: FastMCP,
     *,
     settings: ServingSettings,
-    kernel: _KernelProtocol | None = None,
+    kernel: ServingOperations | None = None,
 ) -> None:
     """Register guided prompts for common workflows.
 
@@ -55,12 +47,14 @@ def register_prompts(
     _register_query_wizard(mcp, settings=settings, kernel=kernel)
     _register_snapshot_diff_prompt(mcp)
 
+
 def _tool_invocation(tool: str, /, **arguments: object) -> dict[str, object]:
     return {"tool": tool, "arguments": {k: v for k, v in arguments.items() if v is not None}}
 
 
 def _tool_invocation_json(tool: str, /, **arguments: object) -> str:
     return json.dumps(_tool_invocation(tool, **arguments), indent=2, sort_keys=True, default=str)
+
 
 def _register_explore_prompt(mcp: FastMCP) -> None:
     @mcp.prompt(
@@ -77,12 +71,18 @@ def _register_explore_prompt(mcp: FastMCP) -> None:
                 role="assistant",
             ),
             Message(
-                "Use `semantic_query(view_id=..., filters=..., pagination=...)` for a small preview. "
-                "If the result is truncated, use `semantic_export(...)`.",
+                (
+                    "Use `semantic_query(view_id=..., filters=..., pagination=...)` "
+                    "for a small preview. "
+                    "If the result is truncated, use `semantic_export(...)`."
+                ),
                 role="assistant",
             ),
             Message(
-                "Use `code_search(query=..., kinds=...)` to locate symbols/files when you have a name or pattern.",
+                (
+                    "Use `code_search(query=..., kinds=...)` to locate symbols/files "
+                    "when you have a name or pattern."
+                ),
                 role="assistant",
             ),
         ]
@@ -104,7 +104,11 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
             messages = no_elicitation
         else:
             format_choices = ["ndjson", "json", "parquet", "arrow"]
-            accepted_view = await _try_elicit(ctx, "Which view_id do you want to export?", response_type=str)
+            accepted_view = await _try_elicit(
+                ctx,
+                "Which view_id do you want to export?",
+                response_type=str,
+            )
             if accepted_view is None:
                 messages = no_elicitation
             else:
@@ -113,7 +117,11 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
                 if not view_id:
                     messages = cancelled if view_result is None else no_elicitation
                 else:
-                    accepted_format = await _try_elicit(ctx, "Choose an export format.", response_type=format_choices)
+                    accepted_format = await _try_elicit(
+                        ctx,
+                        "Choose an export format.",
+                        response_type=format_choices,
+                    )
                     if accepted_format is None:
                         messages = no_elicitation
                     else:
@@ -124,7 +132,10 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
                             export_format = str(format_result).strip() or "ndjson"
                             messages = [
                                 Message(
-                                    "Call `semantic_export` using the parameters below (task-capable when supported):",
+                                    (
+                                        "Call `semantic_export` using the parameters below "
+                                        "(task-capable when supported):"
+                                    ),
                                     role="assistant",
                                 ),
                                 Message(
@@ -137,8 +148,11 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
                                     role="assistant",
                                 ),
                                 Message(
-                                    "Then call `resources/read` on `meta_uri` to discover safe retrieval URIs, and fetch payload in chunks "
-                                    "when needed.",
+                                    (
+                                        "Then call `resources/read` on `meta_uri` "
+                                        "to discover safe retrieval URIs, "
+                                        "and fetch payload in chunks when needed."
+                                    ),
                                     role="assistant",
                                 ),
                             ]
@@ -147,7 +161,7 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
 
 
 def _register_query_wizard(
-    mcp: FastMCP, *, settings: ServingSettings, kernel: _KernelProtocol | None
+    mcp: FastMCP, *, settings: ServingSettings, kernel: ServingOperations | None
 ) -> None:
     @mcp.prompt(
         name="wizard_query_view",
@@ -159,7 +173,11 @@ def _register_query_wizard(
         if not _supports_elicitation(ctx):
             return _wizard_query_view_no_elicitation(settings)
 
-        accepted_view = await _try_elicit(ctx, "Which view_id do you want to query?", response_type=str)
+        accepted_view = await _try_elicit(
+            ctx,
+            "Which view_id do you want to query?",
+            response_type=str,
+        )
         if accepted_view is None:
             return _wizard_query_view_no_elicitation(settings)
         view_result = _accepted_data(accepted_view)
@@ -171,11 +189,22 @@ def _register_query_wizard(
 
         columns = _maybe_get_columns(kernel, view_id=view_id)
         select = await _maybe_elicit_select(ctx, columns=columns)
-        filter_draft = await _maybe_elicit_filter(ctx, columns=columns, kernel=kernel, view_id=view_id)
+        filter_draft = await _maybe_elicit_filter(
+            ctx,
+            columns=columns,
+            kernel=kernel,
+            view_id=view_id,
+        )
 
         filters: list[dict[str, object]] | None = None
         if filter_draft is not None:
-            filters = [{"column": filter_draft.column, "op": filter_draft.op, "value": filter_draft.value}]
+            filters = [
+                {
+                    "column": filter_draft.column,
+                    "op": filter_draft.op,
+                    "value": filter_draft.value,
+                }
+            ]
 
         return [
             Message("Start with a schema check:", role="assistant"),
@@ -196,7 +225,8 @@ def _register_query_wizard(
             ),
             Message(
                 (
-                    "If sampling is enabled server-side and supported client-side, large results may include a summary. "
+                    "If sampling is enabled server-side and supported client-side, "
+                    "large results may include a summary. "
                     f"sampling_enabled={settings.mcp_enable_sampling}"
                 ),
                 role="assistant",
@@ -213,9 +243,15 @@ def _register_snapshot_diff_prompt(mcp: FastMCP) -> None:
     )
     def what_changed_between_snapshots() -> list[PromptMessage]:
         return [
-            Message("Call `resources/read` on `codeintel://meta/views_sql_diff` (if present).", role="assistant"),
             Message(
-                "Then use `resources/read` on `codeintel://meta/views_sql` for full compiled SQL if needed.",
+                "Call `resources/read` on `codeintel://meta/views_sql_diff` (if present).",
+                role="assistant",
+            ),
+            Message(
+                (
+                    "Then use `resources/read` on `codeintel://meta/views_sql` "
+                    "for full compiled SQL if needed."
+                ),
                 role="assistant",
             ),
         ]
@@ -257,7 +293,10 @@ def _accepted_data(result: object | None) -> object | None:
 def _wizard_export_data_no_elicitation(settings: ServingSettings) -> list[PromptMessage]:
     return [
         Message("Elicitation is not available in this client.", role="assistant"),
-        Message("Use `semantic_catalog` to choose a view_id, then call `semantic_export`.", role="assistant"),
+        Message(
+            "Use `semantic_catalog` to choose a view_id, then call `semantic_export`.",
+            role="assistant",
+        ),
         Message(
             (
                 "Export formats: ndjson/json (text) and parquet/arrow (binary). "
@@ -271,12 +310,18 @@ def _wizard_export_data_no_elicitation(settings: ServingSettings) -> list[Prompt
 def _wizard_query_view_no_elicitation(settings: ServingSettings) -> list[PromptMessage]:
     return [
         Message("Elicitation is not available in this client.", role="assistant"),
-        Message("Call `semantic_describe(view_id=...)` then `semantic_query(view_id=..., pagination=...)`.", role="assistant"),
+        Message(
+            (
+                "Call `semantic_describe(view_id=...)` then "
+                "`semantic_query(view_id=..., pagination=...)`."
+            ),
+            role="assistant",
+        ),
         Message(f"sampling_enabled={settings.mcp_enable_sampling}", role="assistant"),
     ]
 
 
-def _maybe_get_columns(kernel: _KernelProtocol | None, *, view_id: str) -> list[str] | None:
+def _maybe_get_columns(kernel: ServingOperations | None, *, view_id: str) -> list[str] | None:
     if kernel is None:
         return None
     try:
@@ -294,7 +339,8 @@ async def _maybe_elicit_select(ctx: Context, *, columns: list[str] | None) -> li
     if columns is None:
         return None
     prompt = (
-        "Enter a comma-separated list of columns to select, or cancel/leave blank to select all columns. "
+        "Enter a comma-separated list of columns to select, or cancel/leave blank "
+        "to select all columns. "
         f"Available columns: {', '.join(columns[:25])}"
     )
     accepted = await _try_elicit(ctx, prompt, response_type=str)
@@ -314,7 +360,7 @@ async def _maybe_elicit_filter(
     ctx: Context,
     *,
     columns: list[str] | None,
-    kernel: _KernelProtocol | None,
+    kernel: ServingOperations | None,
     view_id: str,
 ) -> _FilterDraft | None:
     if columns is None:
@@ -349,7 +395,11 @@ async def _maybe_elicit_filter(
     return _FilterDraft(column=column, op=op, value=_parse_filter_value(dtype, op=op, raw=raw))
 
 
-def _maybe_get_column_types(kernel: _KernelProtocol | None, *, view_id: str) -> dict[str, str] | None:
+def _maybe_get_column_types(
+    kernel: ServingOperations | None,
+    *,
+    view_id: str,
+) -> dict[str, str] | None:
     if kernel is None:
         return None
     try:
@@ -366,7 +416,10 @@ def _allowed_ops_for_dtype(dtype: str | None) -> list[str]:
     if dtype is None:
         return ["eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith"]
     lowered = dtype.lower()
-    if any(token in lowered for token in ("int", "double", "float", "decimal", "numeric", "bigint", "smallint")):
+    if any(
+        token in lowered
+        for token in ("int", "double", "float", "decimal", "numeric", "bigint", "smallint")
+    ):
         return ["eq", "ne", "lt", "lte", "gt", "gte", "in"]
     if "bool" in lowered:
         return ["eq", "ne"]

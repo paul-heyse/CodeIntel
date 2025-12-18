@@ -29,6 +29,7 @@ class Guardrail:
     name: str
     pattern: re.Pattern[str]
     message: str
+    include_prefixes: tuple[str, ...] = ()
     allow_prefixes: tuple[str, ...] = ()
 
 
@@ -74,6 +75,20 @@ GUARDRAILS: tuple[Guardrail, ...] = (
             "(metadata typed as dict[str, object])."
         ),
     ),
+    Guardrail(
+        name="build_cast_any",
+        pattern=re.compile(r"\bcast\(\s*(?:\"Any\"|'Any'|Any)\s*,"),
+        message=(
+            '`cast("Any", ...)` is forbidden in build/storage modules; use codeintel.core.ibis_typing.'
+        ),
+        include_prefixes=("src/codeintel/build/", "src/codeintel/storage/"),
+    ),
+    Guardrail(
+        name="compute_result_any",
+        pattern=re.compile(r"\b(type\s+)?ComputeResult\s*(?::\s*TypeAlias)?\s*=\s*Any\b"),
+        message="ComputeResult = Any is forbidden; use ExecutionResult.",
+        include_prefixes=("src/codeintel/build/",),
+    ),
 )
 
 
@@ -110,6 +125,8 @@ def find_violations(repo_root: Path) -> list[str]:
         rel = path.relative_to(repo_root).as_posix()
         text = path.read_text(encoding="utf-8")
         for rule in GUARDRAILS:
+            if rule.include_prefixes and not rel.startswith(rule.include_prefixes):
+                continue
             if rule.allow_prefixes and rel.startswith(rule.allow_prefixes):
                 continue
             for match in rule.pattern.finditer(text):

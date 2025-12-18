@@ -20,6 +20,7 @@ def test_warehouse_materialize_variants_write_equivalent_rows(
     fresh_gateway: StorageGateway,
     tmp_path: Path,
 ) -> None:
+    """Warehouse materialize_* variants persist equivalent content."""
     warehouse = Warehouse(fresh_gateway)
     snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
     options = MaterializeOptions(snapshot=snapshot, mode="replace")
@@ -52,4 +53,3 @@ def test_warehouse_materialize_variants_write_equivalent_rows(
     expect_equal(len(fetched), 1, label="row count")
     expect_equal(str(fetched[0][0]), snapshot.repo, label="repo")
     expect_equal(str(fetched[0][1]), snapshot.commit, label="commit")
-

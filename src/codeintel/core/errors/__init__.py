@@ -115,8 +115,6 @@ from codeintel.core.errors.taxonomy import (
     RATE_LIMITED,
     SCHEMA_MISMATCH,
     SERVICE_UNAVAILABLE,
-    # Utilities
-    STATUS_CODES,
     TABLE_NOT_FOUND,
     TIMEOUT,
     # Code enums
@@ -171,7 +169,6 @@ __all__ = [
     "SCHEMA_NOT_FOUND",
     "SCHEMA_VALIDATION_FAILED",
     "SERVICE_UNAVAILABLE",
-    "STATUS_CODES",
     "TABLE_NOT_FOUND",
     "TIMEOUT",
     "CodeIntelError",

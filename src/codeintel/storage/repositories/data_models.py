@@ -2,26 +2,42 @@
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
-from datetime import datetime
-from typing import TYPE_CHECKING, Any, cast
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, SupportsInt, cast
 
 import pandas as pd
 
+from codeintel.core.ibis_typing import and_predicates, isin_values
+from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.helpers.json import decode_json, decode_json_dict
-from codeintel.storage.ibis_types import and_predicates, ibis_bool
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from decimal import Decimal
 
     from codeintel.storage.gateway import StorageGateway
 
 
-def _as_int(value: Decimal | int | None) -> int | None:
-    if value is None:
-        return None
-    return int(value)
+_DEFAULT_CREATED_AT = datetime.fromtimestamp(0, tz=UTC)
+
+
+def _as_int(value: object) -> int | None:
+    result: int | None = None
+    if value is None or isinstance(value, bool):
+        result = None
+    elif isinstance(value, int):
+        result = value
+    elif isinstance(value, float):
+        result = int(value) if value.is_integer() else None
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if stripped and (stripped.isdigit() or (stripped[0] == "-" and stripped[1:].isdigit())):
+            result = int(stripped)
+    elif hasattr(value, "__int__"):
+        with contextlib.suppress(TypeError, ValueError):
+            result = int(cast("SupportsInt", value))
+    return result
 
 
 def _decode_base_classes(value: object) -> list[dict[str, str]]:
@@ -141,7 +157,7 @@ def fetch_models(gateway: StorageGateway, repo: str, commit: str) -> list[DataMo
     list[DataModelRow]
         Parsed data model rows with base classes decoded.
     """
-    tbl = gateway.ibis.table("analytics.data_models")
+    tbl = ibis_facade.table(gateway, "analytics.data_models")
     expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit)).select(
         "repo",
         "commit",
@@ -160,7 +176,8 @@ def fetch_models(gateway: StorageGateway, repo: str, commit: str) -> list[DataMo
 
     result: list[DataModelRow] = []
     for record in df.to_dict(orient="records"):
-        row: dict[str, Any] = record
+        row: dict[str, object] = record
+        created_at = _normalize_created_at(row["created_at"], default=_DEFAULT_CREATED_AT)
         result.append(
             DataModelRow(
                 repo=str(row["repo"]),
@@ -174,7 +191,7 @@ def fetch_models(gateway: StorageGateway, repo: str, commit: str) -> list[DataMo
                 base_classes=_decode_base_classes(row["base_classes_json"]),
                 doc_short=str(row["doc_short"]) if row["doc_short"] is not None else None,
                 doc_long=str(row["doc_long"]) if row["doc_long"] is not None else None,
-                created_at=row["created_at"],
+                created_at=created_at,
             )
         )
     return result
@@ -205,11 +222,11 @@ def fetch_fields(
     list[DataModelFieldRow]
         Normalized fields for the requested models.
     """
-    tbl = gateway.ibis.table("analytics.data_model_fields")
+    tbl = ibis_facade.table(gateway, "analytics.data_model_fields")
     expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
 
     if model_ids is not None:
-        expr = expr.filter(ibis_bool(tbl.model_id.isin(cast("Any", list(model_ids)))))
+        expr = expr.filter(isin_values(tbl.model_id, model_ids))
 
     expr = expr.select(
         "repo",
@@ -230,7 +247,8 @@ def fetch_fields(
 
     result: list[DataModelFieldRow] = []
     for record in df.to_dict(orient="records"):
-        row: dict[str, Any] = record
+        row: dict[str, object] = record
+        created_at = _normalize_created_at(row["created_at"], default=_DEFAULT_CREATED_AT)
         result.append(
             DataModelFieldRow(
                 repo=str(row["repo"]),
@@ -244,8 +262,8 @@ def fetch_fields(
                 constraints=decode_json_dict(row["constraints_json"]),
                 source=str(row["source"]),
                 rel_path=str(row["rel_path"]),
-                lineno=int(row["lineno"]) if row["lineno"] is not None else None,
-                created_at=row["created_at"],
+                lineno=_as_int(row["lineno"]),
+                created_at=created_at,
             )
         )
     return result
@@ -276,11 +294,11 @@ def fetch_relationships(
     list[DataModelRelationshipRow]
         Normalized relationships for the requested models.
     """
-    tbl = gateway.ibis.table("analytics.data_model_relationships")
+    tbl = ibis_facade.table(gateway, "analytics.data_model_relationships")
     expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
 
     if model_ids is not None:
-        expr = expr.filter(ibis_bool(tbl.source_model_id.isin(cast("Any", list(model_ids)))))
+        expr = expr.filter(isin_values(tbl.source_model_id, model_ids))
 
     expr = expr.select(
         "repo",
@@ -302,7 +320,8 @@ def fetch_relationships(
 
     result: list[DataModelRelationshipRow] = []
     for record in df.to_dict(orient="records"):
-        row: dict[str, Any] = record
+        row: dict[str, object] = record
+        created_at = _normalize_created_at(row["created_at"], default=_DEFAULT_CREATED_AT)
         result.append(
             DataModelRelationshipRow(
                 repo=str(row["repo"]),
@@ -321,8 +340,8 @@ def fetch_relationships(
                 via=str(row["via"]) if row["via"] is not None else None,
                 evidence=decode_json_dict(row["evidence_json"]),
                 rel_path=str(row["rel_path"]),
-                lineno=int(row["lineno"]) if row["lineno"] is not None else None,
-                created_at=row["created_at"],
+                lineno=_as_int(row["lineno"]),
+                created_at=created_at,
             )
         )
     return result
@@ -468,11 +487,11 @@ def _fetch_models_from_view(
     list[NormalizedDataModel]
         Normalized models with decoded fields and relationships.
     """
-    tbl = gateway.ibis.table("docs.v_data_models_normalized")
+    tbl = ibis_facade.table(gateway, "docs.v_data_models_normalized")
     expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
 
     if allowed is not None:
-        expr = expr.filter(ibis_bool(tbl.model_id.isin(cast("Any", list(allowed)))))
+        expr = expr.filter(isin_values(tbl.model_id, allowed))
 
     expr = expr.select(
         "repo",
@@ -494,20 +513,21 @@ def _fetch_models_from_view(
 
     result: list[NormalizedDataModel] = []
     for record in df.to_dict(orient="records"):
-        row: dict[str, Any] = record
+        row: dict[str, object] = record
+        created_at = _normalize_created_at(row["created_at"], default=_DEFAULT_CREATED_AT)
         field_rows = _decode_field_structs(
             row["fields"],
             repo=str(row["repo"]),
             commit=str(row["commit"]),
             model_id=str(row["model_id"]),
-            default_created_at=row["created_at"],
+            default_created_at=created_at,
         )
         relationship_rows = _decode_relationship_structs(
             row["relationships"],
             repo=str(row["repo"]),
             commit=str(row["commit"]),
             model_id=str(row["model_id"]),
-            default_created_at=row["created_at"],
+            default_created_at=created_at,
         )
         result.append(
             NormalizedDataModel(
@@ -524,7 +544,7 @@ def _fetch_models_from_view(
                 relationships=relationship_rows,
                 doc_short=str(row["doc_short"]) if row["doc_short"] is not None else None,
                 doc_long=str(row["doc_long"]) if row["doc_long"] is not None else None,
-                created_at=row["created_at"],
+                created_at=created_at,
             )
         )
     return result

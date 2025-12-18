@@ -14,4 +14,9 @@ type RowCounts = dict[str, int]
 type TableKey = str
 type TargetName = str
 
-__all__ = ["MaterializationMetadata", "RowCounts", "TableKey", "TargetName"]
+__all__ = [
+    "MaterializationMetadata",
+    "RowCounts",
+    "TableKey",
+    "TargetName",
+]

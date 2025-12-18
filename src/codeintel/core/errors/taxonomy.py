@@ -279,44 +279,6 @@ PLUGIN_SKIPPED = ErrorCode(ErrorCategory.PLUGIN, "skipped", 200, "Plugin Skipped
 PLUGIN_SKIP_REQUEST = ErrorCode(ErrorCategory.PLUGIN, "skip-request", 200, "Plugin Skip Requested")
 
 
-# Status code lookup for backward compatibility
-STATUS_CODES: dict[str, int] = {
-    ValidationErrorCode.MISSING_REQUIRED.value: 400,
-    ValidationErrorCode.INVALID_TYPE.value: 400,
-    ValidationErrorCode.INVALID_FORMAT.value: 400,
-    ValidationErrorCode.OUT_OF_RANGE.value: 400,
-    ValidationErrorCode.CONSTRAINT_VIOLATION.value: 400,
-    OperationErrorCode.NOT_FOUND.value: 404,
-    OperationErrorCode.ALREADY_EXISTS.value: 409,
-    OperationErrorCode.TIMEOUT.value: 504,
-    OperationErrorCode.DEPENDENCY_FAILED.value: 424,
-    OperationErrorCode.CANCELLED.value: 499,
-    OperationErrorCode.INTERNAL_ERROR.value: 500,
-    StorageErrorCode.CONNECTION_FAILED.value: 503,
-    StorageErrorCode.QUERY_FAILED.value: 500,
-    StorageErrorCode.SCHEMA_MISMATCH.value: 500,
-    StorageErrorCode.CORRUPTION_DETECTED.value: 500,
-    StorageErrorCode.TABLE_NOT_FOUND.value: 404,
-    StorageErrorCode.COLUMN_NOT_FOUND.value: 404,
-    ConfigErrorCode.FILE_NOT_FOUND.value: 404,
-    ConfigErrorCode.PARSE_ERROR.value: 400,
-    ConfigErrorCode.INVALID_VALUE.value: 400,
-    ConfigErrorCode.SCHEMA_VIOLATION.value: 400,
-    ServiceErrorCode.UNAVAILABLE.value: 503,
-    ServiceErrorCode.RATE_LIMITED.value: 429,
-    ServiceErrorCode.AUTHENTICATION_FAILED.value: 401,
-    ServiceErrorCode.PERMISSION_DENIED.value: 403,
-    JobErrorCode.NOT_FOUND.value: 404,
-    JobErrorCode.ALREADY_RUNNING.value: 409,
-    JobErrorCode.FAILED.value: 500,
-    JobErrorCode.EXPIRED.value: 410,
-    PluginErrorCode.FATAL.value: 500,
-    PluginErrorCode.TIMEOUT.value: 504,
-    PluginErrorCode.SKIPPED.value: 200,
-    PluginErrorCode.SKIP_REQUEST.value: 200,
-}
-
-
 __all__ = [
     # Operation codes
     "ALREADY_EXISTS",
@@ -356,8 +318,6 @@ __all__ = [
     "RATE_LIMITED",
     "SCHEMA_MISMATCH",
     "SERVICE_UNAVAILABLE",
-    # Utilities
-    "STATUS_CODES",
     "TABLE_NOT_FOUND",
     "TIMEOUT",
     # Code enums

@@ -23,6 +23,7 @@ from hamilton.function_modifiers import (
     value,
 )
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -37,7 +38,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
-from codeintel.build.ibis_typing import (
+from codeintel.core.ibis_typing import (
     add,
     cast_dtype,
     col_nunique,
@@ -303,7 +304,7 @@ def t__hotspots__compute(
 def t__hotspots(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__hotspots: dict[str, object],
+    m__analytics__hotspots: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Finalize hotspots execution from DAG-visible DuckDB materialization.
 

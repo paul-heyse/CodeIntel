@@ -25,12 +25,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.core.repository import PagedResult
 from codeintel.storage.contracts.validation import validate_df
 from codeintel.storage.warehouse import Warehouse
@@ -42,7 +40,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-RowDict = dict[str, Any]
+RowDict = dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -86,8 +84,7 @@ class BaseRepository:
         it.Table
             Ibis table expression.
         """
-        snapshot = SnapshotRef.from_args(self.repo, self.commit, repo_root=Path.cwd())
-        return Warehouse(gateway=self.gateway).read(table_key, snapshot=snapshot)
+        return Warehouse(gateway=self.gateway).read(table_key, snapshot=self)
 
     def _ibis_to_df(
         self,

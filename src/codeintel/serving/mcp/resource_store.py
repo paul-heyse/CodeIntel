@@ -14,6 +14,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
+from codeintel.serving.export.formats import (
+    EXPORT_FORMATS,
+    ExportFormat,
+    mime_type_for_export_format,
+    normalize_export_format,
+    suffix_for_export_format,
+)
 from codeintel.serving.mcp.errors import (
     ExportCorruptError,
     ExportExpiredError,
@@ -24,16 +31,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
     from pathlib import Path
 
-_JSON_SUFFIX: Final = ".json"
-_NDJSON_SUFFIX: Final = ".ndjson"
-_PARQUET_SUFFIX: Final = ".parquet"
-_ARROW_SUFFIX: Final = ".arrow"
 _META_SUFFIX: Final = ".meta.json"
-
-_MIME_JSON: Final = "application/json"
-_MIME_NDJSON: Final = "application/x-ndjson"
-_MIME_PARQUET: Final = "application/vnd.apache.parquet"
-_MIME_ARROW: Final = "application/vnd.apache.arrow.file"
+_CANCEL_SUFFIX: Final = ".cancelled"
 
 _DEFAULT_PREVIEW_ROWS: Final = 5
 
@@ -47,7 +46,7 @@ class ExportArtifactSpec:
     column_types: dict[str, str] = field(default_factory=dict)
     compiled_sql: str | None = None
     snapshot: dict[str, str] = field(default_factory=dict)
-    format: str = "ndjson"
+    format: ExportFormat = "ndjson"
     query_hash: str | None = None
     schema_hash: str | None = None
 
@@ -123,8 +122,8 @@ class StoredMetadata:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime | None = None
     snapshot: dict[str, str] = field(default_factory=dict)
-    format: str = "ndjson"
-    mime_type: str = _MIME_NDJSON
+    format: ExportFormat = "ndjson"
+    mime_type: str = field(default_factory=lambda: mime_type_for_export_format("ndjson"))
     size_bytes: int = 0
     query_hash: str | None = None
     schema_hash: str | None = None
@@ -209,13 +208,34 @@ class ResourceStore:
             deleted += 1
         return deleted
 
-    def delete(self, token: str) -> None:
+    def delete(self, token: str, *, include_cancel_marker: bool = True) -> None:
         """Delete an export artifact and sidecar best-effort."""
         with suppress(FileNotFoundError):
             (self._root / f"{token}{_META_SUFFIX}").unlink()
-        for suffix in (_JSON_SUFFIX, _NDJSON_SUFFIX, _PARQUET_SUFFIX, _ARROW_SUFFIX):
+        for spec in EXPORT_FORMATS.values():
             with suppress(FileNotFoundError):
-                (self._root / f"{token}{suffix}").unlink()
+                (self._root / f"{token}{spec.suffix}").unlink()
+        if include_cancel_marker:
+            with suppress(FileNotFoundError):
+                (self._root / f"{token}{_CANCEL_SUFFIX}").unlink()
+
+    def mark_cancelled(self, token: str) -> None:
+        """Create a cancellation marker for an export token.
+
+        Used to coordinate best-effort cleanup across cancellation boundaries
+        when export generation is running in a worker thread.
+        """
+        (self._root / f"{token}{_CANCEL_SUFFIX}").write_text("cancelled\n", encoding="utf-8")
+
+    def _is_cancelled(self, token: str) -> bool:
+        return (self._root / f"{token}{_CANCEL_SUFFIX}").exists()
+
+    def _raise_if_cancelled(self, token: str) -> None:
+        if not self._is_cancelled(token):
+            return
+        self.delete(token)
+        msg = f"Export cancelled: {token}"
+        raise RuntimeError(msg)
 
     def put_json(self, payload: object, *, row_count: int = 0) -> tuple[str, StoredArtifact]:
         """Store a JSON payload and return its token.
@@ -233,13 +253,14 @@ class ResourceStore:
             Token and artifact metadata.
         """
         token = secrets.token_urlsafe(16)
-        path = self._root / f"{token}{_JSON_SUFFIX}"
+        suffix = suffix_for_export_format("json")
+        path = self._root / f"{token}{suffix}"
         content = json.dumps(payload, indent=2, sort_keys=True, default=str)
         path.write_text(content, encoding="utf-8")
 
         return token, StoredArtifact(
             path=path,
-            mime_type=_MIME_JSON,
+            mime_type=mime_type_for_export_format("json"),
             row_count=row_count,
             size_bytes=path.stat().st_size,
         )
@@ -261,7 +282,8 @@ class ResourceStore:
             Token and artifact metadata.
         """
         token = secrets.token_urlsafe(16)
-        path = self._root / f"{token}{_NDJSON_SUFFIX}"
+        suffix = suffix_for_export_format("ndjson")
+        path = self._root / f"{token}{suffix}"
 
         with path.open("w", encoding="utf-8") as f:
             for row in rows:
@@ -269,7 +291,7 @@ class ResourceStore:
 
         return token, StoredArtifact(
             path=path,
-            mime_type=_MIME_NDJSON,
+            mime_type=mime_type_for_export_format("ndjson"),
             row_count=len(rows),
             size_bytes=path.stat().st_size,
         )
@@ -292,13 +314,8 @@ class ResourceStore:
         ExportNotFoundError
             If token not found.
         """
-        for suffix, mime_type in [
-            (_JSON_SUFFIX, _MIME_JSON),
-            (_NDJSON_SUFFIX, _MIME_NDJSON),
-            (_PARQUET_SUFFIX, _MIME_PARQUET),
-            (_ARROW_SUFFIX, _MIME_ARROW),
-        ]:
-            path = self._root / f"{token}{suffix}"
+        for spec in EXPORT_FORMATS.values():
+            path = self._root / f"{token}{spec.suffix}"
             if path.exists():
                 row_count = 0
                 try:
@@ -310,7 +327,7 @@ class ResourceStore:
                     row_count = meta.row_count
                 return StoredArtifact(
                     path=path,
-                    mime_type=mime_type,
+                    mime_type=spec.mime_type,
                     row_count=row_count,
                     size_bytes=path.stat().st_size,
                 )
@@ -351,6 +368,7 @@ class ResourceStore:
             raise ValueError(msg)
 
         token = export_id or secrets.token_urlsafe(16)
+        self._raise_if_cancelled(token)
         created_at = datetime.now(UTC)
         resolved_columns = spec.columns
         if not resolved_columns and rows:
@@ -370,6 +388,7 @@ class ResourceStore:
                 path.unlink()
             raise
 
+        self._raise_if_cancelled(token)
         metadata = StoredMetadata(
             export_id=token,
             view_id=spec.view_id,
@@ -436,8 +455,10 @@ class ResourceStore:
             raise ValueError(msg)
 
         token = export_id or secrets.token_urlsafe(16)
-        path = self._root / f"{token}{_NDJSON_SUFFIX}"
-        mime_type = _MIME_NDJSON
+        self._raise_if_cancelled(token)
+        suffix = suffix_for_export_format("ndjson")
+        path = self._root / f"{token}{suffix}"
+        mime_type = mime_type_for_export_format("ndjson")
 
         rows_iter = iter(rows)
         first_row = next(rows_iter, None)
@@ -470,6 +491,7 @@ class ResourceStore:
                 path.unlink()
             raise
 
+        self._raise_if_cancelled(token)
         created_at = datetime.now(UTC)
         metadata = StoredMetadata(
             export_id=token,
@@ -536,6 +558,7 @@ class ResourceStore:
             raise ValueError(msg)
 
         token = export_id or secrets.token_urlsafe(16)
+        self._raise_if_cancelled(token)
         created_at = datetime.now(UTC)
         path, mime_type = self._artifact_path_for_format(token, spec.format)
         try:
@@ -544,6 +567,7 @@ class ResourceStore:
             self.delete(token)
             raise
 
+        self._raise_if_cancelled(token)
         row_count = rows_written if isinstance(rows_written, int) else 0
         size_bytes = path.stat().st_size
 
@@ -635,6 +659,17 @@ class ResourceStore:
         expires_at_str = meta_dict.get("expires_at")
         expires_at = datetime.fromisoformat(expires_at_str) if isinstance(expires_at_str, str) else None
 
+        raw_format = meta_dict.get("format", "ndjson")
+        if not isinstance(raw_format, str):
+            raise ExportCorruptError(token)
+        export_format = normalize_export_format(raw_format)
+
+        raw_mime_type = meta_dict.get("mime_type")
+        if isinstance(raw_mime_type, str) and raw_mime_type:
+            mime_type = raw_mime_type
+        else:
+            mime_type = mime_type_for_export_format(export_format)
+
         return StoredMetadata(
             export_id=meta_dict.get("export_id", token),
             view_id=meta_dict.get("view_id", ""),
@@ -645,8 +680,8 @@ class ResourceStore:
             created_at=created_at,
             expires_at=expires_at,
             snapshot=meta_dict.get("snapshot", {}),
-            format=meta_dict.get("format", "ndjson"),
-            mime_type=meta_dict.get("mime_type", _MIME_NDJSON),
+            format=export_format,
+            mime_type=mime_type,
             size_bytes=meta_dict.get("size_bytes", 0),
             query_hash=meta_dict.get("query_hash"),
             schema_hash=meta_dict.get("schema_hash"),
@@ -684,14 +719,14 @@ class ResourceStore:
 
         # Read preview rows
         preview_rows: list[dict[str, object]] = []
-        if artifact.mime_type == _MIME_NDJSON:
+        if artifact.mime_type == mime_type_for_export_format("ndjson"):
             with artifact.path.open("r", encoding="utf-8") as f:
                 for i, line in enumerate(f):
                     if i >= max_rows:
                         break
                     if line.strip():
                         preview_rows.append(json.loads(line))
-        elif artifact.mime_type == _MIME_JSON:
+        elif artifact.mime_type == mime_type_for_export_format("json"):
             data = json.loads(artifact.path.read_text(encoding="utf-8"))
             if isinstance(data, dict) and "rows" in data:
                 preview_rows = data["rows"][:max_rows]
@@ -720,16 +755,10 @@ class ResourceStore:
         raise ExportExpiredError(meta.export_id, expires_at=meta.expires_at.isoformat())
 
     def _artifact_path_for_format(self, token: str, fmt: str) -> tuple[Path, str]:
-        if fmt == "ndjson":
-            return self._root / f"{token}{_NDJSON_SUFFIX}", _MIME_NDJSON
-        if fmt == "json":
-            return self._root / f"{token}{_JSON_SUFFIX}", _MIME_JSON
-        if fmt == "parquet":
-            return self._root / f"{token}{_PARQUET_SUFFIX}", _MIME_PARQUET
-        if fmt == "arrow":
-            return self._root / f"{token}{_ARROW_SUFFIX}", _MIME_ARROW
-        msg = f"Unsupported export format: {fmt}"
-        raise ValueError(msg)
+        normalized = normalize_export_format(fmt)
+        suffix = suffix_for_export_format(normalized)
+        mime_type = mime_type_for_export_format(normalized)
+        return self._root / f"{token}{suffix}", mime_type
 
 
 __all__ = ["ExportArtifactSpec", "ResourceStore", "StoredArtifact", "StoredMetadata"]

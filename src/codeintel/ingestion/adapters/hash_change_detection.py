@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, SupportsInt, cast
 import ibis
 
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.core.ibis_typing import filter_by, ibis_bool, window_over
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.ports.change_detection import (
     ChangeSet,
@@ -20,7 +21,6 @@ from codeintel.ingestion.ports.change_detection import (
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.ibis_types import filter_by, ibis_bool, window_over
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

@@ -24,6 +24,7 @@ class _FakeDuckDBConn:
 
 
 def test_registered_temp_relation_unregisters_on_success() -> None:
+    """registered_temp_relation unregisters on a normal exit."""
     con = _FakeDuckDBConn(registered={}, unregistered=[])
     payload = object()
     with registered_temp_relation(con, payload, prefix="ci_test_") as name:
@@ -34,13 +35,18 @@ def test_registered_temp_relation_unregisters_on_success() -> None:
     expect_equal(con.registered, {}, label="registered map empty")
 
 
+def _raise_with_temp_relation(con: _FakeDuckDBConn, payload: object, *, message: str) -> None:
+    with registered_temp_relation(con, payload, prefix="ci_test_") as name:
+        expect_true(name in con.registered, message="registered")
+        raise RuntimeError(message)
+
+
 def test_registered_temp_relation_unregisters_on_exception() -> None:
+    """registered_temp_relation unregisters when the body raises."""
     con = _FakeDuckDBConn(registered={}, unregistered=[])
     payload = object()
-    with pytest.raises(RuntimeError, match="boom"):
-        with registered_temp_relation(con, payload, prefix="ci_test_") as name:
-            expect_true(name in con.registered, message="registered")
-            raise RuntimeError("boom")
+    message = "boom"
+    with pytest.raises(RuntimeError, match=message):
+        _raise_with_temp_relation(con, payload, message=message)
     expect_true(con.registered == {}, message="cleaned up after exception")
     expect_true(len(con.unregistered) == 1, message="unregister called exactly once")
-

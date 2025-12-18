@@ -17,6 +17,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from codeintel.storage.gateway import ibis_facade
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -95,7 +97,7 @@ def load_ibis_table(
     >>> metadata["table_key"]
     'analytics.function_metrics'
     """
-    table = io_config.gateway.ibis.table(dataset_ref.table_key)
+    table = ibis_facade.table(io_config.gateway, dataset_ref.table_key)
 
     metadata: dict[str, Any] = {
         "source": "duckdb",
@@ -364,7 +366,7 @@ def load_dataset_ibis(
     ... )
     >>> table = load_dataset_ibis(gateway=gateway, ref=ref)
     """
-    t = gateway.ibis.table(ref.table_key)
+    t = ibis_facade.table(gateway, ref.table_key)
     cols = set(t.columns)
 
     if ref.repo and ref.commit and "repo" in cols and "commit" in cols:

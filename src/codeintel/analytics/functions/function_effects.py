@@ -21,8 +21,8 @@ from codeintel.analytics.parsing.ast_cache import (
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.ibis_typing import and_predicates
 from codeintel.graphs.runtime import resolve_graph_runtime
-from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     import networkx as nx

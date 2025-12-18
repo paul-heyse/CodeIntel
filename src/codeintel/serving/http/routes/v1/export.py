@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 
+from codeintel.serving.export.formats import mime_type_for_export_format
 from codeintel.serving.http.dependencies import get_kernel, require_api_key
 from codeintel.serving.http.errors import ProblemType, ServingError
 from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
@@ -262,7 +263,11 @@ def _json_dict_response(
     }
     if schema_hash is not None:
         payload["schema_hash"] = schema_hash
-    return JSONResponse(content=payload, media_type="application/json", headers=headers)
+    return JSONResponse(
+        content=payload,
+        media_type=mime_type_for_export_format("json"),
+        headers=headers,
+    )
 
 
 async def _parquet_response(
@@ -316,7 +321,7 @@ async def _parquet_response(
 
     return FileResponse(
         path=tmp_path,
-        media_type="application/vnd.apache.parquet",
+        media_type=mime_type_for_export_format("parquet"),
         filename=f"{view_id}.parquet",
         headers=headers,
         background=BackgroundTask(_cleanup),
@@ -376,7 +381,7 @@ async def _arrow_response(
 
     response = FileResponse(
         path=tmp_path,
-        media_type="application/vnd.apache.arrow.file",
+        media_type=mime_type_for_export_format("arrow"),
         filename=f"{view_id}.arrow",
         headers=headers,
         background=BackgroundTask(_cleanup),

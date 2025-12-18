@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.storage.ibis_types import and_predicates, ge, ibis_bool
+from codeintel.core.ibis_typing import and_predicates, ge, ibis_bool
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:

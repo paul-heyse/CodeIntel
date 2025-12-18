@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.paths import normalize_path
-from codeintel.storage.ibis_types import and_predicates
 from codeintel.storage.repositories import fetch_models
 
 if TYPE_CHECKING:

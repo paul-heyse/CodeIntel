@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.history.git_history import iter_file_history
-from codeintel.storage.ibis_types import and_predicates
+from codeintel.core.ibis_typing import and_predicates
 
 if TYPE_CHECKING:
     import pandas as pd

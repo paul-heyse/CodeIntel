@@ -16,11 +16,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 
+import ibis.expr.types as ir
+
 from codeintel.core.catalog.function_span import FunctionSpan
 from codeintel.core.catalog.span_index import SpanIndex
+from codeintel.core.ibis_typing import filter_by, ibis_bool, isin_values
 from codeintel.core.paths import normalize_path
 from codeintel.storage.helpers.module_index import load_module_map
-from codeintel.storage.ibis_types import filter_by, ibis_bool
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -73,12 +75,12 @@ def _load_function_rows(
     list[dict[str, Any]]
         Raw row dictionaries from the query.
     """
-    goids = cast("Any", gateway.ibis.table("core.goids"))
+    goids: ir.Table = gateway.ibis.table("core.goids")
     filtered = filter_by(
         goids,
         ibis_bool(goids.repo == repo),
         ibis_bool(goids.commit == commit),
-        ibis_bool(goids.kind.isin(["function", "method"])),
+        isin_values(goids.kind, ["function", "method"]),
     )
     columns = ["goid_h128", "rel_path", "qualname", "start_line", "end_line"]
     if include_urn:

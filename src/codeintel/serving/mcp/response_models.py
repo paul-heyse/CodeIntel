@@ -16,23 +16,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from codeintel.serving.export.formats import ExportFormat
 from codeintel.serving.semantic.models import SemanticQueryResponse
-
-
-def _pydantic_runtime_types() -> tuple[type[object], ...]:
-    """Return runtime types used in Pydantic annotations.
-
-    This helper ensures types like ``datetime`` and ``SemanticQueryResponse`` are
-    treated as runtime dependencies (not type-checking-only) so that Pydantic
-    can resolve annotations without requiring explicit model rebuild calls.
-
-    Returns
-    -------
-    tuple[type[object], ...]
-        Runtime types referenced by model annotations.
-    """
-    return (datetime, SemanticQueryResponse)
-
 
 # =============================================================================
 # URI / ID Primitives (Annotated types with validation + documentation)
@@ -97,9 +82,6 @@ Sha256Hex = Annotated[
 # =============================================================================
 # Literal Types
 # =============================================================================
-
-ExportFormat = Literal["ndjson", "json", "parquet", "arrow"]
-"""Export serialization format."""
 
 ExportStatus = Literal["ready", "expired", "missing", "error"]
 """Current status of an export handle."""

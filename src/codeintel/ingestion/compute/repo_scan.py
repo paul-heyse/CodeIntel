@@ -122,8 +122,8 @@ class RepoScanStep:
             scope = f"{repo}@{commit}"
             self._storage.delete_by_params("core.modules", [repo, commit])
             result = self._storage.write_batch("core.modules", module_rows, scope=scope)
-            table_counts["core.modules"] = result.rows_written
-            total_rows += result.rows_written
+            table_counts["core.modules"] = result.rows_affected
+            total_rows += result.rows_affected
 
         log.info(
             "Repo scan: repo=%s commit=%s modules=%d added=%d modified=%d deleted=%d",

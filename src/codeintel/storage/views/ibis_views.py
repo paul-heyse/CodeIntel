@@ -8,13 +8,13 @@ The legacy create_* functions are maintained for backward compatibility.
 
 from __future__ import annotations
 
-from typing import Any, Protocol, cast
+from typing import Protocol, cast
 
 import ibis
 import ibis.expr.types as it
 
+from codeintel.core.ibis_typing import ibis_bool, ne, or_predicates
 from codeintel.hamilton.semantic_tags import semantic_view
-from codeintel.storage.ibis_types import ne, or_predicates
 from codeintel.storage.queries.safe import assert_single_select_statement
 from codeintel.storage.views.protocol import IbisViewGateway
 from codeintel.storage.views.view_tags import ibis_view
@@ -1343,7 +1343,7 @@ def build_docs_function_history_timeseries(ibis_gw: IbisViewGateway) -> it.Table
     """
     h: it.Table = ibis_gw.table("analytics.history_timeseries")
 
-    return h.filter(cast("Any", h.entity_kind == "function")).select(
+    return h.filter(ibis_bool(h.entity_kind == "function")).select(
         h.repo,
         h.entity_stable_id,
         h.commit,
@@ -1523,7 +1523,7 @@ def build_docs_module_history_timeseries(ibis_gw: IbisViewGateway) -> it.Table:
     """
     h: it.Table = ibis_gw.table("analytics.history_timeseries")
 
-    return h.filter(cast("Any", h.entity_kind == "module")).select(
+    return h.filter(ibis_bool(h.entity_kind == "module")).select(
         h.repo,
         h.entity_stable_id,
         h.commit,

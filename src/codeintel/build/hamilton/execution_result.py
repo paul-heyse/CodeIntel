@@ -12,6 +12,7 @@ This module defines the canonical implementation used across native targets.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,4 +58,43 @@ class ExecutionResult:
         return cls(success=False, table_counts=table_counts or {}, error=error)
 
 
-__all__ = ["ExecutionResult"]
+class ExecutionResultLike(Protocol):
+    """Protocol for objects convertible to ``ExecutionResult``."""
+
+    @property
+    def success(self) -> bool:
+        """Whether computation succeeded."""
+        ...
+
+    @property
+    def table_counts(self) -> dict[str, int]:
+        """Row counts for produced tables keyed by table key."""
+        ...
+
+    @property
+    def error(self) -> str | None:
+        """Error message when computation fails, if available."""
+        ...
+
+
+def to_execution_result(result: ExecutionResultLike, *, default_error: str) -> ExecutionResult:
+    """Convert a compatible compute result object into ``ExecutionResult``.
+
+    Parameters
+    ----------
+    result
+        Object providing ``success``, ``table_counts``, and ``error`` fields.
+    default_error
+        Fallback error message when ``result.error`` is None/empty.
+
+    Returns
+    -------
+    ExecutionResult
+        Canonical result object for executor-style materialization.
+    """
+    if result.success:
+        return ExecutionResult.ok(table_counts=result.table_counts)
+    return ExecutionResult.failed(result.error or default_error, table_counts=result.table_counts)
+
+
+__all__ = ["ExecutionResult", "ExecutionResultLike", "to_execution_result"]

@@ -123,20 +123,12 @@ class BatchResult:
     duration_s
         Operation duration in seconds.
 
-    Notes
-    -----
-    For backward compatibility, this class provides aliases:
-    - ``table_key`` is an alias for ``table``
-    - ``rows_written`` is an alias for ``rows_affected``
-
     Examples
     --------
     >>> result = BatchResult.ok("my_table", 100)
     >>> result.success
     True
     >>> result.rows_affected
-    100
-    >>> result.rows_written  # Alias for backward compatibility
     100
     """
 
@@ -145,28 +137,6 @@ class BatchResult:
     success: bool = True
     error: str | None = None
     duration_s: float = 0.0
-
-    @property
-    def table_key(self) -> str:
-        """Alias for table (backward compatibility with ingestion).
-
-        Returns
-        -------
-        str
-            Target table name or key.
-        """
-        return self.table
-
-    @property
-    def rows_written(self) -> int:
-        """Alias for rows_affected (backward compatibility with ingestion).
-
-        Returns
-        -------
-        int
-            Number of rows written.
-        """
-        return self.rows_affected
 
     @classmethod
     def ok(
@@ -215,38 +185,6 @@ class BatchResult:
             Failed result with error message.
         """
         return cls(table=table, rows_affected=0, success=False, error=error)
-
-    @classmethod
-    def from_write(
-        cls,
-        table_key: str,
-        rows_written: int,
-        duration_s: float = 0.0,
-    ) -> BatchResult:
-        """Create a successful write result (ingestion compatibility).
-
-        This factory method uses the ingestion naming convention.
-
-        Parameters
-        ----------
-        table_key
-            Registry table key (e.g., "core.ast_nodes").
-        rows_written
-            Number of rows successfully written.
-        duration_s
-            Operation duration in seconds.
-
-        Returns
-        -------
-        BatchResult
-            Successful result.
-        """
-        return cls(
-            table=table_key,
-            rows_affected=rows_written,
-            success=True,
-            duration_s=duration_s,
-        )
 
 
 @dataclass

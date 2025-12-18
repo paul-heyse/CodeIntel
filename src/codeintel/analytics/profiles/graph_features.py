@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any, cast
 import ibis
 
 from codeintel.analytics.profiles.types import FunctionGraphFeatures
+from codeintel.core.ibis_typing import filter_by
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import filter_by
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

@@ -116,8 +116,8 @@ class TestsIngestStep:
         if all_rows:
             scope = f"{repo}@{commit}"
             result = self._storage.write_batch("core.test_results", all_rows, scope=scope)
-            table_counts["core.test_results"] = result.rows_written
-            total_rows = result.rows_written
+            table_counts["core.test_results"] = result.rows_affected
+            total_rows = result.rows_affected
 
         summary = data.get("summary", {})
         summary_rows: list[list[object]] = [
@@ -135,8 +135,8 @@ class TestsIngestStep:
 
         if summary_rows:
             result = self._storage.write_batch("core.test_summary", summary_rows)
-            table_counts["core.test_summary"] = result.rows_written
-            total_rows += result.rows_written
+            table_counts["core.test_summary"] = result.rows_affected
+            total_rows += result.rows_affected
 
         log.info(
             "Tests ingest: repo=%s commit=%s tests=%d",

@@ -19,9 +19,8 @@ Examples
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from duckdb import ColumnExpression, ConstantExpression
 from ibis.common.exceptions import (
@@ -41,6 +40,18 @@ from codeintel.core.errors.storage import (
     QueryError,
     TableNotFoundError,
 )
+from codeintel.core.ibis_typing import (
+    col_max,
+    col_min,
+    col_nunique,
+    filter_by,
+    get_column,
+    ibis_bool,
+    is_null,
+    le,
+    not_null,
+)
+from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
     DuckDBCatalogException,
@@ -50,6 +61,7 @@ from codeintel.storage.gateway.protocol import (
     DuckDBInvalidInputException,
     DuckDBProgrammingError,
 )
+from codeintel.storage.query_results import execute_int, execute_optional_float
 from codeintel.storage.sqlglot_tools import extract_table_refs
 
 IbisBaseError = IbisError
@@ -423,8 +435,8 @@ def safe_count(gateway: StorageGateway, table_key: str) -> int | None:
     42
     """
     try:
-        tbl = gateway.ibis.table(table_key)
-        return cast("int", tbl.count().execute())
+        tbl = ibis_facade.table(gateway, table_key)
+        return execute_int(tbl.count(), ctx=f"{table_key}.count()")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count query failed for %s: %s", table_key, exc)
         return None
@@ -452,11 +464,9 @@ def safe_count_with_scope(
         Row count or None if query failed.
     """
     try:
-        tbl = gateway.ibis.table(table_key)
-        filtered = tbl.filter(
-            cast("Any", (tbl.repo == snapshot.repo) & (tbl.commit == snapshot.commit))
-        )
-        return cast("int", filtered.count().execute())
+        tbl = ibis_facade.table(gateway, table_key)
+        filtered = filter_by(tbl, tbl.repo == snapshot.repo, tbl.commit == snapshot.commit)
+        return execute_int(filtered.count(), ctx=f"{table_key}.count(scope)")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Scoped count query failed for %s: %s", table_key, exc)
         return None
@@ -478,7 +488,7 @@ def safe_table_exists(gateway: StorageGateway, table_key: str) -> bool:
         True if table exists, False otherwise.
     """
     try:
-        gateway.ibis.table(table_key)
+        ibis_facade.table(gateway, table_key)
     except DUCKDB_QUERY_ERRORS:
         return False
     else:
@@ -501,7 +511,7 @@ def safe_get_columns(gateway: StorageGateway, table_key: str) -> set[str]:
         Column names, or empty set if query failed.
     """
     try:
-        tbl = gateway.ibis.table(table_key)
+        tbl = ibis_facade.table(gateway, table_key)
         return set(tbl.columns)
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Get columns failed for %s: %s", table_key, exc)
@@ -530,9 +540,10 @@ def safe_count_nulls(
         Count of NULL values, or 0 if query failed.
     """
     try:
-        tbl = gateway.ibis.table(table_key)
-        col = tbl[column]
-        return cast("int", tbl.filter(cast("Any", col.isnull())).count().execute())
+        tbl = ibis_facade.table(gateway, table_key)
+        col = get_column(tbl, column)
+        filtered = filter_by(tbl, is_null(col))
+        return execute_int(filtered.count(), ctx=f"{table_key}.{column}.null_count")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count nulls failed for %s.%s: %s", table_key, column, exc)
         return 0
@@ -560,14 +571,9 @@ def safe_min_value(
         Minimum value or None if query failed or no data.
     """
     try:
-        tbl = gateway.ibis.table(table_key)
-        col = tbl[column]
-        result = col.min().execute()
-        if result is None:
-            return None
-
-        value = float(cast("Any", result))
-        return None if math.isnan(value) else value
+        tbl = ibis_facade.table(gateway, table_key)
+        col = get_column(tbl, column)
+        return execute_optional_float(col_min(col), ctx=f"{table_key}.{column}.min")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Min value failed for %s.%s: %s", table_key, column, exc)
         return None
@@ -595,14 +601,9 @@ def safe_max_value(
         Maximum value or None if query failed or no data.
     """
     try:
-        tbl = gateway.ibis.table(table_key)
-        col = tbl[column]
-        result = col.max().execute()
-        if result is None:
-            return None
-
-        value = float(cast("Any", result))
-        return None if math.isnan(value) else value
+        tbl = ibis_facade.table(gateway, table_key)
+        col = get_column(tbl, column)
+        return execute_optional_float(col_max(col), ctx=f"{table_key}.{column}.max")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Max value failed for %s.%s: %s", table_key, column, exc)
         return None
@@ -630,9 +631,10 @@ def safe_count_non_positive(
         Count of non-positive values, or 0 if query failed.
     """
     try:
-        tbl = gateway.ibis.table(table_key)
-        col = cast("Any", tbl[column])
-        return cast("int", tbl.filter(col <= 0).count().execute())
+        tbl = ibis_facade.table(gateway, table_key)
+        col = get_column(tbl, column)
+        filtered = filter_by(tbl, le(col, 0))
+        return execute_int(filtered.count(), ctx=f"{table_key}.{column}.non_positive_count")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count non-positive failed for %s.%s: %s", table_key, column, exc)
         return 0
@@ -660,12 +662,12 @@ def safe_count_duplicates(
         Count of duplicate values (total rows - distinct), or 0 if query failed.
     """
     try:
-        tbl = gateway.ibis.table(table_key)
-        col = tbl[column]
+        tbl = ibis_facade.table(gateway, table_key)
+        col = get_column(tbl, column)
 
-        non_null = tbl.filter(cast("Any", col.notnull()))
-        total = cast("int", non_null.count().execute())
-        distinct = cast("int", col.nunique().execute())
+        non_null = filter_by(tbl, not_null(col))
+        total = execute_int(non_null.count(), ctx=f"{table_key}.{column}.non_null_count")
+        distinct = execute_int(col_nunique(col), ctx=f"{table_key}.{column}.distinct_count")
         return total - distinct
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count duplicates failed for %s.%s: %s", table_key, column, exc)
@@ -694,12 +696,15 @@ def safe_not_null_fraction(
         Fraction of non-null values (0.0 to 1.0), or 0.0 if query failed.
     """
     try:
-        tbl = gateway.ibis.table(table_key)
-        col = tbl[column]
-        total = cast("int", tbl.count().execute())
+        tbl = ibis_facade.table(gateway, table_key)
+        col = get_column(tbl, column)
+        total = execute_int(tbl.count(), ctx=f"{table_key}.count()")
         if total == 0:
             return 0.0
-        non_null_count = cast("int", tbl.filter(cast("Any", col.notnull())).count().execute())
+        non_null_table = filter_by(tbl, not_null(col))
+        non_null_count = execute_int(
+            non_null_table.count(), ctx=f"{table_key}.{column}.non_null_count"
+        )
         return float(non_null_count) / float(total)
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Not null fraction failed for %s.%s: %s", table_key, column, exc)
@@ -747,20 +752,20 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
         Count of orphaned references, or 0 if query failed.
     """
     try:
-        src_tbl = gateway.ibis.table(fk.source_table)
-        tgt_tbl = gateway.ibis.table(fk.ref_table)
+        src_tbl = ibis_facade.table(gateway, fk.source_table)
+        tgt_tbl = ibis_facade.table(gateway, fk.ref_table)
 
-        joined = src_tbl.left_join(
-            tgt_tbl,
-            cast("Any", src_tbl[fk.source_column] == tgt_tbl[fk.ref_column]),
-        )
+        src_col = get_column(src_tbl, fk.source_column)
+        tgt_col = get_column(tgt_tbl, fk.ref_column)
 
-        orphans = joined.filter(cast("Any", tgt_tbl[fk.ref_column].isnull()))
+        joined = src_tbl.left_join(tgt_tbl, predicates=(ibis_bool(src_col == tgt_col),))
+
+        orphans = filter_by(joined, is_null(tgt_col))
 
         if not fk.allow_null:
-            orphans = orphans.filter(cast("Any", src_tbl[fk.source_column].notnull()))
+            orphans = filter_by(orphans, not_null(src_col))
 
-        return cast("int", orphans.count().execute())
+        return execute_int(orphans.count(), ctx=f"{fk.source_table}.{fk.source_column}.orphan_count")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug(
             "Count orphan refs failed for %s.%s -> %s.%s: %s",

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 def test_maybe_scope_by_repo_commit_adds_filter_when_columns_exist(
     fresh_gateway: StorageGateway,
 ) -> None:
+    """maybe_scope_by_repo_commit adds repo+commit filters when snapshot columns exist."""
     fresh_gateway.con.execute(
         """
         INSERT INTO core.repo_map (repo, commit, modules)
@@ -31,8 +32,8 @@ def test_maybe_scope_by_repo_commit_adds_filter_when_columns_exist(
 def test_maybe_scope_by_repo_commit_is_noop_when_columns_missing(
     fresh_gateway: StorageGateway,
 ) -> None:
+    """maybe_scope_by_repo_commit is a no-op when repo/commit columns are absent."""
     table = fresh_gateway.ibis.table("core.ast_nodes")
     scoped = maybe_scope_by_repo_commit(table, repo="a/repo", commit="c1")
     sql = fresh_gateway.ibis.con.compile(scoped)
     expect_true("WHERE" not in sql.upper(), message="unscoped SQL has no WHERE")
-

@@ -27,8 +27,8 @@ import logging
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.core.ibis_typing import and_predicates, ibis_bool, isin_values
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
-from codeintel.storage.ibis_types import and_predicates, ibis_bool, isin_values
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -73,7 +73,7 @@ class DuckDBStorageAdapter(IngestStoragePort):
     --------
     >>> storage = DuckDBStorageAdapter(ctx.gateway)
     >>> result = storage.write_batch("core.modules", rows)
-    >>> print(f"Wrote {result.rows_written} rows")
+    >>> print(f"Wrote {result.rows_affected} rows")
     """
 
     ADAPTER_NAME: ClassVar[str] = "duckdb_storage"
@@ -140,14 +140,14 @@ class DuckDBStorageAdapter(IngestStoragePort):
         _ = scope
         self._validate_table_exists(table_key)
         if not rows:
-            return BatchResult.from_write(table_key=table_key, rows_written=0, duration_s=0.0)
+            return BatchResult.ok(table_key, 0, duration_s=0.0)
         columns = load_columns_by_table().get(table_key, [])
         inserted = self._backend.bulk_insert(
             table_key,
             [tuple(row) for row in rows],
             columns=columns,
         )
-        return BatchResult.from_write(table_key=table_key, rows_written=inserted, duration_s=0.0)
+        return BatchResult.ok(table_key, inserted, duration_s=0.0)
 
     def delete_by_params(
         self,

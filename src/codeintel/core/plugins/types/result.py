@@ -11,8 +11,7 @@ Architecture
 
 Note
 ----
-For the unified result protocol, see `codeintel.core.results`. The plugin result
-types in this module are designed specifically for plugin execution and include
+The plugin result types in this module are designed specifically for plugin execution and include
 additional fields for caching and plugin-specific metadata.
 """
 

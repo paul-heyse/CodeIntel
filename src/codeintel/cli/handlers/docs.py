@@ -20,7 +20,7 @@ from codeintel.build.exports import (
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors._cli_errors import ValidationError
 from codeintel.cli.errors.results import fail_project_error
-from codeintel.cli.errors.taxonomy import ValidationErrorCode, validation_error
+from codeintel.cli.errors.taxonomy import INVALID_FORMAT, validation_error
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.storage.validation import validate_contract_or_raise
 
@@ -291,7 +291,7 @@ def docs_export_handler(
     except ValidationError as exc:
         return CliResult.fail(
             validation_error(
-                ValidationErrorCode.INVALID_FORMAT,
+                INVALID_FORMAT,
                 "docs",
                 str(exc),
             )
@@ -319,7 +319,7 @@ def docs_export_handler(
                 message = str(exc) or "Validation failed"
                 return CliResult.fail(
                     validation_error(
-                        ValidationErrorCode.INVALID_FORMAT,
+                        INVALID_FORMAT,
                         "validation",
                         f"Validation failed: {message}",
                     )
@@ -328,7 +328,7 @@ def docs_export_handler(
                 LOG.exception("Docs export validation failed")
                 return CliResult.fail(
                     validation_error(
-                        ValidationErrorCode.INVALID_FORMAT,
+                        INVALID_FORMAT,
                         "validation",
                         f"Validation failed: {exc}",
                     )

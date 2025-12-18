@@ -401,8 +401,8 @@ class TypingIngestStep:
 
             scope = f"{repo}@{commit}"
             result = self._storage.write_batch("analytics.typedness", typedness_rows, scope=scope)
-            table_counts["analytics.typedness"] = result.rows_written
-            total_rows += result.rows_written
+            table_counts["analytics.typedness"] = result.rows_affected
+            total_rows += result.rows_affected
 
         if diagnostic_rows:
             diagnostic_paths = [str(row[2]) for row in diagnostic_rows]
@@ -416,8 +416,8 @@ class TypingIngestStep:
             )
 
             result = self._storage.write_batch("analytics.static_diagnostics", diagnostic_rows)
-            table_counts["analytics.static_diagnostics"] = result.rows_written
-            total_rows += result.rows_written
+            table_counts["analytics.static_diagnostics"] = result.rows_affected
+            total_rows += result.rows_affected
 
         log.info(
             "Typing ingest: repo=%s commit=%s typedness=%d diagnostics=%d",

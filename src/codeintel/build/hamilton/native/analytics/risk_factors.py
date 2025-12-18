@@ -22,6 +22,7 @@ from hamilton.function_modifiers import (
     value,
 )
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -39,7 +40,7 @@ from codeintel.build.hamilton.validators import (
     build_table_contract,
 )
 from codeintel.build.targets import TargetGraph
-from codeintel.build.ibis_typing import add, cast_dtype, ge, gt, ibis_bool, truediv
+from codeintel.core.ibis_typing import add, cast_dtype, ge, gt, ibis_bool, truediv
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
@@ -136,7 +137,8 @@ def _risk_factors_join_metrics(metrics: ir.Table, fan_in: ir.Table, fan_out: ir.
     )
 
     risk = risk.left_join(
-        fan_in, ibis_bool(risk.function_goid_h128 == fan_in.function_goid_h128)
+        fan_in,
+        predicates=[ibis_bool(risk.function_goid_h128 == fan_in.function_goid_h128)],
     ).select(
         risk.function_goid_h128,
         risk.repo,
@@ -147,7 +149,8 @@ def _risk_factors_join_metrics(metrics: ir.Table, fan_in: ir.Table, fan_out: ir.
     )
 
     return risk.left_join(
-        fan_out, ibis_bool(risk.function_goid_h128 == fan_out.function_goid_h128)
+        fan_out,
+        predicates=[ibis_bool(risk.function_goid_h128 == fan_out.function_goid_h128)],
     ).select(
         risk.function_goid_h128,
         risk.repo,
@@ -314,7 +317,7 @@ def t__risk_factors__compute(
 def t__risk_factors(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__goid_risk_factors: dict[str, object],
+    m__analytics__goid_risk_factors: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Finalize risk_factors execution from DAG-visible DuckDB materialization.
 

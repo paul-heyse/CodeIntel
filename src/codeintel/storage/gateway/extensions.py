@@ -8,15 +8,20 @@ from __future__ import annotations
 
 import os
 import re
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway.protocol import DuckDBConnection
+from typing import Protocol
 
 __all__ = [
+    "DuckDBExecutor",
     "load_extensions_from_env",
     "parse_extensions_env",
 ]
+
+class DuckDBExecutor(Protocol):
+    """DuckDB execution protocol for extension load/install."""
+
+    def execute(self, query: str, parameters: object | None = None) -> object:
+        """Execute a SQL statement on the underlying connection."""
+        ...
 
 _EXTENSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 _EXTENSIONS_ENV = "CODEINTEL_DUCKDB_EXTENSIONS"
@@ -41,7 +46,7 @@ def parse_extensions_env(*, env_var: str = _EXTENSIONS_ENV) -> tuple[str, ...]:
     return tuple(ext.strip() for ext in raw.split(",") if ext.strip())
 
 
-def load_extensions_from_env(con: DuckDBConnection, *, allow_install: bool) -> None:
+def load_extensions_from_env(con: DuckDBExecutor, *, allow_install: bool) -> None:
     """Install/load DuckDB extensions listed in `CODEINTEL_DUCKDB_EXTENSIONS`.
 
     Parameters

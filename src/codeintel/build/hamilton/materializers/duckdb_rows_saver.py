@@ -13,11 +13,12 @@ import types
 import typing
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, cast, get_args, get_origin
+from typing import Literal, cast, get_args, get_origin
 
 import pandas as pd
 from hamilton.io.data_adapters import DataSaver
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.contracts.pandera_hook import get_pandera_schema
 from codeintel.build.hamilton.env import BuildEnv
@@ -114,7 +115,7 @@ class DuckDBRowsSaver(DataSaver):
 
         return super().applies_to(type_)
 
-    def save_data(self, data: object) -> dict[str, Any]:
+    def save_data(self, data: object) -> MaterializationMetadata:
         """Save the provided rows and return metadata describing the write.
 
         Parameters
@@ -125,13 +126,13 @@ class DuckDBRowsSaver(DataSaver):
 
         Returns
         -------
-        dict[str, Any]
+        MaterializationMetadata
             Metadata describing the write, including status and input hash for
             manifest-based incremental builds.
         """
         start = time.perf_counter()
         input_hash: str | None = None
-        result: dict[str, Any] | None = None
+        result: MaterializationMetadata | None = None
 
         try:
             if not isinstance(self.env, BuildEnv):
@@ -237,7 +238,7 @@ def _duration_ms(start: float) -> float:
 
 def _succeeded(
     *, table_key: str, duration_ms: float, input_hash: str, row_count: int
-) -> dict[str, Any]:
+) -> MaterializationMetadata:
     return DuckDBMaterializationMetadata(
         status="succeeded",
         table_key=table_key,
@@ -254,7 +255,7 @@ def _skipped(
     duration_ms: float,
     input_hash: str,
     row_count: int | None,
-) -> dict[str, Any]:
+) -> MaterializationMetadata:
     return DuckDBMaterializationMetadata(
         status="skipped",
         table_key=table_key,
@@ -265,7 +266,9 @@ def _skipped(
     ).to_dict()
 
 
-def _failed(*, table_key: str, duration_ms: float, input_hash: str, error: str) -> dict[str, Any]:
+def _failed(
+    *, table_key: str, duration_ms: float, input_hash: str, error: str
+) -> MaterializationMetadata:
     return DuckDBMaterializationMetadata(
         status="failed",
         table_key=table_key,

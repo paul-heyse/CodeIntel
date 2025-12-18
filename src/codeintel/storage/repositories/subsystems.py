@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
-from codeintel.storage.ibis_types import and_predicates, ibis_bool, ilike, or_predicates
+from codeintel.core.ibis_typing import (
+    and_predicates,
+    filter_by,
+    ibis_bool,
+    ilike,
+    isin_column,
+    or_predicates,
+)
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -50,8 +57,9 @@ class SubsystemRepository(BaseRepository):
                 .select(modules.subsystem_id)
                 .distinct()
             )
-            expr = expr.filter(
-                ibis_bool(table.subsystem_id.isin(cast("Any", role_subsystems.subsystem_id)))
+            expr = filter_by(
+                expr,
+                isin_column(table.subsystem_id, role_subsystems.subsystem_id),
             )
 
         if query:

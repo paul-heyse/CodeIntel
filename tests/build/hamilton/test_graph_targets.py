@@ -22,6 +22,8 @@ from codeintel.build.hamilton.native.graphs.graph_targets import (
     GoidExtractResult,
     GraphValidationResult,
     SymbolUsesExtractResult,
+    goids__execution_result,
+    symbol_uses__execution_result,
     t__goids,
     t__graph_metrics,
     t__graph_validation,
@@ -304,7 +306,7 @@ def test_goids_materialize_success(
         },
     )
 
-    record = t__goids(env, graph, compute_result)
+    record = t__goids(env, graph, goids__execution_result(compute_result))
 
     expect_equal(record.status, "succeeded")
     expect_true(
@@ -336,7 +338,7 @@ def test_goids_materialize_failure(
         error="Upstream modules failed",
     )
 
-    record = t__goids(env, graph, compute_result)
+    record = t__goids(env, graph, goids__execution_result(compute_result))
 
     expect_equal(record.status, "failed")
     expect_true(
@@ -373,7 +375,7 @@ def test_symbol_uses_materialize_success(
         table_counts={"graph.symbol_use_edges": MAX_SYMBOL_USES_COUNT},
     )
 
-    record = t__symbol_uses(env, graph, compute_result)
+    record = t__symbol_uses(env, graph, symbol_uses__execution_result(compute_result))
 
     expect_equal(record.status, "succeeded")
     expect_true(
@@ -405,7 +407,7 @@ def test_symbol_uses_materialize_failure(
         error="Upstream scip failed",
     )
 
-    record = t__symbol_uses(env, graph, compute_result)
+    record = t__symbol_uses(env, graph, symbol_uses__execution_result(compute_result))
 
     expect_equal(record.status, "failed")
     expect_true(

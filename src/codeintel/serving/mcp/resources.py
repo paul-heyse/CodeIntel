@@ -26,15 +26,15 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as get_package_version
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
+from codeintel.serving.export.formats import mime_type_for_export_format
 from codeintel.serving.mcp.errors import (
     ExportNotFoundError,
     MetaArtifactNotFoundError,
     MetaSqlUnsafeError,
 )
+from codeintel.serving.mcp.protocols import ServingSnapshotPointerProtocol
 from codeintel.serving.mcp.response_models import (
     DEFAULT_RESOURCE_TEMPLATES,
     ExportMetaResponse,
@@ -45,23 +45,23 @@ from codeintel.serving.mcp.response_models import (
     ResourceTemplatesResponse,
     SnapshotRef,
 )
+from codeintel.serving.mcp.tooling_meta import runtime_versions, tooling_mismatch_warnings
 from codeintel.storage.queries.safe import UnsafeSqlError, assert_single_select_statement
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
     from pathlib import Path
 
     from codeintel.serving.mcp._compat import FastMCP
     from codeintel.serving.mcp.resource_store import ResourceStore
-    from codeintel.serving.semantic.models import SemanticExportRequest
+    from codeintel.serving.operations.ops import ServingOperations
     from codeintel.serving.settings import ServingSettings
 
 LOG = logging.getLogger(__name__)
 
-_MIME_JSON = "application/json"
-_MIME_NDJSON = "application/x-ndjson"
-_MIME_PARQUET = "application/vnd.apache.parquet"
-_MIME_ARROW = "application/vnd.apache.arrow.file"
+_MIME_JSON = mime_type_for_export_format("json")
+_MIME_NDJSON = mime_type_for_export_format("ndjson")
+_MIME_PARQUET = mime_type_for_export_format("parquet")
+_MIME_ARROW = mime_type_for_export_format("arrow")
 
 
 class ExportChunkRequestError(ValueError):
@@ -72,86 +72,20 @@ class ExportFullReadNotAllowedError(ValueError):
     """Full export reads are disallowed due to server payload limits."""
 
 
-class _DBProtocol(Protocol):
-    """Protocol for database manager access."""
-
-    def current_pointer(self) -> _PointerProtocol:
-        """Return the current serving snapshot pointer."""
-        ...
-
-
-class _PointerProtocol(Protocol):
-    """Protocol for serving snapshot pointer."""
-
-    @property
-    def repo(self) -> str:
-        """Repository identifier."""
-        ...
-
-    @property
-    def commit(self) -> str:
-        """Git commit SHA."""
-        ...
-
-    @property
-    def run_id(self) -> str:
-        """Build run identifier."""
-        ...
-
-    @property
-    def published_at(self) -> datetime:
-        """When the snapshot was published."""
-        ...
-
-    @property
-    def schema_manifest_path(self) -> Path:
-        """Path to the schema manifest (used to locate serving artifacts)."""
-        ...
-
-
-class _KernelProtocol(Protocol):
-    """Protocol for the kernel interface used by MCP resources.
-
-    This minimal protocol avoids circular imports while providing
-    type safety for resource handlers.
-    """
-
-    @property
-    def db(self) -> _DBProtocol:
-        """Return the database manager."""
-        ...
-
-    def catalog(self) -> dict[str, object]:
-        """Return the semantic view catalog."""
-        ...
-
-    def describe(self, view_id: str) -> dict[str, object]:
-        """Describe a semantic view."""
-        ...
-
-    def meta(self) -> dict[str, object]:
-        """Return serving metadata."""
-        ...
-
-    def export_rows(self, request: SemanticExportRequest) -> Iterator[dict[str, object]]:
-        """Export rows from a semantic view."""
-        ...
-
-
-def _build_resource_templates_response(kernel: _KernelProtocol) -> dict[str, object]:
+def _build_resource_templates_response(ops: ServingOperations) -> dict[str, object]:
     """Build ResourceTemplatesResponse for resource discovery.
 
     Parameters
     ----------
-    kernel
-        Semantic query kernel providing snapshot info.
+    ops
+        Serving operations façade providing access to the current snapshot pointer.
 
     Returns
     -------
     dict[str, object]
         ResourceTemplatesResponse as JSON dict.
     """
-    ptr = kernel.db.current_pointer()
+    ptr = ops.db.current_pointer()
     snapshot = SnapshotRef(
         repo=ptr.repo,
         commit=ptr.commit,
@@ -261,41 +195,18 @@ def _read_json_file(path: Path) -> dict[str, object]:
     return {str(k): v for k, v in raw.items()}
 
 
-def _artifact_dir_for_pointer(pointer: _PointerProtocol) -> Path:
+def _artifact_dir_for_pointer(pointer: ServingSnapshotPointerProtocol) -> Path:
     return pointer.schema_manifest_path.parent
 
 
-def _runtime_versions() -> dict[str, str]:
-    tools = ["codeintel", "duckdb", "ibis-framework", "sqlglot", "pyarrow"]
-    versions: dict[str, str] = {}
-    for tool in tools:
-        try:
-            versions[tool] = get_package_version(tool)
-        except PackageNotFoundError:
-            versions[tool] = "not-installed"
-    return versions
-
-
-def _tooling_mismatch_warnings(environment: dict[str, object]) -> list[str]:
-    tools_obj = environment.get("tools")
-    tools = tools_obj if isinstance(tools_obj, dict) else {}
-    runtime = _runtime_versions()
-    warnings: list[str] = []
-    for key, runtime_version in runtime.items():
-        snapshot_version_obj = tools.get(key)
-        if snapshot_version_obj is None:
-            continue
-        snapshot_version = str(snapshot_version_obj)
-        if snapshot_version != runtime_version:
-            warnings.append(f"tool-version-mismatch: {key} snapshot={snapshot_version} runtime={runtime_version}")
-    return warnings
-
-
-def _read_environment_resource(kernel: _KernelProtocol, *, settings: ServingSettings) -> dict[str, object]:
-    meta = kernel.meta()
+def _read_environment_resource(
+    ops: ServingOperations, *, settings: ServingSettings
+) -> dict[str, object]:
+    meta = ops.meta()
     env_obj = meta.get("environment")
     environment = env_obj if isinstance(env_obj, dict) else {}
-    pointer = kernel.db.current_pointer()
+    pointer = ops.db.current_pointer()
+    runtime = runtime_versions()
     return {
         "snapshot": {
             "repo": pointer.repo,
@@ -304,8 +215,8 @@ def _read_environment_resource(kernel: _KernelProtocol, *, settings: ServingSett
             "published_at": pointer.published_at.isoformat(),
         },
         "environment": environment,
-        "runtime_versions": _runtime_versions(),
-        "warnings": _tooling_mismatch_warnings(environment),
+        "runtime_versions": runtime,
+        "warnings": list(tooling_mismatch_warnings(environment, runtime=runtime)),
         "mcp_export_limits": {
             "max_full_read_bytes": settings.mcp_export_max_full_read_bytes,
             "max_chunk_bytes": settings.mcp_export_max_chunk_bytes,
@@ -315,7 +226,7 @@ def _read_environment_resource(kernel: _KernelProtocol, *, settings: ServingSett
     }
 
 
-def _read_views_sql(pointer: _PointerProtocol) -> dict[str, object]:
+def _read_views_sql(pointer: ServingSnapshotPointerProtocol) -> dict[str, object]:
     path = _artifact_dir_for_pointer(pointer) / "views_sql.json"
     if not path.is_file():
         artifact_name = "views_sql.json"
@@ -332,7 +243,7 @@ def _read_views_sql(pointer: _PointerProtocol) -> dict[str, object]:
     return views_sql
 
 
-def _read_views_sql_diff(pointer: _PointerProtocol) -> dict[str, object]:
+def _read_views_sql_diff(pointer: ServingSnapshotPointerProtocol) -> dict[str, object]:
     path = _artifact_dir_for_pointer(pointer) / "views_sql_diff.json"
     if not path.is_file():
         artifact_name = "views_sql_diff.json"
@@ -360,7 +271,7 @@ def _read_bytes_chunk(path: Path, *, offset: int, limit: int) -> bytes:
 
 def _register_meta_resources(
     mcp: FastMCP,
-    kernel: _KernelProtocol,
+    ops: ServingOperations,
     settings: ServingSettings,
 ) -> None:
     """Register static/meta MCP resources.
@@ -369,8 +280,8 @@ def _register_meta_resources(
     ----------
     mcp
         FastMCP server instance.
-    kernel
-        Semantic query kernel.
+    ops
+        Serving operations facade.
     settings
         Serving settings controlling meta resource behavior.
     """
@@ -384,7 +295,7 @@ def _register_meta_resources(
         dict[str, object]
             Catalog with version, snapshot, and views list.
         """
-        return kernel.catalog()
+        return ops.catalog()
 
     @mcp.resource("codeintel://semantic/views/{view_id}")
     def view_description(view_id: str) -> dict[str, object]:
@@ -400,7 +311,7 @@ def _register_meta_resources(
         dict[str, object]
             View description with schema details.
         """
-        return kernel.describe(view_id)
+        return ops.describe(view_id)
 
     @mcp.resource("codeintel://meta/serving")
     def serving_meta_resource() -> dict[str, object]:
@@ -411,7 +322,7 @@ def _register_meta_resources(
         dict[str, object]
             Comprehensive serving metadata.
         """
-        return kernel.meta()
+        return ops.meta()
 
     @mcp.resource("codeintel://meta/resources")
     def resource_templates() -> dict[str, object]:
@@ -425,7 +336,7 @@ def _register_meta_resources(
         dict[str, object]
             ResourceTemplatesResponse with all supported templates.
         """
-        return _build_resource_templates_response(kernel)
+        return _build_resource_templates_response(ops)
 
     @mcp.resource("codeintel://meta/environment", mime_type="application/json", tags={"meta"})
     def environment() -> dict[str, object]:
@@ -436,7 +347,7 @@ def _register_meta_resources(
         dict[str, object]
             Environment payload including snapshot pointer, tool versions, and limits.
         """
-        return _read_environment_resource(kernel, settings=settings)
+        return _read_environment_resource(ops, settings=settings)
 
     @mcp.resource("codeintel://meta/views_sql", mime_type="application/json", tags={"meta"})
     def views_sql() -> dict[str, object]:
@@ -447,7 +358,7 @@ def _register_meta_resources(
         dict[str, object]
             Mapping of view_id to compiled SQL string.
         """
-        return _read_views_sql(kernel.db.current_pointer())
+        return _read_views_sql(ops.db.current_pointer())
 
     @mcp.resource("codeintel://meta/views_sql_diff", mime_type="application/json", tags={"meta"})
     def views_sql_diff() -> dict[str, object]:
@@ -458,7 +369,7 @@ def _register_meta_resources(
         dict[str, object]
             JSON payload describing changes between snapshots.
         """
-        return _read_views_sql_diff(kernel.db.current_pointer())
+        return _read_views_sql_diff(ops.db.current_pointer())
 
 
 def _validate_chunk_request(*, offset: int, limit: int, max_limit: int) -> None:
@@ -642,7 +553,7 @@ def _register_export_resources(
 
 def register_resources(
     mcp: FastMCP,
-    kernel: _KernelProtocol,
+    ops: ServingOperations,
     store: ResourceStore,
     *,
     settings: ServingSettings,
@@ -653,14 +564,14 @@ def register_resources(
     ----------
     mcp
         FastMCP server instance.
-    kernel
-        Semantic query kernel.
+    ops
+        Serving operations facade.
     store
         Resource store for exports.
     settings
         Serving settings controlling resource behavior.
     """
-    _register_meta_resources(mcp, kernel, settings)
+    _register_meta_resources(mcp, ops, settings)
     _register_export_resources(mcp, store, settings)
 
 

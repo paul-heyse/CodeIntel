@@ -29,6 +29,7 @@ __all__ = [
     "canonical_sql_duckdb",
     "extract_table_keys_duckdb",
     "extract_table_refs",
+    "fingerprint_canonical_sql",
     "fingerprint_sql_duckdb",
     "parse_one_duckdb",
 ]
@@ -46,16 +47,8 @@ def parse_one_duckdb(sql: str) -> exp.Expression:
     -------
     sqlglot.expressions.Expression
         Parsed AST root.
-
-    Raises
-    ------
-    ParseError
-        If parsing fails.
     """
-    try:
-        return parse_one(sql, dialect=DUCKDB_DIALECT)
-    except ParseError:
-        raise
+    return parse_one(sql, dialect=DUCKDB_DIALECT)
 
 
 def canonical_sql_duckdb(sql: str) -> str:
@@ -82,6 +75,22 @@ def fingerprint_sql_duckdb(sql: str) -> str:
         Fingerprint of the canonicalized SQL.
     """
     canon = canonical_sql_duckdb(sql)
+    return fingerprint_canonical_sql(canon)
+
+
+def fingerprint_canonical_sql(canon: str) -> str:
+    """Return a stable SHA-256 fingerprint for canonical SQL text.
+
+    Parameters
+    ----------
+    canon
+        Canonical SQL string.
+
+    Returns
+    -------
+    str
+        Stable fingerprint of the text.
+    """
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
 
