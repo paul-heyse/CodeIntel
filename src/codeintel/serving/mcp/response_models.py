@@ -299,11 +299,11 @@ class ExportURIs(BaseModel):
     sql_uri: str | None = Field(default=None, description="URI to fetch compiled SQL (if stored).")
     lines_uri_template: str | None = Field(
         default=None,
-        description="URI template for chunked line reads: codeintel://exports/{export_id}/lines?offset={offset}&limit={limit}.",
+        description="URI template for chunked line reads: codeintel://exports/{export_id}/lines{?offset,limit}.",
     )
     bytes_uri_template: str | None = Field(
         default=None,
-        description="URI template for chunked byte reads: codeintel://exports/{export_id}/bytes?offset={offset}&limit={limit}.",
+        description="URI template for chunked byte reads: codeintel://exports/{export_id}/bytes{?offset,limit}.",
     )
 
 
@@ -812,13 +812,13 @@ DEFAULT_RESOURCE_TEMPLATES: tuple[ResourceTemplate, ...] = (
         tags=("exports", "sql"),
     ),
     ResourceTemplate(
-        uri="codeintel://exports/{export_id}/lines?offset={offset}&limit={limit}",
+        uri="codeintel://exports/{export_id}/lines{?offset,limit}",
         description="Chunked line retrieval for ndjson/json exports (offset/limit lines).",
         mime_type="text/plain",
         tags=("exports", "chunk"),
     ),
     ResourceTemplate(
-        uri="codeintel://exports/{export_id}/bytes?offset={offset}&limit={limit}",
+        uri="codeintel://exports/{export_id}/bytes{?offset,limit}",
         description="Chunked byte retrieval for parquet/arrow exports (offset/limit bytes).",
         mime_type="application/octet-stream",
         tags=("exports", "chunk"),

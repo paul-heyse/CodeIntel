@@ -35,7 +35,6 @@ from ibis.common.exceptions import (
 )
 from sqlglot import exp, parse
 from sqlglot.errors import ParseError
-from sqlglot.optimizer.scope import traverse_scope
 
 from codeintel.core.errors.storage import (
     ColumnNotFoundError,
@@ -51,6 +50,7 @@ from codeintel.storage.gateway.protocol import (
     DuckDBInvalidInputException,
     DuckDBProgrammingError,
 )
+from codeintel.storage.sqlglot_tools import extract_table_refs
 
 IbisBaseError = IbisError
 
@@ -150,7 +150,7 @@ def assert_select_perimeter(sql: str, *, policy: SqlIngressPolicy) -> exp.Expres
 
 def _validate_ingress_tables(root: exp.Expression, *, policy: SqlIngressPolicy) -> None:
     reason = "policy_violation"
-    tables = _extract_table_refs(root)
+    tables = extract_table_refs(root)
     allowed_schemas = {s.lower() for s in policy.allowed_schemas} if policy.allowed_schemas else None
     allowed_tables = {t.lower() for t in policy.allowed_tables} if policy.allowed_tables else None
 
@@ -181,15 +181,6 @@ def _validate_ingress_tables(root: exp.Expression, *, policy: SqlIngressPolicy) 
         if allowed_tables is not None and key not in allowed_tables:
             detail = f"Table {key!r} is not allowed"
             raise UnsafeSqlError(reason, detail=detail)
-
-
-def _extract_table_refs(root: exp.Expression) -> tuple[exp.Table, ...]:
-    tables: list[exp.Table] = []
-    for scope in traverse_scope(root):
-        tables.extend(
-            source for source in scope.sources.values() if isinstance(source, exp.Table)
-        )
-    return tuple(tables)
 
 
 def _validate_ingress_functions(root: exp.Expression, *, policy: SqlIngressPolicy) -> None:

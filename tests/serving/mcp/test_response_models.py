@@ -619,7 +619,7 @@ def test_resource_templates_response_with_templates(
 
 def test_default_resource_templates_count() -> None:
     """Verify DEFAULT_RESOURCE_TEMPLATES has expected count."""
-    expect_equal(len(DEFAULT_RESOURCE_TEMPLATES), 8)
+    expect_equal(len(DEFAULT_RESOURCE_TEMPLATES), 13)
 
 
 def test_default_resource_templates_structure() -> None:
@@ -636,12 +636,17 @@ def test_default_resource_templates_uris() -> None:
     expected_uris = {
         "codeintel://meta/serving",
         "codeintel://meta/resources",
+        "codeintel://meta/environment",
+        "codeintel://meta/views_sql",
+        "codeintel://meta/views_sql_diff",
         "codeintel://semantic/views",
         "codeintel://semantic/views/{view_id}",
         "codeintel://exports/{export_id}",
         "codeintel://exports/{export_id}/meta",
         "codeintel://exports/{export_id}/preview",
         "codeintel://exports/{export_id}/sql",
+        "codeintel://exports/{export_id}/lines{?offset,limit}",
+        "codeintel://exports/{export_id}/bytes{?offset,limit}",
     }
     expect_equal(uris, expected_uris)
 

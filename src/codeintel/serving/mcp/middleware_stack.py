@@ -9,9 +9,12 @@ import logging
 from typing import TYPE_CHECKING
 
 from fastmcp.server.middleware.caching import (
+    CallToolSettings,
+    GetPromptSettings,
     ListPromptsSettings,
     ListResourcesSettings,
     ListToolsSettings,
+    ReadResourceSettings,
     ResponseCachingMiddleware,
 )
 from fastmcp.server.middleware.logging import StructuredLoggingMiddleware
@@ -34,7 +37,10 @@ def _get_rate_limit_client_id(context: MiddlewareContext[object]) -> str:
     fastmcp_context = context.fastmcp_context
     if fastmcp_context is None:
         return "global"
-    session_id_obj = getattr(fastmcp_context, "session_id", None)
+    try:
+        session_id_obj = getattr(fastmcp_context, "session_id", None)
+    except RuntimeError:
+        return "bootstrap"
     if isinstance(session_id_obj, str) and session_id_obj:
         return session_id_obj
     return "global"
@@ -78,6 +84,9 @@ def build_mcp_middleware(settings: ServingSettings) -> Sequence[Middleware]:
                 list_tools_settings=ListToolsSettings(enabled=True, ttl=ttl),
                 list_resources_settings=ListResourcesSettings(enabled=True, ttl=ttl),
                 list_prompts_settings=ListPromptsSettings(enabled=True, ttl=ttl),
+                read_resource_settings=ReadResourceSettings(enabled=False),
+                get_prompt_settings=GetPromptSettings(enabled=False),
+                call_tool_settings=CallToolSettings(enabled=False),
             )
         )
 

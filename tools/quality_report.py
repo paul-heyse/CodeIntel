@@ -233,20 +233,6 @@ def main() -> int:
                 "tools.guardrails",
             ],
         ),
-        CommandSpec(
-            name="import_hygiene",
-            args=[
-                "uv",
-                "run",
-                "ruff",
-                "check",
-                "--fix",
-                "--select",
-                "F401,TCH",
-                "src",
-                "tests",
-            ],
-        ),
         CommandSpec(name="ruff_check", args=["uv", "run", "ruff", "check", "--fix"]),
         CommandSpec(
             name="target_contracts",

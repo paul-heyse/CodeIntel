@@ -31,7 +31,7 @@ import pandas as pd
 
 from codeintel.core.repository import PagedResult
 from codeintel.storage.contracts.validation import validate_df
-from codeintel.storage.ibis_types import filter_by
+from codeintel.storage.snapshot_scoping import maybe_scope_by_repo_commit
 
 if TYPE_CHECKING:
     from ibis.expr import types as it
@@ -85,11 +85,7 @@ class BaseRepository:
             Ibis table expression.
         """
         expr = self.gateway.ibis.table(table_key)
-        schema = expr.schema()
-        names = set(schema.keys())
-        if "repo" in names and "commit" in names:
-            return filter_by(expr, expr["repo"] == self.repo, expr["commit"] == self.commit)
-        return expr
+        return maybe_scope_by_repo_commit(expr, repo=self.repo, commit=self.commit)
 
     def _ibis_to_df(
         self,

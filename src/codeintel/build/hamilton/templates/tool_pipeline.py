@@ -17,23 +17,22 @@ the public target node (e.g., ``t__scip``) remains a stable identifier.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from hamilton.function_modifiers import source
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materialization,
 )
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.targets import TargetGraph
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetGraph
-    from codeintel.hamilton.records import TargetRunRecord
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, Path)
 
 
 @SaveToObjectMetadataDecorator(
@@ -70,7 +69,7 @@ def record(
     graph: TargetGraph,
     target_name: str,
     artifact_name: str,
-    artifact_metadata: dict[str, object],
+    artifact_metadata: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Convert artifact saver metadata into a TargetRunRecord.
 

@@ -3,7 +3,6 @@
 This module consolidates the common glue across the Phase 1 templates:
 
 - NativeTargetExecutor-based "executor" pattern
-- DuckDB row-oriented materialization (rows → DuckDBRowsSaver → TargetRunRecord)
 - DuckDB Ibis materialization (Ibis expr → DuckDBIbisTableSaver → TargetRunRecord)
 
 It is designed to be used directly via `@subdag` wiring in native target modules, or via
@@ -12,14 +11,13 @@ re-exports from `codeintel.build.hamilton.templates`.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any
-
 import ibis.expr.types as ir
 from hamilton.function_modifiers import source
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata, RowCounts
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
+from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
@@ -29,28 +27,15 @@ from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.targets import TargetGraph
 
-if TYPE_CHECKING:
-    pass
-
 # Keep types available for Hamilton's runtime type resolution
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
-
-# Note: Using Any instead of Protocol for compute_result parameter because:
-# 1. Python 3.13 Protocol doesn't support issubclass() for data-only protocols
-# 2. Hamilton internally uses issubclass() for type matching
-# The expected interface is:
-#   - success: bool
-#   - table_counts: dict[str, int]
-#   - error: str | None
-ComputeResult = Any
-
+_HAMILTON_TYPE_HINTS = (BuildEnv, ExecutionResult, TargetGraph, TargetRunRecord, ir.Table)
 
 @tag_materialize()
 def executor_materialize(
     env: BuildEnv,
     graph: TargetGraph,
     target_name: str,
-    compute_result: ComputeResult,
+    compute_result: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize using the NativeTargetExecutor pattern.
 
@@ -68,7 +53,7 @@ def executor_materialize(
         error_msg = compute_result.error or f"{target_name} computation failed"
         return executor.fail(RuntimeError(error_msg))
 
-    def compute() -> dict[str, int]:
+    def compute() -> RowCounts:
         return dict(compute_result.table_counts)
 
     return executor.execute(compute)
@@ -79,7 +64,7 @@ def executor_record(
     env: BuildEnv,
     graph: TargetGraph,
     target_name: str,
-    compute_result: ComputeResult,
+    compute_result: ExecutionResult,
 ) -> TargetRunRecord:
     """Short-name wrapper for executor_materialize for subDAG wiring.
 
@@ -89,30 +74,6 @@ def executor_record(
         Execution record for the target.
     """
     return executor_materialize(env, graph, target_name, compute_result)
-
-
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_="materialization",
-    env=source("env"),
-    graph=source("graph"),
-    target_name=source("target_name"),
-    table_key=source("table_key"),
-    columns=source("columns"),
-)
-@tag_compute()
-def rows_to_save(
-    rows: Sequence[tuple[Any, ...]] | None,
-) -> Sequence[tuple[Any, ...]] | None:
-    """Return the row sequence to be materialized.
-
-    Returns
-    -------
-    Sequence[tuple[Any, ...]] | None
-        The same row sequence.
-    """
-    return rows
-
 
 @SaveToObjectMetadataDecorator(
     [DuckDBIbisTableSaver],
@@ -140,7 +101,7 @@ def duckdb_record(
     graph: TargetGraph,
     target_name: str,
     table_key: str,
-    materialization: dict[str, object],
+    materialization: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Convert a saver metadata dict into a TargetRunRecord.
 
@@ -158,38 +119,9 @@ def duckdb_record(
     )
 
 
-def row_to_tuple(row: Mapping[str, object], columns: tuple[str, ...]) -> tuple[object, ...]:
-    """Convert a mapping row to a tuple in column order.
-
-    Returns
-    -------
-    tuple[object, ...]
-        Tuple of row values in column order.
-    """
-    return tuple(row.get(col) for col in columns)
-
-
-def rows_to_tuples(
-    rows: Sequence[Mapping[str, object]],
-    columns: tuple[str, ...],
-) -> tuple[tuple[object, ...], ...]:
-    """Convert a sequence of mapping rows to a tuple of tuples in column order.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...]
-        Tuple of row tuples in column order.
-    """
-    return tuple(row_to_tuple(row, columns) for row in rows)
-
-
 __all__ = [
-    "ComputeResult",
     "duckdb_record",
     "executor_materialize",
     "executor_record",
     "ibis_expr_to_save",
-    "row_to_tuple",
-    "rows_to_save",
-    "rows_to_tuples",
 ]

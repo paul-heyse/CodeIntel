@@ -8,12 +8,12 @@ at the gateway layer via DuckDBPolicyBackend.
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.storage.gateway.extensions import load_extensions_from_env
 from codeintel.storage.schema import apply_all_schemas
 
 if TYPE_CHECKING:
@@ -26,8 +26,6 @@ DuckDBConnectConfig = dict[str, DuckDBConnectConfigValue]
 __all__ = [
     "connect",
 ]
-
-_DUCKDB_EXTENSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 
 
 def connect(
@@ -57,7 +55,7 @@ def connect(
             _duckdb_connect_config_from_env(), duckdb_config
         ),
     )
-    _load_duckdb_extensions_from_env(con, allow_install=not config.read_only)
+    load_extensions_from_env(con, allow_install=not config.read_only)
     _attach_history_if_needed(con, config)
     _apply_schema(con, config)
     return con
@@ -130,21 +128,6 @@ def _parse_int_or_string(value: str) -> int | str:
     if stripped.isdigit():
         return int(stripped)
     return stripped
-
-
-def _load_duckdb_extensions_from_env(con: DuckDBConnection, *, allow_install: bool) -> None:
-    raw = os.environ.get("CODEINTEL_DUCKDB_EXTENSIONS", "").strip()
-    if not raw:
-        return
-
-    extensions = [ext.strip() for ext in raw.split(",") if ext.strip()]
-    for extension in extensions:
-        if _DUCKDB_EXTENSION_NAME_PATTERN.fullmatch(extension) is None:
-            message = f"Invalid DuckDB extension name in CODEINTEL_DUCKDB_EXTENSIONS: {extension!r}"
-            raise ValueError(message)
-        if allow_install:
-            con.execute(f"INSTALL {extension}")
-        con.execute(f"LOAD {extension}")
 
 
 def _open_primary_connection(

@@ -122,11 +122,17 @@ def _build_error_context(
     run_id: str | None = None
 
     if fastmcp_ctx is not None:
-        session_id_obj = getattr(fastmcp_ctx, "session_id", None)
+        try:
+            session_id_obj = getattr(fastmcp_ctx, "session_id", None)
+        except RuntimeError:
+            session_id_obj = None
         if isinstance(session_id_obj, str) and session_id_obj:
             request_id = session_id_obj
 
-        snapshot_obj = getattr(fastmcp_ctx, "snapshot", None)
+        try:
+            snapshot_obj = getattr(fastmcp_ctx, "snapshot", None)
+        except RuntimeError:
+            snapshot_obj = None
         if isinstance(snapshot_obj, dict):
             repo_obj = snapshot_obj.get("repo")
             commit_obj = snapshot_obj.get("commit")

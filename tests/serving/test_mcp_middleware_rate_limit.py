@@ -106,6 +106,7 @@ def _write_pointer(
 
 @pytest.mark.anyio
 async def test_mcp_rate_limiting_applies_to_list_tools(tmp_path: Path) -> None:
+    """Apply rate limiting to FastMCP list_tools for a single session."""
     serve_dir = tmp_path / "serve"
     serve_dir.mkdir(parents=True, exist_ok=True)
 

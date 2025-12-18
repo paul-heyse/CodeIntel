@@ -14,8 +14,8 @@ Resource URI Scheme (Canonical Taxonomy)
 - ``codeintel://exports/{export_id}/meta`` - Export metadata
 - ``codeintel://exports/{export_id}/preview`` - Export preview (LLM-friendly)
 - ``codeintel://exports/{export_id}/sql`` - Compiled SQL used for export
-- ``codeintel://exports/{export_id}/lines?offset={offset}&limit={limit}`` - NDJSON/JSON line chunks
-- ``codeintel://exports/{export_id}/bytes?offset={offset}&limit={limit}`` - Binary byte chunks
+- ``codeintel://exports/{export_id}/lines{?offset,limit}`` - NDJSON/JSON line chunks
+- ``codeintel://exports/{export_id}/bytes{?offset,limit}`` - Binary byte chunks
 - ``codeintel://meta/environment`` - Snapshot build environment (tool versions + mismatch warnings)
 - ``codeintel://meta/views_sql`` - Snapshot compiled SQL for semantic views (validated select-only)
 - ``codeintel://meta/views_sql_diff`` - Snapshot diff vs previous compiled view SQL (if available)
@@ -28,10 +28,13 @@ import logging
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_package_version
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from codeintel.serving.mcp.errors import ExportNotFoundError, MetaArtifactNotFoundError, MetaSqlUnsafeError
+from codeintel.serving.mcp.errors import (
+    ExportNotFoundError,
+    MetaArtifactNotFoundError,
+    MetaSqlUnsafeError,
+)
 from codeintel.serving.mcp.response_models import (
     DEFAULT_RESOURCE_TEMPLATES,
     ExportMetaResponse,
@@ -46,6 +49,7 @@ from codeintel.storage.queries.safe import UnsafeSqlError, assert_single_select_
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
     from codeintel.serving.mcp._compat import FastMCP
     from codeintel.serving.mcp.resource_store import ResourceStore
@@ -199,8 +203,8 @@ def _build_export_meta_response(export_id: str, store: ResourceStore) -> dict[st
     )
 
     # Build URIs
-    lines_template = f"codeintel://exports/{export_id}/lines?offset={{offset}}&limit={{limit}}"
-    bytes_template = f"codeintel://exports/{export_id}/bytes?offset={{offset}}&limit={{limit}}"
+    lines_template = f"codeintel://exports/{export_id}/lines{{?offset,limit}}"
+    bytes_template = f"codeintel://exports/{export_id}/bytes{{?offset,limit}}"
     uris = ExportURIs(
         payload_uri=f"codeintel://exports/{export_id}",
         meta_uri=f"codeintel://exports/{export_id}/meta",
@@ -552,8 +556,8 @@ def _register_export_metadata_resources(mcp: FastMCP, store: ResourceStore) -> N
 
 
 def _register_export_chunk_resources(mcp: FastMCP, store: ResourceStore, *, settings: ServingSettings) -> None:
-    @mcp.resource("codeintel://exports/{export_id}/lines?offset={offset}&limit={limit}", mime_type="text/plain")
-    def export_lines(export_id: str, offset: int, limit: int) -> str:
+    @mcp.resource("codeintel://exports/{export_id}/lines{?offset,limit}", mime_type="text/plain")
+    def export_lines(export_id: str, offset: int = 0, limit: int = 100) -> str:
         """Return a slice of NDJSON/JSON lines for large text exports.
 
         Parameters
@@ -582,10 +586,10 @@ def _register_export_chunk_resources(mcp: FastMCP, store: ResourceStore, *, sett
         return _read_text_chunk(artifact.path, offset=offset, limit=limit)
 
     @mcp.resource(
-        "codeintel://exports/{export_id}/bytes?offset={offset}&limit={limit}",
+        "codeintel://exports/{export_id}/bytes{?offset,limit}",
         mime_type="application/octet-stream",
     )
-    def export_bytes(export_id: str, offset: int, limit: int) -> bytes:
+    def export_bytes(export_id: str, offset: int = 0, limit: int = 1024) -> bytes:
         """Return a byte-range slice for large binary exports.
 
         Parameters
@@ -607,7 +611,10 @@ def _register_export_chunk_resources(mcp: FastMCP, store: ResourceStore, *, sett
         ExportChunkRequestError
             If ``offset`` or ``limit`` are invalid for the configured server limits.
         """
-        _validate_chunk_request(offset=offset, limit=limit, max_limit=settings.mcp_export_max_chunk_bytes)
+        try:
+            _validate_chunk_request(offset=offset, limit=limit, max_limit=settings.mcp_export_max_chunk_bytes)
+        except ExportChunkRequestError as exc:
+            raise ExportChunkRequestError from exc
         artifact = store.get(export_id)
         return _read_bytes_chunk(artifact.path, offset=offset, limit=limit)
 

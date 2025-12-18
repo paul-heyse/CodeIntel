@@ -7,13 +7,11 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.exceptions import StorageConnectionError
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.gateway.connection import (
-    connect,
-)
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema import assert_schema_alignment
 from codeintel.storage.validation import validate_contract_or_raise
@@ -47,7 +45,8 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
         If the database connection cannot be established.
     """
     try:
-        con = connect(config)
+        session = DuckDBSession(config)
+        con = session.open_reader() if config.read_only else session.open()
         if not config.read_only:
             include_views = config.ensure_views and config.apply_schema
             bootstrap_metadata_datasets(
