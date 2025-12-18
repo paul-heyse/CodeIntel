@@ -14,8 +14,8 @@ import ibis
 
 from codeintel.analytics.utilities.ast import safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.paths import normalize_path
-from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

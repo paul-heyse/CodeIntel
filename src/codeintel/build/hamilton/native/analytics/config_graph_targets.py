@@ -43,6 +43,7 @@ from codeintel.analytics.graphs.config_graph_metrics import (
     compute_config_graph_metrics_result,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -403,20 +404,20 @@ def config_projection_module_edges__rows(
 class _ConfigMaterializations:
     """Bundle of materialization results for config_data_flow target."""
 
-    data_flow: dict[str, object]
-    keys: dict[str, object]
-    modules: dict[str, object]
-    key_edges: dict[str, object]
-    module_edges: dict[str, object]
+    data_flow: MaterializationMetadata
+    keys: MaterializationMetadata
+    modules: MaterializationMetadata
+    key_edges: MaterializationMetadata
+    module_edges: MaterializationMetadata
 
 
 @tag(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME, node_type="compute")
 def config_data_flow__materializations(
-    m__analytics__config_data_flow: dict[str, object],
-    m__analytics__config_graph_metrics_keys: dict[str, object],
-    m__analytics__config_graph_metrics_modules: dict[str, object],
-    m__analytics__config_projection_key_edges: dict[str, object],
-    m__analytics__config_projection_module_edges: dict[str, object],
+    m__analytics__config_data_flow: MaterializationMetadata,
+    m__analytics__config_graph_metrics_keys: MaterializationMetadata,
+    m__analytics__config_graph_metrics_modules: MaterializationMetadata,
+    m__analytics__config_projection_key_edges: MaterializationMetadata,
+    m__analytics__config_projection_module_edges: MaterializationMetadata,
 ) -> _ConfigMaterializations:
     """Bundle materialization results for the materialize node.
 
@@ -747,15 +748,15 @@ def dfg_function_metrics_ext__rows(
 
 @tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="helper")
 def cfg_dfg_metrics__cfg_materializations(
-    m__analytics__cfg_function_metrics: dict[str, object],
-    m__analytics__cfg_block_metrics: dict[str, object],
-    m__analytics__cfg_function_metrics_ext: dict[str, object],
-) -> dict[str, dict[str, object]]:
+    m__analytics__cfg_function_metrics: MaterializationMetadata,
+    m__analytics__cfg_block_metrics: MaterializationMetadata,
+    m__analytics__cfg_function_metrics_ext: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
     """Collect CFG materialization payloads for cfg_dfg_metrics.
 
     Returns
     -------
-    dict[str, dict[str, object]]
+    dict[str, MaterializationMetadata]
         Materialization metadata keyed by table key.
     """
     return {
@@ -767,15 +768,15 @@ def cfg_dfg_metrics__cfg_materializations(
 
 @tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="helper")
 def cfg_dfg_metrics__dfg_materializations(
-    m__analytics__dfg_function_metrics: dict[str, object],
-    m__analytics__dfg_block_metrics: dict[str, object],
-    m__analytics__dfg_function_metrics_ext: dict[str, object],
-) -> dict[str, dict[str, object]]:
+    m__analytics__dfg_function_metrics: MaterializationMetadata,
+    m__analytics__dfg_block_metrics: MaterializationMetadata,
+    m__analytics__dfg_function_metrics_ext: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
     """Collect DFG materialization payloads for cfg_dfg_metrics.
 
     Returns
     -------
-    dict[str, dict[str, object]]
+    dict[str, MaterializationMetadata]
         Materialization metadata keyed by table key.
     """
     return {
@@ -787,14 +788,14 @@ def cfg_dfg_metrics__dfg_materializations(
 
 @tag(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME, node_type="helper")
 def cfg_dfg_metrics__materializations(
-    cfg_dfg_metrics__cfg_materializations: dict[str, dict[str, object]],
-    cfg_dfg_metrics__dfg_materializations: dict[str, dict[str, object]],
-) -> dict[str, dict[str, object]]:
+    cfg_dfg_metrics__cfg_materializations: dict[str, MaterializationMetadata],
+    cfg_dfg_metrics__dfg_materializations: dict[str, MaterializationMetadata],
+) -> dict[str, MaterializationMetadata]:
     """Collect cfg_dfg_metrics materialization payloads into a single mapping.
 
     Returns
     -------
-    dict[str, dict[str, object]]
+    dict[str, MaterializationMetadata]
         Materialization metadata keyed by table key.
     """
     materializations = dict(cfg_dfg_metrics__cfg_materializations)
@@ -806,7 +807,7 @@ def cfg_dfg_metrics__materializations(
 def t__cfg_dfg_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    cfg_dfg_metrics__materializations: dict[str, dict[str, object]],
+    cfg_dfg_metrics__materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Materialize cfg_dfg_metrics tables to DuckDB.
 

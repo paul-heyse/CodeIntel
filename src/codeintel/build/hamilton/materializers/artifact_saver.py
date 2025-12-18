@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Literal, get_args, get_origin
 
 from hamilton.io.data_adapters import DataSaver
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.metadata import FileArtifactMaterializationMetadata
@@ -127,7 +128,7 @@ class FileArtifactSaver(DataSaver):
 
         return super().applies_to(type_)
 
-    def save_data(self, data: object) -> dict[str, object]:
+    def save_data(self, data: object) -> MaterializationMetadata:
         """Save the provided artifact content and return metadata.
 
         Parameters
@@ -138,12 +139,12 @@ class FileArtifactSaver(DataSaver):
 
         Returns
         -------
-        dict[str, object]
+        MaterializationMetadata
             Metadata describing the write, including status and input hash.
         """
         start = time.perf_counter()
         input_hash: str | None = None
-        result: dict[str, object] | None = None
+        result: MaterializationMetadata | None = None
 
         try:
             target = self.graph.get(self.target_name)
@@ -313,7 +314,7 @@ def _succeeded(
     input_hash: str,
     path: str,
     size_bytes: int,
-) -> dict[str, object]:
+) -> MaterializationMetadata:
     return FileArtifactMaterializationMetadata(
         status="succeeded",
         artifact_name=artifact_name,
@@ -331,7 +332,7 @@ def _skipped(
     duration_ms: float,
     input_hash: str,
     path: str | None,
-) -> dict[str, object]:
+) -> MaterializationMetadata:
     return FileArtifactMaterializationMetadata(
         status="skipped",
         artifact_name=artifact_name,
@@ -349,7 +350,7 @@ def _failed(
     duration_ms: float,
     input_hash: str,
     error: str,
-) -> dict[str, object]:
+) -> MaterializationMetadata:
     return FileArtifactMaterializationMetadata(
         status="failed",
         artifact_name=artifact_name,

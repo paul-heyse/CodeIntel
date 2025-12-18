@@ -10,6 +10,7 @@ from tests._helpers.assertions.expectation_assertions import expect_equal, expec
 
 
 def test_apply_metadata_ddl_is_idempotent() -> None:
+    """apply_metadata_ddl can be safely applied multiple times."""
     con = duckdb.connect(":memory:")
     try:
         apply_metadata_ddl(con)
@@ -25,4 +26,3 @@ def test_apply_metadata_ddl_is_idempotent() -> None:
         expect_equal(len(expected_names), len(actual_names), label="metadata table count")
     finally:
         con.close()
-

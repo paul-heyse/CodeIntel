@@ -29,6 +29,7 @@ from codeintel.analytics.functions import (
 )
 from codeintel.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.analytics.parsing.validation import FUNCTION_VALIDATION_COLS
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -322,9 +323,9 @@ def function_metrics__validation_rows(
 def t__function_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_metrics: dict[str, object],
-    m__analytics__function_types: dict[str, object],
-    m__analytics__function_validation: dict[str, object],
+    m__analytics__function_metrics: MaterializationMetadata,
+    m__analytics__function_types: MaterializationMetadata,
+    m__analytics__function_validation: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize function metrics target.
 

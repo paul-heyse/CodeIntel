@@ -18,6 +18,7 @@ from pathlib import Path
 from hamilton.function_modifiers import source, tag, value
 
 from codeintel.build.contracts import ArtifactSpec
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -204,14 +205,14 @@ def scip__json_artifact(t__scip__run: ScipRunResult) -> Path | None:
 
 @tag(domain="ingestion", target=SCIP_TARGET_NAME, node_type="helper")
 def scip__materializations(
-    m__artifact__scip_index: dict[str, object],
-    m__artifact__scip_json: dict[str, object],
-) -> dict[str, dict[str, object]]:
+    m__artifact__scip_index: MaterializationMetadata,
+    m__artifact__scip_json: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
     """Collect scip artifact materialization payloads into a single mapping.
 
     Returns
     -------
-    dict[str, dict[str, object]]
+    dict[str, MaterializationMetadata]
         Materialization metadata keyed by artifact name.
     """
     return {
@@ -226,7 +227,7 @@ def t__scip(
     graph: TargetGraph,
     t__scip__run: ScipRunResult,
     t__modules: TargetRunRecord,
-    scip__materializations: dict[str, dict[str, object]],
+    scip__materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Finalize scip target from artifact materialization metadata.
 

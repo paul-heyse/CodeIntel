@@ -6,8 +6,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from codeintel.serving.export.formats import ExportFormat
+
 Op = Literal["eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith"]
-ExportFormat = Literal["json", "ndjson", "parquet", "arrow"]
 
 
 class SemanticViewDefaults(BaseModel):

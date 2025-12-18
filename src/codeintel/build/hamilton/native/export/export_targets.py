@@ -20,6 +20,7 @@ import ibis.expr.types as ir
 from hamilton.function_modifiers import check_output_custom, schema, source, value
 
 from codeintel.build.contracts import ArtifactSpec
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.materializers.artifact_saver import (
@@ -262,7 +263,7 @@ def export_jsonl__content(t__export_jsonl__compute: ArtifactWritePlan | None) ->
 def t__export_jsonl(
     env: BuildEnv,
     graph: TargetGraph,
-    m__artifact__jsonl_export: dict[str, object],
+    m__artifact__jsonl_export: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Write JSONL export artifact and return record with ArtifactRef.
 
@@ -374,7 +375,7 @@ def export_parquet__bytes(
 def t__export_parquet(
     env: BuildEnv,
     graph: TargetGraph,
-    m__artifact__parquet_export: dict[str, object],
+    m__artifact__parquet_export: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Write Parquet export artifact and return record with ArtifactRef.
 

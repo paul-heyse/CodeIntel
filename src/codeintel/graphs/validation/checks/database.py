@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import ibis
 
+from codeintel.core.ibis_typing import filter_by, ibis_bool, isin_values
 from codeintel.graphs.validation.base import GraphCheckBase
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import filter_by, ibis_bool, isin_values
 
 if TYPE_CHECKING:
     import logging

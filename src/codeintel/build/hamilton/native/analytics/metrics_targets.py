@@ -45,6 +45,7 @@ from codeintel.analytics.testing.graph_metrics import (
     TEST_GRAPH_METRICS_FUNCTIONS_COLS,
     TEST_GRAPH_METRICS_TESTS_COLS,
 )
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
@@ -233,7 +234,7 @@ def t__function_history__compute(
 def t__function_history(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_history: dict[str, object],
+    m__analytics__function_history: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize function history table to DuckDB.
 
@@ -307,7 +308,7 @@ def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], .
 def t__history_timeseries(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__history_timeseries: dict[str, object],
+    m__analytics__history_timeseries: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize history timeseries table to DuckDB.
 
@@ -729,8 +730,8 @@ def test_graph_metrics__functions_rows(
 def t__test_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__test_graph_metrics_tests: dict[str, object],
-    m__analytics__test_graph_metrics_functions: dict[str, object],
+    m__analytics__test_graph_metrics_tests: MaterializationMetadata,
+    m__analytics__test_graph_metrics_functions: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize both test graph metrics tables to DuckDB.
 

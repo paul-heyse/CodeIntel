@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, SupportsInt, cast
 
 from codeintel.core.catalog import load_function_catalog
+from codeintel.core.ibis_typing import ibis_bool, isin_values
 from codeintel.core.validation.runner import ValidationRunner
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.validation.checks.anomaly import (
@@ -45,7 +46,6 @@ from codeintel.graphs.validation.findings import (
     resolve_validation_options,
 )
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import ibis_bool, isin_values
 
 if TYPE_CHECKING:
     import ibis.expr.types as it

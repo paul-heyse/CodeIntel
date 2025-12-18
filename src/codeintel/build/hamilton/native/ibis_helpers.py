@@ -15,9 +15,9 @@ Example
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
-from codeintel.storage.ibis_types import and_predicates
+from codeintel.core.ibis_typing import filter_by, select_columns
 
 if TYPE_CHECKING:
     import ibis.expr.types as ir
@@ -52,15 +52,7 @@ def filter_for_snapshot(table: ir.Table, snapshot: SnapshotRef) -> ir.Table:
     >>> #     q__core__modules.commit == env.snapshot.commit,
     >>> # ))
     """
-    return table.filter(
-        cast(
-            "Any",
-            and_predicates(
-                table.repo == snapshot.repo,
-                table.commit == snapshot.commit,
-            ),
-        )
-    )
+    return filter_by(table, table.repo == snapshot.repo, table.commit == snapshot.commit)
 
 
 def filter_tables_for_snapshot(
@@ -125,9 +117,15 @@ def select_snapshot_columns(table: ir.Table, *columns: str) -> ir.Table:
     ... )
     >>> # Results in columns: function_goid_h128, cyclomatic_complexity, repo, commit
     """
-    # Build column set ensuring repo and commit are included
-    column_set = {"repo", "commit", *columns}
-    return cast("Any", table.select(*column_set))
+    ordered = ["repo", "commit", *columns]
+    selected: list[str] = []
+    seen: set[str] = set()
+    for column in ordered:
+        if column in seen:
+            continue
+        selected.append(column)
+        seen.add(column)
+    return select_columns(table, *selected)
 
 
 __all__ = [

@@ -35,6 +35,7 @@ from codeintel.analytics.compute.coverage.compute import (
 )
 from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
@@ -255,7 +256,7 @@ def t__coverage_functions__compute(
 def t__coverage_functions(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__coverage_functions: dict[str, object],
+    m__analytics__coverage_functions: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Convert materialization metadata to a TargetRunRecord.
 

@@ -24,8 +24,8 @@ from codeintel.analytics.compute.ibis_utils import (
     safe_ratio,
     zero_if_null,
 )
+from codeintel.core.ibis_typing import and_predicates, gt, ibis_bool
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import and_predicates, gt, ibis_bool
 
 if TYPE_CHECKING:
     import ibis.expr.types as ir

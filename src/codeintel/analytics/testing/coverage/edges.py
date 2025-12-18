@@ -7,12 +7,11 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Final, TypedDict
 
 from coverage import Coverage
 from coverage.exceptions import CoverageException
 
-from codeintel.config.datasets.columns import TEST_CATALOG_UPDATE_GOIDS
 from codeintel.core.catalog import CatalogService
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.generated_rows.analytics import (
@@ -29,6 +28,12 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+TEST_CATALOG_UPDATE_GOIDS: Final[str] = (
+    "UPDATE analytics.test_catalog "
+    "SET test_goid_h128 = ?, urn = ? "
+    "WHERE test_id = ? AND rel_path = ? AND repo = ? AND commit = ?"
+)
 
 
 @dataclass(frozen=True)

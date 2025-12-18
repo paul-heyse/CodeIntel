@@ -8,6 +8,7 @@ from fastapi import Depends, Request
 
 from codeintel.serving.http.errors import ProblemType, ServingError
 from codeintel.serving.http.state import ServingState
+from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 
 
@@ -45,6 +46,26 @@ def get_kernel(state: State) -> SemanticQueryKernel:
 Kernel = Annotated[SemanticQueryKernel, Depends(get_kernel)]
 
 
+def get_ops(state: State) -> ServingOperations:
+    """Extract the ServingOperations facade from the serving state.
+
+    Parameters
+    ----------
+    state
+        Application serving state.
+
+    Returns
+    -------
+    ServingOperations
+        Operations facade for transport adapters.
+    """
+
+    return state.ops
+
+
+Ops = Annotated[ServingOperations, Depends(get_ops)]
+
+
 def require_api_key(request: Request, state: State) -> None:
     """Optionally require a valid API key for this request.
 
@@ -76,4 +97,4 @@ def require_api_key(request: Request, state: State) -> None:
     )
 
 
-__all__ = ["Kernel", "State", "get_kernel", "require_api_key"]
+__all__ = ["Kernel", "Ops", "State", "get_kernel", "get_ops", "require_api_key"]

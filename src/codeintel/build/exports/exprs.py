@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 import ibis
 
 from codeintel.build.schemas import get_contract_for_table_key
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     import ibis.expr.types as it
@@ -57,7 +58,7 @@ def build_export_expr(
     it.Table
         Normalized table expression suitable for exporting.
     """
-    base = gateway.ibis.table(table_key)
+    base = ibis_facade.table(gateway, table_key)
     expr = base
 
     if limit is not None or offset:

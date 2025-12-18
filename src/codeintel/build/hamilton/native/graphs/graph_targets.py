@@ -43,8 +43,9 @@ from codeintel.analytics.graphs import (
     compute_graph_stats,
 )
 from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import (
     filter_paths,
     get_source_root,
@@ -68,6 +69,14 @@ from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.config.primitives import GraphBackendConfig
+from codeintel.core.ibis_typing import (
+    and_predicates,
+    col_nunique,
+    fillna,
+    filter_by,
+    is_null,
+    not_null,
+)
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import goid as goid_compute
 from codeintel.graphs.compute import symbols as symbols_compute
@@ -77,14 +86,6 @@ from codeintel.graphs.runtime import (
     build_graph_runtime,
 )
 from codeintel.storage.gateway import DuckDBError
-from codeintel.build.ibis_typing import (
-    and_predicates,
-    col_nunique,
-    fillna,
-    filter_by,
-    is_null,
-    not_null,
-)
 
 if TYPE_CHECKING:
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
@@ -249,6 +250,30 @@ class SymbolUsesExtractResult:
     edge_count: int = 0
     table_counts: dict[str, int] = field(default_factory=dict)
     error: str | None = None
+
+
+@tag(node_type="helper")
+def goids__execution_result(t__goids__extract: GoidExtractResult) -> ExecutionResult:
+    """Convert goids extract result to the executor boundary type.
+
+    Returns
+    -------
+    ExecutionResult
+        Canonical execution result.
+    """
+    return to_execution_result(t__goids__extract, default_error="GOID extraction failed")
+
+
+@tag(node_type="helper")
+def symbol_uses__execution_result(t__symbol_uses__extract: SymbolUsesExtractResult) -> ExecutionResult:
+    """Convert symbol_uses extract result to the executor boundary type.
+
+    Returns
+    -------
+    ExecutionResult
+        Canonical execution result.
+    """
+    return to_execution_result(t__symbol_uses__extract, default_error="Symbol uses extraction failed")
 
 
 # ---------------------------------------------------------------------------
@@ -948,7 +973,7 @@ def t__goids__extract(
 def t__goids(
     env: BuildEnv,
     graph: TargetGraph,
-    t__goids__extract: GoidExtractResult,
+    goids__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize GOIDs target with validation.
 
@@ -961,15 +986,15 @@ def t__goids(
         Build environment with gateway and snapshot.
     graph
         Target graph for metadata lookup.
-    t__goids__extract
-        Extraction result from upstream compute node.
+    goids__execution_result
+        Execution result derived from upstream extract node.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, GOIDS_TARGET_NAME, t__goids__extract)
+    return executor_materialize(env, graph, GOIDS_TARGET_NAME, goids__execution_result)
 
 
 # ---------------------------------------------------------------------------
@@ -1049,7 +1074,7 @@ def t__symbol_uses__extract(
 def t__symbol_uses(
     env: BuildEnv,
     graph: TargetGraph,
-    t__symbol_uses__extract: SymbolUsesExtractResult,
+    symbol_uses__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize symbol_uses target.
 
@@ -1058,7 +1083,9 @@ def t__symbol_uses(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return executor_materialize(env, graph, SYMBOL_USES_TARGET_NAME, t__symbol_uses__extract)
+    return executor_materialize(
+        env, graph, SYMBOL_USES_TARGET_NAME, symbol_uses__execution_result
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1359,8 +1386,8 @@ def call_graph_depth_stats(
 def t__call_graph_views(
     env: BuildEnv,
     graph: TargetGraph,
-    m__graph__v_function_call_counts: dict[str, object],
-    m__graph__v_call_depth_stats: dict[str, object],
+    m__graph__v_function_call_counts: MaterializationMetadata,
+    m__graph__v_call_depth_stats: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize call graph view expressions to DuckDB.
 

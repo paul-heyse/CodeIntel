@@ -392,8 +392,8 @@ class AstExtractStep(BaseExtractStep):
 
         if metric_rows:
             result = self._storage.write_batch("core.ast_metrics", metric_rows)
-            table_counts["core.ast_metrics"] = result.rows_written
-            total_rows += result.rows_written
+            table_counts["core.ast_metrics"] = result.rows_affected
+            total_rows += result.rows_affected
 
         log.info(
             "AST extraction: repo=%s commit=%s ast_rows=%d metrics=%d",

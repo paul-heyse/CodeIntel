@@ -33,7 +33,7 @@ class IngestStoragePort(Protocol):
     1. **Test isolation**: ``FakeIngestStorage`` implements this protocol
        for unit testing ingestion compute steps without a database.
     2. **Consistent return types**: All write operations return ``BatchResult``
-       with uniform access to ``rows_written``, ``table_key``, etc.
+       with uniform access to ``rows_affected`` and ``table``.
     3. **Clear architectural boundary**: Separates ingestion compute logic
        from database implementation details.
 

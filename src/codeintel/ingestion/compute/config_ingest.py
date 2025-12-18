@@ -315,8 +315,8 @@ class ConfigIngestStep(BaseExtractStep):
         if all_rows:
             scope = f"{repo}@{commit}"
             result = self._storage.write_batch("analytics.config_values", all_rows, scope=scope)
-            table_counts["analytics.config_values"] = result.rows_written
-            total_rows = result.rows_written
+            table_counts["analytics.config_values"] = result.rows_affected
+            total_rows = result.rows_affected
 
         log.info(
             "Config ingest: repo=%s commit=%s files=%d values=%d",

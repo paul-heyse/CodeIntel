@@ -28,6 +28,7 @@ import sqlglot
 from hamilton.function_modifiers import source, tag, value
 
 from codeintel.build.contracts import ArtifactSpec
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -444,10 +445,10 @@ def serving_artifacts__views_sql_diff(env: BuildEnv, serving_artifacts__views_sq
 
 @tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
 def serving_artifacts__materializations_base(
-    m__artifact__semantic_registry: dict[str, object],
-    m__artifact__schema_manifest: dict[str, object],
-    m__artifact__buildspec: dict[str, object],
-) -> dict[str, dict[str, object]]:
+    m__artifact__semantic_registry: MaterializationMetadata,
+    m__artifact__schema_manifest: MaterializationMetadata,
+    m__artifact__buildspec: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
     """Collect saver metadata for the base serving artifacts.
 
     Parameters
@@ -461,7 +462,7 @@ def serving_artifacts__materializations_base(
 
     Returns
     -------
-    dict[str, dict[str, object]]
+    dict[str, MaterializationMetadata]
         Mapping of artifact name to saver metadata.
     """
     return {
@@ -473,15 +474,15 @@ def serving_artifacts__materializations_base(
 
 @tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
 def serving_artifacts__materializations_views(
-    m__artifact__environment: dict[str, object],
-    m__artifact__views_sql: dict[str, object],
-    m__artifact__views_sql_diff: dict[str, object],
-) -> dict[str, dict[str, object]]:
+    m__artifact__environment: MaterializationMetadata,
+    m__artifact__views_sql: MaterializationMetadata,
+    m__artifact__views_sql_diff: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
     """Collect saver metadata for the view/metadata artifacts.
 
     Returns
     -------
-    dict[str, dict[str, object]]
+    dict[str, MaterializationMetadata]
         Mapping of artifact name to saver metadata.
     """
     return {
@@ -493,14 +494,14 @@ def serving_artifacts__materializations_views(
 
 @tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
 def serving_artifacts__materializations(
-    serving_artifacts__materializations_base: dict[str, dict[str, object]],
-    serving_artifacts__materializations_views: dict[str, dict[str, object]],
-) -> dict[str, dict[str, object]]:
+    serving_artifacts__materializations_base: dict[str, MaterializationMetadata],
+    serving_artifacts__materializations_views: dict[str, MaterializationMetadata],
+) -> dict[str, MaterializationMetadata]:
     """Merge all serving artifact materializations.
 
     Returns
     -------
-    dict[str, dict[str, object]]
+    dict[str, MaterializationMetadata]
         Mapping of artifact name to saver metadata.
     """
     merged = dict(serving_artifacts__materializations_base)
@@ -512,7 +513,7 @@ def serving_artifacts__materializations(
 def t__serving_artifacts(
     env: BuildEnv,
     graph: TargetGraph,
-    serving_artifacts__materializations: dict[str, dict[str, object]],
+    serving_artifacts__materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Finalize serving artifacts materialization and persist manifest.
 

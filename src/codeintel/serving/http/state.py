@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.serving.db.manager import ServingDBManager
+    from codeintel.serving.operations.ops import ServingOperations
     from codeintel.serving.semantic.kernel import SemanticQueryKernel
     from codeintel.serving.settings import ServingSettings
 
@@ -28,11 +29,14 @@ class ServingState:
         Snapshot pointer + connection manager.
     kernel
         Semantic query kernel used by HTTP/MCP surfaces.
+    ops
+        Transport-agnostic operations facade.
     """
 
     settings: ServingSettings
     db: ServingDBManager
     kernel: SemanticQueryKernel
+    ops: ServingOperations
 
 
 __all__ = ["ServingState"]

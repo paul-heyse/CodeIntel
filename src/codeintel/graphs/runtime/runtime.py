@@ -2,9 +2,7 @@
 
 Note
 ----
-For common timing and step tracking utilities, see `codeintel.core.runtime`
-which provides `TimingContext`, `ExecutionTracker`, and `StepResult` types.
-These can be used to instrument graph operations.
+For pipeline run and step tracking persistence, see `codeintel.storage.tracking`.
 """
 
 from __future__ import annotations

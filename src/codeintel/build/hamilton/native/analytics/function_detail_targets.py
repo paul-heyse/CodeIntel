@@ -30,6 +30,7 @@ from codeintel.analytics.functions.function_effects import (
     build_function_effects_rows,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -274,7 +275,7 @@ def function_contracts__rows(
 def t__function_contracts(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_contracts: dict[str, object],
+    m__analytics__function_contracts: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize function contracts target.
 
@@ -461,7 +462,7 @@ def function_effects__rows(
 def t__function_effects(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_effects: dict[str, object],
+    m__analytics__function_effects: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize function effects target.
 

@@ -15,8 +15,8 @@ from sqlglot import diff as sqlglot_diff
 
 from codeintel.storage.sqlglot_tools import (
     ParseError,
-    canonical_sql_duckdb,
     extract_table_keys_duckdb,
+    fingerprint_sql_duckdb,
     parse_one_duckdb,
 )
 
@@ -94,16 +94,17 @@ def diff_sql_structural(*, before: str, after: str) -> SqlStructuralDiffSummary:
         Structural diff summary.
     """
     try:
-        before_canon = canonical_sql_duckdb(before)
-        after_canon = canonical_sql_duckdb(after)
-        before_ast = parse_one_duckdb(before_canon)
-        after_ast = parse_one_duckdb(after_canon)
+        before_ast = parse_one_duckdb(before)
+        after_ast = parse_one_duckdb(after)
         actions = sqlglot_diff(before_ast, after_ast)
         counts: dict[str, int] = {}
         for action in actions:
             name = type(action).__name__
             counts[name] = counts.get(name, 0) + 1
-        return SqlStructuralDiffSummary(changed=before_canon != after_canon, actions=counts)
+        return SqlStructuralDiffSummary(
+            changed=fingerprint_sql_duckdb(before) != fingerprint_sql_duckdb(after),
+            actions=counts,
+        )
     except (ParseError, ValueError, TypeError) as exc:
         return SqlStructuralDiffSummary(changed=before != after, actions={}, parse_error=str(exc))
 
@@ -117,10 +118,8 @@ def diff_sql(*, before: str, after: str) -> SqlDiffSummary:
         Parsed diff summary (hashes + referenced table deltas).
     """
     try:
-        before_canon = canonical_sql_duckdb(before)
-        after_canon = canonical_sql_duckdb(after)
-        before_hash = _sha256_text(before_canon)
-        after_hash = _sha256_text(after_canon)
+        before_hash = fingerprint_sql_duckdb(before)
+        after_hash = fingerprint_sql_duckdb(after)
         before_tables = extract_table_keys_duckdb(before)
         after_tables = extract_table_keys_duckdb(after)
         tables_added = tuple(sorted(after_tables - before_tables))

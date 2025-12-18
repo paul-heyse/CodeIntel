@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.materializers.metadata import (
     DuckDBMaterializationMetadata,
@@ -23,10 +24,9 @@ from codeintel.build.hamilton.run_records import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import OutputTarget, TargetGraph
+
 
 def record_from_duckdb_materialization(
     *,
@@ -34,7 +34,7 @@ def record_from_duckdb_materialization(
     graph: TargetGraph,
     target_name: str,
     expected_table_key: str,
-    materialization: Mapping[str, object],
+    materialization: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Build a TargetRunRecord from a DuckDB materializer metadata dict.
 
@@ -164,7 +164,7 @@ def record_from_file_artifact_materialization(
     graph: TargetGraph,
     target_name: str,
     expected_artifact_name: str,
-    materialization: Mapping[str, object],
+    materialization: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Build a TargetRunRecord from a file artifact saver metadata dict.
 
@@ -294,7 +294,7 @@ def record_from_duckdb_materializations(
     env: BuildEnv,
     graph: TargetGraph,
     target_name: str,
-    materializations: Mapping[str, Mapping[str, object]],
+    materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Build a TargetRunRecord from multiple DuckDB saver metadata dicts.
 
@@ -432,7 +432,7 @@ def record_from_file_artifact_materializations(
     env: BuildEnv,
     graph: TargetGraph,
     target_name: str,
-    materializations: Mapping[str, Mapping[str, object]],
+    materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Build a TargetRunRecord from multiple file artifact saver metadata dicts.
 
@@ -533,7 +533,7 @@ def record_from_file_artifact_materializations(
 
 def _parse_expected_artifact_materializations(
     target: OutputTarget,
-    materializations: Mapping[str, Mapping[str, object]],
+    materializations: dict[str, MaterializationMetadata],
 ) -> dict[str, FileArtifactMaterializationMetadata]:
     parsed: dict[str, FileArtifactMaterializationMetadata] = {}
     for expected_artifact_name in target.contract.artifact_names:
@@ -574,7 +574,7 @@ def _parse_expected_artifact_materializations(
 
 
 def _summarize_file_artifact_results(
-    parsed: Mapping[str, FileArtifactMaterializationMetadata],
+    parsed: dict[str, FileArtifactMaterializationMetadata],
 ) -> tuple[set[MaterializationStatus], str, float]:
     statuses: set[MaterializationStatus] = {result.status for result in parsed.values()}
     input_hash = next((result.input_hash for result in parsed.values() if result.input_hash), "")
@@ -584,7 +584,7 @@ def _summarize_file_artifact_results(
 
 def _apply_file_artifact_results(
     record: TargetRunRecord,
-    parsed: Mapping[str, FileArtifactMaterializationMetadata],
+    parsed: dict[str, FileArtifactMaterializationMetadata],
 ) -> TargetRunRecord:
     parsed_by_name = {result.artifact_name: result for result in parsed.values()}
     updated_artifacts: list[ArtifactRef] = []

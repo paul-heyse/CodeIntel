@@ -21,18 +21,18 @@ True
 
 from __future__ import annotations
 
+import importlib
 from functools import lru_cache
+from types import ModuleType
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.schemas.registry import get_schema_provider
-from codeintel.core.providers.base import LazyProvider
 from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
 from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from types import ModuleType
 
     from codeintel.build.contracts import OutputContract
     from codeintel.build.targets import OutputTarget
@@ -44,12 +44,9 @@ if TYPE_CHECKING:
 # Lazy Module Providers
 #
 # These providers break circular dependencies by deferring imports until first
-# access. Using LazyProvider with importlib eliminates global statements
-# (PLW0603) and function-level imports (PLC0415).
+# access. Using SingletonHolder with importlib avoids global statements (PLW0603)
+# and function-level imports (PLC0415).
 # -----------------------------------------------------------------------------
-
-import importlib
-
 
 def _load_module(name: str) -> ModuleType:
     """Load a module by name using importlib.
@@ -67,19 +64,16 @@ def _load_module(name: str) -> ModuleType:
     return importlib.import_module(name)
 
 
-# Module-level lazy providers (no global statements needed)
-_target_system_provider: LazyProvider[ModuleType] = LazyProvider(
-    lambda: _load_module("codeintel.build.target_system"),
-    name="target_system_module",
-)
-_row_registry_provider: LazyProvider[ModuleType] = LazyProvider(
-    lambda: _load_module("codeintel.build.schemas.row_registry"),
-    name="row_registry_module",
-)
-_composites_provider: LazyProvider[ModuleType] = LazyProvider(
-    lambda: _load_module("codeintel.config.datasets.composites"),
-    name="composites_module",
-)
+class _TargetSystemModuleHolder(SingletonHolder[ModuleType]):
+    """Singleton holder for codeintel.build.target_system module."""
+
+
+class _RowRegistryModuleHolder(SingletonHolder[ModuleType]):
+    """Singleton holder for codeintel.build.schemas.row_registry module."""
+
+
+class _CompositesModuleHolder(SingletonHolder[ModuleType]):
+    """Singleton holder for codeintel.config.datasets.composites module."""
 
 
 def _target_system_module() -> ModuleType:
@@ -90,7 +84,7 @@ def _target_system_module() -> ModuleType:
     ModuleType
         The codeintel.build.target_system module.
     """
-    return _target_system_provider.get()
+    return _TargetSystemModuleHolder.get(lambda: _load_module("codeintel.build.target_system"))
 
 
 def _row_registry_module() -> ModuleType:
@@ -101,7 +95,7 @@ def _row_registry_module() -> ModuleType:
     ModuleType
         The codeintel.build.schemas.row_registry module.
     """
-    return _row_registry_provider.get()
+    return _RowRegistryModuleHolder.get(lambda: _load_module("codeintel.build.schemas.row_registry"))
 
 
 def _composites_module() -> ModuleType:
@@ -112,7 +106,7 @@ def _composites_module() -> ModuleType:
     ModuleType
         The codeintel.config.datasets.composites module.
     """
-    return _composites_provider.get()
+    return _CompositesModuleHolder.get(lambda: _load_module("codeintel.config.datasets.composites"))
 
 
 def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:

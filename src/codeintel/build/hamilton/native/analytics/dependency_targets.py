@@ -41,6 +41,7 @@ from codeintel.analytics.entrypoints.core import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.analytics.resources.features import FeaturesProvider
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
@@ -280,7 +281,7 @@ def external_deps__calls_rows(
 )
 def external_deps__dependencies_rows(
     env: BuildEnv,
-    m__analytics__external_dependency_calls: dict[str, object],
+    m__analytics__external_dependency_calls: MaterializationMetadata,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute rows for analytics.external_dependencies after calls are written.
 
@@ -305,8 +306,8 @@ def t__external_deps(
     env: BuildEnv,
     graph: TargetGraph,
     t__call_graph: TargetRunRecord,
-    m__analytics__external_dependency_calls: dict[str, object],
-    m__analytics__external_dependencies: dict[str, object],
+    m__analytics__external_dependency_calls: MaterializationMetadata,
+    m__analytics__external_dependencies: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize both external dependency tables to DuckDB.
 
@@ -542,14 +543,14 @@ def entrypoints__upstream_error(
 
 @tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def entrypoints__materializations(
-    m__analytics__entrypoints: dict[str, object],
-    m__analytics__entrypoint_tests: dict[str, object],
-) -> dict[str, dict[str, object]]:
+    m__analytics__entrypoints: MaterializationMetadata,
+    m__analytics__entrypoint_tests: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
     """Collect entrypoints materialization payloads into a single mapping.
 
     Returns
     -------
-    dict[str, dict[str, object]]
+    dict[str, MaterializationMetadata]
         Materialization metadata keyed by table key.
     """
     return {
@@ -563,7 +564,7 @@ def t__entrypoints(
     env: BuildEnv,
     graph: TargetGraph,
     entrypoints__upstream_error: str | None,
-    entrypoints__materializations: dict[str, dict[str, object]],
+    entrypoints__materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Materialize both entrypoint tables to DuckDB.
 

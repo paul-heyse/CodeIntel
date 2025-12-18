@@ -42,6 +42,7 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -265,9 +266,9 @@ def data_models__relationship_rows(
 def t__data_models(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__data_models: dict[str, object],
-    m__analytics__data_model_fields: dict[str, object],
-    m__analytics__data_model_relationships: dict[str, object],
+    m__analytics__data_models: MaterializationMetadata,
+    m__analytics__data_model_fields: MaterializationMetadata,
+    m__analytics__data_model_relationships: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize all 3 data model tables to DuckDB.
 
@@ -386,7 +387,7 @@ def t__data_model_usage__compute(
 def t__data_model_usage(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__data_model_usage: dict[str, object],
+    m__analytics__data_model_usage: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize analytics.data_model_usage rows to DuckDB.
 

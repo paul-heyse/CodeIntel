@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
+from codeintel.core.ibis_typing import bool_not, filter_by, ibis_bool
 from codeintel.graphs.validation.base import GraphCheckBase
 from codeintel.graphs.validation.findings import (
     SAMPLE_LIMIT,
     SYMBOL_COMMUNITY_MIN,
 )
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import bool_not, filter_by, ibis_bool
 
 if TYPE_CHECKING:
     import logging

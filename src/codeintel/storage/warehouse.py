@@ -23,9 +23,10 @@ from duckdb import ColumnExpression, ConstantExpression, ExplainType
 
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.constants import DUCKDB_DIALECT
+from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.ibis_adapter import OnConflict
-from codeintel.storage.snapshot_scoping import maybe_scope_by_repo_commit
+from codeintel.storage.snapshot_scoping import RepoCommitScope, maybe_scope_by_snapshot
 from codeintel.storage.tracking.asset_tracking import AssetRecord
 
 if TYPE_CHECKING:
@@ -121,7 +122,7 @@ class Warehouse:
             table_key, repo=snapshot.repo, commit=snapshot.commit
         )
 
-    def read(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> ir.Table:
+    def read(self, table_key: str, *, snapshot: RepoCommitScope | None = None) -> ir.Table:
         """Return an Ibis table expression, optionally snapshot-filtered.
 
         Snapshot filtering is applied only when both `repo` and `commit` columns
@@ -132,16 +133,17 @@ class Warehouse:
         ir.Table
             Ibis expression for the requested table, optionally filtered.
         """
-        expr = self.gateway.ibis.table(table_key)
+        expr = ibis_facade.table(self.gateway, table_key)
         if snapshot is None:
             return expr
-        return maybe_scope_by_repo_commit(expr, repo=snapshot.repo, commit=snapshot.commit)
+        return maybe_scope_by_snapshot(expr, snapshot=snapshot)
 
     def exists(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> bool:
         """Return True if the table/view exists.
 
         When `snapshot` is provided, this also checks for the presence of at
-        least one row matching `repo` and `commit`.
+        least one row matching `repo` and `commit`, but only when those columns
+        exist on the relation.
 
         Returns
         -------
@@ -155,6 +157,9 @@ class Warehouse:
             return False
 
         if snapshot is None:
+            return True
+
+        if not _relation_has_repo_commit_columns(relation):
             return True
 
         return _relation_has_snapshot_rows(
@@ -173,7 +178,7 @@ class Warehouse:
         """
         schema, name = split_table_key(table_key)
         relation = self.gateway.con.table(f"{schema}.{name}")
-        if snapshot is not None:
+        if snapshot is not None and _relation_has_repo_commit_columns(relation):
             relation = relation.filter(
                 (ColumnExpression("repo") == ConstantExpression(snapshot.repo))
                 & (ColumnExpression("commit") == ConstantExpression(snapshot.commit))
@@ -582,6 +587,14 @@ def _relation_has_snapshot_rows(relation: DuckDBRelation, *, repo: str, commit: 
         return filtered.limit(1).fetchone() is not None
     except DuckDBError:
         return False
+
+
+def _relation_has_repo_commit_columns(relation: DuckDBRelation) -> bool:
+    try:
+        names = set(relation.columns)
+    except AttributeError:
+        return False
+    return "repo" in names and "commit" in names
 
 
 def _dataset_contract(gateway: StorageGateway, *, table_key: str) -> DatasetContract | None:

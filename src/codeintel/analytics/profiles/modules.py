@@ -23,11 +23,7 @@ from codeintel.analytics.utilities.type_coercion import (
     optional_int,
     optional_str,
 )
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsModuleProfileRow as ModuleProfileRowModel,
-)
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import (
+from codeintel.core.ibis_typing import (
     bool_not,
     col_count,
     col_max,
@@ -36,6 +32,10 @@ from codeintel.storage.ibis_types import (
     filter_by,
     ibis_bool,
 )
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsModuleProfileRow as ModuleProfileRowModel,
+)
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

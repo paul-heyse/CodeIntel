@@ -3,9 +3,7 @@
 Note
 ----
 This module provides domain-specific result types for tool execution.
-For generic step tracking, see `codeintel.core.runtime` which provides
-`ExecutionTracker`, `StepResult`, and `TimingContext` types that can be
-used for broader execution tracking across different subsystems.
+For pipeline run and step tracking persistence, see `codeintel.storage.tracking`.
 """
 
 from __future__ import annotations

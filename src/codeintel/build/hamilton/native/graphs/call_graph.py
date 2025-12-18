@@ -19,8 +19,8 @@ import ibis
 import libcst as cst
 from hamilton.function_modifiers import tag
 
-from codeintel.build.ibis_typing import and_predicates, filter_by, isin_values
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
 from codeintel.build.hamilton.native.target_spec_helpers import (
@@ -31,6 +31,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import load_function_index
+from codeintel.core.ibis_typing import and_predicates, filter_by, isin_values
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.generated_rows.graph import (
     GraphCallGraphNodesRow as CallGraphNodeRow,
@@ -100,6 +101,18 @@ class CallGraphExtractResult:
     edge_count: int = 0
     table_counts: dict[str, int] = field(default_factory=dict)
     error: str | None = None
+
+
+@tag(node_type="helper")
+def call_graph__execution_result(t__call_graph__extract: CallGraphExtractResult) -> ExecutionResult:
+    """Convert call_graph extract result to the executor boundary type.
+
+    Returns
+    -------
+    ExecutionResult
+        Canonical execution result.
+    """
+    return to_execution_result(t__call_graph__extract, default_error="Call graph extraction failed")
 
 
 @dataclass(frozen=True)
@@ -641,7 +654,7 @@ def t__call_graph__extract(
 def t__call_graph(
     env: BuildEnv,
     graph: TargetGraph,
-    t__call_graph__extract: CallGraphExtractResult,
+    call_graph__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize call graph target with validation.
 
@@ -654,15 +667,15 @@ def t__call_graph(
         Build environment with gateway and snapshot.
     graph
         Target graph for metadata lookup.
-    t__call_graph__extract
-        Extraction result from upstream compute node.
+    call_graph__execution_result
+        Execution result derived from upstream extract node.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, CALL_GRAPH_TARGET_NAME, t__call_graph__extract)
+    return executor_materialize(env, graph, CALL_GRAPH_TARGET_NAME, call_graph__execution_result)
 
 
 __all__ = [

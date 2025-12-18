@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.storage.ibis_types import and_predicates
+from codeintel.core.ibis_typing import and_predicates
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

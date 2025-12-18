@@ -16,9 +16,9 @@ from codeintel.build.assets.fingerprinting import (
     compute_table_schema_hash,
 )
 from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.core.ibis_typing import filter_by
 from codeintel.storage.exceptions import StorageError
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import and_predicates
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 from codeintel.storage.tracking.asset_tracking import (
     AssetLineageEdgeRecord,
     AssetVersionRecord,
@@ -80,10 +80,8 @@ def _try_table_row_count_for_snapshot(
     table_key: str,
 ) -> int | None:
     try:
-        table = env.gateway.ibis.table(table_key)
-        filtered = table.filter(
-            and_predicates(table.repo == env.snapshot.repo, table.commit == env.snapshot.commit)
-        )
+        table = ibis_facade.table(env.gateway, table_key)
+        filtered = filter_by(table, table.repo == env.snapshot.repo, table.commit == env.snapshot.commit)
         raw = filtered.count().execute()
         value: object
         if isinstance(raw, pd.DataFrame):

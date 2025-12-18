@@ -203,10 +203,10 @@ def test_subsystem_repository_reads(subsystem_repo_ctx: TestContext) -> None:
     summaries = subsystems.list_subsystems(limit=5)
     _expect_true(len(summaries) > 0, "subsystem summary count should be non-zero")
 
-    modules = subsystems.list_subsystem_modules(summaries[0]["subsystem_id"])
+    modules = subsystems.list_subsystem_modules(str(summaries[0]["subsystem_id"]))
     _expect_true(bool(modules), "subsystem module count mismatch")
 
-    memberships = subsystems.list_subsystems_for_module(modules[0]["module"])
+    memberships = subsystems.list_subsystems_for_module(str(modules[0]["module"]))
     _expect_true(bool(memberships), "module membership count mismatch")
 
 

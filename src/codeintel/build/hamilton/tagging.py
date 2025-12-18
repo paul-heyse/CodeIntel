@@ -10,7 +10,7 @@ still allowing controlled extension via ``extra_tags``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Literal, ParamSpec, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, ParamSpec, Protocol, TypedDict, TypeVar, cast
 
 from hamilton.function_modifiers import tag as h_tag
 
@@ -24,10 +24,7 @@ from codeintel.hamilton.tags import (
     NODE_TYPE_MATERIALIZE,
     NODE_TYPE_TOOL,
     TAG_ARTIFACT,
-    TAG_DOMAIN,
-    TAG_NODE_TYPE,
     TAG_TABLE_KEY,
-    TAG_TARGET,
 )
 
 if TYPE_CHECKING:
@@ -50,18 +47,80 @@ TagKey = Literal[
     "grain",
     "mcp_visible",
 ]
-TagMap = dict[TagKey, TagValue]
+
+class _HamiltonTagKwargs(TypedDict, total=False):
+    domain: TagValue
+    target: TagValue
+    table_key: TagValue
+    artifact: TagValue
+    node_type: TagValue
+    output_kind: TagValue
+    semantic_id: TagValue
+    entity: TagValue
+    grain: TagValue
+    mcp_visible: TagValue
+
+
+class _TagDecoratorFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        target_: str | Collection[str] | EllipsisType | None = None,
+        **tags: TagValue,
+    ) -> object: ...
+
+
+_TAG_DECORATOR_FACTORY = cast("_TagDecoratorFactory", h_tag)
+
+
+def _set_tag_primary(tags: _HamiltonTagKwargs, *, key: TagKey, value: TagValue) -> bool:
+    match key:
+        case "domain":
+            tags["domain"] = value
+        case "target":
+            tags["target"] = value
+        case "table_key":
+            tags["table_key"] = value
+        case "artifact":
+            tags["artifact"] = value
+        case "node_type":
+            tags["node_type"] = value
+        case _:
+            return False
+    return True
+
+
+def _set_tag_secondary(tags: _HamiltonTagKwargs, *, key: TagKey, value: TagValue) -> None:
+    match key:
+        case "output_kind":
+            tags["output_kind"] = value
+        case "semantic_id":
+            tags["semantic_id"] = value
+        case "entity":
+            tags["entity"] = value
+        case "grain":
+            tags["grain"] = value
+        case "mcp_visible":
+            tags["mcp_visible"] = value
+        case _:
+            return
+
+
+def _set_tag(tags: _HamiltonTagKwargs, *, key: TagKey, value: TagValue) -> None:
+    if _set_tag_primary(tags, key=key, value=value):
+        return
+    _set_tag_secondary(tags, key=key, value=value)
 
 
 def _merge_extra_tags(
-    base: TagMap,
+    base: _HamiltonTagKwargs,
     extra_tags: Mapping[TagKey, TagValue] | None,
-) -> TagMap:
+) -> _HamiltonTagKwargs:
     if extra_tags is None:
         return base
-    merged = dict(base)
-    merged.update(extra_tags)
-    return cast("TagMap", merged)
+    for key, value in extra_tags.items():
+        _set_tag(base, key=key, value=value)
+    return base
 
 
 def _build_common_tags(
@@ -70,23 +129,24 @@ def _build_common_tags(
     domain: str | None,
     target: str | None,
     extra_tags: Mapping[TagKey, TagValue] | None,
-) -> TagMap:
-    base: TagMap = {cast("TagKey", TAG_NODE_TYPE): node_type}
+) -> _HamiltonTagKwargs:
+    base: _HamiltonTagKwargs = {"node_type": node_type}
     if domain is not None:
-        base[cast("TagKey", TAG_DOMAIN)] = domain
+        base["domain"] = domain
     if target is not None:
-        base[cast("TagKey", TAG_TARGET)] = target
+        base["target"] = target
     return _merge_extra_tags(base, extra_tags)
 
 
 def _tag(
-    tags: TagMap,
+    tags: _HamiltonTagKwargs,
     *,
     target_: str | Collection[str] | EllipsisType | None,
 ) -> Decorator[P, R]:
+    tags_kwargs = cast("dict[TagKey, TagValue]", tags)
     if target_ is None:
-        return cast("Decorator[P, R]", h_tag(**tags))
-    return cast("Decorator[P, R]", h_tag(**tags, target_=target_))
+        return cast("Decorator[P, R]", _TAG_DECORATOR_FACTORY(**tags_kwargs))
+    return cast("Decorator[P, R]", _TAG_DECORATOR_FACTORY(**tags_kwargs, target_=target_))
 
 
 def tag_compute(

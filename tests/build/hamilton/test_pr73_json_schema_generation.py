@@ -24,7 +24,6 @@ from codeintel.build.schemas.json_schema_registry import (
     get_json_schema,
     get_json_schema_for_dataset_name,
 )
-from codeintel.core.constants.crypto import SHA256_HEX_DIGEST_LENGTH
 from codeintel.core.schemas.json_schema_gen import (
     json_schema_from_table_schema,
 )
@@ -40,6 +39,7 @@ if TYPE_CHECKING:
 
 EXPECTED_COLUMN_TYPE_COUNT = 10  # Number of ColumnType literals
 EXPECTED_SCHEMA_VERSION = "https://json-schema.org/draft/2020-12/schema"
+SHA256_HEX_DIGEST_LENGTH = 64
 
 
 # -----------------------------------------------------------------------------

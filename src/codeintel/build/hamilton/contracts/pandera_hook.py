@@ -21,6 +21,7 @@ import pandas as pd
 from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.core.schemas.pandera_gen import pandera_schema_from_table_schema
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -227,7 +228,7 @@ def validate_dataset_ref(
         return True, None
 
     try:
-        table = gateway.ibis.table(ref.table_key)
+        table = ibis_facade.table(gateway, ref.table_key)
         df = table.execute()
         frame = _ensure_dataframe(df, ref.table_key)
         schema.validate(frame)

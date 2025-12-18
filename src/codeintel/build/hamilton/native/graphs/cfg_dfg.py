@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
-from codeintel.build.ibis_typing import filter_by, isin_values
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root, persist_rows
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
 from codeintel.build.hamilton.native.target_spec_helpers import (
@@ -30,10 +30,12 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
+from codeintel.core.ibis_typing import filter_by, isin_values
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -152,6 +154,30 @@ class DFGExtractResult:
 
 
 @tag(node_type="helper")
+def cfg__execution_result(t__cfg__extract: CFGExtractResult) -> ExecutionResult:
+    """Convert cfg extract result to the executor boundary type.
+
+    Returns
+    -------
+    ExecutionResult
+        Canonical execution result.
+    """
+    return to_execution_result(t__cfg__extract, default_error="CFG extraction failed")
+
+
+@tag(node_type="helper")
+def dfg__execution_result(t__dfg__extract: DFGExtractResult) -> ExecutionResult:
+    """Convert dfg extract result to the executor boundary type.
+
+    Returns
+    -------
+    ExecutionResult
+        Canonical execution result.
+    """
+    return to_execution_result(t__dfg__extract, default_error="DFG extraction failed")
+
+
+@tag(node_type="helper")
 def _load_functions(
     gateway: StorageGateway,
     repo: str,
@@ -174,7 +200,7 @@ def _load_functions(
         Function information for CFG construction.
     """
     try:
-        goids_tbl = gateway.ibis.table("core.goids")
+        goids_tbl = ibis_facade.table(gateway, "core.goids")
         expr = (
             filter_by(
                 goids_tbl,
@@ -454,7 +480,7 @@ def t__cfg__extract(
 def t__cfg(
     env: BuildEnv,
     graph: TargetGraph,
-    t__cfg__extract: CFGExtractResult,
+    cfg__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize CFG target with validation.
 
@@ -467,15 +493,15 @@ def t__cfg(
         Build environment with gateway and snapshot.
     graph
         Target graph for metadata lookup.
-    t__cfg__extract
-        Extraction result from upstream compute node.
+    cfg__execution_result
+        Execution result derived from upstream extract node.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, CFG_TARGET_NAME, t__cfg__extract)
+    return executor_materialize(env, graph, CFG_TARGET_NAME, cfg__execution_result)
 
 
 @tag(domain="graphs", target=DFG_TARGET_NAME, node_type="tool")
@@ -565,7 +591,7 @@ def t__dfg__extract(
 def t__dfg(
     env: BuildEnv,
     graph: TargetGraph,
-    t__dfg__extract: DFGExtractResult,
+    dfg__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize DFG target with validation.
 
@@ -578,15 +604,15 @@ def t__dfg(
         Build environment with gateway and snapshot.
     graph
         Target graph for metadata lookup.
-    t__dfg__extract
-        Extraction result from upstream compute node.
+    dfg__execution_result
+        Execution result derived from upstream extract node.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, DFG_TARGET_NAME, t__dfg__extract)
+    return executor_materialize(env, graph, DFG_TARGET_NAME, dfg__execution_result)
 
 
 __all__ = [

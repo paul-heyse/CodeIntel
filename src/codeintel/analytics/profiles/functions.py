@@ -37,8 +37,7 @@ from codeintel.analytics.utilities.type_coercion import (
     optional_int,
     optional_str,
 )
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import (
+from codeintel.core.ibis_typing import (
     and_predicates,
     col_count,
     col_nunique,
@@ -48,6 +47,7 @@ from codeintel.storage.ibis_types import (
     isin_values,
     window_over,
 )
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping

@@ -5,7 +5,6 @@ This package provides:
 - **Builder** (`builder.py`): `ConfigBuilder` for constructing pipeline contexts
 - **CLI Models** (`models.py`): Pydantic models for CLI argument parsing and validation
 - **Serving** (`serving_models.py`): API server configuration models
-- **Graph Helpers** (`graph_helpers.py`): Graph-related configuration types
 
 Import Patterns
 ---------------
@@ -33,14 +32,6 @@ directly from their respective modules instead of deprecated step configurations
 """
 
 from codeintel.config.builder import BuilderDependencies, ConfigBuilder
-from codeintel.config.graph_helpers import (
-    GraphMetricPluginOverrides,
-    GraphMetricPluginSelection,
-    GraphMetricsTuning,
-    GraphMetricWeights,
-    GraphPluginPolicy,
-    GraphRunScope,
-)
 from codeintel.config.models import (
     CliPathsInput,
     CodeIntelConfig,
@@ -71,12 +62,6 @@ __all__ = [
     "EntryPointToggles",
     "GraphBackendConfig",
     "GraphFeatureFlags",
-    "GraphMetricPluginOverrides",
-    "GraphMetricPluginSelection",
-    "GraphMetricWeights",
-    "GraphMetricsTuning",
-    "GraphPluginPolicy",
-    "GraphRunScope",
     "RepoConfig",
     "ScanProfiles",
     "SnapshotInit",

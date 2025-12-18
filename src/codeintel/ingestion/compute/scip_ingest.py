@@ -171,13 +171,13 @@ class ScipIngestStep:
         if symbol_rows:
             scope = f"{config.repo}@{config.commit}"
             write_result = self._storage.write_batch("core.scip_symbols", symbol_rows, scope=scope)
-            table_counts["core.scip_symbols"] = write_result.rows_written
-            total_rows += write_result.rows_written
+            table_counts["core.scip_symbols"] = write_result.rows_affected
+            total_rows += write_result.rows_affected
 
         if occurrence_rows:
             write_result = self._storage.write_batch("core.scip_occurrences", occurrence_rows)
-            table_counts["core.scip_occurrences"] = write_result.rows_written
-            total_rows += write_result.rows_written
+            table_counts["core.scip_occurrences"] = write_result.rows_affected
+            total_rows += write_result.rows_affected
 
         log.info(
             "SCIP ingest: repo=%s commit=%s symbols=%d occurrences=%d",

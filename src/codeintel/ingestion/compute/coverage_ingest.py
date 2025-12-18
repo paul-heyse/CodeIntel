@@ -119,8 +119,8 @@ class CoverageIngestStep:
             write_result = self._storage.write_batch(
                 "analytics.coverage_lines", all_rows, scope=scope
             )
-            table_counts["analytics.coverage_lines"] = write_result.rows_written
-            total_rows = write_result.rows_written
+            table_counts["analytics.coverage_lines"] = write_result.rows_affected
+            total_rows = write_result.rows_affected
 
         log.info(
             "Coverage ingest: repo=%s commit=%s files=%d lines=%d",

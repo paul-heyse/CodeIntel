@@ -13,7 +13,6 @@ from fastapi.openapi.utils import get_openapi
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.http.errors import (
     ProblemDetail,
     ProblemType,
@@ -30,9 +29,8 @@ from codeintel.serving.http.routes import router as api_router
 from codeintel.serving.http.state import ServingState
 from codeintel.serving.mcp._compat import HAS_EVENT_STORE, EventStore
 from codeintel.serving.mcp.app import build_mcp_app
-from codeintel.serving.semantic.kernel import SemanticQueryKernel
+from codeintel.serving.runtime import build_runtime
 from codeintel.serving.settings import ServingSettings
-from codeintel.storage.gateway.pool import PoolConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
@@ -72,28 +70,27 @@ def create_serving_app(
     cfg.validate_auth_for_host()
     cfg.validate_mcp_single_worker(mount_mcp=mount_mcp)
 
-    db_manager = ServingDBManager(
-        pointer_path=cfg.serve_dir / "current.json",
-        pool_cfg=PoolConfig(size=cfg.pool_size),
-        poll_interval_s=cfg.poll_interval_s,
-        hot_swap=cfg.hot_swap,
+    runtime = build_runtime(cfg)
+    state = ServingState(
+        settings=cfg,
+        db=runtime.db_manager,
+        kernel=runtime.kernel,
+        ops=runtime.ops,
     )
-    kernel = SemanticQueryKernel(db=db_manager, settings=cfg)
-    state = ServingState(settings=cfg, db=db_manager, kernel=kernel)
 
     app = FastAPI(
         title="CodeIntel Serving",
         description="Semantic layer API for CodeIntel",
         version="1.0.0",
-        lifespan=_build_lifespan(db_manager),
+        lifespan=_build_lifespan(runtime.db_manager),
     )
     app.state.serving = state
 
     _install_exception_handlers(app)
     _install_middlewares(app, cfg)
     app.include_router(api_router)
-    _install_observability_routes(app, db_manager=db_manager, kernel=kernel)
-    _maybe_mount_mcp(app, kernel=kernel, settings=cfg, enabled=mount_mcp)
+    _install_observability_routes(app, db_manager=runtime.db_manager, ops=runtime.ops)
+    _maybe_mount_mcp(app, kernel=runtime.kernel, settings=cfg, enabled=mount_mcp)
 
     app.openapi = lambda: _custom_openapi(app)
     return app
@@ -168,11 +165,11 @@ def _install_middlewares(app: FastAPI, cfg: ServingSettings) -> None:
 
 
 def _install_observability_routes(
-    app: FastAPI, *, db_manager: ServingDBManager, kernel: SemanticQueryKernel
+    app: FastAPI, *, db_manager: ServingDBManager, ops: ServingOperations
 ) -> None:
     @app.get("/health")
     async def health() -> dict[str, str]:
-        pointer = db_manager.current_pointer()
+        pointer = runtime.db_manager.current_pointer()
         return {
             "status": "ok",
             "repo": pointer.repo,
@@ -182,13 +179,13 @@ def _install_observability_routes(
 
     @app.get("/meta")
     async def meta() -> dict[str, object]:
-        return await run_in_threadpool(kernel.meta)
+        return await run_in_threadpool(ops.meta)
 
 
 def _maybe_mount_mcp(
     app: FastAPI,
     *,
-    kernel: SemanticQueryKernel,
+    kernel: object,
     settings: ServingSettings,
     enabled: bool,
 ) -> None:

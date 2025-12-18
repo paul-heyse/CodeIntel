@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 
 from starlette.responses import StreamingResponse
 
+from codeintel.serving.export.formats import mime_type_for_export_format
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
 
@@ -61,7 +63,7 @@ def ndjson_response(
         response_headers.update({str(k): str(v) for k, v in headers.items()})
     return StreamingResponse(
         ndjson_stream(rows),
-        media_type="application/x-ndjson",
+        media_type=mime_type_for_export_format("ndjson"),
         headers=response_headers,
     )
 

@@ -21,6 +21,7 @@ from pathlib import Path
 
 from hamilton.function_modifiers import source
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.native.materialization_records import (
@@ -68,7 +69,7 @@ def record(
     graph: TargetGraph,
     target_name: str,
     artifact_name: str,
-    artifact_metadata: dict[str, object],
+    artifact_metadata: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Convert artifact saver metadata into a TargetRunRecord.
 

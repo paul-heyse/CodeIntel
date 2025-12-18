@@ -96,7 +96,7 @@ class FakeIngestStorage:
                 op="write_batch", target=table_key, details={"rows": len(rows), "scope": scope}
             )
         )
-        return BatchResult.from_write(table_key=table_key, rows_written=len(rows), duration_s=0.0)
+        return BatchResult.ok(table_key, len(rows), duration_s=0.0)
 
     def delete_by_params(
         self,

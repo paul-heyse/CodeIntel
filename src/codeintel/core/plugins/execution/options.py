@@ -53,13 +53,6 @@ class _PydanticV2Model(Protocol):
     def model_copy(self: Self, *, update: Mapping[str, Any] | None = None) -> Self: ...
 
 
-@runtime_checkable
-class _PydanticV1Model(Protocol):
-    """Subset of the Pydantic v1 API we rely on."""
-
-    def copy(self: Self, *, update: Mapping[str, Any] | None = None) -> Self: ...
-
-
 class PluginOptionsResolver:
     """Construct typed options objects for plugins."""
 
@@ -104,9 +97,6 @@ class PluginOptionsResolver:
 
         if isinstance(base, _PydanticV2Model):
             return cast("T", base.model_copy(update=overrides))
-
-        if isinstance(base, _PydanticV1Model):
-            return cast("T", base.copy(update=overrides))
 
         for key, value in overrides.items():
             setattr(base, key, value)
