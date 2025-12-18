@@ -41,7 +41,11 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.run_records import (
+    TargetRunRecord,
+    options_hash_for_target,
+    should_skip_native_target,
+)
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
@@ -156,7 +160,7 @@ def _row_to_tuple(row: Mapping[str, object], cols: tuple[str, ...]) -> tuple[obj
     return tuple(row.get(col) for col in cols)
 
 
-@tag(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def t__function_metrics__compute(
     env: BuildEnv, graph: TargetGraph
 ) -> FunctionAnalyticsResult | None:
@@ -187,11 +191,12 @@ def t__function_metrics__compute(
     """
     target = graph.get(FUNCTION_METRICS_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, FUNCTION_METRICS_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):

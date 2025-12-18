@@ -3,21 +3,14 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, SupportsInt, cast
+from typing import SupportsInt, cast
 
-import pandas as pd
-
-from codeintel.core.ibis_typing import and_predicates, isin_values
-from codeintel.storage.gateway import ibis_facade
+from codeintel.core.ibis_typing import isin_values
 from codeintel.storage.helpers.json import decode_json, decode_json_dict
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    from codeintel.storage.gateway import StorageGateway
-
+from codeintel.storage.repositories.base import BaseRepository
 
 _DEFAULT_CREATED_AT = datetime.fromtimestamp(0, tz=UTC)
 
@@ -139,242 +132,264 @@ class NormalizedDataModel:
     created_at: datetime
 
 
-def fetch_models(gateway: StorageGateway, repo: str, commit: str) -> list[DataModelRow]:
-    """
-    Return data model rows for a repo/commit.
+@dataclass(frozen=True)
+class DataModelsRepository(BaseRepository):
+    """Read-only access to data model metadata tables and normalized views."""
 
-    Parameters
-    ----------
-    gateway
-        Storage gateway bound to the target DuckDB database.
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
+    def list_models(self) -> list[DataModelRow]:
+        """List data model rows for the bound snapshot.
 
-    Returns
-    -------
-    list[DataModelRow]
-        Parsed data model rows with base classes decoded.
-    """
-    tbl = ibis_facade.table(gateway, "analytics.data_models")
-    expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit)).select(
-        "repo",
-        "commit",
-        "model_id",
-        "goid_h128",
-        "model_name",
-        "module",
-        "rel_path",
-        "model_kind",
-        "base_classes_json",
-        "doc_short",
-        "doc_long",
-        "created_at",
-    )
-    df = pd.DataFrame(expr.execute())
-
-    result: list[DataModelRow] = []
-    for record in df.to_dict(orient="records"):
-        row: dict[str, object] = record
-        created_at = _normalize_created_at(row["created_at"], default=_DEFAULT_CREATED_AT)
-        result.append(
-            DataModelRow(
-                repo=str(row["repo"]),
-                commit=str(row["commit"]),
-                model_id=str(row["model_id"]),
-                goid_h128=_as_int(row["goid_h128"]),
-                model_name=str(row["model_name"]),
-                module=str(row["module"]),
-                rel_path=str(row["rel_path"]),
-                model_kind=str(row["model_kind"]),
-                base_classes=_decode_base_classes(row["base_classes_json"]),
-                doc_short=str(row["doc_short"]) if row["doc_short"] is not None else None,
-                doc_long=str(row["doc_long"]) if row["doc_long"] is not None else None,
-                created_at=created_at,
-            )
+        Returns
+        -------
+        list[DataModelRow]
+            Data model rows for the repository snapshot.
+        """
+        tbl = self._ibis_table("analytics.data_models")
+        expr = tbl.select(
+            "repo",
+            "commit",
+            "model_id",
+            "goid_h128",
+            "model_name",
+            "module",
+            "rel_path",
+            "model_kind",
+            "base_classes_json",
+            "doc_short",
+            "doc_long",
+            "created_at",
         )
-    return result
+        rows = self._ibis_to_dicts(expr, table_key="analytics.data_models")
 
-
-def fetch_fields(
-    gateway: StorageGateway,
-    repo: str,
-    commit: str,
-    model_ids: Sequence[str] | None = None,
-) -> list[DataModelFieldRow]:
-    """
-    Return normalized field rows for the provided models.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway bound to the target DuckDB database.
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    model_ids
-        Optional whitelist of model_ids to include.
-
-    Returns
-    -------
-    list[DataModelFieldRow]
-        Normalized fields for the requested models.
-    """
-    tbl = ibis_facade.table(gateway, "analytics.data_model_fields")
-    expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
-
-    if model_ids is not None:
-        expr = expr.filter(isin_values(tbl.model_id, model_ids))
-
-    expr = expr.select(
-        "repo",
-        "commit",
-        "model_id",
-        "field_name",
-        "field_type",
-        "required",
-        "has_default",
-        "default_expr",
-        "constraints_json",
-        "source",
-        "rel_path",
-        "lineno",
-        "created_at",
-    )
-    df = pd.DataFrame(expr.execute())
-
-    result: list[DataModelFieldRow] = []
-    for record in df.to_dict(orient="records"):
-        row: dict[str, object] = record
-        created_at = _normalize_created_at(row["created_at"], default=_DEFAULT_CREATED_AT)
-        result.append(
-            DataModelFieldRow(
-                repo=str(row["repo"]),
-                commit=str(row["commit"]),
-                model_id=str(row["model_id"]),
-                name=str(row["field_name"]),
-                field_type=str(row["field_type"]) if row["field_type"] is not None else None,
-                required=bool(row["required"]),
-                has_default=bool(row["has_default"]),
-                default_expr=str(row["default_expr"]) if row["default_expr"] is not None else None,
-                constraints=decode_json_dict(row["constraints_json"]),
-                source=str(row["source"]),
-                rel_path=str(row["rel_path"]),
-                lineno=_as_int(row["lineno"]),
-                created_at=created_at,
+        result: list[DataModelRow] = []
+        for row in rows:
+            created_at = _normalize_created_at(row.get("created_at"), default=_DEFAULT_CREATED_AT)
+            result.append(
+                DataModelRow(
+                    repo=str(row.get("repo") or self.repo),
+                    commit=str(row.get("commit") or self.commit),
+                    model_id=str(row.get("model_id") or ""),
+                    goid_h128=_as_int(row.get("goid_h128")),
+                    model_name=str(row.get("model_name") or ""),
+                    module=str(row.get("module") or ""),
+                    rel_path=str(row.get("rel_path") or ""),
+                    model_kind=str(row.get("model_kind") or ""),
+                    base_classes=_decode_base_classes(row.get("base_classes_json")),
+                    doc_short=str(row["doc_short"]) if row.get("doc_short") is not None else None,
+                    doc_long=str(row["doc_long"]) if row.get("doc_long") is not None else None,
+                    created_at=created_at,
+                )
             )
+        return result
+
+    def list_fields(self, *, model_ids: Sequence[str] | None = None) -> list[DataModelFieldRow]:
+        """List normalized field rows for the requested model_ids (or all).
+
+        Parameters
+        ----------
+        model_ids
+            Optional filter restricting results to these model ids.
+
+        Returns
+        -------
+        list[DataModelFieldRow]
+            Field rows for the selected models.
+        """
+        tbl = self._ibis_table("analytics.data_model_fields")
+        expr = tbl
+        if model_ids is not None:
+            expr = expr.filter(isin_values(tbl.model_id, model_ids))
+
+        expr = expr.select(
+            "repo",
+            "commit",
+            "model_id",
+            "field_name",
+            "field_type",
+            "required",
+            "has_default",
+            "default_expr",
+            "constraints_json",
+            "source",
+            "rel_path",
+            "lineno",
+            "created_at",
         )
-    return result
+        rows = self._ibis_to_dicts(expr, table_key="analytics.data_model_fields")
 
-
-def fetch_relationships(
-    gateway: StorageGateway,
-    repo: str,
-    commit: str,
-    model_ids: Sequence[str] | None = None,
-) -> list[DataModelRelationshipRow]:
-    """
-    Return normalized relationships for the provided models.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway bound to the target DuckDB database.
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    model_ids
-        Optional whitelist of source model_ids to include.
-
-    Returns
-    -------
-    list[DataModelRelationshipRow]
-        Normalized relationships for the requested models.
-    """
-    tbl = ibis_facade.table(gateway, "analytics.data_model_relationships")
-    expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
-
-    if model_ids is not None:
-        expr = expr.filter(isin_values(tbl.source_model_id, model_ids))
-
-    expr = expr.select(
-        "repo",
-        "commit",
-        "source_model_id",
-        "target_model_id",
-        "target_module",
-        "target_model_name",
-        "field_name",
-        "relationship_kind",
-        "multiplicity",
-        "via",
-        "evidence_json",
-        "rel_path",
-        "lineno",
-        "created_at",
-    )
-    df = pd.DataFrame(expr.execute())
-
-    result: list[DataModelRelationshipRow] = []
-    for record in df.to_dict(orient="records"):
-        row: dict[str, object] = record
-        created_at = _normalize_created_at(row["created_at"], default=_DEFAULT_CREATED_AT)
-        result.append(
-            DataModelRelationshipRow(
-                repo=str(row["repo"]),
-                commit=str(row["commit"]),
-                source_model_id=str(row["source_model_id"]),
-                target_model_id=str(row["target_model_id"]),
-                target_module=str(row["target_module"])
-                if row["target_module"] is not None
-                else None,
-                target_model_name=str(row["target_model_name"])
-                if row["target_model_name"] is not None
-                else None,
-                field_name=str(row["field_name"]) if row["field_name"] is not None else None,
-                relationship_kind=str(row["relationship_kind"]),
-                multiplicity=str(row["multiplicity"]) if row["multiplicity"] is not None else None,
-                via=str(row["via"]) if row["via"] is not None else None,
-                evidence=decode_json_dict(row["evidence_json"]),
-                rel_path=str(row["rel_path"]),
-                lineno=_as_int(row["lineno"]),
-                created_at=created_at,
+        result: list[DataModelFieldRow] = []
+        for row in rows:
+            created_at = _normalize_created_at(row.get("created_at"), default=_DEFAULT_CREATED_AT)
+            result.append(
+                DataModelFieldRow(
+                    repo=str(row.get("repo") or self.repo),
+                    commit=str(row.get("commit") or self.commit),
+                    model_id=str(row.get("model_id") or ""),
+                    name=str(row.get("field_name") or ""),
+                    field_type=str(row["field_type"]) if row.get("field_type") is not None else None,
+                    required=bool(row.get("required", False)),
+                    has_default=bool(row.get("has_default", False)),
+                    default_expr=str(row["default_expr"])
+                    if row.get("default_expr") is not None
+                    else None,
+                    constraints=decode_json_dict(row.get("constraints_json")),
+                    source=str(row.get("source") or ""),
+                    rel_path=str(row.get("rel_path") or ""),
+                    lineno=_as_int(row.get("lineno")),
+                    created_at=created_at,
+                )
             )
+        return result
+
+    def list_relationships(
+        self,
+        *,
+        model_ids: Sequence[str] | None = None,
+    ) -> list[DataModelRelationshipRow]:
+        """List normalized relationship rows for the requested model_ids (or all).
+
+        Parameters
+        ----------
+        model_ids
+            Optional filter restricting results to relationships sourced from these model ids.
+
+        Returns
+        -------
+        list[DataModelRelationshipRow]
+            Relationship rows for the selected models.
+        """
+        tbl = self._ibis_table("analytics.data_model_relationships")
+        expr = tbl
+        if model_ids is not None:
+            expr = expr.filter(isin_values(tbl.source_model_id, model_ids))
+
+        expr = expr.select(
+            "repo",
+            "commit",
+            "source_model_id",
+            "target_model_id",
+            "target_module",
+            "target_model_name",
+            "field_name",
+            "relationship_kind",
+            "multiplicity",
+            "via",
+            "evidence_json",
+            "rel_path",
+            "lineno",
+            "created_at",
         )
-    return result
+        rows = self._ibis_to_dicts(expr, table_key="analytics.data_model_relationships")
 
+        result: list[DataModelRelationshipRow] = []
+        for row in rows:
+            created_at = _normalize_created_at(row.get("created_at"), default=_DEFAULT_CREATED_AT)
+            result.append(
+                DataModelRelationshipRow(
+                    repo=str(row.get("repo") or self.repo),
+                    commit=str(row.get("commit") or self.commit),
+                    source_model_id=str(row.get("source_model_id") or ""),
+                    target_model_id=str(row.get("target_model_id") or ""),
+                    target_module=str(row["target_module"])
+                    if row.get("target_module") is not None
+                    else None,
+                    target_model_name=str(row["target_model_name"])
+                    if row.get("target_model_name") is not None
+                    else None,
+                    field_name=str(row["field_name"]) if row.get("field_name") is not None else None,
+                    relationship_kind=str(row.get("relationship_kind") or ""),
+                    multiplicity=str(row["multiplicity"])
+                    if row.get("multiplicity") is not None
+                    else None,
+                    via=str(row["via"]) if row.get("via") is not None else None,
+                    evidence=decode_json_dict(row.get("evidence_json")),
+                    rel_path=str(row.get("rel_path") or ""),
+                    lineno=_as_int(row.get("lineno")),
+                    created_at=created_at,
+                )
+            )
+        return result
 
-def fetch_models_normalized(
-    gateway: StorageGateway,
-    repo: str,
-    commit: str,
-    *,
-    model_ids: Sequence[str] | None = None,
-) -> list[NormalizedDataModel]:
-    """
-    Return normalized data models, including fields and relationships.
+    def list_models_normalized(
+        self,
+        *,
+        model_ids: Sequence[str] | None = None,
+    ) -> list[NormalizedDataModel]:
+        """List normalized data models with decoded fields and relationships.
 
-    Parameters
-    ----------
-    gateway
-        Storage gateway bound to the target DuckDB database.
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    model_ids
-        Optional whitelist of model_ids to include.
+        Parameters
+        ----------
+        model_ids
+            Optional filter restricting results to these model ids.
 
-    Returns
-    -------
-    list[NormalizedDataModel]
-        Normalized models sourced from docs.v_data_models_normalized.
-    """
-    allowed = set(model_ids) if model_ids else None
-    return _fetch_models_from_view(gateway, repo, commit, allowed)
+        Returns
+        -------
+        list[NormalizedDataModel]
+            Fully decoded models with embedded field and relationship details.
+        """
+        allowed = set(model_ids) if model_ids else None
+        tbl = self._ibis_table("docs.v_data_models_normalized")
+        expr = tbl
+        if allowed is not None:
+            expr = expr.filter(isin_values(tbl.model_id, allowed))
+
+        expr = expr.select(
+            "repo",
+            "commit",
+            "model_id",
+            "goid_h128",
+            "model_name",
+            "module",
+            "rel_path",
+            "model_kind",
+            "base_classes_json",
+            "fields",
+            "relationships",
+            "doc_short",
+            "doc_long",
+            "created_at",
+        )
+        rows = self._ibis_to_dicts(expr, table_key="docs.v_data_models_normalized")
+
+        result: list[NormalizedDataModel] = []
+        for row in rows:
+            created_at = _normalize_created_at(row.get("created_at"), default=_DEFAULT_CREATED_AT)
+            repo = str(row.get("repo") or self.repo)
+            commit = str(row.get("commit") or self.commit)
+            model_id = str(row.get("model_id") or "")
+            result.append(
+                NormalizedDataModel(
+                    repo=repo,
+                    commit=commit,
+                    model_id=model_id,
+                    goid_h128=_as_int(row.get("goid_h128")),
+                    model_name=str(row.get("model_name") or ""),
+                    module=str(row.get("module") or ""),
+                    rel_path=str(row.get("rel_path") or ""),
+                    model_kind=str(row.get("model_kind") or ""),
+                    base_classes=_decode_base_classes(row.get("base_classes_json")),
+                    fields=_decode_field_structs(
+                        row.get("fields"),
+                        repo=repo,
+                        commit=commit,
+                        model_id=model_id,
+                        default_created_at=created_at,
+                    ),
+                    relationships=_decode_relationship_structs(
+                        row.get("relationships"),
+                        repo=repo,
+                        commit=commit,
+                        model_id=model_id,
+                        default_created_at=created_at,
+                    ),
+                    doc_short=str(row["doc_short"])
+                    if row.get("doc_short") is not None
+                    else None,
+                    doc_long=str(row["doc_long"]) if row.get("doc_long") is not None else None,
+                    created_at=created_at,
+                )
+            )
+        return result
 
 
 def _decode_field_structs(
@@ -460,91 +475,3 @@ def _decode_relationship_structs(
             )
         )
     return parsed
-
-
-def _fetch_models_from_view(
-    gateway: StorageGateway,
-    repo: str,
-    commit: str,
-    allowed: set[str] | None,
-) -> list[NormalizedDataModel]:
-    """
-    Fetch normalized data models from the view using Ibis.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway bound to the target DuckDB database.
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    allowed
-        Optional set of model_ids to include; None means all.
-
-    Returns
-    -------
-    list[NormalizedDataModel]
-        Normalized models with decoded fields and relationships.
-    """
-    tbl = ibis_facade.table(gateway, "docs.v_data_models_normalized")
-    expr = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
-
-    if allowed is not None:
-        expr = expr.filter(isin_values(tbl.model_id, allowed))
-
-    expr = expr.select(
-        "repo",
-        "commit",
-        "model_id",
-        "goid_h128",
-        "model_name",
-        "module",
-        "rel_path",
-        "model_kind",
-        "base_classes_json",
-        "fields",
-        "relationships",
-        "doc_short",
-        "doc_long",
-        "created_at",
-    )
-    df = pd.DataFrame(expr.execute())
-
-    result: list[NormalizedDataModel] = []
-    for record in df.to_dict(orient="records"):
-        row: dict[str, object] = record
-        created_at = _normalize_created_at(row["created_at"], default=_DEFAULT_CREATED_AT)
-        field_rows = _decode_field_structs(
-            row["fields"],
-            repo=str(row["repo"]),
-            commit=str(row["commit"]),
-            model_id=str(row["model_id"]),
-            default_created_at=created_at,
-        )
-        relationship_rows = _decode_relationship_structs(
-            row["relationships"],
-            repo=str(row["repo"]),
-            commit=str(row["commit"]),
-            model_id=str(row["model_id"]),
-            default_created_at=created_at,
-        )
-        result.append(
-            NormalizedDataModel(
-                repo=str(row["repo"]),
-                commit=str(row["commit"]),
-                model_id=str(row["model_id"]),
-                goid_h128=_as_int(row["goid_h128"]),
-                model_name=str(row["model_name"]),
-                module=str(row["module"]),
-                rel_path=str(row["rel_path"]),
-                model_kind=str(row["model_kind"]),
-                base_classes=_decode_base_classes(row["base_classes_json"]),
-                fields=field_rows,
-                relationships=relationship_rows,
-                doc_short=str(row["doc_short"]) if row["doc_short"] is not None else None,
-                doc_long=str(row["doc_long"]) if row["doc_long"] is not None else None,
-                created_at=created_at,
-            )
-        )
-    return result

@@ -116,7 +116,9 @@ def component_metadata_from_import_table(
     try:
         tbl = ibis_facade.table(gateway, "graph.import_modules")
         scoped = filter_by(tbl, tbl.repo == repo, tbl.commit == commit)
-        df = cast("pd.DataFrame", scoped.select("module", "scc_id", "component_size", "layer").execute())
+        df = cast(
+            "pd.DataFrame", scoped.select("module", "scc_id", "component_size", "layer").execute()
+        )
     except IbisError:
         return None
     if df.empty:
@@ -209,9 +211,9 @@ def _load_symbol_module_edges_from_db(
     def_module_present = and_predicates(not_null(module_defs.module), ne(module_defs.module, ""))
     use_module_present = and_predicates(not_null(module_uses.module), ne(module_uses.module, ""))
 
-    joined = edges.left_join(module_defs, predicates=[(edges.def_path, module_defs.path)]).left_join(
-        module_uses, predicates=[(edges.use_path, module_uses.path)]
-    )
+    joined = edges.left_join(
+        module_defs, predicates=[(edges.def_path, module_defs.path)]
+    ).left_join(module_uses, predicates=[(edges.use_path, module_uses.path)])
     selected = filter_by(joined, def_module_present, use_module_present).select(
         use_module=module_uses.module,
         def_module=module_defs.module,

@@ -18,6 +18,7 @@ from __future__ import annotations
 from functools import cached_property
 from typing import TYPE_CHECKING
 
+from codeintel.storage.repositories.data_models import DataModelsRepository
 from codeintel.storage.repositories.dataflow import DataflowRepository
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.graphs import GraphRepository
@@ -148,3 +149,14 @@ class RepositoryFactory:
             Repository for dataflow queries.
         """
         return DataflowRepository(self._gateway, self._repo, self._commit)
+
+    @cached_property
+    def data_models(self) -> DataModelsRepository:
+        """Return the data models repository.
+
+        Returns
+        -------
+        DataModelsRepository
+            Repository for data model tables and normalized views.
+        """
+        return DataModelsRepository(self._gateway, self._repo, self._commit)

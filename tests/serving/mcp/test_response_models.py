@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import ValidationError
 
-from codeintel.serving.mcp.response_models import (
+from codeintel.serving.mcp.models import (
     DEFAULT_RESOURCE_TEMPLATES,
     BuildSpecInfo,
     ExportHandleResponse,
@@ -31,6 +31,7 @@ from codeintel.serving.mcp.response_models import (
     SnapshotRef,
 )
 from codeintel.serving.semantic.models import SemanticQueryResponse
+from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -39,7 +40,8 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.serving.mcp.response_models import ExportFormat, ExportStatus
+    from codeintel.serving.export.formats import ExportFormat
+    from codeintel.serving.mcp.models.exports import ExportStatus
 
 # =============================================================================
 # Fixtures
@@ -475,7 +477,7 @@ def test_semantic_query_tool_response_creation() -> None:
         columns=["repo", "commit", "loc"],
         rows=[{"repo": "org/repo", "commit": "abc123", "loc": 100}],
         truncated=False,
-        snapshot={"repo": "org/repo", "commit": "abc123", "run_id": "run-001"},
+        snapshot=ServingSnapshotIdentity(repo="org/repo", commit="abc123", run_id="run-001"),
     )
     response = SemanticQueryToolResponse(result=result)
     expect_equal(response.result.view_id, "function_metrics")
@@ -490,7 +492,7 @@ def test_semantic_query_tool_response_with_export(sample_export_snapshot: Export
         columns=["repo", "commit", "loc"],
         rows=[{"repo": "org/repo", "commit": "abc123", "loc": 100}],
         truncated=True,
-        snapshot={"repo": "org/repo", "commit": "abc123", "run_id": "run-001"},
+        snapshot=ServingSnapshotIdentity(repo="org/repo", commit="abc123", run_id="run-001"),
     )
     export_handle = ExportHandleResponse(
         export_id="exp123456789",

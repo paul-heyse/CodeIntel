@@ -36,7 +36,11 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
-from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.run_records import (
+    TargetRunRecord,
+    options_hash_for_target,
+    should_skip_native_target,
+)
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
 from codeintel.build.hamilton.validators import build_table_contract
@@ -205,11 +209,12 @@ def t__export_jsonl__compute(
     """
     target = graph.get(EXPORT_JSONL_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, EXPORT_JSONL_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -248,7 +253,9 @@ def t__export_jsonl__compute(
     artifact_name=value(JSONL_EXPORT_ARTIFACT_NAME),
 )
 @tag_compute(domain="export", target=EXPORT_JSONL_TARGET_NAME, target_="export_jsonl__content")
-def export_jsonl__content(t__export_jsonl__compute: ArtifactWritePlan | None) -> ArtifactWritePlan | None:
+def export_jsonl__content(
+    t__export_jsonl__compute: ArtifactWritePlan | None,
+) -> ArtifactWritePlan | None:
     """Return the JSONL export write plan for materialization.
 
     Returns
@@ -340,11 +347,12 @@ def export_parquet__bytes(
     """
     target = graph.get(EXPORT_PARQUET_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, EXPORT_PARQUET_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):

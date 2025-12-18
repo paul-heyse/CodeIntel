@@ -39,8 +39,8 @@ def expected_datasets(
     Examples
     --------
     >>> from codeintel.config.primitives import SnapshotRef
-    >>> from codeintel.build.registry import get_target_graph
-    >>> graph = get_target_graph()
+    >>> from codeintel.build.target_system import load_target_system
+    >>> graph = load_target_system().graph
     >>> target = graph.get("function_metrics")
     >>> snapshot = SnapshotRef(repo="example", commit="abc123")
     >>> refs = expected_datasets(target, snapshot)
@@ -88,8 +88,8 @@ def expected_artifacts(
     Examples
     --------
     >>> from codeintel.config.primitives import SnapshotRef
-    >>> from codeintel.build.registry import get_target_graph
-    >>> graph = get_target_graph()
+    >>> from codeintel.build.target_system import load_target_system
+    >>> graph = load_target_system().graph
     >>> target = graph.get("scip")
     >>> snapshot = SnapshotRef(repo="example", commit="abc123")
     >>> refs = expected_artifacts(target, snapshot)

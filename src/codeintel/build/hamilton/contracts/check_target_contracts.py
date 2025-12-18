@@ -62,7 +62,9 @@ def _derive_materialize_targets(runtime: HamiltonRuntime) -> tuple[dict[str, str
             continue
         existing = target_to_node.get(target)
         if existing is not None:
-            issues.append(f"Duplicate materialize nodes for target {target}: {existing}, {node_name}")
+            issues.append(
+                f"Duplicate materialize nodes for target {target}: {existing}, {node_name}"
+            )
             continue
         target_to_node[target] = node_name
     return target_to_node, issues

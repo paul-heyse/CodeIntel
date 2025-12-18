@@ -1,9 +1,9 @@
 """Regression test: static OutputTarget dependencies are decommissioned.
 
 The Hamilton DAG is the single source of truth for target dependencies. The
-static OutputTarget declarations in ``codeintel.build.registry`` must not
-encode dependency tuples, to avoid drift and accidental reintroduction of a
-second dependency source of truth.
+static OutputTarget specs in ``codeintel.build.target_catalog`` must not encode
+dependency tuples, to avoid drift and accidental reintroduction of a second
+dependency source of truth.
 """
 
 from __future__ import annotations

@@ -536,7 +536,9 @@ def t__call_graph__extract(
 
         _log_repo_state(env.gateway, snapshot.repo, snapshot.commit)
 
-        function_index = load_function_index(env.gateway, repo=snapshot.repo, commit=snapshot.commit)
+        function_index = load_function_index(
+            env.gateway, repo=snapshot.repo, commit=snapshot.commit
+        )
         paths = filter_paths(function_index.paths(), scope_paths=opts.scope_paths)
 
         if not paths:
@@ -555,7 +557,8 @@ def t__call_graph__extract(
             function_index=function_index,
             global_callees=_build_global_callee_lookup(env.gateway, snapshot.repo, snapshot.commit),
             def_goids_by_path=_build_def_goids_by_path(env.gateway, snapshot.repo, snapshot.commit),
-            source_root=snapshot.repo_root or get_source_root(env.gateway, snapshot.repo, snapshot.commit),
+            source_root=snapshot.repo_root
+            or get_source_root(env.gateway, snapshot.repo, snapshot.commit),
             repo=snapshot.repo,
             commit=snapshot.commit,
             use_libcst=opts.use_libcst,

@@ -25,7 +25,7 @@ from pathlib import Path
 import ibis
 import pyarrow as pa
 import sqlglot
-from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers import source, value
 
 from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
@@ -41,6 +41,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
 from codeintel.build.schemas import SchemaManifest, get_schema_provider
 from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
 from codeintel.build.serving.semantic_compile_hamilton import (
@@ -50,7 +51,7 @@ from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.metadata.bootstrap import sync_derived_lineage_edges
+from codeintel.storage.metadata.sync import sync_derived_lineage_edges
 from codeintel.storage.views import ibis_views as _ibis_views
 from codeintel.storage.views.dependencies import extract_referenced_table_keys
 from codeintel.storage.views.diff import diff_view_sql_maps
@@ -205,9 +206,13 @@ def _views_sql_json(env: BuildEnv) -> str:
         lineage[view_key] = frozenset(extract_referenced_table_keys(sql) - {view_key})
 
     try:
-        sync_derived_lineage_edges(env.gateway.con, repo=env.repo, commit=env.commit, lineage=lineage)
+        sync_derived_lineage_edges(
+            env.gateway.con, repo=env.repo, commit=env.commit, lineage=lineage
+        )
     except DuckDBError:
-        LOG.exception("Failed to sync derived lineage edges repo=%s commit=%s", env.repo, env.commit)
+        LOG.exception(
+            "Failed to sync derived lineage edges repo=%s commit=%s", env.repo, env.commit
+        )
 
     return json.dumps(sql_by_view, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
@@ -269,10 +274,9 @@ def _views_sql_diff_json(env: BuildEnv, *, current_views_sql: str) -> str:
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_SEMANTIC_REGISTRY),
 )
-@tag(
+@tag_compute(
     domain="export",
     target=SERVING_ARTIFACTS_TARGET_NAME,
-    node_type="compute",
     target_="serving_artifacts__semantic_registry",
 )
 def serving_artifacts__semantic_registry(_env: BuildEnv) -> str:
@@ -299,10 +303,9 @@ def serving_artifacts__semantic_registry(_env: BuildEnv) -> str:
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_SCHEMA_MANIFEST),
 )
-@tag(
+@tag_compute(
     domain="export",
     target=SERVING_ARTIFACTS_TARGET_NAME,
-    node_type="compute",
     target_="serving_artifacts__schema_manifest",
 )
 def serving_artifacts__schema_manifest(_env: BuildEnv) -> str:
@@ -329,10 +332,9 @@ def serving_artifacts__schema_manifest(_env: BuildEnv) -> str:
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_BUILDSPEC),
 )
-@tag(
+@tag_compute(
     domain="export",
     target=SERVING_ARTIFACTS_TARGET_NAME,
-    node_type="compute",
     target_="serving_artifacts__buildspec",
 )
 def serving_artifacts__buildspec(_env: BuildEnv) -> str:
@@ -359,10 +361,9 @@ def serving_artifacts__buildspec(_env: BuildEnv) -> str:
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_ENVIRONMENT),
 )
-@tag(
+@tag_compute(
     domain="export",
     target=SERVING_ARTIFACTS_TARGET_NAME,
-    node_type="compute",
     target_="serving_artifacts__environment",
 )
 def serving_artifacts__environment(env: BuildEnv) -> str:
@@ -389,10 +390,9 @@ def serving_artifacts__environment(env: BuildEnv) -> str:
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_VIEWS_SQL),
 )
-@tag(
+@tag_compute(
     domain="export",
     target=SERVING_ARTIFACTS_TARGET_NAME,
-    node_type="compute",
     target_="serving_artifacts__views_sql",
 )
 def serving_artifacts__views_sql(env: BuildEnv) -> str:
@@ -419,10 +419,9 @@ def serving_artifacts__views_sql(env: BuildEnv) -> str:
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_VIEWS_SQL_DIFF),
 )
-@tag(
+@tag_compute(
     domain="export",
     target=SERVING_ARTIFACTS_TARGET_NAME,
-    node_type="compute",
     target_="serving_artifacts__views_sql_diff",
 )
 def serving_artifacts__views_sql_diff(env: BuildEnv, serving_artifacts__views_sql: str) -> str:
@@ -443,7 +442,7 @@ def serving_artifacts__views_sql_diff(env: BuildEnv, serving_artifacts__views_sq
     return _views_sql_diff_json(env, current_views_sql=serving_artifacts__views_sql)
 
 
-@tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
+@tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def serving_artifacts__materializations_base(
     m__artifact__semantic_registry: MaterializationMetadata,
     m__artifact__schema_manifest: MaterializationMetadata,
@@ -472,7 +471,7 @@ def serving_artifacts__materializations_base(
     }
 
 
-@tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
+@tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def serving_artifacts__materializations_views(
     m__artifact__environment: MaterializationMetadata,
     m__artifact__views_sql: MaterializationMetadata,
@@ -492,7 +491,7 @@ def serving_artifacts__materializations_views(
     }
 
 
-@tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
+@tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def serving_artifacts__materializations(
     serving_artifacts__materializations_base: dict[str, MaterializationMetadata],
     serving_artifacts__materializations_views: dict[str, MaterializationMetadata],
@@ -509,7 +508,7 @@ def serving_artifacts__materializations(
     return merged
 
 
-@tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def t__serving_artifacts(
     env: BuildEnv,
     graph: TargetGraph,

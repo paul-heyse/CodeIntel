@@ -2106,7 +2106,9 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         name="run_environments",
         columns=[
             Column("run_id", "VARCHAR", nullable=False, description="Parent run identifier"),
-            Column("python_version", "VARCHAR", nullable=False, description="Python version string"),
+            Column(
+                "python_version", "VARCHAR", nullable=False, description="Python version string"
+            ),
             Column("os_name", "VARCHAR", nullable=False, description="Operating system name"),
             Column("os_version", "VARCHAR", nullable=False, description="Operating system release"),
             Column(

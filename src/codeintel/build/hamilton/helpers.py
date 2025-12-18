@@ -251,11 +251,15 @@ def get_module_paths_from_env(env: BuildEnv) -> list[str]:
     """
     try:
         table = ibis_facade.table(env.gateway, "core.modules")
-        df = filter_by(
-            table,
-            table.repo == env.snapshot.repo,
-            table.commit == env.snapshot.commit,
-        ).select("path").execute()
+        df = (
+            filter_by(
+                table,
+                table.repo == env.snapshot.repo,
+                table.commit == env.snapshot.commit,
+            )
+            .select("path")
+            .execute()
+        )
         return [str(path) for path in df["path"].tolist()]
     except (RuntimeError, OSError, IbisError, TableNotFound) as exc:
         log.warning("gateway error fetching module paths: %s", exc)

@@ -21,12 +21,12 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.materialize_options import materialize_options
-from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
@@ -201,20 +201,17 @@ def _load_functions(
     """
     try:
         goids_tbl = ibis_facade.table(gateway, "core.goids")
-        expr = (
-            filter_by(
-                goids_tbl,
-                goids_tbl.repo == repo,
-                goids_tbl.commit == commit,
-                isin_values(goids_tbl.kind, ["function", "method"]),
-            )
-            .select(
+        expr = filter_by(
+            goids_tbl,
+            goids_tbl.repo == repo,
+            goids_tbl.commit == commit,
+            isin_values(goids_tbl.kind, ["function", "method"]),
+        ).select(
             goids_tbl.goid_h128,
             goids_tbl.qualname,
             goids_tbl.rel_path,
             goids_tbl.start_line,
             goids_tbl.end_line,
-        )
         )
         rows = expr.execute()
 
@@ -594,7 +591,7 @@ def t__dfg__extract(
             DFG_EDGES_TABLE_KEY,
             [row.to_tuple() for row in all_dfg_rows],
             columns=None,
-            options=MaterializeOptions(snapshot=env.snapshot, mode="replace", owner_target=DFG_TARGET_NAME),
+            options=materialize_options(env, owner_target=DFG_TARGET_NAME, mode="replace"),
         )
         edge_count = int(edge_result.rows_written or 0)
 

@@ -11,4 +11,6 @@ def test_sqlglot_tools_extracts_table_keys_and_fingerprint() -> None:
     sql = "  select * from core.modules  "
     table_keys = extract_table_keys_duckdb(sql)
     expect_true("core.modules" in table_keys, message="table key extracted")
-    expect_equal(fingerprint_sql_duckdb(sql), fingerprint_sql_duckdb(sql.strip()), label="fingerprint")
+    expect_equal(
+        fingerprint_sql_duckdb(sql), fingerprint_sql_duckdb(sql.strip()), label="fingerprint"
+    )

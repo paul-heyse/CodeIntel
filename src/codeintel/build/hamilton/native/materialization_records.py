@@ -354,7 +354,9 @@ def record_from_duckdb_materializations(
             )
             continue
 
-        result = DuckDBMaterializationMetadata.from_mapping(meta, default_table_key=expected_table_key)
+        result = DuckDBMaterializationMetadata.from_mapping(
+            meta, default_table_key=expected_table_key
+        )
         if result.status != "failed" and result.table_key != expected_table_key:
             parsed[expected_table_key] = DuckDBMaterializationMetadata(
                 status="failed",

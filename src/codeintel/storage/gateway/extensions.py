@@ -10,11 +10,15 @@ import os
 import re
 from typing import Protocol
 
+from codeintel.storage.gateway.protocol import DuckDBError
+
 __all__ = [
     "DuckDBExecutor",
     "load_extensions_from_env",
     "parse_extensions_env",
+    "require_extension",
 ]
+
 
 class DuckDBExecutor(Protocol):
     """DuckDB execution protocol for extension load/install."""
@@ -23,8 +27,15 @@ class DuckDBExecutor(Protocol):
         """Execute a SQL statement on the underlying connection."""
         ...
 
+
 _EXTENSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 _EXTENSIONS_ENV = "CODEINTEL_DUCKDB_EXTENSIONS"
+
+
+def _validate_extension_name(extension: str) -> None:
+    if _EXTENSION_NAME_PATTERN.fullmatch(extension) is None:
+        message = f"Invalid DuckDB extension name in {_EXTENSIONS_ENV}: {extension!r}"
+        raise ValueError(message)
 
 
 def parse_extensions_env(*, env_var: str = _EXTENSIONS_ENV) -> tuple[str, ...]:
@@ -56,16 +67,39 @@ def load_extensions_from_env(con: DuckDBExecutor, *, allow_install: bool) -> Non
     allow_install
         When True, attempt `INSTALL` before `LOAD`. For read-only connections this
         should be False to avoid unexpected network or disk mutations.
-
-    Raises
-    ------
-    ValueError
-        If an extension name is invalid.
     """
     for extension in parse_extensions_env():
-        if _EXTENSION_NAME_PATTERN.fullmatch(extension) is None:
-            message = f"Invalid DuckDB extension name in {_EXTENSIONS_ENV}: {extension!r}"
-            raise ValueError(message)
+        _validate_extension_name(extension)
         if allow_install:
             con.execute(f"INSTALL {extension}")
         con.execute(f"LOAD {extension}")
+
+
+def require_extension(con: DuckDBExecutor, extension: str, *, allow_install: bool) -> None:
+    """Ensure a DuckDB extension is available and loaded.
+
+    Parameters
+    ----------
+    con
+        Active DuckDB connection.
+    extension
+        DuckDB extension name (alphanumeric/underscore).
+    allow_install
+        When True, attempt `INSTALL` before `LOAD`. Use False for read-only paths.
+
+    Raises
+    ------
+    RuntimeError
+        If the extension cannot be installed/loaded.
+    """
+    _validate_extension_name(extension)
+    try:
+        if allow_install:
+            con.execute(f"INSTALL {extension}")
+        con.execute(f"LOAD {extension}")
+    except DuckDBError as exc:
+        message = (
+            f"DuckDB extension {extension!r} is required "
+            f"(set {_EXTENSIONS_ENV}={extension})"
+        )
+        raise RuntimeError(message) from exc

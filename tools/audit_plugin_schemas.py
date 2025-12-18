@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from codeintel.build.registry import ALL_TARGETS
 from codeintel.build.schemas import get_schema_provider
+from codeintel.build.target_system import load_target_system
 
 DIVIDER = "=" * 70
 SECTION_DIVIDER = "-" * 70
@@ -30,14 +30,15 @@ class TargetAuditState:
 def _collect_plugin_tables() -> tuple[dict[str, list[str]], list[tuple[str, str]], int]:
     plugin_tables: dict[str, list[str]] = {}
     artifacts: list[tuple[str, str]] = []
-    for target in ALL_TARGETS:
+    targets = load_target_system().graph.all_targets
+    for target in targets:
         for table_key in target.table_keys:
             if "." not in table_key or table_key.startswith("index."):
-                artifacts.append((table_key, target.plugin))
+                artifacts.append((table_key, target.name))
                 continue
             plugin_tables.setdefault(table_key, []).append(target.name)
-        artifacts.extend((artifact.name, target.plugin) for artifact in target.contract.artifacts)
-    return plugin_tables, artifacts, len(ALL_TARGETS)
+        artifacts.extend((artifact.name, target.name) for artifact in target.contract.artifacts)
+    return plugin_tables, artifacts, len(targets)
 
 
 def _find_missing_schemas(plugin_tables: dict[str, list[str]]) -> list[tuple[str, list[str]]]:

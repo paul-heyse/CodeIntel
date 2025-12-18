@@ -49,7 +49,7 @@ def ibis_schema_from_table_schema(table: TableSchema) -> ibis.Schema:
         "VARCHAR": ibis.dtype("string"),
         "JSON": ibis.dtype("json"),
         "TIMESTAMP": ibis.dtype("timestamp"),
-        "TIMESTAMPTZ": ibis.dtype("timestamp(\"UTC\")"),
+        "TIMESTAMPTZ": ibis.dtype('timestamp("UTC")'),
         "DECIMAL": ibis.dtype("decimal"),
         "DECIMAL(38,0)": ibis.dtype("decimal(38,0)"),
     }

@@ -25,11 +25,11 @@ Callgraph logic is in compute/callgraph/ (pure functions and persistence utiliti
 Example
 -------
 ```python
-from codeintel.build.registry import get_target_graph
+from codeintel.build.target_system import load_target_system
 from codeintel.graphs.compute.metrics import centrality
 
 
-graph = get_target_graph()
+graph = load_target_system().graph
 graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
 
 
@@ -48,7 +48,7 @@ The graphs package uses hexagonal architecture:
 All builder modules have been consolidated into their corresponding plugins
 under plugins/builders/. Pure computation logic is in compute/.
 
-Plugin registration is handled by the build registry in codeintel.build.unified_registry.
+Graph/target integration is driven by the build TargetSystem in `codeintel.build.target_system`.
 """
 
 from __future__ import annotations

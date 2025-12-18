@@ -8,12 +8,8 @@ if TYPE_CHECKING:
     import pytest
 
 from codeintel.build.contracts import OutputContract
-from codeintel.build.registry import (
-    derive_schemas_from_targets,
-    get_target_by_table,
-)
 from codeintel.build.resources import TargetExecution, TargetResources
-from codeintel.build.targets import OutputTarget
+from codeintel.build.targets import OutputTarget, derive_schemas_from_targets, get_target_by_table
 from codeintel.config.datasets.primitives import Column, TableSchema
 from tests._helpers.assertions import (
     expect_equal,
@@ -28,12 +24,8 @@ def test_registry_derives_schemas_and_detects_duplicates(caplog: pytest.LogCaptu
     """Schema derivation captures duplicates and returns mapping."""
     caplog.set_level("WARNING")
     table = TableSchema(schema="core", name="items", columns=[Column("id", "INTEGER")])
-    t1 = OutputTarget(
-        name="one", module="analytics", contract=OutputContract(tables=(table,))
-    )
-    t2 = OutputTarget(
-        name="two", module="analytics", contract=OutputContract(tables=(table,))
-    )
+    t1 = OutputTarget(name="one", module="analytics", contract=OutputContract(tables=(table,)))
+    t2 = OutputTarget(name="two", module="analytics", contract=OutputContract(tables=(table,)))
 
     schemas = derive_schemas_from_targets((t1, t2))
 

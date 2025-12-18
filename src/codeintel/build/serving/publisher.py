@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.serving.manifest import ServingSnapshotManifest
 from codeintel.build.serving.search_index import build_search_documents_table, ensure_fts_index
+from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.gateway.connection import connect
 from codeintel.storage.gateway.protocol import DuckDBError
 
 if TYPE_CHECKING:
@@ -139,7 +139,7 @@ def publish_serving_snapshot(
     shutil.copy2(db_path, snap_db)
 
     try:
-        snap_con = connect(StorageConfig(db_path=snap_db))
+        snap_con = DuckDBSession(StorageConfig(db_path=snap_db)).open()
         try:
             build_search_documents_table(snap_con)
             ensure_fts_index(snap_con)

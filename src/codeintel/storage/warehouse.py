@@ -26,6 +26,7 @@ from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.ibis_adapter import OnConflict
+from codeintel.storage.query_results import coerce_int
 from codeintel.storage.snapshot_scoping import RepoCommitScope, maybe_scope_by_snapshot
 from codeintel.storage.tracking.asset_tracking import AssetRecord
 
@@ -224,7 +225,7 @@ class Warehouse:
 
         def _write() -> int:
             raw_count = self.gateway.ibis.execute_scalar(expr.count())
-            rows_written = _coerce_int(raw_count, ctx=f"{table_key}.count()")
+            rows_written = coerce_int(raw_count, ctx=f"{table_key}.count()")
             on_conflict = None
             if active.mode == "upsert" and active.upsert is not None:
                 on_conflict = OnConflict(
@@ -340,7 +341,9 @@ class Warehouse:
         schema_version, computed_schema_hash = _contract_schema_metadata(
             self.gateway, table_key=table_key
         )
-        resolved_columns = list(columns) if columns is not None else _require_columns(self.gateway, table_key)
+        resolved_columns = (
+            list(columns) if columns is not None else _require_columns(self.gateway, table_key)
+        )
 
         def _write() -> int | None:
             if active.mode == "upsert" and active.upsert is not None:
@@ -800,25 +803,6 @@ def _asset_record_from_options(
         input_hash=options.input_hash,
         metadata=metadata or None,
     )
-
-
-def _coerce_int(value: object, *, ctx: str) -> int:
-    if isinstance(value, bool):
-        msg = f"Expected int-like value for {ctx}, got bool"
-        raise TypeError(msg)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError as exc:
-            msg = f"Expected int-like string for {ctx}, got {value!r}"
-            raise TypeError(msg) from exc
-
-    msg = f"Expected int-like value for {ctx}, got {type(value).__name__}"
-    raise TypeError(msg)
 
 
 __all__ = [

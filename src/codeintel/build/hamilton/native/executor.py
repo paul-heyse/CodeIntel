@@ -35,6 +35,7 @@ from codeintel.build.hamilton.run_records import (
     RunRecordInputs,
     compute_target_input_hash,
     create_run_record,
+    options_hash_for_target,
     save_manifest,
     should_skip_native_target,
 )
@@ -144,11 +145,15 @@ class NativeTargetExecutor:
         if target is None:
             raise TargetNotFoundError(target_name, list(graph))
 
+        resolved_options_hash = options_hash
+        if resolved_options_hash is None:
+            resolved_options_hash = options_hash_for_target(env, target_name)
+
         input_hash = compute_target_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=options_hash,
+            options_hash=resolved_options_hash,
             manifests=env.manifest_index,
         )
 
@@ -156,7 +161,7 @@ class NativeTargetExecutor:
             env=env,
             target=target,
             input_hash=input_hash,
-            options_hash=options_hash,
+            options_hash=resolved_options_hash,
         )
 
     def should_skip(self) -> bool:

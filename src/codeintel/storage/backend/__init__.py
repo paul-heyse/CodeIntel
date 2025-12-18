@@ -9,6 +9,6 @@ dependency direction clean.
 
 from __future__ import annotations
 
-from codeintel.storage.backend.duckdb_session import DuckDBSession
+from codeintel.storage.backend.duckdb_session import DuckDBConnectConfig, DuckDBSession
 
-__all__ = ["DuckDBSession"]
+__all__ = ["DuckDBConnectConfig", "DuckDBSession"]

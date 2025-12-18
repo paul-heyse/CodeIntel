@@ -26,12 +26,10 @@ class _FakeOps:
         output_path.write_bytes(b"fake-arrow")
         return self.rows_written
 
-    def export_rows(self, _request: SemanticExportRequest) -> list[dict[str, object]]:
-        return []
-
 
 @pytest.mark.anyio
 async def test_http_export_dispatch_returns_row_count_for_parquet() -> None:
+    """Ensure dispatch returns metrics when writing Parquet exports."""
     fake = _FakeOps(rows_written=7)
     payload = SemanticExportRequest(view_id="demo.view", format="parquet", limit=10)
     metrics = ExportMetricsContext(
@@ -48,4 +46,3 @@ async def test_http_export_dispatch_returns_row_count_for_parquet() -> None:
     )
     expect_equal(dispatched.metrics_row_count, 7)
     expect_true(hasattr(dispatched.response, "headers"))
-

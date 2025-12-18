@@ -22,7 +22,6 @@ from hamilton.function_modifiers import (
     pipe_input,
     source,
     step,
-    tag,
     value,
 )
 
@@ -49,6 +48,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
@@ -228,10 +228,9 @@ def _coverage_functions_enrich(aggregated: ir.Table) -> ir.Table:
         no_nulls=["function_goid_h128", "repo", "commit"],
     ),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=COVERAGE_FUNCTIONS_TARGET_NAME,
-    node_type="compute",
     target_="t__coverage_functions__compute",
 )
 def t__coverage_functions__compute(
@@ -252,7 +251,7 @@ def t__coverage_functions__compute(
     return q__core__goids
 
 
-@tag(domain="analytics", target=COVERAGE_FUNCTIONS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=COVERAGE_FUNCTIONS_TARGET_NAME)
 def t__coverage_functions(
     env: BuildEnv,
     graph: TargetGraph,
@@ -288,7 +287,7 @@ def t__coverage_functions(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME, node_type="tool")
+@tag_tool(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
 def t__coverage_test_edges__compute(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -334,7 +333,7 @@ def t__coverage_test_edges__compute(
         return ExecutionResult.failed(str(exc))
 
 
-@tag(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
 def t__coverage_test_edges(
     env: BuildEnv,
     graph: TargetGraph,
@@ -369,7 +368,7 @@ def t__coverage_test_edges(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME, node_type="tool")
+@tag_tool(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
 def t__behavioral_coverage__compute(
     env: BuildEnv,
     t__test_profile: TargetRunRecord,
@@ -389,7 +388,9 @@ def t__behavioral_coverage__compute(
         Result indicating success or failure with table counts.
     """
     if t__test_profile.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream test_profile target failed: {t__test_profile.error}")
+        return ExecutionResult.failed(
+            f"Upstream test_profile target failed: {t__test_profile.error}"
+        )
 
     try:
         build_behavioral_coverage(
@@ -412,7 +413,7 @@ def t__behavioral_coverage__compute(
         return ExecutionResult.failed(str(exc))
 
 
-@tag(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
 def t__behavioral_coverage(
     env: BuildEnv,
     graph: TargetGraph,

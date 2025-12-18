@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pandas as pd
 from ibis.common import exceptions as ibis_exceptions
 
-from codeintel.core.hashing import file_hash
+from codeintel.core.hashing import content_hash
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.schema.json_schema import json_schema_from_typeddict
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
+    from pathlib import Path
 
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.datasets.registry import DatasetRegistry
@@ -182,14 +183,22 @@ def _schema_digest(dataset: DatasetContract) -> str | None:
     Returns
     -------
     str | None
-        Hex digest for the JSON Schema file if present.
+        Hex digest for the export JSON Schema when available.
     """
     if dataset.json_schema_id is None:
         return None
-    path = Path("src/codeintel/config/schemas/export") / f"{dataset.json_schema_id}.json"
-    if not path.exists():
+    row_binding = dataset.row_binding
+    if row_binding is None or row_binding.row_type is None:
         return None
-    return file_hash(path, algorithm="sha256")
+    schema_id = f"https://schemas.codeintel.dev/export/{dataset.json_schema_id}.json"
+    schema = json_schema_from_typeddict(
+        row_binding.row_type,
+        additional_properties=True,
+        schema_id=schema_id,
+        title=f"{dataset.name} export",
+    )
+    payload = json.dumps(schema, indent=2, sort_keys=True).encode("utf-8")
+    return content_hash(payload, algorithm="sha256")
 
 
 def build_catalog(

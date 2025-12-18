@@ -9,7 +9,7 @@ These tests ensure:
 
 from __future__ import annotations
 
-from codeintel.serving.mcp.errors import (
+from codeintel.serving.errors import (
     ERROR_CODE_CATALOG,
     AuthForbiddenError,
     ErrorContext,
@@ -26,9 +26,9 @@ from codeintel.serving.mcp.errors import (
     SemanticViewNotFoundError,
     ServingDBLockedError,
     ServingSnapshotNotMountedError,
-    error_from_code,
     exception_to_error_response,
 )
+from codeintel.serving.errors.mapping import error_from_code
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,

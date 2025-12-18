@@ -21,7 +21,7 @@ from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.paths import normalize_path
 from codeintel.storage.gateway import ibis_facade
-from codeintel.storage.repositories import fetch_models
+from codeintel.storage.repositories import DataModelsRepository
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -29,7 +29,6 @@ if TYPE_CHECKING:
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.repositories import DataModelRow
 
 DATA_MODEL_USAGE_COLS = [
     "repo",
@@ -416,7 +415,7 @@ class ModelUsageVisitor(ast.NodeVisitor):
 
 
 def _load_models(gateway: StorageGateway, repo: str, commit: str) -> list[ModelInfo]:
-    models: list[DataModelRow] = fetch_models(gateway, repo, commit)
+    models = DataModelsRepository(gateway, repo, commit).list_models()
     return [
         ModelInfo(model_id=model.model_id, name=model.model_name, module=model.module)
         for model in models

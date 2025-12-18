@@ -8,23 +8,27 @@ same parameter mapping, rather than instantiating options dataclasses directly.
 from __future__ import annotations
 
 from dataclasses import is_dataclass
-from typing import TYPE_CHECKING, Protocol, TypeVar, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.parameters import TargetParameters
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-OptionsT = TypeVar("OptionsT", bound=object)
-
 
 @runtime_checkable
-class _FromParameters(Protocol[OptionsT]):
+class _FromParameters[OptionsT: object](Protocol):
     @classmethod
     def from_parameters(cls, params: Mapping[str, object], /) -> OptionsT: ...
 
 
-def load_target_options(env: BuildEnv, *, target_name: str, options_type: type[OptionsT]) -> OptionsT:
+def load_target_options[OptionsT: object](
+    env: BuildEnv,
+    *,
+    target_name: str,
+    options_type: type[OptionsT],
+) -> OptionsT:
     """Load a target options object from BuildEnv configuration.
 
     Parameters
@@ -44,32 +48,25 @@ def load_target_options(env: BuildEnv, *, target_name: str, options_type: type[O
     Raises
     ------
     TypeError
-        If configuration parameters are not a mapping, or if options cannot be constructed.
+        If options cannot be constructed.
     """
-    params_raw = env.config.parameters_for(target_name)
-    if not params_raw:
+    params: TargetParameters = env.config.parameters_for(target_name)
+    if len(params) == 0:
         return options_type()
-    if not isinstance(params_raw, dict):
-        msg = (
-            f"Expected env.config.parameters_for({target_name!r}) to return dict[str, object], "
-            f"got {type(params_raw)}"
-        )
-        raise TypeError(msg)
-
-    params = cast("Mapping[str, object]", params_raw)
+    mapping = cast("Mapping[str, object]", params)
 
     from_params = getattr(options_type, "from_parameters", None)
     if callable(from_params):
-        return cast("_FromParameters[OptionsT]", options_type).from_parameters(params)
+        return cast("_FromParameters[OptionsT]", options_type).from_parameters(mapping)
 
     if not is_dataclass(options_type):
         msg = f"Options type must be a dataclass or implement from_parameters(): {options_type}"
         raise TypeError(msg)
 
     try:
-        return options_type(**dict(params))
+        return options_type(**dict(mapping))
     except TypeError as exc:
-        msg = f"Failed to construct {options_type} for {target_name} from params={dict(params)!r}"
+        msg = f"Failed to construct {options_type} for {target_name} from params={dict(mapping)!r}"
         raise TypeError(msg) from exc
 
 

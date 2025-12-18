@@ -21,11 +21,8 @@ from codeintel.storage.repositories.data_models import (
     DataModelFieldRow,
     DataModelRelationshipRow,
     DataModelRow,
+    DataModelsRepository,
     NormalizedDataModel,
-    fetch_fields,
-    fetch_models,
-    fetch_models_normalized,
-    fetch_relationships,
 )
 from codeintel.storage.repositories.dataflow import DataflowRepository
 from codeintel.storage.repositories.datasets import DatasetReadRepository
@@ -41,6 +38,7 @@ __all__ = [
     "DataModelFieldRow",
     "DataModelRelationshipRow",
     "DataModelRow",
+    "DataModelsRepository",
     "DataflowRepository",
     "DatasetReadRepository",
     "FunctionRepository",
@@ -52,8 +50,4 @@ __all__ = [
     "RowDict",
     "SubsystemRepository",
     "TestRepository",
-    "fetch_fields",
-    "fetch_models",
-    "fetch_models_normalized",
-    "fetch_relationships",
 ]

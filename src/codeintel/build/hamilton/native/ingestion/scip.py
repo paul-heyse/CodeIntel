@@ -15,7 +15,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers import source, value
 
 from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
@@ -32,6 +32,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.engine.infrastructure import ToolRunner
@@ -104,7 +105,7 @@ def _tool_service(env: BuildEnv) -> ToolService:
     return ToolService(runner)
 
 
-@tag(domain="ingestion", target=SCIP_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=SCIP_TARGET_NAME)
 def t__scip__run(
     env: BuildEnv,
     graph: TargetGraph,
@@ -157,10 +158,9 @@ def t__scip__run(
     target_name=value(SCIP_TARGET_NAME),
     artifact_name=value(SCIP_ARTIFACT_INDEX),
 )
-@tag(
+@tag_compute(
     domain="ingestion",
     target=SCIP_TARGET_NAME,
-    node_type="compute",
     target_="scip__index_artifact",
 )
 def scip__index_artifact(t__scip__run: ScipRunResult) -> Path | None:
@@ -184,10 +184,9 @@ def scip__index_artifact(t__scip__run: ScipRunResult) -> Path | None:
     target_name=value(SCIP_TARGET_NAME),
     artifact_name=value(SCIP_ARTIFACT_JSON),
 )
-@tag(
+@tag_compute(
     domain="ingestion",
     target=SCIP_TARGET_NAME,
-    node_type="compute",
     target_="scip__json_artifact",
 )
 def scip__json_artifact(t__scip__run: ScipRunResult) -> Path | None:
@@ -203,7 +202,7 @@ def scip__json_artifact(t__scip__run: ScipRunResult) -> Path | None:
     return t__scip__run.json_path
 
 
-@tag(domain="ingestion", target=SCIP_TARGET_NAME, node_type="helper")
+@tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__materializations(
     m__artifact__scip_index: MaterializationMetadata,
     m__artifact__scip_json: MaterializationMetadata,
@@ -221,7 +220,7 @@ def scip__materializations(
     }
 
 
-@tag(domain="ingestion", target=SCIP_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="ingestion", target=SCIP_TARGET_NAME)
 def t__scip(
     env: BuildEnv,
     graph: TargetGraph,

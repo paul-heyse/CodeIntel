@@ -31,6 +31,7 @@ Generate @schema.output args from registry:
 from __future__ import annotations
 
 import logging
+import textwrap
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
@@ -388,11 +389,16 @@ def generate_migration_code(
 
     validators_str = "\n".join(validator_lines)
 
-    # Generate the code
-    code = f'''
-# Generated migration code for {table_key}
-from hamilton.function_modifiers import check_output_custom, schema, tag
+    domain, table = table_key.split(".", maxsplit=1) if "." in table_key else ("main", table_key)
 
+    # Generate the code
+    code = f"""
+# Generated migration code for {table_key}
+from hamilton.function_modifiers import check_output_custom, schema
+
+import pandas as pd
+
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hamilton.validators import (
     ColumnsExistValidator,
     ColumnTypesValidator,
@@ -400,7 +406,8 @@ from codeintel.build.hamilton.validators import (
     UniqueColumnsValidator,
 )
 
-@tag(domain="{table_key.split(".", maxsplit=1)[0]}", target="{table_key.split(".")[1]}", node_type="compute")
+
+@tag_compute(domain="{domain}", target="{table}")
 @schema.output(
     {schema_args}
 )
@@ -408,7 +415,7 @@ from codeintel.build.hamilton.validators import (
 {validators_str}
 )
 def {node_name}(...) -> pd.DataFrame:
-    """Compute {table_key} with Hamilton-native validation."""
+    \"\"\"Compute {table_key} with Hamilton-native validation.\"\"\"
     ...
-'''
-    return code.strip()
+"""
+    return textwrap.dedent(code).strip()

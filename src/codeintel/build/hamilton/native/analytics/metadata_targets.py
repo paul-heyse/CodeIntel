@@ -55,7 +55,11 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
-from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.run_records import (
+    TargetRunRecord,
+    options_hash_for_target,
+    should_skip_native_target,
+)
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
@@ -161,11 +165,12 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
     """
     target = graph.get(DATA_MODELS_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, DATA_MODELS_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -345,11 +350,12 @@ def t__data_model_usage__compute(
     """
     target = graph.get(DATA_MODEL_USAGE_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, DATA_MODEL_USAGE_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):

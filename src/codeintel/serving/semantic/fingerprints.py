@@ -100,7 +100,9 @@ def canonicalize_list(items: Sequence[object]) -> list[object]:
     return list(items)
 
 
-def canonicalize_order_insensitive_dicts(items: Iterable[Mapping[str, object]]) -> list[dict[str, object]]:
+def canonicalize_order_insensitive_dicts(
+    items: Iterable[Mapping[str, object]],
+) -> list[dict[str, object]]:
     """Canonicalize a set-like collection of dicts for hashing.
 
     This is intended for inputs whose order is semantically irrelevant, e.g.

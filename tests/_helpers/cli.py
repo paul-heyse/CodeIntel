@@ -24,12 +24,9 @@ from cyclopts.exceptions import (
 from codeintel.cli import app
 from codeintel.cli.errors import handle_cli_error
 from codeintel.cli.resolution.errors import ResolutionError
-from codeintel.storage.exceptions import (
-    QueryError as StorageQueryError,
-)
-from codeintel.storage.exceptions import (
-    SchemaError as StorageSchemaError,
-)
+from codeintel.core.errors.schema import SchemaError as StorageSchemaError
+from codeintel.core.errors.storage import QueryError as StorageQueryError
+from codeintel.core.errors.storage import StorageQueryError as StructuredStorageQueryError
 from codeintel.storage.exceptions import (
     StorageConnectionError,
     StorageError,
@@ -153,6 +150,7 @@ def run_cli(
                 StorageConnectionError,
                 StorageError,
                 StorageQueryError,
+                StructuredStorageQueryError,
                 StorageSchemaError,
                 RuntimeError,
                 ValueError,

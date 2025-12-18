@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from codeintel.storage.gateway.connection import DuckDBConnectConfig
+    from codeintel.storage.backend.duckdb_session import DuckDBConnectConfig
     from codeintel.storage.gateway.protocol import StorageGateway
 
 __all__ = ["PoolConfig", "ReadPoolWarehouse"]

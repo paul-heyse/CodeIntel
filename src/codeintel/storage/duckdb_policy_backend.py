@@ -35,33 +35,28 @@ Direct connection usage (via MinimalStorageGateway):
 
 from __future__ import annotations
 
-import json
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
-from ibis.common.exceptions import IbisError
 from sqlglot import parse_one
 
 import codeintel.storage.views.ibis_views as _ibis_views
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
-from codeintel.storage.gateway.protocol import DuckDBError
+from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.metadata.bootstrap import sync_derived_lineage_edges
-from codeintel.storage.schema_roundtrip import create_table_ast
-from codeintel.storage.views.dependencies import (
-    build_dependency_graph_from_sql,
-    extract_referenced_table_keys,
-    toposort,
+from codeintel.storage.schema.sqlglot_ddl import (
+    create_index_if_not_exists_ast,
+    create_schema_if_not_exists_ast,
 )
-from codeintel.storage.views.discovery import discover_view_builders
+from codeintel.storage.schema_roundtrip import create_table_ast
+from codeintel.storage.views.materialization import materialize_registered_views
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
 
-    import ibis.expr.types as it
     from duckdb import DuckDBPyConnection
 
     from codeintel.core.schemas.primitives import TableSchema
@@ -168,76 +163,6 @@ def _build_drop_table(table: TableSchema) -> exp.Drop:
             db=exp.to_identifier(table.schema),
         ),
         kind="TABLE",
-        exists=True,
-    )
-
-
-def _build_create_index(
-    index_name: str,
-    table_schema: str,
-    table_name: str,
-    columns: tuple[str, ...],
-    *,
-    unique: bool = False,
-) -> exp.Create:
-    """Build a SQLGlot CREATE INDEX expression.
-
-    Parameters
-    ----------
-    index_name
-        Name of the index.
-    table_schema
-        Schema containing the table.
-    table_name
-        Table name.
-    columns
-        Columns to include in the index.
-    unique
-        Whether the index should be unique.
-
-    Returns
-    -------
-    exp.Create
-        SQLGlot CREATE INDEX expression.
-    """
-    table_expr = exp.Table(
-        this=exp.to_identifier(table_name),
-        db=exp.to_identifier(table_schema),
-    )
-
-    index_columns = [exp.Ordered(this=exp.Column(this=exp.to_identifier(col))) for col in columns]
-    index_params = exp.IndexParameters(columns=index_columns)
-
-    index_expr = exp.Index(
-        this=exp.to_identifier(index_name),
-        table=table_expr,
-        params=index_params,
-    )
-
-    return exp.Create(
-        this=index_expr,
-        kind="INDEX",
-        exists=True,
-        unique=unique,
-    )
-
-
-def _build_create_schema(schema_name: str) -> exp.Create:
-    """Build a SQLGlot CREATE SCHEMA IF NOT EXISTS expression.
-
-    Parameters
-    ----------
-    schema_name
-        Schema name.
-
-    Returns
-    -------
-    exp.Create
-        SQLGlot CREATE SCHEMA expression.
-    """
-    return exp.Create(
-        this=exp.to_identifier(schema_name),
-        kind="SCHEMA",
         exists=True,
     )
 
@@ -769,7 +694,7 @@ class DuckDBPolicyBackend:
         schema_name
             Name of the schema to create.
         """
-        self._run(_build_create_schema(schema_name))
+        self._run(create_schema_if_not_exists_ast(schema_name))
 
     def create_table_from_schema(
         self,
@@ -802,14 +727,15 @@ class DuckDBPolicyBackend:
             Table schema definition with indexes.
         """
         for index in table.indexes:
-            expr = _build_create_index(
-                index.name,
-                table.schema,
-                table.name,
-                index.columns,
-                unique=index.unique,
+            self._run(
+                create_index_if_not_exists_ast(
+                    index_name=index.name,
+                    table_schema=table.schema,
+                    table_name=table.name,
+                    columns=index.columns,
+                    unique=index.unique,
+                )
             )
-            self._run(expr)
 
     def delete_repo_commit(
         self,
@@ -1014,82 +940,12 @@ class DuckDBPolicyBackend:
             creation after logging. When False, exceptions are logged
             but execution continues.
         """
-        expr_by_view, sql_by_view = self._compile_view_definitions(strict=strict)
-        if not sql_by_view:
-            return
-        self._materialize_views(
-            expr_by_view=expr_by_view,
-            sql_by_view=sql_by_view,
+        materialize_registered_views(
+            self.gateway,
+            modules=(_ibis_views,),
             overwrite=overwrite,
             strict=strict,
         )
-        self._sync_view_lineage(sql_by_view)
-
-    def _compile_view_definitions(
-        self,
-        *,
-        strict: bool,
-    ) -> tuple[dict[str, it.Table], dict[str, str]]:
-        ibis_gateway = self.ibis
-        builders = discover_view_builders(modules=(_ibis_views,))
-
-        expr_by_view: dict[str, it.Table] = {}
-        sql_by_view: dict[str, str] = {}
-        for spec in builders:
-            view_name = spec.table_key
-            try:
-                expr = spec.builder(ibis_gateway)
-                expr_by_view[view_name] = expr
-                sql_by_view[view_name] = ibis_gateway.con.compile(expr)
-            except (DuckDBError, IbisError, KeyError, TypeError, ValueError):
-                log.exception("Failed to build view expression: %s", view_name)
-                if strict:
-                    raise
-        return expr_by_view, sql_by_view
-
-    def _materialize_views(
-        self,
-        *,
-        expr_by_view: dict[str, it.Table],
-        sql_by_view: dict[str, str],
-        overwrite: bool,
-        strict: bool,
-    ) -> None:
-        ibis_gateway = self.ibis
-        deps = build_dependency_graph_from_sql(sql_by_view)
-        order_lower = toposort(sql_by_view.keys(), deps, raise_on_cycle=strict)
-        original_by_lower = {k.lower(): k for k in sql_by_view}
-
-        for view_key_lower in order_lower:
-            view_name = original_by_lower[view_key_lower]
-            expr = expr_by_view.get(view_name)
-            if expr is None:
-                continue
-            try:
-                database, name = split_table_key(view_name)
-                ibis_gateway.con.create_view(name, expr, database=database, overwrite=overwrite)
-                log.debug("Created view: %s", view_name)
-            except (DuckDBError, IbisError, KeyError, TypeError, ValueError):
-                log.exception("Failed to create view: %s", view_name)
-                if strict:
-                    raise
-
-    def _sync_view_lineage(self, sql_by_view: dict[str, str]) -> None:
-        config = getattr(self.gateway, "config", None)
-        repo = getattr(config, "repo", None)
-        commit = getattr(config, "commit", None)
-        if not (isinstance(repo, str) and repo and isinstance(commit, str) and commit):
-            return
-
-        lineage: dict[str, frozenset[str]] = {}
-        for raw_key, sql in sql_by_view.items():
-            view_key = raw_key.lower()
-            lineage[view_key] = frozenset(extract_referenced_table_keys(sql) - {view_key})
-
-        try:
-            sync_derived_lineage_edges(self.con, repo=repo, commit=commit, lineage=lineage)
-        except DuckDBError:
-            log.exception("Failed to sync derived lineage edges repo=%s commit=%s", repo, commit)
 
     def ensure_schemas_preserve(
         self,
@@ -1232,14 +1088,6 @@ class DuckDBPolicyBackend:
         self.con.executemany(sql, rows)
         return len(rows)
 
-    @staticmethod
-    def _coerce_json_value(value: object) -> object:
-        if isinstance(value, set):
-            return json.dumps(sorted(value))
-        if isinstance(value, (dict, list, tuple)):
-            return json.dumps(value)
-        return value
-
     @classmethod
     def _coerce_insert_value(
         cls,
@@ -1251,7 +1099,7 @@ class DuckDBPolicyBackend:
             return None
         if column_type_by_name.get(column) != "JSON":
             return value
-        return cls._coerce_json_value(value)
+        return normalize_duckdb_json_value(value)
 
     def bulk_insert_mappings(
         self,

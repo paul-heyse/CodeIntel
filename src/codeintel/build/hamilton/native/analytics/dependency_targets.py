@@ -54,7 +54,11 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
-from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.run_records import (
+    TargetRunRecord,
+    options_hash_for_target,
+    should_skip_native_target,
+)
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
 from codeintel.build.hashing import compute_input_hash
@@ -220,11 +224,12 @@ def t__external_deps__compute_calls(
     """
     target = graph.get(EXTERNAL_DEPS_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, EXTERNAL_DEPS_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -249,7 +254,9 @@ def t__external_deps__compute_calls(
     table_key=value(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
     columns=value(tuple(EXTERNAL_DEPENDENCY_CALLS_COLS)),
 )
-@tag_compute(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME, target_="external_deps__calls_rows")
+@tag_compute(
+    domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME, target_="external_deps__calls_rows"
+)
 def external_deps__calls_rows(
     t__external_deps__compute_calls: DependencyCallsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -453,11 +460,12 @@ def t__entrypoints__compute(
     """
     target = graph.get(ENTRYPOINTS_TARGET_NAME)
     if target is not None:
+        options_hash = options_hash_for_target(env, ENTRYPOINTS_TARGET_NAME)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=None,
+            options_hash=options_hash,
             manifests=env.manifest_index,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -478,7 +486,9 @@ def t__entrypoints__compute(
     table_key=value(ENTRYPOINTS_TABLE_KEY),
     columns=value(tuple(ENTRYPOINTS_COLS)),
 )
-@tag_compute(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, target_="entrypoints__entrypoint_rows")
+@tag_compute(
+    domain="analytics", target=ENTRYPOINTS_TARGET_NAME, target_="entrypoints__entrypoint_rows"
+)
 def entrypoints__entrypoint_rows(
     t__entrypoints__compute: EntrypointsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:

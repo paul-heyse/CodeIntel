@@ -50,7 +50,9 @@ class _ParsedOperationContext:
     export_id: str | None
 
 
-def _parse_tool_call_context(context: MiddlewareContext[object], method: str) -> _ParsedOperationContext:
+def _parse_tool_call_context(
+    context: MiddlewareContext[object], method: str
+) -> _ParsedOperationContext:
     tool_name: str | None = None
     view_id: str | None = None
     export_id: str | None = None
@@ -75,7 +77,9 @@ def _parse_tool_call_context(context: MiddlewareContext[object], method: str) ->
     )
 
 
-def _parse_resource_read_context(context: MiddlewareContext[object], method: str) -> _ParsedOperationContext:
+def _parse_resource_read_context(
+    context: MiddlewareContext[object], method: str
+) -> _ParsedOperationContext:
     resource_uri: str | None = None
     export_id: str | None = None
 

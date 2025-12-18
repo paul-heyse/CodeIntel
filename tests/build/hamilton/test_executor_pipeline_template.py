@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         t__goids__extract: object
         t__goids: object
 
+
 # Keep types available for Hamilton's runtime type resolution
 _HAMILTON_TYPE_HINTS = (TargetRunRecord,)
 
@@ -91,7 +92,9 @@ def test_execution_result_contract() -> None:
     """Verify ExecutionResult exposes the executor boundary fields."""
     result = ExecutionResult.ok(table_counts={"core.goids": 10})
     expect_true(hasattr(result, "success"), message="ExecutionResult should have success attr")
-    expect_true(hasattr(result, "table_counts"), message="ExecutionResult should have table_counts attr")
+    expect_true(
+        hasattr(result, "table_counts"), message="ExecutionResult should have table_counts attr"
+    )
     expect_true(hasattr(result, "error"), message="ExecutionResult should have error attr")
 
 

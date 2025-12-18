@@ -1,4 +1,4 @@
-"""Schema-backed validation helpers for storage boundaries."""
+"""Schema-backed Pandera validation helpers for storage boundaries."""
 
 from __future__ import annotations
 
@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 ValidationMode = str
 
 _log = logging.getLogger(__name__)
+
+__all__ = ["ValidationMode", "get_pandera_schema", "validate_df"]
 
 
 def get_pandera_schema(table_key: str) -> DataFrameSchema | None:
@@ -77,10 +79,3 @@ def validate_df(
             _log.warning("Validation warning for %s: %s", table_key, str(exc)[:200])
             return df
         raise
-
-
-__all__ = [
-    "ValidationMode",
-    "get_pandera_schema",
-    "validate_df",
-]

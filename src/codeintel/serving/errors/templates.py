@@ -12,7 +12,13 @@ if TYPE_CHECKING:
 
 
 def safe_format(template: str, params: Mapping[str, Any] | None) -> str:
-    """Format a template with a safe fallback for missing keys."""
+    """Format a template with a safe fallback for missing keys.
+
+    Returns
+    -------
+    str
+        Rendered template with missing keys preserved.
+    """
     if not params:
         return template
 
@@ -35,9 +41,23 @@ class ErrorInfoTemplate:
     http_status: int | None = None
 
     def render_message(self, params: Mapping[str, Any] | None = None) -> str:
+        """Render the message template with parameter substitution.
+
+        Returns
+        -------
+        str
+            Rendered message with placeholders substituted.
+        """
         return safe_format(self.message, params)
 
     def render_hint(self, params: Mapping[str, Any] | None = None) -> str | None:
+        """Render the hint template with parameter substitution.
+
+        Returns
+        -------
+        str | None
+            Rendered hint text, or ``None`` when no hint is defined.
+        """
         if self.hint is None:
             return None
         return safe_format(self.hint, params)

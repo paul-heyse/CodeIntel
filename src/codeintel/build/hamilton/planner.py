@@ -47,6 +47,7 @@ PlanReason = Literal[
     "no_plugin",
 ]
 
+
 @dataclass(frozen=True)
 class PlanEntry:
     """Plan entry describing why a target will or won't run.
@@ -430,6 +431,8 @@ def _compute_entry_for_target(
         Pre-loaded manifest index.
     upstream_status
         Status of upstream targets computed so far.
+    native_names
+        Set of target names whose `t__*` node originates from a native module.
 
     Returns
     -------
@@ -461,8 +464,8 @@ def _compute_entry_for_target(
             impl_kind=impl_kind,
         )
 
-    raw_params = env.config.parameters_for(target_name)
-    options_hash = compute_target_options_hash(raw_params) if raw_params else None
+    params = env.config.parameters_for(target_name)
+    options_hash = compute_target_options_hash(params.as_dict()) if len(params) else None
     input_hash, dep_hashes = compute_target_input_hash_with_deps(
         target=target,
         snapshot=env.snapshot,
@@ -559,7 +562,7 @@ def compute_plan(
     env
         Build environment with gateway, snapshot, and configuration.
     graph
-        Target graph to use. If None, fetches from registry.
+        Target graph to use. If None, uses the graph from the build TargetSystem.
     requested
         Tuple of target names requested by the user.
     graph_source
@@ -621,7 +624,9 @@ def compute_plan(
             upstream_status[target_name] = "missing"
             continue
 
-        entry = _compute_entry_for_target(target, env, manifests, upstream_status, native_names=native_names)
+        entry = _compute_entry_for_target(
+            target, env, manifests, upstream_status, native_names=native_names
+        )
         entries.append(entry)
         upstream_status[target_name] = entry.status
 

@@ -25,7 +25,18 @@ def write_export_to_store(
     spec: ExportArtifactSpec,
     export_id: str,
 ) -> tuple[str, StoredArtifact, StoredMetadata]:
-    """Write a semantic export to the ResourceStore based on the requested format."""
+    """Write a semantic export to the ResourceStore based on the requested format.
+
+    Returns
+    -------
+    tuple[str, StoredArtifact, StoredMetadata]
+        Resource URI, stored artifact, and associated metadata.
+
+    Raises
+    ------
+    ValueError
+        If the export format is unsupported.
+    """
     if is_text_export_format(spec.format):
         if spec.format == "ndjson":
             return store.put_with_metadata_stream(
@@ -55,4 +66,3 @@ def write_export_to_store(
 
 
 __all__ = ["write_export_to_store"]
-

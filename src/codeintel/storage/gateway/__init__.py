@@ -37,8 +37,8 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codeintel.storage.exceptions import QueryError as StorageQueryError
-    from codeintel.storage.exceptions import SchemaError as StorageSchemaError
+    from codeintel.core.errors.schema import SchemaError as StorageSchemaError
+    from codeintel.core.errors.storage import StorageQueryError
     from codeintel.storage.exceptions import StorageConnectionError, StorageError
     from codeintel.storage.gateway.accessors import (
         AnalyticsTables,
@@ -102,8 +102,8 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "StorageConnectionError": ("codeintel.storage.exceptions", "StorageConnectionError"),
     "StorageError": ("codeintel.storage.exceptions", "StorageError"),
     "StorageGateway": ("codeintel.storage.gateway.protocol", "StorageGateway"),
-    "StorageQueryError": ("codeintel.storage.exceptions", "QueryError"),
-    "StorageSchemaError": ("codeintel.storage.exceptions", "SchemaError"),
+    "StorageQueryError": ("codeintel.core.errors.storage", "StorageQueryError"),
+    "StorageSchemaError": ("codeintel.core.errors.schema", "SchemaError"),
     "build_snapshot_gateway_resolver": (
         "codeintel.storage.gateway.factory",
         "build_snapshot_gateway_resolver",

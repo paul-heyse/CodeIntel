@@ -1,0 +1,62 @@
+"""FastMCP tool: semantic_describe."""
+
+from __future__ import annotations
+
+import time
+from typing import TYPE_CHECKING
+
+from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
+from codeintel.serving.mcp._compat import Context, FastMCP
+from codeintel.serving.mcp.runtime import QueryLimiter
+from codeintel.serving.mcp.tools.shared import (
+    READ_ONLY_LOCAL_ANNOTATIONS,
+    TAG_READ,
+    TAG_SEMANTIC,
+    maybe_report_progress,
+    mcp_correlation_id,
+)
+from codeintel.serving.operations.ops import ServingOperations
+from codeintel.serving.semantic.models import SemanticViewDescriptionResponse
+
+if TYPE_CHECKING:
+    from codeintel.serving.settings import ServingSettings
+
+
+def register_describe_tool(
+    mcp: FastMCP,
+    ops: ServingOperations,
+    limiter: QueryLimiter,
+    *,
+    settings: ServingSettings,
+) -> None:
+    """Register semantic_describe tool."""
+
+    @mcp.tool(
+        name="semantic_describe",
+        description="Describe a semantic view's schema and metadata",
+        annotations=READ_ONLY_LOCAL_ANNOTATIONS,
+        tags={TAG_SEMANTIC, TAG_READ},
+    )
+    async def semantic_describe(view_id: str, *, ctx: Context) -> SemanticViewDescriptionResponse:
+        start = time.perf_counter()
+        await ctx.info(f"Describing view: {view_id}")
+        await maybe_report_progress(ctx, settings=settings, progress=10, total=100)
+        result = await limiter.run(ops.describe, view_id)
+        await maybe_report_progress(ctx, settings=settings, progress=100, total=100)
+        data = result if isinstance(result, dict) else {}
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_query_metrics(
+            QueryMetrics(
+                endpoint="mcp:semantic_describe",
+                view_id=view_id,
+                query=None,
+                row_count=0,
+                truncated=False,
+                duration_ms=duration_ms,
+                correlation_id=mcp_correlation_id(ctx),
+            )
+        )
+        return SemanticViewDescriptionResponse.model_validate(data)
+
+
+__all__ = ["register_describe_tool"]

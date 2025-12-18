@@ -26,7 +26,13 @@ class ServingSnapshotIdentity(BaseModel):
 
     @classmethod
     def from_pointer(cls, pointer: ServingSnapshotPointerProtocol) -> ServingSnapshotIdentity:
-        """Create a minimal identity model from a snapshot pointer."""
+        """Create a minimal identity model from a snapshot pointer.
+
+        Returns
+        -------
+        ServingSnapshotIdentity
+            Snapshot identity derived from the pointer.
+        """
         return cls(repo=pointer.repo, commit=pointer.commit, run_id=pointer.run_id)
 
 
@@ -37,7 +43,13 @@ class ServingSnapshotRef(ServingSnapshotIdentity):
 
     @classmethod
     def from_pointer(cls, pointer: ServingSnapshotPointerProtocol) -> ServingSnapshotRef:
-        """Create a snapshot reference model from a snapshot pointer."""
+        """Create a snapshot reference model from a snapshot pointer.
+
+        Returns
+        -------
+        ServingSnapshotRef
+            Snapshot reference derived from the pointer.
+        """
         return cls(
             repo=pointer.repo,
             commit=pointer.commit,
@@ -59,7 +71,13 @@ class ServingExportSnapshot(BaseModel):
 
     @classmethod
     def from_pointer(cls, pointer: ServingSnapshotPointerProtocol) -> ServingExportSnapshot:
-        """Create an export snapshot model from a snapshot pointer."""
+        """Create an export snapshot model from a snapshot pointer.
+
+        Returns
+        -------
+        ServingExportSnapshot
+            Export snapshot metadata derived from the pointer.
+        """
         return cls(
             repo=pointer.repo,
             commit=pointer.commit,

@@ -26,9 +26,7 @@ class ModuleRepository(BaseRepository):
             Sorted module names for the current snapshot.
         """
         tbl = self._ibis_table("core.modules")
-        expr = (
-            tbl.select("module").order_by("module")
-        )
+        expr = tbl.select("module").order_by("module")
 
         rows = self._ibis_to_dicts(expr)
         return [str(row["module"]) for row in rows]

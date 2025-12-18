@@ -27,6 +27,7 @@ from codeintel.build.hamilton.helpers import (
     get_module_paths_from_env,
     paths_to_modules,
 )
+from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
@@ -34,6 +35,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
@@ -57,7 +59,6 @@ from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.storage.warehouse import MaterializeOptions
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -259,8 +260,11 @@ def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
         change_detection = HashChangeDetectionAdapter(storage)
 
-        # Build scan profile from config
-        opts = ModuleIngestOptions()
+        opts = load_target_options(
+            env,
+            target_name=MODULES_TARGET_NAME,
+            options_type=ModuleIngestOptions,
+        )
         profile = build_scan_profile(env.snapshot.repo_root, opts)
 
         step = RepoScanStep(
@@ -346,7 +350,11 @@ def t__modules__write_repo_map(
                     "generated_at": generated_at,
                 }
             ],
-            options=MaterializeOptions(snapshot=env.snapshot, mode="replace"),
+            options=materialize_options(
+                env,
+                owner_target=MODULES_TARGET_NAME,
+                mode="replace",
+            ),
         )
 
         return RepoMapWriteResult(

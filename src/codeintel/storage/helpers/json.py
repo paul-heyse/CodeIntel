@@ -22,6 +22,7 @@ __all__ = [
     "decode_json_list",
     "deserialize_str_tuple",
     "encode_json_compact",
+    "normalize_duckdb_json_value",
     "serialize_str_sequence",
 ]
 
@@ -136,6 +137,30 @@ def encode_json_compact(value: object) -> str:
     '[1,2,3]'
     """
     return json.dumps(value, separators=(",", ":"))
+
+
+def normalize_duckdb_json_value(value: object) -> object:
+    """Normalize a Python value for DuckDB JSON column insertion.
+
+    DuckDB's JSON column type accepts JSON text for parameter binding. This
+    helper centralizes conversion rules so callers do not implement bespoke
+    `json.dumps(...)` logic.
+
+    Parameters
+    ----------
+    value
+        Value destined for a DuckDB JSON-typed column.
+
+    Returns
+    -------
+    object
+        JSON text (str) for container inputs, otherwise the original value.
+    """
+    if isinstance(value, set):
+        return encode_json_compact(sorted(value))
+    if isinstance(value, (dict, list, tuple)):
+        return encode_json_compact(value)
+    return value
 
 
 def serialize_str_sequence(items: Sequence[str]) -> str:

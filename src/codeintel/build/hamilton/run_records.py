@@ -27,6 +27,7 @@ from codeintel.build.hashing import (
     compute_input_hash_with_deps,
     compute_options_hash,
 )
+from codeintel.build.parameters import TargetParameters
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.hamilton.records import TargetRunRecord
 
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
 
 def _validate_strict_row_counts(
     *,
@@ -164,6 +166,27 @@ def compute_target_options_hash(options: object | None) -> str | None:
         16-character hex hash, or None if no options.
     """
     return compute_options_hash(options)
+
+
+def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:
+    """Compute the current configuration options hash for a target.
+
+    Parameters
+    ----------
+    env
+        Build environment with configuration.
+    target_name
+        Target name to compute the options hash for.
+
+    Returns
+    -------
+    str | None
+        16-character options hash, or None when the target has no configuration parameters.
+    """
+    params: TargetParameters = env.config.parameters_for(target_name)
+    if len(params) == 0:
+        return None
+    return compute_target_options_hash(params.as_dict())
 
 
 @dataclass(frozen=True)
@@ -487,7 +510,9 @@ def save_manifest(
     )
 
     env.gateway.build.save_manifest(manifest)
-    log.debug("build.hamilton.manifest.saved target=%s input_hash=%s", record.target, record.input_hash)
+    log.debug(
+        "build.hamilton.manifest.saved target=%s input_hash=%s", record.target, record.input_hash
+    )
 
 
 __all__ = [
@@ -500,6 +525,7 @@ __all__ = [
     "compute_target_input_hash_with_deps",
     "compute_target_options_hash",
     "create_run_record",
+    "options_hash_for_target",
     "save_manifest",
     "should_skip",
     "should_skip_native_target",

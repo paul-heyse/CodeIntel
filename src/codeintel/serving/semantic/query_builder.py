@@ -135,7 +135,9 @@ def _predicate_gte(col: it.Value, value: object) -> tuple[it.BooleanValue, it.Sc
     return col >= param, param, value
 
 
-_SIMPLE_PREDICATES: dict[str, Callable[[it.Value, object], tuple[it.BooleanValue, it.Scalar, object]]] = {
+_SIMPLE_PREDICATES: dict[
+    str, Callable[[it.Value, object], tuple[it.BooleanValue, it.Scalar, object]]
+] = {
     "eq": _predicate_eq,
     "ne": _predicate_ne,
     "lt": _predicate_lt,
@@ -145,17 +147,23 @@ _SIMPLE_PREDICATES: dict[str, Callable[[it.Value, object], tuple[it.BooleanValue
 }
 
 
-def _predicate_contains(col: it.StringColumn, value: str) -> tuple[it.BooleanValue, it.Scalar, object]:
+def _predicate_contains(
+    col: it.StringColumn, value: str
+) -> tuple[it.BooleanValue, it.Scalar, object]:
     param = ibis.param(col.type())
     return col.contains(cast("it.StringScalar", param)), param, value
 
 
-def _predicate_startswith(col: it.StringColumn, value: str) -> tuple[it.BooleanValue, it.Scalar, object]:
+def _predicate_startswith(
+    col: it.StringColumn, value: str
+) -> tuple[it.BooleanValue, it.Scalar, object]:
     param = ibis.param(col.type())
     return col.startswith(cast("it.StringScalar", param)), param, value
 
 
-_STRING_PREDICATES: dict[str, Callable[[it.StringColumn, str], tuple[it.BooleanValue, it.Scalar, object]]] = {
+_STRING_PREDICATES: dict[
+    str, Callable[[it.StringColumn, str], tuple[it.BooleanValue, it.Scalar, object]]
+] = {
     "contains": _predicate_contains,
     "startswith": _predicate_startswith,
 }
@@ -167,7 +175,9 @@ def _build_predicate(
     filter_spec: FilterSpec,
     ctx: _PredicateContext,
 ) -> it.BooleanValue:
-    _require_allowed_column(column=filter_spec.column, allowed_columns=ctx.allowed_columns, ctx="filter")
+    _require_allowed_column(
+        column=filter_spec.column, allowed_columns=ctx.allowed_columns, ctx="filter"
+    )
     col_expr = table[filter_spec.column]
     op = filter_spec.op
     value = filter_spec.value

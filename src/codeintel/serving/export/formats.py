@@ -109,22 +109,46 @@ def normalize_export_format(fmt: str) -> ExportFormat:
 
 
 def export_format_choices() -> tuple[ExportFormat, ...]:
-    """Return supported export formats in a stable, UX-friendly order."""
+    """Return supported export formats in a stable, UX-friendly order.
+
+    Returns
+    -------
+    tuple[ExportFormat, ...]
+        Ordered tuple of supported formats for UI prompts.
+    """
     return _EXPORT_FORMAT_ORDER
 
 
 def default_export_format() -> ExportFormat:
-    """Return the default export format for interactive clients."""
+    """Return the default export format for interactive clients.
+
+    Returns
+    -------
+    ExportFormat
+        Preferred default format.
+    """
     return "ndjson"
 
 
 def is_text_export_format(fmt: ExportFormat) -> bool:
-    """Return True when the export format is a text payload (JSON/NDJSON)."""
+    """Return True when the export format is a text payload (JSON/NDJSON).
+
+    Returns
+    -------
+    bool
+        ``True`` when the payload is text-based.
+    """
     return fmt in _TEXT_EXPORT_FORMATS
 
 
 def supports_preview(fmt: ExportFormat) -> bool:
-    """Return True when `codeintel://exports/{id}/preview` is supported for the format."""
+    """Return True when `codeintel://exports/{id}/preview` is supported for the format.
+
+    Returns
+    -------
+    bool
+        ``True`` when preview endpoints are available.
+    """
     return is_text_export_format(fmt)
 
 
@@ -134,17 +158,34 @@ def supports_line_chunks(fmt: ExportFormat) -> bool:
     Notes
     -----
     Line chunking is row-based and therefore only supported for NDJSON.
+
+    Returns
+    -------
+    bool
+        ``True`` when NDJSON line chunking is supported.
     """
     return fmt == "ndjson"
 
 
 def supports_byte_chunks(fmt: ExportFormat) -> bool:
-    """Return True when byte-range chunk resources are supported for the format."""
+    """Return True when byte-range chunk resources are supported for the format.
+
+    Returns
+    -------
+    bool
+        ``True`` when binary byte-range chunking is supported.
+    """
     return fmt in _BINARY_EXPORT_FORMATS
 
 
 def is_binary_export_format(fmt: ExportFormat) -> bool:
-    """Return True when the export format is binary (Parquet/Arrow)."""
+    """Return True when the export format is binary (Parquet/Arrow).
+
+    Returns
+    -------
+    bool
+        ``True`` for binary export formats.
+    """
     return fmt in _BINARY_EXPORT_FORMATS
 
 

@@ -22,7 +22,13 @@ _DEFAULT_TOOL_NAMES: Final[tuple[str, ...]] = (
 
 
 def runtime_versions(*, tools: tuple[str, ...] = _DEFAULT_TOOL_NAMES) -> dict[str, str]:
-    """Return runtime versions for the configured tool set."""
+    """Return runtime versions for the configured tool set.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of tool name to installed version or ``not-installed``.
+    """
     versions: dict[str, str] = {}
     for tool in tools:
         try:
@@ -37,7 +43,13 @@ def tooling_mismatch_warnings(
     *,
     runtime: Mapping[str, str] | None = None,
 ) -> tuple[str, ...]:
-    """Compute snapshot vs runtime version mismatch warnings."""
+    """Compute snapshot vs runtime version mismatch warnings.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Warning messages for mismatched snapshot and runtime versions.
+    """
     tools_obj = environment.get("tools")
     snapshot_tools = tools_obj if isinstance(tools_obj, Mapping) else {}
     runtime_versions_map = dict(runtime) if runtime is not None else runtime_versions()

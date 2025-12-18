@@ -1,8 +1,7 @@
-"""Bootstrap DuckDB metadata catalog for datasets.
+"""Metadata catalog synchronization utilities.
 
-This module owns the DDL and bootstrap routines for the `metadata.*` schema.
-It intentionally does not create or depend on DuckDB macros; all reads/writes
-should be expressed via Ibis and/or the policy backend.
+This module owns populating and validating metadata tables derived from dataset
+contracts and runtime configuration.
 """
 
 from __future__ import annotations
@@ -10,111 +9,44 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import sqlglot.expressions as exp
-
 from codeintel.core.schemas import schema_hash
-from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph
 from codeintel.storage.contracts.provider import is_view, iter_contracts
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.metadata.schema import METADATA_TABLES
-from codeintel.storage.schema_roundtrip import create_table_ast
+from codeintel.storage.metadata.ddl import apply_metadata_ddl
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from duckdb import DuckDBPyConnection
 
-    from codeintel.core.schemas.primitives import Index, TableSchema
-
-
-def _expected_schema_hash(table_key: str) -> str:
-    """Compute the expected schema hash for a table using the canonical provider.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table key (schema.table).
-
-    Returns
-    -------
-    str
-        The canonical schema hash.
-
-    Raises
-    ------
-    KeyError
-        If the table key is not found or has no schema.
-    """
-    table_schema = get_schema_provider().get_table_schema(table_key)
-    if table_schema is None:
-        message = f"Cannot compute schema hash for view or missing schema: {table_key}"
-        raise KeyError(message)
-    return schema_hash(table_schema)
-
-
-def apply_metadata_ddl(con: DuckDBPyConnection) -> None:
-    """Create metadata schema tables required for runtime and export."""
-    for table in METADATA_TABLES:
-        _ensure_metadata_table(con, table)
-
-
-def _ensure_metadata_table(con: DuckDBPyConnection, table: TableSchema) -> None:
-    con.execute(_build_create_schema(table.schema).sql(dialect=DUCKDB_DIALECT))
-    con.execute(create_table_ast(table, if_not_exists=True).sql(dialect=DUCKDB_DIALECT))
-    for index in table.indexes:
-        index_sql = _build_create_index(
-            index,
-            table_schema=table.schema,
-            table_name=table.name,
-        ).sql(dialect=DUCKDB_DIALECT)
-        con.execute(index_sql)
-
-
-def _build_create_schema(schema_name: str) -> exp.Create:
-    return exp.Create(
-        this=exp.to_identifier(schema_name),
-        kind="SCHEMA",
-        exists=True,
-    )
-
-
-def _build_create_index(index: Index, *, table_schema: str, table_name: str) -> exp.Create:
-    table_expr = exp.Table(
-        this=exp.to_identifier(table_name),
-        db=exp.to_identifier(table_schema),
-    )
-
-    index_columns = [exp.Ordered(this=exp.Column(this=exp.to_identifier(col))) for col in index.columns]
-    index_params = exp.IndexParameters(columns=index_columns)
-    index_expr = exp.Index(
-        this=exp.to_identifier(index.name),
-        table=table_expr,
-        params=index_params,
-    )
-
-    return exp.Create(
-        this=index_expr,
-        kind="INDEX",
-        exists=True,
-        unique=index.unique,
-    )
+__all__ = [
+    "bootstrap_metadata_datasets",
+    "load_dataset_schema_registry",
+    "sync_dataset_dataflow_graph",
+    "sync_derived_lineage_edges",
+    "validate_dataset_schema_registry",
+]
 
 
 def load_dataset_schema_registry(con: DuckDBPyConnection) -> dict[str, str]:
-    """
-    Return the dataset schema hashes recorded in metadata.dataset_schema_registry.
+    """Load schema hashes recorded in metadata.dataset_schema_registry.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection to query.
 
     Returns
     -------
     dict[str, str]
-        Mapping of table_key to recorded schema hash.
+        Mapping of dataset ``table_key`` to its persisted schema hash.
     """
     rows = con.execute(
         "SELECT table_key, schema_hash FROM metadata.dataset_schema_registry"
     ).fetchall()
-    return {str(table_key): str(schema_hash) for table_key, schema_hash in rows}
+    return {str(table_key): str(schema_hash_val) for table_key, schema_hash_val in rows}
 
 
 def _register_dataset_schema_hashes(con: DuckDBPyConnection) -> None:
@@ -306,21 +238,7 @@ def sync_derived_lineage_edges(
     lineage: Mapping[str, frozenset[str]],
     edge_type: str = "derived_depends_on",
 ) -> None:
-    """Persist derived lineage edges for a snapshot.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    repo
-        Repository identifier.
-    commit
-        Snapshot commit hash.
-    lineage
-        Mapping of downstream table_key -> referenced table_keys.
-    edge_type
-        Edge type label to store.
-    """
+    """Persist derived lineage edges for a snapshot."""
     con.execute(
         """
         DELETE FROM metadata.derived_lineage_edges
@@ -352,13 +270,3 @@ def sync_derived_lineage_edges(
         """,
         rows,
     )
-
-
-__all__ = [
-    "apply_metadata_ddl",
-    "bootstrap_metadata_datasets",
-    "load_dataset_schema_registry",
-    "sync_dataset_dataflow_graph",
-    "sync_derived_lineage_edges",
-    "validate_dataset_schema_registry",
-]

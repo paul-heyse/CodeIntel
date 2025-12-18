@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import sys
+import traceback
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,9 +78,7 @@ GUARDRAILS: tuple[Guardrail, ...] = (
             r"\.policy\.(?:delete_for_snapshot|bulk_insert_mappings|bulk_insert|delete)\("
         ),
         message="Build must not call gateway.policy write methods; use Warehouse.materialize_*.",
-        allow_prefixes=(
-            "src/codeintel/storage/warehouse.py",
-        ),
+        allow_prefixes=("src/codeintel/storage/warehouse.py",),
         include_prefixes=("src/codeintel/build/",),
     ),
     Guardrail(
@@ -130,6 +129,12 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         ),
         include_prefixes=("src/codeintel/build/",),
         allow_prefixes=("src/codeintel/build/hamilton/tagging.py",),
+    ),
+    Guardrail(
+        name="removed_build_registry_module",
+        pattern=re.compile(r"\bcodeintel\.build\.registry\b"),
+        message="codeintel.build.registry is removed; use codeintel.build.target_system.load_target_system().",
+        include_prefixes=("src/", "tests/", "tools/"),
     ),
 )
 
@@ -192,7 +197,13 @@ def main() -> int:
             sys.stderr.write(f"{line}\n")
         return 1
 
-    graph_result = validate_graph()
+    try:
+        graph_result = validate_graph()
+    except ImportError as exc:
+        sys.stderr.write("Hamilton graph validation could not run due to an import error.\n")
+        sys.stderr.write(f"{type(exc).__name__}: {exc}\n")
+        sys.stderr.write(traceback.format_exc())
+        return 1
     if graph_result.has_errors:
         sys.stderr.write("Hamilton graph validation failed.\n")
         sys.stderr.write(validation_result_to_json(graph_result, indent=2))
