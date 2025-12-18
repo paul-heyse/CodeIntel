@@ -50,12 +50,15 @@ EXPECTED_CODES = {
     "CODEINTEL_SEMANTIC_QUERY_TIMEOUT",
     "CODEINTEL_SEMANTIC_QUERY_UNAVAILABLE",
     "CODEINTEL_SEMANTIC_INTERNAL_ERROR",
+    "CODEINTEL_EXPORT_INVALID_REQUEST",
     "CODEINTEL_EXPORT_NOT_FOUND",
     "CODEINTEL_EXPORT_EXPIRED",
     "CODEINTEL_EXPORT_CORRUPT",
     "CODEINTEL_EXPORT_TOO_LARGE",
     "CODEINTEL_EXPORT_UNAVAILABLE",
     "CODEINTEL_EXPORT_INTERNAL_ERROR",
+    "CODEINTEL_META_ARTIFACT_NOT_FOUND",
+    "CODEINTEL_META_SQL_UNSAFE",
     "CODEINTEL_SERVING_SNAPSHOT_NOT_MOUNTED",
     "CODEINTEL_SERVING_SNAPSHOT_MISMATCH",
     "CODEINTEL_SERVING_DB_LOCKED",
@@ -70,9 +73,9 @@ def test_error_catalog_codes_are_locked_in() -> None:
     expect_equal(set(ERROR_CODE_CATALOG.keys()), EXPECTED_CODES)
 
 
-def test_error_catalog_has_20_codes() -> None:
-    """Verify catalog contains exactly 20 codes."""
-    expect_equal(len(ERROR_CODE_CATALOG), 20)
+def test_error_catalog_has_23_codes() -> None:
+    """Verify catalog contains exactly 23 codes."""
+    expect_equal(len(ERROR_CODE_CATALOG), 23)
 
 
 def test_error_catalog_codes_match_keys() -> None:

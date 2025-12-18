@@ -11,10 +11,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from typing import TYPE_CHECKING
 
-from sqlglot import exp, parse_one
-from sqlglot.optimizer.scope import traverse_scope
-
-from codeintel.storage.constants import DUCKDB_DIALECT
+from codeintel.storage.sqlglot_tools import extract_table_keys_duckdb
 
 __all__ = [
     "build_dependency_graph_from_sql",
@@ -39,21 +36,7 @@ def extract_referenced_table_keys(sql: str) -> set[str]:
     set[str]
         Set of referenced tables/views, using ``schema.table`` where available.
     """
-    root = parse_one(sql, dialect=DUCKDB_DIALECT)
-    referenced: set[str] = set()
-
-    for scope in traverse_scope(root):
-        for source in scope.sources.values():
-            if not isinstance(source, exp.Table):
-                continue
-            name = source.name
-            schema = source.db
-            if schema:
-                referenced.add(f"{schema}.{name}".lower())
-            else:
-                referenced.add(name.lower())
-
-    return referenced
+    return set(extract_table_keys_duckdb(sql))
 
 
 def build_dependency_graph_from_sql(

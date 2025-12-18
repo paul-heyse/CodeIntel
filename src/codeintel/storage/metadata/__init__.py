@@ -8,10 +8,6 @@ This package provides utilities for managing the CodeIntel metadata catalog:
 from __future__ import annotations
 
 from codeintel.storage.metadata.bootstrap import (
-    METADATA_SCHEMA_DDL,
-    PIPELINE_INDEXES_DDL,
-    PIPELINE_RUNS_DDL,
-    PIPELINE_STEPS_DDL,
     apply_metadata_ddl,
     bootstrap_metadata_datasets,
     load_dataset_schema_registry,
@@ -20,10 +16,6 @@ from codeintel.storage.metadata.bootstrap import (
 )
 
 __all__ = [
-    "METADATA_SCHEMA_DDL",
-    "PIPELINE_INDEXES_DDL",
-    "PIPELINE_RUNS_DDL",
-    "PIPELINE_STEPS_DDL",
     "apply_metadata_ddl",
     "bootstrap_metadata_datasets",
     "load_dataset_schema_registry",

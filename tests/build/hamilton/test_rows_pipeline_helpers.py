@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from codeintel.build.hamilton.templates.materialize_template import row_to_tuple, rows_to_tuples
+from codeintel.build.hamilton.templates.rows_helpers import row_to_tuple, rows_to_tuples
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
 

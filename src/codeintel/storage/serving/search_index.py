@@ -196,21 +196,18 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
     if duckdb_schema_exists(con, schema=fts_schema):
         return fts_schema
 
-    try:
-        backend.execute_sql("LOAD fts")
-    except duckdb.Error as exc:
-        msg = "DuckDB extension 'fts' is not available (set CODEINTEL_DUCKDB_EXTENSIONS=fts)"
-        raise RuntimeError(msg) from exc
-
-    backend.execute_sql(
-        f"""
-        PRAGMA create_fts_index(
-            '{table_key}',
-            'doc_id',
-            'text',
-            'name',
-            'module'
-        )
-        """,
+    create_sql = f"""
+    PRAGMA create_fts_index(
+        '{table_key}',
+        'doc_id',
+        'text',
+        'name',
+        'module'
     )
+    """
+    try:
+        backend.execute_sql(create_sql)
+    except duckdb.Error as exc:
+        msg = "DuckDB extension 'fts' is required (set CODEINTEL_DUCKDB_EXTENSIONS=fts)"
+        raise RuntimeError(msg) from exc
     return fts_schema

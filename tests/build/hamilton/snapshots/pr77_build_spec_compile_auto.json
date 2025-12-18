@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "a2a86a3396659be21b15704ec1a539f9421906b28c27fb6c3f24f41b5cca3d64",
+  "buildspec_hash": "c982723aebcb922f48364cbc1b14a9e50a4ecd0dc3ccb1c98cd35d11d291bd40",
   "datasets": [
     {
       "schema_hash": "4fea3b6c5a5a27bc4a5461a3f75e27173887f4605159c550eac43dd3e5d0d0cb",
@@ -50,6 +50,14 @@
       "table_key": "analytics.coverage_lines"
     },
     {
+      "schema_hash": "1836a4bdc9233f5d223d36d67dfd8edb280d60946721216bcabb8f115c523260",
+      "table_key": "analytics.data_model_fields"
+    },
+    {
+      "schema_hash": "ae5f28059f5a15a05de40daf953d666286fb989cc1828a974f3f587c65945035",
+      "table_key": "analytics.data_model_relationships"
+    },
+    {
       "schema_hash": "0be07984b4f280a5d923cefe8bfdc679847976311636b8cb671676d24d89c846",
       "table_key": "analytics.data_model_usage"
     },
@@ -68,6 +76,10 @@
     {
       "schema_hash": "5198ef39497a6ee2a0bb3456348344dae4ea5eb63dee460076035d83d2bf3e40",
       "table_key": "analytics.dfg_function_metrics_ext"
+    },
+    {
+      "schema_hash": "8ebebe0cbcbf3b3aebcfcfc9376ea87f189149798fe35fe91e37dc658a22ba64",
+      "table_key": "analytics.entrypoint_tests"
     },
     {
       "schema_hash": "72cbd71ac106c61f5af33d575c435c7a52f1882930a1e59fbedaff96e7e1ab6a",
@@ -112,6 +124,10 @@
     {
       "schema_hash": "7394b2d65a1fa9626d0391bb939fb8a87b9d60c19033c75c6e7c32631fb8620b",
       "table_key": "analytics.function_types"
+    },
+    {
+      "schema_hash": "86af3821b6fb0de90f48b57526d7dc6b543ef83a3b27df13c7be378ba8a8415a",
+      "table_key": "analytics.function_validation"
     },
     {
       "schema_hash": "290c8ce27dfe7691cc95a7e3b33e969aacbcea5329a5f09a2c797a03d73a5cec",
@@ -464,6 +480,8 @@
       "impl_kind": "native",
       "name": "data_models",
       "outputs": [
+        "analytics.data_model_fields",
+        "analytics.data_model_relationships",
         "analytics.data_models"
       ]
     },
@@ -502,6 +520,7 @@
       "impl_kind": "native",
       "name": "entrypoints",
       "outputs": [
+        "analytics.entrypoint_tests",
         "analytics.entrypoints"
       ]
     },
@@ -603,7 +622,8 @@
       "name": "function_metrics",
       "outputs": [
         "analytics.function_metrics",
-        "analytics.function_types"
+        "analytics.function_types",
+        "analytics.function_validation"
       ]
     },
     {
@@ -768,6 +788,11 @@
         },
         {
           "kind": null,
+          "name": "environment",
+          "path_template": "{build_dir}/serving/artifacts/environment.json"
+        },
+        {
+          "kind": null,
           "name": "schema_manifest",
           "path_template": "{build_dir}/serving/artifacts/schema_manifest.json"
         },
@@ -775,6 +800,16 @@
           "kind": null,
           "name": "semantic_registry",
           "path_template": "{build_dir}/serving/artifacts/semantic_registry.json"
+        },
+        {
+          "kind": null,
+          "name": "views_sql",
+          "path_template": "{build_dir}/serving/artifacts/views_sql.json"
+        },
+        {
+          "kind": null,
+          "name": "views_sql_diff",
+          "path_template": "{build_dir}/serving/artifacts/views_sql_diff.json"
         }
       ],
       "deps": [],
@@ -810,6 +845,7 @@
     {
       "artifacts": [],
       "deps": [
+        "import_graph",
         "semantic_roles"
       ],
       "domain": "analytics",

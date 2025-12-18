@@ -25,11 +25,11 @@ from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.ibis_adapter import OnConflict
-from codeintel.storage.ibis_types import filter_by
+from codeintel.storage.snapshot_scoping import maybe_scope_by_repo_commit
 from codeintel.storage.tracking.asset_tracking import AssetRecord
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     import ibis.expr.types as ir
     import pandas as pd
@@ -135,12 +135,7 @@ class Warehouse:
         expr = self.gateway.ibis.table(table_key)
         if snapshot is None:
             return expr
-
-        schema = expr.schema()
-        names = set(schema.keys())
-        if "repo" in names and "commit" in names:
-            return filter_by(expr, expr["repo"] == snapshot.repo, expr["commit"] == snapshot.commit)
-        return expr
+        return maybe_scope_by_repo_commit(expr, repo=snapshot.repo, commit=snapshot.commit)
 
     def exists(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> bool:
         """Return True if the table/view exists.
@@ -208,80 +203,40 @@ class Warehouse:
         -------
         MaterializationResult
             Structured result describing the write.
-
-        Raises
-        ------
-        ValueError
-            If ``mode="replace"`` is requested without a snapshot.
         """
         active = options or MaterializeOptions()
+        _validate_materialize_options(
+            active,
+            supports_upsert=True,
+            upsert_unsupported_message="mode='upsert' requires options.upsert to be provided",
+        )
+
         started_at = datetime.now(tz=UTC)
         self.gateway.policy.ensure_table(table_key, create_if_missing=True)
-
-        contract = _dataset_contract(self.gateway, table_key=table_key)
-        schema_version = contract.schema_version if contract is not None else None
-        computed_schema_hash = None
-        if contract is not None and contract.schema is not None:
-            computed_schema_hash = schema_hash(contract.schema)
-
-        snapshot = active.snapshot
-        if active.mode == "replace" and snapshot is None:
-            msg = "mode='replace' requires snapshot for safe snapshot-scoped semantics"
-            raise ValueError(msg)
-        if active.mode == "upsert" and active.upsert is None:
-            msg = "mode='upsert' requires options.upsert to be provided"
-            raise ValueError(msg)
-
-        profiling_path = _maybe_enable_profiling(
-            con=self.gateway.con,
-            table_key=table_key,
-            snapshot=snapshot,
-            owner_target=active.owner_target,
+        schema_version, computed_schema_hash = _contract_schema_metadata(
+            self.gateway, table_key=table_key
         )
 
-        rows_written: int | None = None
-        try:
-            with self.gateway.policy.transaction():
-                if active.mode == "replace" and snapshot is not None:
-                    self.gateway.policy.delete_for_snapshot(
-                        table_key, repo=snapshot.repo, commit=snapshot.commit
-                    )
-
-                raw_count = self.gateway.ibis.execute_scalar(expr.count())
-                rows_written = _coerce_int(raw_count, ctx=f"{table_key}.count()")
-                on_conflict = None
-                if active.mode == "upsert" and active.upsert is not None:
-                    on_conflict = OnConflict(
-                        conflict_columns=active.upsert.conflict_columns,
-                        update_columns=active.upsert.update_columns,
-                    )
-                self.gateway.ibis.write(table_key, expr, on_conflict=on_conflict)
-
-                record = _asset_record_from_options(
-                    table_key=table_key,
-                    schema_version=schema_version,
-                    rows_written=rows_written,
-                    options=active,
-                    profiling_path=profiling_path,
+        def _write() -> int:
+            raw_count = self.gateway.ibis.execute_scalar(expr.count())
+            rows_written = _coerce_int(raw_count, ctx=f"{table_key}.count()")
+            on_conflict = None
+            if active.mode == "upsert" and active.upsert is not None:
+                on_conflict = OnConflict(
+                    conflict_columns=active.upsert.conflict_columns,
+                    update_columns=active.upsert.update_columns,
                 )
-                if record is not None:
-                    self.gateway.assets.record_asset(record)
-        finally:
-            _disable_profiling_if_enabled(self.gateway.con, profiling_path)
+            self.gateway.ibis.write(table_key, expr, on_conflict=on_conflict)
+            return rows_written
 
-        completed_at = datetime.now(tz=UTC)
-
-        return MaterializationResult(
+        ctx = _MaterializeWriterContext(
+            gateway=self.gateway,
             table_key=table_key,
-            repo=snapshot.repo if snapshot is not None else None,
-            commit=snapshot.commit if snapshot is not None else None,
-            rows_written=rows_written,
             started_at=started_at,
-            completed_at=completed_at,
-            schema_hash=computed_schema_hash,
             schema_version=schema_version,
-            profiling_artifact=str(profiling_path) if profiling_path is not None else None,
+            schema_hash=computed_schema_hash,
         )
+        return _materialize_with_writer(ctx, options=active, writer=_write)
 
     def materialize_dataframe(
         self,
@@ -305,82 +260,41 @@ class Warehouse:
         -------
         MaterializationResult
             Structured result describing the write.
-
-        Raises
-        ------
-        ValueError
-            If ``mode="replace"`` is requested without a snapshot.
         """
         active = options or MaterializeOptions()
-        snapshot = active.snapshot
-        if active.mode == "replace" and snapshot is None:
-            msg = "mode='replace' requires snapshot for safe snapshot-scoped semantics"
-            raise ValueError(msg)
-        if active.mode == "upsert" and active.upsert is None:
-            msg = "mode='upsert' requires options.upsert to be provided"
-            raise ValueError(msg)
+        _validate_materialize_options(
+            active,
+            supports_upsert=True,
+            upsert_unsupported_message="mode='upsert' requires options.upsert to be provided",
+        )
 
         started_at = datetime.now(tz=UTC)
         self.gateway.policy.ensure_table(table_key, create_if_missing=True)
-
-        contract = _dataset_contract(self.gateway, table_key=table_key)
-        schema_version = contract.schema_version if contract is not None else None
-        computed_schema_hash = None
-        if contract is not None and contract.schema is not None:
-            computed_schema_hash = schema_hash(contract.schema)
-
-        profiling_path = _maybe_enable_profiling(
-            con=self.gateway.con,
-            table_key=table_key,
-            snapshot=snapshot,
-            owner_target=active.owner_target,
+        schema_version, computed_schema_hash = _contract_schema_metadata(
+            self.gateway, table_key=table_key
         )
 
-        rows_written: int | None = None
-        try:
-            with self.gateway.policy.transaction():
-                if active.mode == "replace" and snapshot is not None:
-                    self.gateway.policy.delete_for_snapshot(
-                        table_key, repo=snapshot.repo, commit=snapshot.commit
-                    )
-
-                if active.mode == "upsert" and active.upsert is not None:
-                    on_conflict = OnConflict(
-                        conflict_columns=active.upsert.conflict_columns,
-                        update_columns=active.upsert.update_columns,
-                    )
-                    result = self.gateway.ibis.write(table_key, df, on_conflict=on_conflict)
-                    rows_written = result.rows_affected
-                else:
-                    rows_written = len(df)
-                    if rows_written:
-                        self.gateway.ibis.write(table_key, df)
-
-                record = _asset_record_from_options(
-                    table_key=table_key,
-                    schema_version=schema_version,
-                    rows_written=rows_written,
-                    options=active,
-                    profiling_path=profiling_path,
+        def _write() -> int | None:
+            if active.mode == "upsert" and active.upsert is not None:
+                on_conflict = OnConflict(
+                    conflict_columns=active.upsert.conflict_columns,
+                    update_columns=active.upsert.update_columns,
                 )
-                if record is not None:
-                    self.gateway.assets.record_asset(record)
-        finally:
-            _disable_profiling_if_enabled(self.gateway.con, profiling_path)
+                result = self.gateway.ibis.write(table_key, df, on_conflict=on_conflict)
+                return result.rows_affected
+            rows_written = len(df)
+            if rows_written:
+                self.gateway.ibis.write(table_key, df)
+            return rows_written
 
-        completed_at = datetime.now(tz=UTC)
-
-        return MaterializationResult(
+        ctx = _MaterializeWriterContext(
+            gateway=self.gateway,
             table_key=table_key,
-            repo=snapshot.repo if snapshot is not None else None,
-            commit=snapshot.commit if snapshot is not None else None,
-            rows_written=rows_written,
             started_at=started_at,
-            completed_at=completed_at,
-            schema_hash=computed_schema_hash,
             schema_version=schema_version,
-            profiling_artifact=str(profiling_path) if profiling_path is not None else None,
+            schema_hash=computed_schema_hash,
         )
+        return _materialize_with_writer(ctx, options=active, writer=_write)
 
     def materialize_rows(
         self,
@@ -407,87 +321,47 @@ class Warehouse:
         -------
         MaterializationResult
             Structured result describing the write.
-
-        Raises
-        ------
-        ValueError
-            If ``mode="replace"`` is requested without a snapshot.
         """
         active = options or MaterializeOptions()
-        snapshot = active.snapshot
-        if active.mode == "replace" and snapshot is None:
-            msg = "mode='replace' requires snapshot for safe snapshot-scoped semantics"
-            raise ValueError(msg)
-        if active.mode == "upsert" and active.upsert is None:
-            msg = "mode='upsert' requires options.upsert to be provided"
-            raise ValueError(msg)
+        _validate_materialize_options(
+            active,
+            supports_upsert=True,
+            upsert_unsupported_message="mode='upsert' requires options.upsert to be provided",
+        )
 
         started_at = datetime.now(tz=UTC)
         self.gateway.policy.ensure_table(table_key, create_if_missing=True)
-
-        contract = _dataset_contract(self.gateway, table_key=table_key)
-        schema_version = contract.schema_version if contract is not None else None
-        computed_schema_hash = None
-        if contract is not None and contract.schema is not None:
-            computed_schema_hash = schema_hash(contract.schema)
-
-        profiling_path = _maybe_enable_profiling(
-            con=self.gateway.con,
-            table_key=table_key,
-            snapshot=snapshot,
-            owner_target=active.owner_target,
+        schema_version, computed_schema_hash = _contract_schema_metadata(
+            self.gateway, table_key=table_key
         )
 
-        rows_written: int | None = None
-        try:
-            with self.gateway.policy.transaction():
-                if active.mode == "replace" and snapshot is not None:
-                    self.gateway.policy.delete_for_snapshot(
-                        table_key, repo=snapshot.repo, commit=snapshot.commit
-                    )
-
-                if active.mode == "upsert" and active.upsert is not None:
-                    on_conflict = OnConflict(
-                        conflict_columns=active.upsert.conflict_columns,
-                        update_columns=active.upsert.update_columns,
-                    )
-                    result = self.gateway.ibis.write(
-                        table_key,
-                        rows,
-                        columns=list(columns),
-                        on_conflict=on_conflict,
-                    )
-                    rows_written = result.rows_affected
-                else:
-                    rows_written = len(rows)
-                    if rows_written:
-                        self.gateway.ibis.write(table_key, rows, columns=list(columns))
-
-                record = _asset_record_from_options(
-                    table_key=table_key,
-                    schema_version=schema_version,
-                    rows_written=rows_written,
-                    options=active,
-                    profiling_path=profiling_path,
+        def _write() -> int | None:
+            if active.mode == "upsert" and active.upsert is not None:
+                on_conflict = OnConflict(
+                    conflict_columns=active.upsert.conflict_columns,
+                    update_columns=active.upsert.update_columns,
                 )
-                if record is not None:
-                    self.gateway.assets.record_asset(record)
-        finally:
-            _disable_profiling_if_enabled(self.gateway.con, profiling_path)
+                result = self.gateway.ibis.write(
+                    table_key,
+                    rows,
+                    columns=list(columns),
+                    on_conflict=on_conflict,
+                )
+                return result.rows_affected
 
-        completed_at = datetime.now(tz=UTC)
+            rows_written = len(rows)
+            if rows_written:
+                self.gateway.ibis.write(table_key, rows, columns=list(columns))
+            return rows_written
 
-        return MaterializationResult(
+        ctx = _MaterializeWriterContext(
+            gateway=self.gateway,
             table_key=table_key,
-            repo=snapshot.repo if snapshot is not None else None,
-            commit=snapshot.commit if snapshot is not None else None,
-            rows_written=rows_written,
             started_at=started_at,
-            completed_at=completed_at,
-            schema_hash=computed_schema_hash,
             schema_version=schema_version,
-            profiling_artifact=str(profiling_path) if profiling_path is not None else None,
+            schema_hash=computed_schema_hash,
         )
+        return _materialize_with_writer(ctx, options=active, writer=_write)
 
     def materialize_mappings(
         self,
@@ -515,78 +389,37 @@ class Warehouse:
         -------
         MaterializationResult
             Structured result describing the write.
-
-        Raises
-        ------
-        ValueError
-            If ``mode="replace"`` is requested without a snapshot.
         """
         active = options or MaterializeOptions(mode="append")
-        snapshot = active.snapshot
-        if active.mode == "replace" and snapshot is None:
-            msg = "mode='replace' requires snapshot for safe snapshot-scoped semantics"
-            raise ValueError(msg)
-        if active.mode == "upsert":
-            msg = "materialize_mappings does not support mode='upsert'; use materialize_rows/dataframe"
-            raise ValueError(msg)
+        _validate_materialize_options(
+            active,
+            supports_upsert=False,
+            upsert_unsupported_message=(
+                "materialize_mappings does not support mode='upsert'; use materialize_rows/dataframe"
+            ),
+        )
 
         started_at = datetime.now(tz=UTC)
         self.gateway.policy.ensure_table(table_key, create_if_missing=True)
-
-        contract = _dataset_contract(self.gateway, table_key=table_key)
-        schema_version = contract.schema_version if contract is not None else None
-        computed_schema_hash = None
-        if contract is not None and contract.schema is not None:
-            computed_schema_hash = schema_hash(contract.schema)
-
-        replace_snapshot = snapshot if active.mode == "replace" and snapshot is not None else None
-
-        profiling_path = _maybe_enable_profiling(
-            con=self.gateway.con,
-            table_key=table_key,
-            snapshot=snapshot,
-            owner_target=active.owner_target,
+        schema_version, computed_schema_hash = _contract_schema_metadata(
+            self.gateway, table_key=table_key
         )
 
-        rows_written: int | None = None
-        try:
-            with self.gateway.policy.transaction():
-                if replace_snapshot is not None:
-                    self.gateway.policy.delete_for_snapshot(
-                        table_key, repo=replace_snapshot.repo, commit=replace_snapshot.commit
-                    )
+        def _write() -> int:
+            return self.gateway.policy.bulk_insert_mappings(
+                table_key,
+                rows,
+                columns=columns,
+            )
 
-                rows_written = self.gateway.policy.bulk_insert_mappings(
-                    table_key,
-                    rows,
-                    columns=columns,
-                )
-
-                record = _asset_record_from_options(
-                    table_key=table_key,
-                    schema_version=schema_version,
-                    rows_written=rows_written,
-                    options=active,
-                    profiling_path=profiling_path,
-                )
-                if record is not None:
-                    self.gateway.assets.record_asset(record)
-        finally:
-            _disable_profiling_if_enabled(self.gateway.con, profiling_path)
-
-        completed_at = datetime.now(tz=UTC)
-
-        return MaterializationResult(
+        ctx = _MaterializeWriterContext(
+            gateway=self.gateway,
             table_key=table_key,
-            repo=snapshot.repo if snapshot is not None else None,
-            commit=snapshot.commit if snapshot is not None else None,
-            rows_written=rows_written,
             started_at=started_at,
-            completed_at=completed_at,
-            schema_hash=computed_schema_hash,
             schema_version=schema_version,
-            profiling_artifact=str(profiling_path) if profiling_path is not None else None,
+            schema_hash=computed_schema_hash,
         )
+        return _materialize_with_writer(ctx, options=active, writer=_write)
 
     def create_or_replace_view(
         self, table_key: str, expr: ir.Table, *, overwrite: bool = True
@@ -819,6 +652,101 @@ def _disable_profiling_if_enabled(con: DuckDBConnection, path: Path | None) -> N
     if path is None:
         return
     con.execute("PRAGMA disable_profiling")
+
+
+def _validate_materialize_options(
+    options: MaterializeOptions,
+    *,
+    supports_upsert: bool,
+    upsert_unsupported_message: str,
+) -> None:
+    snapshot = options.snapshot
+    if options.mode == "replace" and snapshot is None:
+        msg = "mode='replace' requires snapshot for safe snapshot-scoped semantics"
+        raise ValueError(msg)
+
+    if options.mode != "upsert":
+        return
+
+    if not supports_upsert:
+        raise ValueError(upsert_unsupported_message)
+    if options.upsert is None:
+        raise ValueError(upsert_unsupported_message)
+
+
+def _contract_schema_metadata(
+    gateway: StorageGateway,
+    *,
+    table_key: str,
+) -> tuple[str | None, str | None]:
+    contract = _dataset_contract(gateway, table_key=table_key)
+    schema_version = contract.schema_version if contract is not None else None
+    computed_schema_hash = None
+    if contract is not None and contract.schema is not None:
+        computed_schema_hash = schema_hash(contract.schema)
+    return schema_version, computed_schema_hash
+
+
+@dataclass(frozen=True, slots=True)
+class _MaterializeWriterContext:
+    gateway: StorageGateway
+    table_key: str
+    started_at: datetime
+    schema_version: str | None
+    schema_hash: str | None
+
+
+def _materialize_with_writer(
+    ctx: _MaterializeWriterContext,
+    *,
+    options: MaterializeOptions,
+    writer: Callable[[], int | None],
+) -> MaterializationResult:
+    snapshot = options.snapshot
+    profiling_path = _maybe_enable_profiling(
+        con=ctx.gateway.con,
+        table_key=ctx.table_key,
+        snapshot=snapshot,
+        owner_target=options.owner_target,
+    )
+
+    rows_written: int | None = None
+    try:
+        with ctx.gateway.policy.transaction():
+            if options.mode == "replace" and snapshot is not None:
+                ctx.gateway.policy.delete_for_snapshot(
+                    ctx.table_key,
+                    repo=snapshot.repo,
+                    commit=snapshot.commit,
+                )
+
+            rows_written = writer()
+
+            record = _asset_record_from_options(
+                table_key=ctx.table_key,
+                schema_version=ctx.schema_version,
+                rows_written=rows_written,
+                options=options,
+                profiling_path=profiling_path,
+            )
+            if record is not None:
+                ctx.gateway.assets.record_asset(record)
+    finally:
+        _disable_profiling_if_enabled(ctx.gateway.con, profiling_path)
+
+    completed_at = datetime.now(tz=UTC)
+
+    return MaterializationResult(
+        table_key=ctx.table_key,
+        repo=snapshot.repo if snapshot is not None else None,
+        commit=snapshot.commit if snapshot is not None else None,
+        rows_written=rows_written,
+        started_at=ctx.started_at,
+        completed_at=completed_at,
+        schema_hash=ctx.schema_hash,
+        schema_version=ctx.schema_version,
+        profiling_artifact=str(profiling_path) if profiling_path is not None else None,
+    )
 
 
 def _asset_record_from_options(

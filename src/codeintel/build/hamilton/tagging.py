@@ -10,7 +10,7 @@ still allowing controlled extension via ``extra_tags``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, ParamSpec, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, ParamSpec, TypeVar, cast
 
 from hamilton.function_modifiers import tag as h_tag
 
@@ -38,17 +38,30 @@ P = ParamSpec("P")
 R = TypeVar("R")
 Decorator = Callable[[Callable[P, R]], Callable[P, R]]
 TagValue = str | list[str]
+TagKey = Literal[
+    "domain",
+    "target",
+    "table_key",
+    "artifact",
+    "node_type",
+    "output_kind",
+    "semantic_id",
+    "entity",
+    "grain",
+    "mcp_visible",
+]
+TagMap = dict[TagKey, TagValue]
 
 
 def _merge_extra_tags(
-    base: dict[str, TagValue],
-    extra_tags: Mapping[str, TagValue] | None,
-) -> dict[str, TagValue]:
+    base: TagMap,
+    extra_tags: Mapping[TagKey, TagValue] | None,
+) -> TagMap:
     if extra_tags is None:
         return base
     merged = dict(base)
     merged.update(extra_tags)
-    return merged
+    return cast("TagMap", merged)
 
 
 def _build_common_tags(
@@ -56,18 +69,18 @@ def _build_common_tags(
     node_type: str,
     domain: str | None,
     target: str | None,
-    extra_tags: Mapping[str, TagValue] | None,
-) -> dict[str, TagValue]:
-    base: dict[str, TagValue] = {TAG_NODE_TYPE: node_type}
+    extra_tags: Mapping[TagKey, TagValue] | None,
+) -> TagMap:
+    base: TagMap = {cast("TagKey", TAG_NODE_TYPE): node_type}
     if domain is not None:
-        base[TAG_DOMAIN] = domain
+        base[cast("TagKey", TAG_DOMAIN)] = domain
     if target is not None:
-        base[TAG_TARGET] = target
+        base[cast("TagKey", TAG_TARGET)] = target
     return _merge_extra_tags(base, extra_tags)
 
 
 def _tag(
-    tags: dict[str, TagValue],
+    tags: TagMap,
     *,
     target_: str | Collection[str] | EllipsisType | None,
 ) -> Decorator[P, R]:
@@ -81,7 +94,7 @@ def tag_compute(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, TagValue] | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
     """Tag a compute node with canonical build tags.
 
@@ -104,7 +117,7 @@ def tag_materialize(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, TagValue] | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
     """Tag a materialize node with canonical build tags.
 
@@ -128,7 +141,7 @@ def tag_dataset(
     target: str | None = None,
     table_key: str,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, TagValue] | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
     """Tag a dataset-producing node with canonical build tags.
 
@@ -143,7 +156,7 @@ def tag_dataset(
         target=target,
         extra_tags=extra_tags,
     )
-    tags[TAG_TABLE_KEY] = table_key
+    tags[cast("TagKey", TAG_TABLE_KEY)] = table_key
     return _tag(tags, target_=target_)
 
 
@@ -153,7 +166,7 @@ def tag_artifact(
     target: str | None = None,
     artifact: str,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, TagValue] | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
     """Tag an artifact-producing node with canonical build tags.
 
@@ -168,7 +181,7 @@ def tag_artifact(
         target=target,
         extra_tags=extra_tags,
     )
-    tags[TAG_ARTIFACT] = artifact
+    tags[cast("TagKey", TAG_ARTIFACT)] = artifact
     return _tag(tags, target_=target_)
 
 
@@ -177,7 +190,7 @@ def tag_tool(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, TagValue] | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
     """Tag a tool/external-boundary node with canonical build tags.
 
@@ -200,7 +213,7 @@ def tag_loader_query(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, TagValue] | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
     """Tag a loader/query node with canonical build tags.
 
@@ -223,7 +236,7 @@ def tag_loader_dataframe(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, TagValue] | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
     """Tag a loader/dataframe node with canonical build tags.
 
@@ -246,7 +259,7 @@ def tag_helper(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, TagValue] | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
     """Tag a helper node with canonical build tags.
 

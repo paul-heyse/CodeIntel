@@ -81,8 +81,6 @@ class DuckDBSession:
             self.config,
             read_only=True,
             apply_schema=False,
-            ensure_views=False,
-            validate_schema=False,
         )
         con = connect(
             cfg,

@@ -243,11 +243,6 @@ def infer_view_schema(
     TableSchema
         Inferred schema for the view.
 
-    Raises
-    ------
-    ValueError
-        If the view is not present in the database or has no columns.
-
     Examples
     --------
     >>> schema = infer_view_schema(con=con, view_key="docs.v_function_summary")
@@ -258,18 +253,9 @@ def infer_view_schema(
     _validate_identifier(schema_name, kind="schema")
     _validate_identifier(view_name, kind="table/view")
 
-    rows = con.execute(
-        """
-        SELECT column_name, data_type, is_nullable
-        FROM information_schema.columns
-        WHERE table_schema = ? AND table_name = ?
-        ORDER BY ordinal_position
-        """,
-        [schema_name, view_name],
-    ).fetchall()
-    if not rows:
-        msg = f"View not found or has no columns: {view_key}"
-        raise ValueError(msg)
+    # Use DESCRIBE because it preserves NOT NULL constraints for many views, and
+    # allows duckdb.CatalogException to surface for nonexistent objects.
+    rows = con.execute(f"DESCRIBE {schema_name}.{view_name}").fetchall()
 
     columns: list[Column] = []
     for row in rows:

@@ -10,15 +10,13 @@ import json
 from typing import TYPE_CHECKING
 
 from fastmcp.prompts import Message
-from fastmcp.server.dependencies import CurrentContext
-
-from codeintel.serving.mcp._compat import Context
 
 if TYPE_CHECKING:
-    from codeintel.serving.mcp._compat import FastMCP
-    from codeintel.serving.settings import ServingSettings
+    from fastmcp.prompts import PromptMessage
 
-CURRENT_CONTEXT: object = CurrentContext()
+    from codeintel.serving.mcp._compat import FastMCP
+    from codeintel.serving.mcp._compat import Context
+    from codeintel.serving.settings import ServingSettings
 
 
 def register_prompts(mcp: FastMCP, *, settings: ServingSettings) -> None:
@@ -38,7 +36,7 @@ def register_prompts(mcp: FastMCP, *, settings: ServingSettings) -> None:
         tags={"onboarding", "semantic"},
         meta={"version": 2},
     )
-    def explore_codebase() -> list[object]:
+    def explore_codebase() -> list[PromptMessage]:
         return [
             Message(
                 "Call `semantic_catalog()` to list available views, then choose a view and call "
@@ -62,7 +60,7 @@ def register_prompts(mcp: FastMCP, *, settings: ServingSettings) -> None:
         tags={"export", "wizard"},
         meta={"version": 1},
     )
-    async def wizard_export_data(ctx: Context = CURRENT_CONTEXT) -> list[object]:
+    async def wizard_export_data(ctx: Context) -> list[PromptMessage]:
         format_choices = ["ndjson", "json", "parquet", "arrow"]
         accepted_view = await ctx.elicit("Which view_id do you want to export?", response_type=str)
         if getattr(accepted_view, "action", None) != "accept":
@@ -104,7 +102,7 @@ def register_prompts(mcp: FastMCP, *, settings: ServingSettings) -> None:
         tags={"semantic", "wizard"},
         meta={"version": 1},
     )
-    async def wizard_query_view(ctx: Context = CURRENT_CONTEXT) -> list[object]:
+    async def wizard_query_view(ctx: Context) -> list[PromptMessage]:
         accepted_view = await ctx.elicit("Which view_id do you want to query?", response_type=str)
         if getattr(accepted_view, "action", None) != "accept":
             return [Message("Query wizard cancelled.", role="assistant")]
@@ -136,7 +134,7 @@ def register_prompts(mcp: FastMCP, *, settings: ServingSettings) -> None:
         tags={"ops", "meta"},
         meta={"version": 1},
     )
-    def what_changed_between_snapshots() -> list[object]:
+    def what_changed_between_snapshots() -> list[PromptMessage]:
         return [
             Message("Call `resources/read` on `codeintel://meta/views_sql_diff` (if present).", role="assistant"),
             Message("Then use `resources/read` on `codeintel://meta/views_sql` for full compiled SQL if needed.", role="assistant"),

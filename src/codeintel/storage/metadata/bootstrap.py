@@ -11,10 +11,15 @@ import importlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
 
+import sqlglot.expressions as exp
+
 from codeintel.core.schemas import schema_hash
+from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.contracts.provider import is_view, iter_contracts
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.metadata.schema import METADATA_TABLES
+from codeintel.storage.schema_roundtrip import create_table_ast
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -22,6 +27,7 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
     from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
+    from codeintel.core.schemas.primitives import Index, TableSchema
 
 
 class _DataflowGraphBuilder(Protocol):
@@ -69,132 +75,52 @@ def _expected_schema_hash(table_key: str) -> str:
     return schema_hash(table_schema)
 
 
-METADATA_SCHEMA_DDL: tuple[str, ...] = (
-    """
-    CREATE SCHEMA IF NOT EXISTS metadata;
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS metadata.dataset_schema_registry (
-        table_key TEXT PRIMARY KEY,
-        schema_hash TEXT NOT NULL
-    );
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS metadata.datasets (
-        table_key        TEXT PRIMARY KEY,
-        name             TEXT NOT NULL,
-        is_view          BOOLEAN NOT NULL,
-        jsonl_filename   TEXT,
-        parquet_filename TEXT,
-        family           TEXT,
-        description      TEXT,
-        schema_version   TEXT,
-        deprecated       BOOLEAN DEFAULT FALSE
-    );
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS metadata.dataset_dataflow_nodes (
-        id            TEXT PRIMARY KEY,
-        kind          TEXT NOT NULL,
-        family        TEXT,
-        owner_package TEXT,
-        description   TEXT
-    );
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS metadata.dataset_dataflow_edges (
-        src       TEXT NOT NULL,
-        dst       TEXT NOT NULL,
-        edge_type TEXT NOT NULL,
-        PRIMARY KEY (src, dst, edge_type)
-    );
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_dataset_dataflow_edges_src
-        ON metadata.dataset_dataflow_edges (src);
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_dataset_dataflow_edges_dst
-        ON metadata.dataset_dataflow_edges (dst);
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS metadata.derived_lineage_edges (
-        repo        TEXT NOT NULL,
-        commit      TEXT NOT NULL,
-        downstream  TEXT NOT NULL,
-        upstream    TEXT NOT NULL,
-        edge_type   TEXT NOT NULL,
-        PRIMARY KEY (repo, commit, downstream, upstream, edge_type)
-    );
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_derived_lineage_edges_downstream
-        ON metadata.derived_lineage_edges (repo, commit, downstream);
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_derived_lineage_edges_upstream
-        ON metadata.derived_lineage_edges (repo, commit, upstream);
-    """,
-)
-
-
-PIPELINE_RUNS_DDL = """
-CREATE TABLE IF NOT EXISTS metadata.pipeline_runs (
-    run_id              TEXT PRIMARY KEY,
-    repo                TEXT NOT NULL,
-    commit              TEXT NOT NULL,
-    kind                TEXT NOT NULL,
-    trigger             TEXT NOT NULL,
-    requested_operation TEXT,
-    requested_datasets  JSON,
-    started_at          TIMESTAMPTZ NOT NULL,
-    completed_at        TIMESTAMPTZ,
-    status              TEXT NOT NULL,
-    error_summary       TEXT,
-    pipeline_name       TEXT
-);
-"""
-
-
-PIPELINE_STEPS_DDL = """
-CREATE TABLE IF NOT EXISTS metadata.pipeline_steps (
-    run_id          TEXT NOT NULL,
-    module          TEXT NOT NULL,
-    stage           TEXT NOT NULL,
-    name            TEXT NOT NULL,
-    started_at      TIMESTAMPTZ NOT NULL,
-    completed_at    TIMESTAMPTZ,
-    status          TEXT NOT NULL,
-    row_counts      JSON,
-    extra           JSON,
-    PRIMARY KEY (run_id, module, name)
-);
-"""
-
-
-PIPELINE_INDEXES_DDL = """
-CREATE INDEX IF NOT EXISTS idx_pipeline_runs_repo_commit
-    ON metadata.pipeline_runs (repo, commit, started_at);
-
-CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status
-    ON metadata.pipeline_runs (status, repo, commit);
-
-CREATE INDEX IF NOT EXISTS idx_pipeline_steps_run
-    ON metadata.pipeline_steps (run_id, module, stage);
-"""
-
-
 def apply_metadata_ddl(con: DuckDBPyConnection) -> None:
     """Create metadata schema tables required for runtime and export."""
-    for stmt in METADATA_SCHEMA_DDL:
-        con.execute(stmt)
+    for table in METADATA_TABLES:
+        _ensure_metadata_table(con, table)
 
-    con.execute(PIPELINE_RUNS_DDL)
-    con.execute(PIPELINE_STEPS_DDL)
-    for index_stmt in PIPELINE_INDEXES_DDL.strip().split(";"):
-        stripped_stmt = index_stmt.strip()
-        if stripped_stmt:
-            con.execute(stripped_stmt)
+
+def _ensure_metadata_table(con: DuckDBPyConnection, table: TableSchema) -> None:
+    con.execute(_build_create_schema(table.schema).sql(dialect=DUCKDB_DIALECT))
+    con.execute(create_table_ast(table, if_not_exists=True).sql(dialect=DUCKDB_DIALECT))
+    for index in table.indexes:
+        index_sql = _build_create_index(
+            index,
+            table_schema=table.schema,
+            table_name=table.name,
+        ).sql(dialect=DUCKDB_DIALECT)
+        con.execute(index_sql)
+
+
+def _build_create_schema(schema_name: str) -> exp.Create:
+    return exp.Create(
+        this=exp.to_identifier(schema_name),
+        kind="SCHEMA",
+        exists=True,
+    )
+
+
+def _build_create_index(index: Index, *, table_schema: str, table_name: str) -> exp.Create:
+    table_expr = exp.Table(
+        this=exp.to_identifier(table_name),
+        db=exp.to_identifier(table_schema),
+    )
+
+    index_columns = [exp.Ordered(this=exp.Column(this=exp.to_identifier(col))) for col in index.columns]
+    index_params = exp.IndexParameters(columns=index_columns)
+    index_expr = exp.Index(
+        this=exp.to_identifier(index.name),
+        table=table_expr,
+        params=index_params,
+    )
+
+    return exp.Create(
+        this=index_expr,
+        kind="INDEX",
+        exists=True,
+        unique=index.unique,
+    )
 
 
 def load_dataset_schema_registry(con: DuckDBPyConnection) -> dict[str, str]:
@@ -449,10 +375,6 @@ def sync_derived_lineage_edges(
 
 
 __all__ = [
-    "METADATA_SCHEMA_DDL",
-    "PIPELINE_INDEXES_DDL",
-    "PIPELINE_RUNS_DDL",
-    "PIPELINE_STEPS_DDL",
     "apply_metadata_ddl",
     "bootstrap_metadata_datasets",
     "load_dataset_schema_registry",

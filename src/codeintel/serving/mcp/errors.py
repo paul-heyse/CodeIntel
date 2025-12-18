@@ -566,10 +566,7 @@ def exception_to_error_response(
         code = "CODEINTEL_EXPORT_INVALID_REQUEST" if is_export else "CODEINTEL_SEMANTIC_INVALID_QUERY"
         details = {"validation_errors": exc.errors()[:10]}
     elif isinstance(exc, TimeoutError):
-        if is_export:
-            code = "CODEINTEL_EXPORT_UNAVAILABLE"
-        else:
-            code = "CODEINTEL_SEMANTIC_QUERY_TIMEOUT"
+        code = "CODEINTEL_EXPORT_UNAVAILABLE" if is_export else "CODEINTEL_SEMANTIC_QUERY_TIMEOUT"
     elif isinstance(exc, KeyError) and context.view_id is not None:
         code = "CODEINTEL_SEMANTIC_VIEW_NOT_FOUND"
         params = {"view_id": context.view_id}

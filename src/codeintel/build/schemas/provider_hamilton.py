@@ -338,6 +338,7 @@ def infer_schema_for_table_key(
         candidates = _inferable_candidates_for_table_key(table_key=table_key, producers=producers)
         target_name, compute_fn = candidates[0]
         compute_name = compute_node(target_name)
+        exec_name = _compute_node_for_inference(runtime, compute_name=compute_name)
 
         _ = compute_fn
         qparams, requires_env, requires_graph = _inference_requirements(
@@ -347,6 +348,7 @@ def infer_schema_for_table_key(
         job = _ComputeInferenceJob(
             target_name=target_name,
             compute_name=compute_name,
+            exec_name=exec_name,
             table_key=table_key,
             qparams=frozenset(qparams),
             requires_env=requires_env,

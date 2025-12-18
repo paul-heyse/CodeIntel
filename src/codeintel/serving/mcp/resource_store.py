@@ -662,8 +662,11 @@ class ResourceStore:
         ExportNotFoundError
             If the export or its metadata sidecar is missing.
         """
-        artifact = self.get(token)
-        meta = self.get_meta(token)
+        try:
+            artifact = self.get(token)
+            meta = self.get_meta(token)
+        except ExportNotFoundError as exc:
+            raise ExportNotFoundError(token) from exc
         self._assert_not_expired(meta)
         columns = meta.columns
 

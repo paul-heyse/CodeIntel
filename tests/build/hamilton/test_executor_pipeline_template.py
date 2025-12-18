@@ -9,7 +9,6 @@ success, failure, and skip scenarios.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
 from types import ModuleType
 from typing import TYPE_CHECKING, cast
 
@@ -18,6 +17,7 @@ from hamilton.function_modifiers import source, subdag, tag, value
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.templates import materialize_template
 from codeintel.build.hamilton.templates.materialize_template import executor_materialize
@@ -40,15 +40,6 @@ if TYPE_CHECKING:
 
 # Keep types available for Hamilton's runtime type resolution
 _HAMILTON_TYPE_HINTS = (TargetRunRecord,)
-
-
-@dataclass
-class MockComputeResult:
-    """Mock compute result implementing ComputeResult protocol."""
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    error: str | None = None
 
 
 def _make_env(
@@ -96,16 +87,12 @@ def _make_graph() -> TargetGraph:
     return graph
 
 
-def test_compute_result_protocol() -> None:
-    """Verify MockComputeResult has required ComputeResult attributes."""
-    result = MockComputeResult(success=True, table_counts={"core.goids": 10})
-    # Can't use isinstance with Protocol that has non-method members
-    # Instead, verify the attributes exist
-    expect_true(hasattr(result, "success"), message="MockComputeResult should have success attr")
-    expect_true(
-        hasattr(result, "table_counts"), message="MockComputeResult should have table_counts attr"
-    )
-    expect_true(hasattr(result, "error"), message="MockComputeResult should have error attr")
+def test_execution_result_contract() -> None:
+    """Verify ExecutionResult exposes the executor boundary fields."""
+    result = ExecutionResult.ok(table_counts={"core.goids": 10})
+    expect_true(hasattr(result, "success"), message="ExecutionResult should have success attr")
+    expect_true(hasattr(result, "table_counts"), message="ExecutionResult should have table_counts attr")
+    expect_true(hasattr(result, "error"), message="ExecutionResult should have error attr")
 
 
 def test_executor_materialize_success(
@@ -119,10 +106,7 @@ def test_executor_materialize_success(
     env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = MockComputeResult(
-        success=True,
-        table_counts={"core.goids": 100, "core.goid_crosswalk": 50},
-    )
+    compute_result = ExecutionResult.ok(table_counts={"core.goids": 100, "core.goid_crosswalk": 50})
 
     record = executor_materialize(env, graph, "goids", compute_result)
 
@@ -151,10 +135,7 @@ def test_executor_materialize_failure(
     env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = MockComputeResult(
-        success=False,
-        error="GOID extraction failed: syntax error",
-    )
+    compute_result = ExecutionResult.failed("GOID extraction failed: syntax error")
 
     record = executor_materialize(env, graph, "goids", compute_result)
 
@@ -177,10 +158,7 @@ def test_executor_materialize_failure_default_error(
     env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = MockComputeResult(
-        success=False,
-        error=None,
-    )
+    compute_result = ExecutionResult(success=False)
 
     record = executor_materialize(env, graph, "goids", compute_result)
 
@@ -191,7 +169,7 @@ def test_executor_materialize_failure_default_error(
     )
 
 
-def _build_subdag_module(compute_result: MockComputeResult) -> ModuleType:
+def _build_subdag_module(compute_result: ExecutionResult) -> ModuleType:
     """Build an ephemeral Hamilton module using materialize_template via @subdag.
 
     Returns
@@ -207,13 +185,13 @@ def _build_subdag_module(compute_result: MockComputeResult) -> ModuleType:
     captured_result = compute_result
 
     @tag(domain="graphs", target="goids", node_type="tool")
-    def t__goids__extract(env: BuildEnv) -> MockComputeResult:
-        """Return the captured mock compute result.
+    def t__goids__extract(env: BuildEnv) -> ExecutionResult:
+        """Return the captured compute result.
 
         Returns
         -------
-        MockComputeResult
-            Mock result for testing.
+        ExecutionResult
+            Result for testing.
         """
         # Use env to satisfy Hamilton's requirement for inputs
         _ = env
@@ -260,10 +238,7 @@ def test_executor_pipeline_via_subdag_success(
     env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = MockComputeResult(
-        success=True,
-        table_counts={"core.goids": 42, "core.goid_crosswalk": 21},
-    )
+    compute_result = ExecutionResult.ok(table_counts={"core.goids": 42, "core.goid_crosswalk": 21})
     module = _build_subdag_module(compute_result)
 
     driver = h_driver.Builder().with_modules(module).build()
@@ -290,10 +265,7 @@ def test_executor_pipeline_via_subdag_failure(
     env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = MockComputeResult(
-        success=False,
-        error="Test failure",
-    )
+    compute_result = ExecutionResult.failed("Test failure")
     module = _build_subdag_module(compute_result)
 
     driver = h_driver.Builder().with_modules(module).build()

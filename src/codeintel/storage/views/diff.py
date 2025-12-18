@@ -12,10 +12,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from sqlglot import diff as sqlglot_diff
-from sqlglot import exp, parse_one
-from sqlglot.errors import ParseError
 
-from codeintel.storage.constants import DUCKDB_DIALECT
+from codeintel.storage.sqlglot_tools import (
+    ParseError,
+    canonical_sql_duckdb,
+    extract_table_keys_duckdb,
+    parse_one_duckdb,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -23,24 +26,6 @@ if TYPE_CHECKING:
 
 def _sha256_text(payload: str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _canonical_sql(sql: str) -> str:
-    root = parse_one(sql, dialect=DUCKDB_DIALECT)
-    return root.sql(dialect=DUCKDB_DIALECT)
-
-
-def _extract_tables(sql: str) -> frozenset[str]:
-    root = parse_one(sql, dialect=DUCKDB_DIALECT)
-    tables: set[str] = set()
-    for table in root.find_all(exp.Table):
-        name = table.name
-        schema = table.db
-        if schema:
-            tables.add(f"{schema}.{name}".lower())
-        else:
-            tables.add(name.lower())
-    return frozenset(tables)
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,10 +94,10 @@ def diff_sql_structural(*, before: str, after: str) -> SqlStructuralDiffSummary:
         Structural diff summary.
     """
     try:
-        before_canon = _canonical_sql(before)
-        after_canon = _canonical_sql(after)
-        before_ast = parse_one(before_canon, dialect=DUCKDB_DIALECT)
-        after_ast = parse_one(after_canon, dialect=DUCKDB_DIALECT)
+        before_canon = canonical_sql_duckdb(before)
+        after_canon = canonical_sql_duckdb(after)
+        before_ast = parse_one_duckdb(before_canon)
+        after_ast = parse_one_duckdb(after_canon)
         actions = sqlglot_diff(before_ast, after_ast)
         counts: dict[str, int] = {}
         for action in actions:
@@ -132,12 +117,12 @@ def diff_sql(*, before: str, after: str) -> SqlDiffSummary:
         Parsed diff summary (hashes + referenced table deltas).
     """
     try:
-        before_canon = _canonical_sql(before)
-        after_canon = _canonical_sql(after)
+        before_canon = canonical_sql_duckdb(before)
+        after_canon = canonical_sql_duckdb(after)
         before_hash = _sha256_text(before_canon)
         after_hash = _sha256_text(after_canon)
-        before_tables = _extract_tables(before)
-        after_tables = _extract_tables(after)
+        before_tables = extract_table_keys_duckdb(before)
+        after_tables = extract_table_keys_duckdb(after)
         tables_added = tuple(sorted(after_tables - before_tables))
         tables_removed = tuple(sorted(before_tables - after_tables))
         return SqlDiffSummary(

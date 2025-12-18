@@ -19,20 +19,18 @@ functions that sit between a compute node and multiple DuckDBRowsSaver nodes.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.runtime_typing import Callable, Mapping, Sequence
 from codeintel.build.hamilton.tagging import tag_materialize
+from codeintel.build.targets import TargetGraph
 
-if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
-
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.run_records import TargetRunRecord
-    from codeintel.build.targets import TargetGraph
+_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
 
 @tag_materialize()

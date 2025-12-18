@@ -19,8 +19,8 @@ from dataclasses import dataclass
 from queue import Empty, LifoQueue
 from typing import TYPE_CHECKING, cast
 
+from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.gateway.connection import connect
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.warehouse import Warehouse
 
@@ -28,10 +28,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    from codeintel.storage.gateway.connection import DuckDBConnectConfig
     from codeintel.storage.gateway.protocol import StorageGateway
-
-DuckDBConnectConfigValue = bool | float | int | list[str] | str
-DuckDBConnectConfig = dict[str, DuckDBConnectConfigValue]
 
 __all__ = ["PoolConfig", "ReadPoolWarehouse"]
 
@@ -88,9 +86,11 @@ class ReadPoolWarehouse:
         return config
 
     def _open(self) -> Warehouse:
-        con = connect(
-            StorageConfig.for_readonly(self._db_path), duckdb_config=self._connect_config()
+        session = DuckDBSession(
+            StorageConfig.for_readonly(self._db_path),
+            duckdb_config=self._connect_config(),
         )
+        con = session.open_reader()
         gateway = MinimalStorageGateway(con)
         return Warehouse(gateway=cast("StorageGateway", gateway))
 
