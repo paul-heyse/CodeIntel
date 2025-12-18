@@ -117,6 +117,24 @@ METADATA_SCHEMA_DDL: tuple[str, ...] = (
     CREATE INDEX IF NOT EXISTS idx_dataset_dataflow_edges_dst
         ON metadata.dataset_dataflow_edges (dst);
     """,
+    """
+    CREATE TABLE IF NOT EXISTS metadata.derived_lineage_edges (
+        repo        TEXT NOT NULL,
+        commit      TEXT NOT NULL,
+        downstream  TEXT NOT NULL,
+        upstream    TEXT NOT NULL,
+        edge_type   TEXT NOT NULL,
+        PRIMARY KEY (repo, commit, downstream, upstream, edge_type)
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_derived_lineage_edges_downstream
+        ON metadata.derived_lineage_edges (repo, commit, downstream);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_derived_lineage_edges_upstream
+        ON metadata.derived_lineage_edges (repo, commit, upstream);
+    """,
 )
 
 
@@ -374,6 +392,62 @@ def bootstrap_metadata_datasets(
     sync_dataset_dataflow_graph(con)
 
 
+def sync_derived_lineage_edges(
+    con: DuckDBPyConnection,
+    *,
+    repo: str,
+    commit: str,
+    lineage: Mapping[str, frozenset[str]],
+    edge_type: str = "derived_depends_on",
+) -> None:
+    """Persist derived lineage edges for a snapshot.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    repo
+        Repository identifier.
+    commit
+        Snapshot commit hash.
+    lineage
+        Mapping of downstream table_key -> referenced table_keys.
+    edge_type
+        Edge type label to store.
+    """
+    con.execute(
+        """
+        DELETE FROM metadata.derived_lineage_edges
+        WHERE repo = ? AND commit = ? AND edge_type = ?
+        """,
+        [repo, commit, edge_type],
+    )
+
+    rows: list[tuple[str, str, str, str, str]] = []
+    for downstream, upstreams in lineage.items():
+        for upstream in upstreams:
+            if upstream == downstream:
+                continue
+            rows.append((repo, commit, downstream, upstream, edge_type))
+
+    if not rows:
+        return
+
+    con.executemany(
+        """
+        INSERT INTO metadata.derived_lineage_edges (
+            repo,
+            commit,
+            downstream,
+            upstream,
+            edge_type
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+
 __all__ = [
     "METADATA_SCHEMA_DDL",
     "PIPELINE_INDEXES_DDL",
@@ -383,5 +457,6 @@ __all__ = [
     "bootstrap_metadata_datasets",
     "load_dataset_schema_registry",
     "sync_dataset_dataflow_graph",
+    "sync_derived_lineage_edges",
     "validate_dataset_schema_registry",
 ]

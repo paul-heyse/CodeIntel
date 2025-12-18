@@ -2,7 +2,6 @@
 
 These tests validate the Hamilton-based build execution infrastructure:
 - Naming conventions for Hamilton nodes
-- Metadata bridge from OutputTarget to CanonicalPluginMeta
 - Driver construction and DAG validation
 - Skip logic via manifest checking
 
@@ -22,10 +21,6 @@ from codeintel.build.hamilton.driver_factory import (
     list_available_nodes,
     target_to_node_name,
 )
-from codeintel.build.hamilton.metadata_bridge import (
-    CanonicalPluginMeta,
-    from_target,
-)
 from codeintel.build.hamilton.naming import (
     dataset_node,
     node_to_target,
@@ -37,8 +32,6 @@ from codeintel.build.hamilton.nodes.support_factory import (
     build_support_module,
     clear_support_module_cache,
 )
-from codeintel.build.registry import get_target_graph
-from tests._helpers import assert_frozen
 
 
 class TestNamingConventions:
@@ -102,50 +95,6 @@ class TestNamingConventions:
         result = node_to_target("d__some_dataset")
         if result is not None:
             pytest.fail("Expected None for dataset node")
-
-
-class TestMetadataBridge:
-    """Tests for metadata extraction from OutputTarget."""
-
-    @staticmethod
-    def test_from_target_extracts_name() -> None:
-        """Verify from_target builds stable name from target."""
-        graph = get_target_graph()
-        modules_target = graph.get("modules")
-        meta = from_target(modules_target)
-        if meta.name != "ingestion.modules":
-            pytest.fail("Name did not match expected ingestion.modules")
-
-    @staticmethod
-    def test_from_target_extracts_domain() -> None:
-        """Verify from_target extracts module as domain."""
-        graph = get_target_graph()
-        modules_target = graph.get("modules")
-        meta = from_target(modules_target)
-        if meta.domain != "ingestion":
-            pytest.fail("Domain did not match ingestion")
-
-    @staticmethod
-    def test_from_target_extracts_description() -> None:
-        """Verify from_target includes target description."""
-        graph = get_target_graph()
-        modules_target = graph.get("modules")
-        meta = from_target(modules_target)
-        description = meta.description.lower()
-        if "module" not in description and "scan" not in description:
-            pytest.fail("Description missing expected keywords")
-
-    @staticmethod
-    def test_canonical_plugin_meta_frozen() -> None:
-        """Verify CanonicalPluginMeta is immutable."""
-        meta = CanonicalPluginMeta(
-            name="test.plugin",
-            version="1.0.0",
-            domain="test",
-            description="Test plugin",
-        )
-
-        assert_frozen(meta, "name", "changed")
 
 
 class TestDriverFactory:

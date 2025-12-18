@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -247,12 +248,15 @@ class ServingSnapshotContext:
         Schema inventory loaded from the snapshot artifact.
     buildspec
         BuildSpec contract loaded from the snapshot artifact.
+    environment
+        Optional environment metadata artifact (tool versions, settings).
     """
 
     pointer: ServingSnapshotPointer
     registry: SemanticRegistry
     inventory: SchemaInventory
     buildspec: BuildSpec
+    environment: dict[str, object] | None = None
 
     def to_summary(self) -> Mapping[str, object]:
         """Return a compact summary for observability endpoints.
@@ -262,7 +266,7 @@ class ServingSnapshotContext:
         Mapping[str, object]
             Stable snapshot metadata for health/observability surfaces.
         """
-        return {
+        summary: dict[str, object] = {
             "repo": self.pointer.repo,
             "commit": self.pointer.commit,
             "run_id": self.pointer.run_id,
@@ -271,6 +275,14 @@ class ServingSnapshotContext:
             "schema_inventory": self.inventory.summary(),
             "buildspec_version": self.buildspec.spec_version,
         }
+        tools = None
+        if isinstance(self.environment, dict):
+            tools_obj = self.environment.get("tools")
+            if isinstance(tools_obj, dict):
+                tools = {str(k): str(v) for k, v in tools_obj.items()}
+        if tools is not None:
+            summary["tools"] = tools
+        return summary
 
 
 def _load_snapshot_context(pointer: ServingSnapshotPointer) -> ServingSnapshotContext:
@@ -278,9 +290,19 @@ def _load_snapshot_context(pointer: ServingSnapshotPointer) -> ServingSnapshotCo
     inventory = SchemaInventory.load(pointer.schema_manifest_path)
     buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
     buildspec = buildspec_from_json(buildspec_payload)
+    env_path = pointer.schema_manifest_path.parent / "environment.json"
+    environment: dict[str, object] | None = None
+    if env_path.is_file():
+        try:
+            raw = json.loads(env_path.read_text(encoding="utf-8"))
+        except ValueError:
+            raw = None
+        if isinstance(raw, dict):
+            environment = raw
     return ServingSnapshotContext(
         pointer=pointer,
         registry=registry,
         inventory=inventory,
         buildspec=buildspec,
+        environment=environment,
     )

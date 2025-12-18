@@ -34,7 +34,6 @@ from typing import TYPE_CHECKING
 
 __all__ = [
     "BuildEnv",
-    "CanonicalPluginMeta",
     "DatasetRef",
     "HamiltonBuildExecutor",
     "HamiltonBuildPlan",
@@ -80,7 +79,6 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
     from codeintel.build.hamilton.io import DatasetRef, IbisIOConfig, refs_from_target_result
-    from codeintel.build.hamilton.metadata_bridge import CanonicalPluginMeta
     from codeintel.build.hamilton.naming import dataset_node, target_node, to_node_name
     from codeintel.build.hamilton.observability import (
         export_dag_json,
@@ -114,7 +112,6 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "IbisIOConfig": ("codeintel.build.hamilton.io", "IbisIOConfig"),
     "refs_from_target_result": ("codeintel.build.hamilton.io", "refs_from_target_result"),
     "TargetRunRecord": ("codeintel.build.hamilton.run_records", "TargetRunRecord"),
-    "CanonicalPluginMeta": ("codeintel.build.hamilton.metadata_bridge", "CanonicalPluginMeta"),
     "dataset_node": ("codeintel.build.hamilton.naming", "dataset_node"),
     "target_node": ("codeintel.build.hamilton.naming", "target_node"),
     "to_node_name": ("codeintel.build.hamilton.naming", "to_node_name"),

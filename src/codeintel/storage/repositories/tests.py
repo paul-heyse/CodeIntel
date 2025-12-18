@@ -68,7 +68,7 @@ class TestRepository(BaseRepository):
             Test catalog rows.
         """
         tbl = self._ibis_table("analytics.test_catalog")
-        expr = tbl.filter(and_predicates(tbl.repo == self.repo, tbl.commit == self.commit))
+        expr = tbl
 
         if status:
             expr = expr.filter(ibis_bool(tbl.status == status))
@@ -93,8 +93,6 @@ class TestRepository(BaseRepository):
         tbl = self._ibis_table("analytics.test_profile")
         expr = tbl.filter(
             and_predicates(
-                tbl.repo == self.repo,
-                tbl.commit == self.commit,
                 tbl.test_id == test_id,
             )
         ).limit(1)

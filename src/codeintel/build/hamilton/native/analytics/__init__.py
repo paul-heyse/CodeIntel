@@ -118,9 +118,6 @@ from codeintel.build.hamilton.native.analytics.metadata_targets import (
     t__profiles__compute,
 )
 from codeintel.build.hamilton.native.analytics.metrics_targets import (
-    SubsystemAgreementResult,
-    SubsystemGraphMetricsResult,
-    SymbolGraphMetricsResult,
     t__function_history,
     t__function_history__compute,
     t__history_timeseries,
@@ -163,9 +160,6 @@ __all__ = [
     "FunctionEffectsResult",
     "ProfilesResult",
     "SemanticRolesResult",
-    "SubsystemAgreementResult",
-    "SubsystemGraphMetricsResult",
-    "SymbolGraphMetricsResult",
     "TestProfileComputeResult",
     "function_contracts__rows",
     "function_effects__rows",

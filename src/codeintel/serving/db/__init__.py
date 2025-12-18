@@ -4,16 +4,9 @@ from __future__ import annotations
 
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.serving.db.pool import (
-    DuckDBPoolConfig,
-    DuckDBReadPool,
-    PoolConfig,
-    ReadPoolWarehouse,
-)
+from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
 __all__ = [
-    "DuckDBPoolConfig",
-    "DuckDBReadPool",
     "PoolConfig",
     "ReadPoolWarehouse",
     "ServingDBManager",

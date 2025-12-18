@@ -11,6 +11,8 @@ import hashlib
 import json
 from typing import TYPE_CHECKING
 
+from codeintel.build.engine_version import get_build_engine_version
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -116,6 +118,9 @@ def compute_input_hash_with_deps(
     {'ast': 'abc123...', 'goids': 'def456...'}
     """
     hasher = hashlib.sha256()
+
+    hasher.update(get_build_engine_version().encode("utf-8"))
+    hasher.update(b"|")
 
     hasher.update(snapshot.repo.encode("utf-8"))
     hasher.update(b":")

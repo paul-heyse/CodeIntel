@@ -15,12 +15,13 @@ import types
 import typing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, get_args, get_origin
+from typing import TYPE_CHECKING, Literal, get_args, get_origin
 
 from hamilton.io.data_adapters import DataSaver
 
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.materializers.metadata import FileArtifactMaterializationMetadata
 from codeintel.build.hamilton.native.outputs import expected_artifacts
 from codeintel.build.hamilton.run_records import should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
@@ -36,6 +37,26 @@ _RECOVERABLE_EXCEPTIONS = (
     RuntimeError,
     OSError,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactWritePlan:
+    """Deferred artifact write plan executed by FileArtifactSaver.
+
+    This allows compute nodes to remain I/O free while still enabling
+    streaming writers (bounded memory) for large artifacts.
+
+    Parameters
+    ----------
+    write_to
+        Callable that writes the artifact payload to the provided path and returns
+        the number of bytes written.
+    """
+
+    write_to: Callable[[Path], int]
 
 
 @dataclass(frozen=True)
@@ -77,7 +98,7 @@ class FileArtifactSaver(DataSaver):
         list[type]
             Types that this saver can write as a file artifact.
         """
-        return [bytes, str, Path]
+        return [ArtifactWritePlan, bytes, str, Path]
 
     @classmethod
     def applies_to(cls, type_: type) -> bool:
@@ -95,16 +116,18 @@ class FileArtifactSaver(DataSaver):
         """
         if type_ in {bytes, str, Path}:
             return True
+        if type_ is ArtifactWritePlan:
+            return True
 
         origin = get_origin(type_)
         if origin in {types.UnionType, typing.Union}:
             bases = {get_origin(arg) or arg for arg in get_args(type_)}
-            if bases.issubset({bytes, str, Path, type(None)}):
+            if bases.issubset({ArtifactWritePlan, bytes, str, Path, type(None)}):
                 return True
 
         return super().applies_to(type_)
 
-    def save_data(self, data: object) -> dict[str, Any]:
+    def save_data(self, data: object) -> dict[str, object]:
         """Save the provided artifact content and return metadata.
 
         Parameters
@@ -115,12 +138,12 @@ class FileArtifactSaver(DataSaver):
 
         Returns
         -------
-        dict[str, Any]
+        dict[str, object]
             Metadata describing the write, including status and input hash.
         """
         start = time.perf_counter()
         input_hash: str | None = None
-        result: dict[str, Any] | None = None
+        result: dict[str, object] | None = None
 
         try:
             target = self.graph.get(self.target_name)
@@ -175,7 +198,32 @@ class FileArtifactSaver(DataSaver):
                     # Validate contract if strict mode is enabled
                     ContractEnforcer.validate_artifact_write(self.artifact_name)
 
-                    if isinstance(data, Path) and _same_path(data, output_path):
+                    if isinstance(data, ArtifactWritePlan):
+                        size_bytes = _atomic_write_via_plan(output_path, data)
+                        _record_asset(
+                            env=self.env,
+                            record=AssetRecord(
+                                asset_key=self.artifact_name,
+                                asset_type="artifact",
+                                repo=self.env.snapshot.repo,
+                                commit=self.env.snapshot.commit,
+                                owner_target=self.target_name,
+                                file_size_bytes=size_bytes,
+                                input_hash=input_hash,
+                                metadata={
+                                    "path": str(output_path),
+                                    "size_bytes": size_bytes,
+                                },
+                            ),
+                        )
+                        result = _succeeded(
+                            artifact_name=self.artifact_name,
+                            duration_ms=_duration_ms(start),
+                            input_hash=input_hash,
+                            path=str(output_path),
+                            size_bytes=size_bytes,
+                        )
+                    elif isinstance(data, Path) and _same_path(data, output_path):
                         size_bytes = output_path.stat().st_size
                         _record_asset(
                             env=self.env,
@@ -265,16 +313,16 @@ def _succeeded(
     input_hash: str,
     path: str,
     size_bytes: int,
-) -> dict[str, Any]:
-    return {
-        "status": "succeeded",
-        "artifact_name": artifact_name,
-        "path": path,
-        "size_bytes": size_bytes,
-        "duration_ms": duration_ms,
-        "input_hash": input_hash,
-        "error": None,
-    }
+) -> dict[str, object]:
+    return FileArtifactMaterializationMetadata(
+        status="succeeded",
+        artifact_name=artifact_name,
+        path=path,
+        size_bytes=size_bytes,
+        duration_ms=duration_ms,
+        input_hash=input_hash,
+        error=None,
+    ).to_dict()
 
 
 def _skipped(
@@ -283,16 +331,16 @@ def _skipped(
     duration_ms: float,
     input_hash: str,
     path: str | None,
-) -> dict[str, Any]:
-    return {
-        "status": "skipped",
-        "artifact_name": artifact_name,
-        "path": path,
-        "size_bytes": None,
-        "duration_ms": duration_ms,
-        "input_hash": input_hash,
-        "error": None,
-    }
+) -> dict[str, object]:
+    return FileArtifactMaterializationMetadata(
+        status="skipped",
+        artifact_name=artifact_name,
+        path=path,
+        size_bytes=None,
+        duration_ms=duration_ms,
+        input_hash=input_hash,
+        error=None,
+    ).to_dict()
 
 
 def _failed(
@@ -301,16 +349,16 @@ def _failed(
     duration_ms: float,
     input_hash: str,
     error: str,
-) -> dict[str, Any]:
-    return {
-        "status": "failed",
-        "artifact_name": artifact_name,
-        "path": None,
-        "size_bytes": None,
-        "duration_ms": duration_ms,
-        "input_hash": input_hash,
-        "error": error,
-    }
+) -> dict[str, object]:
+    return FileArtifactMaterializationMetadata(
+        status="failed",
+        artifact_name=artifact_name,
+        path=None,
+        size_bytes=None,
+        duration_ms=duration_ms,
+        input_hash=input_hash,
+        error=error,
+    ).to_dict()
 
 
 def _resolve_artifact_path(
@@ -338,6 +386,34 @@ def _resolve_artifact_path(
     return None
 
 
+def resolve_artifact_path(
+    env: BuildEnv,
+    graph: TargetGraph,
+    *,
+    target_name: str,
+    artifact_name: str,
+) -> Path | None:
+    """Resolve the contract-declared artifact path for a target.
+
+    Parameters
+    ----------
+    env
+        Build environment providing snapshot and build paths.
+    graph
+        Target graph for looking up the target contract.
+    target_name
+        Target name that declares the artifact.
+    artifact_name
+        Artifact name in the target contract.
+
+    Returns
+    -------
+    Path | None
+        Resolved artifact path, or None when not declared/resolvable.
+    """
+    return _resolve_artifact_path(env, graph, target_name, artifact_name)
+
+
 def _coerce_bytes(data: object) -> bytes:
     if isinstance(data, bytes):
         return data
@@ -347,6 +423,27 @@ def _coerce_bytes(data: object) -> bytes:
         return data.read_bytes()
     msg = f"Unsupported artifact payload type: {type(data).__name__}"
     raise TypeError(msg)
+
+
+def _atomic_write_via_plan(output_path: Path, plan: ArtifactWritePlan) -> int:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        dir=str(output_path.parent),
+        prefix=f".{output_path.name}.",
+        suffix=".tmp",
+    ) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        size_bytes = plan.write_to(tmp_path)
+        tmp_path.rename(output_path)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
+    else:
+        return size_bytes
 
 
 def _atomic_write(output_path: Path, content: bytes) -> None:
@@ -378,6 +475,8 @@ def _record_asset(
 
 
 __all__ = [
+    "ArtifactWritePlan",
     "FileArtifactSaver",
     "SaveStatus",
+    "resolve_artifact_path",
 ]

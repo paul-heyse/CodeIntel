@@ -20,6 +20,8 @@ from codeintel.serving.semantic.models import (
     SemanticQueryResponse,
 )
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
+from codeintel.serving.semantic.templates import DbApiTemplate
+from codeintel.storage.queries.safe import UnsafeSqlError, assert_single_select_statement
 from codeintel.storage.serving.search_index import fts_index_available
 
 try:
@@ -28,7 +30,7 @@ except ImportError:  # pragma: no cover
     pl = None
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Generator, Sequence
     from pathlib import Path
 
     from codeintel.core.schemas.primitives import ColumnType
@@ -41,6 +43,7 @@ if TYPE_CHECKING:
         SemanticQueryRequest,
         SemanticViewSpec,
     )
+    from codeintel.serving.semantic.templates import BoundQuery, DbApiQuery
     from codeintel.serving.settings import ServingSettings
     from codeintel.storage.warehouse import Warehouse
 
@@ -130,6 +133,11 @@ AND kind = ANY(?)
 ORDER BY kind, name
 LIMIT ? OFFSET ?
 """
+
+_SEARCH_QUERY_FTS = DbApiTemplate(sql=_SQL_SEARCH_FTS)
+_SEARCH_QUERY_FTS_KINDS = DbApiTemplate(sql=_SQL_SEARCH_FTS_KINDS)
+_SEARCH_QUERY_LIKE = DbApiTemplate(sql=_SQL_SEARCH_LIKE)
+_SEARCH_QUERY_LIKE_KINDS = DbApiTemplate(sql=_SQL_SEARCH_LIKE_KINDS)
 
 
 def _sanitize_float_nan(value: object) -> object:
@@ -262,11 +270,25 @@ class SemanticQueryKernel:
     ) -> list[dict[str, object]]:
         ibis_con = warehouse.gateway.ibis.con
         built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
+        return self._execute_bound_query(warehouse=warehouse, query=built)
+
+    def _execute_bound_query(self, *, warehouse: Warehouse, query: BoundQuery) -> list[dict[str, object]]:
+        ibis_con = warehouse.gateway.ibis.con
         try:
-            sql = ibis_con.compile(built.expr)
+            sql = query.compile_sql(ibis_con)
+            assert_single_select_statement(sql)
             return self._execute_sql(warehouse=warehouse, sql=sql)
+        except UnsafeSqlError as exc:
+            raise ValueError(str(exc)) from exc
         finally:
-            _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=built.temp_tables)
+            _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=query.temp_tables)
+
+    def _execute_dbapi_query(self, *, warehouse: Warehouse, query: DbApiQuery) -> list[dict[str, object]]:
+        try:
+            assert_single_select_statement(query.sql)
+        except UnsafeSqlError as exc:
+            raise ValueError(str(exc)) from exc
+        return self._execute_sql(warehouse=warehouse, sql=query.sql, params=query.params)
 
     def catalog(self) -> dict[str, object]:
         """List all available semantic views.
@@ -403,6 +425,11 @@ class SemanticQueryKernel:
         -------
         SemanticExplainResponse
             Explain output including compiled SQL and plan text.
+
+        Raises
+        ------
+        ValueError
+            If compiled SQL violates the select-only perimeter.
         """
         with self.db.connect() as (warehouse, pointer):
             context = self._snapshot_context(pointer)
@@ -428,9 +455,13 @@ class SemanticQueryKernel:
             column_types = _column_types_for_view(view=view, inventory=context.inventory)
             built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
             try:
-                compiled = ibis_con.compile(built.expr)
+                compiled = built.compile_sql(ibis_con)
             finally:
                 _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=built.temp_tables)
+            try:
+                assert_single_select_statement(compiled)
+            except UnsafeSqlError as exc:
+                raise ValueError(str(exc)) from exc
 
             raw_rows = warehouse.gateway.policy.execute_sql(f"EXPLAIN {compiled}").fetchall()
             plan_text = _format_explain_rows(raw_rows)
@@ -454,6 +485,7 @@ class SemanticQueryKernel:
         context = self._snapshot_context(pointer)
         registry = context.registry
         spec = context.buildspec
+        env_meta = context.environment or {}
 
         tables = sum(1 for d in spec.datasets if not d.table_key.startswith("docs.v_"))
         views = sum(1 for d in spec.datasets if d.table_key.startswith("docs.v_"))
@@ -467,6 +499,7 @@ class SemanticQueryKernel:
             "buildspec_hash": spec.buildspec_hash,
             "buildspec_version": spec.spec_version,
             "duckdb": {"db_path": str(pointer.db_path), "read_only": True},
+            "environment": env_meta,
             "semantic_views": [
                 {"id": v.id, "table_key": v.table_key, "entity": v.entity, "grain": v.grain}
                 for v in registry.views
@@ -526,26 +559,28 @@ class SemanticQueryKernel:
 
             query_limit = request.limit + 1
             if fts_available and request.kinds:
-                sql = _SQL_SEARCH_FTS_KINDS
-                params: list[object] = [request.query, request.kinds, query_limit, request.offset]
+                query = _SEARCH_QUERY_FTS_KINDS.bind(
+                    [request.query, request.kinds, query_limit, request.offset]
+                )
             elif fts_available:
-                sql = _SQL_SEARCH_FTS
-                params = [request.query, query_limit, request.offset]
+                query = _SEARCH_QUERY_FTS.bind([request.query, query_limit, request.offset])
             elif request.kinds:
-                sql = _SQL_SEARCH_LIKE_KINDS
-                params = [
-                    request.query,
-                    request.query,
-                    request.query,
-                    request.kinds,
-                    query_limit,
-                    request.offset,
-                ]
+                query = _SEARCH_QUERY_LIKE_KINDS.bind(
+                    [
+                        request.query,
+                        request.query,
+                        request.query,
+                        request.kinds,
+                        query_limit,
+                        request.offset,
+                    ]
+                )
             else:
-                sql = _SQL_SEARCH_LIKE
-                params = [request.query, request.query, request.query, query_limit, request.offset]
+                query = _SEARCH_QUERY_LIKE.bind(
+                    [request.query, request.query, request.query, query_limit, request.offset]
+                )
 
-            rows = self._execute_sql(warehouse=warehouse, sql=sql, params=params)
+            rows = self._execute_dbapi_query(warehouse=warehouse, query=query)
 
         truncated = len(rows) > request.limit
         if truncated:
@@ -560,7 +595,7 @@ class SemanticQueryKernel:
             engine=engine,
         )
 
-    def export_rows(self, request: SemanticExportRequest) -> Iterator[dict[str, object]]:
+    def export_rows(self, request: SemanticExportRequest) -> Generator[dict[str, object]]:
         """Yield rows for streaming export (memory-efficient).
 
         Unlike query(), this method yields rows one at a time to support
@@ -700,7 +735,8 @@ class SemanticQueryKernel:
         ibis_con = warehouse.gateway.ibis.con
         column_types = _column_types_for_view(view=view, inventory=context.inventory)
         built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
-        sql = ibis_con.compile(built.expr)
+        sql = built.compile_sql(ibis_con)
+        assert_single_select_statement(sql)
         return sql, columns, built.temp_tables
 
 

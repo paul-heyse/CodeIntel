@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+import ibis.expr.types as it
 import pandas as pd
 import pytest
 
-from codeintel.storage.ibis_adapter import OnConflict, WriteResult
+from codeintel.storage import ibis_adapter
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_instance,
@@ -60,7 +61,7 @@ def test_write_dataframe_basic(write_gateway: StorageGateway) -> None:
     result = write_gateway.ibis.write("analytics.write_test", df)
 
     expected_rows = 3
-    expect_is_instance(result, WriteResult)
+    expect_is_instance(result, ibis_adapter.WriteResult)
     expect_equal(result.table_key, "analytics.write_test")
     expect_equal(result.rows_affected, expected_rows)
     expect_equal(result.method, "insert_values")
@@ -136,6 +137,65 @@ def test_write_ibis_expression_basic(write_gateway: StorageGateway) -> None:
     expect_equal(len(read_df), expected_rows)
 
 
+def test_write_dataframe_fast_lane_does_not_iterate_rows(
+    write_gateway: StorageGateway,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify large-frame fast lane uses relation-based INSERT...SELECT."""
+    monkeypatch.setattr(ibis_adapter, "_DATAFRAME_FAST_LANE_MIN_ROWS", 5)
+
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError
+
+    monkeypatch.setattr(pd.DataFrame, "itertuples", _boom, raising=True)
+
+    df = pd.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "name": ["a", "b", "c", "d", "e"],
+            "value": [1, 2, 3, 4, 5],
+        }
+    )
+    result = write_gateway.ibis.write("analytics.write_test", df)
+    expect_equal(result.method, "insert_select")
+    expect_equal(result.rows_affected, len(df))
+
+
+def test_upsert_from_ibis_expression_does_not_materialize_to_pandas(
+    write_gateway: StorageGateway,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify expression UPSERT uses INSERT...SELECT, not pandas materialization."""
+    write_gateway.ibis.write(
+        "analytics.upsert_test",
+        [(1, "original", 1.0)],
+        columns=["id", "name", "value"],
+    )
+    write_gateway.ibis.write(
+        "analytics.write_test",
+        [(1, "updated", 9.0), (2, "new", 2.0)],
+        columns=["id", "name", "value"],
+    )
+
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError
+
+    monkeypatch.setattr(it.Table, "to_pandas", _boom, raising=True)
+
+    expr = write_gateway.ibis.table("analytics.write_test").select(["id", "name", "value"])
+    result = write_gateway.ibis.write(
+        "analytics.upsert_test",
+        expr,
+        on_conflict=ibis_adapter.OnConflict(conflict_columns=["id"]),
+    )
+    expect_equal(result.method, "upsert_select")
+
+    rows = write_gateway.con.execute(
+        "SELECT id, name, value FROM analytics.upsert_test ORDER BY id"
+    ).fetchall()
+    expect_equal(rows, [(1, "updated", 9.0), (2, "new", 2.0)])
+
+
 def test_upsert_insert_new_rows(write_gateway: StorageGateway) -> None:
     """Verify UPSERT inserts new rows when no conflict."""
     rows = [(1, "a", 1.0), (2, "b", 2.0)]
@@ -144,7 +204,7 @@ def test_upsert_insert_new_rows(write_gateway: StorageGateway) -> None:
         "analytics.upsert_test",
         rows,
         columns=["id", "name", "value"],
-        on_conflict=OnConflict(conflict_columns=["id"]),
+        on_conflict=ibis_adapter.OnConflict(conflict_columns=["id"]),
     )
 
     expected_rows = 2
@@ -168,7 +228,7 @@ def test_upsert_updates_on_conflict(write_gateway: StorageGateway) -> None:
         "analytics.upsert_test",
         [(1, "updated", expected_value)],
         columns=["id", "name", "value"],
-        on_conflict=OnConflict(conflict_columns=["id"]),
+        on_conflict=ibis_adapter.OnConflict(conflict_columns=["id"]),
     )
 
     read_df = write_gateway.ibis.table("analytics.upsert_test").to_pandas()
@@ -190,7 +250,7 @@ def test_upsert_selective_update_columns(write_gateway: StorageGateway) -> None:
         "analytics.upsert_test",
         [(1, "should_not_update", expected_value)],
         columns=["id", "name", "value"],
-        on_conflict=OnConflict(conflict_columns=["id"], update_columns=["value"]),
+        on_conflict=ibis_adapter.OnConflict(conflict_columns=["id"], update_columns=["value"]),
     )
 
     read_df = write_gateway.ibis.table("analytics.upsert_test").to_pandas()

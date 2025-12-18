@@ -11,10 +11,8 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.analytics.metrics_targets import (
-    SubsystemAgreementResult,
-    SubsystemGraphMetricsResult,
-    SymbolGraphMetricsResult,
     t__subsystem_agreement,
     t__subsystem_graph_metrics,
     t__symbol_graph_metrics,
@@ -107,86 +105,21 @@ def _make_graph() -> TargetGraph:
 
 
 # ---------------------------------------------------------------------------
-# SubsystemGraphMetricsResult Tests
+# ExecutionResult Tests
 # ---------------------------------------------------------------------------
 
 
-def test_subsystem_graph_metrics_result_success() -> None:
-    """Verify SubsystemGraphMetricsResult dataclass for success case."""
-    result = SubsystemGraphMetricsResult(
-        success=True,
-        table_counts={"analytics.subsystem_graph_metrics": 100},
-    )
+def test_execution_result_success() -> None:
+    """Verify ExecutionResult for success case."""
+    result = ExecutionResult.ok(table_counts={"analytics.subsystem_graph_metrics": 100})
     expect_true(result.success, message="Result should be successful")
     expect_equal(result.table_counts["analytics.subsystem_graph_metrics"], 100)
     expect_equal(result.error, None)
 
 
-def test_subsystem_graph_metrics_result_failure() -> None:
-    """Verify SubsystemGraphMetricsResult dataclass for failure case."""
-    result = SubsystemGraphMetricsResult(
-        success=False,
-        table_counts={},
-        error="Upstream subsystems failed",
-    )
-    expect_true(not result.success, message="Result should indicate failure")
-    expect_equal(result.error, "Upstream subsystems failed")
-
-
-# ---------------------------------------------------------------------------
-# SymbolGraphMetricsResult Tests
-# ---------------------------------------------------------------------------
-
-
-def test_symbol_graph_metrics_result_success() -> None:
-    """Verify SymbolGraphMetricsResult dataclass for success case."""
-    result = SymbolGraphMetricsResult(
-        success=True,
-        table_counts={
-            "analytics.symbol_graph_metrics_modules": 50,
-            "analytics.symbol_graph_metrics_functions": 200,
-        },
-    )
-    expect_true(result.success, message="Result should be successful")
-    expect_equal(result.table_counts["analytics.symbol_graph_metrics_modules"], 50)
-    expect_equal(result.table_counts["analytics.symbol_graph_metrics_functions"], 200)
-    expect_equal(result.error, None)
-
-
-def test_symbol_graph_metrics_result_failure() -> None:
-    """Verify SymbolGraphMetricsResult dataclass for failure case."""
-    result = SymbolGraphMetricsResult(
-        success=False,
-        table_counts={},
-        error="Upstream symbol_uses failed",
-    )
-    expect_true(not result.success, message="Result should indicate failure")
-    expect_equal(result.error, "Upstream symbol_uses failed")
-
-
-# ---------------------------------------------------------------------------
-# SubsystemAgreementResult Tests
-# ---------------------------------------------------------------------------
-
-
-def test_subsystem_agreement_result_success() -> None:
-    """Verify SubsystemAgreementResult dataclass for success case."""
-    result = SubsystemAgreementResult(
-        success=True,
-        table_counts={"analytics.subsystem_agreement": 30},
-    )
-    expect_true(result.success, message="Result should be successful")
-    expect_equal(result.table_counts["analytics.subsystem_agreement"], 30)
-    expect_equal(result.error, None)
-
-
-def test_subsystem_agreement_result_failure() -> None:
-    """Verify SubsystemAgreementResult dataclass for failure case."""
-    result = SubsystemAgreementResult(
-        success=False,
-        table_counts={},
-        error="Upstream subsystems failed",
-    )
+def test_execution_result_failure() -> None:
+    """Verify ExecutionResult for failure case."""
+    result = ExecutionResult.failed("Upstream subsystems failed")
     expect_true(not result.success, message="Result should indicate failure")
     expect_equal(result.error, "Upstream subsystems failed")
 
@@ -213,10 +146,7 @@ def test_subsystem_graph_metrics_materialize_success(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = SubsystemGraphMetricsResult(
-        success=True,
-        table_counts={"analytics.subsystem_graph_metrics": 25},
-    )
+    compute_result = ExecutionResult.ok(table_counts={"analytics.subsystem_graph_metrics": 25})
 
     record = t__subsystem_graph_metrics(env, graph, compute_result)
 
@@ -245,11 +175,7 @@ def test_subsystem_graph_metrics_materialize_failure(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = SubsystemGraphMetricsResult(
-        success=False,
-        table_counts={},
-        error="Upstream subsystems failed",
-    )
+    compute_result = ExecutionResult.failed("Upstream subsystems failed")
 
     record = t__subsystem_graph_metrics(env, graph, compute_result)
 
@@ -277,12 +203,11 @@ def test_symbol_graph_metrics_materialize_success(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = SymbolGraphMetricsResult(
-        success=True,
+    compute_result = ExecutionResult.ok(
         table_counts={
             "analytics.symbol_graph_metrics_modules": 10,
             "analytics.symbol_graph_metrics_functions": 50,
-        },
+        }
     )
 
     record = t__symbol_graph_metrics(env, graph, compute_result)
@@ -307,11 +232,7 @@ def test_symbol_graph_metrics_materialize_failure(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = SymbolGraphMetricsResult(
-        success=False,
-        table_counts={},
-        error="Upstream symbol_uses failed",
-    )
+    compute_result = ExecutionResult.failed("Upstream symbol_uses failed")
 
     record = t__symbol_graph_metrics(env, graph, compute_result)
 
@@ -339,10 +260,7 @@ def test_subsystem_agreement_materialize_success(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = SubsystemAgreementResult(
-        success=True,
-        table_counts={"analytics.subsystem_agreement": 15},
-    )
+    compute_result = ExecutionResult.ok(table_counts={"analytics.subsystem_agreement": 15})
 
     record = t__subsystem_agreement(env, graph, compute_result)
 
@@ -371,11 +289,7 @@ def test_subsystem_agreement_materialize_failure(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = SubsystemAgreementResult(
-        success=False,
-        table_counts={},
-        error="Upstream subsystems failed",
-    )
+    compute_result = ExecutionResult.failed("Upstream subsystems failed")
 
     record = t__subsystem_agreement(env, graph, compute_result)
 
