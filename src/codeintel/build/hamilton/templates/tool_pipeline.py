@@ -17,15 +17,16 @@ the public target node (e.g., ``t__scip``) remains a stable identifier.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import source, tag
-from hamilton.function_modifiers.adapters import SaveToDecorator
+from hamilton.function_modifiers import source
 
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materialization,
 )
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
     from codeintel.hamilton.records import TargetRunRecord
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_="artifact_metadata",
     env=source("env"),
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
     target_name=source("target_name"),
     artifact_name=source("artifact_name"),
 )
-@tag(node_type="compute")
+@tag_compute()
 def tool_output_to_save(
     tool_output: bytes | str | Path | None,
 ) -> bytes | str | Path | None:
@@ -63,13 +64,13 @@ def tool_output_to_save(
     return tool_output
 
 
-@tag(node_type="materialize")
+@tag_materialize()
 def record(
     env: BuildEnv,
     graph: TargetGraph,
     target_name: str,
     artifact_name: str,
-    artifact_metadata: dict[str, Any],
+    artifact_metadata: dict[str, object],
 ) -> TargetRunRecord:
     """Convert artifact saver metadata into a TargetRunRecord.
 

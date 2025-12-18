@@ -35,7 +35,7 @@
    - Open the relevant spec/proposal under `openspec/` (when applicable).
    - Bootstrap environment and run local checks:
     ```bash
-    scripts/bootstrap.sh
+    scripts/bootstrap_codex.sh
     ```
     then run "uv sync"
 
@@ -59,6 +59,11 @@
   - Report structure (LLM-friendly JSON):
     - Top-level: `suite`, `generated_at`, `overall_status`, `duration_seconds`, `output_path`, and `results`.
     - Each `results` entry: `name`, `command`, `status`, `return_code`, `started_at`, `ended_at`, `duration_seconds`, `stdout`, `stderr`, and optional `exception`.
+
+4) **Git protocol**
+- Do not use git checkout or any other file manipulation via git under any circumstance. If you notice file changes unrelated to your changes, assume they are conscientious changes by the user that your are not involved with and that you do not have to address them in any way. 
+- Do not worry about git cleanliness. The user has conscientiously configured their .gitignore file and you do not have to worry about build files, coverage data, etc. being committed
+
 
 ### Quality checks (zero-error mandate)
 

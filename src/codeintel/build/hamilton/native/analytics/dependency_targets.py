@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from hamilton.function_modifiers import cache, source, tag, value
+from hamilton.function_modifiers import source, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.dependencies.compute import (
@@ -44,6 +44,7 @@ from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_f
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
@@ -54,6 +55,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -165,8 +167,7 @@ def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
     )
 
 
-@cache(format="memory")
-@tag(node_type="helper", domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
+@tag_helper(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
 def external_deps_inputs(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
@@ -183,7 +184,7 @@ def external_deps_inputs(
     return _build_inputs(env)
 
 
-@tag(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
 def t__external_deps__compute_calls(
     env: BuildEnv,
     graph: TargetGraph,
@@ -247,12 +248,7 @@ def t__external_deps__compute_calls(
     table_key=value(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
     columns=value(tuple(EXTERNAL_DEPENDENCY_CALLS_COLS)),
 )
-@tag(
-    domain="analytics",
-    target=EXTERNAL_DEPS_TARGET_NAME,
-    node_type="compute",
-    target_="external_deps__calls_rows",
-)
+@tag_compute(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME, target_="external_deps__calls_rows")
 def external_deps__calls_rows(
     t__external_deps__compute_calls: DependencyCallsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -277,10 +273,9 @@ def external_deps__calls_rows(
     table_key=value(EXTERNAL_DEPENDENCIES_TABLE_KEY),
     columns=value(tuple(EXTERNAL_DEPENDENCIES_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=EXTERNAL_DEPS_TARGET_NAME,
-    node_type="compute",
     target_="external_deps__dependencies_rows",
 )
 def external_deps__dependencies_rows(
@@ -294,15 +289,18 @@ def external_deps__dependencies_rows(
     tuple[tuple[object, ...], ...] | None
         Row tuples to materialize, or None when the calls write failed.
     """
-    status = m__analytics__external_dependency_calls.get("status")
-    if status != "succeeded":
+    meta = DuckDBMaterializationMetadata.from_mapping(
+        m__analytics__external_dependency_calls,
+        default_table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
+    )
+    if meta.status != "succeeded":
         return None
 
     result = compute_external_dependencies_pure(env.gateway, env.snapshot)
     return tuple(result.rows)
 
 
-@tag(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
 def t__external_deps(
     env: BuildEnv,
     graph: TargetGraph,
@@ -416,8 +414,7 @@ def _build_entrypoint_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
     )
 
 
-@cache(format="memory")
-@tag(node_type="helper", domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
+@tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def entrypoints_inputs(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -440,7 +437,7 @@ def entrypoints_inputs(
     return _build_entrypoint_inputs(env)
 
 
-@tag(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def t__entrypoints__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -480,12 +477,7 @@ def t__entrypoints__compute(
     table_key=value(ENTRYPOINTS_TABLE_KEY),
     columns=value(tuple(ENTRYPOINTS_COLS)),
 )
-@tag(
-    domain="analytics",
-    target=ENTRYPOINTS_TARGET_NAME,
-    node_type="compute",
-    target_="entrypoints__entrypoint_rows",
-)
+@tag_compute(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, target_="entrypoints__entrypoint_rows")
 def entrypoints__entrypoint_rows(
     t__entrypoints__compute: EntrypointsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -510,12 +502,7 @@ def entrypoints__entrypoint_rows(
     table_key=value(ENTRYPOINT_TESTS_TABLE_KEY),
     columns=value(tuple(ENTRYPOINT_TESTS_COLS)),
 )
-@tag(
-    domain="analytics",
-    target=ENTRYPOINTS_TARGET_NAME,
-    node_type="compute",
-    target_="entrypoints__test_rows",
-)
+@tag_compute(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, target_="entrypoints__test_rows")
 def entrypoints__test_rows(
     t__entrypoints__compute: EntrypointsResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -531,7 +518,7 @@ def entrypoints__test_rows(
     return tuple(t__entrypoints__compute.test_rows)
 
 
-@tag(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, node_type="helper")
+@tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def entrypoints__upstream_error(
     t__goids: TargetRunRecord,
     t__semantic_roles: TargetRunRecord,
@@ -553,7 +540,7 @@ def entrypoints__upstream_error(
     return None
 
 
-@tag(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, node_type="helper")
+@tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def entrypoints__materializations(
     m__analytics__entrypoints: dict[str, Any],
     m__analytics__entrypoint_tests: dict[str, Any],
@@ -571,7 +558,7 @@ def entrypoints__materializations(
     }
 
 
-@tag(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def t__entrypoints(
     env: BuildEnv,
     graph: TargetGraph,

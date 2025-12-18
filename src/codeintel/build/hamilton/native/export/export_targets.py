@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Protocol, SupportsInt, TextIO, cast, runtime_c
 
 import ibis
 import ibis.expr.types as ir
-from hamilton.function_modifiers import check_output_custom, schema, source, tag, value
+from hamilton.function_modifiers import check_output_custom, schema, source, value
 
 from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.env import BuildEnv
@@ -37,6 +37,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -182,7 +183,7 @@ def _write_export_parquet(
     return output_path.stat().st_size
 
 
-@tag(domain="export", target=EXPORT_JSONL_TARGET_NAME, node_type="tool")
+@tag_tool(domain="export", target=EXPORT_JSONL_TARGET_NAME)
 def t__export_jsonl__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -245,12 +246,7 @@ def t__export_jsonl__compute(
     target_name=value(EXPORT_JSONL_TARGET_NAME),
     artifact_name=value(JSONL_EXPORT_ARTIFACT_NAME),
 )
-@tag(
-    domain="export",
-    target=EXPORT_JSONL_TARGET_NAME,
-    node_type="compute",
-    target_="export_jsonl__content",
-)
+@tag_compute(domain="export", target=EXPORT_JSONL_TARGET_NAME, target_="export_jsonl__content")
 def export_jsonl__content(t__export_jsonl__compute: ArtifactWritePlan | None) -> ArtifactWritePlan | None:
     """Return the JSONL export write plan for materialization.
 
@@ -262,7 +258,7 @@ def export_jsonl__content(t__export_jsonl__compute: ArtifactWritePlan | None) ->
     return t__export_jsonl__compute
 
 
-@tag(domain="export", target=EXPORT_JSONL_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="export", target=EXPORT_JSONL_TARGET_NAME)
 def t__export_jsonl(
     env: BuildEnv,
     graph: TargetGraph,
@@ -284,7 +280,7 @@ def t__export_jsonl(
     )
 
 
-@tag(domain="export", target=EXPORT_PARQUET_TARGET_NAME, node_type="compute")
+@tag_compute(domain="export", target=EXPORT_PARQUET_TARGET_NAME)
 @check_output_custom(
     *build_table_contract(
         required_columns=["function_goid_h128", "repo", "commit"],
@@ -323,12 +319,7 @@ def t__export_parquet__compute(
     target_name=value(EXPORT_PARQUET_TARGET_NAME),
     artifact_name=value(PARQUET_EXPORT_ARTIFACT_NAME),
 )
-@tag(
-    domain="export",
-    target=EXPORT_PARQUET_TARGET_NAME,
-    node_type="tool",
-    target_="export_parquet__bytes",
-)
+@tag_tool(domain="export", target=EXPORT_PARQUET_TARGET_NAME, target_="export_parquet__bytes")
 def export_parquet__bytes(
     env: BuildEnv,
     graph: TargetGraph,
@@ -379,7 +370,7 @@ def export_parquet__bytes(
     )
 
 
-@tag(domain="export", target=EXPORT_PARQUET_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="export", target=EXPORT_PARQUET_TARGET_NAME)
 def t__export_parquet(
     env: BuildEnv,
     graph: TargetGraph,

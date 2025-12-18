@@ -17,8 +17,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from hamilton.function_modifiers import cache, tag
-
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
@@ -27,6 +25,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import tag_materialize, tag_tool
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
@@ -143,8 +142,7 @@ class DocstringsExtractResult:
     error: str | None = None
 
 
-@cache(format="memory")
-@tag(domain="ingestion", target=AST_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=AST_TARGET_NAME)
 def t__ast__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -192,7 +190,7 @@ def t__ast__extract(
         return AstExtractResult(success=False, error=str(exc))
 
 
-@tag(domain="ingestion", target=AST_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="ingestion", target=AST_TARGET_NAME)
 def t__ast(
     env: BuildEnv,
     graph: TargetGraph,
@@ -222,8 +220,7 @@ def t__ast(
     )
 
 
-@cache(format="memory")
-@tag(domain="ingestion", target=CST_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=CST_TARGET_NAME)
 def t__cst__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -271,7 +268,7 @@ def t__cst__extract(
         return CstExtractResult(success=False, error=str(exc))
 
 
-@tag(domain="ingestion", target=CST_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="ingestion", target=CST_TARGET_NAME)
 def t__cst(
     env: BuildEnv,
     graph: TargetGraph,
@@ -301,8 +298,7 @@ def t__cst(
     )
 
 
-@cache(format="memory")
-@tag(domain="ingestion", target=DOCSTRINGS_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
 def t__docstrings__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
@@ -350,7 +346,7 @@ def t__docstrings__extract(
         return DocstringsExtractResult(success=False, error=str(exc))
 
 
-@tag(domain="ingestion", target=DOCSTRINGS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
 def t__docstrings(
     env: BuildEnv,
     graph: TargetGraph,

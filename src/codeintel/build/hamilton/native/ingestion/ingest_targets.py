@@ -19,9 +19,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import cache, tag
-
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import (
     build_scan_profile,
     filter_modules,
@@ -36,6 +35,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
@@ -74,6 +74,12 @@ CONFIG_INGEST_TARGET_NAME = "config_ingest"
 COVERAGE_INGEST_TARGET_NAME = "coverage_ingest"
 TESTS_INGEST_TARGET_NAME = "tests_ingest"
 TYPING_TARGET_NAME = "typing"
+
+# Stable result aliases imported by `codeintel.build.hamilton.native.ingestion`.
+type ConfigIngestResult = ExecutionResult
+type CoverageIngestResult = ExecutionResult
+type TestsIngestResult = ExecutionResult
+type TypingIngestResult = ExecutionResult
 
 MODULES_TABLE_KEY = "core.modules"
 FILE_STATE_TABLE_KEY = "core.file_state"
@@ -180,8 +186,7 @@ class RepoMapWriteResult:
     error: str | None = None
 
 
-@cache(format="memory")
-@tag(node_type="helper")
+@tag_helper()
 def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
     """Load module paths for the current snapshot from storage.
 
@@ -205,8 +210,7 @@ def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
     return tuple(get_module_paths_from_env(env))
 
 
-@cache(format="memory")
-@tag(node_type="helper")
+@tag_helper()
 def module_records(env: BuildEnv, module_paths: tuple[str, ...]) -> tuple[ModuleRecord, ...]:
     """Convert module paths into ModuleRecord objects.
 
@@ -227,8 +231,7 @@ def module_records(env: BuildEnv, module_paths: tuple[str, ...]) -> tuple[Module
     return tuple(paths_to_modules(module_paths, env.snapshot.repo_root))
 
 
-@cache(format="memory")
-@tag(domain="ingestion", target=MODULES_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=MODULES_TARGET_NAME)
 def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
     """Execute repository scan to discover modules.
 
@@ -290,7 +293,7 @@ def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
         )
 
 
-@tag(domain="ingestion", target=MODULES_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=MODULES_TARGET_NAME)
 def t__modules__write_repo_map(
     env: BuildEnv,
     t__modules__scan: ModuleScanResult,
@@ -359,7 +362,7 @@ def t__modules__write_repo_map(
         )
 
 
-@tag(domain="ingestion", target=MODULES_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="ingestion", target=MODULES_TARGET_NAME)
 def t__modules(
     env: BuildEnv,
     graph: TargetGraph,
@@ -437,29 +440,7 @@ class ConfigScanResult:
     error: str | None = None
 
 
-@dataclass(frozen=True)
-class ConfigIngestResult:
-    """Result from config ingestion.
-
-    Attributes
-    ----------
-    success
-        Whether ingestion completed successfully.
-    table_counts
-        Row counts per produced table.
-    errors
-        List of parse errors (non-fatal).
-    error
-        Fatal error message if ingestion failed.
-    """
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    errors: list[str] = field(default_factory=list)
-    error: str | None = None
-
-
-@tag(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
     """Discover config files in repository.
 
@@ -486,28 +467,24 @@ def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
         return ConfigScanResult(success=False, error="Config file discovery failed with exception")
 
 
-@tag(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest__ingest(
     env: BuildEnv,
     t__config_ingest__scan: ConfigScanResult,
-) -> ConfigIngestResult:
+) -> ExecutionResult:
     """Ingest discovered config files into structured tables.
 
     Returns
     -------
-    ConfigIngestResult
+    ExecutionResult
         Ingestion status and per-table row counts.
     """
     if not t__config_ingest__scan.success:
-        return ConfigIngestResult(
-            success=False,
-            error=f"Config scan failed: {t__config_ingest__scan.error}",
-        )
+        return ExecutionResult.failed(f"Config scan failed: {t__config_ingest__scan.error}")
 
     config_files = t__config_ingest__scan.config_files
     if not config_files:
-        return ConfigIngestResult(
-            success=True,
+        return ExecutionResult.ok(
             table_counts=normalize_table_counts((CONFIG_VALUES_TABLE_KEY,), None),
         )
 
@@ -522,34 +499,29 @@ def t__config_ingest__ingest(
             commit=env.snapshot.commit,
         )
 
+        for error in result.errors or ():
+            log.warning("Config parse warning: %s", error)
+
         if result.errors and result.rows_written == 0:
             errors = "; ".join(result.errors)
-            return ConfigIngestResult(
-                success=False,
-                error=f"Config ingest failed: {errors}",
-            )
+            return ExecutionResult.failed(f"Config ingest failed: {errors}")
 
-        return ConfigIngestResult(
-            success=True,
+        return ExecutionResult.ok(
             table_counts=normalize_table_counts(
                 (CONFIG_VALUES_TABLE_KEY,),
                 dict(result.table_counts) if result.table_counts else None,
             ),
-            errors=list(result.errors) if result.errors else [],
         )
     except Exception:
         log.exception("Config ingestion failed")
-        return ConfigIngestResult(
-            success=False,
-            error="Config ingestion failed with exception",
-        )
+        return ExecutionResult.failed("Config ingestion failed with exception")
 
 
-@tag(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest(
     env: BuildEnv,
     graph: TargetGraph,
-    t__config_ingest__ingest: ConfigIngestResult,
+    t__config_ingest__ingest: ExecutionResult,
 ) -> TargetRunRecord:
     """Finalize config_ingest execution and persist manifest.
 
@@ -558,26 +530,12 @@ def t__config_ingest(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    # Log parse warnings before materialization
-    for error in t__config_ingest__ingest.errors:
-        log.warning("Config parse warning: %s", error)
-
     return executor_materialize(env, graph, CONFIG_INGEST_TARGET_NAME, t__config_ingest__ingest)
 
 
 # ---------------------------------------------------------------------------
 # coverage_ingest target
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class CoverageIngestResult:
-    """Result from coverage ingestion."""
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    skipped: bool = False
-    error: str | None = None
 
 
 def _resolve_coverage_file(env: BuildEnv) -> Path | None:
@@ -595,31 +553,26 @@ def _resolve_coverage_file(env: BuildEnv) -> Path | None:
     return None
 
 
-@tag(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
 async def t__coverage_ingest__ingest(
     env: BuildEnv,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-) -> CoverageIngestResult:
+) -> ExecutionResult:
     """Execute coverage data ingestion from coverage.py output.
 
     Returns
     -------
-    CoverageIngestResult
+    ExecutionResult
         Ingestion status and per-table row counts.
     """
     if t__modules.status != "succeeded":
-        return CoverageIngestResult(
-            success=False,
-            error=f"Upstream modules target failed: {t__modules.error}",
-        )
+        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
 
     coverage_path = _resolve_coverage_file(env)
     if coverage_path is None:
         log.info("No coverage file found, skipping coverage ingestion")
-        return CoverageIngestResult(
-            success=True,
-            skipped=True,
+        return ExecutionResult.ok(
             table_counts=normalize_table_counts((COVERAGE_LINES_TABLE_KEY,), None),
         )
 
@@ -640,31 +593,24 @@ async def t__coverage_ingest__ingest(
 
         if not result.success:
             errors = "; ".join(result.errors) if result.errors else "Unknown error"
-            return CoverageIngestResult(
-                success=False,
-                error=f"Coverage ingest failed: {errors}",
-            )
+            return ExecutionResult.failed(f"Coverage ingest failed: {errors}")
 
-        return CoverageIngestResult(
-            success=True,
+        return ExecutionResult.ok(
             table_counts=normalize_table_counts(
                 (COVERAGE_LINES_TABLE_KEY,),
                 dict(result.table_counts) if result.table_counts else None,
-            ),
+            )
         )
     except Exception:
         log.exception("Coverage ingestion failed")
-        return CoverageIngestResult(
-            success=False,
-            error="Coverage ingestion failed with exception",
-        )
+        return ExecutionResult.failed("Coverage ingestion failed with exception")
 
 
-@tag(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
 def t__coverage_ingest(
     env: BuildEnv,
     graph: TargetGraph,
-    t__coverage_ingest__ingest: CoverageIngestResult,
+    t__coverage_ingest__ingest: ExecutionResult,
 ) -> TargetRunRecord:
     """Finalize coverage_ingest execution and persist manifest.
 
@@ -679,16 +625,6 @@ def t__coverage_ingest(
 # ---------------------------------------------------------------------------
 # tests_ingest target
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class TestsIngestResult:
-    """Result from test results ingestion."""
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    skipped: bool = False
-    error: str | None = None
 
 
 def _resolve_report_file(env: BuildEnv) -> Path | None:
@@ -713,31 +649,26 @@ def _resolve_report_file(env: BuildEnv) -> Path | None:
     return None
 
 
-@tag(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def t__tests_ingest__ingest(
     env: BuildEnv,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-) -> TestsIngestResult:
+) -> ExecutionResult:
     """Execute pytest report ingestion into analytics tables.
 
     Returns
     -------
-    TestsIngestResult
+    ExecutionResult
         Ingestion status and per-table row counts.
     """
     if t__modules.status != "succeeded":
-        return TestsIngestResult(
-            success=False,
-            error=f"Upstream modules target failed: {t__modules.error}",
-        )
+        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
 
     report_path = _resolve_report_file(env)
     if report_path is None:
         log.info("No pytest report found, skipping tests ingestion")
-        return TestsIngestResult(
-            success=True,
-            skipped=True,
+        return ExecutionResult.ok(
             table_counts=normalize_table_counts((TEST_CATALOG_TABLE_KEY,), None),
         )
 
@@ -753,31 +684,24 @@ def t__tests_ingest__ingest(
 
         if not result.success:
             errors = "; ".join(result.errors) if result.errors else "Unknown error"
-            return TestsIngestResult(
-                success=False,
-                error=f"Tests ingest failed: {errors}",
-            )
+            return ExecutionResult.failed(f"Tests ingest failed: {errors}")
 
-        return TestsIngestResult(
-            success=True,
+        return ExecutionResult.ok(
             table_counts=normalize_table_counts(
                 (TEST_CATALOG_TABLE_KEY,),
                 dict(result.table_counts) if result.table_counts else None,
-            ),
+            )
         )
     except Exception:
         log.exception("Tests ingestion failed")
-        return TestsIngestResult(
-            success=False,
-            error="Tests ingestion failed with exception",
-        )
+        return ExecutionResult.failed("Tests ingestion failed with exception")
 
 
-@tag(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def t__tests_ingest(
     env: BuildEnv,
     graph: TargetGraph,
-    t__tests_ingest__ingest: TestsIngestResult,
+    t__tests_ingest__ingest: ExecutionResult,
 ) -> TargetRunRecord:
     """Finalize tests_ingest execution and persist manifest.
 
@@ -794,49 +718,29 @@ def t__tests_ingest(
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class TypingIngestResult:
-    """Result from typing ingestion."""
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    skipped: bool = False
-    error: str | None = None
-
-
-@tag(domain="ingestion", target=TYPING_TARGET_NAME, node_type="tool")
+@tag_tool(domain="ingestion", target=TYPING_TARGET_NAME)
 def t__typing__ingest(
     env: BuildEnv,
     graph: TargetGraph,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-) -> TypingIngestResult:
+) -> ExecutionResult:
     """Execute typing analysis and persist typedness + diagnostics tables.
 
     Returns
     -------
-    TypingIngestResult
+    ExecutionResult
         Ingestion status and per-table row counts.
     """
     if t__modules.status != "succeeded":
-        return TypingIngestResult(
-            success=False,
-            error=f"Upstream modules target failed: {t__modules.error}",
-        )
+        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
 
     executor = NativeTargetExecutor.for_target(env, graph, TYPING_TARGET_NAME)
     if executor.should_skip():
-        return TypingIngestResult(
-            success=True,
-            skipped=True,
-            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, None),
-        )
+        return ExecutionResult.ok(table_counts=normalize_table_counts(TYPING_TABLE_KEYS, None))
 
     if not module_records:
-        return TypingIngestResult(
-            success=True,
-            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, None),
-        )
+        return ExecutionResult.ok(table_counts=normalize_table_counts(TYPING_TABLE_KEYS, None))
 
     storage = DuckDBStorageAdapter(env.gateway)
     discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
@@ -860,31 +764,28 @@ def t__typing__ingest(
     )
 
     if result.skipped:
-        return TypingIngestResult(
-            success=True,
-            skipped=True,
-            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts)),
-            error=result.skip_reason,
+        if result.skip_reason:
+            log.info("Typing ingestion skipped: %s", result.skip_reason)
+        return ExecutionResult.ok(
+            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts))
         )
 
     if not result.success:
-        return TypingIngestResult(
-            success=False,
+        return ExecutionResult.failed(
+            "; ".join(result.errors) if result.errors else "Typing ingestion failed",
             table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts)),
-            error="; ".join(result.errors) if result.errors else "Typing ingestion failed",
         )
 
-    return TypingIngestResult(
-        success=True,
-        table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts)),
+    return ExecutionResult.ok(
+        table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts))
     )
 
 
-@tag(domain="ingestion", target=TYPING_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="ingestion", target=TYPING_TARGET_NAME)
 def t__typing(
     env: BuildEnv,
     graph: TargetGraph,
-    t__typing__ingest: TypingIngestResult,
+    t__typing__ingest: ExecutionResult,
 ) -> TargetRunRecord:
     """Finalize typing target execution and persist manifest.
 

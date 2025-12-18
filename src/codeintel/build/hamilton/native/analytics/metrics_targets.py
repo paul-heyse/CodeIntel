@@ -21,10 +21,8 @@ materialize nodes with ``NativeTargetExecutor`` pattern.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-from hamilton.function_modifiers import source, tag, value
-from hamilton.function_modifiers.adapters import SaveToDecorator
+from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.functions.function_history import (
     FUNCTION_HISTORY_COLS,
@@ -60,6 +58,8 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -172,7 +172,7 @@ def _get_graph_runtime(env: BuildEnv) -> GraphRuntime | None:
 # -----------------------------------------------------------------------------
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(FUNCTION_HISTORY_TABLE_KEY),
     env=source("env"),
@@ -181,10 +181,9 @@ def _get_graph_runtime(env: BuildEnv) -> GraphRuntime | None:
     table_key=value(FUNCTION_HISTORY_TABLE_KEY),
     columns=value(tuple(FUNCTION_HISTORY_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=FUNCTION_HISTORY_TARGET_NAME,
-    node_type="compute",
     target_="t__function_history__compute",
 )
 def t__function_history__compute(
@@ -230,11 +229,11 @@ def t__function_history__compute(
     return build_function_history_rows(env.gateway, env.snapshot)
 
 
-@tag(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)
 def t__function_history(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_history: dict[str, Any],
+    m__analytics__function_history: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize function history table to DuckDB.
 
@@ -266,7 +265,7 @@ def t__function_history(
 # -----------------------------------------------------------------------------
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(HISTORY_TIMESERIES_TABLE_KEY),
     env=source("env"),
@@ -275,10 +274,9 @@ def t__function_history(
     table_key=value(HISTORY_TIMESERIES_TABLE_KEY),
     columns=value(tuple(HISTORY_TIMESERIES_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=HISTORY_TIMESERIES_TARGET_NAME,
-    node_type="compute",
     target_="t__history_timeseries__compute",
 )
 def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], ...]:
@@ -305,11 +303,11 @@ def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], .
     return ()
 
 
-@tag(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
 def t__history_timeseries(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__history_timeseries: dict[str, Any],
+    m__analytics__history_timeseries: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize history timeseries table to DuckDB.
 
@@ -341,7 +339,7 @@ def t__history_timeseries(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME, node_type="tool")
+@tag_tool(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
 def t__subsystem_graph_metrics__compute(
     env: BuildEnv,
     t__subsystems: TargetRunRecord,
@@ -391,7 +389,7 @@ def t__subsystem_graph_metrics__compute(
         return ExecutionResult.failed(str(exc))
 
 
-@tag(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
 def t__subsystem_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -426,7 +424,7 @@ def t__subsystem_graph_metrics(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME, node_type="tool")
+@tag_tool(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
 def t__symbol_graph_metrics__compute(
     env: BuildEnv,
     t__symbol_uses: TargetRunRecord,
@@ -505,7 +503,7 @@ def t__symbol_graph_metrics__compute(
         return ExecutionResult.failed(str(exc))
 
 
-@tag(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
 def t__symbol_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -540,7 +538,7 @@ def t__symbol_graph_metrics(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME, node_type="tool")
+@tag_tool(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
 def t__subsystem_agreement__compute(
     env: BuildEnv,
     t__subsystems: TargetRunRecord,
@@ -587,7 +585,7 @@ def t__subsystem_agreement__compute(
         return ExecutionResult.failed(str(exc))
 
 
-@tag(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
 def t__subsystem_agreement(
     env: BuildEnv,
     graph: TargetGraph,
@@ -622,7 +620,7 @@ def t__subsystem_agreement(
 # -----------------------------------------------------------------------------
 
 
-@tag(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME, node_type="tool")
+@tag_tool(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
 def t__test_graph_metrics__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -659,7 +657,7 @@ def t__test_graph_metrics__compute(
     return compute_test_graph_metrics_pure(env.gateway, env.snapshot, runtime)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(TEST_GRAPH_METRICS_TESTS_TABLE_KEY),
     env=source("env"),
@@ -668,10 +666,9 @@ def t__test_graph_metrics__compute(
     table_key=value(TEST_GRAPH_METRICS_TESTS_TABLE_KEY),
     columns=value(tuple(TEST_GRAPH_METRICS_TESTS_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=TEST_GRAPH_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="test_graph_metrics__tests_rows",
 )
 def test_graph_metrics__tests_rows(
@@ -694,7 +691,7 @@ def test_graph_metrics__tests_rows(
     return tuple(t__test_graph_metrics__compute.test_rows)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
     env=source("env"),
@@ -703,10 +700,9 @@ def test_graph_metrics__tests_rows(
     table_key=value(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
     columns=value(tuple(TEST_GRAPH_METRICS_FUNCTIONS_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=TEST_GRAPH_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="test_graph_metrics__functions_rows",
 )
 def test_graph_metrics__functions_rows(
@@ -729,12 +725,12 @@ def test_graph_metrics__functions_rows(
     return tuple(t__test_graph_metrics__compute.function_rows)
 
 
-@tag(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
 def t__test_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__test_graph_metrics_tests: dict[str, Any],
-    m__analytics__test_graph_metrics_functions: dict[str, Any],
+    m__analytics__test_graph_metrics_tests: dict[str, object],
+    m__analytics__test_graph_metrics_functions: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize both test graph metrics tables to DuckDB.
 

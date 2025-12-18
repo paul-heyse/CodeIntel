@@ -22,11 +22,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from hamilton.function_modifiers import tag
-
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.tagging import tag_materialize
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -36,7 +35,7 @@ if TYPE_CHECKING:
     from codeintel.build.targets import TargetGraph
 
 
-@tag(node_type="materialize")
+@tag_materialize()
 def multi_table_record(
     env: BuildEnv,
     graph: TargetGraph,
@@ -103,7 +102,7 @@ def multi_table_record(
     )
 
 
-@tag(node_type="materialize")
+@tag_materialize()
 def record(
     env: BuildEnv,
     graph: TargetGraph,
