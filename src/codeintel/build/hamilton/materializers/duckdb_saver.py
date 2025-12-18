@@ -18,6 +18,7 @@ from hamilton.io.data_adapters import DataSaver
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.contracts.pandera_hook import get_pandera_schema
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
 from codeintel.build.hamilton.run_records import should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -224,14 +225,14 @@ def _duration_ms(start: float) -> float:
 def _succeeded(
     *, table_key: str, duration_ms: float, input_hash: str, row_count: int
 ) -> dict[str, Any]:
-    return {
-        "status": "succeeded",
-        "table_key": table_key,
-        "row_count": row_count,
-        "duration_ms": duration_ms,
-        "input_hash": input_hash,
-        "error": None,
-    }
+    return DuckDBMaterializationMetadata(
+        status="succeeded",
+        table_key=table_key,
+        row_count=row_count,
+        duration_ms=duration_ms,
+        input_hash=input_hash,
+        error=None,
+    ).to_dict()
 
 
 def _skipped(
@@ -241,25 +242,25 @@ def _skipped(
     input_hash: str,
     row_count: int | None,
 ) -> dict[str, Any]:
-    return {
-        "status": "skipped",
-        "table_key": table_key,
-        "row_count": row_count,
-        "duration_ms": duration_ms,
-        "input_hash": input_hash,
-        "error": None,
-    }
+    return DuckDBMaterializationMetadata(
+        status="skipped",
+        table_key=table_key,
+        row_count=row_count,
+        duration_ms=duration_ms,
+        input_hash=input_hash,
+        error=None,
+    ).to_dict()
 
 
 def _failed(*, table_key: str, duration_ms: float, input_hash: str, error: str) -> dict[str, Any]:
-    return {
-        "status": "failed",
-        "table_key": table_key,
-        "row_count": None,
-        "duration_ms": duration_ms,
-        "input_hash": input_hash,
-        "error": error,
-    }
+    return DuckDBMaterializationMetadata(
+        status="failed",
+        table_key=table_key,
+        row_count=None,
+        duration_ms=duration_ms,
+        input_hash=input_hash,
+        error=error,
+    ).to_dict()
 
 
 def _manifest_row_count(env: BuildEnv, *, target_name: str) -> int | None:

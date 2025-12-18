@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-18T00:05:09.093876+00:00",
+  "generated_at": "2025-12-18T01:36:22.511703+00:00",
   "overall_status": "passed",
-  "duration_seconds": 17.352328,
+  "duration_seconds": 15.651203,
   "results": [
     {
       "name": "guardrails",
@@ -15,9 +15,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-18T00:04:51.741389+00:00",
-      "ended_at": "2025-12-18T00:04:51.965417+00:00",
-      "duration_seconds": 0.224028,
+      "started_at": "2025-12-18T01:36:06.860334+00:00",
+      "ended_at": "2025-12-18T01:36:07.098285+00:00",
+      "duration_seconds": 0.237951,
       "stdout": [],
       "stderr": []
     },
@@ -36,9 +36,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-18T00:04:51.965437+00:00",
-      "ended_at": "2025-12-18T00:04:51.987312+00:00",
-      "duration_seconds": 0.021875,
+      "started_at": "2025-12-18T01:36:07.098307+00:00",
+      "ended_at": "2025-12-18T01:36:07.124867+00:00",
+      "duration_seconds": 0.02656,
       "stdout": [
         "All checks passed!"
       ],
@@ -55,11 +55,11 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-18T00:04:51.987326+00:00",
-      "ended_at": "2025-12-18T00:04:52.017038+00:00",
-      "duration_seconds": 0.029712,
+      "started_at": "2025-12-18T01:36:07.124887+00:00",
+      "ended_at": "2025-12-18T01:36:07.150226+00:00",
+      "duration_seconds": 0.025339,
       "stdout": [
-        "Found 1 error (1 fixed, 0 remaining)."
+        "All checks passed!"
       ],
       "stderr": []
     },
@@ -74,9 +74,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-18T00:04:52.017059+00:00",
-      "ended_at": "2025-12-18T00:04:53.490964+00:00",
-      "duration_seconds": 1.473905,
+      "started_at": "2025-12-18T01:36:07.150248+00:00",
+      "ended_at": "2025-12-18T01:36:08.701717+00:00",
+      "duration_seconds": 1.551469,
       "stdout": [],
       "stderr": []
     },
@@ -91,9 +91,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-18T00:04:53.490984+00:00",
-      "ended_at": "2025-12-18T00:04:55.221938+00:00",
-      "duration_seconds": 1.730954,
+      "started_at": "2025-12-18T01:36:08.701737+00:00",
+      "ended_at": "2025-12-18T01:36:10.462340+00:00",
+      "duration_seconds": 1.760603,
       "stdout": [],
       "stderr": [
         "/home/paul/CodeIntel/.venv/lib/python3.13/site-packages/fastmcp/server/server.py:302: DeprecationWarning: Providing `json_response` when creating a server is deprecated. Provide it when calling `run` or as a global setting instead.",
@@ -111,9 +111,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-18T00:04:55.221957+00:00",
-      "ended_at": "2025-12-18T00:05:08.493321+00:00",
-      "duration_seconds": 13.271364,
+      "started_at": "2025-12-18T01:36:10.462361+00:00",
+      "ended_at": "2025-12-18T01:36:21.921756+00:00",
+      "duration_seconds": 11.459395,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -129,9 +129,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-18T00:05:08.493339+00:00",
-      "ended_at": "2025-12-18T00:05:09.093717+00:00",
-      "duration_seconds": 0.600378,
+      "started_at": "2025-12-18T01:36:21.921775+00:00",
+      "ended_at": "2025-12-18T01:36:22.511537+00:00",
+      "duration_seconds": 0.589762,
       "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",

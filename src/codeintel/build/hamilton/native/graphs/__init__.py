@@ -25,7 +25,6 @@ from codeintel.build.hamilton.native.graphs.cfg_dfg import (
 from codeintel.build.hamilton.native.graphs.graph_targets import (
     GoidExtractionInputs,
     GoidExtractResult,
-    GraphMetricsComputeResult,
     GraphValidationResult,
     SymbolUsesExtractResult,
     call_graph_depth_stats,
@@ -53,7 +52,6 @@ __all__ = [
     "FunctionInfo",
     "GoidExtractResult",
     "GoidExtractionInputs",
-    "GraphMetricsComputeResult",
     "GraphValidationResult",
     "ImportGraphExtractResult",
     "SymbolUsesExtractResult",

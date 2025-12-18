@@ -12,7 +12,7 @@ import duckdb
 import pytest
 
 from codeintel.serving.db.manager import ServingDBManager
-from codeintel.serving.db.pool import DuckDBPoolConfig
+from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 
 if TYPE_CHECKING:
@@ -90,7 +90,7 @@ async def test_manager_initial_load_and_connect(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=2),
+        pool_cfg=PoolConfig(size=2),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -129,7 +129,7 @@ async def test_manager_hot_swap_on_pointer_change(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -176,7 +176,7 @@ async def test_manager_same_path_no_swap_optimization(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -198,5 +198,50 @@ async def test_manager_same_path_no_swap_optimization(tmp_path: Path) -> None:
             con2 = warehouse2.gateway.con
             expect_true(con2 is con1)
             expect_equal(con2.execute("SELECT value FROM kv").fetchone(), (1,))
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_manager_export_pool_isolated_from_query_pool(tmp_path: Path) -> None:
+    """Holding an export handle must not block normal query acquisition."""
+    db1 = tmp_path / "db1.duckdb"
+    _make_db(db1, value=1)
+
+    pointer_path = tmp_path / "current.json"
+    paths = _PointerPaths(
+        semantic_registry_path=tmp_path / "semantic_registry.json",
+        schema_manifest_path=tmp_path / "schema_manifest.json",
+        buildspec_path=tmp_path / "buildspec.json",
+    )
+    _write_registry(paths.semantic_registry_path)
+    _write_schema_manifest(paths.schema_manifest_path)
+    _write_buildspec(paths.buildspec_path)
+    _write_pointer(
+        pointer_path,
+        db_path=db1,
+        run_id="run-1",
+        paths=paths,
+    )
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        export_pool_cfg=PoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        with manager.connect_export() as (warehouse_export, _pointer):
+            export_con_id = id(warehouse_export.gateway.con)
+
+            def _query_from_pool() -> tuple[int, tuple[int] | None]:
+                with manager.connect() as (warehouse, _pointer2):
+                    value = warehouse.gateway.con.execute("SELECT value FROM kv").fetchone()
+                    return id(warehouse.gateway.con), value
+
+            query_con_id, value = await asyncio.wait_for(asyncio.to_thread(_query_from_pool), timeout=1.0)
+            expect_true(query_con_id != export_con_id)
+            expect_equal(value, (1,))
     finally:
         await manager.stop()

@@ -49,8 +49,13 @@ import codeintel.storage.views.ibis_views as _ibis_views
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.metadata.bootstrap import sync_derived_lineage_edges
 from codeintel.storage.schema_roundtrip import create_table_ast
-from codeintel.storage.views.dependencies import build_dependency_graph_from_sql, toposort
+from codeintel.storage.views.dependencies import (
+    build_dependency_graph_from_sql,
+    extract_referenced_table_keys,
+    toposort,
+)
 from codeintel.storage.views.discovery import discover_view_builders
 
 if TYPE_CHECKING:
@@ -954,20 +959,23 @@ class DuckDBPolicyBackend:
             When True, re-raises any exception that occurs during view
             creation after logging. When False, exceptions are logged
             but execution continues.
-
-        Raises
-        ------
-        DuckDBError
-            Propagated when strict=True and DuckDB raises during view creation.
-        IbisError
-            Propagated when strict=True and Ibis raises during view creation.
-        KeyError
-            Propagated when strict=True and required view metadata is missing.
-        TypeError
-            Propagated when strict=True and a view builder returns an invalid type.
-        ValueError
-            Propagated when strict=True and inputs fail validation.
         """
+        expr_by_view, sql_by_view = self._compile_view_definitions(strict=strict)
+        if not sql_by_view:
+            return
+        self._materialize_views(
+            expr_by_view=expr_by_view,
+            sql_by_view=sql_by_view,
+            overwrite=overwrite,
+            strict=strict,
+        )
+        self._sync_view_lineage(sql_by_view)
+
+    def _compile_view_definitions(
+        self,
+        *,
+        strict: bool,
+    ) -> tuple[dict[str, it.Table], dict[str, str]]:
         ibis_gateway = self.ibis
         builders = discover_view_builders(modules=(_ibis_views,))
 
@@ -975,19 +983,25 @@ class DuckDBPolicyBackend:
         sql_by_view: dict[str, str] = {}
         for spec in builders:
             view_name = spec.table_key
-            builder = spec.builder
             try:
-                expr = builder(ibis_gateway)
+                expr = spec.builder(ibis_gateway)
                 expr_by_view[view_name] = expr
                 sql_by_view[view_name] = ibis_gateway.con.compile(expr)
             except (DuckDBError, IbisError, KeyError, TypeError, ValueError):
                 log.exception("Failed to build view expression: %s", view_name)
                 if strict:
                     raise
+        return expr_by_view, sql_by_view
 
-        if not sql_by_view:
-            return
-
+    def _materialize_views(
+        self,
+        *,
+        expr_by_view: dict[str, it.Table],
+        sql_by_view: dict[str, str],
+        overwrite: bool,
+        strict: bool,
+    ) -> None:
+        ibis_gateway = self.ibis
         deps = build_dependency_graph_from_sql(sql_by_view)
         order_lower = toposort(sql_by_view.keys(), deps, raise_on_cycle=strict)
         original_by_lower = {k.lower(): k for k in sql_by_view}
@@ -1005,6 +1019,23 @@ class DuckDBPolicyBackend:
                 log.exception("Failed to create view: %s", view_name)
                 if strict:
                     raise
+
+    def _sync_view_lineage(self, sql_by_view: dict[str, str]) -> None:
+        config = getattr(self.gateway, "config", None)
+        repo = getattr(config, "repo", None)
+        commit = getattr(config, "commit", None)
+        if not (isinstance(repo, str) and repo and isinstance(commit, str) and commit):
+            return
+
+        lineage: dict[str, frozenset[str]] = {}
+        for raw_key, sql in sql_by_view.items():
+            view_key = raw_key.lower()
+            lineage[view_key] = frozenset(extract_referenced_table_keys(sql) - {view_key})
+
+        try:
+            sync_derived_lineage_edges(self.con, repo=repo, commit=commit, lineage=lineage)
+        except DuckDBError:
+            log.exception("Failed to sync derived lineage edges repo=%s commit=%s", repo, commit)
 
     def ensure_schemas_preserve(
         self,

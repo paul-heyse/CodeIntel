@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import duckdb
 import pytest
 
-from codeintel.serving.db.pool import DuckDBPoolConfig, DuckDBReadPool
+from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ def test_pool_creates_configured_size(tmp_path: Path) -> None:
     db_path = tmp_path / "db.duckdb"
     _make_db(db_path)
 
-    pool = DuckDBReadPool(db_path, DuckDBPoolConfig(size=POOL_SIZE))
+    pool = ReadPoolWarehouse(db_path, PoolConfig(size=POOL_SIZE))
     try:
         with ExitStack() as stack:
             warehouses = [stack.enter_context(pool.acquire()) for _ in range(POOL_SIZE)]
@@ -44,7 +44,7 @@ def test_pool_acquire_release_cycle(tmp_path: Path) -> None:
     db_path = tmp_path / "db.duckdb"
     _make_db(db_path)
 
-    pool = DuckDBReadPool(db_path, DuckDBPoolConfig(size=1))
+    pool = ReadPoolWarehouse(db_path, PoolConfig(size=1))
     with pool.acquire() as warehouse1:
         con1 = warehouse1.gateway.con
         expect_equal(con1.execute("SELECT COUNT(*) FROM kv").fetchone(), (2,))
@@ -61,7 +61,7 @@ def test_pool_close_gracefully_closes_available(tmp_path: Path) -> None:
     db_path = tmp_path / "db.duckdb"
     _make_db(db_path)
 
-    pool = DuckDBReadPool(db_path, DuckDBPoolConfig(size=1))
+    pool = ReadPoolWarehouse(db_path, PoolConfig(size=1))
     pool.close_gracefully()
 
     with pytest.raises(RuntimeError, match="Pool is closing"), pool.acquire():

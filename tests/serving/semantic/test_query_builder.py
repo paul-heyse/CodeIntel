@@ -68,7 +68,7 @@ def test_build_query_filters_orders_and_paginates(tmp_path: Path) -> None:
                 offset=0,
             ),
         )
-        df = pd.DataFrame(built.expr.execute())
+        df = pd.DataFrame(built.expr.execute(params=built.execute_params()))
         rows = df.to_dict(orient="records")
         expect_equal(rows, [{"id": 3, "label": "three"}, {"id": 2, "label": "two"}])
         for table_name in built.temp_tables:

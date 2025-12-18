@@ -41,14 +41,12 @@ class SubsystemRepository(BaseRepository):
             Subsystem summary rows ordered by module count.
         """
         table = self._ibis_table("docs.v_subsystem_summary")
-        expr = table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
+        expr = table
 
         if role:
             modules = self._ibis_table("analytics.subsystem_modules")
             exists_expr = modules.filter(
                 and_predicates(
-                    modules.repo == self.repo,
-                    modules.commit == self.commit,
                     modules.subsystem_id == table.subsystem_id,
                     modules.role == role,
                 )
@@ -81,8 +79,6 @@ class SubsystemRepository(BaseRepository):
         table = self._ibis_table("docs.v_subsystem_summary")
         expr = table.filter(
             and_predicates(
-                table.repo == self.repo,
-                table.commit == self.commit,
                 table.subsystem_id == subsystem_id,
             )
         ).limit(1)
@@ -132,8 +128,6 @@ class SubsystemRepository(BaseRepository):
         table = self._ibis_table("docs.v_module_with_subsystem")
         expr = table.filter(
             and_predicates(
-                table.repo == self.repo,
-                table.commit == self.commit,
                 table.subsystem_id == subsystem_id,
             )
         ).order_by(table.module)
@@ -149,9 +143,7 @@ class SubsystemRepository(BaseRepository):
             Membership rows keyed by subsystem and module.
         """
         table = self._ibis_table("analytics.subsystem_modules")
-        expr = table.filter(
-            and_predicates(table.repo == self.repo, table.commit == self.commit)
-        ).select("subsystem_id", "module")
+        expr = table.select("subsystem_id", "module")
         return self._ibis_to_dicts(expr)
 
     def list_subsystems_for_module(self, module: str) -> list[RowDict]:
@@ -171,8 +163,6 @@ class SubsystemRepository(BaseRepository):
         table = self._ibis_table("docs.v_module_with_subsystem")
         expr = table.filter(
             and_predicates(
-                table.repo == self.repo,
-                table.commit == self.commit,
                 table.module == module,
             )
         )
@@ -193,9 +183,7 @@ class SubsystemRepository(BaseRepository):
             True if cache has at least one row for this repo/commit.
         """
         table = self._ibis_table(cache_table)
-        expr = table.filter(
-            and_predicates(table.repo == self.repo, table.commit == self.commit)
-        ).limit(1)
+        expr = table.limit(1)
         return self._ibis_exists(expr)
 
     def list_subsystem_profiles(self, *, limit: int) -> list[RowDict]:
@@ -216,16 +204,14 @@ class SubsystemRepository(BaseRepository):
         if self._has_cache(cache_table):
             table = self._ibis_table(cache_table)
             expr = (
-                table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
-                .order_by([table.module_count.desc(), table.subsystem_id])
+                table.order_by([table.module_count.desc(), table.subsystem_id])
                 .limit(limit)
             )
             return self._ibis_to_dicts(expr, cache_table)
 
         table = self._ibis_table("docs.v_subsystem_profile")
         expr = (
-            table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
-            .order_by([table.module_count.desc(), table.subsystem_id])
+            table.order_by([table.module_count.desc(), table.subsystem_id])
             .limit(limit)
         )
         return self._ibis_to_dicts(expr, "docs.v_subsystem_profile")
@@ -248,8 +234,7 @@ class SubsystemRepository(BaseRepository):
         if self._has_cache(cache_table):
             table = self._ibis_table(cache_table)
             expr = (
-                table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
-                .order_by(
+                table.order_by(
                     [
                         table.test_count.desc(nulls_first=False),
                         table.subsystem_id,
@@ -261,8 +246,7 @@ class SubsystemRepository(BaseRepository):
 
         table = self._ibis_table("docs.v_subsystem_coverage")
         expr = (
-            table.filter(and_predicates(table.repo == self.repo, table.commit == self.commit))
-            .order_by(
+            table.order_by(
                 [
                     table.test_count.desc(nulls_first=False),
                     table.subsystem_id,

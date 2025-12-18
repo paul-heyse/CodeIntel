@@ -21,7 +21,6 @@ materialize nodes with ``NativeTargetExecutor`` pattern.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from typing import Any
 
 from hamilton.function_modifiers import source, tag, value
@@ -49,6 +48,7 @@ from codeintel.analytics.testing.graph_metrics import (
     TEST_GRAPH_METRICS_TESTS_COLS,
 )
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
@@ -165,47 +165,6 @@ def _get_graph_runtime(env: BuildEnv) -> GraphRuntime | None:
     except (RuntimeError, ValueError) as exc:
         log.warning("Failed to resolve graph runtime: %s", exc)
         return None
-
-
-# -----------------------------------------------------------------------------
-# Result dataclasses (adapted for executor_materialize template)
-# -----------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class SubsystemGraphMetricsResult:
-    """Result from subsystem graph metrics computation.
-
-    Follows ComputeResult protocol for executor_materialize template.
-    """
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class SymbolGraphMetricsResult:
-    """Result from symbol graph metrics computation.
-
-    Follows ComputeResult protocol for executor_materialize template.
-    """
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class SubsystemAgreementResult:
-    """Result from subsystem agreement computation.
-
-    Follows ComputeResult protocol for executor_materialize template.
-    """
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    error: str | None = None
 
 
 # -----------------------------------------------------------------------------
@@ -386,7 +345,7 @@ def t__history_timeseries(
 def t__subsystem_graph_metrics__compute(
     env: BuildEnv,
     t__subsystems: TargetRunRecord,
-) -> SubsystemGraphMetricsResult:
+) -> ExecutionResult:
     """Compute graph metrics for subsystems.
 
     Parameters
@@ -398,14 +357,11 @@ def t__subsystem_graph_metrics__compute(
 
     Returns
     -------
-    SubsystemGraphMetricsResult
+    ExecutionResult
         Result indicating success or failure with table counts.
     """
     if t__subsystems.status != "succeeded":
-        return SubsystemGraphMetricsResult(
-            success=False,
-            error=f"Upstream subsystems target failed: {t__subsystems.error}",
-        )
+        return ExecutionResult.failed(f"Upstream subsystems target failed: {t__subsystems.error}")
 
     try:
         graph_runtime = _get_graph_runtime(env)
@@ -427,21 +383,18 @@ def t__subsystem_graph_metrics__compute(
             snapshot=env.snapshot,
         )
 
-        return SubsystemGraphMetricsResult(
-            success=True,
-            table_counts={SUBSYSTEM_GRAPH_METRICS_TABLE_KEY: row_count},
-        )
+        return ExecutionResult.ok(table_counts={SUBSYSTEM_GRAPH_METRICS_TABLE_KEY: row_count})
 
     except Exception as exc:
         log.exception("Subsystem graph metrics computation failed")
-        return SubsystemGraphMetricsResult(success=False, error=str(exc))
+        return ExecutionResult.failed(str(exc))
 
 
 @tag(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME, node_type="materialize")
 def t__subsystem_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    t__subsystem_graph_metrics__compute: SubsystemGraphMetricsResult,
+    t__subsystem_graph_metrics__compute: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize subsystem graph metrics target using executor template.
 
@@ -476,7 +429,7 @@ def t__subsystem_graph_metrics(
 def t__symbol_graph_metrics__compute(
     env: BuildEnv,
     t__symbol_uses: TargetRunRecord,
-) -> SymbolGraphMetricsResult:
+) -> ExecutionResult:
     """Compute graph metrics from symbol usage patterns.
 
     Parameters
@@ -488,14 +441,11 @@ def t__symbol_graph_metrics__compute(
 
     Returns
     -------
-    SymbolGraphMetricsResult
+    ExecutionResult
         Result indicating success or failure with table counts.
     """
     if t__symbol_uses.status != "succeeded":
-        return SymbolGraphMetricsResult(
-            success=False,
-            error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
-        )
+        return ExecutionResult.failed(f"Upstream symbol_uses target failed: {t__symbol_uses.error}")
 
     table_counts: dict[str, int] = {
         SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY: 0,
@@ -544,23 +494,19 @@ def t__symbol_graph_metrics__compute(
 
         log.info("Symbol graph metrics completed: %s", table_counts)
         if errors:
-            return SymbolGraphMetricsResult(
-                success=False,
-                table_counts=table_counts,
-                error="; ".join(errors),
-            )
-        return SymbolGraphMetricsResult(success=True, table_counts=table_counts)
+            return ExecutionResult.failed("; ".join(errors), table_counts=table_counts)
+        return ExecutionResult.ok(table_counts=table_counts)
 
     except Exception as exc:
         log.exception("Symbol graph metrics computation failed")
-        return SymbolGraphMetricsResult(success=False, error=str(exc))
+        return ExecutionResult.failed(str(exc))
 
 
 @tag(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME, node_type="materialize")
 def t__symbol_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    t__symbol_graph_metrics__compute: SymbolGraphMetricsResult,
+    t__symbol_graph_metrics__compute: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize symbol graph metrics target using executor template.
 
@@ -595,7 +541,7 @@ def t__symbol_graph_metrics(
 def t__subsystem_agreement__compute(
     env: BuildEnv,
     t__subsystems: TargetRunRecord,
-) -> SubsystemAgreementResult:
+) -> ExecutionResult:
     """Compare subsystem assignments with import community labels.
 
     Parameters
@@ -607,14 +553,11 @@ def t__subsystem_agreement__compute(
 
     Returns
     -------
-    SubsystemAgreementResult
+    ExecutionResult
         Status indicator, table counts, and optional error message.
     """
     if t__subsystems.status != "succeeded":
-        return SubsystemAgreementResult(
-            success=False,
-            error=f"Upstream subsystems target failed: {t__subsystems.error}",
-        )
+        return ExecutionResult.failed(f"Upstream subsystems target failed: {t__subsystems.error}")
 
     try:
         log.info(
@@ -634,20 +577,17 @@ def t__subsystem_agreement__compute(
             snapshot=env.snapshot,
         )
 
-        return SubsystemAgreementResult(
-            success=True,
-            table_counts={SUBSYSTEM_AGREEMENT_TABLE_KEY: row_count},
-        )
+        return ExecutionResult.ok(table_counts={SUBSYSTEM_AGREEMENT_TABLE_KEY: row_count})
     except Exception as exc:
         log.exception("Subsystem agreement computation failed")
-        return SubsystemAgreementResult(success=False, error=str(exc))
+        return ExecutionResult.failed(str(exc))
 
 
 @tag(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME, node_type="materialize")
 def t__subsystem_agreement(
     env: BuildEnv,
     graph: TargetGraph,
-    t__subsystem_agreement__compute: SubsystemAgreementResult,
+    t__subsystem_agreement__compute: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize subsystem agreement target using executor template.
 
@@ -822,9 +762,6 @@ def t__test_graph_metrics(
 
 
 __all__ = [
-    "SubsystemAgreementResult",
-    "SubsystemGraphMetricsResult",
-    "SymbolGraphMetricsResult",
     "t__function_history",
     "t__function_history__compute",
     "t__history_timeseries",

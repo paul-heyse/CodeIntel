@@ -6,10 +6,14 @@ metadata dict) to the build system's ``TargetRunRecord`` contract.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
+from codeintel.build.hamilton.materializers.metadata import (
+    DuckDBMaterializationMetadata,
+    FileArtifactMaterializationMetadata,
+    MaterializationStatus,
+)
 from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
     RunRecordInputs,
@@ -23,39 +27,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import OutputTarget, TargetGraph
-
-MaterializationStatus = Literal["succeeded", "skipped", "failed"]
-_MATERIALIZATION_STATUS: dict[str, MaterializationStatus] = {
-    "failed": "failed",
-    "skipped": "skipped",
-    "succeeded": "succeeded",
-}
-
-
-@dataclass(frozen=True)
-class DuckDBMaterializationResult:
-    """Parsed materialization metadata for a single DuckDB table write."""
-
-    status: MaterializationStatus
-    table_key: str
-    row_count: int | None
-    duration_ms: float
-    input_hash: str
-    error: str | None
-
-
-@dataclass(frozen=True)
-class FileArtifactMaterializationResult:
-    """Parsed materialization metadata for a single file artifact write."""
-
-    status: MaterializationStatus
-    artifact_name: str
-    path: str | None
-    size_bytes: int | None
-    duration_ms: float
-    input_hash: str
-    error: str | None
-
 
 def record_from_duckdb_materialization(
     *,
@@ -85,7 +56,10 @@ def record_from_duckdb_materialization(
     TargetRunRecord
         Record describing succeeded/skipped/failed completion.
     """
-    parsed = _parse_materialization(materialization, default_table_key=expected_table_key)
+    parsed = DuckDBMaterializationMetadata.from_mapping(
+        materialization,
+        default_table_key=expected_table_key,
+    )
     target = graph.get(target_name)
     if target is None:
         msg = f"Target not found: {target_name}"
@@ -212,7 +186,7 @@ def record_from_file_artifact_materialization(
     TargetRunRecord
         Record describing succeeded/skipped/failed completion.
     """
-    parsed = _parse_file_artifact_materialization(
+    parsed = FileArtifactMaterializationMetadata.from_mapping(
         materialization,
         default_artifact_name=expected_artifact_name,
     )
@@ -366,11 +340,11 @@ def record_from_duckdb_materializations(
             inputs=RunRecordInputs(error=RuntimeError(msg)),
         )
 
-    parsed: dict[str, DuckDBMaterializationResult] = {}
+    parsed: dict[str, DuckDBMaterializationMetadata] = {}
     for expected_table_key in target.contract.table_keys:
         meta = materializations.get(expected_table_key)
         if meta is None:
-            parsed[expected_table_key] = DuckDBMaterializationResult(
+            parsed[expected_table_key] = DuckDBMaterializationMetadata(
                 status="failed",
                 table_key=expected_table_key,
                 row_count=None,
@@ -380,9 +354,9 @@ def record_from_duckdb_materializations(
             )
             continue
 
-        result = _parse_materialization(meta, default_table_key=expected_table_key)
+        result = DuckDBMaterializationMetadata.from_mapping(meta, default_table_key=expected_table_key)
         if result.status != "failed" and result.table_key != expected_table_key:
-            parsed[expected_table_key] = DuckDBMaterializationResult(
+            parsed[expected_table_key] = DuckDBMaterializationMetadata(
                 status="failed",
                 table_key=expected_table_key,
                 row_count=None,
@@ -560,12 +534,12 @@ def record_from_file_artifact_materializations(
 def _parse_expected_artifact_materializations(
     target: OutputTarget,
     materializations: Mapping[str, Mapping[str, object]],
-) -> dict[str, FileArtifactMaterializationResult]:
-    parsed: dict[str, FileArtifactMaterializationResult] = {}
+) -> dict[str, FileArtifactMaterializationMetadata]:
+    parsed: dict[str, FileArtifactMaterializationMetadata] = {}
     for expected_artifact_name in target.contract.artifact_names:
         meta = materializations.get(expected_artifact_name)
         if meta is None:
-            parsed[expected_artifact_name] = FileArtifactMaterializationResult(
+            parsed[expected_artifact_name] = FileArtifactMaterializationMetadata(
                 status="failed",
                 artifact_name=expected_artifact_name,
                 path=None,
@@ -576,12 +550,12 @@ def _parse_expected_artifact_materializations(
             )
             continue
 
-        result = _parse_file_artifact_materialization(
+        result = FileArtifactMaterializationMetadata.from_mapping(
             meta,
             default_artifact_name=expected_artifact_name,
         )
         if result.status != "failed" and result.artifact_name != expected_artifact_name:
-            parsed[expected_artifact_name] = FileArtifactMaterializationResult(
+            parsed[expected_artifact_name] = FileArtifactMaterializationMetadata(
                 status="failed",
                 artifact_name=expected_artifact_name,
                 path=result.path,
@@ -600,7 +574,7 @@ def _parse_expected_artifact_materializations(
 
 
 def _summarize_file_artifact_results(
-    parsed: Mapping[str, FileArtifactMaterializationResult],
+    parsed: Mapping[str, FileArtifactMaterializationMetadata],
 ) -> tuple[set[MaterializationStatus], str, float]:
     statuses: set[MaterializationStatus] = {result.status for result in parsed.values()}
     input_hash = next((result.input_hash for result in parsed.values() if result.input_hash), "")
@@ -610,7 +584,7 @@ def _summarize_file_artifact_results(
 
 def _apply_file_artifact_results(
     record: TargetRunRecord,
-    parsed: Mapping[str, FileArtifactMaterializationResult],
+    parsed: Mapping[str, FileArtifactMaterializationMetadata],
 ) -> TargetRunRecord:
     parsed_by_name = {result.artifact_name: result for result in parsed.values()}
     updated_artifacts: list[ArtifactRef] = []
@@ -648,87 +622,7 @@ def _apply_file_artifact_results(
     )
 
 
-def _parse_materialization(
-    materialization: Mapping[str, object],
-    *,
-    default_table_key: str,
-) -> DuckDBMaterializationResult:
-    status_raw = materialization.get("status")
-    if isinstance(status_raw, str) and status_raw in _MATERIALIZATION_STATUS:
-        status = _MATERIALIZATION_STATUS[status_raw]
-    else:
-        status = "failed"
-
-    table_key = materialization.get("table_key")
-    if not isinstance(table_key, str) or not table_key:
-        table_key = default_table_key
-
-    row_count_raw = materialization.get("row_count")
-    row_count = row_count_raw if isinstance(row_count_raw, int) else None
-
-    duration_raw = materialization.get("duration_ms")
-    duration_ms = float(duration_raw) if isinstance(duration_raw, (int, float)) else 0.0
-
-    input_hash_raw = materialization.get("input_hash")
-    input_hash = input_hash_raw if isinstance(input_hash_raw, str) else ""
-
-    error_raw = materialization.get("error")
-    error = error_raw if isinstance(error_raw, str) else None
-
-    return DuckDBMaterializationResult(
-        status=status,
-        table_key=table_key,
-        row_count=row_count,
-        duration_ms=duration_ms,
-        input_hash=input_hash,
-        error=error,
-    )
-
-
-def _parse_file_artifact_materialization(
-    materialization: Mapping[str, object],
-    *,
-    default_artifact_name: str,
-) -> FileArtifactMaterializationResult:
-    status_raw = materialization.get("status")
-    if isinstance(status_raw, str) and status_raw in _MATERIALIZATION_STATUS:
-        status = _MATERIALIZATION_STATUS[status_raw]
-    else:
-        status = "failed"
-
-    artifact_name = materialization.get("artifact_name")
-    if not isinstance(artifact_name, str) or not artifact_name:
-        artifact_name = default_artifact_name
-
-    path_raw = materialization.get("path")
-    path = path_raw if isinstance(path_raw, str) else None
-
-    size_bytes_raw = materialization.get("size_bytes")
-    size_bytes = size_bytes_raw if isinstance(size_bytes_raw, int) else None
-
-    duration_raw = materialization.get("duration_ms")
-    duration_ms = float(duration_raw) if isinstance(duration_raw, (int, float)) else 0.0
-
-    input_hash_raw = materialization.get("input_hash")
-    input_hash = input_hash_raw if isinstance(input_hash_raw, str) else ""
-
-    error_raw = materialization.get("error")
-    error = error_raw if isinstance(error_raw, str) else None
-
-    return FileArtifactMaterializationResult(
-        status=status,
-        artifact_name=artifact_name,
-        path=path,
-        size_bytes=size_bytes,
-        duration_ms=duration_ms,
-        input_hash=input_hash,
-        error=error,
-    )
-
-
 __all__ = [
-    "DuckDBMaterializationResult",
-    "FileArtifactMaterializationResult",
     "MaterializationStatus",
     "record_from_duckdb_materialization",
     "record_from_duckdb_materializations",

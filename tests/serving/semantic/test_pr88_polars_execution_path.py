@@ -10,10 +10,10 @@ import duckdb
 import pytest
 
 from codeintel.serving.db.manager import ServingDBManager
-from codeintel.serving.db.pool import DuckDBPoolConfig
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.semantic.models import SemanticQueryRequest
 from codeintel.serving.settings import ServingSettings
+from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
 if TYPE_CHECKING:
@@ -128,7 +128,7 @@ async def test_polars_execution_path_matches_expected_rows(tmp_path: Path) -> No
         buildspec_path=buildspec_path,
     )
 
-    manager = ServingDBManager(pointer_path=pointer_path, pool_cfg=DuckDBPoolConfig(size=1))
+    manager = ServingDBManager(pointer_path=pointer_path, pool_cfg=PoolConfig(size=1))
     await manager.start()
     try:
         kernel = SemanticQueryKernel(

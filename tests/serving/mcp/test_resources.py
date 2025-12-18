@@ -11,7 +11,6 @@ import pytest
 from fastmcp.client import Client
 
 from codeintel.serving.db.manager import ServingDBManager
-from codeintel.serving.db.pool import DuckDBPoolConfig
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.mcp.resource_store import (
     ExportArtifactSpec,
@@ -21,6 +20,7 @@ from codeintel.serving.mcp.resource_store import (
 )
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
+from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 
 if TYPE_CHECKING:
@@ -420,7 +420,7 @@ async def test_mcp_semantic_export_returns_uri(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -480,7 +480,7 @@ async def test_mcp_semantic_export_json_format(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -518,7 +518,7 @@ async def test_mcp_semantic_export_with_filters(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -560,7 +560,7 @@ async def test_mcp_semantic_export_error_invalid_view(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -595,7 +595,7 @@ async def test_mcp_static_resources_available(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -642,7 +642,7 @@ async def test_mcp_resource_read_semantic_views(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -684,7 +684,7 @@ async def test_mcp_resource_read_meta_serving(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -721,7 +721,7 @@ async def test_mcp_export_tool_has_annotations(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -765,7 +765,7 @@ async def test_mcp_resource_meta_resources(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -827,7 +827,7 @@ async def test_mcp_resource_export_meta(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -891,7 +891,7 @@ async def test_mcp_resource_export_preview(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -952,7 +952,7 @@ async def test_mcp_resource_export_sql(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()

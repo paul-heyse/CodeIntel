@@ -14,8 +14,16 @@ recorded in the build manifest.
 from __future__ import annotations
 
 import json
+import os
+import platform
+import sys
+from pathlib import Path
 from typing import Any
 
+import duckdb
+import ibis
+import pyarrow as pa
+import sqlglot
 from hamilton.function_modifiers import source, tag, value
 from hamilton.function_modifiers.adapters import SaveToDecorator
 
@@ -40,6 +48,8 @@ from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.views import ibis_views as _ibis_views
+from codeintel.storage.views.diff import diff_view_sql_maps
+from codeintel.storage.views.discovery import discover_view_builders
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
@@ -48,6 +58,9 @@ SERVING_ARTIFACTS_TARGET_NAME = "serving_artifacts"
 SERVING_ARTIFACT_SEMANTIC_REGISTRY = "semantic_registry"
 SERVING_ARTIFACT_SCHEMA_MANIFEST = "schema_manifest"
 SERVING_ARTIFACT_BUILDSPEC = "buildspec"
+SERVING_ARTIFACT_ENVIRONMENT = "environment"
+SERVING_ARTIFACT_VIEWS_SQL = "views_sql"
+SERVING_ARTIFACT_VIEWS_SQL_DIFF = "views_sql_diff"
 
 SERVING_ARTIFACT_SPECS = (
     ArtifactSpec(
@@ -64,6 +77,21 @@ SERVING_ARTIFACT_SPECS = (
         SERVING_ARTIFACT_BUILDSPEC,
         "{build_dir}/serving/artifacts/buildspec.json",
         "Compiled BuildSpec contract for serving",
+    ),
+    ArtifactSpec(
+        SERVING_ARTIFACT_ENVIRONMENT,
+        "{build_dir}/serving/artifacts/environment.json",
+        "Captured tool and configuration metadata for this snapshot",
+    ),
+    ArtifactSpec(
+        SERVING_ARTIFACT_VIEWS_SQL,
+        "{build_dir}/serving/artifacts/views_sql.json",
+        "Compiled SQL for all registered views",
+    ),
+    ArtifactSpec(
+        SERVING_ARTIFACT_VIEWS_SQL_DIFF,
+        "{build_dir}/serving/artifacts/views_sql_diff.json",
+        "Diff summary between previous and current view SQL maps",
     ),
 )
 
@@ -102,6 +130,100 @@ def _schema_manifest_json() -> str:
 def _buildspec_json() -> str:
     spec = compile_buildspec(options=BuildSpecCompileOptions(include_columns=False))
     return buildspec_to_json(spec, indent=2)
+
+
+def _environment_json(env: BuildEnv) -> str:
+    gateway_cfg = getattr(env.gateway, "config", None)
+    read_only = bool(getattr(gateway_cfg, "read_only", False))
+    extensions = os.environ.get("CODEINTEL_DUCKDB_EXTENSIONS", "").strip()
+    payload = {
+        "repo": env.repo,
+        "commit": env.commit,
+        "python": {
+            "version": platform.python_version(),
+            "implementation": platform.python_implementation(),
+        },
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+        },
+        "tools": {
+            "duckdb": str(getattr(duckdb, "__version__", "unknown")),
+            "ibis": str(getattr(ibis, "__version__", "unknown")),
+            "pyarrow": str(getattr(pa, "__version__", "unknown")),
+            "sqlglot": str(getattr(sqlglot, "__version__", "unknown")),
+        },
+        "duckdb": {
+            "read_only": read_only,
+            "extensions_env": extensions,
+            "connect_env": {
+                "threads": os.environ.get("CODEINTEL_DUCKDB_THREADS", "").strip() or None,
+                "memory_limit": os.environ.get("CODEINTEL_DUCKDB_MEMORY_LIMIT", "").strip() or None,
+                "temp_directory": os.environ.get("CODEINTEL_DUCKDB_TEMP_DIRECTORY", "").strip()
+                or None,
+                "enable_profiling": os.environ.get("CODEINTEL_DUCKDB_ENABLE_PROFILING", "").strip()
+                or None,
+                "profiling_output": os.environ.get("CODEINTEL_DUCKDB_PROFILING_OUTPUT", "").strip()
+                or None,
+            },
+        },
+        "argv0": sys.argv[0] if sys.argv else None,
+    }
+    return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def _views_sql_json(env: BuildEnv) -> str:
+    builders = discover_view_builders(modules=(_ibis_views,))
+    ibis_gateway = env.gateway.ibis
+
+    sql_by_view: dict[str, str] = {}
+    for spec in builders:
+        expr = spec.builder(ibis_gateway)
+        sql_by_view[spec.table_key.lower()] = ibis_gateway.con.compile(expr)
+
+    return json.dumps(sql_by_view, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def _views_sql_diff_json(env: BuildEnv, *, current_views_sql: str) -> str:
+    after = json.loads(current_views_sql)
+    if not isinstance(after, dict):
+        msg = "views_sql artifact did not contain an object mapping"
+        raise TypeError(msg)
+
+    before: dict[str, str] = {}
+    versions = env.gateway.assets.get_asset_versions(
+        repo=env.repo,
+        commit=env.commit,
+        asset_kind="artifact",
+        asset_key=SERVING_ARTIFACT_VIEWS_SQL,
+        limit=1,
+    )
+    if versions:
+        location = versions[0].location
+        if isinstance(location, str):
+            path = Path(location)
+            if path.is_file():
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except OSError:
+                    text = ""
+                if text:
+                    try:
+                        loaded = json.loads(text)
+                    except ValueError:
+                        loaded = None
+                    if isinstance(loaded, dict):
+                        before = {str(k).lower(): str(v) for k, v in loaded.items()}
+
+    diff = diff_view_sql_maps(before=before, after={str(k): str(v) for k, v in after.items()})
+    payload = {
+        "repo": env.repo,
+        "commit": env.commit,
+        "previous_present": bool(before),
+        "views": diff,
+    }
+    return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
 @SaveToDecorator(
@@ -194,13 +316,105 @@ def serving_artifacts__buildspec(_env: BuildEnv) -> str:
     return _buildspec_json()
 
 
+@SaveToDecorator(
+    [FileArtifactSaver],
+    output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_ENVIRONMENT}"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
+    artifact_name=value(SERVING_ARTIFACT_ENVIRONMENT),
+)
+@tag(
+    domain="export",
+    target=SERVING_ARTIFACTS_TARGET_NAME,
+    node_type="compute",
+    target_="serving_artifacts__environment",
+)
+def serving_artifacts__environment(env: BuildEnv) -> str:
+    """Capture environment metadata for serving snapshots.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway access.
+
+    Returns
+    -------
+    str
+        Newline-terminated JSON payload describing tool versions and settings.
+    """
+    return _environment_json(env)
+
+
+@SaveToDecorator(
+    [FileArtifactSaver],
+    output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_VIEWS_SQL}"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
+    artifact_name=value(SERVING_ARTIFACT_VIEWS_SQL),
+)
+@tag(
+    domain="export",
+    target=SERVING_ARTIFACTS_TARGET_NAME,
+    node_type="compute",
+    target_="serving_artifacts__views_sql",
+)
+def serving_artifacts__views_sql(env: BuildEnv) -> str:
+    """Compile compiled view SQL map JSON for serving.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway access.
+
+    Returns
+    -------
+    str
+        Newline-terminated JSON mapping of view_key -> compiled SQL.
+    """
+    return _views_sql_json(env)
+
+
+@SaveToDecorator(
+    [FileArtifactSaver],
+    output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_VIEWS_SQL_DIFF}"),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
+    artifact_name=value(SERVING_ARTIFACT_VIEWS_SQL_DIFF),
+)
+@tag(
+    domain="export",
+    target=SERVING_ARTIFACTS_TARGET_NAME,
+    node_type="compute",
+    target_="serving_artifacts__views_sql_diff",
+)
+def serving_artifacts__views_sql_diff(env: BuildEnv, serving_artifacts__views_sql: str) -> str:
+    """Compute a diff summary between the latest stored and current view SQL maps.
+
+    Parameters
+    ----------
+    env
+        Build environment with gateway access.
+    serving_artifacts__views_sql
+        Newline-terminated JSON mapping of view_key -> compiled SQL for this build.
+
+    Returns
+    -------
+    str
+        Newline-terminated JSON diff artifact.
+    """
+    return _views_sql_diff_json(env, current_views_sql=serving_artifacts__views_sql)
+
+
 @tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
-def serving_artifacts__materializations(
+def serving_artifacts__materializations_base(
     m__artifact__semantic_registry: dict[str, Any],
     m__artifact__schema_manifest: dict[str, Any],
     m__artifact__buildspec: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Collect saver metadata for all serving artifacts.
+    """Collect saver metadata for the base serving artifacts.
 
     Parameters
     ----------
@@ -221,6 +435,43 @@ def serving_artifacts__materializations(
         SERVING_ARTIFACT_SCHEMA_MANIFEST: m__artifact__schema_manifest,
         SERVING_ARTIFACT_BUILDSPEC: m__artifact__buildspec,
     }
+
+
+@tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
+def serving_artifacts__materializations_views(
+    m__artifact__environment: dict[str, Any],
+    m__artifact__views_sql: dict[str, Any],
+    m__artifact__views_sql_diff: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Collect saver metadata for the view/metadata artifacts.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Mapping of artifact name to saver metadata.
+    """
+    return {
+        SERVING_ARTIFACT_ENVIRONMENT: m__artifact__environment,
+        SERVING_ARTIFACT_VIEWS_SQL: m__artifact__views_sql,
+        SERVING_ARTIFACT_VIEWS_SQL_DIFF: m__artifact__views_sql_diff,
+    }
+
+
+@tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
+def serving_artifacts__materializations(
+    serving_artifacts__materializations_base: dict[str, dict[str, Any]],
+    serving_artifacts__materializations_views: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Merge all serving artifact materializations.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Mapping of artifact name to saver metadata.
+    """
+    merged = dict(serving_artifacts__materializations_base)
+    merged.update(serving_artifacts__materializations_views)
+    return merged
 
 
 @tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="materialize")

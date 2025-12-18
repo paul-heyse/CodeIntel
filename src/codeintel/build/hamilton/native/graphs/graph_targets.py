@@ -45,6 +45,7 @@ from codeintel.analytics.graphs import (
 )
 from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import (
     filter_paths,
     get_source_root,
@@ -239,30 +240,6 @@ class SymbolUsesExtractResult:
 
     success: bool
     edge_count: int = 0
-    table_counts: dict[str, int] = field(default_factory=dict)
-    error: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Result dataclasses for graph_metrics target
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class GraphMetricsComputeResult:
-    """Result from graph metrics computation.
-
-    Attributes
-    ----------
-    success
-        Whether computation completed successfully.
-    table_counts
-        Row counts per produced table.
-    error
-        Fatal error message if computation failed.
-    """
-
-    success: bool
     table_counts: dict[str, int] = field(default_factory=dict)
     error: str | None = None
 
@@ -1408,7 +1385,7 @@ def t__call_graph_views(
 def t__graph_metrics__compute(
     env: BuildEnv,
     t__call_graph: TargetRunRecord,
-) -> GraphMetricsComputeResult:
+) -> ExecutionResult:
     """Compute graph metrics from call graph data.
 
     Parameters
@@ -1420,14 +1397,11 @@ def t__graph_metrics__compute(
 
     Returns
     -------
-    GraphMetricsComputeResult
+    ExecutionResult
         Result containing table row counts.
     """
     if t__call_graph.status != "succeeded":
-        return GraphMetricsComputeResult(
-            success=False,
-            error=f"Upstream call_graph target failed: {t__call_graph.error}",
-        )
+        return ExecutionResult.failed(f"Upstream call_graph target failed: {t__call_graph.error}")
 
     try:
         gateway = env.gateway
@@ -1478,24 +1452,18 @@ def t__graph_metrics__compute(
 
         log.info("graph_metrics: Computed metrics row_counts=%s", row_counts)
 
-        return GraphMetricsComputeResult(
-            success=True,
-            table_counts=row_counts,
-        )
+        return ExecutionResult.ok(table_counts=row_counts)
 
     except (RuntimeError, ValueError, OSError) as exc:
         log.exception("Graph metrics computation failed")
-        return GraphMetricsComputeResult(
-            success=False,
-            error=str(exc),
-        )
+        return ExecutionResult.failed(str(exc))
 
 
 @tag(domain="graphs", target=GRAPH_METRICS_TARGET_NAME, node_type="materialize")
 def t__graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    t__graph_metrics__compute: GraphMetricsComputeResult,
+    t__graph_metrics__compute: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize graph metrics target with validation.
 
@@ -1612,7 +1580,6 @@ def t__graph_validation(
 __all__ = [
     "GoidExtractResult",
     "GoidExtractionInputs",
-    "GraphMetricsComputeResult",
     "GraphValidationResult",
     "SymbolUsesExtractResult",
     "call_graph_depth_stats",

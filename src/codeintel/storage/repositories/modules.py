@@ -27,9 +27,7 @@ class ModuleRepository(BaseRepository):
         """
         tbl = self._ibis_table("core.modules")
         expr = (
-            tbl.filter(and_predicates(tbl.repo == self.repo, tbl.commit == self.commit))
-            .select("module")
-            .order_by("module")
+            tbl.select("module").order_by("module")
         )
 
         rows = self._ibis_to_dicts(expr)
@@ -53,8 +51,6 @@ class ModuleRepository(BaseRepository):
         expr = tbl.filter(
             and_predicates(
                 tbl.rel_path == rel_path,
-                tbl.repo == self.repo,
-                tbl.commit == self.commit,
             )
         ).limit(1)
         return self._ibis_to_one(expr)
@@ -76,8 +72,6 @@ class ModuleRepository(BaseRepository):
         tbl = self._ibis_table("docs.v_module_architecture")
         expr = tbl.filter(
             and_predicates(
-                tbl.repo == self.repo,
-                tbl.commit == self.commit,
                 tbl.module == module,
             )
         ).limit(1)
@@ -100,8 +94,6 @@ class ModuleRepository(BaseRepository):
         tbl = self._ibis_table("analytics.module_profile")
         expr = tbl.filter(
             and_predicates(
-                tbl.repo == self.repo,
-                tbl.commit == self.commit,
                 tbl.module == module,
             )
         ).limit(1)
@@ -124,8 +116,6 @@ class ModuleRepository(BaseRepository):
         tbl = self._ibis_table("analytics.file_profile")
         expr = tbl.filter(
             and_predicates(
-                tbl.repo == self.repo,
-                tbl.commit == self.commit,
                 tbl.rel_path == rel_path,
             )
         ).limit(1)
@@ -148,8 +138,6 @@ class ModuleRepository(BaseRepository):
         tbl = self._ibis_table("docs.v_ide_hints")
         expr = tbl.filter(
             and_predicates(
-                tbl.repo == self.repo,
-                tbl.commit == self.commit,
                 tbl.rel_path == rel_path,
             )
         )

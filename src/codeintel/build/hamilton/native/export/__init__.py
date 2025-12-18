@@ -9,7 +9,8 @@ Phase 5: Export domain migration with Hamilton-native validation.
 from __future__ import annotations
 
 from codeintel.build.hamilton.native.export.export_targets import (
-    ExportJsonlComputeResult,
+    export_jsonl__content,
+    export_parquet__bytes,
     t__export_jsonl,
     t__export_jsonl__compute,
     t__export_parquet,
@@ -17,7 +18,8 @@ from codeintel.build.hamilton.native.export.export_targets import (
 )
 
 __all__ = [
-    "ExportJsonlComputeResult",
+    "export_jsonl__content",
+    "export_parquet__bytes",
     "t__export_jsonl",
     "t__export_jsonl__compute",
     "t__export_parquet",

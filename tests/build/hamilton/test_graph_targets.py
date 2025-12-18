@@ -17,9 +17,9 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.graphs.graph_targets import (
     GoidExtractResult,
-    GraphMetricsComputeResult,
     GraphValidationResult,
     SymbolUsesExtractResult,
     t__goids,
@@ -198,18 +198,17 @@ def test_symbol_uses_result_failure() -> None:
 
 
 # ---------------------------------------------------------------------------
-# GraphMetricsComputeResult Tests
+# ExecutionResult Tests
 # ---------------------------------------------------------------------------
 
 
-def test_graph_metrics_result_success() -> None:
-    """Verify GraphMetricsComputeResult dataclass for success case."""
-    result = GraphMetricsComputeResult(
-        success=True,
+def test_execution_result_success() -> None:
+    """Verify ExecutionResult for success case."""
+    result = ExecutionResult.ok(
         table_counts={
             "analytics.graph_metrics_functions": MAX_GRAPH_METRICS_COUNT,
             "analytics.graph_metrics_modules": MAX_GRAPH_METRICS_COUNT,
-        },
+        }
     )
     expect_true(result.success, message="Result should be successful")
     expect_equal(
@@ -219,13 +218,9 @@ def test_graph_metrics_result_success() -> None:
     expect_equal(result.error, None)
 
 
-def test_graph_metrics_result_failure() -> None:
-    """Verify GraphMetricsComputeResult dataclass for failure case."""
-    result = GraphMetricsComputeResult(
-        success=False,
-        table_counts={},
-        error="Upstream call_graph failed",
-    )
+def test_execution_result_failure() -> None:
+    """Verify ExecutionResult for failure case."""
+    result = ExecutionResult.failed("Upstream call_graph failed")
     expect_true(not result.success, message="Result should indicate failure")
     expect_equal(result.error, "Upstream call_graph failed")
 
@@ -441,12 +436,11 @@ def test_graph_metrics_materialize_success(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = GraphMetricsComputeResult(
-        success=True,
+    compute_result = ExecutionResult.ok(
         table_counts={
             "analytics.graph_metrics_functions": MAX_GRAPH_METRICS_COUNT,
             "analytics.graph_metrics_modules": MAX_GRAPH_METRICS_COUNT,
-        },
+        }
     )
 
     record = t__graph_metrics(env, graph, compute_result)
@@ -475,11 +469,7 @@ def test_graph_metrics_materialize_failure(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = GraphMetricsComputeResult(
-        success=False,
-        table_counts={},
-        error="Upstream call_graph failed",
-    )
+    compute_result = ExecutionResult.failed("Upstream call_graph failed")
 
     record = t__graph_metrics(env, graph, compute_result)
 

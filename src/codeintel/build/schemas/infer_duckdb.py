@@ -3,8 +3,8 @@
 This module implements the Phase 2 schema inference strategy:
 
 - compile an Ibis expression to SQL
-- run DuckDB ``DESCRIBE`` against that SQL
-- map the resulting DuckDB types into the project TableSchema primitives
+- use DuckDB's relation metadata for schema
+- map DuckDB types into the project TableSchema primitives
 
 Notes
 -----
@@ -18,6 +18,9 @@ import re
 from typing import TYPE_CHECKING
 
 import ibis
+import sqlglot
+import sqlglot.expressions as exp
+from sqlglot.errors import ParseError
 
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.constants import DUCKDB_DIALECT
@@ -34,6 +37,19 @@ _DECIMAL_RE = re.compile(r"^DECIMAL\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)$")
 _DECIMAL_INT_PRECISION = 38
 _DECIMAL_INT_SCALE = 0
 _DESCRIBE_NULLABILITY_INDEX = 2
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+_BANNED_SQLGLOT_NODES: tuple[type[exp.Expression], ...] = (
+    exp.Alter,
+    exp.Command,
+    exp.Create,
+    exp.Delete,
+    exp.Drop,
+    exp.Insert,
+    exp.Transaction,
+    exp.TruncateTable,
+    exp.Update,
+)
 
 
 def _strip_trailing_semicolon(sql: str) -> str:
@@ -50,6 +66,65 @@ def _strip_trailing_semicolon(sql: str) -> str:
         SQL query with at most one trailing semicolon removed.
     """
     return re.sub(r";\s*$", "", sql.strip())
+
+
+def _validate_identifier(identifier: str, *, kind: str) -> str:
+    """Validate a DuckDB identifier.
+
+    Parameters
+    ----------
+    identifier
+        Identifier string to validate.
+    kind
+        Human-friendly kind used in error messages (e.g., "schema", "table").
+
+    Returns
+    -------
+    str
+        The validated identifier.
+
+    Raises
+    ------
+    ValueError
+        If the identifier does not match the allowed pattern.
+    """
+    if _IDENTIFIER_RE.fullmatch(identifier) is None:
+        msg = f"Invalid DuckDB identifier for {kind}: {identifier!r}"
+        raise ValueError(msg)
+    return identifier
+
+
+def _validate_trusted_select_sql(sql: str) -> str:
+    """Validate a SQL string is a single SELECT-like query with no DDL/DML.
+
+    Parameters
+    ----------
+    sql
+        SQL query text.
+
+    Returns
+    -------
+    str
+        Stripped SQL query text safe to pass to ``DuckDBConnection.sql``.
+
+    Raises
+    ------
+    ValueError
+        If parsing fails or the query contains DDL/DML statements.
+    """
+    stripped_sql = _strip_trailing_semicolon(sql)
+    try:
+        parsed = sqlglot.parse_one(stripped_sql, read=DUCKDB_DIALECT)
+    except ParseError as exc:
+        msg = "Failed to parse SQL for schema inference"
+        raise ValueError(msg) from exc
+
+    for node in parsed.walk():
+        if type(node) in _BANNED_SQLGLOT_NODES:
+            msg = "Schema inference only supports SELECT-style queries (DDL/DML is not allowed)"
+            raise ValueError(msg)
+
+    return stripped_sql
 
 
 def normalize_duckdb_type(type_str: str) -> ColumnType:
@@ -107,49 +182,6 @@ def normalize_duckdb_type(type_str: str) -> ColumnType:
     raise ValueError(msg)
 
 
-def infer_table_schema_from_sql(
-    *,
-    con: DuckDBConnection,
-    sql: str,
-    table_key: str,
-) -> TableSchema:
-    """Infer a TableSchema by running DuckDB ``DESCRIBE`` on a SQL query.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    sql
-        SQL query to describe.
-    table_key
-        Table key (schema.table) to assign to the inferred schema.
-
-    Returns
-    -------
-    TableSchema
-        Inferred schema for the query output.
-    """
-    stripped_sql = _strip_trailing_semicolon(sql)
-    rows = con.execute(f"DESCRIBE {stripped_sql}").fetchall()
-
-    schema_name, table_name = split_table_key(table_key)
-
-    columns: list[Column] = []
-    for row in rows:
-        col_name = str(row[0])
-        col_type = normalize_duckdb_type(str(row[1]))
-        nullable = True
-        if len(row) > _DESCRIBE_NULLABILITY_INDEX:
-            null_field = str(row[_DESCRIBE_NULLABILITY_INDEX]).strip().upper()
-            if null_field in {"NO", "N", "FALSE", "0"}:
-                nullable = False
-            elif null_field in {"YES", "Y", "TRUE", "1"}:
-                nullable = True
-        columns.append(Column(name=col_name, type=col_type, nullable=nullable))
-
-    return TableSchema(schema=schema_name, name=table_name, columns=columns)
-
-
 def infer_table_schema_from_ibis(
     *,
     expr: ir.Table,
@@ -173,7 +205,17 @@ def infer_table_schema_from_ibis(
         Inferred schema for the Ibis expression output.
     """
     sql = ibis.to_sql(expr, dialect=DUCKDB_DIALECT)
-    return infer_table_schema_from_sql(con=con, sql=sql, table_key=table_key)
+    validated_sql = _validate_trusted_select_sql(sql)
+
+    schema_name, table_name = split_table_key(table_key)
+    relation = con.sql(validated_sql)
+
+    columns: list[Column] = []
+    for col_name, dtype in zip(relation.columns, relation.types, strict=True):
+        col_type = normalize_duckdb_type(str(dtype))
+        columns.append(Column(name=str(col_name), type=col_type, nullable=True))
+
+    return TableSchema(schema=schema_name, name=table_name, columns=columns)
 
 
 def infer_view_schema(
@@ -199,6 +241,11 @@ def infer_view_schema(
     TableSchema
         Inferred schema for the view.
 
+    Raises
+    ------
+    ValueError
+        If the view is not present in the database or has no columns.
+
     Examples
     --------
     >>> schema = infer_view_schema(con=con, view_key="docs.v_function_summary")
@@ -206,19 +253,34 @@ def infer_view_schema(
     'docs.v_function_summary'
     """
     schema_name, view_name = split_table_key(view_key)
-    rows = con.execute(f"DESCRIBE {schema_name}.{view_name}").fetchall()
+    _validate_identifier(schema_name, kind="schema")
+    _validate_identifier(view_name, kind="table/view")
+
+    rows = con.execute(
+        """
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = ? AND table_name = ?
+        ORDER BY ordinal_position
+        """,
+        [schema_name, view_name],
+    ).fetchall()
+    if not rows:
+        msg = f"View not found or has no columns: {view_key}"
+        raise ValueError(msg)
 
     columns: list[Column] = []
     for row in rows:
         col_name = str(row[0])
         col_type = normalize_duckdb_type(str(row[1]))
-        # Views typically don't have NOT NULL constraints visible via DESCRIBE,
-        # so default to nullable=True
         nullable = True
-        if len(row) > _DESCRIBE_NULLABILITY_INDEX:
-            null_field = str(row[_DESCRIBE_NULLABILITY_INDEX]).strip().upper()
-            if null_field in {"NO", "N", "FALSE", "0"}:
-                nullable = False
+        nullable_raw = (
+            str(row[_DESCRIBE_NULLABILITY_INDEX]).strip().upper()
+            if len(row) > _DESCRIBE_NULLABILITY_INDEX
+            else "YES"
+        )
+        if nullable_raw in {"NO", "N", "FALSE", "0"}:
+            nullable = False
         columns.append(Column(name=col_name, type=col_type, nullable=nullable))
 
     return TableSchema(schema=schema_name, name=view_name, columns=columns)
@@ -226,7 +288,6 @@ def infer_view_schema(
 
 __all__ = [
     "infer_table_schema_from_ibis",
-    "infer_table_schema_from_sql",
     "infer_view_schema",
     "normalize_duckdb_type",
 ]

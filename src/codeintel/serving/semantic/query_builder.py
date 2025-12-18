@@ -1,8 +1,9 @@
 """Safe Ibis query builder for semantic queries.
 
-All user-provided values are embedded as typed expression literals (never
-interpolated into raw SQL strings). Identifiers are validated against an
-explicit allowlist from the semantic registry.
+All user-provided identifiers are validated against an explicit allowlist from
+the semantic registry. User-provided scalar values are parameterized via
+``ibis.param(...)`` and bound at compile/execute time; large IN-lists are staged
+via Arrow-backed memtables with explicit cleanup.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from typing import TYPE_CHECKING, cast
 import ibis
 import pyarrow as pa
 
+from codeintel.serving.semantic.templates import QueryTemplate
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
@@ -23,6 +25,7 @@ if TYPE_CHECKING:
 
     from codeintel.core.schemas.primitives import ColumnType
     from codeintel.serving.semantic.models import FilterSpec
+    from codeintel.serving.semantic.templates import BoundQuery
 
 
 class QueryBuilderError(ValueError):
@@ -64,11 +67,11 @@ _IN_LIST_MEMTABLE_THRESHOLD = 500
 
 
 @dataclass(frozen=True, slots=True)
-class BuiltSemanticQuery:
-    """Built query plus any staged temporary tables."""
-
-    expr: it.Table
-    temp_tables: tuple[str, ...]
+class _PredicateContext:
+    allowed_columns: frozenset[str]
+    column_types: Mapping[str, ColumnType] | None
+    temp_tables: list[str]
+    params: dict[it.Expr, object]
 
 
 def _validate_pagination(*, limit: int, offset: int) -> None:
@@ -101,31 +104,37 @@ def _resolve_table(*, ibis_con: DuckDBBackend, table_key: str) -> it.Table:
     return ibis_con.table(table_name, database=schema_name)
 
 
-def _predicate_eq(col: it.Value, value: object) -> it.BooleanValue:
-    return col == ibis.literal(value)
+def _predicate_eq(col: it.Value, value: object) -> tuple[it.BooleanValue, it.Scalar, object]:
+    param = ibis.param(col.type())
+    return col == param, param, value
 
 
-def _predicate_ne(col: it.Value, value: object) -> it.BooleanValue:
-    return col != ibis.literal(value)
+def _predicate_ne(col: it.Value, value: object) -> tuple[it.BooleanValue, it.Scalar, object]:
+    param = ibis.param(col.type())
+    return col != param, param, value
 
 
-def _predicate_lt(col: it.Value, value: object) -> it.BooleanValue:
-    return col < ibis.literal(value)
+def _predicate_lt(col: it.Value, value: object) -> tuple[it.BooleanValue, it.Scalar, object]:
+    param = ibis.param(col.type())
+    return col < param, param, value
 
 
-def _predicate_lte(col: it.Value, value: object) -> it.BooleanValue:
-    return col <= ibis.literal(value)
+def _predicate_lte(col: it.Value, value: object) -> tuple[it.BooleanValue, it.Scalar, object]:
+    param = ibis.param(col.type())
+    return col <= param, param, value
 
 
-def _predicate_gt(col: it.Value, value: object) -> it.BooleanValue:
-    return col > ibis.literal(value)
+def _predicate_gt(col: it.Value, value: object) -> tuple[it.BooleanValue, it.Scalar, object]:
+    param = ibis.param(col.type())
+    return col > param, param, value
 
 
-def _predicate_gte(col: it.Value, value: object) -> it.BooleanValue:
-    return col >= ibis.literal(value)
+def _predicate_gte(col: it.Value, value: object) -> tuple[it.BooleanValue, it.Scalar, object]:
+    param = ibis.param(col.type())
+    return col >= param, param, value
 
 
-_SIMPLE_PREDICATES: dict[str, Callable[[it.Value, object], it.BooleanValue]] = {
+_SIMPLE_PREDICATES: dict[str, Callable[[it.Value, object], tuple[it.BooleanValue, it.Scalar, object]]] = {
     "eq": _predicate_eq,
     "ne": _predicate_ne,
     "lt": _predicate_lt,
@@ -135,56 +144,66 @@ _SIMPLE_PREDICATES: dict[str, Callable[[it.Value, object], it.BooleanValue]] = {
 }
 
 
-_STRING_PREDICATES: dict[str, Callable[[it.StringColumn, str], it.BooleanValue]] = {
-    "contains": lambda col, value: col.contains(value),
-    "startswith": lambda col, value: col.startswith(value),
+def _predicate_contains(col: it.StringColumn, value: str) -> tuple[it.BooleanValue, it.Scalar, object]:
+    param = ibis.param(col.type())
+    return col.contains(cast("it.StringScalar", param)), param, value
+
+
+def _predicate_startswith(col: it.StringColumn, value: str) -> tuple[it.BooleanValue, it.Scalar, object]:
+    param = ibis.param(col.type())
+    return col.startswith(cast("it.StringScalar", param)), param, value
+
+
+_STRING_PREDICATES: dict[str, Callable[[it.StringColumn, str], tuple[it.BooleanValue, it.Scalar, object]]] = {
+    "contains": _predicate_contains,
+    "startswith": _predicate_startswith,
 }
 
 
 def _build_predicate(
     *,
     table: it.Table,
-    allowed_columns: frozenset[str],
     filter_spec: FilterSpec,
-    column_types: Mapping[str, ColumnType] | None,
-    temp_tables: list[str],
+    ctx: _PredicateContext,
 ) -> it.BooleanValue:
-    _require_allowed_column(
-        column=filter_spec.column, allowed_columns=allowed_columns, ctx="filter"
-    )
+    _require_allowed_column(column=filter_spec.column, allowed_columns=ctx.allowed_columns, ctx="filter")
     col_expr = table[filter_spec.column]
     op = filter_spec.op
     value = filter_spec.value
 
-    column_type = column_types.get(filter_spec.column) if column_types is not None else None
+    column_type = ctx.column_types.get(filter_spec.column) if ctx.column_types is not None else None
 
     simple = _SIMPLE_PREDICATES.get(op)
     if simple is not None:
-        return _build_simple_predicate(
+        predicate, param, param_value = _build_simple_predicate(
             op=op,
             predicate=simple,
             col_expr=col_expr,
             value=value,
             column_type=column_type,
         )
+        ctx.params[param] = param_value
+        return predicate
 
     if op == "in":
         return _build_in_predicate(
             col_expr=col_expr,
             value=value,
             column_type=column_type,
-            temp_tables=temp_tables,
+            temp_tables=ctx.temp_tables,
         )
 
     string_predicate = _STRING_PREDICATES.get(op)
     if string_predicate is not None:
-        return _build_string_predicate(
+        predicate, param, param_value = _build_string_predicate(
             op=op,
             predicate=string_predicate,
             col_expr=col_expr,
             value=value,
             column_type=column_type,
         )
+        ctx.params[param] = param_value
+        return predicate
 
     msg = f"Unsupported operator: {op}"
     raise QueryBuilderError(msg)
@@ -193,11 +212,11 @@ def _build_predicate(
 def _build_simple_predicate(
     *,
     op: str,
-    predicate: Callable[[it.Value, object], it.BooleanValue],
+    predicate: Callable[[it.Value, object], tuple[it.BooleanValue, it.Scalar, object]],
     col_expr: it.Value,
     value: object,
     column_type: ColumnType | None,
-) -> it.BooleanValue:
+) -> tuple[it.BooleanValue, it.Scalar, object]:
     if op in {"lt", "lte", "gt", "gte"} and column_type == "VARCHAR":
         msg = f"Operator {op} is not supported for string columns"
         raise QueryBuilderError(msg)
@@ -234,11 +253,11 @@ def _build_in_predicate(
 def _build_string_predicate(
     *,
     op: str,
-    predicate: Callable[[it.StringColumn, str], it.BooleanValue],
+    predicate: Callable[[it.StringColumn, str], tuple[it.BooleanValue, it.Scalar, object]],
     col_expr: it.Value,
     value: object,
     column_type: ColumnType | None,
-) -> it.BooleanValue:
+) -> tuple[it.BooleanValue, it.Scalar, object]:
     if not isinstance(value, str):
         msg = f"{op} operator requires string value"
         raise QueryBuilderError(msg)
@@ -269,7 +288,7 @@ def build_query(
     ibis_con: DuckDBBackend,
     plan: SemanticQueryPlan,
     column_types: Mapping[str, ColumnType] | None = None,
-) -> BuiltSemanticQuery:
+) -> BoundQuery:
     """Build an Ibis query expression for a semantic view.
 
     Parameters
@@ -284,8 +303,8 @@ def build_query(
 
     Returns
     -------
-    BuiltSemanticQuery
-        Built query expression and any staged temporary tables.
+    BoundQuery
+        Bound query ready for compilation/execution, plus any staged temporary tables.
 
     Raises
     ------
@@ -301,13 +320,18 @@ def build_query(
 
     table = _resolve_table(ibis_con=ibis_con, table_key=plan.table_key)
     temp_tables: list[str] = []
+    params: dict[it.Expr, object] = {}
+    ctx = _PredicateContext(
+        allowed_columns=plan.allowed_columns,
+        column_types=column_types,
+        temp_tables=temp_tables,
+        params=params,
+    )
     predicates = [
         _build_predicate(
             table=table,
-            allowed_columns=plan.allowed_columns,
             filter_spec=f,
-            column_types=column_types,
-            temp_tables=temp_tables,
+            ctx=ctx,
         )
         for f in plan.filters
     ]
@@ -322,10 +346,9 @@ def build_query(
         )
 
     expr = expr.select([expr[c] for c in plan.columns])
-    return BuiltSemanticQuery(
-        expr=expr.limit(plan.limit, offset=plan.offset),
-        temp_tables=tuple(temp_tables),
-    )
+    limited_expr = expr.limit(plan.limit, offset=plan.offset)
+    template = QueryTemplate(expr=limited_expr, temp_tables=tuple(temp_tables))
+    return template.bind(params)
 
 
-__all__ = ["BuiltSemanticQuery", "QueryBuilderError", "SemanticQueryPlan", "build_query"]
+__all__ = ["QueryBuilderError", "SemanticQueryPlan", "build_query"]

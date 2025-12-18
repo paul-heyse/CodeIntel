@@ -83,7 +83,7 @@ class FunctionRepository(BaseRepository):
         qualname: str | None,
     ) -> int | None:
         goids = self._ibis_table("core.goids")
-        expr = goids.filter(and_predicates(goids.repo == self.repo, goids.commit == self.commit))
+        expr = goids
 
         if urn:
             expr = expr.filter(ibis_bool(goids.urn == urn))
@@ -107,9 +107,7 @@ class FunctionRepository(BaseRepository):
         qualname: str | None,
     ) -> int | None:
         factors = self._ibis_table("analytics.goid_risk_factors")
-        expr = factors.filter(
-            and_predicates(factors.repo == self.repo, factors.commit == self.commit)
-        )
+        expr = factors
 
         if urn:
             expr = expr.filter(ibis_bool(factors.urn == urn))
@@ -142,8 +140,6 @@ class FunctionRepository(BaseRepository):
         table = self._ibis_table("docs.v_function_summary")
         expr = table.filter(
             and_predicates(
-                table.repo == self.repo,
-                table.commit == self.commit,
                 table.function_goid_h128 == goid_h128,
             )
         ).limit(1)
@@ -168,8 +164,6 @@ class FunctionRepository(BaseRepository):
         expr = table.filter(
             and_predicates(
                 table.rel_path == rel_path,
-                table.repo == self.repo,
-                table.commit == self.commit,
             )
         ).order_by(table.qualname)
         return self._validated_records("docs.v_function_summary", expr)
@@ -201,8 +195,6 @@ class FunctionRepository(BaseRepository):
         table = self._ibis_table("analytics.goid_risk_factors")
         expr = table.filter(
             and_predicates(
-                table.repo == self.repo,
-                table.commit == self.commit,
                 ge(table.risk_score, min_risk),
             )
         )
@@ -228,8 +220,6 @@ class FunctionRepository(BaseRepository):
         table = self._ibis_table("analytics.function_profile")
         expr = table.filter(
             and_predicates(
-                table.repo == self.repo,
-                table.commit == self.commit,
                 table.function_goid_h128 == goid_h128,
             )
         ).limit(1)
@@ -253,8 +243,6 @@ class FunctionRepository(BaseRepository):
         table = self._ibis_table("docs.v_function_architecture")
         expr = table.filter(
             and_predicates(
-                table.repo == self.repo,
-                table.commit == self.commit,
                 table.function_goid_h128 == goid_h128,
             )
         ).limit(1)
@@ -271,9 +259,7 @@ class FunctionRepository(BaseRepository):
             Function GOIDs present in the snapshot.
         """
         table = self._ibis_table("docs.v_function_summary")
-        expr = table.filter(
-            and_predicates(table.repo == self.repo, table.commit == self.commit)
-        ).select("function_goid_h128")
+        expr = table.select("function_goid_h128")
 
         df = pd.DataFrame(expr.execute())
         records = df.where(pd.notna(df), None).to_dict(orient="records")

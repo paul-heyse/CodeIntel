@@ -15,10 +15,10 @@ import pytest
 from fastmcp.client import Client
 
 from codeintel.serving.db.manager import ServingDBManager
-from codeintel.serving.db.pool import DuckDBPoolConfig
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
+from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_not_none,
@@ -200,7 +200,7 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -264,7 +264,7 @@ async def test_mcp_tool_annotations_present(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -308,7 +308,7 @@ async def test_mcp_tool_error_handling(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -350,7 +350,7 @@ async def test_mcp_typed_response_structure(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -408,7 +408,7 @@ async def test_mcp_query_response_has_result_data(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()
@@ -465,7 +465,7 @@ async def test_mcp_serving_meta_typed_response(tmp_path: Path) -> None:
 
     manager = ServingDBManager(
         pointer_path=pointer_path,
-        pool_cfg=DuckDBPoolConfig(size=1),
+        pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
     )
     await manager.start()

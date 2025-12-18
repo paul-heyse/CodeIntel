@@ -33,6 +33,8 @@ from ibis.common.exceptions import (
     RelationError,
     TableNotFound,
 )
+from sqlglot import exp, parse
+from sqlglot.errors import ParseError
 
 from codeintel.core.errors.storage import (
     ColumnNotFoundError,
@@ -80,6 +82,86 @@ DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 log = logging.getLogger(__name__)
+
+
+class UnsafeSqlError(ValueError):
+    """Raised when a SQL string violates the select-only perimeter."""
+
+    def __init__(self, reason: str, *, detail: str | None = None) -> None:
+        messages = {
+            "empty_sql": "Empty SQL string",
+            "parse_failed": "Failed to parse SQL",
+            "multiple_statements": "Only single-statement SQL is allowed",
+            "disallowed_operation": "SQL contains disallowed non-select operations",
+            "not_select": "SQL must be a SELECT query",
+        }
+        msg = messages.get(reason, "Unsafe SQL")
+        if detail:
+            msg = f"{msg}: {detail}"
+        super().__init__(msg)
+        self.reason = reason
+        self.detail = detail
+
+
+_DISALLOWED_SQL_NODES: tuple[type[exp.Expression], ...] = (
+    exp.Alter,
+    exp.Command,
+    exp.Copy,
+    exp.Create,
+    exp.Delete,
+    exp.Drop,
+    exp.Insert,
+    exp.Update,
+)
+
+
+def assert_single_select_statement(sql: str) -> exp.Expression:
+    """Validate a SQL string contains exactly one select-like statement.
+
+    Parameters
+    ----------
+    sql
+        DuckDB SQL string to validate.
+
+    Returns
+    -------
+    sqlglot.expressions.Expression
+        Parsed SQLGlot AST root.
+
+    Raises
+    ------
+    UnsafeSqlError
+        If the SQL contains multiple statements or disallowed operations.
+    """
+    normalized = sql.strip()
+    if not normalized:
+        reason = "empty_sql"
+        raise UnsafeSqlError(reason)
+
+    try:
+        statements = parse(normalized, read="duckdb")
+    except ParseError as exc:
+        reason = "parse_failed"
+        raise UnsafeSqlError(reason, detail=str(exc)) from exc
+
+    if len(statements) != 1:
+        reason = "multiple_statements"
+        raise UnsafeSqlError(reason)
+
+    root = statements[0]
+    if root is None:
+        reason = "parse_failed"
+        raise UnsafeSqlError(reason)
+    for node_type in _DISALLOWED_SQL_NODES:
+        if root.find(node_type) is not None:
+            reason = "disallowed_operation"
+            raise UnsafeSqlError(reason)
+
+    if not root.find(exp.Select) and not isinstance(root, (exp.Select, exp.Union, exp.With)):
+        reason = "not_select"
+        raise UnsafeSqlError(reason)
+
+    return root
 
 
 def table_has_rows_for_snapshot(
