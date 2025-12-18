@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import pyarrow as pa
 
 from codeintel.serving.search.models import SearchQueryResponse, SearchResult
 from codeintel.serving.semantic.models import (
@@ -28,7 +29,9 @@ except ImportError:  # pragma: no cover
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
+    from pathlib import Path
 
+    from codeintel.core.schemas.primitives import ColumnType
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
     from codeintel.serving.db.pointer import ServingSnapshotPointer
     from codeintel.serving.search.models import SearchQueryRequest
@@ -255,11 +258,15 @@ class SemanticQueryKernel:
         *,
         warehouse: Warehouse,
         plan: SemanticQueryPlan,
+        column_types: dict[str, ColumnType] | None,
     ) -> list[dict[str, object]]:
         ibis_con = warehouse.gateway.ibis.con
-        expr = build_query(ibis_con=ibis_con, plan=plan)
-        sql = ibis_con.compile(expr)
-        return self._execute_sql(warehouse=warehouse, sql=sql)
+        built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
+        try:
+            sql = ibis_con.compile(built.expr)
+            return self._execute_sql(warehouse=warehouse, sql=sql)
+        finally:
+            _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=built.temp_tables)
 
     def catalog(self) -> dict[str, object]:
         """List all available semantic views.
@@ -348,6 +355,7 @@ class SemanticQueryKernel:
         with self.db.connect() as (warehouse, pointer):
             context = self._snapshot_context(pointer)
             view = context.registry.by_id(request.view_id)
+            column_types = _column_types_for_view(view=view, inventory=context.inventory)
             allowed_columns = self._resolve_allowed_columns(view=view, inventory=context.inventory)
             columns = request.select if request.select else allowed_columns
 
@@ -365,7 +373,11 @@ class SemanticQueryKernel:
                 offset=request.offset,
             )
 
-            rows = self._execute_semantic_plan(warehouse=warehouse, plan=plan)
+            rows = self._execute_semantic_plan(
+                warehouse=warehouse,
+                plan=plan,
+                column_types=column_types,
+            )
 
         truncated = len(rows) > effective_limit
         if truncated:
@@ -413,7 +425,12 @@ class SemanticQueryKernel:
             )
 
             ibis_con = warehouse.gateway.ibis.con
-            compiled = ibis_con.compile(build_query(ibis_con=ibis_con, plan=plan))
+            column_types = _column_types_for_view(view=view, inventory=context.inventory)
+            built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
+            try:
+                compiled = ibis_con.compile(built.expr)
+            finally:
+                _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=built.temp_tables)
 
             raw_rows = warehouse.gateway.policy.execute_sql(f"EXPLAIN {compiled}").fetchall()
             plan_text = _format_explain_rows(raw_rows)
@@ -558,49 +575,152 @@ class SemanticQueryKernel:
         ------
         dict[str, object]
             Row dictionary for each result row.
-
-        Raises
-        ------
-        UnknownViewIdError
-            If the view_id does not exist.
-        UnknownColumnsError
-            If the request specifies unknown columns.
         """
-        with self.db.connect() as (warehouse, pointer):
-            context = self._snapshot_context(pointer)
-            try:
-                view = context.registry.by_id(request.view_id)
-            except KeyError as exc:
-                raise UnknownViewIdError(request.view_id) from exc
-            allowed_columns = self._resolve_allowed_columns(view=view, inventory=context.inventory)
-            if request.select:
-                unknown = [col for col in request.select if col not in allowed_columns]
-                if unknown:
-                    raise UnknownColumnsError(
-                        unknown=tuple(unknown),
-                        allowed=tuple(allowed_columns),
-                    )
-                columns = request.select
-            else:
-                columns = allowed_columns
-
-            plan = SemanticQueryPlan(
-                table_key=view.table_key,
-                columns=columns,
-                allowed_columns=frozenset(allowed_columns),
-                filters=request.filters,
-                order_by=request.order_by,
-                limit=request.limit,
-                offset=request.offset,
+        with self.db.connect_export() as (warehouse, pointer):
+            sql, columns, temp_tables = self._compile_export_query(
+                warehouse=warehouse,
+                pointer=pointer,
+                request=request,
             )
 
-            ibis_con = warehouse.gateway.ibis.con
-            expr = build_query(ibis_con=ibis_con, plan=plan)
-            sql = ibis_con.compile(expr)
+            try:
+                result = warehouse.gateway.policy.execute_sql(sql)
+                reader = result.fetch_record_batch(self.settings.export_batch_size)
+                for batch in reader:
+                    payload = batch.to_pydict()
+                    row_count = batch.num_rows
+                    for idx in range(row_count):
+                        yield {name: payload[name][idx] for name in columns}
+            finally:
+                _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=temp_tables)
 
-            result = warehouse.gateway.policy.execute_sql(sql)
-            for row in result.fetchall():
-                yield dict(zip(columns, row, strict=False))
+    def export_sql(self, request: SemanticExportRequest) -> str:
+        """Return the compiled SQL for an export request.
+
+        Parameters
+        ----------
+        request
+            Export request with filters, selection, and pagination.
+
+        Returns
+        -------
+        str
+            Compiled DuckDB SQL for the export.
+        """
+        with self.db.connect_export() as (warehouse, pointer):
+            sql, _columns, temp_tables = self._compile_export_query(
+                warehouse=warehouse,
+                pointer=pointer,
+                request=request,
+            )
+            try:
+                return sql
+            finally:
+                _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=temp_tables)
+
+    def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> None:
+        """Write an export result to a Parquet file via DuckDB COPY."""
+        with self.db.connect_export() as (warehouse, pointer):
+            sql, _columns, temp_tables = self._compile_export_query(
+                warehouse=warehouse,
+                pointer=pointer,
+                request=request,
+            )
+            try:
+                escaped = str(output_path).replace("'", "''")
+                copy_sql = f"COPY ({sql}) TO '{escaped}' (FORMAT PARQUET)"
+                warehouse.gateway.policy.execute_sql(copy_sql)
+            finally:
+                _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=temp_tables)
+
+    def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int:
+        """Write an export result to an Arrow IPC file.
+
+        Returns
+        -------
+        int
+            Number of rows written.
+        """
+        with self.db.connect_export() as (warehouse, pointer):
+            sql, _columns, temp_tables = self._compile_export_query(
+                warehouse=warehouse,
+                pointer=pointer,
+                request=request,
+            )
+            try:
+                result = warehouse.gateway.policy.execute_sql(sql)
+                reader = result.fetch_record_batch(self.settings.export_batch_size)
+                rows_written = 0
+                with output_path.open("wb") as handle, pa.ipc.new_file(
+                    handle,
+                    reader.schema,
+                ) as writer:
+                    for batch in reader:
+                        rows_written += batch.num_rows
+                        writer.write_batch(batch)
+                return rows_written
+            finally:
+                _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=temp_tables)
+
+    def _compile_export_query(
+        self,
+        *,
+        warehouse: Warehouse,
+        pointer: ServingSnapshotPointer,
+        request: SemanticExportRequest,
+    ) -> tuple[str, list[str], tuple[str, ...]]:
+        context = self._snapshot_context(pointer)
+        try:
+            view = context.registry.by_id(request.view_id)
+        except KeyError as exc:
+            raise UnknownViewIdError(request.view_id) from exc
+
+        allowed_columns = self._resolve_allowed_columns(view=view, inventory=context.inventory)
+        if request.select:
+            unknown = [col for col in request.select if col not in allowed_columns]
+            if unknown:
+                raise UnknownColumnsError(
+                    unknown=tuple(unknown),
+                    allowed=tuple(allowed_columns),
+                )
+            columns = list(request.select)
+        else:
+            columns = allowed_columns
+
+        plan = SemanticQueryPlan(
+            table_key=view.table_key,
+            columns=columns,
+            allowed_columns=frozenset(allowed_columns),
+            filters=request.filters,
+            order_by=request.order_by,
+            limit=request.limit,
+            offset=request.offset,
+        )
+
+        ibis_con = warehouse.gateway.ibis.con
+        column_types = _column_types_for_view(view=view, inventory=context.inventory)
+        built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
+        sql = ibis_con.compile(built.expr)
+        return sql, columns, built.temp_tables
+
+
+def _column_types_for_view(
+    *,
+    view: SemanticViewSpec,
+    inventory: SchemaInventory,
+) -> dict[str, ColumnType] | None:
+    table_schema = inventory.get(view.table_key)
+    if table_schema is None:
+        return None
+    return {col.name: col.type for col in table_schema.columns}
+
+
+def _cleanup_temp_tables(*, con: object, temp_tables: tuple[str, ...]) -> None:
+    unregister = getattr(con, "unregister", None)
+    if not callable(unregister):
+        return
+    for table_name in temp_tables:
+        unregister(table_name)
 
 
 __all__ = ["SemanticQueryKernel"]

@@ -179,6 +179,8 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
     ------
     ValueError
         If ``table_key`` is not schema-qualified or the target table does not exist.
+    RuntimeError
+        If DuckDB does not have the ``fts`` extension available.
     """
     if "." not in table_key:
         msg = f"Expected schema-qualified table_key, got: {table_key}"
@@ -196,9 +198,9 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
 
     try:
         backend.execute_sql("LOAD fts")
-    except duckdb.Error:
-        backend.execute_sql("INSTALL fts")
-        backend.execute_sql("LOAD fts")
+    except duckdb.Error as exc:
+        msg = "DuckDB extension 'fts' is not available (set CODEINTEL_DUCKDB_EXTENSIONS=fts)"
+        raise RuntimeError(msg) from exc
 
     backend.execute_sql(
         f"""

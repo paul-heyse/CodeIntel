@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -48,11 +49,12 @@ import codeintel.storage.views.ibis_views as _ibis_views
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.schema_roundtrip import create_table_ast
 from codeintel.storage.views.dependencies import build_dependency_graph_from_sql, toposort
 from codeintel.storage.views.discovery import discover_view_builders
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
 
     import ibis.expr.types as it
     from duckdb import DuckDBPyConnection
@@ -124,84 +126,6 @@ def _infer_table_alias(where_ast: exp.Where) -> str | None:
     return None
 
 
-def _column_type_to_sqlglot(col_type: str) -> exp.DataType:
-    """Convert a column type string to a SQLGlot DataType expression.
-
-    Parameters
-    ----------
-    col_type
-        DuckDB column type string (e.g., "VARCHAR", "INTEGER", "DECIMAL(38,0)").
-
-    Returns
-    -------
-    exp.DataType
-        SQLGlot DataType expression.
-    """
-    if col_type.startswith("DECIMAL"):
-        return exp.DataType.build(col_type, dialect=DUCKDB_DIALECT)
-
-    if col_type == "TIMESTAMPTZ":
-        return exp.DataType.build("TIMESTAMPTZ", dialect=DUCKDB_DIALECT)
-
-    type_map: dict[str, exp.DataType.Type] = {
-        "BOOLEAN": exp.DataType.Type.BOOLEAN,
-        "INTEGER": exp.DataType.Type.INT,
-        "BIGINT": exp.DataType.Type.BIGINT,
-        "DOUBLE": exp.DataType.Type.DOUBLE,
-        "VARCHAR": exp.DataType.Type.VARCHAR,
-        "JSON": exp.DataType.Type.JSON,
-        "TIMESTAMP": exp.DataType.Type.TIMESTAMP,
-    }
-    if col_type in type_map:
-        return exp.DataType(this=type_map[col_type])
-
-    return exp.DataType.build(col_type, dialect=DUCKDB_DIALECT)
-
-
-def _build_column_def(col_name: str, col_type: str, *, nullable: bool) -> exp.ColumnDef:
-    """Build a SQLGlot ColumnDef for a column.
-
-    Parameters
-    ----------
-    col_name
-        Column name.
-    col_type
-        DuckDB column type.
-    nullable
-        Whether the column allows NULL values.
-
-    Returns
-    -------
-    exp.ColumnDef
-        SQLGlot column definition expression.
-    """
-    constraints: list[exp.Expression] = []
-    if not nullable:
-        constraints.append(exp.NotNullColumnConstraint())
-
-    return exp.ColumnDef(
-        this=exp.to_identifier(col_name),
-        kind=_column_type_to_sqlglot(col_type),
-        constraints=[exp.ColumnConstraint(kind=c) for c in constraints] if constraints else None,
-    )
-
-
-def _build_primary_key_constraint(columns: tuple[str, ...]) -> exp.PrimaryKey:
-    """Build a SQLGlot PrimaryKey constraint.
-
-    Parameters
-    ----------
-    columns
-        Column names forming the primary key.
-
-    Returns
-    -------
-    exp.PrimaryKey
-        SQLGlot primary key expression.
-    """
-    return exp.PrimaryKey(expressions=[exp.to_identifier(col) for col in columns])
-
-
 def _build_create_table(table: TableSchema, *, if_not_exists: bool = False) -> exp.Create:
     """Build a SQLGlot CREATE TABLE expression from a TableSchema.
 
@@ -217,27 +141,7 @@ def _build_create_table(table: TableSchema, *, if_not_exists: bool = False) -> e
     exp.Create
         SQLGlot CREATE TABLE expression.
     """
-    column_defs = [
-        _build_column_def(col.name, col.type, nullable=col.nullable) for col in table.columns
-    ]
-
-    schema_expr = exp.Schema(
-        this=exp.Table(
-            this=exp.to_identifier(table.name),
-            db=exp.to_identifier(table.schema),
-        ),
-        expressions=column_defs,
-    )
-
-    if table.primary_key:
-        pk_constraint = _build_primary_key_constraint(table.primary_key)
-        schema_expr.expressions.append(pk_constraint)
-
-    return exp.Create(
-        this=schema_expr,
-        kind="TABLE",
-        exists=if_not_exists,
-    )
+    return create_table_ast(table, if_not_exists=if_not_exists)
 
 
 def _build_drop_table(table: TableSchema) -> exp.Drop:
@@ -615,6 +519,24 @@ class DuckDBPolicyBackend:
         else:
             self.con.execute(sql)
 
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Execute statements within an explicit DuckDB transaction.
+
+        Notes
+        -----
+        This context manager is intended for multi-statement operations where
+        partial application would be unsafe (e.g., snapshot-scoped replace).
+        """
+        self.con.execute("BEGIN TRANSACTION")
+        try:
+            yield
+        except Exception:
+            self.con.execute("ROLLBACK")
+            raise
+        else:
+            self.con.execute("COMMIT")
+
     def execute_sql(
         self,
         sql: str,
@@ -685,6 +607,70 @@ class DuckDBPolicyBackend:
             columns,
             select_sql=select_sql,
         )
+        self._run(insert_expr)
+
+    def upsert_select(
+        self,
+        table_key: str,
+        *,
+        columns: Sequence[str],
+        select_sql: str,
+        conflict_columns: Sequence[str],
+        update_columns: Sequence[str] | None = None,
+    ) -> None:
+        """Upsert rows produced by a SELECT query into a table.
+
+        Parameters
+        ----------
+        table_key
+            Target table in 'schema.table' format.
+        columns
+            Column names to insert into.
+        select_sql
+            SQL SELECT statement to insert from.
+        conflict_columns
+            Columns defining the conflict key.
+        update_columns
+            Columns to update on conflict. When None, updates all non-conflict columns.
+        """
+        table_schema, table_name = split_table_key(table_key)
+        insert_expr = _build_insert_select(
+            table_schema,
+            table_name,
+            columns,
+            select_sql=select_sql,
+        )
+
+        cols_to_update = (
+            [col for col in columns if col not in conflict_columns]
+            if update_columns is None
+            else [col for col in update_columns if col not in conflict_columns]
+        )
+        conflict_keys = [exp.to_identifier(col) for col in conflict_columns]
+
+        if cols_to_update:
+            assignments = [
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier(col)),
+                    expression=exp.Column(
+                        this=exp.to_identifier(col),
+                        table=exp.to_identifier("excluded"),
+                    ),
+                )
+                for col in cols_to_update
+            ]
+            conflict = exp.OnConflict(
+                conflict_keys=conflict_keys,
+                action=exp.Var(this="DO UPDATE"),
+                expressions=assignments,
+            )
+        else:
+            conflict = exp.OnConflict(
+                conflict_keys=conflict_keys,
+                action=exp.Var(this="DO NOTHING"),
+            )
+
+        insert_expr.set("conflict", conflict)
         self._run(insert_expr)
 
     def delete(
@@ -882,7 +868,7 @@ class DuckDBPolicyBackend:
         ).fetchall()
         return frozenset(str(row[0]) for row in rows)
 
-    def clear_cfg_metrics(self, repo: str, commit: str) -> None:
+    def _clear_cfg_metrics(self, repo: str, commit: str) -> None:
         """Clear CFG metrics for a snapshot.
 
         Parameters
@@ -894,7 +880,7 @@ class DuckDBPolicyBackend:
         """
         self.delete_repo_commit("analytics", "cfg_metrics", repo, commit)
 
-    def clear_dfg_metrics(self, repo: str, commit: str) -> None:
+    def _clear_dfg_metrics(self, repo: str, commit: str) -> None:
         """Clear DFG metrics for a snapshot.
 
         Parameters

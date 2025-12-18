@@ -57,7 +57,7 @@ def connect(
             _duckdb_connect_config_from_env(), duckdb_config
         ),
     )
-    _load_duckdb_extensions_from_env(con)
+    _load_duckdb_extensions_from_env(con, allow_install=not config.read_only)
     _attach_history_if_needed(con, config)
     _apply_schema(con, config)
     return con
@@ -107,7 +107,7 @@ def _parse_bool_or_string(value: str) -> bool | str:
     return value.strip()
 
 
-def _load_duckdb_extensions_from_env(con: DuckDBConnection) -> None:
+def _load_duckdb_extensions_from_env(con: DuckDBConnection, *, allow_install: bool) -> None:
     raw = os.environ.get("CODEINTEL_DUCKDB_EXTENSIONS", "").strip()
     if not raw:
         return
@@ -117,7 +117,8 @@ def _load_duckdb_extensions_from_env(con: DuckDBConnection) -> None:
         if _DUCKDB_EXTENSION_NAME_PATTERN.fullmatch(extension) is None:
             message = f"Invalid DuckDB extension name in CODEINTEL_DUCKDB_EXTENSIONS: {extension!r}"
             raise ValueError(message)
-        con.execute(f"INSTALL {extension}")
+        if allow_install:
+            con.execute(f"INSTALL {extension}")
         con.execute(f"LOAD {extension}")
 
 

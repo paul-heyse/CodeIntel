@@ -49,6 +49,8 @@ class ServingSettings:
         Whether to enable gzip compression middleware.
     export_max_rows
         Maximum rows allowed for export endpoints.
+    export_batch_size
+        Arrow record batch size used for streaming exports.
     enable_export_endpoints
         Whether to enable the /export endpoints.
     mcp_enable_sampling
@@ -115,6 +117,7 @@ class ServingSettings:
     gzip_minimum_size: int = 500
     enable_gzip: bool = True
     export_max_rows: int = 100_000
+    export_batch_size: int = 10_000
     enable_export_endpoints: bool = True
 
     # MCP Context Features
@@ -183,6 +186,9 @@ class ServingSettings:
             gzip_minimum_size=int(os.environ.get("CODEINTEL_SERVE_GZIP_MIN_SIZE", "500")),
             enable_gzip=os.environ.get("CODEINTEL_SERVE_GZIP", "1") == "1",
             export_max_rows=int(os.environ.get("CODEINTEL_SERVE_EXPORT_MAX_ROWS", "100000")),
+            export_batch_size=int(
+                os.environ.get("CODEINTEL_SERVE_EXPORT_BATCH_SIZE", "10000")
+            ),
             enable_export_endpoints=os.environ.get("CODEINTEL_SERVE_ENABLE_EXPORT", "1") == "1",
             # MCP Context Features
             mcp_enable_sampling=os.environ.get("CODEINTEL_MCP_ENABLE_SAMPLING", "0") == "1",

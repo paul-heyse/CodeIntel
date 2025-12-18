@@ -22,6 +22,7 @@ imports. MinimalStorageGateway is the composition root that creates both.
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
@@ -35,6 +36,8 @@ from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from ibis.backends.duckdb import Backend as DuckDBBackend
 
     from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
@@ -43,6 +46,8 @@ if TYPE_CHECKING:
 __all__ = ["IbisGateway", "OnConflict", "WriteResult"]
 
 log = logging.getLogger(__name__)
+
+_DATAFRAME_FAST_LANE_MIN_ROWS = 10_000
 
 
 def _convert_numpy_types(value: object) -> object:
@@ -127,7 +132,7 @@ class WriteResult:
     rows_affected
         Number of rows written or affected.
     method
-        Method used: 'insert_select', 'insert_values', 'upsert'.
+        Method used: 'insert_select', 'upsert_select', 'insert_values', 'upsert'.
     """
 
     table_key: str
@@ -238,6 +243,33 @@ class IbisGateway:
             database, name = table_name.split(".", 1)
             return self.con.table(name, database=database)
         return self.con.table(table_name)
+
+    def to_sqlglot(
+        self,
+        expr: it.Expr,
+        *,
+        params: Mapping[it.Expr, object] | None = None,
+        limit: int | None = None,
+    ) -> exp.Expression:
+        """Compile an Ibis expression to a SQLGlot AST.
+
+        Parameters
+        ----------
+        expr
+            Ibis expression to compile.
+        params
+            Optional scalar parameter bindings for expressions containing
+            ``ibis.param(...)``.
+        limit
+            Optional limit applied at compile time.
+
+        Returns
+        -------
+        sqlglot.expressions.Expression
+            SQLGlot AST for the expression.
+        """
+        limit_arg = str(limit) if limit is not None else None
+        return self.con.compiler.to_sqlglot(expr, limit=limit_arg, params=params)
 
     def read(self, table_name: str) -> it.Table:
         """
@@ -439,10 +471,18 @@ class IbisGateway:
         select_sql = ibis.to_sql(expr, dialect=DUCKDB_DIALECT)
 
         if on_conflict is not None:
-            log.warning("UPSERT with Ibis expression not yet optimized; using temp table")
-            df = expr.to_pandas()
-            return self._write_dataframe(
-                write_ctx, df=df, columns=resolved_columns, on_conflict=on_conflict
+            backend = self._policy
+            backend.upsert_select(
+                write_ctx.table_key,
+                columns=resolved_columns,
+                select_sql=select_sql,
+                conflict_columns=on_conflict.conflict_columns,
+                update_columns=on_conflict.update_columns,
+            )
+            return WriteResult(
+                table_key=write_ctx.table_key,
+                rows_affected=-1,
+                method="upsert_select",
             )
 
         backend = self._policy
@@ -466,9 +506,21 @@ class IbisGateway:
             Write operation result.
         """
         resolved_columns = list(df.columns) if columns is None else list(columns)
-        normalized_rows = [_normalize_row(row) for row in df.itertuples(index=False, name=None)]
         backend = self._policy
 
+        row_count = len(df)
+        if row_count == 0:
+            return WriteResult(table_key=write_ctx.table_key, rows_affected=0, method="noop")
+
+        if row_count >= _DATAFRAME_FAST_LANE_MIN_ROWS:
+            return self._write_dataframe_via_relation(
+                write_ctx,
+                df=df,
+                columns=resolved_columns,
+                on_conflict=on_conflict,
+            )
+
+        normalized_rows = [_normalize_row(row) for row in df.itertuples(index=False, name=None)]
         if on_conflict is None:
             count = backend.bulk_insert(
                 write_ctx.table_key, normalized_rows, columns=resolved_columns
@@ -491,6 +543,49 @@ class IbisGateway:
             rows_affected=count,
             method="upsert",
         )
+
+    def _write_dataframe_via_relation(
+        self,
+        write_ctx: _WriteContext,
+        *,
+        df: pd.DataFrame,
+        columns: Sequence[str],
+        on_conflict: OnConflict | None,
+    ) -> WriteResult:
+        temp_name = f"ci_df_{uuid.uuid4().hex}"
+        self._gateway.con.register(temp_name, df)
+        try:
+            select_expr = exp.Select(
+                expressions=[exp.Column(this=exp.to_identifier(col)) for col in columns],
+            ).from_(exp.Table(this=exp.to_identifier(temp_name)))
+            select_sql = select_expr.sql(dialect=DUCKDB_DIALECT)
+            backend = self._policy
+            if on_conflict is None:
+                backend.insert_select(
+                    write_ctx.table_key,
+                    columns=columns,
+                    select_sql=select_sql,
+                )
+                return WriteResult(
+                    table_key=write_ctx.table_key,
+                    rows_affected=len(df),
+                    method="insert_select",
+                )
+
+            backend.upsert_select(
+                write_ctx.table_key,
+                columns=columns,
+                select_sql=select_sql,
+                conflict_columns=on_conflict.conflict_columns,
+                update_columns=on_conflict.update_columns,
+            )
+            return WriteResult(
+                table_key=write_ctx.table_key,
+                rows_affected=-1,
+                method="upsert_select",
+            )
+        finally:
+            self._gateway.con.unregister(temp_name)
 
     def _write_tuples(
         self,

@@ -33,7 +33,9 @@ def _build_query_from_memory(plan: SemanticQueryPlan) -> None:
     con = duckdb.connect(database=":memory:")
     try:
         ibis_con = ibis.duckdb.from_connection(con)
-        build_query(ibis_con=ibis_con, plan=plan)
+        built = build_query(ibis_con=ibis_con, plan=plan)
+        for table_name in built.temp_tables:
+            con.unregister(table_name)
     finally:
         con.close()
 
@@ -42,7 +44,9 @@ def _build_query_from_file(db_path: Path, plan: SemanticQueryPlan) -> None:
     con = _make_db(db_path)
     try:
         ibis_con = ibis.duckdb.from_connection(con)
-        build_query(ibis_con=ibis_con, plan=plan)
+        built = build_query(ibis_con=ibis_con, plan=plan)
+        for table_name in built.temp_tables:
+            con.unregister(table_name)
     finally:
         con.close()
 
@@ -52,7 +56,7 @@ def test_build_query_filters_orders_and_paginates(tmp_path: Path) -> None:
     con = _make_db(tmp_path / "demo.duckdb")
     try:
         ibis_con = ibis.duckdb.from_connection(con)
-        expr = build_query(
+        built = build_query(
             ibis_con=ibis_con,
             plan=SemanticQueryPlan(
                 table_key="docs.v_demo",
@@ -64,9 +68,11 @@ def test_build_query_filters_orders_and_paginates(tmp_path: Path) -> None:
                 offset=0,
             ),
         )
-        df = pd.DataFrame(expr.execute())
+        df = pd.DataFrame(built.expr.execute())
         rows = df.to_dict(orient="records")
         expect_equal(rows, [{"id": 3, "label": "three"}, {"id": 2, "label": "two"}])
+        for table_name in built.temp_tables:
+            con.unregister(table_name)
     finally:
         con.close()
 

@@ -6,11 +6,15 @@ execution of heavy database queries.
 
 from __future__ import annotations
 
-from typing import TypeVar
+from typing import TYPE_CHECKING, ParamSpec, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 import anyio
 from anyio import to_thread
 
+P = ParamSpec("P")
 T = TypeVar("T")
 
 
@@ -53,7 +57,7 @@ class QueryLimiter:
         """
         return self._max
 
-    async def run(self, fn: object, *args: object, **kwargs: object) -> object:
+    async def run(self, fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
         """Execute a synchronous function with concurrency limiting.
 
         Acquire the semaphore, then offload the function to a thread
@@ -70,13 +74,18 @@ class QueryLimiter:
 
         Returns
         -------
-        object
+        T
             Result from the function.
         """
         async with self._sem:
-            return await to_thread.run_sync(lambda: fn(*args, **kwargs))  # type: ignore[operator]
+            return await to_thread.run_sync(lambda: fn(*args, **kwargs))
 
-    async def run_async(self, coro_fn: object, *args: object, **kwargs: object) -> object:
+    async def run_async(
+        self,
+        coro_fn: Callable[P, Awaitable[T]],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
         """Execute an async function with concurrency limiting.
 
         Acquire the semaphore, then await the coroutine.
@@ -92,11 +101,11 @@ class QueryLimiter:
 
         Returns
         -------
-        object
+        T
             Result from the coroutine.
         """
         async with self._sem:
-            return await coro_fn(*args, **kwargs)  # type: ignore[operator]
+            return await coro_fn(*args, **kwargs)
 
 
 __all__ = ["QueryLimiter"]

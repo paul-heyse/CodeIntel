@@ -11,15 +11,17 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 import ibis
+import pyarrow as pa
 
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     import ibis.expr.types as it
     from ibis.backends.duckdb import Backend as DuckDBBackend
 
+    from codeintel.core.schemas.primitives import ColumnType
     from codeintel.serving.semantic.models import FilterSpec
 
 
@@ -56,6 +58,17 @@ class SemanticQueryPlan:
     order_by: list[str]
     limit: int
     offset: int
+
+
+_IN_LIST_MEMTABLE_THRESHOLD = 500
+
+
+@dataclass(frozen=True, slots=True)
+class BuiltSemanticQuery:
+    """Built query plus any staged temporary tables."""
+
+    expr: it.Table
+    temp_tables: tuple[str, ...]
 
 
 def _validate_pagination(*, limit: int, offset: int) -> None:
@@ -133,6 +146,8 @@ def _build_predicate(
     table: it.Table,
     allowed_columns: frozenset[str],
     filter_spec: FilterSpec,
+    column_types: Mapping[str, ColumnType] | None,
+    temp_tables: list[str],
 ) -> it.BooleanValue:
     _require_allowed_column(
         column=filter_spec.column, allowed_columns=allowed_columns, ctx="filter"
@@ -141,27 +156,97 @@ def _build_predicate(
     op = filter_spec.op
     value = filter_spec.value
 
+    column_type = column_types.get(filter_spec.column) if column_types is not None else None
+
     simple = _SIMPLE_PREDICATES.get(op)
     if simple is not None:
-        return simple(col_expr, value)
+        return _build_simple_predicate(
+            op=op,
+            predicate=simple,
+            col_expr=col_expr,
+            value=value,
+            column_type=column_type,
+        )
 
     if op == "in":
-        if not isinstance(value, list):
-            msg = "IN operator requires list value"
-            raise QueryBuilderError(msg)
-        values = [ibis.literal(v) for v in value]
-        return col_expr.isin(values)
+        return _build_in_predicate(
+            col_expr=col_expr,
+            value=value,
+            column_type=column_type,
+            temp_tables=temp_tables,
+        )
 
     string_predicate = _STRING_PREDICATES.get(op)
     if string_predicate is not None:
-        if not isinstance(value, str):
-            msg = f"{op} operator requires string value"
-            raise QueryBuilderError(msg)
-        string_expr = cast("it.StringColumn", col_expr)
-        return string_predicate(string_expr, value)
+        return _build_string_predicate(
+            op=op,
+            predicate=string_predicate,
+            col_expr=col_expr,
+            value=value,
+            column_type=column_type,
+        )
 
     msg = f"Unsupported operator: {op}"
     raise QueryBuilderError(msg)
+
+
+def _build_simple_predicate(
+    *,
+    op: str,
+    predicate: Callable[[it.Value, object], it.BooleanValue],
+    col_expr: it.Value,
+    value: object,
+    column_type: ColumnType | None,
+) -> it.BooleanValue:
+    if op in {"lt", "lte", "gt", "gte"} and column_type == "VARCHAR":
+        msg = f"Operator {op} is not supported for string columns"
+        raise QueryBuilderError(msg)
+    return predicate(col_expr, value)
+
+
+def _build_in_predicate(
+    *,
+    col_expr: it.Value,
+    value: object,
+    column_type: ColumnType | None,
+    temp_tables: list[str],
+) -> it.BooleanValue:
+    if not isinstance(value, list):
+        msg = "IN operator requires list value"
+        raise QueryBuilderError(msg)
+    if column_type == "JSON":
+        msg = "IN operator is not supported for JSON columns"
+        raise QueryBuilderError(msg)
+
+    if len(value) >= _IN_LIST_MEMTABLE_THRESHOLD:
+        staged = ibis.memtable(pa.table({"value": value}))
+        name = getattr(staged.op(), "name", None)
+        if not isinstance(name, str) or not name:
+            msg = "Failed to stage IN-list values for query execution"
+            raise QueryBuilderError(msg)
+        temp_tables.append(name)
+        return col_expr.isin(staged["value"])
+
+    values = [ibis.literal(v, type=col_expr.type()) for v in value]
+    return col_expr.isin(values)
+
+
+def _build_string_predicate(
+    *,
+    op: str,
+    predicate: Callable[[it.StringColumn, str], it.BooleanValue],
+    col_expr: it.Value,
+    value: object,
+    column_type: ColumnType | None,
+) -> it.BooleanValue:
+    if not isinstance(value, str):
+        msg = f"{op} operator requires string value"
+        raise QueryBuilderError(msg)
+    if column_type is not None and column_type != "VARCHAR":
+        msg = f"{op} operator is only supported for VARCHAR columns"
+        raise QueryBuilderError(msg)
+    string_expr = cast("it.StringColumn", col_expr)
+    return predicate(string_expr, value)
 
 
 def _build_order_by(
@@ -179,7 +264,12 @@ def _build_order_by(
     return order_parts
 
 
-def build_query(*, ibis_con: DuckDBBackend, plan: SemanticQueryPlan) -> it.Table:
+def build_query(
+    *,
+    ibis_con: DuckDBBackend,
+    plan: SemanticQueryPlan,
+    column_types: Mapping[str, ColumnType] | None = None,
+) -> BuiltSemanticQuery:
     """Build an Ibis query expression for a semantic view.
 
     Parameters
@@ -188,11 +278,14 @@ def build_query(*, ibis_con: DuckDBBackend, plan: SemanticQueryPlan) -> it.Table
         Ibis DuckDB backend bound to the serving connection.
     plan
         Resolved query plan.
+    column_types
+        Optional mapping of column name to contract type. When provided, filter
+        operators are validated against the contract types.
 
     Returns
     -------
-    it.Table
-        Ibis table expression with filters, ordering, and pagination applied.
+    BuiltSemanticQuery
+        Built query expression and any staged temporary tables.
 
     Raises
     ------
@@ -207,8 +300,15 @@ def build_query(*, ibis_con: DuckDBBackend, plan: SemanticQueryPlan) -> it.Table
             raise QueryBuilderError(msg)
 
     table = _resolve_table(ibis_con=ibis_con, table_key=plan.table_key)
+    temp_tables: list[str] = []
     predicates = [
-        _build_predicate(table=table, allowed_columns=plan.allowed_columns, filter_spec=f)
+        _build_predicate(
+            table=table,
+            allowed_columns=plan.allowed_columns,
+            filter_spec=f,
+            column_types=column_types,
+            temp_tables=temp_tables,
+        )
         for f in plan.filters
     ]
 
@@ -222,7 +322,10 @@ def build_query(*, ibis_con: DuckDBBackend, plan: SemanticQueryPlan) -> it.Table
         )
 
     expr = expr.select([expr[c] for c in plan.columns])
-    return expr.limit(plan.limit, offset=plan.offset)
+    return BuiltSemanticQuery(
+        expr=expr.limit(plan.limit, offset=plan.offset),
+        temp_tables=tuple(temp_tables),
+    )
 
 
-__all__ = ["QueryBuilderError", "SemanticQueryPlan", "build_query"]
+__all__ = ["BuiltSemanticQuery", "QueryBuilderError", "SemanticQueryPlan", "build_query"]
