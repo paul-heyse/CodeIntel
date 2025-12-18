@@ -26,6 +26,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
+from codeintel.build.config import BuildConfig
+from codeintel.build.hashing import compute_options_hash
 from codeintel.build.session import BuildSession
 from codeintel.build.state_types import (
     BuildState,
@@ -80,6 +82,8 @@ class StateComputer:
         self,
         graph: TargetGraph,
         session: BuildSession,
+        *,
+        config: BuildConfig | None = None,
     ) -> None:
         """Initialize the state computer.
 
@@ -89,9 +93,12 @@ class StateComputer:
             Target graph with all registered targets.
         session
             Build session for caching and storage access.
+        config
+            Build configuration used to compute per-target options hashes.
         """
         self._graph = graph
         self._session = session
+        self._config = config or BuildConfig.empty()
 
     @classmethod
     def create(
@@ -120,6 +127,12 @@ class StateComputer:
         """
         session = BuildSession(snapshot=snapshot, gateway=gateway)
         return cls(graph=graph, session=session)
+
+    def _options_hash_for_target(self, target: OutputTarget) -> str | None:
+        params = self._config.parameters_for(target.name)
+        if len(params) == 0:
+            return None
+        return compute_options_hash(params.as_dict())
 
     def compute_all(self) -> BuildState:
         """Compute state for all targets in topological order.
@@ -241,7 +254,10 @@ class StateComputer:
             Preliminary state (may be upgraded to blocked in pass 2).
         """
         if manifest is None:
-            current_hash = self._session.get_input_hash(target)
+            current_hash = self._session.get_input_hash(
+                target,
+                self._options_hash_for_target(target),
+            )
             return TargetState(
                 name=target.name,
                 status="missing",
@@ -251,8 +267,8 @@ class StateComputer:
                 blocking_deps=(),
             )
 
-        # Compute current hash (uses session caching)
-        current_hash = self._session.get_input_hash(target, manifest.options_hash)
+        options_hash = self._options_hash_for_target(target)
+        current_hash = self._session.get_input_hash(target, options_hash)
         stored_hash = manifest.input_hash
 
         if stored_hash == current_hash:
@@ -262,6 +278,17 @@ class StateComputer:
                 manifest=manifest,
                 current_hash=current_hash,
                 blocking_reason=None,
+                blocking_deps=(),
+                stored_hash=stored_hash,
+            )
+
+        if options_hash != manifest.options_hash:
+            return TargetState(
+                name=target.name,
+                status="stale",
+                manifest=manifest,
+                current_hash=current_hash,
+                blocking_reason="options_hash_mismatch",
                 blocking_deps=(),
                 stored_hash=stored_hash,
             )

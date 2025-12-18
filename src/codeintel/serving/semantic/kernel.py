@@ -89,6 +89,7 @@ class _PlanInputs:
     order_by: list[str]
     offset: int
 
+
 def _sanitize_float_nan(value: object) -> object:
     if isinstance(value, float) and math.isnan(value):
         return None
@@ -614,7 +615,9 @@ class SemanticQueryKernel:
                         offset=request.offset,
                     ),
                 )
-            query = build_search_query(request, fts_available=is_fts_available(warehouse.gateway.con))
+            query = build_search_query(
+                request, fts_available=is_fts_available(warehouse.gateway.con)
+            )
 
             rows = self._execute_dbapi_query(warehouse=warehouse, query=query)
 

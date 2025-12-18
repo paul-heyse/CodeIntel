@@ -453,12 +453,13 @@ def t__test_profile(
         Record describing the materialization outcome.
     """
     if t__test_profile__compute.error:
+        options_hash = options_hash_for_target(env, TEST_PROFILE_TARGET_NAME)
         return TargetRunRecord(
             target=TEST_PROFILE_TARGET_NAME,
             plugin_name=f"native:{TEST_PROFILE_TARGET_NAME}",
             status="failed",
             input_hash="",
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=0.0,
             row_counts={},
             error=t__test_profile__compute.error,

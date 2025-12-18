@@ -121,4 +121,3 @@ def __getattr__(name: str) -> object:
 def __dir__() -> list[str]:
     """Return package attributes for tab-completion."""
     return sorted(set(globals()) | set(__all__))
-

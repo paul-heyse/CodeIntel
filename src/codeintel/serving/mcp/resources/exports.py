@@ -178,7 +178,9 @@ def _register_export_chunk_resources(
 ) -> None:
     @mcp.resource("codeintel://exports/{export_id}/lines{?offset,limit}", mime_type="text/plain")
     def export_lines(export_id: str, offset: int = 0, limit: int = 100) -> str:
-        _validate_chunk_request(offset=offset, limit=limit, max_limit=settings.mcp_export_max_chunk_lines)
+        _validate_chunk_request(
+            offset=offset, limit=limit, max_limit=settings.mcp_export_max_chunk_lines
+        )
         meta = store.get_meta(export_id)
         if not supports_line_chunks(meta.format):
             raise ExportChunkRequestError
@@ -192,7 +194,9 @@ def _register_export_chunk_resources(
         mime_type="application/octet-stream",
     )
     def export_bytes(export_id: str, offset: int = 0, limit: int = 1024) -> bytes:
-        _validate_chunk_request(offset=offset, limit=limit, max_limit=settings.mcp_export_max_chunk_bytes)
+        _validate_chunk_request(
+            offset=offset, limit=limit, max_limit=settings.mcp_export_max_chunk_bytes
+        )
         meta = store.get_meta(export_id)
         if not supports_byte_chunks(meta.format):
             raise ExportChunkRequestError

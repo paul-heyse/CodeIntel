@@ -1,8 +1,8 @@
 """SQLGlot DDL builders for DuckDB.
 
-This module centralizes SQLGlot AST construction for common DDL primitives that
-are used across storage subsystems (policy backend, metadata bootstrap, schema
-automation). Keeping these builders in one place prevents semantic drift.
+This module centralizes SQLGlot AST construction for common schema/index DDL
+primitives used across storage subsystems (policy backend, metadata bootstrap,
+schema automation). Keeping these builders in one place prevents semantic drift.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ __all__ = [
 
 
 def create_schema_if_not_exists_ast(schema_name: str) -> exp.Create:
-    """Build a SQLGlot CREATE SCHEMA IF NOT EXISTS expression.
+    """Build a SQLGlot schema-create expression with IF NOT EXISTS semantics.
 
     Parameters
     ----------
@@ -28,7 +28,7 @@ def create_schema_if_not_exists_ast(schema_name: str) -> exp.Create:
     Returns
     -------
     exp.Create
-        SQLGlot expression for CREATE SCHEMA IF NOT EXISTS.
+        SQLGlot expression for schema creation with IF NOT EXISTS.
     """
     return exp.Create(
         this=exp.to_identifier(schema_name),
@@ -45,7 +45,7 @@ def create_index_if_not_exists_ast(
     columns: Sequence[str],
     unique: bool = False,
 ) -> exp.Create:
-    """Build a SQLGlot CREATE INDEX IF NOT EXISTS expression.
+    """Build a SQLGlot index-create expression with IF NOT EXISTS semantics.
 
     Parameters
     ----------
@@ -63,7 +63,7 @@ def create_index_if_not_exists_ast(
     Returns
     -------
     exp.Create
-        SQLGlot expression for CREATE INDEX IF NOT EXISTS.
+        SQLGlot expression for index creation with IF NOT EXISTS.
     """
     table_expr = exp.Table(
         this=exp.to_identifier(table_name),

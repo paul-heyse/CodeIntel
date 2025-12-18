@@ -31,11 +31,11 @@ def test_load_build_config_merges_module_and_target(tmp_path: Path) -> None:
     config = load_build_config(project_root)
     params = config.parameters_for("hotspots")
 
-    expect_equal(params.get("threshold", int), 3)
-    expect_true(params.get("enabled", bool) is True)
+    expect_equal(params.get_typed("threshold", int), 3)
+    expect_true(params.get_typed("enabled", bool) is True)
 
-    expect_equal(params.get("sampling_rate", float), 0.2)
-    expect_equal(params.get("shared", str), "module")
+    expect_equal(params.get_typed("sampling_rate", float), 0.2)
+    expect_equal(params.get_typed("shared", str), "module")
 
 
 def test_load_build_config_missing_or_invalid_returns_empty(tmp_path: Path) -> None:
@@ -77,13 +77,13 @@ def test_build_config_get_nested_with_defaults() -> None:
 def test_target_parameters_success_and_merge() -> None:
     """TargetParameters returns typed values and merges overrides."""
     params = TargetParameters({"count": 10, "enabled": True})
-    expect_equal(params.get("count", int), 10)
-    expect_true(params.get("enabled", bool) is True)
+    expect_equal(params.get_typed("count", int), 10)
+    expect_true(params.get_typed("enabled", bool) is True)
     expect_true(params.get_optional("missing", str) is None)
 
     merged = params.merge(TargetParameters({"count": 20, "name": "demo"}))
-    expect_equal(merged.get("count", int), 20)
-    expect_equal(merged.get("name", str), "demo")
+    expect_equal(merged.get_typed("count", int), 20)
+    expect_equal(merged.get_typed("name", str), "demo")
     expect_true(merged.has("enabled") is True)
 
 
@@ -92,10 +92,10 @@ def test_target_parameters_errors() -> None:
     params = TargetParameters({"count": 10, "flag": "yes"})
 
     with pytest.raises(ParameterError):
-        params.get("missing", int)
+        params.get_typed("missing", int)
 
     with pytest.raises(ParameterError) as exc_info:
-        params.get("flag", bool)
+        params.get_typed("flag", bool)
     expect_in("bool", str(exc_info.value))
     expect_in("str", str(exc_info.value))
 

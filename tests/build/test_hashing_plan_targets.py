@@ -43,7 +43,9 @@ class _FakeGateway:
     build: _FakeBuildAccessor
 
 
-def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> None:
+def test_compute_input_hash_differentiates_dependency_hashes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Input hash uses repo/commit/target/dependency input_hashes deterministically.
 
     Note: Uses input_hash (not output_hash) for cascade semantics - changes in
@@ -66,13 +68,14 @@ def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> 
         dependencies=("dep", "missing"),
     )
     snapshot = make_snapshot(tmp_path, repo="demo", commit="c1")
+    monkeypatch.setenv("CODEINTEL_BUILD_ENGINE_VERSION", "test")
 
     hash1 = compute_input_hash(target, snapshot, cast("Any", gateway), options_hash="opts")
     hash2 = compute_input_hash(target, snapshot, cast("Any", gateway), options_hash="opts")
 
     expect_equal(hash1, hash2)
 
-    combined = b"demo:c1|main|dep:in,missing:MISSING|opts"
+    combined = b"test|demo:c1|main|dep:in,missing:MISSING|opts"
     expect_equal(hash1, hashlib.sha256(combined).hexdigest()[:16])
 
 

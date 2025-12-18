@@ -160,6 +160,8 @@ def _get_graph_runtime(env: BuildEnv, *, target_name: str) -> GraphRuntime | Non
     ----------
     env
         Build environment with gateway and snapshot info.
+    target_name
+        Target name used to load runtime options from configuration.
 
     Returns
     -------

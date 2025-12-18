@@ -170,9 +170,7 @@ def _install_middlewares(app: FastAPI, cfg: ServingSettings) -> None:
     app.middleware("http")(correlation_id_and_timing_middleware)
 
 
-def _install_observability_routes(
-    app: FastAPI, *, db_manager: ServingDBManager
-) -> None:
+def _install_observability_routes(app: FastAPI, *, db_manager: ServingDBManager) -> None:
     @app.get("/health")
     async def health() -> dict[str, str]:
         pointer = db_manager.current_pointer()

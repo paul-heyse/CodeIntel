@@ -13,8 +13,12 @@ class QueryPreview(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    columns: tuple[str, ...] = Field(default_factory=tuple, description="Column names in display order.")
-    rows: tuple[dict[str, object], ...] = Field(default_factory=tuple, description="Preview rows (truncated).")
+    columns: tuple[str, ...] = Field(
+        default_factory=tuple, description="Column names in display order."
+    )
+    rows: tuple[dict[str, object], ...] = Field(
+        default_factory=tuple, description="Preview rows (truncated)."
+    )
     truncated: bool = Field(default=True, description="Whether preview is truncated.")
 
 
@@ -23,15 +27,23 @@ class SemanticQueryToolResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    result: SemanticQueryResponse = Field(..., description="Primary query result (may be truncated).")
-    preview: QueryPreview | None = Field(default=None, description="Optional small preview for LLM-friendly output.")
+    result: SemanticQueryResponse = Field(
+        ..., description="Primary query result (may be truncated)."
+    )
+    preview: QueryPreview | None = Field(
+        default=None, description="Optional small preview for LLM-friendly output."
+    )
     export: ExportHandleResponse | None = Field(
         default=None, description="If present, full results are available via export resources."
     )
     export_uri: str | None = Field(default=None, description="Shortcut to export payload URI.")
     export_meta_uri: str | None = Field(default=None, description="Shortcut to export meta URI.")
-    summary: str | None = Field(default=None, description="Optional LLM-generated summary for large results.")
-    sql_fingerprint: str | None = Field(default=None, description="SHA256 fingerprint of canonical SQL.")
+    summary: str | None = Field(
+        default=None, description="Optional LLM-generated summary for large results."
+    )
+    sql_fingerprint: str | None = Field(
+        default=None, description="SHA256 fingerprint of canonical SQL."
+    )
     note: str | None = Field(default=None, description="Short, user/LLM-friendly note.")
 
 

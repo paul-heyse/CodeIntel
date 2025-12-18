@@ -17,13 +17,14 @@ from __future__ import annotations
 import inspect
 import logging
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import ModuleType
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 
 import ibis.expr.types as ir
 import pandas as pd
 
+from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
@@ -35,6 +36,9 @@ from codeintel.build.hamilton.naming import (
     query_node,
     target_node,
 )
+from codeintel.build.hamilton.nodes.mappings import SupportNodeMappings
+from codeintel.build.hamilton.nodes.module_attach import attach_node
+from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import (
     tag_artifact,
@@ -43,7 +47,6 @@ from codeintel.build.hamilton.tagging import (
     tag_loader_query,
     tag_materialize,
 )
-from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.helpers.table_key import split_table_key
 
@@ -74,87 +77,6 @@ class _SupportModuleCache:
 
 
 _MODULE_CACHE = _SupportModuleCache()
-
-
-class _SupportModule(Protocol):
-    """Protocol for support modules that receive generated mapping attributes."""
-
-    TARGET_TO_NODE: dict[str, str]
-    DATASET_TO_NODE: dict[str, str]
-    QUERY_TO_NODE: dict[str, str]
-    DATAFRAME_TO_NODE: dict[str, str]
-    ARTIFACT_TO_NODE: dict[str, str]
-
-
-class _SignaturedCallable(Protocol):
-    """Protocol for callables with mutable signature/annotation metadata."""
-
-    __signature__: inspect.Signature
-    __annotations__: dict[str, object]
-
-
-class _NamedCallable(Protocol):
-    """Protocol for callables with mutable naming metadata."""
-
-    __name__: str
-    __module__: str
-
-
-@dataclass
-class _SupportNodeMappings:
-    """Collect node-name mappings for a generated support module."""
-
-    target_to_node: dict[str, str] = field(default_factory=dict)
-    dataset_to_node: dict[str, str] = field(default_factory=dict)
-    query_to_node: dict[str, str] = field(default_factory=dict)
-    dataframe_to_node: dict[str, str] = field(default_factory=dict)
-    artifact_to_node: dict[str, str] = field(default_factory=dict)
-
-    def attach_to(self, module: ModuleType) -> None:
-        """Attach mapping dicts to the support module."""
-        mod = cast("_SupportModule", module)
-        mod.TARGET_TO_NODE = self.target_to_node
-        mod.DATASET_TO_NODE = self.dataset_to_node
-        mod.QUERY_TO_NODE = self.query_to_node
-        mod.DATAFRAME_TO_NODE = self.dataframe_to_node
-        mod.ARTIFACT_TO_NODE = self.artifact_to_node
-
-
-def _set_signature[T](fn: Callable[..., T], signature: inspect.Signature) -> Callable[..., T]:
-    """Attach an inspect.Signature to a callable for Hamilton compatibility.
-
-    Parameters
-    ----------
-    fn
-        Function object to annotate.
-    signature
-        Signature that Hamilton should use for dependency resolution.
-
-    Returns
-    -------
-    Callable[..., T]
-        The input function with signature metadata applied.
-    """
-    meta = cast("_SignaturedCallable", fn)
-    meta.__signature__ = signature
-
-    annotations: dict[str, object] = dict(getattr(fn, "__annotations__", {}))
-    for name, param in signature.parameters.items():
-        if param.annotation is inspect.Signature.empty:
-            continue
-        annotations[name] = param.annotation
-    if signature.return_annotation is not inspect.Signature.empty:
-        annotations["return"] = signature.return_annotation
-    meta.__annotations__ = annotations
-    return fn
-
-
-def _attach_node(module: ModuleType, *, node_name: str, fn: object) -> None:
-    """Attach a callable to a module under a stable node name."""
-    named = cast("_NamedCallable", fn)
-    named.__name__ = node_name
-    named.__module__ = module.__name__
-    setattr(module, node_name, fn)
 
 
 def _create_stub_target_node_function(
@@ -220,7 +142,7 @@ def _create_stub_target_node_function(
         ],
     ]
 
-    _set_signature(node_fn, inspect.Signature(params, return_annotation=TargetRunRecord))
+    set_signature(node_fn, inspect.Signature(params, return_annotation=TargetRunRecord))
     node_fn.__name__ = target_node(target_name)
     node_fn.__doc__ = f"Stub target node for {target_name}. Native implementation missing."
 
@@ -271,7 +193,7 @@ def _create_dataset_node_function(
             annotation=TargetRunRecord,
         ),
     ]
-    _set_signature(dataset_fn, inspect.Signature(params, return_annotation=DatasetRef))
+    set_signature(dataset_fn, inspect.Signature(params, return_annotation=DatasetRef))
     dataset_fn.__name__ = d_name
     dataset_fn.__doc__ = f"Extract {table_key} dataset from {target_name} target."
 
@@ -313,7 +235,7 @@ def _create_query_node_function(
             annotation=DatasetRef,
         ),
     ]
-    _set_signature(query_fn, inspect.Signature(params, return_annotation=ir.Table))
+    set_signature(query_fn, inspect.Signature(params, return_annotation=ir.Table))
     query_fn.__name__ = q_name
     query_fn.__doc__ = f"Load {table_key} as Ibis expression."
 
@@ -355,7 +277,7 @@ def _create_dataframe_node_function(
             annotation=DatasetRef,
         ),
     ]
-    _set_signature(dataframe_fn, inspect.Signature(params, return_annotation=pd.DataFrame))
+    set_signature(dataframe_fn, inspect.Signature(params, return_annotation=pd.DataFrame))
     dataframe_fn.__name__ = df_name
     dataframe_fn.__doc__ = f"Load {table_key} as pandas DataFrame."
 
@@ -416,7 +338,7 @@ def _create_artifact_node_function(
             annotation=TargetRunRecord,
         ),
     ]
-    _set_signature(artifact_fn, inspect.Signature(params, return_annotation=ArtifactRef))
+    set_signature(artifact_fn, inspect.Signature(params, return_annotation=ArtifactRef))
     artifact_fn.__name__ = a_name
     artifact_fn.__doc__ = f"Access {artifact_name} artifact from {target_name} target."
 
@@ -425,17 +347,14 @@ def _create_artifact_node_function(
 
 
 def _build_contract_graph() -> TargetGraph:
-    """Build a TargetGraph from the canonical target catalog.
+    """Build a TargetGraph with Hamilton-derived dependencies.
 
     Returns
     -------
     TargetGraph
         Graph containing all registered build targets.
     """
-    graph = TargetGraph()
-    for target in load_target_specs():
-        graph.register(target)
-    return graph
+    return build_driver().graph
 
 
 def _new_support_module() -> ModuleType:
@@ -477,14 +396,14 @@ def _populate_for_target(
     *,
     target: OutputTarget,
     options: SupportGenerationOptions,
-    mappings: _SupportNodeMappings,
+    mappings: SupportNodeMappings,
 ) -> None:
     """Attach all enabled support nodes for a target to the module."""
     if options.include_target_stubs:
         dep_node_names = [target_node(dep) for dep in target.dependencies]
         t_name = target_node(target.name)
         mappings.target_to_node[target.name] = t_name
-        _attach_node(
+        attach_node(
             module,
             node_name=t_name,
             fn=_create_stub_target_node_function(target, dep_node_names, domain=target.module),
@@ -494,7 +413,7 @@ def _populate_for_target(
         for table_key in target.contract.table_keys:
             d_name = dataset_node(table_key)
             mappings.dataset_to_node[table_key] = d_name
-            _attach_node(
+            attach_node(
                 module,
                 node_name=d_name,
                 fn=_create_dataset_node_function(table_key=table_key, target_name=target.name),
@@ -503,7 +422,7 @@ def _populate_for_target(
             if options.include_loader_nodes:
                 q_name = query_node(table_key)
                 mappings.query_to_node[table_key] = q_name
-                _attach_node(
+                attach_node(
                     module,
                     node_name=q_name,
                     fn=_create_query_node_function(table_key=table_key, target_name=target.name),
@@ -511,7 +430,7 @@ def _populate_for_target(
 
                 df_name = dataframe_node(table_key)
                 mappings.dataframe_to_node[table_key] = df_name
-                _attach_node(
+                attach_node(
                     module,
                     node_name=df_name,
                     fn=_create_dataframe_node_function(
@@ -524,7 +443,7 @@ def _populate_for_target(
         for artifact_name in target.contract.artifact_names:
             a_name = artifact_node(artifact_name)
             mappings.artifact_to_node[artifact_name] = a_name
-            _attach_node(
+            attach_node(
                 module,
                 node_name=a_name,
                 fn=_create_artifact_node_function(
@@ -554,7 +473,7 @@ def build_support_module(*, options: SupportGenerationOptions | None = None) -> 
     exclude = resolved.exclude_targets or frozenset()
 
     module = _new_support_module()
-    mappings = _SupportNodeMappings()
+    mappings = SupportNodeMappings()
 
     for target in graph.all_targets:
         if not _include_target(target_name=target.name, include=include, exclude=exclude):

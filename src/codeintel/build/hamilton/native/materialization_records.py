@@ -20,6 +20,7 @@ from codeintel.build.hamilton.run_records import (
     RunRecordInputs,
     TargetRunRecord,
     create_run_record,
+    options_hash_for_target,
     save_manifest,
 )
 
@@ -60,6 +61,7 @@ def record_from_duckdb_materialization(
         materialization,
         default_table_key=expected_table_key,
     )
+    options_hash = options_hash_for_target(env, target_name)
     target = graph.get(target_name)
     if target is None:
         msg = f"Target not found: {target_name}"
@@ -68,7 +70,7 @@ def record_from_duckdb_materialization(
             plugin_name=f"native:{target_name}",
             status="failed",
             input_hash=parsed.input_hash,
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=parsed.duration_ms,
             row_counts={},
             error=msg,
@@ -91,7 +93,7 @@ def record_from_duckdb_materialization(
             )
         run = NativeRunInfo(
             input_hash=parsed.input_hash,
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=parsed.duration_ms,
             row_counts=None,
         )
@@ -110,7 +112,7 @@ def record_from_duckdb_materialization(
         )
         run = NativeRunInfo(
             input_hash=parsed.input_hash,
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=parsed.duration_ms,
             row_counts=None,
         )
@@ -123,7 +125,7 @@ def record_from_duckdb_materialization(
 
     run = NativeRunInfo(
         input_hash=parsed.input_hash,
-        options_hash=None,
+        options_hash=options_hash,
         duration_ms=parsed.duration_ms,
         row_counts={parsed.table_key: parsed.row_count or 0}
         if parsed.status == "succeeded"
@@ -190,6 +192,7 @@ def record_from_file_artifact_materialization(
         materialization,
         default_artifact_name=expected_artifact_name,
     )
+    options_hash = options_hash_for_target(env, target_name)
     target = graph.get(target_name)
     if target is None:
         msg = f"Target not found: {target_name}"
@@ -198,7 +201,7 @@ def record_from_file_artifact_materialization(
             plugin_name=f"native:{target_name}",
             status="failed",
             input_hash=parsed.input_hash,
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=parsed.duration_ms,
             row_counts={},
             error=msg,
@@ -221,7 +224,7 @@ def record_from_file_artifact_materialization(
             )
         run = NativeRunInfo(
             input_hash=parsed.input_hash,
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=parsed.duration_ms,
             row_counts=None,
         )
@@ -240,7 +243,7 @@ def record_from_file_artifact_materialization(
         )
         run = NativeRunInfo(
             input_hash=parsed.input_hash,
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=parsed.duration_ms,
             row_counts=None,
         )
@@ -253,7 +256,7 @@ def record_from_file_artifact_materialization(
 
     run = NativeRunInfo(
         input_hash=parsed.input_hash,
-        options_hash=None,
+        options_hash=options_hash,
         duration_ms=parsed.duration_ms,
         row_counts=None,
     )
@@ -314,6 +317,7 @@ def record_from_duckdb_materializations(
     TargetRunRecord
         Record describing succeeded/skipped/failed completion for the target.
     """
+    options_hash = options_hash_for_target(env, target_name)
     target = graph.get(target_name)
     if target is None:
         msg = f"Target not found: {target_name}"
@@ -322,7 +326,7 @@ def record_from_duckdb_materializations(
             plugin_name=f"native:{target_name}",
             status="failed",
             input_hash="",
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=0.0,
             row_counts={},
             error=msg,
@@ -333,11 +337,17 @@ def record_from_duckdb_materializations(
     extra_table_keys = set(materializations) - set(target.contract.table_keys)
     if extra_table_keys:
         msg = f"Unexpected materialization metadata for tables: {sorted(extra_table_keys)}"
+        run = NativeRunInfo(
+            input_hash="",
+            options_hash=options_hash,
+            duration_ms=0.0,
+            row_counts=None,
+        )
         return create_run_record(
             target,
             "failed",
             "",
-            inputs=RunRecordInputs(error=RuntimeError(msg)),
+            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(msg)),
         )
 
     parsed: dict[str, DuckDBMaterializationMetadata] = {}
@@ -381,7 +391,7 @@ def record_from_duckdb_materializations(
         message = errors[0] if errors else "One or more table writes failed"
         run = NativeRunInfo(
             input_hash=input_hash,
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=duration_ms,
             row_counts=None,
         )
@@ -395,7 +405,7 @@ def record_from_duckdb_materializations(
     if statuses == {"skipped"}:
         run = NativeRunInfo(
             input_hash=input_hash,
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=duration_ms,
             row_counts=None,
         )
@@ -415,7 +425,7 @@ def record_from_duckdb_materializations(
 
     run = NativeRunInfo(
         input_hash=input_hash,
-        options_hash=None,
+        options_hash=options_hash,
         duration_ms=duration_ms,
         row_counts=row_counts,
     )
@@ -454,6 +464,7 @@ def record_from_file_artifact_materializations(
     TargetRunRecord
         Record describing succeeded/skipped/failed completion for the target.
     """
+    options_hash = options_hash_for_target(env, target_name)
     target = graph.get(target_name)
     if target is None:
         msg = f"Target not found: {target_name}"
@@ -462,7 +473,7 @@ def record_from_file_artifact_materializations(
             plugin_name=f"native:{target_name}",
             status="failed",
             input_hash="",
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=0.0,
             row_counts={},
             error=msg,
@@ -473,11 +484,17 @@ def record_from_file_artifact_materializations(
     extra_artifacts = set(materializations) - set(target.contract.artifact_names)
     if extra_artifacts:
         msg = f"Unexpected materialization metadata for artifacts: {sorted(extra_artifacts)}"
+        run = NativeRunInfo(
+            input_hash="",
+            options_hash=options_hash,
+            duration_ms=0.0,
+            row_counts=None,
+        )
         return create_run_record(
             target,
             "failed",
             "",
-            inputs=RunRecordInputs(error=RuntimeError(msg)),
+            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(msg)),
         )
 
     parsed = _parse_expected_artifact_materializations(target, materializations)
@@ -490,7 +507,7 @@ def record_from_file_artifact_materializations(
         message = errors[0] if errors else "One or more artifact writes failed"
         run = NativeRunInfo(
             input_hash=input_hash,
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=duration_ms,
             row_counts=None,
         )
@@ -504,7 +521,7 @@ def record_from_file_artifact_materializations(
     if statuses == {"skipped"}:
         run = NativeRunInfo(
             input_hash=input_hash,
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=duration_ms,
             row_counts=None,
         )
@@ -517,7 +534,7 @@ def record_from_file_artifact_materializations(
 
     run = NativeRunInfo(
         input_hash=input_hash,
-        options_hash=None,
+        options_hash=options_hash,
         duration_ms=duration_ms,
         row_counts=None,
     )

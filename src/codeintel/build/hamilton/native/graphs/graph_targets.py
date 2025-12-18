@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import ast
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, SupportsInt, cast
@@ -84,7 +84,6 @@ from codeintel.graphs.compute import goid as goid_compute
 from codeintel.graphs.compute import symbols as symbols_compute
 from codeintel.graphs.runtime import (
     GraphMetricsOptions,
-    GraphRuntimeOptions,
     build_graph_runtime,
 )
 from codeintel.storage.gateway import DuckDBError, ibis_facade
@@ -1464,16 +1463,10 @@ def t__graph_metrics__compute(
 
         backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
         base_runtime_options = load_graph_runtime_options(env, target_name=GRAPH_METRICS_TARGET_NAME)
-        runtime_options = GraphRuntimeOptions(
+        runtime_options = replace(
+            base_runtime_options,
             snapshot=snapshot,
             backend=backend_config,
-            graphs=base_runtime_options.graphs,
-            eager=base_runtime_options.eager,
-            validate=base_runtime_options.validate,
-            cache_key=base_runtime_options.cache_key,
-            engine=base_runtime_options.engine,
-            graph_cache_dir=base_runtime_options.graph_cache_dir,
-            features=base_runtime_options.features,
         )
         runtime = build_graph_runtime(gateway, runtime_options)
 

@@ -54,8 +54,12 @@ class ExportQuerySpec(BaseModel):
     view_id: str | None = Field(
         default=None, description="Semantic view exported (if export came from semantic layer)."
     )
-    select: tuple[str, ...] | None = Field(default=None, description="Selected columns (if specified).")
-    order_by: tuple[str, ...] = Field(default_factory=tuple, description="Ordering spec (server conventions).")
+    select: tuple[str, ...] | None = Field(
+        default=None, description="Selected columns (if specified)."
+    )
+    order_by: tuple[str, ...] = Field(
+        default_factory=tuple, description="Ordering spec (server conventions)."
+    )
     filters: tuple[dict[str, object], ...] = Field(
         default_factory=tuple, description="Filter specs (sanitized, JSON-serializable)."
     )
@@ -73,7 +77,9 @@ class ExportSchemaSummary(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    columns: tuple[str, ...] = Field(default_factory=tuple, description="Column names in payload order.")
+    columns: tuple[str, ...] = Field(
+        default_factory=tuple, description="Column names in payload order."
+    )
     types: dict[str, str] = Field(
         default_factory=dict,
         description="Column types keyed by column name.",
@@ -94,14 +100,24 @@ class ExportHandleResponse(BaseModel):
 
     uri: str = Field(..., description="Resource URI to fetch the export payload.")
     meta_uri: str = Field(..., description="Resource URI to fetch export metadata.")
-    preview_uri: str | None = Field(default=None, description="Resource URI to fetch export preview.")
-    sql_uri: str | None = Field(default=None, description="Resource URI to fetch compiled SQL (if available).")
+    preview_uri: str | None = Field(
+        default=None, description="Resource URI to fetch export preview."
+    )
+    sql_uri: str | None = Field(
+        default=None, description="Resource URI to fetch compiled SQL (if available)."
+    )
 
     created_at: datetime = Field(..., description="When this export was generated.")
-    expires_at: datetime | None = Field(default=None, description="When this export expires (if TTL is used).")
+    expires_at: datetime | None = Field(
+        default=None, description="When this export expires (if TTL is used)."
+    )
 
-    row_count: int | None = Field(default=None, ge=0, description="Row count if known without reading payload.")
-    byte_size: int | None = Field(default=None, ge=0, description="Byte size if known without reading payload.")
+    row_count: int | None = Field(
+        default=None, ge=0, description="Row count if known without reading payload."
+    )
+    byte_size: int | None = Field(
+        default=None, ge=0, description="Byte size if known without reading payload."
+    )
 
     snapshot: ExportSnapshot = Field(..., description="Hashes/identities captured at export time.")
     note: str | None = Field(default=None, description="Optional note for the client/LLM.")
@@ -115,7 +131,9 @@ class ExportMetaResponse(BaseModel):
     export_id: str = Field(..., description="Export identifier.")
     status: ExportStatus = Field(..., description="Current export status.")
     created_at: datetime = Field(..., description="When this export was created.")
-    expires_at: datetime | None = Field(default=None, description="When this export expires (if TTL configured).")
+    expires_at: datetime | None = Field(
+        default=None, description="When this export expires (if TTL configured)."
+    )
 
     format: ExportFormat = Field(..., description="Serialization format.")
     mime_type: str = Field(..., description="MIME type for payload.")
@@ -125,9 +143,13 @@ class ExportMetaResponse(BaseModel):
     byte_size: int | None = Field(default=None, ge=0, description="Byte size (if known).")
     sha256: str | None = Field(default=None, description="Hash of payload bytes (if computed).")
 
-    snapshot: ExportSnapshot = Field(..., description="Snapshot/build/semantic hashes captured at export time.")
+    snapshot: ExportSnapshot = Field(
+        ..., description="Snapshot/build/semantic hashes captured at export time."
+    )
 
-    query: ExportQuerySpec | None = Field(default=None, description="Sanitized query spec used to generate the export.")
+    query: ExportQuerySpec | None = Field(
+        default=None, description="Sanitized query spec used to generate the export."
+    )
     schema_summary: ExportSchemaSummary | None = Field(
         default=None, description="Schema summary for the exported payload (if applicable)."
     )

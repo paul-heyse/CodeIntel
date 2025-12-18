@@ -399,7 +399,9 @@ def test_fetch_models_filters_by_repo_commit(data_models_ctx: TestContext) -> No
     ).list_models()
     expect_length(result, 1)
 
-    result_other = DataModelsRepository(data_models_ctx.gateway, "other/repo", "def456").list_models()
+    result_other = DataModelsRepository(
+        data_models_ctx.gateway, "other/repo", "def456"
+    ).list_models()
     expect_length(result_other, 1)
 
 

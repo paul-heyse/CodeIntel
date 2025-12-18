@@ -39,6 +39,34 @@ def materialize_options(
     )
 
 
+def append_materialize_options(options: MaterializeOptions) -> MaterializeOptions:
+    """Return append-mode options derived from an existing options object.
+
+    This is used by validated materializers that perform an explicit
+    delete-for-snapshot and then need to append the validated rows.
+
+    Parameters
+    ----------
+    options
+        Existing options (typically snapshot-scoped replace-mode options).
+
+    Returns
+    -------
+    MaterializeOptions
+        Options object with the same snapshot/owner_target/input_hash but with
+        mode set to ``"append"``.
+    """
+    return MaterializeOptions(
+        snapshot=options.snapshot,
+        mode="append",
+        owner_target=options.owner_target,
+        input_hash=options.input_hash,
+        asset_type=options.asset_type,
+        upsert=options.upsert,
+    )
+
+
 __all__ = [
+    "append_materialize_options",
     "materialize_options",
 ]

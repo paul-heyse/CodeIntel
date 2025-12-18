@@ -25,6 +25,18 @@ if TYPE_CHECKING:
         validate_row_with_schema,
     )
 
+    _TYPE_CHECKING_EXPORTS = (
+        SCHEMAS,
+        apply_all_schemas,
+        assert_schema_alignment,
+        create_schemas,
+        ensure_schemas_preserve,
+        build_validator,
+        generate_export_schemas,
+        json_schema_from_typeddict,
+        validate_row_with_schema,
+    )
+
 _EXPORTS: dict[str, tuple[str, str]] = {
     "SCHEMAS": ("codeintel.storage.schema.ddl", "SCHEMAS"),
     "apply_all_schemas": ("codeintel.storage.schema.ddl", "apply_all_schemas"),
@@ -33,8 +45,14 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "ensure_schemas_preserve": ("codeintel.storage.schema.ddl", "ensure_schemas_preserve"),
     "build_validator": ("codeintel.storage.schema.json_schema", "build_validator"),
     "generate_export_schemas": ("codeintel.storage.schema.json_schema", "generate_export_schemas"),
-    "json_schema_from_typeddict": ("codeintel.storage.schema.json_schema", "json_schema_from_typeddict"),
-    "validate_row_with_schema": ("codeintel.storage.schema.json_schema", "validate_row_with_schema"),
+    "json_schema_from_typeddict": (
+        "codeintel.storage.schema.json_schema",
+        "json_schema_from_typeddict",
+    ),
+    "validate_row_with_schema": (
+        "codeintel.storage.schema.json_schema",
+        "validate_row_with_schema",
+    ),
 }
 
 
@@ -53,4 +71,14 @@ def __dir__() -> list[str]:
     return sorted(set(globals()) | set(_EXPORTS))
 
 
-__all__ = list(_EXPORTS)
+__all__ = (
+    "SCHEMAS",
+    "apply_all_schemas",
+    "assert_schema_alignment",
+    "create_schemas",
+    "ensure_schemas_preserve",
+    "build_validator",
+    "generate_export_schemas",
+    "json_schema_from_typeddict",
+    "validate_row_with_schema",
+)
