@@ -583,6 +583,8 @@ class SemanticQueryToolResponse(BaseModel):
         Shortcut to export meta URI.
     summary
         Optional LLM-generated summary (sampling) when enabled and supported.
+    sql_fingerprint
+        Optional sha256 fingerprint of canonical SQL for correlation.
     note
         Short, user/LLM-friendly note.
     """
@@ -604,6 +606,10 @@ class SemanticQueryToolResponse(BaseModel):
     summary: str | None = Field(
         default=None,
         description="Optional LLM-generated summary for large results (requires sampling support).",
+    )
+    sql_fingerprint: str | None = Field(
+        default=None,
+        description="SHA256 fingerprint of canonical SQL for correlation and sampling.",
     )
     note: str | None = Field(
         default=None,

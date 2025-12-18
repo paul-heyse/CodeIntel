@@ -322,6 +322,7 @@ class ResourceStore:
         rows: list[dict[str, object]],
         *,
         spec: ExportArtifactSpec,
+        export_id: str | None = None,
     ) -> tuple[str, StoredArtifact, StoredMetadata]:
         """Store rows with rich metadata sidecar (NDJSON or JSON).
 
@@ -331,6 +332,9 @@ class ResourceStore:
             Row dictionaries to store.
         spec
             Artifact metadata specification.
+        export_id
+            Optional caller-supplied export identifier. When provided, enables best-effort cleanup
+            on task cancellation.
 
         Returns
         -------
@@ -346,7 +350,7 @@ class ResourceStore:
             msg = "put_with_metadata only supports format='ndjson' or format='json'"
             raise ValueError(msg)
 
-        token = secrets.token_urlsafe(16)
+        token = export_id or secrets.token_urlsafe(16)
         created_at = datetime.now(UTC)
         resolved_columns = spec.columns
         if not resolved_columns and rows:
@@ -401,6 +405,7 @@ class ResourceStore:
         rows: Iterable[dict[str, object]],
         *,
         spec: ExportArtifactSpec,
+        export_id: str | None = None,
     ) -> tuple[str, StoredArtifact, StoredMetadata]:
         """Stream rows to an NDJSON artifact with rich metadata sidecar.
 
@@ -410,6 +415,9 @@ class ResourceStore:
             Iterable of row dictionaries.
         spec
             Artifact metadata specification. Must use ``format="ndjson"``.
+        export_id
+            Optional caller-supplied export identifier. When provided, enables best-effort cleanup
+            on task cancellation.
 
         Returns
         -------
@@ -427,7 +435,7 @@ class ResourceStore:
             msg = "Streaming export only supports format='ndjson'"
             raise ValueError(msg)
 
-        token = secrets.token_urlsafe(16)
+        token = export_id or secrets.token_urlsafe(16)
         path = self._root / f"{token}{_NDJSON_SUFFIX}"
         mime_type = _MIME_NDJSON
 
@@ -498,6 +506,7 @@ class ResourceStore:
         *,
         spec: ExportArtifactSpec,
         write_fn: Callable[[Path], int | None],
+        export_id: str | None = None,
     ) -> tuple[str, StoredArtifact, StoredMetadata]:
         """Generate a file-backed artifact (parquet/arrow) with a metadata sidecar.
 
@@ -508,6 +517,9 @@ class ResourceStore:
         write_fn
             Callback that writes the artifact to the provided path and optionally
             returns the row count.
+        export_id
+            Optional caller-supplied export identifier. When provided, enables best-effort cleanup
+            on task cancellation.
 
         Returns
         -------
@@ -523,7 +535,7 @@ class ResourceStore:
             msg = "put_generated_file_with_metadata only supports format='parquet' or format='arrow'"
             raise ValueError(msg)
 
-        token = secrets.token_urlsafe(16)
+        token = export_id or secrets.token_urlsafe(16)
         created_at = datetime.now(UTC)
         path, mime_type = self._artifact_path_for_format(token, spec.format)
         try:

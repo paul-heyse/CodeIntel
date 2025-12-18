@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -35,6 +36,7 @@ from codeintel.serving.mcp.response_models import (
     SnapshotRef,
 )
 from codeintel.serving.mcp.runtime import QueryLimiter
+from codeintel.serving.mcp.sql_fingerprint import sqlglot_canonical_sha256
 from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
 from codeintel.serving.semantic.models import (
     FilterSpec,
@@ -309,6 +311,8 @@ class SemanticKernel(Protocol):
 
     def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int: ...
 
+    def compile_query_sql(self, request: SemanticQueryRequest) -> str: ...
+
 
 def _build_semantic_request(
     view_id: str,
@@ -431,7 +435,7 @@ def build_mcp_app(
     _register_health_routes(mcp, kernel)
 
     # Register guided prompts for LLM workflows
-    register_prompts(mcp, settings=settings)
+    register_prompts(mcp, settings=settings, kernel=kernel)
 
     return mcp
 
@@ -667,6 +671,14 @@ def _register_query_tool(
         query_hash = result.query_hash
         schema_hash = result.schema_hash
 
+        sql_fingerprint: str | None = None
+        try:
+            compiled_sql = await limiter.run(kernel.compile_query_sql, request)
+        except (KeyError, TypeError, ValueError):
+            compiled_sql = None
+        if isinstance(compiled_sql, str) and compiled_sql:
+            sql_fingerprint = sqlglot_canonical_sha256(compiled_sql)
+
         preview: QueryPreview | None = None
         if truncated or row_count > _PREVIEW_ROW_COUNT:
             preview = QueryPreview(
@@ -709,6 +721,7 @@ def _register_query_tool(
             result=result,
             preview=preview,
             summary=summary,
+            sql_fingerprint=sql_fingerprint,
             note=note,
         )
 
@@ -1017,15 +1030,23 @@ def _register_export_tool(
         )
 
         cancel_exc = anyio.get_cancelled_exc_class()
+        export_id = secrets.token_urlsafe(16)
         try:
             if format_type in {"ndjson", "json"}:
                 token, artifact, stored_meta = await limiter.run(
-                    lambda: _write_text_export(kernel=kernel, store=store, request=request, spec=spec)
+                    lambda: _write_text_export(
+                        kernel=kernel,
+                        store=store,
+                        request=request,
+                        spec=spec,
+                        export_id=export_id,
+                    )
                 )
             elif format_type == "parquet":
                 token, artifact, stored_meta = await limiter.run(
                     lambda: store.put_generated_file_with_metadata(
                         spec=spec,
+                        export_id=export_id,
                         write_fn=lambda path: kernel.export_to_parquet(request, output_path=path),
                     )
                 )
@@ -1033,6 +1054,7 @@ def _register_export_tool(
                 token, artifact, stored_meta = await limiter.run(
                     lambda: store.put_generated_file_with_metadata(
                         spec=spec,
+                        export_id=export_id,
                         write_fn=lambda path: kernel.export_to_arrow_ipc(request, output_path=path),
                     )
                 )
@@ -1040,7 +1062,7 @@ def _register_export_tool(
                 raise InvalidExportFormatError(export_format)
         except cancel_exc:
             await ctx.info("Export cancelled; cleaning up partial artifacts")
-            store.cleanup_expired()
+            store.delete(export_id)
             raise
 
         await _maybe_report_progress(ctx, settings=settings, progress=100, total=100)
@@ -1097,6 +1119,7 @@ def _write_text_export(
     store: ResourceStore,
     request: SemanticExportRequest,
     spec: ExportArtifactSpec,
+    export_id: str,
 ) -> tuple[str, StoredArtifact, StoredMetadata]:
     """Write a JSON/NDJSON export to the ResourceStore.
 
@@ -1110,6 +1133,8 @@ def _write_text_export(
         Export request to execute.
     spec
         Metadata/specification describing the artifact.
+    export_id
+        Caller-provided export identifier for stable cancellation cleanup.
 
     Returns
     -------
@@ -1117,9 +1142,9 @@ def _write_text_export(
         Export token, artifact metadata, and stored metadata.
     """
     if spec.format == "ndjson":
-        return store.put_with_metadata_stream(kernel.export_rows(request), spec=spec)
+        return store.put_with_metadata_stream(kernel.export_rows(request), spec=spec, export_id=export_id)
     rows = list(kernel.export_rows(request))
-    return store.put_with_metadata(rows, spec=spec)
+    return store.put_with_metadata(rows, spec=spec, export_id=export_id)
 
 
 __all__ = ["build_mcp_app"]

@@ -10,8 +10,6 @@ This module demonstrates Phase 3 native execution with:
 
 from __future__ import annotations
 
-from typing import Any, cast
-
 import ibis
 import ibis.expr.types as ir
 from hamilton.function_modifiers import (
@@ -41,7 +39,7 @@ from codeintel.build.hamilton.validators import (
     build_table_contract,
 )
 from codeintel.build.targets import TargetGraph
-from codeintel.storage.ibis_types import ge, gt
+from codeintel.build.ibis_typing import add, cast_dtype, ge, gt, ibis_bool, truediv
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
@@ -138,7 +136,7 @@ def _risk_factors_join_metrics(metrics: ir.Table, fan_in: ir.Table, fan_out: ir.
     )
 
     risk = risk.left_join(
-        fan_in, cast("Any", risk.function_goid_h128 == fan_in.function_goid_h128)
+        fan_in, ibis_bool(risk.function_goid_h128 == fan_in.function_goid_h128)
     ).select(
         risk.function_goid_h128,
         risk.repo,
@@ -149,7 +147,7 @@ def _risk_factors_join_metrics(metrics: ir.Table, fan_in: ir.Table, fan_out: ir.
     )
 
     return risk.left_join(
-        fan_out, cast("Any", risk.function_goid_h128 == fan_out.function_goid_h128)
+        fan_out, ibis_bool(risk.function_goid_h128 == fan_out.function_goid_h128)
     ).select(
         risk.function_goid_h128,
         risk.repo,
@@ -178,11 +176,15 @@ def _risk_factors_score(risk: ir.Table) -> ir.Table:
         (gt(risk.cyclomatic_complexity, COMPLEXITY_THRESHOLD), 2),
         else_=0,
     )
-    risk_score += cast("Any", cast("Any", risk.fan_in_count) / FAN_IN_BUCKET_SIZE).cast("int64")
-    risk_score += cast("Any", cast("Any", risk.fan_out_count) / FAN_OUT_BUCKET_SIZE).cast("int64")
+    risk_score = add(
+        risk_score, cast_dtype(truediv(risk.fan_in_count, FAN_IN_BUCKET_SIZE), "int64")
+    )
+    risk_score = add(
+        risk_score, cast_dtype(truediv(risk.fan_out_count, FAN_OUT_BUCKET_SIZE), "int64")
+    )
     risk_score = ibis.cases(
         (risk.has_tests, risk_score),
-        else_=risk_score + NO_TESTS_PENALTY,
+        else_=add(risk_score, NO_TESTS_PENALTY),
     )
 
     return risk.mutate(risk_score=risk_score)
