@@ -21,13 +21,11 @@ import sys
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
 
 import ibis
 import pyarrow as pa
 import sqlglot
 from hamilton.function_modifiers import source, tag, value
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.env import BuildEnv
@@ -41,6 +39,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.schemas import SchemaManifest, get_schema_provider
 from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
 from codeintel.build.serving.semantic_compile_hamilton import (
@@ -261,7 +260,7 @@ def _views_sql_diff_json(env: BuildEnv, *, current_views_sql: str) -> str:
     return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_SEMANTIC_REGISTRY}"),
     env=source("env"),
@@ -291,7 +290,7 @@ def serving_artifacts__semantic_registry(_env: BuildEnv) -> str:
     return _semantic_registry_json()
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_SCHEMA_MANIFEST}"),
     env=source("env"),
@@ -321,7 +320,7 @@ def serving_artifacts__schema_manifest(_env: BuildEnv) -> str:
     return _schema_manifest_json()
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_BUILDSPEC}"),
     env=source("env"),
@@ -351,7 +350,7 @@ def serving_artifacts__buildspec(_env: BuildEnv) -> str:
     return _buildspec_json()
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_ENVIRONMENT}"),
     env=source("env"),
@@ -381,7 +380,7 @@ def serving_artifacts__environment(env: BuildEnv) -> str:
     return _environment_json(env)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_VIEWS_SQL}"),
     env=source("env"),
@@ -411,7 +410,7 @@ def serving_artifacts__views_sql(env: BuildEnv) -> str:
     return _views_sql_json(env)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_VIEWS_SQL_DIFF}"),
     env=source("env"),
@@ -445,10 +444,10 @@ def serving_artifacts__views_sql_diff(env: BuildEnv, serving_artifacts__views_sq
 
 @tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
 def serving_artifacts__materializations_base(
-    m__artifact__semantic_registry: dict[str, Any],
-    m__artifact__schema_manifest: dict[str, Any],
-    m__artifact__buildspec: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
+    m__artifact__semantic_registry: dict[str, object],
+    m__artifact__schema_manifest: dict[str, object],
+    m__artifact__buildspec: dict[str, object],
+) -> dict[str, dict[str, object]]:
     """Collect saver metadata for the base serving artifacts.
 
     Parameters
@@ -462,7 +461,7 @@ def serving_artifacts__materializations_base(
 
     Returns
     -------
-    dict[str, dict[str, Any]]
+    dict[str, dict[str, object]]
         Mapping of artifact name to saver metadata.
     """
     return {
@@ -474,15 +473,15 @@ def serving_artifacts__materializations_base(
 
 @tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
 def serving_artifacts__materializations_views(
-    m__artifact__environment: dict[str, Any],
-    m__artifact__views_sql: dict[str, Any],
-    m__artifact__views_sql_diff: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
+    m__artifact__environment: dict[str, object],
+    m__artifact__views_sql: dict[str, object],
+    m__artifact__views_sql_diff: dict[str, object],
+) -> dict[str, dict[str, object]]:
     """Collect saver metadata for the view/metadata artifacts.
 
     Returns
     -------
-    dict[str, dict[str, Any]]
+    dict[str, dict[str, object]]
         Mapping of artifact name to saver metadata.
     """
     return {
@@ -494,14 +493,14 @@ def serving_artifacts__materializations_views(
 
 @tag(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME, node_type="helper")
 def serving_artifacts__materializations(
-    serving_artifacts__materializations_base: dict[str, dict[str, Any]],
-    serving_artifacts__materializations_views: dict[str, dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
+    serving_artifacts__materializations_base: dict[str, dict[str, object]],
+    serving_artifacts__materializations_views: dict[str, dict[str, object]],
+) -> dict[str, dict[str, object]]:
     """Merge all serving artifact materializations.
 
     Returns
     -------
-    dict[str, dict[str, Any]]
+    dict[str, dict[str, object]]
         Mapping of artifact name to saver metadata.
     """
     merged = dict(serving_artifacts__materializations_base)
@@ -513,7 +512,7 @@ def serving_artifacts__materializations(
 def t__serving_artifacts(
     env: BuildEnv,
     graph: TargetGraph,
-    serving_artifacts__materializations: dict[str, dict[str, Any]],
+    serving_artifacts__materializations: dict[str, dict[str, object]],
 ) -> TargetRunRecord:
     """Finalize serving artifacts materialization and persist manifest.
 

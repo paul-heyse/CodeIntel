@@ -155,6 +155,8 @@ def normalize_duckdb_type(type_str: str) -> ColumnType:
         "INT4": "INTEGER",
         "BIGINT": "BIGINT",
         "INT8": "BIGINT",
+        "HUGEINT": "DECIMAL(38,0)",
+        "UHUGEINT": "DECIMAL(38,0)",
         "DOUBLE": "DOUBLE",
         "DOUBLE PRECISION": "DOUBLE",
         "VARCHAR": "VARCHAR",

@@ -19,10 +19,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, tag, value
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.functions.function_contracts import build_function_contracts_rows
 from codeintel.analytics.functions.function_effects import (
@@ -42,6 +41,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -232,7 +232,7 @@ def t__function_contracts__compute(
         )
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(FUNCTION_CONTRACTS_TABLE_KEY),
     env=source("env"),
@@ -274,7 +274,7 @@ def function_contracts__rows(
 def t__function_contracts(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_contracts: dict[str, Any],
+    m__analytics__function_contracts: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize function contracts target.
 
@@ -425,7 +425,7 @@ def t__function_effects__compute(
         return FunctionEffectsResult(rows=None, error=str(exc))
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(FUNCTION_EFFECTS_TABLE_KEY),
     env=source("env"),
@@ -461,7 +461,7 @@ def function_effects__rows(
 def t__function_effects(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_effects: dict[str, Any],
+    m__analytics__function_effects: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize function effects target.
 

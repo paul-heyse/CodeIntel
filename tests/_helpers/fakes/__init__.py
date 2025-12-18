@@ -7,13 +7,9 @@ This package provides fake implementations for:
 Example (new protocol-based fakes)
 ----------------------------------
 >>> from tests._helpers.fakes import ProtocolFakeProviders
->>> from codeintel.build.context import ContextResources
 >>>
 >>>
 >>> providers = ProtocolFakeProviders.defaults()
->>>
->>>
->>> resources = ContextResources(providers=providers)
 
 Example (legacy tool fakes)
 ---------------------------

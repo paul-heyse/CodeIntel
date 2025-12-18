@@ -80,7 +80,16 @@ def main() -> None:
     mcp = create_mcp_server(cfg)
     transport: Literal["stdio", "http"]
     transport = "stdio" if cfg.mcp_transport == "stdio" else "http"
-    mcp.run(transport=transport)
+    if transport == "stdio":
+        mcp.run(transport="stdio")
+        return
+    mcp.run(
+        transport="streamable-http",
+        host=cfg.host,
+        port=cfg.port,
+        json_response=True,
+        stateless_http=False,
+    )
 
 
 __all__ = ["create_mcp_server", "main"]

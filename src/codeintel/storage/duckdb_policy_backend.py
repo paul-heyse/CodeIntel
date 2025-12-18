@@ -368,6 +368,44 @@ def _build_insert_select(
     )
 
 
+def _build_insert_select_ast(
+    table_schema: str,
+    table_name: str,
+    columns: Sequence[str],
+    *,
+    select_ast: exp.Expression,
+) -> exp.Insert:
+    """Build a SQLGlot INSERT...SELECT expression from a pre-built SELECT AST.
+
+    Parameters
+    ----------
+    table_schema
+        Schema containing the table.
+    table_name
+        Table name.
+    columns
+        Column names for the INSERT.
+    select_ast
+        SQLGlot AST for the SELECT statement to insert from.
+
+    Returns
+    -------
+    exp.Insert
+        SQLGlot INSERT expression.
+    """
+    insert_schema = exp.Schema(
+        this=exp.Table(
+            this=exp.to_identifier(table_name),
+            db=exp.to_identifier(table_schema),
+        ),
+        expressions=[exp.to_identifier(col) for col in columns],
+    )
+    return exp.Insert(
+        this=insert_schema,
+        expression=select_ast,
+    )
+
+
 def _build_upsert(
     table_schema: str,
     table_name: str,
@@ -592,7 +630,7 @@ class DuckDBPolicyBackend:
         table_key: str,
         *,
         columns: Sequence[str],
-        select_sql: str,
+        select_sql: str | exp.Expression,
     ) -> None:
         """Insert rows produced by a SELECT query into a table.
 
@@ -603,15 +641,23 @@ class DuckDBPolicyBackend:
         columns
             Column names to insert into.
         select_sql
-            SQL SELECT statement to insert from.
+            SQL SELECT statement (string) or SQLGlot AST to insert from.
         """
         table_schema, table_name = split_table_key(table_key)
-        insert_expr = _build_insert_select(
-            table_schema,
-            table_name,
-            columns,
-            select_sql=select_sql,
-        )
+        if isinstance(select_sql, exp.Expression):
+            insert_expr = _build_insert_select_ast(
+                table_schema,
+                table_name,
+                columns,
+                select_ast=select_sql,
+            )
+        else:
+            insert_expr = _build_insert_select(
+                table_schema,
+                table_name,
+                columns,
+                select_sql=select_sql,
+            )
         self._run(insert_expr)
 
     def upsert_select(
@@ -619,7 +665,7 @@ class DuckDBPolicyBackend:
         table_key: str,
         *,
         columns: Sequence[str],
-        select_sql: str,
+        select_sql: str | exp.Expression,
         conflict_columns: Sequence[str],
         update_columns: Sequence[str] | None = None,
     ) -> None:
@@ -632,19 +678,27 @@ class DuckDBPolicyBackend:
         columns
             Column names to insert into.
         select_sql
-            SQL SELECT statement to insert from.
+            SQL SELECT statement (string) or SQLGlot AST to upsert from.
         conflict_columns
             Columns defining the conflict key.
         update_columns
             Columns to update on conflict. When None, updates all non-conflict columns.
         """
         table_schema, table_name = split_table_key(table_key)
-        insert_expr = _build_insert_select(
-            table_schema,
-            table_name,
-            columns,
-            select_sql=select_sql,
-        )
+        if isinstance(select_sql, exp.Expression):
+            insert_expr = _build_insert_select_ast(
+                table_schema,
+                table_name,
+                columns,
+                select_ast=select_sql,
+            )
+        else:
+            insert_expr = _build_insert_select(
+                table_schema,
+                table_name,
+                columns,
+                select_sql=select_sql,
+            )
 
         cols_to_update = (
             [col for col in columns if col not in conflict_columns]

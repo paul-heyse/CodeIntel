@@ -12,10 +12,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, tag, value
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.semantic_roles import SemanticRolesResult, build_semantic_roles_rows
 from codeintel.analytics.testing.profiles.builder import build_test_profile_result
@@ -31,6 +30,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -183,7 +183,7 @@ def t__semantic_roles__compute(
         return None
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
     env=source("env"),
@@ -219,7 +219,7 @@ def semantic_roles__functions_rows(
     return tuple(t__semantic_roles__compute.function_rows)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(SEMANTIC_ROLES_MODULES_TABLE_KEY),
     env=source("env"),
@@ -259,8 +259,8 @@ def semantic_roles__modules_rows(
 def t__semantic_roles(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__semantic_roles_functions: dict[str, Any],
-    m__analytics__semantic_roles_modules: dict[str, Any],
+    m__analytics__semantic_roles_functions: dict[str, object],
+    m__analytics__semantic_roles_modules: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize semantic roles target.
 
@@ -399,7 +399,7 @@ def t__test_profile__compute(
         return TestProfileComputeResult(result=None, error=str(exc))
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(TEST_PROFILE_TABLE_KEY),
     env=source("env"),
@@ -439,7 +439,7 @@ def t__test_profile(
     env: BuildEnv,
     graph: TargetGraph,
     t__test_profile__compute: TestProfileComputeResult,
-    m__analytics__test_profile: dict[str, Any],
+    m__analytics__test_profile: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize test profile target.
 

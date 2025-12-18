@@ -9,9 +9,8 @@ still allowing controlled extension via ``extra_tags``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping
-from types import EllipsisType
-from typing import ParamSpec, TypeVar, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, ParamSpec, TypeVar, cast
 
 from hamilton.function_modifiers import tag as h_tag
 
@@ -31,15 +30,20 @@ from codeintel.hamilton.tags import (
     TAG_TARGET,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Collection, Mapping
+    from types import EllipsisType
+
 P = ParamSpec("P")
 R = TypeVar("R")
 Decorator = Callable[[Callable[P, R]], Callable[P, R]]
+TagValue = str | list[str]
 
 
 def _merge_extra_tags(
-    base: dict[str, object],
-    extra_tags: Mapping[str, object] | None,
-) -> dict[str, object]:
+    base: dict[str, TagValue],
+    extra_tags: Mapping[str, TagValue] | None,
+) -> dict[str, TagValue]:
     if extra_tags is None:
         return base
     merged = dict(base)
@@ -52,9 +56,9 @@ def _build_common_tags(
     node_type: str,
     domain: str | None,
     target: str | None,
-    extra_tags: Mapping[str, object] | None,
-) -> dict[str, object]:
-    base: dict[str, object] = {TAG_NODE_TYPE: node_type}
+    extra_tags: Mapping[str, TagValue] | None,
+) -> dict[str, TagValue]:
+    base: dict[str, TagValue] = {TAG_NODE_TYPE: node_type}
     if domain is not None:
         base[TAG_DOMAIN] = domain
     if target is not None:
@@ -62,43 +66,11 @@ def _build_common_tags(
     return _merge_extra_tags(base, extra_tags)
 
 
-def tag_node(
+def _tag(
+    tags: dict[str, TagValue],
     *,
-    node_type: str,
-    domain: str | None = None,
-    target: str | None = None,
-    table_key: str | None = None,
-    artifact: str | None = None,
-    target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, object] | None = None,
+    target_: str | Collection[str] | EllipsisType | None,
 ) -> Decorator[P, R]:
-    """Return a Hamilton ``@tag`` decorator with canonical keys.
-
-    Parameters
-    ----------
-    node_type
-        Canonical node type value (e.g. ``NODE_TYPE_COMPUTE``).
-    domain
-        Optional domain identifier for the node (e.g. ``"analytics"``).
-    target
-        Optional target name for the node.
-    table_key
-        Optional dataset table key (required for dataset nodes).
-    artifact
-        Optional artifact name (required for artifact nodes).
-    extra_tags
-        Additional tags to merge (later wins on key conflict).
-
-    Returns
-    -------
-    Callable
-        Decorator that tags the underlying Hamilton node.
-    """
-    tags = _build_common_tags(node_type=node_type, domain=domain, target=target, extra_tags=extra_tags)
-    if table_key is not None:
-        tags[TAG_TABLE_KEY] = table_key
-    if artifact is not None:
-        tags[TAG_ARTIFACT] = artifact
     if target_ is None:
         return cast("Decorator[P, R]", h_tag(**tags))
     return cast("Decorator[P, R]", h_tag(**tags, target_=target_))
@@ -109,15 +81,22 @@ def tag_compute(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, object] | None = None,
+    extra_tags: Mapping[str, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    return tag_node(
+    """Tag a compute node with canonical build tags.
+
+    Returns
+    -------
+    Decorator
+        Hamilton decorator that applies the canonical compute tags.
+    """
+    tags = _build_common_tags(
         node_type=NODE_TYPE_COMPUTE,
         domain=domain,
         target=target,
-        target_=target_,
         extra_tags=extra_tags,
     )
+    return _tag(tags, target_=target_)
 
 
 def tag_materialize(
@@ -125,15 +104,22 @@ def tag_materialize(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, object] | None = None,
+    extra_tags: Mapping[str, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    return tag_node(
+    """Tag a materialize node with canonical build tags.
+
+    Returns
+    -------
+    Decorator
+        Hamilton decorator that applies the canonical materialize tags.
+    """
+    tags = _build_common_tags(
         node_type=NODE_TYPE_MATERIALIZE,
         domain=domain,
         target=target,
-        target_=target_,
         extra_tags=extra_tags,
     )
+    return _tag(tags, target_=target_)
 
 
 def tag_dataset(
@@ -142,16 +128,23 @@ def tag_dataset(
     target: str | None = None,
     table_key: str,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, object] | None = None,
+    extra_tags: Mapping[str, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    return tag_node(
+    """Tag a dataset-producing node with canonical build tags.
+
+    Returns
+    -------
+    Decorator
+        Hamilton decorator that applies the canonical dataset tags.
+    """
+    tags = _build_common_tags(
         node_type=NODE_TYPE_DATASET,
         domain=domain,
         target=target,
-        table_key=table_key,
-        target_=target_,
         extra_tags=extra_tags,
     )
+    tags[TAG_TABLE_KEY] = table_key
+    return _tag(tags, target_=target_)
 
 
 def tag_artifact(
@@ -160,16 +153,23 @@ def tag_artifact(
     target: str | None = None,
     artifact: str,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, object] | None = None,
+    extra_tags: Mapping[str, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    return tag_node(
+    """Tag an artifact-producing node with canonical build tags.
+
+    Returns
+    -------
+    Decorator
+        Hamilton decorator that applies the canonical artifact tags.
+    """
+    tags = _build_common_tags(
         node_type=NODE_TYPE_ARTIFACT,
         domain=domain,
         target=target,
-        artifact=artifact,
-        target_=target_,
         extra_tags=extra_tags,
     )
+    tags[TAG_ARTIFACT] = artifact
+    return _tag(tags, target_=target_)
 
 
 def tag_tool(
@@ -177,11 +177,22 @@ def tag_tool(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, object] | None = None,
+    extra_tags: Mapping[str, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    return tag_node(
-        node_type=NODE_TYPE_TOOL, domain=domain, target=target, target_=target_, extra_tags=extra_tags
+    """Tag a tool/external-boundary node with canonical build tags.
+
+    Returns
+    -------
+    Decorator
+        Hamilton decorator that applies the canonical tool tags.
+    """
+    tags = _build_common_tags(
+        node_type=NODE_TYPE_TOOL,
+        domain=domain,
+        target=target,
+        extra_tags=extra_tags,
     )
+    return _tag(tags, target_=target_)
 
 
 def tag_loader_query(
@@ -189,15 +200,22 @@ def tag_loader_query(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, object] | None = None,
+    extra_tags: Mapping[str, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    return tag_node(
+    """Tag a loader/query node with canonical build tags.
+
+    Returns
+    -------
+    Decorator
+        Hamilton decorator that applies the canonical loader-query tags.
+    """
+    tags = _build_common_tags(
         node_type=NODE_TYPE_LOADER_QUERY,
         domain=domain,
         target=target,
-        target_=target_,
         extra_tags=extra_tags,
     )
+    return _tag(tags, target_=target_)
 
 
 def tag_loader_dataframe(
@@ -205,15 +223,22 @@ def tag_loader_dataframe(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, object] | None = None,
+    extra_tags: Mapping[str, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    return tag_node(
+    """Tag a loader/dataframe node with canonical build tags.
+
+    Returns
+    -------
+    Decorator
+        Hamilton decorator that applies the canonical loader-dataframe tags.
+    """
+    tags = _build_common_tags(
         node_type=NODE_TYPE_LOADER_DATAFRAME,
         domain=domain,
         target=target,
-        target_=target_,
         extra_tags=extra_tags,
     )
+    return _tag(tags, target_=target_)
 
 
 def tag_helper(
@@ -221,15 +246,22 @@ def tag_helper(
     domain: str | None = None,
     target: str | None = None,
     target_: str | Collection[str] | EllipsisType | None = None,
-    extra_tags: Mapping[str, object] | None = None,
+    extra_tags: Mapping[str, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    return tag_node(
+    """Tag a helper node with canonical build tags.
+
+    Returns
+    -------
+    Decorator
+        Hamilton decorator that applies the canonical helper tags.
+    """
+    tags = _build_common_tags(
         node_type=NODE_TYPE_HELPER,
         domain=domain,
         target=target,
-        target_=target_,
         extra_tags=extra_tags,
     )
+    return _tag(tags, target_=target_)
 
 
 __all__ = [
@@ -241,6 +273,5 @@ __all__ = [
     "tag_loader_dataframe",
     "tag_loader_query",
     "tag_materialize",
-    "tag_node",
     "tag_tool",
 ]

@@ -7,13 +7,12 @@ object. It intentionally excludes resources/identity, which remain part of ``Bui
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.hooks import HookOptions
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from codeintel.build.hamilton.env import BuildEnv
 
 
@@ -31,7 +30,18 @@ class BuildExecutionOptions:
     enable_timing: bool = False
 
     def resolved_profile(self, *, env: BuildEnv) -> str:
-        """Resolve the effective profile for this run."""
+        """Resolve the effective profile for this run.
+
+        Parameters
+        ----------
+        env
+            Build environment for the run.
+
+        Returns
+        -------
+        str
+            Effective profile name.
+        """
         if self.profile is not None:
             return self.profile
         if env.profile is not None:
@@ -41,9 +51,19 @@ class BuildExecutionOptions:
     def resolved_cache_dir(self, *, env: BuildEnv) -> Path:
         """Resolve the cache directory for this run.
 
+        Parameters
+        ----------
+        env
+            Build environment for the run.
+
         Notes
         -----
         This only matters when ``enable_hamilton_cache`` is True.
+
+        Returns
+        -------
+        Path
+            Effective cache directory.
         """
         if self.cache_dir is not None:
             return Path(self.cache_dir)
@@ -52,8 +72,18 @@ class BuildExecutionOptions:
     def hook_options(self, *, env: BuildEnv) -> HookOptions:
         """Construct HookOptions for this run.
 
+        Parameters
+        ----------
+        env
+            Build environment for the run.
+
         Validation is kept strict-only by default; telemetry/progress/timing follow the execution
         options toggles.
+
+        Returns
+        -------
+        HookOptions
+            Hook configuration derived from env and execution options.
         """
         return HookOptions(
             strict_contracts=env.strict_contracts,

@@ -11,6 +11,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from sqlglot import diff as sqlglot_diff
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
 
@@ -69,6 +70,57 @@ class SqlDiffSummary:
             "tables_removed": list(self.tables_removed),
             "parse_error": self.parse_error,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class SqlStructuralDiffSummary:
+    """AST-level diff summary between two SQL strings."""
+
+    changed: bool
+    actions: dict[str, int]
+    parse_error: str | None = None
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable representation.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-ready payload with stable keys.
+        """
+        return {
+            "changed": self.changed,
+            "actions": dict(self.actions),
+            "parse_error": self.parse_error,
+        }
+
+
+def diff_sql_structural(*, before: str, after: str) -> SqlStructuralDiffSummary:
+    """Compute a SQLGlot structural diff summary for two SQL strings.
+
+    Notes
+    -----
+    This is intentionally additive to the existing `diff_sql` function; callers
+    can opt into structural diffs without changing artifact formats.
+
+    Returns
+    -------
+    SqlStructuralDiffSummary
+        Structural diff summary.
+    """
+    try:
+        before_canon = _canonical_sql(before)
+        after_canon = _canonical_sql(after)
+        before_ast = parse_one(before_canon, dialect=DUCKDB_DIALECT)
+        after_ast = parse_one(after_canon, dialect=DUCKDB_DIALECT)
+        actions = sqlglot_diff(before_ast, after_ast)
+        counts: dict[str, int] = {}
+        for action in actions:
+            name = type(action).__name__
+            counts[name] = counts.get(name, 0) + 1
+        return SqlStructuralDiffSummary(changed=before_canon != after_canon, actions=counts)
+    except (ParseError, ValueError, TypeError) as exc:
+        return SqlStructuralDiffSummary(changed=before != after, actions={}, parse_error=str(exc))
 
 
 def diff_sql(*, before: str, after: str) -> SqlDiffSummary:

@@ -27,9 +27,6 @@ from tests._helpers.constants import DEFAULT_RUN_ID
 from tests._helpers.context import create_test_context
 from tests._helpers.env import build_test_gateway
 from tests._helpers.fakes.configs import create_test_snapshot
-from tests._helpers.fakes.contexts import (
-    ExecutionContextBuilder,
-)
 from tests._helpers.fakes.function_catalogs import (
     MockFunctionCatalog,
     MockFunctionMeta,
@@ -322,20 +319,6 @@ class PluginTestHarness:
     def close(self) -> None:
         """Close the underlying TestContext."""
         self.ctx.close()
-
-    def execution_builder(self) -> ExecutionContextBuilder:
-        """Create an ExecutionContextBuilder from this harness.
-
-        Returns
-        -------
-        ExecutionContextBuilder
-            Builder initialized with this harness's gateway/snapshot/paths.
-        """
-        return ExecutionContextBuilder(
-            gateway=self.ctx.gateway,
-            snapshot=self.ctx.snapshot,
-            paths=self.ctx.build_paths,
-        )
 
 
 @pytest.fixture

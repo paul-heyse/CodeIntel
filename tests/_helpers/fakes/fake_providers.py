@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from codeintel.build.protocols import (
+from codeintel.build.types import (
     ScipIndexResult,
     ScipParseResult,
     ToolRunResult,
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
 
-    from codeintel.build.protocols import (
+    from codeintel.build.types import (
         CoverageData,
         GitLogEntry,
         ScipOccurrence,

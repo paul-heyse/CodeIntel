@@ -19,10 +19,9 @@ Therefore, materialization of calls must happen before computing dependencies.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, value
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.dependencies.compute import (
     DependencyCallsResult,
@@ -55,6 +54,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
@@ -239,7 +239,7 @@ def t__external_deps__compute_calls(
     )
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
     env=source("env"),
@@ -264,7 +264,7 @@ def external_deps__calls_rows(
     return tuple(t__external_deps__compute_calls.rows)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(EXTERNAL_DEPENDENCIES_TABLE_KEY),
     env=source("env"),
@@ -280,7 +280,7 @@ def external_deps__calls_rows(
 )
 def external_deps__dependencies_rows(
     env: BuildEnv,
-    m__analytics__external_dependency_calls: dict[str, Any],
+    m__analytics__external_dependency_calls: dict[str, object],
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute rows for analytics.external_dependencies after calls are written.
 
@@ -305,8 +305,8 @@ def t__external_deps(
     env: BuildEnv,
     graph: TargetGraph,
     t__call_graph: TargetRunRecord,
-    m__analytics__external_dependency_calls: dict[str, Any],
-    m__analytics__external_dependencies: dict[str, Any],
+    m__analytics__external_dependency_calls: dict[str, object],
+    m__analytics__external_dependencies: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize both external dependency tables to DuckDB.
 
@@ -468,7 +468,7 @@ def t__entrypoints__compute(
     return compute_entrypoints_pure(env.gateway, env.snapshot, entrypoints_inputs)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(ENTRYPOINTS_TABLE_KEY),
     env=source("env"),
@@ -493,7 +493,7 @@ def entrypoints__entrypoint_rows(
     return tuple(t__entrypoints__compute.entrypoint_rows)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(ENTRYPOINT_TESTS_TABLE_KEY),
     env=source("env"),
@@ -542,14 +542,14 @@ def entrypoints__upstream_error(
 
 @tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def entrypoints__materializations(
-    m__analytics__entrypoints: dict[str, Any],
-    m__analytics__entrypoint_tests: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
+    m__analytics__entrypoints: dict[str, object],
+    m__analytics__entrypoint_tests: dict[str, object],
+) -> dict[str, dict[str, object]]:
     """Collect entrypoints materialization payloads into a single mapping.
 
     Returns
     -------
-    dict[str, dict[str, Any]]
+    dict[str, dict[str, object]]
         Materialization metadata keyed by table key.
     """
     return {
@@ -563,7 +563,7 @@ def t__entrypoints(
     env: BuildEnv,
     graph: TargetGraph,
     entrypoints__upstream_error: str | None,
-    entrypoints__materializations: dict[str, dict[str, Any]],
+    entrypoints__materializations: dict[str, dict[str, object]],
 ) -> TargetRunRecord:
     """Materialize both entrypoint tables to DuckDB.
 

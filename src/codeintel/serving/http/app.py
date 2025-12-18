@@ -70,6 +70,7 @@ def create_serving_app(
 
     # Fail-fast: require auth for public interfaces
     cfg.validate_auth_for_host()
+    cfg.validate_mcp_single_worker(mount_mcp=mount_mcp)
 
     db_manager = ServingDBManager(
         pointer_path=cfg.serve_dir / "current.json",
@@ -227,8 +228,11 @@ def _maybe_mount_mcp(
         "/mcp",
         mcp.http_app(
             path="/",
+            transport="streamable-http",
             event_store=event_store,
             retry_interval=retry_interval,
+            json_response=True,
+            stateless_http=False,
         ),
     )
 

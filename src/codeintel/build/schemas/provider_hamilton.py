@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 class _ComputeInferenceJob:
     target_name: str
     compute_name: str
+    exec_name: str
     table_key: str
     qparams: frozenset[str]
     requires_env: bool
@@ -506,6 +507,7 @@ def _build_inference_jobs(
         target_name, compute_fn = candidates[0]
         compute_name = compute_node(target_name)
         _ = compute_fn
+        exec_name = _compute_node_for_inference(runtime, compute_name=compute_name)
         qparams, requires_env, requires_graph = _inference_requirements(
             runtime=runtime,
             compute_name=compute_name,
@@ -514,6 +516,7 @@ def _build_inference_jobs(
             _ComputeInferenceJob(
                 target_name=target_name,
                 compute_name=compute_name,
+                exec_name=exec_name,
                 table_key=table_key,
                 qparams=frozenset(qparams),
                 requires_env=requires_env,
@@ -531,20 +534,21 @@ def _infer_job_schema(
     *,
     runtime: HamiltonRuntime,
     job: _ComputeInferenceJob,
-    base_inputs: Mapping[str, object],
+    base_overrides: Mapping[str, object],
     env: BuildEnv,
     con: DuckDBConnection,
 ) -> TableSchema:
-    inputs = dict(base_inputs)
+    inputs: dict[str, object] = {}
+    overrides = dict(base_overrides)
     if job.requires_env:
         inputs["env"] = env
     if job.requires_graph:
         inputs["graph"] = runtime.graph
 
-    out = runtime.dr.execute([job.compute_name], inputs=inputs)
-    expr_obj = out[job.compute_name]
+    out = runtime.dr.execute([job.exec_name], inputs=inputs, overrides=overrides)
+    expr_obj = out[job.exec_name]
     if not isinstance(expr_obj, ir.Table):
-        msg = f"{job.compute_name} returned {type(expr_obj)}; expected ibis Table"
+        msg = f"{job.exec_name} returned {type(expr_obj)}; expected ibis Table"
         raise TypeError(msg)
 
     return infer_table_schema_from_ibis(
@@ -583,7 +587,7 @@ def infer_table_schemas(
 
     with _schema_inference_gateway() as gateway:
         harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
-        base_inputs: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
+        base_overrides: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
         env = _inference_env(
             gateway=gateway,
             force_targets=frozenset({job.target_name for job in jobs}),
@@ -594,7 +598,7 @@ def infer_table_schemas(
             inferred[job.table_key] = _infer_job_schema(
                 runtime=runtime,
                 job=job,
-                base_inputs=base_inputs,
+                base_overrides=base_overrides,
                 env=env,
                 con=gateway.con,
             )

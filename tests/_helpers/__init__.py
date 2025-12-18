@@ -5,29 +5,20 @@ This package provides standardized test infrastructure including:
 Canonical Environment Types
 ---------------------------
 - ``TestContext``: Unified test environment for hexagonal architecture
-- ``ExecutionContextBuilder``: Fluent builder for plugin/target execution contexts
 
 Context Creation (require tmp_path for isolation)
 -------------------------------------------------
 - ``create_test_env(tmp_path, ...)``: Create a TestContext with gateway and snapshot
 - ``create_test_context(tmp_path, ...)``: Lower-level TestContext creation
 
-Execution Context Building
---------------------------
-- ``ExecutionContextBuilder``: Fluent builder for PluginExecutionContext and
-  TargetExecutionContext
-- ``build_plugin_execution_context(...)``: Convenience function for plugin contexts
-- ``build_target_execution_context(...)``: Convenience function for target contexts
+Hamilton Execution
+------------------
+- ``HamiltonTestBuilder``: Production-parity Hamilton target execution helper
 
 Scenario Building
 -----------------
 - ``TestScenario``: Declarative scenario builder with seed pack composition
 - ``minimal_context``, ``graph_context``, etc.: Convenience factories
-
-Recording/Test Doubles
-----------------------
-- ``RecordingGateway``: Wraps real gateway, records SQL (canonical implementation
-  from ``fakes.contexts``)
 
 Gateway Configuration
 ---------------------
@@ -89,12 +80,6 @@ from tests._helpers.env import (
     create_test_env,
 )
 from tests._helpers.evidence import build_entrypoint_evidence
-from tests._helpers.fakes.contexts import (
-    ExecutionContextBuilder,
-    RecordingGateway,
-    build_plugin_execution_context,
-    build_target_execution_context,
-)
 from tests._helpers.fakes.httpx_clients import RecordingAsyncClient
 from tests._helpers.fakes.ingestion_context import build_repo_tree
 from tests._helpers.fakes.networkx_graphs import (
@@ -176,7 +161,6 @@ __all__ = [
     "SUBSYSTEM_HANDLER_PACK",
     "CallgraphFixtureOptions",
     "CliTestContext",
-    "ExecutionContextBuilder",
     "GatewayFactory",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
@@ -187,7 +171,6 @@ __all__ = [
     "ProvisioningConfig",
     "QueryRow",
     "RecordingAsyncClient",
-    "RecordingGateway",
     "RecordingProviders",
     "ScenarioConfig",
     "SeedPack",
@@ -199,9 +182,7 @@ __all__ = [
     "build_callgraph_fixture_repo",
     "build_entrypoint_evidence",
     "build_fake_coverage",
-    "build_plugin_execution_context",
     "build_repo_tree",
-    "build_target_execution_context",
     "build_test_gateway",
     "chain_graph",
     "cli_test_context_with_seeds",

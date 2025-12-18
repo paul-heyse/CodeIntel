@@ -15,10 +15,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, tag, value
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.compute.data_models import (
@@ -56,6 +55,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -171,7 +171,7 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
     return compute_data_models_pure(env.gateway, env.snapshot)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(DATA_MODELS_TABLE_KEY),
     env=source("env"),
@@ -201,7 +201,7 @@ def data_models__model_rows(
     return tuple(t__data_models__compute.model_rows)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(DATA_MODEL_FIELDS_TABLE_KEY),
     env=source("env"),
@@ -231,7 +231,7 @@ def data_models__field_rows(
     return tuple(t__data_models__compute.field_rows)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
     env=source("env"),
@@ -265,9 +265,9 @@ def data_models__relationship_rows(
 def t__data_models(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__data_models: dict[str, Any],
-    m__analytics__data_model_fields: dict[str, Any],
-    m__analytics__data_model_relationships: dict[str, Any],
+    m__analytics__data_models: dict[str, object],
+    m__analytics__data_model_fields: dict[str, object],
+    m__analytics__data_model_relationships: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize all 3 data model tables to DuckDB.
 
@@ -311,7 +311,7 @@ def t__data_models(
     )
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(DATA_MODEL_USAGE_TABLE_KEY),
     env=source("env"),
@@ -386,7 +386,7 @@ def t__data_model_usage__compute(
 def t__data_model_usage(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__data_model_usage: dict[str, Any],
+    m__analytics__data_model_usage: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize analytics.data_model_usage rows to DuckDB.
 

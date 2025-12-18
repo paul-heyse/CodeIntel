@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 import ibis.expr.types as ir
 from hamilton.function_modifiers import (
@@ -26,7 +25,6 @@ from hamilton.function_modifiers import (
     tag,
     value,
 )
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.compute.coverage.compute import (
     aggregate_coverage_lines,
@@ -49,6 +47,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
@@ -187,7 +186,7 @@ def _coverage_functions_enrich(aggregated: ir.Table) -> ir.Table:
     return enrich_coverage_results(aggregated)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBIbisTableSaver],
     output_name_=materialize_node(COVERAGE_FUNCTIONS_TABLE_KEY),
     env=source("env"),
@@ -256,7 +255,7 @@ def t__coverage_functions__compute(
 def t__coverage_functions(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__coverage_functions: dict[str, Any],
+    m__analytics__coverage_functions: dict[str, object],
 ) -> TargetRunRecord:
     """Convert materialization metadata to a TargetRunRecord.
 

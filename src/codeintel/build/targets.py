@@ -53,7 +53,7 @@ class OutputTarget:
 
     The OutputTarget is the single source of truth for what a target
     produces and how it should be executed. Plugins receive all their
-    configuration from the target via TargetExecutionContext.
+    configuration from the target contract and execution options.
 
     Attributes
     ----------

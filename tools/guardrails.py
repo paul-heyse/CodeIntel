@@ -59,6 +59,21 @@ GUARDRAILS: tuple[Guardrail, ...] = (
             "tests/",
         ),
     ),
+    Guardrail(
+        name="legacy_build_context_stack",
+        pattern=re.compile(r"\bcodeintel\.build\.(context|context_base|result|protocols)\b"),
+        message="Legacy build context stack is removed; use Hamilton BuildEnv/executor patterns.",
+    ),
+    Guardrail(
+        name="hamilton_save_to_decorator",
+        pattern=re.compile(
+            r"\b(from hamilton\.function_modifiers\.adapters import SaveToDecorator|@SaveToDecorator\b)"
+        ),
+        message=(
+            "Hamilton SaveToDecorator is forbidden; use SaveToObjectMetadataDecorator "
+            "(metadata typed as dict[str, object])."
+        ),
+    ),
 )
 
 

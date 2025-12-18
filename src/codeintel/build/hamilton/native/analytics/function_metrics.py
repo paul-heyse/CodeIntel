@@ -19,10 +19,9 @@ Phase 4: Analytics domain migration with Hamilton-native DAG-visible I/O.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, tag, value
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.functions import (
     FunctionAnalyticsOptions,
@@ -41,6 +40,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 
@@ -202,7 +202,7 @@ def t__function_metrics__compute(
     )
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(FUNCTION_METRICS_TABLE_KEY),
     env=source("env"),
@@ -241,7 +241,7 @@ def function_metrics__metrics_rows(
     )
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(FUNCTION_TYPES_TABLE_KEY),
     env=source("env"),
@@ -279,7 +279,7 @@ def function_metrics__types_rows(
     )
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(FUNCTION_VALIDATION_TABLE_KEY),
     env=source("env"),
@@ -322,9 +322,9 @@ def function_metrics__validation_rows(
 def t__function_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_metrics: dict[str, Any],
-    m__analytics__function_types: dict[str, Any],
-    m__analytics__function_validation: dict[str, Any],
+    m__analytics__function_metrics: dict[str, object],
+    m__analytics__function_types: dict[str, object],
+    m__analytics__function_validation: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize function metrics target.
 

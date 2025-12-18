@@ -12,6 +12,7 @@ from collections import defaultdict, deque
 from typing import TYPE_CHECKING
 
 from sqlglot import exp, parse_one
+from sqlglot.optimizer.scope import traverse_scope
 
 from codeintel.storage.constants import DUCKDB_DIALECT
 
@@ -41,13 +42,16 @@ def extract_referenced_table_keys(sql: str) -> set[str]:
     root = parse_one(sql, dialect=DUCKDB_DIALECT)
     referenced: set[str] = set()
 
-    for table in root.find_all(exp.Table):
-        name = table.name
-        schema = table.db
-        if schema:
-            referenced.add(f"{schema}.{name}".lower())
-        else:
-            referenced.add(name.lower())
+    for scope in traverse_scope(root):
+        for source in scope.sources.values():
+            if not isinstance(source, exp.Table):
+                continue
+            name = source.name
+            schema = source.db
+            if schema:
+                referenced.add(f"{schema}.{name}".lower())
+            else:
+                referenced.add(name.lower())
 
     return referenced
 

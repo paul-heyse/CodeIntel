@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_package_version
 from typing import TYPE_CHECKING, Protocol
 
+import anyio
+from mcp import McpError
 from starlette.responses import JSONResponse, PlainTextResponse
 
 from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
-from codeintel.serving.mcp._compat import Context, FastMCP, ToolError, create_bearer_auth
+from codeintel.serving.mcp._compat import Context, FastMCP, create_bearer_auth
+from codeintel.serving.mcp.errors import ExportTooLargeError
+from codeintel.serving.mcp.middleware_stack import build_mcp_middleware
 from codeintel.serving.mcp.prompts import register_prompts
 from codeintel.serving.mcp.resource_store import ExportArtifactSpec, ResourceStore
 from codeintel.serving.mcp.resources import register_resources
@@ -40,14 +47,16 @@ from codeintel.serving.semantic.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import AsyncIterator, Callable, Iterator
     from contextlib import AbstractAsyncContextManager
+    from pathlib import Path
 
     from starlette.requests import Request
     from starlette.responses import Response
 
     from codeintel.serving.db.manager import ServingDBManager
     from codeintel.serving.db.pointer import ServingSnapshotPointer
+    from codeintel.serving.mcp.resource_store import StoredArtifact, StoredMetadata
     from codeintel.serving.semantic.models import ExportFormat
     from codeintel.serving.settings import ServingSettings
 
@@ -99,6 +108,85 @@ _ERR_EXPORT_FAILED = "Export execution failed. Check server logs."
 _PREVIEW_ROW_COUNT = 5
 
 
+def _mcp_correlation_id(ctx: Context) -> str:
+    session_id_obj = getattr(ctx, "session_id", None)
+    if isinstance(session_id_obj, str) and session_id_obj:
+        return session_id_obj
+    return "mcp-unknown"
+
+
+async def _maybe_report_progress(
+    ctx: Context,
+    *,
+    settings: ServingSettings,
+    progress: float,
+    total: float | None = None,
+    message: str | None = None,
+) -> None:
+    if not settings.mcp_progress_reporting:
+        return
+    await ctx.report_progress(progress, total, message)
+
+
+async def _try_sample_summary(
+    ctx: Context,
+    *,
+    view_id: str,
+    preview: QueryPreview,
+    query_hash: str | None,
+) -> str | None:
+    payload = {
+        "view_id": view_id,
+        "query_hash": query_hash,
+        "columns": list(preview.columns),
+        "rows": list(preview.rows),
+        "truncated": preview.truncated,
+    }
+    prompt = json.dumps(payload, indent=2, sort_keys=True, default=str)
+    try:
+        result = await ctx.sample(
+            f"Summarize this query preview in 5 bullets (be precise, no speculation):\n\n{prompt}",
+            system_prompt=(
+                "You are summarizing a database query preview for an agent. "
+                "Prefer actionable observations and call out truncation."
+            ),
+            max_tokens=250,
+        )
+    except (McpError, RuntimeError, ValueError):
+        return None
+    if isinstance(result.result, str):
+        return result.result
+    return result.text
+
+
+def _runtime_versions_for_meta() -> dict[str, str]:
+    tools = ["codeintel", "duckdb", "ibis-framework", "sqlglot", "pyarrow"]
+    versions: dict[str, str] = {}
+    for tool in tools:
+        try:
+            versions[tool] = get_package_version(tool)
+        except PackageNotFoundError:
+            versions[tool] = "not-installed"
+    return versions
+
+
+def _tooling_mismatch_warnings(meta: dict[str, object]) -> tuple[str, ...]:
+    env_obj = meta.get("environment")
+    environment = env_obj if isinstance(env_obj, dict) else {}
+    tools_obj = environment.get("tools")
+    tools = tools_obj if isinstance(tools_obj, dict) else {}
+    runtime = _runtime_versions_for_meta()
+    warnings: list[str] = []
+    for key, runtime_version in runtime.items():
+        snapshot_version_obj = tools.get(key)
+        if snapshot_version_obj is None:
+            continue
+        snapshot_version = str(snapshot_version_obj)
+        if snapshot_version != runtime_version:
+            warnings.append(f"tool-version-mismatch: {key} snapshot={snapshot_version} runtime={runtime_version}")
+    return tuple(warnings)
+
+
 class InvalidExportFormatError(ValueError):
     """Raised when an export_format value is unsupported."""
 
@@ -119,7 +207,7 @@ def _normalize_export_format(export_format: str) -> ExportFormat:
     Returns
     -------
     str
-        Normalized export format ("ndjson" or "json").
+        Normalized export format ("ndjson", "json", "parquet", or "arrow").
 
     Raises
     ------
@@ -131,6 +219,10 @@ def _normalize_export_format(export_format: str) -> ExportFormat:
         return "ndjson"
     if normalized == "json":
         return "json"
+    if normalized == "parquet":
+        return "parquet"
+    if normalized == "arrow":
+        return "arrow"
     raise InvalidExportFormatError(export_format)
 
 
@@ -213,6 +305,10 @@ class SemanticKernel(Protocol):
 
     def export_fingerprint(self, request: SemanticExportRequest) -> tuple[str, str | None]: ...
 
+    def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> None: ...
+
+    def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int: ...
+
 
 def _build_semantic_request(
     view_id: str,
@@ -283,45 +379,79 @@ def build_mcp_app(
     FastMCP
         Configured MCP server.
     """
-    mcp = FastMCP(
-        "CodeIntel",
-        json_response=True,
-        mask_error_details=settings.mcp_mask_errors,
-        lifespan=lifespan,
-        auth=create_bearer_auth(settings.auth_token),  # Bearer token auth when set
+    store = ResourceStore(
+        settings.serve_dir / "exports",
+        ttl_seconds=settings.mcp_export_ttl_seconds,
     )
 
-    # Initialize query limiter for concurrency control
-    limiter = QueryLimiter(max_concurrent=settings.mcp_max_concurrent_queries)
+    @asynccontextmanager
+    async def composed_lifespan(server: FastMCP) -> AsyncIterator[object]:
+        async with _optional_lifespan(lifespan, server):
+            store.cleanup_expired()
+            async with anyio.create_task_group() as tg:
+                if settings.mcp_export_ttl_seconds is not None:
+                    interval = max(settings.mcp_export_cleanup_interval_seconds, 1)
+                    tg.start_soon(_periodic_store_cleanup, store, interval)
+                yield object()
 
-    # Initialize resource store for exports
-    store = ResourceStore(settings.serve_dir / "exports")
+    mcp = FastMCP(
+        "CodeIntel",
+        mask_error_details=settings.mcp_mask_errors,
+        lifespan=composed_lifespan,
+        auth=create_bearer_auth(settings.auth_token),
+        middleware=build_mcp_middleware(settings),
+        on_duplicate_tools="error",
+        on_duplicate_resources="error",
+        on_duplicate_prompts="error",
+        strict_input_validation=True,
+    )
+
+    query_limiter = QueryLimiter(max_concurrent=settings.mcp_max_concurrent_queries)
+    export_limiter = QueryLimiter(max_concurrent=settings.mcp_max_concurrent_exports)
 
     # Register core tools (always enabled)
-    _register_catalog_tool(mcp, kernel, limiter)
-    _register_describe_tool(mcp, kernel, limiter)
-    _register_query_tool(mcp, kernel, limiter)
+    _register_catalog_tool(mcp, kernel, query_limiter, settings)
+    _register_describe_tool(mcp, kernel, query_limiter, settings)
+    _register_query_tool(mcp, kernel, query_limiter, settings)
 
     # Register optional tools (feature-flagged)
     if settings.mcp_enable_explain:
-        _register_explain_tool(mcp, kernel, limiter)
+        _register_explain_tool(mcp, kernel, query_limiter, settings)
     if settings.mcp_enable_meta:
-        _register_meta_tool(mcp, kernel, limiter, settings)
+        _register_meta_tool(mcp, kernel, query_limiter, settings)
     if settings.mcp_enable_search:
-        _register_search_tool(mcp, kernel, limiter)
+        _register_search_tool(mcp, kernel, query_limiter, settings)
     if settings.mcp_enable_export:
-        _register_export_tool(mcp, kernel, limiter, store, settings)
+        _register_export_tool(mcp, kernel, export_limiter, store, settings)
 
     # Register MCP resources
-    register_resources(mcp, kernel, store)
+    register_resources(mcp, kernel, store, settings=settings)
 
     # Register health check routes for load balancers
     _register_health_routes(mcp, kernel)
 
     # Register guided prompts for LLM workflows
-    register_prompts(mcp)
+    register_prompts(mcp, settings=settings)
 
     return mcp
+
+
+@asynccontextmanager
+async def _optional_lifespan(
+    lifespan: Callable[[FastMCP], AbstractAsyncContextManager[object]] | None,
+    server: FastMCP,
+) -> AsyncIterator[object]:
+    if lifespan is None:
+        yield object()
+        return
+    async with lifespan(server):
+        yield object()
+
+
+async def _periodic_store_cleanup(store: ResourceStore, interval_seconds: int) -> None:
+    while True:
+        store.cleanup_expired()
+        await anyio.sleep(interval_seconds)
 
 
 def _register_health_routes(mcp: FastMCP, kernel: SemanticKernel) -> None:
@@ -388,7 +518,9 @@ def _register_health_routes(mcp: FastMCP, kernel: SemanticKernel) -> None:
             return PlainTextResponse("not ready", status_code=503)
 
 
-def _register_catalog_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter) -> None:
+def _register_catalog_tool(
+    mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter, settings: ServingSettings
+) -> None:
     """Register semantic_catalog tool."""
 
     @mcp.tool(
@@ -409,41 +541,33 @@ def _register_catalog_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryL
         -------
         SemanticCatalogResponse
             Typed catalog response with views and snapshot metadata.
-
-        Raises
-        ------
-        ToolError
-            If catalog retrieval fails.
         """
         start = time.perf_counter()
-        row_count = 0
-        try:
-            await ctx.info("Retrieving semantic catalog")
-            result = await limiter.run(kernel.catalog)
-            data = result if isinstance(result, dict) else {}
-            views_obj = data.get("views")
-            views = views_obj if isinstance(views_obj, list) else []
-            row_count = len(views)
-            return SemanticCatalogResponse.model_validate(data)
-        except Exception as e:
-            LOG.exception("Catalog retrieval failed")
-            raise ToolError(_ERR_CATALOG_FAILED) from e
-        finally:
-            duration_ms = (time.perf_counter() - start) * 1000
-            log_query_metrics(
-                QueryMetrics(
-                    endpoint="mcp:semantic_catalog",
-                    view_id=None,
-                    query=None,
-                    row_count=row_count,
-                    truncated=False,
-                    duration_ms=duration_ms,
-                    correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
-                )
+        result = await limiter.run(kernel.catalog)
+        data = result if isinstance(result, dict) else {}
+        views_obj = data.get("views")
+        views = views_obj if isinstance(views_obj, list) else []
+        row_count = len(views)
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_query_metrics(
+            QueryMetrics(
+                endpoint="mcp:semantic_catalog",
+                view_id=None,
+                query=None,
+                row_count=row_count,
+                truncated=False,
+                duration_ms=duration_ms,
+                correlation_id=_mcp_correlation_id(ctx),
             )
+        )
+        await ctx.info("Retrieved semantic catalog")
+        await _maybe_report_progress(ctx, settings=settings, progress=100, total=100)
+        return SemanticCatalogResponse.model_validate(data)
 
 
-def _register_describe_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter) -> None:
+def _register_describe_tool(
+    mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter, settings: ServingSettings
+) -> None:
     """Register semantic_describe tool."""
 
     @mcp.tool(
@@ -466,40 +590,31 @@ def _register_describe_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: Query
         -------
         SemanticViewDescriptionResponse
             Typed view description with schema and metadata.
-
-        Raises
-        ------
-        ToolError
-            If view not found or description fails.
         """
         start = time.perf_counter()
-        view_id_for_metrics = view_id
-        try:
-            await ctx.info(f"Describing view: {view_id}")
-            result = await limiter.run(kernel.describe, view_id)
-            data = result if isinstance(result, dict) else {}
-            return SemanticViewDescriptionResponse.model_validate(data)
-        except KeyError as e:
-            raise ToolError(_view_not_found_msg(view_id)) from e
-        except Exception as e:
-            LOG.exception("View description failed for %s", view_id)
-            raise ToolError(_ERR_DESCRIBE_FAILED) from e
-        finally:
-            duration_ms = (time.perf_counter() - start) * 1000
-            log_query_metrics(
-                QueryMetrics(
-                    endpoint="mcp:semantic_describe",
-                    view_id=view_id_for_metrics,
-                    query=None,
-                    row_count=0,
-                    truncated=False,
-                    duration_ms=duration_ms,
-                    correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
-                )
+        await ctx.info(f"Describing view: {view_id}")
+        await _maybe_report_progress(ctx, settings=settings, progress=10, total=100)
+        result = await limiter.run(kernel.describe, view_id)
+        await _maybe_report_progress(ctx, settings=settings, progress=100, total=100)
+        data = result if isinstance(result, dict) else {}
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_query_metrics(
+            QueryMetrics(
+                endpoint="mcp:semantic_describe",
+                view_id=view_id,
+                query=None,
+                row_count=0,
+                truncated=False,
+                duration_ms=duration_ms,
+                correlation_id=_mcp_correlation_id(ctx),
             )
+        )
+        return SemanticViewDescriptionResponse.model_validate(data)
 
 
-def _register_query_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter) -> None:
+def _register_query_tool(
+    mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter, settings: ServingSettings
+) -> None:
     """Register semantic_query tool."""
 
     @mcp.tool(
@@ -538,73 +653,69 @@ def _register_query_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLim
         -------
         SemanticQueryToolResponse
             Typed query response with result, optional preview, and notes.
-
-        Raises
-        ------
-        ToolError
-            If view not found or query parameters invalid.
         """
         start = time.perf_counter()
-        view_id_for_metrics = view_id
-        row_count = 0
-        truncated = False
-        query_hash: str | None = None
-        schema_hash: str | None = None
-        try:
-            await ctx.info(f"Querying view: {view_id}")
-            await ctx.report_progress(10, 100)
-            request = _build_semantic_request(view_id, filters, select, order_by, pagination)
-            await ctx.report_progress(20, 100)
-            result = await limiter.run(kernel.query, request)
-            await ctx.report_progress(100, 100)
-            row_count = len(result.rows)
-            truncated = result.truncated
-            query_hash = result.query_hash
-            schema_hash = result.schema_hash
+        await ctx.info(f"Querying view: {view_id}")
+        await _maybe_report_progress(ctx, settings=settings, progress=10, total=100)
+        request = _build_semantic_request(view_id, filters, select, order_by, pagination)
+        await _maybe_report_progress(ctx, settings=settings, progress=20, total=100)
+        result = await limiter.run(kernel.query, request)
+        await _maybe_report_progress(ctx, settings=settings, progress=100, total=100)
 
-            # Build preview if result is truncated or has multiple rows
-            preview = None
-            if result.truncated or len(result.rows) > _PREVIEW_ROW_COUNT:
-                preview = QueryPreview(
-                    columns=tuple(result.columns),
-                    rows=tuple(result.rows[:_PREVIEW_ROW_COUNT]),
-                    truncated=len(result.rows) > _PREVIEW_ROW_COUNT or result.truncated,
-                )
+        row_count = len(result.rows)
+        truncated = result.truncated
+        query_hash = result.query_hash
+        schema_hash = result.schema_hash
 
-            note = None
-            if result.truncated:
-                note = "Result truncated; use semantic_export for full dataset."
-
-            return SemanticQueryToolResponse(
-                result=result,
-                preview=preview,
-                note=note,
+        preview: QueryPreview | None = None
+        if truncated or row_count > _PREVIEW_ROW_COUNT:
+            preview = QueryPreview(
+                columns=tuple(result.columns),
+                rows=tuple(result.rows[:_PREVIEW_ROW_COUNT]),
+                truncated=row_count > _PREVIEW_ROW_COUNT or truncated,
             )
-        except KeyError as e:
-            raise ToolError(_view_not_found_msg(view_id)) from e
-        except ValueError as e:
-            raise ToolError(_invalid_params_msg(e)) from e
-        except Exception as e:
-            LOG.exception("Query failed for view %s", view_id)
-            raise ToolError(_ERR_QUERY_FAILED) from e
-        finally:
-            duration_ms = (time.perf_counter() - start) * 1000
-            log_query_metrics(
-                QueryMetrics(
-                    endpoint="mcp:semantic_query",
-                    view_id=view_id_for_metrics,
-                    query=None,
-                    row_count=row_count,
-                    truncated=truncated,
-                    duration_ms=duration_ms,
-                    correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
+
+        summary: str | None = None
+        if settings.mcp_enable_sampling and preview is not None:
+            should_sample = truncated or row_count >= settings.mcp_sample_threshold
+            if should_sample:
+                summary = await _try_sample_summary(
+                    ctx,
+                    view_id=view_id,
+                    preview=preview,
                     query_hash=query_hash,
-                    schema_hash=schema_hash,
                 )
+
+        note = None
+        if truncated:
+            note = "Result truncated; use semantic_export for full dataset."
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_query_metrics(
+            QueryMetrics(
+                endpoint="mcp:semantic_query",
+                view_id=view_id,
+                query=None,
+                row_count=row_count,
+                truncated=truncated,
+                duration_ms=duration_ms,
+                correlation_id=_mcp_correlation_id(ctx),
+                query_hash=query_hash,
+                schema_hash=schema_hash,
             )
+        )
+
+        return SemanticQueryToolResponse(
+            result=result,
+            preview=preview,
+            summary=summary,
+            note=note,
+        )
 
 
-def _register_explain_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter) -> None:
+def _register_explain_tool(
+    mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter, settings: ServingSettings
+) -> None:
     """Register semantic_explain tool."""
 
     @mcp.tool(
@@ -643,42 +754,28 @@ def _register_explain_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryL
         -------
         SemanticExplainResponse
             Typed explain response with SQL and query plan.
-
-        Raises
-        ------
-        ToolError
-            If view not found or explain fails.
         """
         start = time.perf_counter()
-        view_id_for_metrics = view_id
-        try:
-            await ctx.info(f"Explaining query for view: {view_id}")
-            await ctx.report_progress(10, 100)
-            request = _build_semantic_request(view_id, filters, select, order_by, pagination)
-            await ctx.report_progress(20, 100)
-            result = await limiter.run(kernel.explain, request)
-            await ctx.report_progress(100, 100)
-            return result  # noqa: TRY300 - Return inside try ensures finally metrics run
-        except KeyError as e:
-            raise ToolError(_view_not_found_msg(view_id)) from e
-        except ValueError as e:
-            raise ToolError(_invalid_params_msg(e)) from e
-        except Exception as e:
-            LOG.exception("Explain failed for view %s", view_id)
-            raise ToolError(_ERR_EXPLAIN_FAILED) from e
-        finally:
-            duration_ms = (time.perf_counter() - start) * 1000
-            log_query_metrics(
-                QueryMetrics(
-                    endpoint="mcp:semantic_explain",
-                    view_id=view_id_for_metrics,
-                    query=None,
-                    row_count=0,
-                    truncated=False,
-                    duration_ms=duration_ms,
-                    correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
-                )
+        await ctx.info(f"Explaining query for view: {view_id}")
+        await _maybe_report_progress(ctx, settings=settings, progress=10, total=100)
+        request = _build_semantic_request(view_id, filters, select, order_by, pagination)
+        await _maybe_report_progress(ctx, settings=settings, progress=20, total=100)
+        result = await limiter.run(kernel.explain, request)
+        await _maybe_report_progress(ctx, settings=settings, progress=100, total=100)
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_query_metrics(
+            QueryMetrics(
+                endpoint="mcp:semantic_explain",
+                view_id=view_id,
+                query=None,
+                row_count=0,
+                truncated=False,
+                duration_ms=duration_ms,
+                correlation_id=_mcp_correlation_id(ctx),
             )
+        )
+        return result
 
 
 def _register_meta_tool(
@@ -704,73 +801,64 @@ def _register_meta_tool(
         -------
         ServingMetaResponse
             Typed serving metadata with snapshot, limits, and features.
-
-        Raises
-        ------
-        ToolError
-            If metadata retrieval fails.
         """
         start = time.perf_counter()
-        try:
-            await ctx.info("Retrieving serving metadata")
-            result = await limiter.run(kernel.meta)
-            data = result if isinstance(result, dict) else {}
+        await ctx.info("Retrieving serving metadata")
+        result = await limiter.run(kernel.meta)
+        data = result if isinstance(result, dict) else {}
 
-            # Build snapshot reference from current pointer
-            ptr = kernel.db.current_pointer()
-            snapshot = SnapshotRef(
-                repo=ptr.repo,
-                commit=ptr.commit,
-                run_id=ptr.run_id,
-                published_at=ptr.published_at,
+        ptr = kernel.db.current_pointer()
+        snapshot = SnapshotRef(
+            repo=ptr.repo,
+            commit=ptr.commit,
+            run_id=ptr.run_id,
+            published_at=ptr.published_at,
+        )
+
+        view_count = await _catalog_view_count(kernel, limiter)
+        semantic_layer = _semantic_layer_info(data, view_count=view_count)
+        buildspec = _buildspec_info(data, compiled_at=ptr.published_at)
+
+        limits = QueryLimits(export_max_rows=settings.export_max_rows)
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_query_metrics(
+            QueryMetrics(
+                endpoint="mcp:serving_meta",
+                view_id=None,
+                query=None,
+                row_count=0,
+                truncated=False,
+                duration_ms=duration_ms,
+                correlation_id=_mcp_correlation_id(ctx),
             )
+        )
 
-            view_count = await _catalog_view_count(kernel, limiter)
-            semantic_layer = _semantic_layer_info(data, view_count=view_count)
-            buildspec = _buildspec_info(data, compiled_at=ptr.published_at)
-
-            # Build query limits from settings
-            # max_limit uses QueryLimits default (5000), export_max_rows from settings
-            limits = QueryLimits(
-                export_max_rows=settings.export_max_rows,
-            )
-
-            return ServingMetaResponse(
-                server_version=get_package_version("codeintel"),
-                started_at=_SERVER_STARTED_AT,
-                snapshot=snapshot,
-                semantic_layer=semantic_layer,
-                buildspec=buildspec,
-                read_only=True,
-                features={
-                    "supports_explain": settings.mcp_enable_explain,
-                    "supports_export": settings.mcp_enable_export,
-                    "supports_search": settings.mcp_enable_search,
-                    "supports_resources": True,
-                },
-                limits=limits,
-                resource_templates=DEFAULT_RESOURCE_TEMPLATES,
-                inventories={"views": view_count},
-            )
-        except Exception as e:
-            LOG.exception("Metadata retrieval failed")
-            raise ToolError(_ERR_META_FAILED) from e
-        finally:
-            duration_ms = (time.perf_counter() - start) * 1000
-            log_query_metrics(
-                QueryMetrics(
-                    endpoint="mcp:serving_meta",
-                    view_id=None,
-                    query=None,
-                    row_count=0,
-                    truncated=False,
-                    duration_ms=duration_ms,
-                    correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
-                )
-            )
+        return ServingMetaResponse(
+            server_version=get_package_version("codeintel"),
+            started_at=_SERVER_STARTED_AT,
+            snapshot=snapshot,
+            semantic_layer=semantic_layer,
+            buildspec=buildspec,
+            read_only=True,
+            features={
+                "supports_explain": settings.mcp_enable_explain,
+                "supports_export": settings.mcp_enable_export,
+                "supports_export_tasks": settings.mcp_export_enable_tasks,
+                "supports_search": settings.mcp_enable_search,
+                "supports_resources": True,
+                "supports_sampling": settings.mcp_enable_sampling,
+            },
+            limits=limits,
+            resource_templates=DEFAULT_RESOURCE_TEMPLATES,
+            inventories={"views": view_count},
+            warnings=_tooling_mismatch_warnings(data),
+        )
 
 
-def _register_search_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter) -> None:
+def _register_search_tool(
+    mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLimiter, settings: ServingSettings
+) -> None:
     """Register code_search tool."""
 
     @mcp.tool(
@@ -806,50 +894,34 @@ def _register_search_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLi
         -------
         SearchQueryResponse
             Typed search response with matching results.
-
-        Raises
-        ------
-        ToolError
-            If search fails.
         """
         start = time.perf_counter()
-        query_for_metrics = query
-        row_count = 0
-        query_hash: str | None = None
-        try:
-            await ctx.info(f"Searching: {query}")
-            await ctx.report_progress(10, 100)
-            request = SearchQueryRequest(
+        await ctx.info(f"Searching: {query}")
+        await _maybe_report_progress(ctx, settings=settings, progress=10, total=100)
+        request = SearchQueryRequest(
+            query=query,
+            kinds=kinds,
+            limit=limit,
+            offset=offset,
+        )
+        await _maybe_report_progress(ctx, settings=settings, progress=20, total=100)
+        result = await limiter.run(kernel.search, request)
+        await _maybe_report_progress(ctx, settings=settings, progress=100, total=100)
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_query_metrics(
+            QueryMetrics(
+                endpoint="mcp:code_search",
+                view_id=None,
                 query=query,
-                kinds=kinds,
-                limit=limit,
-                offset=offset,
+                row_count=len(result.results),
+                truncated=False,
+                duration_ms=duration_ms,
+                correlation_id=_mcp_correlation_id(ctx),
+                query_hash=result.query_hash,
             )
-            await ctx.report_progress(20, 100)
-            result = await limiter.run(kernel.search, request)
-            await ctx.report_progress(100, 100)
-            row_count = len(result.results)
-            query_hash = result.query_hash
-            return result  # noqa: TRY300 - Return inside try ensures finally metrics run
-        except ValueError as e:
-            raise ToolError(_invalid_params_msg(e)) from e
-        except Exception as e:
-            LOG.exception("Search failed for query: %s", query)
-            raise ToolError(_ERR_SEARCH_FAILED) from e
-        finally:
-            duration_ms = (time.perf_counter() - start) * 1000
-            log_query_metrics(
-                QueryMetrics(
-                    endpoint="mcp:code_search",
-                    view_id=None,
-                    query=query_for_metrics,
-                    row_count=row_count,
-                    truncated=False,
-                    duration_ms=duration_ms,
-                    correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
-                    query_hash=query_hash,
-                )
-            )
+        )
+        return result
 
 
 def _register_export_tool(
@@ -866,6 +938,7 @@ def _register_export_tool(
         description="Export semantic view data and return a resource URI",
         annotations=_READ_ONLY_LOCAL_ANNOTATIONS,
         tags={TAG_SEMANTIC, TAG_EXPORT},
+        task=settings.mcp_export_enable_tasks,
     )
     async def semantic_export(  # noqa: PLR0914
         view_id: str,
@@ -887,7 +960,7 @@ def _register_export_tool(
         filters
             Optional filter specifications.
         export_format
-            Export format: "json" or "ndjson".
+            Export format: "ndjson", "json", "parquet", or "arrow".
         limit
             Maximum rows to export.
         ctx
@@ -900,112 +973,153 @@ def _register_export_tool(
 
         Raises
         ------
-        ToolError
-            If view not found, parameters invalid, or export fails.
+        ExportTooLargeError
+            If the requested export exceeds the configured maximum rows.
+        InvalidExportFormatError
+            If ``export_format`` is not supported.
         """
         start = time.perf_counter()
-        view_id_for_metrics = view_id
-        row_count = 0
-        query_hash: str | None = None
-        schema_hash: str | None = None
+        await ctx.info(f"Exporting view: {view_id} (format={export_format})")
+        await _maybe_report_progress(ctx, settings=settings, progress=10, total=100)
+
+        format_type = _normalize_export_format(export_format)
+        if limit > settings.export_max_rows:
+            raise ExportTooLargeError(row_count=limit)
+
+        request = SemanticExportRequest(
+            view_id=view_id,
+            filters=[FilterSpec.model_validate(f) for f in (filters or [])],
+            format=format_type,
+            limit=limit,
+        )
+
+        ptr = kernel.db.current_pointer()
+        meta_result = await limiter.run(kernel.meta)
+        meta_payload = meta_result if isinstance(meta_result, dict) else {}
+        snapshot_dict = _export_snapshot_dict(ptr) | {
+            "buildspec_hash": str(meta_payload.get("buildspec_hash", "unknown")),
+        }
+
+        await _maybe_report_progress(ctx, settings=settings, progress=20, total=100)
+        column_types = _safe_column_types(kernel, view_id)
+        columns = tuple(column_types)
+        compiled_sql = kernel.export_sql(request)
+        query_hash, schema_hash = kernel.export_fingerprint(request)
+        spec = ExportArtifactSpec(
+            view_id=view_id,
+            columns=columns,
+            column_types=column_types,
+            compiled_sql=compiled_sql,
+            snapshot=snapshot_dict,
+            format=format_type,
+            query_hash=query_hash,
+            schema_hash=schema_hash,
+        )
+
+        cancel_exc = anyio.get_cancelled_exc_class()
         try:
-            await ctx.info(f"Exporting view: {view_id} (format={export_format})")
-            await ctx.report_progress(10, 100)
-
-            format_type = _normalize_export_format(export_format)
-
-            request = SemanticExportRequest(
-                view_id=view_id,
-                filters=[FilterSpec.model_validate(f) for f in (filters or [])],
-                format=format_type,
-                limit=min(limit, settings.export_max_rows),
-            )
-
-            ptr = kernel.db.current_pointer()
-            snapshot_dict = _export_snapshot_dict(ptr)
-            column_types = _safe_column_types(kernel, view_id)
-            compiled_sql = kernel.export_sql(request)
-            query_hash, schema_hash = kernel.export_fingerprint(request)
-            spec = ExportArtifactSpec(
-                view_id=view_id,
-                column_types=column_types,
-                compiled_sql=compiled_sql,
-                snapshot=snapshot_dict,
-                format=format_type,
-                query_hash=query_hash,
-                schema_hash=schema_hash,
-            )
-
-            # Export rows via limiter
-            await ctx.report_progress(20, 100)
-            if format_type == "ndjson":
-                token, artifact, _stored_meta = await limiter.run(
-                    lambda: store.put_with_metadata_stream(
-                        kernel.export_rows(request),
+            if format_type in {"ndjson", "json"}:
+                token, artifact, stored_meta = await limiter.run(
+                    lambda: _write_text_export(kernel=kernel, store=store, request=request, spec=spec)
+                )
+            elif format_type == "parquet":
+                token, artifact, stored_meta = await limiter.run(
+                    lambda: store.put_generated_file_with_metadata(
                         spec=spec,
+                        write_fn=lambda path: kernel.export_to_parquet(request, output_path=path),
+                    )
+                )
+            elif format_type == "arrow":
+                token, artifact, stored_meta = await limiter.run(
+                    lambda: store.put_generated_file_with_metadata(
+                        spec=spec,
+                        write_fn=lambda path: kernel.export_to_arrow_ipc(request, output_path=path),
                     )
                 )
             else:
-                rows = await limiter.run(lambda: list(kernel.export_rows(request)))
-                token, artifact, _stored_meta = store.put_with_metadata(rows, spec=spec)
-            await ctx.report_progress(80, 100)
+                raise InvalidExportFormatError(export_format)
+        except cancel_exc:
+            await ctx.info("Export cancelled; cleaning up partial artifacts")
+            store.cleanup_expired()
+            raise
 
-            await ctx.info(f"Export complete: {artifact.row_count} rows")
-            await ctx.report_progress(100, 100)
+        await _maybe_report_progress(ctx, settings=settings, progress=100, total=100)
+        await ctx.info(f"Export complete: {stored_meta.row_count} rows")
 
-            row_count = artifact.row_count
+        snapshot_ref = SnapshotRef(
+            repo=ptr.repo,
+            commit=ptr.commit,
+            run_id=ptr.run_id,
+            published_at=ptr.published_at,
+        )
+        export_snapshot = ExportSnapshot(
+            snapshot=snapshot_ref,
+            semantic_layer_hash=ptr.semantic_layer_version,
+            buildspec_hash=str(meta_payload.get("buildspec_hash", "unknown")),
+        )
 
-            # Build snapshot reference from current pointer (already fetched above)
-            snapshot_ref = SnapshotRef(
-                repo=ptr.repo,
-                commit=ptr.commit,
-                run_id=ptr.run_id,
-                published_at=ptr.published_at,
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_query_metrics(
+            QueryMetrics(
+                endpoint="mcp:semantic_export",
+                view_id=view_id,
+                query=None,
+                row_count=stored_meta.row_count,
+                truncated=False,
+                duration_ms=duration_ms,
+                correlation_id=_mcp_correlation_id(ctx),
+                query_hash=query_hash,
+                schema_hash=schema_hash,
             )
+        )
 
-            # Build export snapshot with hashes
-            export_snapshot = ExportSnapshot(
-                snapshot=snapshot_ref,
-                semantic_layer_hash=ptr.semantic_layer_version,
-                buildspec_hash="unknown",  # Buildspec hash not available in pointer
-            )
+        return ExportHandleResponse(
+            export_id=token,
+            format=format_type,
+            mime_type=artifact.mime_type,
+            filename=f"{view_id}.{format_type}",
+            uri=f"codeintel://exports/{token}",
+            meta_uri=f"codeintel://exports/{token}/meta",
+            preview_uri=f"codeintel://exports/{token}/preview" if format_type in {"ndjson", "json"} else None,
+            sql_uri=f"codeintel://exports/{token}/sql",
+            created_at=stored_meta.created_at,
+            expires_at=stored_meta.expires_at,
+            row_count=stored_meta.row_count,
+            byte_size=artifact.size_bytes,
+            snapshot=export_snapshot,
+            note="Use codeintel://exports/{export_id}/meta to discover safe retrieval URIs.",
+        )
 
-            fmt = "ndjson" if format_type == "ndjson" else "json"
 
-            return ExportHandleResponse(
-                export_id=token,
-                format=fmt,
-                mime_type=artifact.mime_type,
-                filename=f"{view_id}.{format_type}",
-                uri=f"codeintel://exports/{token}",
-                meta_uri=f"codeintel://exports/{token}/meta",
-                created_at=datetime.now(UTC),
-                row_count=row_count,
-                byte_size=artifact.size_bytes,
-                snapshot=export_snapshot,
-            )
-        except KeyError as e:
-            raise ToolError(_view_not_found_msg(view_id)) from e
-        except ValueError as e:
-            raise ToolError(_invalid_params_msg(e)) from e
-        except Exception as e:
-            LOG.exception("Export failed for view %s", view_id)
-            raise ToolError(_ERR_EXPORT_FAILED) from e
-        finally:
-            duration_ms = (time.perf_counter() - start) * 1000
-            log_query_metrics(
-                QueryMetrics(
-                    endpoint="mcp:semantic_export",
-                    view_id=view_id_for_metrics,
-                    query=None,
-                    row_count=row_count,
-                    truncated=False,
-                    duration_ms=duration_ms,
-                    correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
-                    query_hash=query_hash,
-                    schema_hash=schema_hash,
-                )
-            )
+def _write_text_export(
+    *,
+    kernel: SemanticKernel,
+    store: ResourceStore,
+    request: SemanticExportRequest,
+    spec: ExportArtifactSpec,
+) -> tuple[str, StoredArtifact, StoredMetadata]:
+    """Write a JSON/NDJSON export to the ResourceStore.
+
+    Parameters
+    ----------
+    kernel
+        Semantic query kernel to generate export rows.
+    store
+        Resource store for persisting exports and metadata.
+    request
+        Export request to execute.
+    spec
+        Metadata/specification describing the artifact.
+
+    Returns
+    -------
+    tuple[str, StoredArtifact, StoredMetadata]
+        Export token, artifact metadata, and stored metadata.
+    """
+    if spec.format == "ndjson":
+        return store.put_with_metadata_stream(kernel.export_rows(request), spec=spec)
+    rows = list(kernel.export_rows(request))
+    return store.put_with_metadata(rows, spec=spec)
 
 
 __all__ = ["build_mcp_app"]

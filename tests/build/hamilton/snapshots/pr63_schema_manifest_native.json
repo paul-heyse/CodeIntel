@@ -1105,6 +1105,200 @@
         },
         {
           "description": null,
+          "name": "field_name",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "field_type",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "required",
+          "nullable": false,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "has_default",
+          "nullable": false,
+          "type": "BOOLEAN"
+        },
+        {
+          "description": null,
+          "name": "default_expr",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "constraints_json",
+          "nullable": false,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "source",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "lineno",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Normalized field definitions extracted from analytics.data_models.",
+      "indexes": [],
+      "name": "data_model_fields",
+      "primary_key": [
+        "repo",
+        "commit",
+        "model_id",
+        "field_name"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.data_model_fields"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "source_model_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "target_model_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "target_module",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "target_model_name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "field_name",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "relationship_kind",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "multiplicity",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "via",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "evidence_json",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "lineno",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Resolved relationships between data models with evidence and provenance.",
+      "indexes": [],
+      "name": "data_model_relationships",
+      "primary_key": [
+        "repo",
+        "commit",
+        "source_model_id",
+        "field_name",
+        "target_model_id",
+        "relationship_kind"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.data_model_relationships"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "model_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "function_goid_h128",
           "nullable": false,
           "type": "DECIMAL(38,0)"
@@ -1616,6 +1810,75 @@
       ],
       "schema": "analytics",
       "table_key": "analytics.dfg_function_metrics_ext"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "entrypoint_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "test_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "test_goid_h128",
+          "nullable": true,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "coverage_ratio",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "status",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "duration_ms",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Bipartite edges between entrypoints and tests",
+      "indexes": [],
+      "name": "entrypoint_tests",
+      "primary_key": [
+        "repo",
+        "commit",
+        "entrypoint_id",
+        "test_id"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.entrypoint_tests"
     },
     {
       "columns": [
@@ -3788,6 +4051,78 @@
       "primary_key": [],
       "schema": "analytics",
       "table_key": "analytics.function_types"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "function_goid_h128",
+          "nullable": false,
+          "type": "DECIMAL(38,0)"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "qualname",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "issue",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "detail",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Validation findings for function analytics gaps",
+      "indexes": [
+        {
+          "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_function_validation_repo_commit",
+          "unique": false
+        }
+      ],
+      "name": "function_validation",
+      "primary_key": [
+        "repo",
+        "commit",
+        "function_goid_h128",
+        "issue"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.function_validation"
     },
     {
       "columns": [

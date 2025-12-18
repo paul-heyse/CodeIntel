@@ -9,20 +9,31 @@ from __future__ import annotations
 
 import json
 import secrets
+from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
+from codeintel.serving.mcp.errors import (
+    ExportCorruptError,
+    ExportExpiredError,
+    ExportNotFoundError,
+)
+
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from pathlib import Path
 
 _JSON_SUFFIX: Final = ".json"
 _NDJSON_SUFFIX: Final = ".ndjson"
+_PARQUET_SUFFIX: Final = ".parquet"
+_ARROW_SUFFIX: Final = ".arrow"
 _META_SUFFIX: Final = ".meta.json"
 
 _MIME_JSON: Final = "application/json"
 _MIME_NDJSON: Final = "application/x-ndjson"
+_MIME_PARQUET: Final = "application/vnd.apache.parquet"
+_MIME_ARROW: Final = "application/vnd.apache.arrow.file"
 
 _DEFAULT_PREVIEW_ROWS: Final = 5
 
@@ -87,6 +98,8 @@ class StoredMetadata:
         Compiled SQL used to generate the export (if available).
     created_at
         When the export was created.
+    expires_at
+        When the export expires (if TTL is enabled).
     snapshot
         Snapshot metadata (repo, commit, run_id, published_at).
     format
@@ -108,6 +121,7 @@ class StoredMetadata:
     column_types: dict[str, str] = field(default_factory=dict)
     compiled_sql: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
     snapshot: dict[str, str] = field(default_factory=dict)
     format: str = "ndjson"
     mime_type: str = _MIME_NDJSON
@@ -136,16 +150,19 @@ class ResourceStore:
     2
     """
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, ttl_seconds: int | None = None) -> None:
         """Initialize the resource store.
 
         Parameters
         ----------
         root
             Root directory for artifact storage.
+        ttl_seconds
+            Optional TTL for exports. When set, resources may expire and cleanup removes old artifacts.
         """
         self._root = root
         self._root.mkdir(parents=True, exist_ok=True)
+        self._ttl_seconds = ttl_seconds if ttl_seconds is None else max(ttl_seconds, 1)
 
     @property
     def root(self) -> Path:
@@ -157,6 +174,48 @@ class ResourceStore:
             Root directory path.
         """
         return self._root
+
+    @property
+    def ttl_seconds(self) -> int | None:
+        """Return the export TTL in seconds (None = no expiry)."""
+        return self._ttl_seconds
+
+    def _expires_at(self, *, created_at: datetime) -> datetime | None:
+        if self._ttl_seconds is None:
+            return None
+        return created_at + timedelta(seconds=self._ttl_seconds)
+
+    def cleanup_expired(self) -> int:
+        """Delete expired artifacts best-effort.
+
+        Returns
+        -------
+        int
+            Count of expired export IDs deleted.
+        """
+        deleted = 0
+        now = datetime.now(UTC)
+        for meta_path in self._root.glob(f"*{_META_SUFFIX}"):
+            export_id = meta_path.name.removesuffix(_META_SUFFIX)
+            try:
+                meta = self.get_meta(export_id)
+            except ExportNotFoundError:
+                continue
+            except ExportCorruptError:
+                continue
+            if meta.expires_at is None or meta.expires_at > now:
+                continue
+            self.delete(export_id)
+            deleted += 1
+        return deleted
+
+    def delete(self, token: str) -> None:
+        """Delete an export artifact and sidecar best-effort."""
+        with suppress(FileNotFoundError):
+            (self._root / f"{token}{_META_SUFFIX}").unlink()
+        for suffix in (_JSON_SUFFIX, _NDJSON_SUFFIX, _PARQUET_SUFFIX, _ARROW_SUFFIX):
+            with suppress(FileNotFoundError):
+                (self._root / f"{token}{suffix}").unlink()
 
     def put_json(self, payload: object, *, row_count: int = 0) -> tuple[str, StoredArtifact]:
         """Store a JSON payload and return its token.
@@ -230,21 +289,25 @@ class ResourceStore:
 
         Raises
         ------
-        KeyError
+        ExportNotFoundError
             If token not found.
         """
         for suffix, mime_type in [
             (_JSON_SUFFIX, _MIME_JSON),
             (_NDJSON_SUFFIX, _MIME_NDJSON),
+            (_PARQUET_SUFFIX, _MIME_PARQUET),
+            (_ARROW_SUFFIX, _MIME_ARROW),
         ]:
             path = self._root / f"{token}{suffix}"
             if path.exists():
-                # Try to get row count from metadata if available
                 row_count = 0
-                meta_path = self._root / f"{token}{_META_SUFFIX}"
-                if meta_path.exists():
-                    meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
-                    row_count = meta_data.get("row_count", 0)
+                try:
+                    meta = self.get_meta(token)
+                except ExportNotFoundError:
+                    meta = None
+                if meta is not None:
+                    self._assert_not_expired(meta)
+                    row_count = meta.row_count
                 return StoredArtifact(
                     path=path,
                     mime_type=mime_type,
@@ -252,8 +315,7 @@ class ResourceStore:
                     size_bytes=path.stat().st_size,
                 )
 
-        msg = f"Artifact not found: {token}"
-        raise KeyError(msg)
+        raise ExportNotFoundError(token)
 
     def put_with_metadata(
         self,
@@ -280,25 +342,29 @@ class ResourceStore:
         ValueError
             If ``spec.format`` is unsupported.
         """
+        if spec.format not in {"ndjson", "json"}:
+            msg = "put_with_metadata only supports format='ndjson' or format='json'"
+            raise ValueError(msg)
+
         token = secrets.token_urlsafe(16)
+        created_at = datetime.now(UTC)
         resolved_columns = spec.columns
         if not resolved_columns and rows:
             resolved_columns = tuple(rows[0].keys())
 
-        if spec.format == "ndjson":
-            path = self._root / f"{token}{_NDJSON_SUFFIX}"
-            mime_type = _MIME_NDJSON
-            with path.open("w", encoding="utf-8") as f:
-                for row in rows:
-                    f.write(json.dumps(row, default=str) + "\n")
-        elif spec.format == "json":
-            path = self._root / f"{token}{_JSON_SUFFIX}"
-            mime_type = _MIME_JSON
-            content = json.dumps({"rows": rows}, indent=2, sort_keys=True, default=str)
-            path.write_text(content, encoding="utf-8")
-        else:
-            msg = f"Unsupported export format: {spec.format}"
-            raise ValueError(msg)
+        path, mime_type = self._artifact_path_for_format(token, spec.format)
+        try:
+            if spec.format == "ndjson":
+                with path.open("w", encoding="utf-8") as f:
+                    for row in rows:
+                        f.write(json.dumps(row, default=str) + "\n")
+            else:
+                content = json.dumps({"rows": rows}, indent=2, sort_keys=True, default=str)
+                path.write_text(content, encoding="utf-8")
+        except Exception:
+            with suppress(FileNotFoundError):
+                path.unlink()
+            raise
 
         metadata = StoredMetadata(
             export_id=token,
@@ -307,7 +373,8 @@ class ResourceStore:
             columns=resolved_columns,
             column_types=spec.column_types,
             compiled_sql=spec.compiled_sql,
-            created_at=datetime.now(UTC),
+            created_at=created_at,
+            expires_at=self._expires_at(created_at=created_at),
             snapshot=spec.snapshot,
             format=spec.format,
             mime_type=mime_type,
@@ -315,7 +382,11 @@ class ResourceStore:
             query_hash=spec.query_hash,
             schema_hash=spec.schema_hash,
         )
-        self._write_metadata_sidecar(metadata)
+        try:
+            self._write_metadata_sidecar(metadata)
+        except Exception:
+            self.delete(token)
+            raise
 
         artifact = StoredArtifact(
             path=path,
@@ -367,20 +438,31 @@ class ResourceStore:
             raise TypeError(msg)
         row_count = 0
 
-        with path.open("w", encoding="utf-8") as f:
-            if first_row is not None:
-                resolved_columns = spec.columns or tuple(first_row.keys())
-                f.write(json.dumps(first_row, default=str) + "\n")
-                row_count += 1
-                for row in rows_iter:
-                    if not isinstance(row, dict):
-                        msg = "rows must yield dictionaries"
-                        raise TypeError(msg)
-                    f.write(json.dumps(row, default=str) + "\n")
+        def _write_rows_to_path() -> tuple[tuple[str, ...], int]:
+            nonlocal row_count
+            with path.open("w", encoding="utf-8") as f:
+                if first_row is not None:
+                    resolved_columns = spec.columns or tuple(first_row.keys())
+                    f.write(json.dumps(first_row, default=str) + "\n")
                     row_count += 1
-            else:
+                    for row in rows_iter:
+                        if not isinstance(row, dict):
+                            msg = "rows must yield dictionaries"
+                            raise TypeError(msg)
+                        f.write(json.dumps(row, default=str) + "\n")
+                        row_count += 1
+                    return resolved_columns, row_count
                 resolved_columns = spec.columns
+                return resolved_columns, row_count
 
+        try:
+            resolved_columns, row_count = _write_rows_to_path()
+        except Exception:
+            with suppress(FileNotFoundError):
+                path.unlink()
+            raise
+
+        created_at = datetime.now(UTC)
         metadata = StoredMetadata(
             export_id=token,
             view_id=spec.view_id,
@@ -388,7 +470,8 @@ class ResourceStore:
             columns=resolved_columns,
             column_types=spec.column_types,
             compiled_sql=spec.compiled_sql,
-            created_at=datetime.now(UTC),
+            created_at=created_at,
+            expires_at=self._expires_at(created_at=created_at),
             snapshot=spec.snapshot,
             format=spec.format,
             mime_type=mime_type,
@@ -396,13 +479,89 @@ class ResourceStore:
             query_hash=spec.query_hash,
             schema_hash=spec.schema_hash,
         )
-        self._write_metadata_sidecar(metadata)
+        try:
+            self._write_metadata_sidecar(metadata)
+        except Exception:
+            self.delete(token)
+            raise
 
         artifact = StoredArtifact(
             path=path,
             mime_type=mime_type,
             row_count=row_count,
             size_bytes=metadata.size_bytes,
+        )
+        return token, artifact, metadata
+
+    def put_generated_file_with_metadata(
+        self,
+        *,
+        spec: ExportArtifactSpec,
+        write_fn: Callable[[Path], int | None],
+    ) -> tuple[str, StoredArtifact, StoredMetadata]:
+        """Generate a file-backed artifact (parquet/arrow) with a metadata sidecar.
+
+        Parameters
+        ----------
+        spec
+            Artifact metadata specification. Must use a binary format.
+        write_fn
+            Callback that writes the artifact to the provided path and optionally
+            returns the row count.
+
+        Returns
+        -------
+        tuple[str, StoredArtifact, StoredMetadata]
+            Export token, artifact metadata, and stored metadata.
+
+        Raises
+        ------
+        ValueError
+            If ``spec.format`` is not a binary export format.
+        """
+        if spec.format not in {"parquet", "arrow"}:
+            msg = "put_generated_file_with_metadata only supports format='parquet' or format='arrow'"
+            raise ValueError(msg)
+
+        token = secrets.token_urlsafe(16)
+        created_at = datetime.now(UTC)
+        path, mime_type = self._artifact_path_for_format(token, spec.format)
+        try:
+            rows_written = write_fn(path)
+        except Exception:
+            self.delete(token)
+            raise
+
+        row_count = rows_written if isinstance(rows_written, int) else 0
+        size_bytes = path.stat().st_size
+
+        metadata = StoredMetadata(
+            export_id=token,
+            view_id=spec.view_id,
+            row_count=row_count,
+            columns=spec.columns,
+            column_types=spec.column_types,
+            compiled_sql=spec.compiled_sql,
+            created_at=created_at,
+            expires_at=self._expires_at(created_at=created_at),
+            snapshot=spec.snapshot,
+            format=spec.format,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+            query_hash=spec.query_hash,
+            schema_hash=spec.schema_hash,
+        )
+        try:
+            self._write_metadata_sidecar(metadata)
+        except Exception:
+            self.delete(token)
+            raise
+
+        artifact = StoredArtifact(
+            path=path,
+            mime_type=mime_type,
+            row_count=row_count,
+            size_bytes=size_bytes,
         )
         return token, artifact, metadata
 
@@ -416,6 +575,7 @@ class ResourceStore:
             "column_types": metadata.column_types,
             "compiled_sql": metadata.compiled_sql,
             "created_at": metadata.created_at.isoformat(),
+            "expires_at": metadata.expires_at.isoformat() if metadata.expires_at else None,
             "snapshot": metadata.snapshot,
             "format": metadata.format,
             "mime_type": metadata.mime_type,
@@ -443,19 +603,25 @@ class ResourceStore:
 
         Raises
         ------
-        KeyError
-            If metadata not found.
+        ExportCorruptError
+            If metadata exists but cannot be parsed.
+        ExportNotFoundError
+            If metadata sidecar does not exist.
         """
         meta_path = self._root / f"{token}{_META_SUFFIX}"
         if not meta_path.exists():
-            msg = f"Metadata not found: {token}"
-            raise KeyError(msg)
+            raise ExportNotFoundError(token)
 
-        meta_dict = json.loads(meta_path.read_text(encoding="utf-8"))
+        try:
+            meta_dict = json.loads(meta_path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            raise ExportCorruptError(token) from exc
 
         # Parse created_at back to datetime
         created_at_str = meta_dict.get("created_at", "")
         created_at = datetime.fromisoformat(created_at_str) if created_at_str else datetime.now(UTC)
+        expires_at_str = meta_dict.get("expires_at")
+        expires_at = datetime.fromisoformat(expires_at_str) if isinstance(expires_at_str, str) else None
 
         return StoredMetadata(
             export_id=meta_dict.get("export_id", token),
@@ -465,6 +631,7 @@ class ResourceStore:
             column_types=meta_dict.get("column_types", {}),
             compiled_sql=meta_dict.get("compiled_sql"),
             created_at=created_at,
+            expires_at=expires_at,
             snapshot=meta_dict.get("snapshot", {}),
             format=meta_dict.get("format", "ndjson"),
             mime_type=meta_dict.get("mime_type", _MIME_NDJSON),
@@ -490,20 +657,15 @@ class ResourceStore:
         dict[str, object]
             Preview dict with columns, rows, and metadata.
 
-        Notes
-        -----
-        May raise ``KeyError`` via ``self.get()`` if export not found.
+        Raises
+        ------
+        ExportNotFoundError
+            If the export or its metadata sidecar is missing.
         """
-        # First get the artifact to find the file
         artifact = self.get(token)
-
-        # Try to get metadata for columns
-        columns: tuple[str, ...] = ()
-        try:
-            meta = self.get_meta(token)
-            columns = meta.columns
-        except KeyError:
-            pass
+        meta = self.get_meta(token)
+        self._assert_not_expired(meta)
+        columns = meta.columns
 
         # Read preview rows
         preview_rows: list[dict[str, object]] = []
@@ -533,6 +695,26 @@ class ResourceStore:
             "total_row_count": artifact.row_count,
             "truncated": artifact.row_count > len(preview_rows),
         }
+
+    @staticmethod
+    def _assert_not_expired(meta: StoredMetadata) -> None:
+        if meta.expires_at is None:
+            return
+        if datetime.now(UTC) <= meta.expires_at:
+            return
+        raise ExportExpiredError(meta.export_id, expires_at=meta.expires_at.isoformat())
+
+    def _artifact_path_for_format(self, token: str, fmt: str) -> tuple[Path, str]:
+        if fmt == "ndjson":
+            return self._root / f"{token}{_NDJSON_SUFFIX}", _MIME_NDJSON
+        if fmt == "json":
+            return self._root / f"{token}{_JSON_SUFFIX}", _MIME_JSON
+        if fmt == "parquet":
+            return self._root / f"{token}{_PARQUET_SUFFIX}", _MIME_PARQUET
+        if fmt == "arrow":
+            return self._root / f"{token}{_ARROW_SUFFIX}", _MIME_ARROW
+        msg = f"Unsupported export format: {fmt}"
+        raise ValueError(msg)
 
 
 __all__ = ["ExportArtifactSpec", "ResourceStore", "StoredArtifact", "StoredMetadata"]

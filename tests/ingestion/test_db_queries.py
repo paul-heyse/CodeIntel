@@ -57,7 +57,7 @@ from tests._helpers.ingestion import (
 if TYPE_CHECKING:
     from types import SimpleNamespace
 
-    from codeintel.build.context import TargetExecutionContext
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -92,7 +92,7 @@ def _make_test_target(name: str = "repo_scan") -> OutputTarget:
     )
 
 
-def _ctx_for_gateway(gateway: StorageGateway, tmp_path: Path) -> TargetExecutionContext:
+def _ctx_for_gateway(gateway: StorageGateway, tmp_path: Path) -> BuildEnv:
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
     return build_target_context_for_target(

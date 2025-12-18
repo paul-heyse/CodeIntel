@@ -10,7 +10,6 @@ Key concepts:
 - **OutputContract**: Tables and artifacts a target produces (single source of truth)
 - **OutputManifest**: Record of a target's computation with input/output hashes
 - **BuildRunRecord**: Record of a build system run for observability
-- **TargetExecutionContext**: Execution context for build operations
 - **BuildError**: Rich error hierarchy with actionable hints
 
 Import patterns::
@@ -24,11 +23,7 @@ Import patterns::
     from codeintel.build.parameters import TargetParameters
 
 
-    from codeintel.build.context import TargetExecutionContext, TargetResult
-
-
-    from codeintel.build.protocols import ToolRunner, ScipIndexer, TypeChecker
-    from codeintel.build.providers import create_default_providers
+    from codeintel.build.hamilton.env import BuildEnv
 
 
     from codeintel.build.errors import BuildError, BuildErrorCollection
@@ -68,19 +63,16 @@ __all__ = [
     "OutputManifest",
     "OutputTarget",
     "TargetExecution",
-    "TargetExecutionContext",
     "TargetGraph",
     "TargetModule",
     "TargetParameters",
     "TargetResources",
-    "TargetResult",
     "compute_input_hash",
     "compute_options_hash",
     "get_target_graph",
 ]
 
 if TYPE_CHECKING:
-    from codeintel.build.context import TargetExecutionContext, TargetResult
     from codeintel.build.contracts import EMPTY_CONTRACT, ArtifactSpec, OutputContract
     from codeintel.build.errors import BuildError, BuildErrorCollection
     from codeintel.build.hashing import compute_input_hash, compute_options_hash
@@ -110,12 +102,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "OutputManifest": ("codeintel.core.build_manifest", "OutputManifest"),
     "OutputTarget": ("codeintel.build.targets", "OutputTarget"),
     "TargetExecution": ("codeintel.build.resources", "TargetExecution"),
-    "TargetExecutionContext": ("codeintel.build.context", "TargetExecutionContext"),
     "TargetGraph": ("codeintel.build.targets", "TargetGraph"),
     "TargetModule": ("codeintel.build.targets", "TargetModule"),
     "TargetParameters": ("codeintel.build.parameters", "TargetParameters"),
     "TargetResources": ("codeintel.build.resources", "TargetResources"),
-    "TargetResult": ("codeintel.build.context", "TargetResult"),
     "compute_input_hash": ("codeintel.build.hashing", "compute_input_hash"),
     "compute_options_hash": ("codeintel.build.hashing", "compute_options_hash"),
     "get_target_graph": ("codeintel.build.registry", "get_target_graph"),
