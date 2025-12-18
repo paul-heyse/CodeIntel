@@ -30,6 +30,10 @@ _POOL_CLOSING_ERROR = "Pool is closing"
 _POOL_ACQUIRE_MAX_ATTEMPTS = 3
 
 
+def _default_export_pool_cfg() -> PoolConfig:
+    return PoolConfig(size=1)
+
+
 @dataclass
 class ServingDBManager:
     """Manages serving database connections with hot-swap support.
@@ -48,11 +52,13 @@ class ServingDBManager:
 
     pointer_path: Path
     pool_cfg: PoolConfig = field(default_factory=PoolConfig)
+    export_pool_cfg: PoolConfig = field(default_factory=_default_export_pool_cfg)
     poll_interval_s: float = 1.0
     hot_swap: bool = True
 
     _pointer: ServingSnapshotPointer | None = field(default=None, init=False)
     _pool: ReadPoolWarehouse | None = field(default=None, init=False)
+    _export_pool: ReadPoolWarehouse | None = field(default=None, init=False)
     _snapshot_cache: dict[Path, ServingSnapshotContext] = field(default_factory=dict, init=False)
     _watch_task: asyncio.Task[None] | None = field(default=None, init=False)
     _last_mtime_ns: int | None = field(default=None, init=False)
@@ -71,6 +77,8 @@ class ServingDBManager:
                 await self._watch_task
         if self._pool is not None:
             self._pool.close_gracefully()
+        if self._export_pool is not None:
+            self._export_pool.close_gracefully()
 
     def current_pointer(self) -> ServingSnapshotPointer:
         """Return current snapshot pointer.
@@ -125,6 +133,43 @@ class ServingDBManager:
             else:
                 return
 
+    @contextmanager
+    def connect_export(self) -> Iterator[tuple[Warehouse, ServingSnapshotPointer]]:
+        """Yield a warehouse handle from the export pool plus the current pointer.
+
+        This isolates long-lived export streams from interactive query capacity.
+
+        Yields
+        ------
+        tuple[Warehouse, ServingSnapshotPointer]
+            Warehouse handle and current pointer.
+
+        Raises
+        ------
+        RuntimeError
+            If manager not started.
+        """
+        attempts = 0
+        while True:
+            pool = self._export_pool
+            pointer = self._pointer
+            if pool is None or pointer is None:
+                msg = "ServingDBManager not started"
+                raise RuntimeError(msg)
+            try:
+                with pool.acquire() as warehouse:
+                    yield warehouse, pointer
+            except RuntimeError as exc:
+                if str(exc) != _POOL_CLOSING_ERROR:
+                    raise
+                attempts += 1
+                if attempts >= _POOL_ACQUIRE_MAX_ATTEMPTS:
+                    msg = "ServingDBManager could not acquire an export warehouse handle"
+                    raise RuntimeError(msg) from exc
+                continue
+            else:
+                return
+
     def snapshot_context(self, pointer: ServingSnapshotPointer) -> ServingSnapshotContext:
         """Return cached snapshot context for the given pointer.
 
@@ -171,13 +216,18 @@ class ServingDBManager:
             return
 
         new_pool = ReadPoolWarehouse(new_ptr.db_path, self.pool_cfg)
+        new_export_pool = ReadPoolWarehouse(new_ptr.db_path, self.export_pool_cfg)
         old_pool = self._pool
+        old_export_pool = self._export_pool
         self._pool = new_pool
+        self._export_pool = new_export_pool
         self._pointer = new_ptr
         self._snapshot_cache[new_ptr.db_path] = _load_snapshot_context(new_ptr)
 
         if old_pool is not None:
             old_pool.close_gracefully()
+        if old_export_pool is not None:
+            old_export_pool.close_gracefully()
 
 
 __all__ = ["ServingDBManager"]

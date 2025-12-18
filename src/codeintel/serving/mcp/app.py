@@ -6,14 +6,14 @@ import logging
 import time
 from datetime import UTC, datetime
 from importlib.metadata import version as get_package_version
-from typing import TYPE_CHECKING, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
 from starlette.responses import JSONResponse, PlainTextResponse
 
 from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.mcp._compat import Context, FastMCP, ToolError, create_bearer_auth
 from codeintel.serving.mcp.prompts import register_prompts
-from codeintel.serving.mcp.resource_store import ResourceStore
+from codeintel.serving.mcp.resource_store import ExportArtifactSpec, ResourceStore
 from codeintel.serving.mcp.resources import register_resources
 from codeintel.serving.mcp.response_models import (
     DEFAULT_RESOURCE_TEMPLATES,
@@ -47,6 +47,8 @@ if TYPE_CHECKING:
     from starlette.responses import Response
 
     from codeintel.serving.db.manager import ServingDBManager
+    from codeintel.serving.db.pointer import ServingSnapshotPointer
+    from codeintel.serving.semantic.models import ExportFormat
     from codeintel.serving.settings import ServingSettings
 
 LOG = logging.getLogger(__name__)
@@ -97,6 +99,94 @@ _ERR_EXPORT_FAILED = "Export execution failed. Check server logs."
 _PREVIEW_ROW_COUNT = 5
 
 
+class InvalidExportFormatError(ValueError):
+    """Raised when an export_format value is unsupported."""
+
+    def __init__(self, export_format: str) -> None:
+        msg = f"Unsupported export_format: {export_format}"
+        super().__init__(msg)
+        self.export_format = export_format
+
+
+def _normalize_export_format(export_format: str) -> ExportFormat:
+    """Normalize and validate export_format values.
+
+    Parameters
+    ----------
+    export_format
+        Raw export format string from tool inputs.
+
+    Returns
+    -------
+    str
+        Normalized export format ("ndjson" or "json").
+
+    Raises
+    ------
+    InvalidExportFormatError
+        If export_format is not supported.
+    """
+    normalized = export_format.strip().lower()
+    if normalized == "ndjson":
+        return "ndjson"
+    if normalized == "json":
+        return "json"
+    raise InvalidExportFormatError(export_format)
+
+
+def _export_snapshot_dict(ptr: ServingSnapshotPointer) -> dict[str, str]:
+    return {
+        "repo": ptr.repo,
+        "commit": ptr.commit,
+        "run_id": ptr.run_id,
+        "published_at": ptr.published_at.isoformat(),
+        "semantic_layer_hash": ptr.semantic_layer_version,
+        "buildspec_hash": "unknown",
+    }
+
+
+def _safe_column_types(kernel: SemanticKernel, view_id: str) -> dict[str, str]:
+    try:
+        describe = kernel.describe(view_id)
+    except (KeyError, TypeError, ValueError):
+        return {}
+
+    raw_types = describe.get("column_types")
+    if not isinstance(raw_types, dict):
+        return {}
+    return {str(k): str(v) for k, v in raw_types.items()}
+
+
+async def _catalog_view_count(kernel: SemanticKernel, limiter: QueryLimiter) -> int:
+    catalog_data = await limiter.run(kernel.catalog)
+    catalog_dict = catalog_data if isinstance(catalog_data, dict) else {}
+    views_obj = catalog_dict.get("views")
+    views = views_obj if isinstance(views_obj, list) else []
+    return len(views)
+
+
+def _semantic_layer_info(meta: dict[str, object], *, view_count: int) -> SemanticLayerInfo:
+    version_raw = meta.get("semantic_layer_version", "unknown")
+    hash_raw = meta.get("semantic_layer_hash", "unknown")
+    schema_manifest_hash_raw = meta.get("schema_manifest_hash")
+    return SemanticLayerInfo(
+        version=str(version_raw),
+        hash=str(hash_raw),
+        view_count=view_count,
+        schema_manifest_hash=str(schema_manifest_hash_raw) if schema_manifest_hash_raw is not None else None,
+    )
+
+
+def _buildspec_info(meta: dict[str, object], *, compiled_at: datetime) -> BuildSpecInfo:
+    raw_version = meta.get("buildspec_version", "unknown")
+    buildspec_hash_raw = meta.get("buildspec_hash", "unknown")
+    return BuildSpecInfo(
+        version=str(raw_version) if raw_version is not None else "unknown",
+        hash=str(buildspec_hash_raw),
+        compiled_at=compiled_at,
+    )
+
+
 class SemanticKernel(Protocol):
     """Protocol for the kernel interface used by MCP tools."""
 
@@ -118,6 +208,8 @@ class SemanticKernel(Protocol):
     def meta(self) -> dict[str, object]: ...
 
     def export_rows(self, request: SemanticExportRequest) -> Iterator[dict[str, object]]: ...
+
+    def export_sql(self, request: SemanticExportRequest) -> str: ...
 
 
 def _build_semantic_request(
@@ -327,7 +419,9 @@ def _register_catalog_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryL
             await ctx.info("Retrieving semantic catalog")
             result = await limiter.run(kernel.catalog)
             data = result if isinstance(result, dict) else {}
-            row_count = len(data.get("views", [])) if isinstance(data, dict) else 0
+            views_obj = data.get("views")
+            views = views_obj if isinstance(views_obj, list) else []
+            row_count = len(views)
             return SemanticCatalogResponse.model_validate(data)
         except Exception as e:
             LOG.exception("Catalog retrieval failed")
@@ -457,7 +551,7 @@ def _register_query_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLim
             await ctx.report_progress(10, 100)
             request = _build_semantic_request(view_id, filters, select, order_by, pagination)
             await ctx.report_progress(20, 100)
-            result = cast("SemanticQueryResponse", await limiter.run(kernel.query, request))
+            result = await limiter.run(kernel.query, request)
             await ctx.report_progress(100, 100)
             row_count = len(result.rows)
             truncated = result.truncated
@@ -554,7 +648,7 @@ def _register_explain_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryL
             await ctx.report_progress(10, 100)
             request = _build_semantic_request(view_id, filters, select, order_by, pagination)
             await ctx.report_progress(20, 100)
-            result = cast("SemanticExplainResponse", await limiter.run(kernel.explain, request))
+            result = await limiter.run(kernel.explain, request)
             await ctx.report_progress(100, 100)
             return result  # noqa: TRY300 - Return inside try ensures finally metrics run
         except KeyError as e:
@@ -623,24 +717,9 @@ def _register_meta_tool(
                 published_at=ptr.published_at,
             )
 
-            # Build semantic layer info from catalog data
-            catalog_data = await limiter.run(kernel.catalog)
-            view_count = len(catalog_data.get("views", [])) if isinstance(catalog_data, dict) else 0
-            semantic_layer = SemanticLayerInfo(
-                version=data.get("semantic_layer_version", "unknown"),
-                hash=data.get("semantic_layer_hash", "unknown"),
-                view_count=view_count,
-                schema_manifest_hash=data.get("schema_manifest_hash"),
-            )
-
-            # Build buildspec info
-            # buildspec_version may be int or str from DB, convert to string
-            raw_version = data.get("buildspec_version", "unknown")
-            buildspec = BuildSpecInfo(
-                version=str(raw_version) if raw_version is not None else "unknown",
-                hash=data.get("buildspec_hash", "unknown"),
-                compiled_at=ptr.published_at,  # Use snapshot publish time as approximation
-            )
+            view_count = await _catalog_view_count(kernel, limiter)
+            semantic_layer = _semantic_layer_info(data, view_count=view_count)
+            buildspec = _buildspec_info(data, compiled_at=ptr.published_at)
 
             # Build query limits from settings
             # max_limit uses QueryLimits default (5000), export_max_rows from settings
@@ -738,7 +817,7 @@ def _register_search_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLi
                 offset=offset,
             )
             await ctx.report_progress(20, 100)
-            result = cast("SearchQueryResponse", await limiter.run(kernel.search, request))
+            result = await limiter.run(kernel.search, request)
             await ctx.report_progress(100, 100)
             row_count = len(result.results)
             return result  # noqa: TRY300 - Return inside try ensures finally metrics run
@@ -820,54 +899,45 @@ def _register_export_tool(
             await ctx.info(f"Exporting view: {view_id} (format={export_format})")
             await ctx.report_progress(10, 100)
 
+            format_type = _normalize_export_format(export_format)
+
             request = SemanticExportRequest(
                 view_id=view_id,
                 filters=[FilterSpec.model_validate(f) for f in (filters or [])],
-                format=export_format,  # type: ignore[arg-type]
+                format=format_type,
                 limit=min(limit, settings.export_max_rows),
+            )
+
+            ptr = kernel.db.current_pointer()
+            snapshot_dict = _export_snapshot_dict(ptr)
+            column_types = _safe_column_types(kernel, view_id)
+            compiled_sql = kernel.export_sql(request)
+            spec = ExportArtifactSpec(
+                view_id=view_id,
+                column_types=column_types,
+                compiled_sql=compiled_sql,
+                snapshot=snapshot_dict,
+                format=format_type,
             )
 
             # Export rows via limiter
             await ctx.report_progress(20, 100)
-            rows = cast(
-                "list[dict[str, object]]",
-                await limiter.run(lambda: list(kernel.export_rows(request))),
-            )
+            if format_type == "ndjson":
+                token, artifact, _stored_meta = await limiter.run(
+                    lambda: store.put_with_metadata_stream(
+                        kernel.export_rows(request),
+                        spec=spec,
+                    )
+                )
+            else:
+                rows = await limiter.run(lambda: list(kernel.export_rows(request)))
+                token, artifact, _stored_meta = store.put_with_metadata(rows, spec=spec)
             await ctx.report_progress(80, 100)
-
-            # Extract columns from first row (if available)
-            columns: tuple[str, ...] = ()
-            if rows:
-                columns = tuple(rows[0].keys())
-
-            # Get snapshot info for metadata
-            ptr = kernel.db.current_pointer()
-            snapshot_dict = {
-                "repo": ptr.repo,
-                "commit": ptr.commit,
-                "run_id": ptr.run_id,
-                "published_at": ptr.published_at.isoformat(),
-                "semantic_layer_hash": ptr.semantic_layer_version,
-                "buildspec_hash": "unknown",
-            }
-
-            # Store artifact with metadata
-            token, artifact, _stored_meta = store.put_with_metadata(
-                rows,
-                view_id=view_id,
-                columns=columns,
-                column_types={},  # Type info not available from export
-                compiled_sql=None,  # SQL not captured during export
-                snapshot=snapshot_dict,
-                format_type=export_format,
-            )
-            mime_type = artifact.mime_type
 
             await ctx.info(f"Export complete: {artifact.row_count} rows")
             await ctx.report_progress(100, 100)
 
             row_count = artifact.row_count
-            created_at = datetime.now(UTC)
 
             # Build snapshot reference from current pointer (already fetched above)
             snapshot_ref = SnapshotRef(
@@ -884,19 +954,16 @@ def _register_export_tool(
                 buildspec_hash="unknown",  # Buildspec hash not available in pointer
             )
 
-            # Determine format literal
-            fmt: Literal["ndjson", "json", "parquet", "arrow"] = (
-                "ndjson" if export_format == "ndjson" else "json"
-            )
+            fmt = "ndjson" if format_type == "ndjson" else "json"
 
             return ExportHandleResponse(
                 export_id=token,
                 format=fmt,
-                mime_type=mime_type,
-                filename=f"{view_id}.{export_format}",
+                mime_type=artifact.mime_type,
+                filename=f"{view_id}.{format_type}",
                 uri=f"codeintel://exports/{token}",
                 meta_uri=f"codeintel://exports/{token}/meta",
-                created_at=created_at,
+                created_at=datetime.now(UTC),
                 row_count=row_count,
                 byte_size=artifact.size_bytes,
                 snapshot=export_snapshot,

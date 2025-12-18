@@ -13,7 +13,12 @@ from fastmcp.client import Client
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.db.pool import DuckDBPoolConfig
 from codeintel.serving.mcp.app import build_mcp_app
-from codeintel.serving.mcp.resource_store import ResourceStore, StoredArtifact, StoredMetadata
+from codeintel.serving.mcp.resource_store import (
+    ExportArtifactSpec,
+    ResourceStore,
+    StoredArtifact,
+    StoredMetadata,
+)
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
@@ -300,15 +305,15 @@ def test_resource_store_put_with_metadata(tmp_path: Path) -> None:
     column_types = {"id": "INTEGER", "name": "VARCHAR"}
     snapshot = {"repo": "demo/repo", "commit": "abc123", "run_id": "run-1"}
 
-    token, artifact, metadata = store.put_with_metadata(
-        rows,
+    spec = ExportArtifactSpec(
         view_id="demo.view",
         columns=columns,
         column_types=column_types,
         compiled_sql="SELECT * FROM demo",
         snapshot=snapshot,
-        format_type="ndjson",
+        format="ndjson",
     )
+    token, artifact, metadata = store.put_with_metadata(rows, spec=spec)
 
     # Verify token and artifact
     expect_true(len(token) > 0, message="Token should be non-empty")
@@ -334,13 +339,14 @@ def test_resource_store_get_meta(tmp_path: Path) -> None:
     store = ResourceStore(tmp_path / "exports")
 
     rows: list[dict[str, object]] = [{"id": 1}]
-    token, _artifact, _metadata = store.put_with_metadata(
-        rows,
+    spec = ExportArtifactSpec(
         view_id="test.view",
         columns=("id",),
         compiled_sql="SELECT id FROM test",
         snapshot={"repo": "test"},
+        format="ndjson",
     )
+    token, _artifact, _metadata = store.put_with_metadata(rows, spec=spec)
 
     # Retrieve metadata
     retrieved = store.get_meta(token)
@@ -363,11 +369,8 @@ def test_resource_store_get_preview(tmp_path: Path) -> None:
     store = ResourceStore(tmp_path / "exports")
 
     rows: list[dict[str, object]] = [{"id": i, "name": f"item-{i}"} for i in range(10)]
-    token, _artifact, _metadata = store.put_with_metadata(
-        rows,
-        view_id="test.view",
-        columns=("id", "name"),
-    )
+    spec = ExportArtifactSpec(view_id="test.view", columns=("id", "name"), format="ndjson")
+    token, _artifact, _metadata = store.put_with_metadata(rows, spec=spec)
 
     # Get preview (default 5 rows)
     preview = store.get_preview(token, max_rows=5)
@@ -383,11 +386,8 @@ def test_resource_store_get_preview_small_dataset(tmp_path: Path) -> None:
     store = ResourceStore(tmp_path / "exports")
 
     rows: list[dict[str, object]] = [{"id": 1}, {"id": 2}]
-    token, _artifact, _metadata = store.put_with_metadata(
-        rows,
-        view_id="test.view",
-        columns=("id",),
-    )
+    spec = ExportArtifactSpec(view_id="test.view", columns=("id",), format="ndjson")
+    token, _artifact, _metadata = store.put_with_metadata(rows, spec=spec)
 
     preview = store.get_preview(token, max_rows=5)
     expect_equal(preview["preview_row_count"], 2)

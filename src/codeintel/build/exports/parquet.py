@@ -7,6 +7,9 @@ from datetime import UTC, datetime
 from time import perf_counter
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+
 from codeintel.build.exports.common import (
     MAX_EXPORT_LIMIT,
     AuditRecord,
@@ -45,6 +48,8 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+_EXPORT_RECORD_BATCH_SIZE = 10_000
 
 
 def export_parquet_for_table(
@@ -100,15 +105,22 @@ def export_parquet_for_table(
             duration,
         )
         return
-    df = rel.df()
-    df.to_parquet(output_path)
+    reader = rel.fetch_record_batch(_EXPORT_RECORD_BATCH_SIZE)
+    rows_written = 0
+    wrote_batches = False
+    with pq.ParquetWriter(str(output_path), reader.schema) as writer:
+        for batch in reader:
+            rows_written += batch.num_rows
+            wrote_batches = True
+            writer.write_table(pa.Table.from_batches([batch], schema=reader.schema))
+    if not wrote_batches:
+        pq.write_table(pa.Table.from_batches([], schema=reader.schema), str(output_path))
     duration = perf_counter() - start
-    rows = len(df)
     write_audit_entry(
         AuditRecord(
             table_name=table_name,
             macro=macro_name,
-            rows=rows,
+            rows=rows_written,
             duration_s=duration,
             output_path=output_path,
         ),
@@ -116,7 +128,7 @@ def export_parquet_for_table(
     )
     log.debug(
         "Exported %s rows for %s via Ibis export fallback in %.3fs",
-        rows,
+        rows_written,
         table_name,
         duration,
     )

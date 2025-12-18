@@ -47,6 +47,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+_EXPORT_RECORD_BATCH_SIZE = 10_000
+
 
 @runtime_checkable
 class _SupportsIsoformat(Protocol):
@@ -112,19 +114,23 @@ def export_jsonl_for_table(
     start = perf_counter()
     rel = build_export_relation(gateway, table_name, MAX_EXPORT_LIMIT, 0)
     macro_name = "ibis_export"
-    df = rel.df()
-    records = df.to_dict(orient="records")
     with output_path.open("w", encoding="utf-8") as f:
-        for record in records:
-            f.write(json.dumps(record, default=default))
-            f.write("\n")
+        rows_written = 0
+        reader = rel.fetch_record_batch(_EXPORT_RECORD_BATCH_SIZE)
+        for batch in reader:
+            payload = batch.to_pydict()
+            columns = list(payload.keys())
+            for idx in range(batch.num_rows):
+                record = {name: payload[name][idx] for name in columns}
+                f.write(json.dumps(record, default=default))
+                f.write("\n")
+                rows_written += 1
     duration = perf_counter() - start
-    rows = len(records)
     write_audit_entry(
         AuditRecord(
             table_name=table_name,
             macro=macro_name,
-            rows=rows,
+            rows=rows_written,
             duration_s=duration,
             output_path=output_path,
         ),
@@ -132,7 +138,7 @@ def export_jsonl_for_table(
     )
     log.debug(
         "Exported %s rows for %s via Ibis export in %.3fs",
-        rows,
+        rows_written,
         table_name,
         duration,
     )

@@ -6,12 +6,16 @@ multiple formats: JSON, NDJSON, Parquet, and Arrow.
 
 from __future__ import annotations
 
-import io
+import os
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
-from starlette.responses import StreamingResponse
+from fastapi.responses import JSONResponse
+from starlette.background import BackgroundTask
+from starlette.responses import FileResponse
 
 from codeintel.serving.http.dependencies import get_kernel, require_api_key
 from codeintel.serving.http.errors import ProblemType, ServingError
@@ -75,8 +79,7 @@ async def export_view(
 
     try:
         if payload.format == "ndjson":
-            rows = await run_in_threadpool(lambda: list(kernel.export_rows(payload)))
-            return ndjson_response(rows, filename=f"{view_id}.ndjson")
+            return ndjson_response(kernel.export_rows(payload), filename=f"{view_id}.ndjson")
 
         if payload.format == "parquet":
             return await _parquet_response(kernel, payload, view_id)
@@ -119,8 +122,6 @@ def _json_dict_response(view_id: str, rows: list[dict[str, object]]) -> Response
     Response
         JSON response.
     """
-    from fastapi.responses import JSONResponse  # noqa: PLC0415
-
     return JSONResponse(
         content={"view_id": view_id, "rows": rows, "count": len(rows)},
         media_type="application/json",
@@ -131,7 +132,7 @@ async def _parquet_response(
     kernel: SemanticQueryKernel,
     payload: SemanticExportRequest,
     view_id: str,
-) -> StreamingResponse:
+) -> FileResponse:
     """Generate Parquet export (requires pyarrow).
 
     Parameters
@@ -145,36 +146,38 @@ async def _parquet_response(
 
     Returns
     -------
-    StreamingResponse
+    FileResponse
         Parquet file response.
 
     Raises
     ------
-    ServingError
-        When pyarrow is not available.
+    KeyError
+        If the view cannot be resolved by the kernel.
+    OSError
+        If writing the Parquet file fails.
+    RuntimeError
+        If the kernel cannot acquire an export connection.
+    ValueError
+        If the export request is invalid.
     """
+    fd, tmp_path = tempfile.mkstemp(prefix=f"codeintel-export-{view_id}-", suffix=".parquet")
+    os.close(fd)
     try:
-        import pyarrow as pa  # noqa: PLC0415
-        import pyarrow.parquet as pq  # noqa: PLC0415
-    except ImportError as exc:
-        raise ServingError(
-            problem_type=ProblemType.INTERNAL_ERROR,
-            title="Export Unavailable",
-            status=501,
-            detail="Parquet export requires pyarrow to be installed",
-        ) from exc
+        await run_in_threadpool(
+            lambda: kernel.export_to_parquet(payload, output_path=Path(tmp_path))
+        )
+    except (KeyError, OSError, RuntimeError, ValueError):
+        _unlink_best_effort(tmp_path)
+        raise
 
-    rows = await run_in_threadpool(lambda: list(kernel.export_rows(payload)))
-    table = pa.Table.from_pylist(rows)
+    def _cleanup() -> None:
+        _unlink_best_effort(tmp_path)
 
-    buffer = io.BytesIO()
-    pq.write_table(table, buffer)
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
+    return FileResponse(
+        path=tmp_path,
         media_type="application/vnd.apache.parquet",
-        headers={"Content-Disposition": f'attachment; filename="{view_id}.parquet"'},
+        filename=f"{view_id}.parquet",
+        background=BackgroundTask(_cleanup),
     )
 
 
@@ -182,7 +185,7 @@ async def _arrow_response(
     kernel: SemanticQueryKernel,
     payload: SemanticExportRequest,
     view_id: str,
-) -> StreamingResponse:
+) -> FileResponse:
     """Generate Arrow IPC export (requires pyarrow).
 
     Parameters
@@ -196,37 +199,46 @@ async def _arrow_response(
 
     Returns
     -------
-    StreamingResponse
+    FileResponse
         Arrow IPC file response.
 
     Raises
     ------
-    ServingError
-        When pyarrow is not available.
+    KeyError
+        If the view cannot be resolved by the kernel.
+    OSError
+        If writing the Arrow file fails.
+    RuntimeError
+        If the kernel cannot acquire an export connection.
+    ValueError
+        If the export request is invalid.
     """
+    fd, tmp_path = tempfile.mkstemp(prefix=f"codeintel-export-{view_id}-", suffix=".arrow")
+    os.close(fd)
     try:
-        import pyarrow as pa  # noqa: PLC0415
-    except ImportError as exc:
-        raise ServingError(
-            problem_type=ProblemType.INTERNAL_ERROR,
-            title="Export Unavailable",
-            status=501,
-            detail="Arrow export requires pyarrow to be installed",
-        ) from exc
+        await run_in_threadpool(
+            lambda: kernel.export_to_arrow_ipc(payload, output_path=Path(tmp_path))
+        )
+    except (KeyError, OSError, RuntimeError, ValueError):
+        _unlink_best_effort(tmp_path)
+        raise
 
-    rows = await run_in_threadpool(lambda: list(kernel.export_rows(payload)))
-    table = pa.Table.from_pylist(rows)
+    def _cleanup() -> None:
+        _unlink_best_effort(tmp_path)
 
-    buffer = io.BytesIO()
-    with pa.ipc.new_file(buffer, table.schema) as writer:
-        writer.write_table(table)
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
+    return FileResponse(
+        path=tmp_path,
         media_type="application/vnd.apache.arrow.file",
-        headers={"Content-Disposition": f'attachment; filename="{view_id}.arrow"'},
+        filename=f"{view_id}.arrow",
+        background=BackgroundTask(_cleanup),
     )
+
+
+def _unlink_best_effort(path: str) -> None:
+    try:
+        Path(path).unlink()
+    except FileNotFoundError:
+        return
 
 
 __all__ = ["router"]

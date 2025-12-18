@@ -115,6 +115,11 @@ class _DummyKernel:
         _ = request
         return iter(())
 
+    @staticmethod
+    def export_sql(request: SemanticExportRequest) -> str:
+        _ = request
+        return "SELECT 1"
+
 
 def _check_semantic_http_routes() -> list[str]:
     issues: list[str] = []

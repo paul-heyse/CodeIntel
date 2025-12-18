@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from pathlib import Path
 
 _JSON_SUFFIX: Final = ".json"
@@ -24,6 +25,18 @@ _MIME_JSON: Final = "application/json"
 _MIME_NDJSON: Final = "application/x-ndjson"
 
 _DEFAULT_PREVIEW_ROWS: Final = 5
+
+
+@dataclass(frozen=True, slots=True)
+class ExportArtifactSpec:
+    """Input specification for an export artifact plus its metadata sidecar."""
+
+    view_id: str
+    columns: tuple[str, ...] = ()
+    column_types: dict[str, str] = field(default_factory=dict)
+    compiled_sql: str | None = None
+    snapshot: dict[str, str] = field(default_factory=dict)
+    format: str = "ndjson"
 
 
 @dataclass(frozen=True)
@@ -234,80 +247,155 @@ class ResourceStore:
         msg = f"Artifact not found: {token}"
         raise KeyError(msg)
 
-    def put_with_metadata(  # noqa: PLR0913
+    def put_with_metadata(
         self,
         rows: list[dict[str, object]],
         *,
-        view_id: str,
-        columns: tuple[str, ...],
-        column_types: dict[str, str] | None = None,
-        compiled_sql: str | None = None,
-        snapshot: dict[str, str] | None = None,
-        format_type: str = "ndjson",
+        spec: ExportArtifactSpec,
     ) -> tuple[str, StoredArtifact, StoredMetadata]:
-        """Store rows with rich metadata sidecar.
-
-        Writes both the artifact (NDJSON or JSON) and a `.meta.json` sidecar
-        file containing complete provenance and schema information.
+        """Store rows with rich metadata sidecar (NDJSON or JSON).
 
         Parameters
         ----------
         rows
-            List of row dictionaries to store.
-        view_id
-            Semantic view identifier.
-        columns
-            Column names in payload order.
-        column_types
-            Optional column type mapping.
-        compiled_sql
-            Compiled SQL used to generate the export.
-        snapshot
-            Snapshot metadata dict (repo, commit, run_id, published_at).
-        format_type
-            Export format: "ndjson" or "json".
+            Row dictionaries to store.
+        spec
+            Artifact metadata specification.
 
         Returns
         -------
         tuple[str, StoredArtifact, StoredMetadata]
-            Token, artifact metadata, and rich metadata object.
-        """
-        # Generate token
-        token = secrets.token_urlsafe(16)
+            Export token, artifact metadata, and stored metadata.
 
-        # Write artifact based on format
-        if format_type == "ndjson":
+        Raises
+        ------
+        ValueError
+            If ``spec.format`` is unsupported.
+        """
+        token = secrets.token_urlsafe(16)
+        resolved_columns = spec.columns
+        if not resolved_columns and rows:
+            resolved_columns = tuple(rows[0].keys())
+
+        if spec.format == "ndjson":
             path = self._root / f"{token}{_NDJSON_SUFFIX}"
             mime_type = _MIME_NDJSON
             with path.open("w", encoding="utf-8") as f:
                 for row in rows:
                     f.write(json.dumps(row, default=str) + "\n")
-        else:
+        elif spec.format == "json":
             path = self._root / f"{token}{_JSON_SUFFIX}"
             mime_type = _MIME_JSON
             content = json.dumps({"rows": rows}, indent=2, sort_keys=True, default=str)
             path.write_text(content, encoding="utf-8")
+        else:
+            msg = f"Unsupported export format: {spec.format}"
+            raise ValueError(msg)
 
-        size_bytes = path.stat().st_size
-        created_at = datetime.now(UTC)
-
-        # Build metadata
         metadata = StoredMetadata(
             export_id=token,
-            view_id=view_id,
+            view_id=spec.view_id,
             row_count=len(rows),
-            columns=columns,
-            column_types=column_types or {},
-            compiled_sql=compiled_sql,
-            created_at=created_at,
-            snapshot=snapshot or {},
-            format=format_type,
+            columns=resolved_columns,
+            column_types=spec.column_types,
+            compiled_sql=spec.compiled_sql,
+            created_at=datetime.now(UTC),
+            snapshot=spec.snapshot,
+            format=spec.format,
             mime_type=mime_type,
-            size_bytes=size_bytes,
+            size_bytes=path.stat().st_size,
         )
+        self._write_metadata_sidecar(metadata)
 
-        # Write metadata sidecar
-        meta_path = self._root / f"{token}{_META_SUFFIX}"
+        artifact = StoredArtifact(
+            path=path,
+            mime_type=mime_type,
+            row_count=len(rows),
+            size_bytes=metadata.size_bytes,
+        )
+        return token, artifact, metadata
+
+    def put_with_metadata_stream(
+        self,
+        rows: Iterable[dict[str, object]],
+        *,
+        spec: ExportArtifactSpec,
+    ) -> tuple[str, StoredArtifact, StoredMetadata]:
+        """Stream rows to an NDJSON artifact with rich metadata sidecar.
+
+        Parameters
+        ----------
+        rows
+            Iterable of row dictionaries.
+        spec
+            Artifact metadata specification. Must use ``format="ndjson"``.
+
+        Returns
+        -------
+        tuple[str, StoredArtifact, StoredMetadata]
+            Export token, artifact metadata, and stored metadata.
+
+        Raises
+        ------
+        TypeError
+            If ``rows`` yields non-dictionary values.
+        ValueError
+            If ``spec.format`` is not ``"ndjson"``.
+        """
+        if spec.format != "ndjson":
+            msg = "Streaming export only supports format='ndjson'"
+            raise ValueError(msg)
+
+        token = secrets.token_urlsafe(16)
+        path = self._root / f"{token}{_NDJSON_SUFFIX}"
+        mime_type = _MIME_NDJSON
+
+        rows_iter = iter(rows)
+        first_row = next(rows_iter, None)
+        if first_row is not None and not isinstance(first_row, dict):
+            msg = "rows must yield dictionaries"
+            raise TypeError(msg)
+        row_count = 0
+
+        with path.open("w", encoding="utf-8") as f:
+            if first_row is not None:
+                resolved_columns = spec.columns or tuple(first_row.keys())
+                f.write(json.dumps(first_row, default=str) + "\n")
+                row_count += 1
+                for row in rows_iter:
+                    if not isinstance(row, dict):
+                        msg = "rows must yield dictionaries"
+                        raise TypeError(msg)
+                    f.write(json.dumps(row, default=str) + "\n")
+                    row_count += 1
+            else:
+                resolved_columns = spec.columns
+
+        metadata = StoredMetadata(
+            export_id=token,
+            view_id=spec.view_id,
+            row_count=row_count,
+            columns=resolved_columns,
+            column_types=spec.column_types,
+            compiled_sql=spec.compiled_sql,
+            created_at=datetime.now(UTC),
+            snapshot=spec.snapshot,
+            format=spec.format,
+            mime_type=mime_type,
+            size_bytes=path.stat().st_size,
+        )
+        self._write_metadata_sidecar(metadata)
+
+        artifact = StoredArtifact(
+            path=path,
+            mime_type=mime_type,
+            row_count=row_count,
+            size_bytes=metadata.size_bytes,
+        )
+        return token, artifact, metadata
+
+    def _write_metadata_sidecar(self, metadata: StoredMetadata) -> None:
+        meta_path = self._root / f"{metadata.export_id}{_META_SUFFIX}"
         meta_dict = {
             "export_id": metadata.export_id,
             "view_id": metadata.view_id,
@@ -325,15 +413,6 @@ class ResourceStore:
             json.dumps(meta_dict, indent=2, sort_keys=True, default=str),
             encoding="utf-8",
         )
-
-        artifact = StoredArtifact(
-            path=path,
-            mime_type=mime_type,
-            row_count=len(rows),
-            size_bytes=size_bytes,
-        )
-
-        return token, artifact, metadata
 
     def get_meta(self, token: str) -> StoredMetadata:
         """Retrieve rich metadata for an export.
@@ -440,4 +519,4 @@ class ResourceStore:
         }
 
 
-__all__ = ["ResourceStore", "StoredArtifact", "StoredMetadata"]
+__all__ = ["ExportArtifactSpec", "ResourceStore", "StoredArtifact", "StoredMetadata"]
