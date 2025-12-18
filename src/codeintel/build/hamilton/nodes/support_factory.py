@@ -21,11 +21,15 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import TYPE_CHECKING
 
+import hamilton.driver as h_driver
 import ibis.expr.types as ir
 import pandas as pd
 
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.introspect import (
+    derive_target_dependencies,
+    target_graph_from_hamilton,
+)
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df, load_dataset_ibis
@@ -36,6 +40,7 @@ from codeintel.build.hamilton.naming import (
     query_node,
     target_node,
 )
+from codeintel.build.hamilton.native.discovery import load_native_modules
 from codeintel.build.hamilton.nodes.mappings import SupportNodeMappings
 from codeintel.build.hamilton.nodes.module_attach import attach_node
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
@@ -47,6 +52,7 @@ from codeintel.build.hamilton.tagging import (
     tag_loader_query,
     tag_materialize,
 )
+from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.helpers.table_key import split_table_key
 
@@ -77,6 +83,14 @@ class _SupportModuleCache:
 
 
 _MODULE_CACHE = _SupportModuleCache()
+
+
+@dataclass(frozen=True)
+class _IntrospectRuntime:
+    """Minimal runtime wrapper for Hamilton graph introspection."""
+
+    dr: h_driver.Driver
+    graph: TargetGraph
 
 
 def _create_stub_target_node_function(
@@ -354,7 +368,21 @@ def _build_contract_graph() -> TargetGraph:
     TargetGraph
         Graph containing all registered build targets.
     """
-    return build_driver().graph
+    targets = load_target_specs()
+    base_graph = TargetGraph()
+    for target in targets:
+        base_graph.register(target)
+
+    native_mods = load_native_modules()
+    dr = h_driver.Builder().with_modules(*native_mods).allow_module_overrides().build()
+    runtime = _IntrospectRuntime(dr=dr, graph=base_graph)
+    derived = derive_target_dependencies(runtime)
+    return target_graph_from_hamilton(
+        runtime,
+        base_graph=base_graph,
+        derived_deps=derived,
+        strict=False,
+    )
 
 
 def _new_support_module() -> ModuleType:
