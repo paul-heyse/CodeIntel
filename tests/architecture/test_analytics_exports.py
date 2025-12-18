@@ -61,7 +61,7 @@ EXPECTED_EXPORTS: Mapping[str, set[str]] = {
         "SourceSpan",
         "SpanResolutionError",
         "SpanResolutionResult",
-        "ValidationResult",
+        "ValidationRows",
         "build_span_index",
         "get_parser",
         "get_validation_rows",

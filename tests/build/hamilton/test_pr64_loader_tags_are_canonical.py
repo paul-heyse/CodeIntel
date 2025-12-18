@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.hamilton.tags import NODE_TYPE_LOADER_DATAFRAME, NODE_TYPE_LOADER_QUERY
+from codeintel.core.hamilton.tags import NODE_TYPE_LOADER_DATAFRAME, NODE_TYPE_LOADER_QUERY
 
 
 def test_pr64_loader_tags_are_canonical() -> None:

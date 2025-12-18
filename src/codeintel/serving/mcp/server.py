@@ -7,9 +7,8 @@ from typing import TYPE_CHECKING, Literal
 
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.mcp.app import build_mcp_app
-from codeintel.serving.semantic.kernel import SemanticQueryKernel
+from codeintel.serving.runtime import build_db_manager, build_kernel
 from codeintel.serving.settings import ServingSettings
-from codeintel.storage.gateway.pool import PoolConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -45,17 +44,12 @@ def create_mcp_server(
 
     # Use injected or create new
     if db_manager is None:
-        db_manager = ServingDBManager(
-            pointer_path=cfg.serve_dir / "current.json",
-            pool_cfg=PoolConfig(size=cfg.pool_size),
-            poll_interval_s=cfg.poll_interval_s,
-            hot_swap=cfg.hot_swap,
-        )
+        db_manager = build_db_manager(cfg)
         owns_db_manager = True
     else:
         owns_db_manager = False
 
-    kernel = SemanticQueryKernel(db=db_manager, settings=cfg)
+    kernel = build_kernel(db_manager, cfg)
 
     @asynccontextmanager
     async def lifespan(_mcp: FastMCP) -> AsyncGenerator[object]:

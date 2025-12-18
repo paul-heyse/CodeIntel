@@ -196,8 +196,8 @@ class _SlowExportKernel:
     def export_fingerprint(self, request: SemanticExportRequest) -> tuple[str, str | None]:
         return self.inner.export_fingerprint(request)
 
-    def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> None:
-        self.inner.export_to_parquet(request, output_path=output_path)
+    def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> int:
+        return self.inner.export_to_parquet(request, output_path=output_path)
 
     def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int:
         return self.inner.export_to_arrow_ipc(request, output_path=output_path)

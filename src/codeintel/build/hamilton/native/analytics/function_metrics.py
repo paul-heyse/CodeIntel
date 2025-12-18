@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import source, tag, value
+from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.functions import (
     FunctionAnalyticsOptions,
@@ -40,8 +40,10 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 
@@ -195,7 +197,11 @@ def t__function_metrics__compute(
         if should_skip_native_target(env, target, input_hash):
             return None
 
-    options = FunctionAnalyticsOptions()
+    options = load_target_options(
+        env,
+        target_name=FUNCTION_METRICS_TARGET_NAME,
+        options_type=FunctionAnalyticsOptions,
+    )
     return compute_function_analytics_result(
         env.gateway,
         env.snapshot,
@@ -212,10 +218,9 @@ def t__function_metrics__compute(
     table_key=value(FUNCTION_METRICS_TABLE_KEY),
     columns=value(FUNCTION_METRICS_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=FUNCTION_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="function_metrics__metrics_rows",
 )
 def function_metrics__metrics_rows(
@@ -251,10 +256,9 @@ def function_metrics__metrics_rows(
     table_key=value(FUNCTION_TYPES_TABLE_KEY),
     columns=value(FUNCTION_TYPES_COLS),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=FUNCTION_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="function_metrics__types_rows",
 )
 def function_metrics__types_rows(
@@ -289,10 +293,9 @@ def function_metrics__types_rows(
     table_key=value(FUNCTION_VALIDATION_TABLE_KEY),
     columns=value(tuple(FUNCTION_VALIDATION_COLS)),
 )
-@tag(
+@tag_compute(
     domain="analytics",
     target=FUNCTION_METRICS_TARGET_NAME,
-    node_type="compute",
     target_="function_metrics__validation_rows",
 )
 def function_metrics__validation_rows(
@@ -319,7 +322,7 @@ def function_metrics__validation_rows(
     return tuple(validation_rows)
 
 
-@tag(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def t__function_metrics(
     env: BuildEnv,
     graph: TargetGraph,

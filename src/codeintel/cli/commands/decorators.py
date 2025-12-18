@@ -20,7 +20,7 @@ import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TypeGuard, TypeVar, cast
 
 from codeintel.cli.commands._common import SharedFlags
 from codeintel.cli.context import CommandContextBuilder
@@ -43,7 +43,7 @@ CommandInstance = object
 
 
 class _DataclassCommand(Protocol):
-    __dataclass_fields__: dict[str, dataclasses.Field[object]]
+    __dataclass_fields__: ClassVar[dict[str, dataclasses.Field[object]]]
 
     def __init__(self, **kwargs: object) -> None: ...
 
@@ -355,8 +355,7 @@ def _reconstruct_command_from_context(
         raise TypeError(msg)
 
     kwargs: dict[str, object] = {}
-    dataclass_cls = cast("Any", cls)
-    for fld in dataclasses.fields(dataclass_cls):
+    for fld in dataclasses.fields(cls):
         if fld.name == "flags":
             kwargs["flags"] = SharedFlags(
                 output_format=ctx.output_format,

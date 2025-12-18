@@ -17,17 +17,19 @@ from typing import TYPE_CHECKING, cast
 
 import ibis
 import libcst as cst
-from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
+from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import load_function_index
@@ -43,7 +45,8 @@ from codeintel.graphs.compute.callgraph import (
     collect_edges_cst,
 )
 from codeintel.graphs.compute.callgraph.persistence import dedupe_edge_rows
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.warehouse import MaterializationResult, MaterializeOptions
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -103,7 +106,7 @@ class CallGraphExtractResult:
     error: str | None = None
 
 
-@tag(node_type="helper")
+@tag_helper()
 def call_graph__execution_result(t__call_graph__extract: CallGraphExtractResult) -> ExecutionResult:
     """Convert call_graph extract result to the executor boundary type.
 
@@ -152,7 +155,7 @@ class _EdgeCollectionState:
     max_edges_per_file: int
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
     """Log current module/GOID counts to aid validation diagnostics.
 
@@ -166,8 +169,8 @@ def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
         Commit SHA.
     """
     try:
-        modules_tbl = gateway.ibis.table("core.modules")
-        goids_tbl = gateway.ibis.table("core.goids")
+        modules_tbl = ibis_facade.table(gateway, "core.modules")
+        goids_tbl = ibis_facade.table(gateway, "core.goids")
 
         module_count = int(
             cast(
@@ -213,7 +216,7 @@ def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
         log.debug("call_graph: Could not query repo state: %s", exc)
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _build_global_callee_lookup(
     gateway: StorageGateway,
     repo: str,
@@ -236,7 +239,7 @@ def _build_global_callee_lookup(
         Mapping of qualname to GOID.
     """
     try:
-        goids_tbl = gateway.ibis.table("core.goids")
+        goids_tbl = ibis_facade.table(gateway, "core.goids")
         expr = (
             filter_by(
                 goids_tbl,
@@ -255,7 +258,7 @@ def _build_global_callee_lookup(
         return {}
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _build_def_goids_by_path(
     gateway: StorageGateway,
     repo: str,
@@ -278,7 +281,7 @@ def _build_def_goids_by_path(
         Mapping of relative path to module GOID.
     """
     try:
-        goids_tbl = gateway.ibis.table("core.goids")
+        goids_tbl = ibis_facade.table(gateway, "core.goids")
         expr = (
             filter_by(
                 goids_tbl,
@@ -298,7 +301,7 @@ def _build_def_goids_by_path(
         return {}
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _collect_edges_for_file(
     rel_path: str,
     file_path: Path,
@@ -351,7 +354,7 @@ def _collect_edges_for_file(
     return edges
 
 
-@tag(node_type="helper")
+@tag_helper()
 def _build_nodes_from_goids(
     gateway: StorageGateway,
     repo: str,
@@ -374,7 +377,7 @@ def _build_nodes_from_goids(
         Node rows for all functions.
     """
     try:
-        goids_tbl = gateway.ibis.table("core.goids")
+        goids_tbl = ibis_facade.table(gateway, "core.goids")
 
         language_expr = (
             goids_tbl.language if "language" in goids_tbl.columns else ibis.literal("python")
@@ -415,85 +418,7 @@ def _build_nodes_from_goids(
     ]
 
 
-@tag(node_type="helper")
-def _persist_nodes(
-    gateway: StorageGateway,
-    nodes: list[CallGraphNodeRow],
-    repo: str,
-    commit: str,
-) -> int:
-    """Persist call graph nodes.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    nodes
-        Node rows to persist.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Number of nodes persisted.
-    """
-    if not nodes:
-        return 0
-
-    gateway.policy.ensure_table(CALL_GRAPH_NODES_TABLE_KEY)
-    gateway.policy.delete_for_snapshot(CALL_GRAPH_NODES_TABLE_KEY, repo=repo, commit=commit)
-    gateway.policy.bulk_insert_mappings(CALL_GRAPH_NODES_TABLE_KEY, nodes)
-    return len(nodes)
-
-
-@tag(node_type="helper")
-def _persist_edges(
-    gateway: StorageGateway,
-    edges: list[CallGraphEdgeRow],
-    repo: str,
-    commit: str,
-) -> int:
-    """Persist call graph edges after deduplication.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    edges
-        Edge rows to persist.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Number of edges persisted.
-    """
-    if not edges:
-        return 0
-
-    unique_edges = dedupe_edge_rows(edges)
-
-    serialized: list[CallGraphEdgeRow] = []
-    for edge in unique_edges:
-        evidence = edge["evidence_json"]
-        if isinstance(evidence, dict):
-            serialized.append({**edge, "evidence_json": json.dumps(evidence)})
-        else:
-            serialized.append(edge)
-
-    gateway.policy.ensure_table(CALL_GRAPH_EDGES_TABLE_KEY)
-    gateway.policy.delete_for_snapshot(CALL_GRAPH_EDGES_TABLE_KEY, repo=repo, commit=commit)
-    gateway.policy.bulk_insert_mappings(CALL_GRAPH_EDGES_TABLE_KEY, serialized)
-    return len(serialized)
-
-
-@tag(node_type="helper")
+@tag_helper()
 def _collect_all_edges(
     paths: list[str],
     ctx: _EdgeCollectionState,
@@ -547,7 +472,26 @@ def _collect_all_edges(
     return all_edges
 
 
-@tag(domain="graphs", target=CALL_GRAPH_TARGET_NAME, node_type="tool")
+def _materialize_options(env: BuildEnv) -> MaterializeOptions:
+    return materialize_options(env, owner_target=CALL_GRAPH_TARGET_NAME, mode="replace")
+
+
+def _rows_written(result: MaterializationResult) -> int:
+    return int(result.rows_written or 0)
+
+
+def _serialize_edge_row(edge: CallGraphEdgeRow) -> CallGraphEdgeRow:
+    evidence = edge["evidence_json"]
+    if isinstance(evidence, dict):
+        return {**edge, "evidence_json": json.dumps(evidence)}
+    return edge
+
+
+def _serialize_call_graph_edges(edges: list[CallGraphEdgeRow]) -> list[CallGraphEdgeRow]:
+    return [_serialize_edge_row(edge) for edge in dedupe_edge_rows(edges)]
+
+
+@tag_tool(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def t__call_graph__extract(
     env: BuildEnv,
     t__goids: TargetRunRecord,
@@ -583,15 +527,16 @@ def t__call_graph__extract(
         )
 
     try:
-        gateway = env.gateway
         snapshot = env.snapshot
-        repo = snapshot.repo
-        commit = snapshot.commit
-        opts = CallGraphOptions()
+        opts = load_target_options(
+            env,
+            target_name=CALL_GRAPH_TARGET_NAME,
+            options_type=CallGraphOptions,
+        )
 
-        _log_repo_state(gateway, repo, commit)
+        _log_repo_state(env.gateway, snapshot.repo, snapshot.commit)
 
-        function_index = load_function_index(gateway, repo=repo, commit=commit)
+        function_index = load_function_index(env.gateway, repo=snapshot.repo, commit=snapshot.commit)
         paths = filter_paths(function_index.paths(), scope_paths=opts.scope_paths)
 
         if not paths:
@@ -606,18 +551,13 @@ def t__call_graph__extract(
                 },
             )
 
-        global_callees = _build_global_callee_lookup(gateway, repo, commit)
-        def_goids = _build_def_goids_by_path(gateway, repo, commit)
-
-        source_root = snapshot.repo_root or get_source_root(gateway, repo, commit)
-
         collection_ctx = _EdgeCollectionState(
             function_index=function_index,
-            global_callees=global_callees,
-            def_goids_by_path=def_goids,
-            source_root=source_root,
-            repo=repo,
-            commit=commit,
+            global_callees=_build_global_callee_lookup(env.gateway, snapshot.repo, snapshot.commit),
+            def_goids_by_path=_build_def_goids_by_path(env.gateway, snapshot.repo, snapshot.commit),
+            source_root=snapshot.repo_root or get_source_root(env.gateway, snapshot.repo, snapshot.commit),
+            repo=snapshot.repo,
+            commit=snapshot.commit,
             use_libcst=opts.use_libcst,
             resolve_imports=opts.resolve_imports,
             max_edges_per_file=opts.max_edges_per_file,
@@ -625,10 +565,21 @@ def t__call_graph__extract(
         edges = _collect_all_edges(paths, collection_ctx)
         log.info("call_graph: Collected %d edges from %d files", len(edges), len(paths))
 
-        node_count = _persist_nodes(
-            gateway, _build_nodes_from_goids(gateway, repo, commit), repo, commit
+        options = _materialize_options(env)
+        node_count = _rows_written(
+            env.warehouse.materialize_mappings(
+                CALL_GRAPH_NODES_TABLE_KEY,
+                _build_nodes_from_goids(env.gateway, snapshot.repo, snapshot.commit),
+                options=options,
+            )
         )
-        edge_count = _persist_edges(gateway, edges, repo, commit)
+        edge_count = _rows_written(
+            env.warehouse.materialize_mappings(
+                CALL_GRAPH_EDGES_TABLE_KEY,
+                _serialize_call_graph_edges(edges),
+                options=options,
+            )
+        )
 
         log.info("call_graph: Persisted %d nodes, %d edges", node_count, edge_count)
 
@@ -650,7 +601,7 @@ def t__call_graph__extract(
         )
 
 
-@tag(domain="graphs", target=CALL_GRAPH_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def t__call_graph(
     env: BuildEnv,
     graph: TargetGraph,

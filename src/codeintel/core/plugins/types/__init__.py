@@ -8,7 +8,7 @@ Protocol Types
 - AsyncPluginProtocol: Async plugin interface for tool plugins
 - PluginMetadata: Static metadata about a plugin
 - PluginDependency: Dependency specification
-- ValidationResult: Contract validation result
+- ValidationOutcome: Contract validation outcome
 
 Result Types
 ------------
@@ -50,7 +50,7 @@ from codeintel.core.plugins.types.protocol import (
     PluginResourceHints,
     PluginSeverity,
     PluginStage,
-    ValidationResult,
+    ValidationOutcome,
 )
 from codeintel.core.plugins.types.report import (
     BaseExecutionReport,
@@ -86,5 +86,5 @@ __all__ = [
     "PluginSeverity",
     "PluginStage",
     "PluginStatus",
-    "ValidationResult",
+    "ValidationOutcome",
 ]

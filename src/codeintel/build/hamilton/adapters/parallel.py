@@ -38,7 +38,7 @@ from hamilton.lifecycle import base as lifecycle_base
 
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.hamilton import tags as ht
+from codeintel.core.hamilton import tags as ht
 from codeintel.storage.gateway import open_gateway
 
 if TYPE_CHECKING:

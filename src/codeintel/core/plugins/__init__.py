@@ -46,7 +46,7 @@ from codeintel.core.plugins.types.protocol import (
     PluginResourceHints,
     PluginSeverity,
     PluginStage,
-    ValidationResult,
+    ValidationOutcome,
 )
 from codeintel.core.plugins.types.report import (
     BaseExecutionReport,
@@ -98,7 +98,7 @@ __all__ = [
     "RegistryHooks",
     "ResourceNotFoundError",
     "ResourceRegistry",
-    "ValidationResult",
+    "ValidationOutcome",
     "build_provider_index",
     "build_provider_index_from_metadata",
     "topological_sort",

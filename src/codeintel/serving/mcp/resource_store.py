@@ -14,17 +14,19 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
-from codeintel.serving.export.formats import (
-    EXPORT_FORMATS,
-    ExportFormat,
-    mime_type_for_export_format,
-    normalize_export_format,
-    suffix_for_export_format,
-)
-from codeintel.serving.mcp.errors import (
+from codeintel.serving.errors import (
     ExportCorruptError,
     ExportExpiredError,
     ExportNotFoundError,
+)
+from codeintel.serving.export.formats import (
+    EXPORT_FORMATS,
+    ExportFormat,
+    is_binary_export_format,
+    is_text_export_format,
+    mime_type_for_export_format,
+    normalize_export_format,
+    suffix_for_export_format,
 )
 
 if TYPE_CHECKING:
@@ -143,7 +145,10 @@ class ResourceStore:
     Examples
     --------
     >>> store = ResourceStore(Path("/tmp/exports"))
-    >>> token, artifact = store.put_ndjson([{"id": 1}, {"id": 2}])
+    >>> token, artifact, meta = store.put_with_metadata(
+    ...     [{"id": 1}, {"id": 2}],
+    ...     spec=ExportArtifactSpec(view_id="demo.view", format="ndjson"),
+    ... )
     >>> retrieved = store.get(token)
     >>> retrieved.row_count
     2
@@ -237,65 +242,6 @@ class ResourceStore:
         msg = f"Export cancelled: {token}"
         raise RuntimeError(msg)
 
-    def put_json(self, payload: object, *, row_count: int = 0) -> tuple[str, StoredArtifact]:
-        """Store a JSON payload and return its token.
-
-        Parameters
-        ----------
-        payload
-            JSON-serializable data.
-        row_count
-            Number of rows in the payload (for metadata).
-
-        Returns
-        -------
-        tuple[str, StoredArtifact]
-            Token and artifact metadata.
-        """
-        token = secrets.token_urlsafe(16)
-        suffix = suffix_for_export_format("json")
-        path = self._root / f"{token}{suffix}"
-        content = json.dumps(payload, indent=2, sort_keys=True, default=str)
-        path.write_text(content, encoding="utf-8")
-
-        return token, StoredArtifact(
-            path=path,
-            mime_type=mime_type_for_export_format("json"),
-            row_count=row_count,
-            size_bytes=path.stat().st_size,
-        )
-
-    def put_ndjson(self, rows: list[dict[str, object]]) -> tuple[str, StoredArtifact]:
-        """Store rows as NDJSON and return token.
-
-        NDJSON (Newline Delimited JSON) writes one JSON object per line,
-        enabling streaming reads of large datasets.
-
-        Parameters
-        ----------
-        rows
-            List of row dictionaries.
-
-        Returns
-        -------
-        tuple[str, StoredArtifact]
-            Token and artifact metadata.
-        """
-        token = secrets.token_urlsafe(16)
-        suffix = suffix_for_export_format("ndjson")
-        path = self._root / f"{token}{suffix}"
-
-        with path.open("w", encoding="utf-8") as f:
-            for row in rows:
-                f.write(json.dumps(row, default=str) + "\n")
-
-        return token, StoredArtifact(
-            path=path,
-            mime_type=mime_type_for_export_format("ndjson"),
-            row_count=len(rows),
-            size_bytes=path.stat().st_size,
-        )
-
     def get(self, token: str) -> StoredArtifact:
         """Retrieve artifact metadata by token.
 
@@ -363,7 +309,7 @@ class ResourceStore:
         ValueError
             If ``spec.format`` is unsupported.
         """
-        if spec.format not in {"ndjson", "json"}:
+        if not is_text_export_format(spec.format):
             msg = "put_with_metadata only supports format='ndjson' or format='json'"
             raise ValueError(msg)
 
@@ -527,7 +473,7 @@ class ResourceStore:
         self,
         *,
         spec: ExportArtifactSpec,
-        write_fn: Callable[[Path], int | None],
+        write_fn: Callable[[Path], int],
         export_id: str | None = None,
     ) -> tuple[str, StoredArtifact, StoredMetadata]:
         """Generate a file-backed artifact (parquet/arrow) with a metadata sidecar.
@@ -537,8 +483,7 @@ class ResourceStore:
         spec
             Artifact metadata specification. Must use a binary format.
         write_fn
-            Callback that writes the artifact to the provided path and optionally
-            returns the row count.
+            Callback that writes the artifact to the provided path and returns the row count.
         export_id
             Optional caller-supplied export identifier. When provided, enables best-effort cleanup
             on task cancellation.
@@ -553,7 +498,7 @@ class ResourceStore:
         ValueError
             If ``spec.format`` is not a binary export format.
         """
-        if spec.format not in {"parquet", "arrow"}:
+        if not is_binary_export_format(spec.format):
             msg = "put_generated_file_with_metadata only supports format='parquet' or format='arrow'"
             raise ValueError(msg)
 
@@ -568,7 +513,7 @@ class ResourceStore:
             raise
 
         self._raise_if_cancelled(token)
-        row_count = rows_written if isinstance(rows_written, int) else 0
+        row_count = rows_written
         size_bytes = path.stat().st_size
 
         metadata = StoredMetadata(

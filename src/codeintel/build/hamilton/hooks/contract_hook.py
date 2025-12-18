@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from hamilton.lifecycle import base as lifecycle_base
 
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
-from codeintel.hamilton import tags as ht
+from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
     from hamilton.node import Node

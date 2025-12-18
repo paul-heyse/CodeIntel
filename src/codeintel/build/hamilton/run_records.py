@@ -28,7 +28,7 @@ from codeintel.build.hashing import (
     compute_options_hash,
 )
 from codeintel.core.build_manifest import OutputManifest
-from codeintel.hamilton.records import TargetRunRecord
+from codeintel.core.hamilton.records import TargetRunRecord
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.impl_kind import native_target_names
 from codeintel.build.hamilton.introspect import derive_target_dependencies, derive_target_outputs
-from codeintel.build.hamilton.native.registry import is_native_target
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec.primitives import ArtifactOutSpec, BuildSpec, DatasetSpec, TargetSpec
 from codeintel.build.spec.serdes import ensure_buildspec_hash
@@ -92,10 +92,11 @@ def _compile_target_specs(
     """
     all_table_keys: set[str] = set()
     target_specs: list[TargetSpec] = []
+    native_names = native_target_names(runtime)
 
     for target_name in sorted(deps_by_target):
         target = runtime.graph.get(target_name)
-        impl_kind = "native" if is_native_target(target_name) else "wrapper"
+        impl_kind = "native" if target_name in native_names else "wrapper"
 
         outputs = derived_outputs.datasets_by_target.get(target_name, ())
         artifacts = derived_outputs.artifacts_by_target.get(target_name, ())

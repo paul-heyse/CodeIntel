@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from hamilton.driver import Driver
 
-from codeintel.hamilton import tags as ht
+from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
     from types import ModuleType

@@ -28,11 +28,17 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.serving.export.formats import mime_type_for_export_format
-from codeintel.serving.mcp.errors import (
+from codeintel.serving.errors import (
     ExportNotFoundError,
     MetaArtifactNotFoundError,
     MetaSqlUnsafeError,
+)
+from codeintel.serving.export.formats import (
+    mime_type_for_export_format,
+    suffix_for_export_format,
+    supports_byte_chunks,
+    supports_line_chunks,
+    supports_preview,
 )
 from codeintel.serving.mcp.protocols import ServingSnapshotPointerProtocol
 from codeintel.serving.mcp.response_models import (
@@ -45,7 +51,14 @@ from codeintel.serving.mcp.response_models import (
     ResourceTemplatesResponse,
     SnapshotRef,
 )
-from codeintel.serving.mcp.tooling_meta import runtime_versions, tooling_mismatch_warnings
+from codeintel.serving.meta.service import (
+    build_environment_meta_payload,
+    build_resource_templates_payload,
+)
+from codeintel.serving.semantic.models import (
+    SemanticCatalogResponse,
+    SemanticViewDescriptionResponse,
+)
 from codeintel.storage.queries.safe import UnsafeSqlError, assert_single_select_statement
 
 if TYPE_CHECKING:
@@ -73,31 +86,12 @@ class ExportFullReadNotAllowedError(ValueError):
 
 
 def _build_resource_templates_response(ops: ServingOperations) -> dict[str, object]:
-    """Build ResourceTemplatesResponse for resource discovery.
-
-    Parameters
-    ----------
-    ops
-        Serving operations façade providing access to the current snapshot pointer.
-
-    Returns
-    -------
-    dict[str, object]
-        ResourceTemplatesResponse as JSON dict.
-    """
-    ptr = ops.db.current_pointer()
-    snapshot = SnapshotRef(
-        repo=ptr.repo,
-        commit=ptr.commit,
-        run_id=ptr.run_id,
-        published_at=ptr.published_at,
-    )
-    return ResourceTemplatesResponse(
-        uri="codeintel://meta/resources",
-        generated_at=datetime.now(UTC),
-        snapshot=snapshot,
+    payload = build_resource_templates_payload(
+        ops,
         templates=DEFAULT_RESOURCE_TEMPLATES,
-    ).model_dump(mode="json")
+        generated_at=datetime.now(UTC),
+    )
+    return ResourceTemplatesResponse.model_validate(payload).model_dump(mode="json")
 
 
 def _build_export_meta_response(export_id: str, store: ResourceStore) -> dict[str, object]:
@@ -142,10 +136,10 @@ def _build_export_meta_response(export_id: str, store: ResourceStore) -> dict[st
     uris = ExportURIs(
         payload_uri=f"codeintel://exports/{export_id}",
         meta_uri=f"codeintel://exports/{export_id}/meta",
-        preview_uri=f"codeintel://exports/{export_id}/preview",
+        preview_uri=f"codeintel://exports/{export_id}/preview" if supports_preview(meta.format) else None,
         sql_uri=f"codeintel://exports/{export_id}/sql" if meta.compiled_sql else None,
-        lines_uri_template=lines_template if meta.format in {"ndjson", "json"} else None,
-        bytes_uri_template=bytes_template if meta.format in {"parquet", "arrow"} else None,
+        lines_uri_template=lines_template if supports_line_chunks(meta.format) else None,
+        bytes_uri_template=bytes_template if supports_byte_chunks(meta.format) else None,
     )
 
     # Build query spec
@@ -166,19 +160,14 @@ def _build_export_meta_response(export_id: str, store: ResourceStore) -> dict[st
         schema_hash=meta.schema_hash,
     )
 
-    # Determine format type
-    format_type = meta.format
-    if format_type not in {"ndjson", "json", "parquet", "arrow"}:
-        format_type = "ndjson"
-
     return ExportMetaResponse(
         export_id=export_id,
         status="ready",
         created_at=meta.created_at,
         expires_at=meta.expires_at,
-        format=format_type,  # type: ignore[arg-type]
+        format=meta.format,
         mime_type=meta.mime_type,
-        filename=f"{meta.view_id}_{export_id}.{meta.format}",
+        filename=f"{meta.view_id}_{export_id}{suffix_for_export_format(meta.format)}",
         row_count=meta.row_count,
         byte_size=artifact.size_bytes,
         snapshot=export_snapshot,
@@ -202,28 +191,7 @@ def _artifact_dir_for_pointer(pointer: ServingSnapshotPointerProtocol) -> Path:
 def _read_environment_resource(
     ops: ServingOperations, *, settings: ServingSettings
 ) -> dict[str, object]:
-    meta = ops.meta()
-    env_obj = meta.get("environment")
-    environment = env_obj if isinstance(env_obj, dict) else {}
-    pointer = ops.db.current_pointer()
-    runtime = runtime_versions()
-    return {
-        "snapshot": {
-            "repo": pointer.repo,
-            "commit": pointer.commit,
-            "run_id": pointer.run_id,
-            "published_at": pointer.published_at.isoformat(),
-        },
-        "environment": environment,
-        "runtime_versions": runtime,
-        "warnings": list(tooling_mismatch_warnings(environment, runtime=runtime)),
-        "mcp_export_limits": {
-            "max_full_read_bytes": settings.mcp_export_max_full_read_bytes,
-            "max_chunk_bytes": settings.mcp_export_max_chunk_bytes,
-            "max_chunk_lines": settings.mcp_export_max_chunk_lines,
-            "ttl_seconds": settings.mcp_export_ttl_seconds,
-        },
-    }
+    return build_environment_meta_payload(ops, settings=settings)
 
 
 def _read_views_sql(pointer: ServingSnapshotPointerProtocol) -> dict[str, object]:
@@ -295,7 +263,7 @@ def _register_meta_resources(
         dict[str, object]
             Catalog with version, snapshot, and views list.
         """
-        return ops.catalog()
+        return SemanticCatalogResponse.model_validate(ops.catalog()).model_dump(mode="json")
 
     @mcp.resource("codeintel://semantic/views/{view_id}")
     def view_description(view_id: str) -> dict[str, object]:
@@ -311,7 +279,7 @@ def _register_meta_resources(
         dict[str, object]
             View description with schema details.
         """
-        return ops.describe(view_id)
+        return SemanticViewDescriptionResponse.model_validate(ops.describe(view_id)).model_dump(mode="json")
 
     @mcp.resource("codeintel://meta/serving")
     def serving_meta_resource() -> dict[str, object]:
@@ -491,8 +459,11 @@ def _register_export_chunk_resources(mcp: FastMCP, store: ResourceStore, *, sett
             If ``offset`` or ``limit`` are invalid for the configured server limits.
         """
         _validate_chunk_request(offset=offset, limit=limit, max_limit=settings.mcp_export_max_chunk_lines)
+        meta = store.get_meta(export_id)
+        if not supports_line_chunks(meta.format):
+            raise ExportChunkRequestError
         artifact = store.get(export_id)
-        if artifact.mime_type not in {_MIME_NDJSON, _MIME_JSON}:
+        if artifact.mime_type != _MIME_NDJSON:
             raise ExportChunkRequestError
         return _read_text_chunk(artifact.path, offset=offset, limit=limit)
 
@@ -526,7 +497,12 @@ def _register_export_chunk_resources(mcp: FastMCP, store: ResourceStore, *, sett
             _validate_chunk_request(offset=offset, limit=limit, max_limit=settings.mcp_export_max_chunk_bytes)
         except ExportChunkRequestError as exc:
             raise ExportChunkRequestError from exc
+        meta = store.get_meta(export_id)
+        if not supports_byte_chunks(meta.format):
+            raise ExportChunkRequestError
         artifact = store.get(export_id)
+        if artifact.mime_type not in {_MIME_PARQUET, _MIME_ARROW}:
+            raise ExportChunkRequestError
         return _read_bytes_chunk(artifact.path, offset=offset, limit=limit)
 
 

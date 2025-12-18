@@ -6,7 +6,7 @@ import ast
 from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.parsing.registry import register_parser
-from codeintel.config.parser_types import FunctionParserKind
+from codeintel.analytics.parsing.types import FunctionParserKind
 from codeintel.core.parsing import AstSpanIndex, ParsedFunction, ParsedModule, SourceSpan
 
 if TYPE_CHECKING:

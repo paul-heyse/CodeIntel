@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from codeintel.serving.export.formats import ExportFormat
+from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 
 Op = Literal["eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith"]
 
@@ -164,7 +165,7 @@ class SemanticQueryResponse(BaseModel):
     columns: list[str]
     rows: list[dict[str, object]]
     truncated: bool
-    snapshot: dict[str, str]
+    snapshot: ServingSnapshotIdentity
     query_hash: str | None = None
     schema_hash: str | None = None
 
@@ -177,7 +178,7 @@ class SemanticExplainResponse(BaseModel):
     view_id: str
     sql: str
     plan: str
-    snapshot: dict[str, str]
+    snapshot: ServingSnapshotIdentity
 
 
 class SemanticCatalogView(BaseModel):
@@ -199,7 +200,7 @@ class SemanticCatalogResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: str
-    snapshot: dict[str, str]
+    snapshot: ServingSnapshotIdentity
     views: list[SemanticCatalogView]
 
 
@@ -221,7 +222,7 @@ class SemanticViewDescriptionResponse(BaseModel):
     defaults: SemanticViewDefaults = Field(default_factory=SemanticViewDefaults)
     deprecated: bool = False
     replaced_by: str | None = None
-    snapshot: dict[str, str]
+    snapshot: ServingSnapshotIdentity
 
 
 class SemanticExportRequest(BaseModel):

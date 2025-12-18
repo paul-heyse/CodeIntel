@@ -34,7 +34,6 @@ def build_db_manager(settings: ServingSettings) -> ServingDBManager:
     ServingDBManager
         Configured DB manager.
     """
-
     return ServingDBManager(
         pointer_path=settings.serve_dir / "current.json",
         pool_cfg=PoolConfig(size=settings.pool_size),
@@ -58,7 +57,6 @@ def build_kernel(db_manager: ServingDBManager, settings: ServingSettings) -> Sem
     SemanticQueryKernel
         Configured kernel.
     """
-
     return SemanticQueryKernel(db=db_manager, settings=settings)
 
 
@@ -75,12 +73,10 @@ def build_runtime(settings: ServingSettings) -> ServingRuntime:
     ServingRuntime
         Constructed runtime dependencies.
     """
-
     db_manager = build_db_manager(settings)
     kernel = build_kernel(db_manager, settings)
-    ops = ServingOperations(kernel)
+    ops = ServingOperations(kernel=kernel, settings=settings)
     return ServingRuntime(settings=settings, db_manager=db_manager, kernel=kernel, ops=ops)
 
 
 __all__ = ["ServingRuntime", "build_db_manager", "build_kernel", "build_runtime"]
-

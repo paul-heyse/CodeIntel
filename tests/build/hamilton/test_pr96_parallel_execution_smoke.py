@@ -17,7 +17,7 @@ from hamilton.driver import Driver
 from hamilton.function_modifiers import tag
 
 from codeintel.build.hamilton.adapters.parallel import ThreadPoolAdapter
-from codeintel.hamilton import tags as ht
+from codeintel.core.hamilton import tags as ht
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_is_instance
 
 if TYPE_CHECKING:

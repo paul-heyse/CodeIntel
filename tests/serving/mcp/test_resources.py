@@ -216,8 +216,11 @@ def test_resource_store_put_and_get_json(tmp_path: Path) -> None:
     """Verify JSON artifact storage and retrieval."""
     store = ResourceStore(tmp_path / "exports")
 
-    payload = {"rows": [{"id": 1}, {"id": 2}]}
-    token, artifact = store.put_json(payload, row_count=2)
+    rows = [{"id": 1}, {"id": 2}]
+    token, artifact, _meta = store.put_with_metadata(
+        rows,
+        spec=ExportArtifactSpec(view_id="demo.view", format="json"),
+    )
 
     expect_true(len(token) > 0, message="Token should be non-empty")
     expect_equal(artifact.mime_type, "application/json")
@@ -244,7 +247,10 @@ def test_resource_store_put_and_get_ndjson(tmp_path: Path) -> None:
         {"id": 2, "name": "two"},
         {"id": 3, "name": "three"},
     ]
-    token, artifact = store.put_ndjson(rows)
+    token, artifact, _meta = store.put_with_metadata(
+        rows,
+        spec=ExportArtifactSpec(view_id="demo.view", format="ndjson"),
+    )
 
     expect_true(len(token) > 0, message="Token should be non-empty")
     expect_equal(artifact.mime_type, "application/x-ndjson")
@@ -1014,6 +1020,54 @@ async def test_mcp_resource_export_lines_chunk(tmp_path: Path) -> None:
             expect_equal(len(lines), 2)
             _ = json.loads(lines[0])
             _ = json.loads(lines[1])
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_mcp_resource_export_meta_row_count_for_parquet(tmp_path: Path) -> None:
+    """Verify parquet exports record row_count and expose binary URIs."""
+    pointer_path = _setup_test_snapshot(tmp_path)
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        settings = ServingSettings(
+            serve_dir=tmp_path,
+            hot_swap=False,
+            pool_size=1,
+            poll_interval_s=0.01,
+            result_engine="pandas",
+            schema_enforcement="strict",
+            mcp_mask_errors=False,
+        )
+        kernel = SemanticQueryKernel(db=manager, settings=settings)
+        mcp = build_mcp_app(kernel=kernel, settings=settings)
+
+        async with Client(mcp) as client:
+            export_result = _extract_payload(
+                await client.call_tool(
+                    "semantic_export",
+                    {"view_id": "demo.view", "export_format": "parquet", "limit": 10},
+                )
+            )
+            export_id = export_result["export_id"]
+
+            meta_result = await client.read_resource(f"codeintel://exports/{export_id}/meta")
+            content_item = cast("TextResourceContents", meta_result[0])
+            meta = json.loads(content_item.text)
+
+            expect_equal(meta.get("format"), "parquet")
+            expect_equal(meta.get("row_count"), 3)
+            uris = meta.get("uris", {})
+            expect_true(isinstance(uris, dict))
+            expect_true(uris.get("bytes_uri_template") is not None)
+            expect_equal(uris.get("lines_uri_template"), None)
+            expect_equal(uris.get("preview_uri"), None)
     finally:
         await manager.stop()
 

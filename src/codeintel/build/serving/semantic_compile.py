@@ -10,8 +10,8 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.hamilton import tags as ht
-from codeintel.hamilton.semantic_tags import (
+from codeintel.core.hamilton import tags as ht
+from codeintel.core.hamilton.semantic_tags import (
     TAG_DEFAULT_LIMIT,
     TAG_DEFAULT_ORDER,
     TAG_DEPRECATED,

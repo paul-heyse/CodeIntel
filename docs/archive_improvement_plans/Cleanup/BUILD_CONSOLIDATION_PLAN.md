@@ -806,7 +806,7 @@ modules_filtered = q__core__modules.filter(
    
    from typing import TYPE_CHECKING, Any, cast
    
-   from codeintel.storage.ibis_types import and_predicates
+   from codeintel.core.ibis_typing import and_predicates
    
    if TYPE_CHECKING:
        import ibis.expr.types as ir
@@ -1211,4 +1211,3 @@ Each phase is designed to be independently reversible:
 - `plugins/analytics/_metadata.py` → re-export from plugins/_metadata.py
 - `MaterializationContext` → recommend BuildContext
 - `NATIVE_TARGETS` tuple → delegate to UnifiedRegistry
-

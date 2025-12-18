@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import ibis
 
@@ -57,8 +57,7 @@ def zero_if_null(value: it.Value) -> it.NumericValue:
     NumericValue
         Numeric expression with NULLs coalesced to zero.
     """
-    coalesced = ibis.coalesce(cast("Any", value), ibis.literal(0, type="int64"))
-    return cast("it.NumericValue", coalesced)
+    return cast("it.NumericValue", value.fill_null(ibis.literal(0, type="int64")))
 
 
 def safe_ratio(

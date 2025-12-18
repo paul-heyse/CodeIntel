@@ -12,6 +12,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from starlette.requests import Request
+
+from codeintel.serving.errors import (
+    ERROR_CODE_CATALOG,
+    AuthForbiddenError,
+    CodeIntelDomainError,
+    ErrorContext,
+    ExportTooLargeError,
+    SemanticViewNotFoundError,
+    exception_to_error_response,
+)
+from codeintel.serving.http.errors import problem_from_domain_error
 from codeintel.serving.http.routes import router as http_router
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.search.models import SearchQueryResponse
@@ -38,16 +50,18 @@ EXPECTED_MCP_TOOL_NAMES: frozenset[str] = frozenset(
     }
 )
 
-EXPECTED_SEMANTIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
+EXPECTED_HTTP_ROUTES: frozenset[tuple[str, str]] = frozenset(
     {
         ("GET", "/semantic/views"),
         ("GET", "/semantic/views/{view_id}"),
         ("POST", "/semantic/explain"),
         ("POST", "/semantic/query"),
+        ("POST", "/export/semantic/{view_id}"),
         ("GET", "/v1/semantic/views"),
         ("GET", "/v1/semantic/views/{view_id}"),
         ("POST", "/v1/semantic/explain"),
         ("POST", "/v1/semantic/query"),
+        ("POST", "/v1/export/semantic/{view_id}"),
         ("POST", "/search"),
         ("POST", "/v1/search"),
     }
@@ -157,16 +171,78 @@ def _check_semantic_http_routes() -> list[str]:
             if isinstance(method, str):
                 observed.add((method, path))
 
-    prefixes = ("/semantic", "/v1/semantic", "/search", "/v1/search")
+    prefixes = ("/semantic", "/v1/semantic", "/search", "/v1/search", "/export", "/v1/export")
     semantic_paths = {item for item in observed if item[1].startswith(prefixes)}
 
-    missing = EXPECTED_SEMANTIC_ROUTES - semantic_paths
+    missing = EXPECTED_HTTP_ROUTES - semantic_paths
     if missing:
-        issues.append(f"Missing semantic HTTP routes: {sorted(missing)}")
+        issues.append(f"Missing serving HTTP routes: {sorted(missing)}")
 
-    extra = semantic_paths - EXPECTED_SEMANTIC_ROUTES
+    extra = semantic_paths - EXPECTED_HTTP_ROUTES
     if extra:
-        issues.append(f"Unexpected semantic HTTP routes: {sorted(extra)}")
+        issues.append(f"Unexpected serving HTTP routes: {sorted(extra)}")
+
+    return issues
+
+
+def _request_for_contracts(*, path: str) -> Request:
+    scope: dict[str, object] = {
+        "type": "http",
+        "asgi": {"spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode("utf-8"),
+        "query_string": b"",
+        "headers": [],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 8000),
+        "root_path": "",
+    }
+    request = Request(scope)
+    request.state.correlation_id = "contract-check"
+    return request
+
+
+def _check_error_parity() -> list[str]:
+    issues: list[str] = []
+    ctx = ErrorContext(operation="contract-check", request_id="contract-check")
+    request = _request_for_contracts(path="/contract-check")
+
+    samples: list[tuple[str, Exception]] = [
+        ("CODEINTEL_SEMANTIC_VIEW_NOT_FOUND", SemanticViewNotFoundError("demo.view")),
+        ("CODEINTEL_SEMANTIC_INVALID_QUERY", CodeIntelDomainError(code="CODEINTEL_SEMANTIC_INVALID_QUERY")),
+        ("CODEINTEL_AUTH_FORBIDDEN", AuthForbiddenError(reason="missing api key")),
+        ("CODEINTEL_EXPORT_TOO_LARGE", ExportTooLargeError(row_count=10_000_000)),
+        ("CODEINTEL_EXPORT_INVALID_REQUEST", CodeIntelDomainError(code="CODEINTEL_EXPORT_INVALID_REQUEST")),
+    ]
+
+    for expected_code, exc in samples:
+        error_response = exception_to_error_response(exc, context=ctx)
+        if error_response.error.code != expected_code:
+            issues.append(
+                "MCP error mapping mismatch: "
+                f"expected={expected_code} got={error_response.error.code} exc={type(exc).__name__}"
+            )
+
+        if not isinstance(exc, CodeIntelDomainError):
+            msg = f"Contract test expects domain errors only, got {type(exc).__name__}"
+            raise TypeError(msg)
+        problem = problem_from_domain_error(request, exc)
+        if problem.code != expected_code:
+            issues.append(
+                "HTTP problem code mismatch: "
+                f"expected={expected_code} got={problem.code} exc={type(exc).__name__}"
+            )
+        tmpl = ERROR_CODE_CATALOG.get(expected_code)
+        if tmpl is None or tmpl.http_status is None:
+            issues.append(f"Missing http_status for {expected_code} in canonical catalog")
+        elif problem.status != tmpl.http_status:
+            issues.append(
+                "HTTP problem status mismatch: "
+                f"code={expected_code} expected={tmpl.http_status} got={problem.status}"
+            )
 
     return issues
 
@@ -190,6 +266,37 @@ def _get_tool_input_schema(tool: object) -> Mapping[str, object] | None:
     return None
 
 
+_MCP_TOOLS_REQUIRE_VIEW_ID: frozenset[str] = frozenset(
+    {"semantic_describe", "semantic_explain", "semantic_export", "semantic_query"}
+)
+_MCP_TOOLS_NO_REQUIRED_ARGS: frozenset[str] = frozenset({"semantic_catalog", "serving_meta"})
+_MCP_TOOLS_REQUIRED_ARG: dict[str, str] = {"code_search": "query"}
+_MCP_TOOL_EXPECTED_PROPERTIES: dict[str, frozenset[str]] = {
+    "semantic_explain": frozenset({"view_id", "filters", "select", "order_by", "pagination"}),
+    "semantic_query": frozenset({"view_id", "filters", "select", "order_by", "pagination"}),
+    "semantic_export": frozenset({"view_id", "filters", "export_format", "limit"}),
+}
+
+
+def _tool_properties(schema: Mapping[str, object]) -> Mapping[str, object] | None:
+    props = schema.get("properties", {})
+    if isinstance(props, dict):
+        return props
+    return None
+
+
+def _check_mcp_tool_properties(schema: Mapping[str, object], *, name: str, expected: frozenset[str]) -> list[str]:
+    issues: list[str] = []
+    props = _tool_properties(schema)
+    if props is None:
+        issues.append(f"MCP tool {name} inputSchema.properties must be a dict")
+        return issues
+    missing_props = expected - set(props)
+    if missing_props:
+        issues.append(f"MCP tool {name} missing properties: {sorted(missing_props)}")
+    return issues
+
+
 def _check_mcp_tool_schema(tool: object, *, name: str) -> list[str]:
     issues: list[str] = []
     schema = _get_tool_input_schema(tool)
@@ -198,25 +305,17 @@ def _check_mcp_tool_schema(tool: object, *, name: str) -> list[str]:
         return issues
 
     required = _get_required_fields(schema)
-    if (
-        name in {"semantic_describe", "semantic_explain", "semantic_export", "semantic_query"}
-        and "view_id" not in required
-    ):
+    if name in _MCP_TOOLS_REQUIRE_VIEW_ID and "view_id" not in required:
         issues.append(f"MCP tool {name} must require view_id")
-    if name in {"semantic_catalog", "serving_meta"} and required:
+    if name in _MCP_TOOLS_NO_REQUIRED_ARGS and required:
         issues.append(f"MCP tool {name} must not require arguments, got {sorted(required)}")
-    if name == "code_search" and "query" not in required:
-        issues.append("MCP tool code_search must require query")
+    required_arg = _MCP_TOOLS_REQUIRED_ARG.get(name)
+    if required_arg is not None and required_arg not in required:
+        issues.append(f"MCP tool {name} must require {required_arg}")
 
-    if name in {"semantic_explain", "semantic_query"}:
-        props = schema.get("properties", {})
-        if not isinstance(props, dict):
-            issues.append(f"MCP tool {name} inputSchema.properties must be a dict")
-            return issues
-        expected_props = {"view_id", "filters", "select", "order_by", "pagination"}
-        missing_props = expected_props - set(props)
-        if missing_props:
-            issues.append(f"MCP tool {name} missing properties: {sorted(missing_props)}")
+    expected_props = _MCP_TOOL_EXPECTED_PROPERTIES.get(name)
+    if expected_props is not None:
+        issues.extend(_check_mcp_tool_properties(schema, name=name, expected=expected_props))
 
     return issues
 
@@ -258,6 +357,7 @@ def main() -> int:
     """
     issues: list[str] = []
     issues.extend(_check_semantic_http_routes())
+    issues.extend(_check_error_parity())
     issues.extend(asyncio.run(_check_mcp_tools()))
     if issues:
         error = OperationContractsError(issues=issues)

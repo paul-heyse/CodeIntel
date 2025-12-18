@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, fields, replace
 from typing import Self
 
-from codeintel.core.options.protocol import ValidationResult
+from codeintel.core.options.protocol import ValidationOutcome
 
 
 @dataclass(frozen=True)
@@ -26,13 +26,13 @@ class BaseOptions:
     ...     timeout_ms: int = 5000
     ...     retry_count: int = 3
     ...
-    ...     def validate(self) -> ValidationResult:
+    ...     def validate(self) -> ValidationOutcome:
     ...         if self.timeout_ms <= 0:
-    ...             return ValidationResult.failure("timeout_ms must be positive")
+    ...             return ValidationOutcome.failure("timeout_ms must be positive")
     ...         return super().validate()
     """
 
-    def validate(self) -> ValidationResult:
+    def validate(self) -> ValidationOutcome:
         """Validate options and return any issues.
 
         Default implementation always returns success. Override in
@@ -40,12 +40,12 @@ class BaseOptions:
 
         Returns
         -------
-        ValidationResult
+        ValidationOutcome
             Validation result (always ok=True by default).
         """
         # Base implementation validates that self is a dataclass (always true here)
         _ = fields(self)  # Ensure self is used
-        return ValidationResult.success()
+        return ValidationOutcome.success()
 
     def with_defaults(self, defaults: Self) -> Self:
         """Merge with default values, preferring self's non-None values.

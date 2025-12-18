@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from cyclopts import config as cyclopts_config
 
 from codeintel.cli.config.loader import apply_overrides, load_config
-from codeintel.cli.core.parsing import parse_bool_or_none
 from codeintel.config.models import CliConfigOptions, CodeIntelConfig, RepoConfig
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 
@@ -100,10 +99,13 @@ def _make_optional_toml_config() -> Callable[[object, tuple[str, ...], object], 
         if path is None:
             return arguments
 
-        toml_loader = cast("Any", cyclopts_config.Toml(str(path)))
+        toml_loader_obj = cyclopts_config.Toml(str(path))
+        toml_loader = cast(
+            "Callable[[App, tuple[str, ...], object], object]",
+            toml_loader_obj,
+        )
         app_arg = cast("App", apps)
-        args_arg = cast("Any", arguments)
-        return toml_loader(app_arg, commands, args_arg)
+        return toml_loader(app_arg, commands, arguments)
 
     return _apply_toml
 
@@ -289,26 +291,7 @@ def build_graph_feature_flags_from_env() -> GraphFeatureFlags:
     GraphFeatureFlags
         Feature flags derived from environment variables.
     """
-    eager = (
-        parse_bool_or_none(os.environ.get("CODEINTEL_GRAPH_EAGER"))
-        if "CODEINTEL_GRAPH_EAGER" in os.environ
-        else None
-    )
-    community_limit = (
-        int(os.environ["CODEINTEL_GRAPH_COMMUNITY_LIMIT"])
-        if "CODEINTEL_GRAPH_COMMUNITY_LIMIT" in os.environ
-        else None
-    )
-    validation_strict = (
-        parse_bool_or_none(os.environ.get("CODEINTEL_GRAPH_VALIDATION_STRICT"))
-        if "CODEINTEL_GRAPH_VALIDATION_STRICT" in os.environ
-        else None
-    )
-    return GraphFeatureFlags(
-        eager_hydration=eager,
-        community_detection_limit=community_limit,
-        validation_strict=validation_strict,
-    )
+    return GraphFeatureFlags.from_env()
 
 
 def build_config_from_options(

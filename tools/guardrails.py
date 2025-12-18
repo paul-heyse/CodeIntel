@@ -61,6 +61,28 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         ),
     ),
     Guardrail(
+        name="direct_ibis_table_calls",
+        pattern=re.compile(r"\.ibis\.table\("),
+        message="Direct `.ibis.table(...)` is forbidden; use codeintel.storage.gateway.ibis_facade.table.",
+        allow_prefixes=(
+            "src/codeintel/storage/gateway/ibis_facade.py",
+            "src/codeintel/storage/ibis_adapter.py",
+            "src/codeintel/build/hamilton/validate.py",
+        ),
+        include_prefixes=("src/codeintel/",),
+    ),
+    Guardrail(
+        name="build_policy_write_calls",
+        pattern=re.compile(
+            r"\.policy\.(?:delete_for_snapshot|bulk_insert_mappings|bulk_insert|delete)\("
+        ),
+        message="Build must not call gateway.policy write methods; use Warehouse.materialize_*.",
+        allow_prefixes=(
+            "src/codeintel/storage/warehouse.py",
+        ),
+        include_prefixes=("src/codeintel/build/",),
+    ),
+    Guardrail(
         name="legacy_build_context_stack",
         pattern=re.compile(r"\bcodeintel\.build\.(context|context_base|result|protocols)\b"),
         message="Legacy build context stack is removed; use Hamilton BuildEnv/executor patterns.",
@@ -76,18 +98,38 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         ),
     ),
     Guardrail(
+        name="removed_ibis_typing_modules",
+        pattern=re.compile(r"\bcodeintel\.(?:storage\.ibis_types|build\.ibis_typing)\b"),
+        message=(
+            "Legacy Ibis typing modules are removed; use codeintel.core.ibis_typing "
+            "and codeintel.storage.gateway.ibis_facade."
+        ),
+    ),
+    Guardrail(
         name="build_cast_any",
         pattern=re.compile(r"\bcast\(\s*(?:\"Any\"|'Any'|Any)\s*,"),
         message=(
-            '`cast("Any", ...)` is forbidden in build/storage modules; use codeintel.core.ibis_typing.'
+            '`cast("Any", ...)` is forbidden outside codeintel.core.ibis_typing; use '
+            "codeintel.core.ibis_typing helpers."
         ),
-        include_prefixes=("src/codeintel/build/", "src/codeintel/storage/"),
+        include_prefixes=("src/codeintel/",),
+        allow_prefixes=("src/codeintel/core/ibis_typing.py",),
     ),
     Guardrail(
         name="compute_result_any",
         pattern=re.compile(r"\b(type\s+)?ComputeResult\s*(?::\s*TypeAlias)?\s*=\s*Any\b"),
         message="ComputeResult = Any is forbidden; use ExecutionResult.",
         include_prefixes=("src/codeintel/build/",),
+    ),
+    Guardrail(
+        name="build_direct_hamilton_tag",
+        pattern=re.compile(r"\bfrom hamilton\.function_modifiers import [^\n]*\btag\b"),
+        message=(
+            "Direct imports of Hamilton's @tag decorator are forbidden; use "
+            "codeintel.build.hamilton.tagging helpers."
+        ),
+        include_prefixes=("src/codeintel/build/",),
+        allow_prefixes=("src/codeintel/build/hamilton/tagging.py",),
     ),
 )
 

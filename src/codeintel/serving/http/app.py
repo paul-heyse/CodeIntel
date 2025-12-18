@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, cast
 
@@ -14,11 +15,10 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from codeintel.serving.http.errors import (
+    CodeIntelDomainError,
     ProblemDetail,
-    ProblemType,
-    ServingError,
-    internal_error_problem,
-    problem_from_error,
+    problem_from_domain_error,
+    problem_from_exception,
     problem_response,
 )
 from codeintel.serving.http.middleware import (
@@ -27,8 +27,9 @@ from codeintel.serving.http.middleware import (
 )
 from codeintel.serving.http.routes import router as api_router
 from codeintel.serving.http.state import ServingState
-from codeintel.serving.mcp._compat import HAS_EVENT_STORE, EventStore
+from codeintel.serving.mcp._compat import EventStore
 from codeintel.serving.mcp.app import build_mcp_app
+from codeintel.serving.meta.service import build_kernel_meta_payload
 from codeintel.serving.runtime import build_runtime
 from codeintel.serving.settings import ServingSettings
 
@@ -38,6 +39,12 @@ if TYPE_CHECKING:
 
     from fastapi import Request
     from fastapi.responses import JSONResponse
+
+    from codeintel.serving.db.manager import ServingDBManager
+    from codeintel.serving.operations.ops import ServingOperations
+    from codeintel.serving.operations.protocols import ServingKernelProtocol
+
+LOG = logging.getLogger(__name__)
 
 
 def create_serving_app(
@@ -114,17 +121,17 @@ def _build_lifespan(
 
 
 def _handle_serving_error(request: Request, exc: Exception) -> JSONResponse:
-    if not isinstance(exc, ServingError):
+    if not isinstance(exc, CodeIntelDomainError):
         return _handle_unexpected(request, exc)
-    problem = problem_from_error(request, exc)
-    return problem_response(problem, headers=exc.headers)
+    problem = problem_from_domain_error(request, exc)
+    return problem_response(problem)
 
 
 def _handle_request_validation(request: Request, exc: Exception) -> JSONResponse:
     if not isinstance(exc, RequestValidationError):
         return _handle_unexpected(request, exc)
     problem = ProblemDetail(
-        type=str(ProblemType.VALIDATION_ERROR),
+        type="/problems/validation-error",
         title="Validation Error",
         status=422,
         detail="Request validation failed.",
@@ -136,11 +143,11 @@ def _handle_request_validation(request: Request, exc: Exception) -> JSONResponse
 
 
 def _handle_unexpected(request: Request, _exc: Exception) -> JSONResponse:
-    return problem_response(internal_error_problem(request))
+    return problem_response(problem_from_exception(request, _exc))
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
-    app.add_exception_handler(ServingError, _handle_serving_error)
+    app.add_exception_handler(CodeIntelDomainError, _handle_serving_error)
     app.add_exception_handler(RequestValidationError, _handle_request_validation)
     app.add_exception_handler(Exception, _handle_unexpected)
 
@@ -169,7 +176,7 @@ def _install_observability_routes(
 ) -> None:
     @app.get("/health")
     async def health() -> dict[str, str]:
-        pointer = runtime.db_manager.current_pointer()
+        pointer = db_manager.current_pointer()
         return {
             "status": "ok",
             "repo": pointer.repo,
@@ -179,13 +186,13 @@ def _install_observability_routes(
 
     @app.get("/meta")
     async def meta() -> dict[str, object]:
-        return await run_in_threadpool(ops.meta)
+        return await run_in_threadpool(lambda: build_kernel_meta_payload(db_manager))
 
 
 def _maybe_mount_mcp(
     app: FastAPI,
     *,
-    kernel: object,
+    kernel: ServingKernelProtocol,
     settings: ServingSettings,
     enabled: bool,
 ) -> None:
@@ -216,9 +223,12 @@ def _maybe_mount_mcp(
     # Configure EventStore for SSE polling/resumability
     event_store = None
     retry_interval = None
-    if settings.mcp_enable_event_store and HAS_EVENT_STORE and EventStore is not None:
-        event_store = EventStore()
-        retry_interval = settings.mcp_retry_interval_ms
+    if settings.mcp_enable_event_store:
+        if EventStore is None:
+            LOG.warning("EventStore not available - SSE resumability disabled")
+        else:
+            event_store = EventStore()
+            retry_interval = settings.mcp_retry_interval_ms
 
     # gofastmcp 2.x uses http_app() with path="/" to avoid double-prefix
     app.mount(

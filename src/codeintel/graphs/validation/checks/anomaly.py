@@ -8,15 +8,15 @@ Check classes implement CheckProtocol from core/validation.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.core.ibis_typing import bool_not, filter_by, ibis_bool
+from codeintel.core.ibis_typing import bool_not, filter_by, gt, ibis_bool
 from codeintel.graphs.validation.base import GraphCheckBase
 from codeintel.graphs.validation.findings import (
     SAMPLE_LIMIT,
     SYMBOL_COMMUNITY_MIN,
 )
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     import logging
@@ -99,7 +99,7 @@ def _symbol_community_findings_impl(
         Findings for symbol community anomalies.
     """
     try:
-        metrics = cast("Any", gateway.ibis.table("analytics.symbol_graph_metrics_modules"))
+        metrics = ibis_facade.table(gateway, "analytics.symbol_graph_metrics_modules")
         filtered = filter_by(
             metrics,
             ibis_bool(metrics.repo == repo),
@@ -109,7 +109,7 @@ def _symbol_community_findings_impl(
         grouped = filtered.group_by(metrics.symbol_community_id).aggregate(
             sym_count=metrics.symbol_community_id.count()
         )
-        expr = grouped.filter(ibis_bool(grouped["sym_count"] > SYMBOL_COMMUNITY_MIN))
+        expr = grouped.filter(gt(grouped["sym_count"], SYMBOL_COMMUNITY_MIN))
         comm_counts_df = expr.execute()
     except DuckDBError:
         return []
@@ -143,7 +143,7 @@ def _subsystem_disagreement_findings_impl(
         Findings for subsystem disagreement anomalies.
     """
     try:
-        agreement = cast("Any", gateway.ibis.table("analytics.subsystem_agreement"))
+        agreement = ibis_facade.table(gateway, "analytics.subsystem_agreement")
         filtered = filter_by(
             agreement,
             agreement.repo == repo,

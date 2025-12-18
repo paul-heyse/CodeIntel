@@ -6,9 +6,18 @@ semantic-first serving stack.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from codeintel.core.env import (
+    get_bool,
+    get_float,
+    get_int,
+    get_path,
+    get_str,
+    is_set,
+    split_csv,
+)
 
 
 @dataclass(frozen=True)
@@ -206,103 +215,121 @@ class ServingSettings:
         ServingSettings
             Loaded settings.
         """
-        serve_dir = Path(os.environ.get("CODEINTEL_SERVE_DIR", ".codeintel/serve")).resolve()
-        cors_origins = _split_csv(os.environ.get("CODEINTEL_SERVE_CORS_ORIGINS", ""))
-        trusted_hosts = _split_csv(os.environ.get("CODEINTEL_SERVE_TRUSTED_HOSTS", ""))
+
+        def get_required_bool(name: str, *, default: bool) -> bool:
+            value = get_bool(name, default=default)
+            return default if value is None else value
+
+        def get_required_int(name: str, *, default: int) -> int:
+            value = get_int(name, default=default)
+            return default if value is None else value
+
+        def get_required_float(name: str, *, default: float) -> float:
+            value = get_float(name, default=default)
+            return default if value is None else value
+
+        def get_optional_int(name: str, *, default_when_unset: int | None = None) -> int | None:
+            if not is_set(name):
+                return default_when_unset
+            return get_int(name, default=None)
+
+        serve_dir = get_path("CODEINTEL_SERVE_DIR", default=Path(".codeintel/serve")) or Path(
+            ".codeintel/serve"
+        )
+        cors_origins = split_csv(get_str("CODEINTEL_SERVE_CORS_ORIGINS", default=None))
+        trusted_hosts = split_csv(get_str("CODEINTEL_SERVE_TRUSTED_HOSTS", default=None))
         return cls(
             serve_dir=serve_dir,
-            hot_swap=os.environ.get("CODEINTEL_SERVE_HOTSWAP", "1") == "1",
-            pool_size=int(os.environ.get("CODEINTEL_SERVE_POOL_SIZE", "4")),
-            poll_interval_s=float(os.environ.get("CODEINTEL_SERVE_POLL_INTERVAL", "1.0")),
-            mcp_transport=os.environ.get("CODEINTEL_MCP_TRANSPORT", "stdio"),
-            host=os.environ.get("CODEINTEL_HOST", "127.0.0.1"),
-            port=int(os.environ.get("CODEINTEL_PORT", "8000")),
-            auth_token=os.environ.get("CODEINTEL_AUTH_TOKEN"),
-            schema_enforcement=os.environ.get("CODEINTEL_SERVE_SCHEMA_ENFORCEMENT", "strict"),
-            result_engine=os.environ.get("CODEINTEL_SERVE_RESULT_ENGINE", "polars"),
-            api_key=os.environ.get("CODEINTEL_SERVE_API_KEY"),
+            hot_swap=get_required_bool("CODEINTEL_SERVE_HOTSWAP", default=True),
+            pool_size=get_required_int("CODEINTEL_SERVE_POOL_SIZE", default=4),
+            poll_interval_s=get_required_float("CODEINTEL_SERVE_POLL_INTERVAL", default=1.0),
+            mcp_transport=get_str("CODEINTEL_MCP_TRANSPORT", default="stdio") or "stdio",
+            host=get_str("CODEINTEL_HOST", default="127.0.0.1") or "127.0.0.1",
+            port=get_required_int("CODEINTEL_PORT", default=8000),
+            auth_token=get_str("CODEINTEL_AUTH_TOKEN", default=None),
+            schema_enforcement=get_str("CODEINTEL_SERVE_SCHEMA_ENFORCEMENT", default="strict")
+            or "strict",
+            result_engine=get_str("CODEINTEL_SERVE_RESULT_ENGINE", default="polars") or "polars",
+            api_key=get_str("CODEINTEL_SERVE_API_KEY", default=None),
             cors_origins=cors_origins,
             trusted_hosts=trusted_hosts,
-            gzip_minimum_size=int(os.environ.get("CODEINTEL_SERVE_GZIP_MIN_SIZE", "500")),
-            enable_gzip=os.environ.get("CODEINTEL_SERVE_GZIP", "1") == "1",
-            export_max_rows=int(os.environ.get("CODEINTEL_SERVE_EXPORT_MAX_ROWS", "100000")),
-            export_batch_size=int(
-                os.environ.get("CODEINTEL_SERVE_EXPORT_BATCH_SIZE", "10000")
-            ),
-            enable_export_endpoints=os.environ.get("CODEINTEL_SERVE_ENABLE_EXPORT", "1") == "1",
+            gzip_minimum_size=get_required_int("CODEINTEL_SERVE_GZIP_MIN_SIZE", default=500),
+            enable_gzip=get_required_bool("CODEINTEL_SERVE_GZIP", default=True),
+            export_max_rows=get_required_int("CODEINTEL_SERVE_EXPORT_MAX_ROWS", default=100_000),
+            export_batch_size=get_required_int("CODEINTEL_SERVE_EXPORT_BATCH_SIZE", default=10_000),
+            enable_export_endpoints=get_required_bool("CODEINTEL_SERVE_ENABLE_EXPORT", default=True),
             # MCP Context Features
-            mcp_enable_sampling=os.environ.get("CODEINTEL_MCP_ENABLE_SAMPLING", "0") == "1",
-            mcp_sample_threshold=int(os.environ.get("CODEINTEL_MCP_SAMPLE_THRESHOLD", "500")),
-            mcp_progress_reporting=os.environ.get("CODEINTEL_MCP_PROGRESS", "1") == "1",
+            mcp_enable_sampling=get_required_bool("CODEINTEL_MCP_ENABLE_SAMPLING", default=False),
+            mcp_sample_threshold=get_required_int("CODEINTEL_MCP_SAMPLE_THRESHOLD", default=500),
+            mcp_progress_reporting=get_required_bool("CODEINTEL_MCP_PROGRESS", default=True),
             # MCP Error Handling
-            mcp_mask_errors=os.environ.get("CODEINTEL_MCP_MASK_ERRORS", "1") == "1",
+            mcp_mask_errors=get_required_bool("CODEINTEL_MCP_MASK_ERRORS", default=True),
             # MCP Query Concurrency Control
-            mcp_max_concurrent_queries=int(
-                os.environ.get("CODEINTEL_MCP_MAX_CONCURRENT_QUERIES", "2")
-            ),
-            mcp_max_concurrent_exports=int(
-                os.environ.get("CODEINTEL_MCP_MAX_CONCURRENT_EXPORTS", "1")
-            ),
+            mcp_max_concurrent_queries=get_required_int("CODEINTEL_MCP_MAX_CONCURRENT_QUERIES", default=2),
+            mcp_max_concurrent_exports=get_required_int("CODEINTEL_MCP_MAX_CONCURRENT_EXPORTS", default=1),
             # MCP EventStore for SSE Resumability
-            mcp_enable_event_store=os.environ.get("CODEINTEL_MCP_EVENT_STORE", "1") == "1",
-            mcp_retry_interval_ms=int(os.environ.get("CODEINTEL_MCP_RETRY_INTERVAL", "1000")),
+            mcp_enable_event_store=get_required_bool("CODEINTEL_MCP_EVENT_STORE", default=True),
+            mcp_retry_interval_ms=get_required_int("CODEINTEL_MCP_RETRY_INTERVAL", default=1000),
             # MCP Middleware Features
-            mcp_enable_structured_logging=os.environ.get(
-                "CODEINTEL_MCP_ENABLE_STRUCTURED_LOGGING", "1"
-            )
-            == "1",
-            mcp_rate_limit_rps=float(os.environ.get("CODEINTEL_MCP_RATE_LIMIT_RPS", "20.0")),
-            mcp_rate_limit_burst=int(os.environ.get("CODEINTEL_MCP_RATE_LIMIT_BURST", "40")),
-            mcp_cache_listings=os.environ.get("CODEINTEL_MCP_CACHE_LISTINGS", "1") == "1",
-            mcp_cache_listings_ttl_seconds=int(
-                os.environ.get("CODEINTEL_MCP_CACHE_LISTINGS_TTL_SECONDS", "5")
+            mcp_enable_structured_logging=get_required_bool(
+                "CODEINTEL_MCP_ENABLE_STRUCTURED_LOGGING",
+                default=True,
+            ),
+            mcp_rate_limit_rps=get_required_float("CODEINTEL_MCP_RATE_LIMIT_RPS", default=20.0),
+            mcp_rate_limit_burst=get_required_int("CODEINTEL_MCP_RATE_LIMIT_BURST", default=40),
+            mcp_cache_listings=get_required_bool("CODEINTEL_MCP_CACHE_LISTINGS", default=True),
+            mcp_cache_listings_ttl_seconds=get_required_int(
+                "CODEINTEL_MCP_CACHE_LISTINGS_TTL_SECONDS",
+                default=5,
             ),
             # MCP Export Lifecycle
-            mcp_export_enable_tasks=os.environ.get("CODEINTEL_MCP_EXPORT_ENABLE_TASKS", "1")
-            == "1",
-            mcp_export_ttl_seconds=_parse_optional_int(
-                os.environ.get("CODEINTEL_MCP_EXPORT_TTL_SECONDS", "3600")
+            mcp_export_enable_tasks=get_required_bool("CODEINTEL_MCP_EXPORT_ENABLE_TASKS", default=True),
+            mcp_export_ttl_seconds=get_optional_int(
+                "CODEINTEL_MCP_EXPORT_TTL_SECONDS",
+                default_when_unset=3600,
             ),
-            mcp_export_cleanup_interval_seconds=int(
-                os.environ.get("CODEINTEL_MCP_EXPORT_CLEANUP_INTERVAL_SECONDS", "60")
+            mcp_export_cleanup_interval_seconds=get_required_int(
+                "CODEINTEL_MCP_EXPORT_CLEANUP_INTERVAL_SECONDS",
+                default=60,
             ),
-            mcp_export_max_full_read_bytes=int(
-                os.environ.get("CODEINTEL_MCP_EXPORT_MAX_FULL_READ_BYTES", "1000000")
+            mcp_export_max_full_read_bytes=get_required_int(
+                "CODEINTEL_MCP_EXPORT_MAX_FULL_READ_BYTES",
+                default=1_000_000,
             ),
-            mcp_export_max_chunk_bytes=int(
-                os.environ.get("CODEINTEL_MCP_EXPORT_MAX_CHUNK_BYTES", "1000000")
+            mcp_export_max_chunk_bytes=get_required_int(
+                "CODEINTEL_MCP_EXPORT_MAX_CHUNK_BYTES",
+                default=1_000_000,
             ),
-            mcp_export_max_chunk_lines=int(
-                os.environ.get("CODEINTEL_MCP_EXPORT_MAX_CHUNK_LINES", "2000")
+            mcp_export_max_chunk_lines=get_required_int(
+                "CODEINTEL_MCP_EXPORT_MAX_CHUNK_LINES",
+                default=2_000,
             ),
             # Uvicorn Production Configuration
-            uvicorn_workers=int(os.environ.get("CODEINTEL_UVICORN_WORKERS", "1")),
-            uvicorn_loop=os.environ.get("CODEINTEL_UVICORN_LOOP", "auto"),
-            uvicorn_http=os.environ.get("CODEINTEL_UVICORN_HTTP", "auto"),
-            uvicorn_limit_concurrency=_parse_optional_int(
-                os.environ.get("CODEINTEL_UVICORN_LIMIT_CONCURRENCY")
+            uvicorn_workers=get_required_int("CODEINTEL_UVICORN_WORKERS", default=1),
+            uvicorn_loop=get_str("CODEINTEL_UVICORN_LOOP", default="auto") or "auto",
+            uvicorn_http=get_str("CODEINTEL_UVICORN_HTTP", default="auto") or "auto",
+            uvicorn_limit_concurrency=get_optional_int("CODEINTEL_UVICORN_LIMIT_CONCURRENCY"),
+            uvicorn_limit_max_requests=get_optional_int("CODEINTEL_UVICORN_LIMIT_MAX_REQUESTS"),
+            uvicorn_timeout_keep_alive=get_required_int(
+                "CODEINTEL_UVICORN_TIMEOUT_KEEP_ALIVE",
+                default=30,
             ),
-            uvicorn_limit_max_requests=_parse_optional_int(
-                os.environ.get("CODEINTEL_UVICORN_LIMIT_MAX_REQUESTS")
-            ),
-            uvicorn_timeout_keep_alive=int(
-                os.environ.get("CODEINTEL_UVICORN_TIMEOUT_KEEP_ALIVE", "30")
-            ),
-            uvicorn_backlog=int(os.environ.get("CODEINTEL_UVICORN_BACKLOG", "2048")),
-            uvicorn_access_log=os.environ.get("CODEINTEL_UVICORN_ACCESS_LOG", "1") == "1",
-            uvicorn_server_header=os.environ.get("CODEINTEL_UVICORN_SERVER_HEADER", "0") == "1",
-            uvicorn_proxy_headers=os.environ.get("CODEINTEL_UVICORN_PROXY_HEADERS", "0") == "1",
-            uvicorn_forwarded_allow_ips=os.environ.get(
-                "CODEINTEL_UVICORN_FORWARDED_ALLOW_IPS", "127.0.0.1"
-            ),
+            uvicorn_backlog=get_required_int("CODEINTEL_UVICORN_BACKLOG", default=2048),
+            uvicorn_access_log=get_required_bool("CODEINTEL_UVICORN_ACCESS_LOG", default=True),
+            uvicorn_server_header=get_required_bool("CODEINTEL_UVICORN_SERVER_HEADER", default=False),
+            uvicorn_proxy_headers=get_required_bool("CODEINTEL_UVICORN_PROXY_HEADERS", default=False),
+            uvicorn_forwarded_allow_ips=get_str(
+                "CODEINTEL_UVICORN_FORWARDED_ALLOW_IPS",
+                default="127.0.0.1",
+            )
+            or "127.0.0.1",
             # Security: Auth Enforcement
-            auth_required_for_remote=os.environ.get("CODEINTEL_AUTH_REQUIRED_FOR_REMOTE", "1")
-            == "1",
+            auth_required_for_remote=get_required_bool("CODEINTEL_AUTH_REQUIRED_FOR_REMOTE", default=True),
             # MCP Tool Feature Flags
-            mcp_enable_search=os.environ.get("CODEINTEL_MCP_ENABLE_SEARCH", "1") == "1",
-            mcp_enable_explain=os.environ.get("CODEINTEL_MCP_ENABLE_EXPLAIN", "1") == "1",
-            mcp_enable_meta=os.environ.get("CODEINTEL_MCP_ENABLE_META", "1") == "1",
-            mcp_enable_export=os.environ.get("CODEINTEL_MCP_ENABLE_EXPORT", "1") == "1",
+            mcp_enable_search=get_required_bool("CODEINTEL_MCP_ENABLE_SEARCH", default=True),
+            mcp_enable_explain=get_required_bool("CODEINTEL_MCP_ENABLE_EXPLAIN", default=True),
+            mcp_enable_meta=get_required_bool("CODEINTEL_MCP_ENABLE_META", default=True),
+            mcp_enable_export=get_required_bool("CODEINTEL_MCP_ENABLE_EXPORT", default=True),
         )
 
     def validate_auth_for_host(self) -> None:
@@ -352,38 +379,3 @@ class ServingSettings:
 
 
 __all__ = ["ServingSettings"]
-
-
-def _split_csv(raw: str) -> tuple[str, ...]:
-    """Split comma-separated values into a tuple of strings.
-
-    Parameters
-    ----------
-    raw
-        Raw comma-separated string.
-
-    Returns
-    -------
-    tuple[str, ...]
-        Tuple of stripped, non-empty values.
-    """
-    items = [item.strip() for item in raw.split(",") if item.strip()]
-    return tuple(items)
-
-
-def _parse_optional_int(value: str | None) -> int | None:
-    """Parse optional integer from environment variable.
-
-    Parameters
-    ----------
-    value
-        Raw string value or None.
-
-    Returns
-    -------
-    int | None
-        Parsed integer or None if input was None/empty.
-    """
-    if value is None or not value.strip():
-        return None
-    return int(value)

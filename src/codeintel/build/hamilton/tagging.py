@@ -1,7 +1,7 @@
 """Canonical Hamilton tagging helpers for build nodes.
 
 This module provides small wrappers around Hamilton's ``@tag`` decorator using the canonical tag
-keys and node type values defined in ``codeintel.hamilton.tags``.
+keys and node type values defined in ``codeintel.core.hamilton.tags``.
 
 The intent is to prevent "tag drift" by making common tagging patterns easy and consistent while
 still allowing controlled extension via ``extra_tags``.
@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Literal, ParamSpec, Protocol, TypedDict, TypeV
 
 from hamilton.function_modifiers import tag as h_tag
 
-from codeintel.hamilton.tags import (
+from codeintel.core.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
     NODE_TYPE_COMPUTE,
     NODE_TYPE_DATASET,
@@ -272,6 +272,7 @@ def tag_loader_query(
     *,
     domain: str | None = None,
     target: str | None = None,
+    table_key: str,
     target_: str | Collection[str] | EllipsisType | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
@@ -288,6 +289,7 @@ def tag_loader_query(
         target=target,
         extra_tags=extra_tags,
     )
+    tags[cast("TagKey", TAG_TABLE_KEY)] = table_key
     return _tag(tags, target_=target_)
 
 
@@ -295,6 +297,7 @@ def tag_loader_dataframe(
     *,
     domain: str | None = None,
     target: str | None = None,
+    table_key: str,
     target_: str | Collection[str] | EllipsisType | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
@@ -311,6 +314,7 @@ def tag_loader_dataframe(
         target=target,
         extra_tags=extra_tags,
     )
+    tags[cast("TagKey", TAG_TABLE_KEY)] = table_key
     return _tag(tags, target_=target_)
 
 

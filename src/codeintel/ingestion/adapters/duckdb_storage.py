@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, ClassVar, cast
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.ibis_typing import and_predicates, ibis_bool, isin_values
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -191,7 +192,7 @@ class DuckDBStorageAdapter(IngestStoragePort):
         if not paths:
             return 0
 
-        table = self._gateway.ibis.table(table_key)
+        table = ibis_facade.table(self._gateway, table_key)
         predicates = [isin_values(table[path_column], list(paths))]
         schema_names_attr = table.schema().names
         schema_names = list(cast("Sequence[str]", schema_names_attr))

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.serving_models import ServingConfig, normalize_optional_path
+from codeintel.serving.config import ServingConfig, normalize_optional_path
 
 if TYPE_CHECKING:
     from pathlib import Path

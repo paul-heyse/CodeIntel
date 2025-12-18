@@ -1,4 +1,4 @@
-"""Tests for codeintel.config.datasets.dataflow module."""
+"""Tests for codeintel.storage.contracts.dataflow module."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.config.datasets.dataflow import (
+from codeintel.storage.contracts.dataflow import (
     DataflowEdge,
     DataflowNode,
     build_contract_dataflow_graph,
@@ -16,7 +16,7 @@ from codeintel.config.datasets.dataflow import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.config.datasets.dataflow import (
+    from codeintel.storage.contracts.dataflow import (
         EdgeType,
         NodeKind,
     )

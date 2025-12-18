@@ -66,6 +66,7 @@ from codeintel.core.validation.options import (
     BaseValidationOptions,
     ValidationSeverity,
 )
+from codeintel.core.validation.outcome import ValidationOutcome
 from codeintel.core.validation.reporters import (
     FUNCTION_VALIDATION_COLS,
     GRAPH_VALIDATION_COLS,
@@ -90,6 +91,7 @@ __all__ = [
     "CheckResult",
     "FunctionValidationReporter",
     "GraphValidationReporter",
+    "ValidationOutcome",
     "ValidationReport",
     "ValidationRunner",
     "ValidationSeverity",

@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from codeintel.serving.export.formats import ExportFormat
 from codeintel.serving.semantic.models import SemanticQueryResponse
+from codeintel.serving.snapshot.models import ServingSnapshotRef
 
 # =============================================================================
 # URI / ID Primitives (Annotated types with validation + documentation)
@@ -91,7 +92,7 @@ ExportStatus = Literal["ready", "expired", "missing", "error"]
 # =============================================================================
 
 
-class SnapshotRef(BaseModel):
+class SnapshotRef(ServingSnapshotRef):
     """Identify the immutable serving snapshot currently mounted.
 
     Every MCP response includes snapshot metadata so LLM agents can
@@ -108,8 +109,6 @@ class SnapshotRef(BaseModel):
     published_at
         When the serving snapshot was published.
     """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     repo: str = Field(..., description="Repository identifier (usually org/repo format).")
     commit: str = Field(..., description="Git commit SHA (or equivalent).")

@@ -17,7 +17,7 @@ import networkx as nx
 from networkx.readwrite import json_graph
 
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
-from codeintel.core.options import ValidationResult
+from codeintel.core.options import ValidationOutcome
 from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.engine.factory import EngineBuildOptions, build_graph_engine
 
@@ -76,12 +76,12 @@ class GraphRuntimeOptions:
         """Validate nested feature flags."""
         self.features.validate()
 
-    def options_validate(self) -> ValidationResult:
+    def options_validate(self) -> ValidationOutcome:
         """Validate options and return any issues.
 
         Returns
         -------
-        ValidationResult
+        ValidationOutcome
             Validation result with errors/warnings if any.
         """
         errors: list[str] = []
@@ -93,8 +93,8 @@ class GraphRuntimeOptions:
             errors.append(f"Feature flags validation failed: {exc}")
 
         if errors:
-            return ValidationResult.failure(*errors)
-        return ValidationResult.success()
+            return ValidationOutcome.failure(*errors)
+        return ValidationOutcome.success()
 
     def with_defaults(self, defaults: Self) -> Self:
         """Merge with default values, preferring self's non-None values.

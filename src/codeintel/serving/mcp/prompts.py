@@ -8,13 +8,17 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import cast
 
 from fastmcp.prompts import Message
 from mcp import McpError
 from mcp.types import PromptMessage
 
+from codeintel.serving.export.formats import default_export_format, export_format_choices
 from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.operations.ops import ServingOperations
+from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type, parse_filter_value
+from codeintel.serving.semantic.models import Op
 from codeintel.serving.settings import ServingSettings
 
 
@@ -103,7 +107,7 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
         if not _supports_elicitation(ctx):
             messages = no_elicitation
         else:
-            format_choices = ["ndjson", "json", "parquet", "arrow"]
+            format_choices = list(export_format_choices())
             accepted_view = await _try_elicit(
                 ctx,
                 "Which view_id do you want to export?",
@@ -129,7 +133,7 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
                         if format_result is None:
                             messages = cancelled
                         else:
-                            export_format = str(format_result).strip() or "ndjson"
+                            export_format = str(format_result).strip() or default_export_format()
                             messages = [
                                 Message(
                                     (
@@ -378,7 +382,7 @@ async def _maybe_elicit_filter(
 
     column_types = _maybe_get_column_types(kernel, view_id=view_id)
     dtype = column_types.get(column) if column_types is not None else None
-    ops = _allowed_ops_for_dtype(dtype)
+    ops: list[str] = [str(item) for item in allowed_ops_for_column_type(dtype)]
 
     accepted_op = await _try_elicit(ctx, "Choose an operator.", response_type=ops)
     op_data = _accepted_data(accepted_op)
@@ -392,7 +396,7 @@ async def _maybe_elicit_filter(
     if not raw:
         return None
 
-    return _FilterDraft(column=column, op=op, value=_parse_filter_value(dtype, op=op, raw=raw))
+    return _FilterDraft(column=column, op=op, value=parse_filter_value(dtype, op=cast("Op", op), raw=raw))
 
 
 def _maybe_get_column_types(
@@ -410,57 +414,4 @@ def _maybe_get_column_types(
     if not isinstance(types_obj, dict):
         return None
     return {str(k): str(v) for k, v in types_obj.items()}
-
-
-def _allowed_ops_for_dtype(dtype: str | None) -> list[str]:
-    if dtype is None:
-        return ["eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith"]
-    lowered = dtype.lower()
-    if any(
-        token in lowered
-        for token in ("int", "double", "float", "decimal", "numeric", "bigint", "smallint")
-    ):
-        return ["eq", "ne", "lt", "lte", "gt", "gte", "in"]
-    if "bool" in lowered:
-        return ["eq", "ne"]
-    if any(token in lowered for token in ("char", "text", "varchar", "string", "uuid")):
-        return ["eq", "ne", "in", "contains", "startswith"]
-    return ["eq", "ne", "lt", "lte", "gt", "gte", "in"]
-
-
-def _parse_filter_value(dtype: str | None, *, op: str, raw: str) -> object:
-    if op == "in":
-        items = [item.strip() for item in raw.split(",") if item.strip()]
-        if dtype is None:
-            return items
-        return [_parse_scalar_value(dtype, item) for item in items]
-    if dtype is None:
-        return raw
-    return _parse_scalar_value(dtype, raw)
-
-
-def _parse_scalar_value(dtype: str, raw: str) -> object:
-    lowered = dtype.lower()
-    parsed: object = raw
-    if any(token in lowered for token in ("int", "bigint", "smallint", "tinyint")):
-        try:
-            parsed = int(raw)
-        except ValueError:
-            parsed = raw
-    elif any(token in lowered for token in ("float", "double", "decimal", "numeric")):
-        try:
-            parsed = float(raw)
-        except ValueError:
-            parsed = raw
-    elif "bool" in lowered:
-        normalized = raw.lower()
-        if normalized in {"true", "1", "yes"}:
-            parsed = True
-        elif normalized in {"false", "0", "no"}:
-            parsed = False
-        else:
-            parsed = raw
-    return parsed
-
-
 __all__ = ["register_prompts"]

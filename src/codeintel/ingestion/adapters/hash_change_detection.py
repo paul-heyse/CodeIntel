@@ -21,10 +21,13 @@ from codeintel.ingestion.ports.change_detection import (
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
+
+    import pandas as pd
 
     from codeintel.ingestion.ports.change_detection import (
         ChangeRequest,
@@ -145,7 +148,7 @@ class HashChangeDetectionAdapter:
         """
         gateway = getattr(self._storage, "_gateway", None)
         if gateway is not None:
-            file_state = gateway.ibis.table("core.file_state")
+            file_state = ibis_facade.table(gateway, "core.file_state")
             window = window_over(
                 partition_by=[file_state.rel_path],
                 order_by=[file_state.mtime_ns.desc()],
@@ -157,8 +160,8 @@ class HashChangeDetectionAdapter:
                 .filter(ibis_bool(rn_expr == 0))
                 .select("rel_path", "size_bytes", "mtime_ns", "content_hash")
             )
-            df = ranked.execute()
-            rows = df.to_dict(orient="records")
+            df = cast("pd.DataFrame", ranked.execute())
+            rows = cast("list[dict[str, object]]", df.to_dict(orient="records"))
         else:
             self._storage.ensure_schema("core.file_state")
             result = self._storage.execute_query(

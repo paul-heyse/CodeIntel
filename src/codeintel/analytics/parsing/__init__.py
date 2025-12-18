@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from codeintel.analytics.parsing.compute import (
-    ValidationResult,
+    ValidationRows,
     get_validation_rows,
 )
 from codeintel.analytics.parsing.function_parsing import parse_python_module
@@ -31,7 +31,7 @@ __all__ = [
     "SourceSpan",
     "SpanResolutionError",
     "SpanResolutionResult",
-    "ValidationResult",
+    "ValidationRows",
     "build_span_index",
     "get_parser",
     "get_validation_rows",

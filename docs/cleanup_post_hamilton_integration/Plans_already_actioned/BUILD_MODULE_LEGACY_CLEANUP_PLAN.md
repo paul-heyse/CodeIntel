@@ -25,7 +25,7 @@ This plan addresses the removal of dead code, legacy compatibility layers, and o
 | Alias Module | Canonical Location | Files Updated |
 |--------------|-------------------|---------------|
 | `build/manifest.py` | `codeintel.core.build_manifest` | 20 files |
-| `build/hamilton/tags.py` | `codeintel.hamilton.tags` | 13 files |
+| `build/hamilton/tags.py` | `codeintel.core.hamilton.tags` | 13 files |
 | `build/schemas/declared_schemas.py` | `codeintel.config.datasets.declared_schemas` | 2 files |
 | `build/hamilton/contracts/enforcement_hook.py` | `codeintel.build.hamilton.hooks.contract_hook` | 1 file |
 
@@ -255,7 +255,7 @@ src/codeintel/build/plugin.py
 
 ### 2.2 Consolidate `build/hamilton/tags.py` - ✅ DONE
 
-**Canonical Location**: `codeintel.hamilton.tags`
+**Canonical Location**: `codeintel.core.hamilton.tags`
 
 **Files Updated** (13 total):
 - `src/codeintel/build/hamilton/nodes/support_factory.py`
@@ -784,4 +784,3 @@ find src/codeintel/build -type d -empty -delete
 # Remove __pycache__ after changes
 find src/codeintel/build -type d -name __pycache__ -exec rm -rf {} +
 ```
-

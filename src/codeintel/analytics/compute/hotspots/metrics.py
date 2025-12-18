@@ -17,7 +17,7 @@ from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsHotspotsRow as HotspotRow,
 )
 from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -228,7 +228,7 @@ def build_hotspots(
     [('sample.py', 0.17328679513998632)]
     """
     try:
-        df_ast = gateway.ibis.table("core.ast_metrics").select("rel_path", "complexity").execute()
+        df_ast = ibis_facade.table(gateway, "core.ast_metrics").select("rel_path", "complexity").execute()
     except DuckDBError as exc:
         log.warning("Failed to read core.ast_metrics for hotspots: %s", exc)
         return

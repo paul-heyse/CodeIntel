@@ -17,12 +17,13 @@ from __future__ import annotations
 
 import ibis.expr.types as ir
 
-from codeintel.storage.gateway.protocol import MinimalGateway, StorageGateway
+from codeintel.storage.gateway.protocol import MinimalGateway
+from codeintel.storage.helpers.table_key import TableKey
 
 __all__ = ["table"]
 
 
-def table(gateway: MinimalGateway | StorageGateway, table_key: str) -> ir.Table:
+def table(gateway: MinimalGateway, table_key: TableKey) -> ir.Table:
     """Return an Ibis table expression for a fully qualified table key.
 
     Parameters

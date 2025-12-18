@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, cast
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.ibis_typing import and_predicates
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -216,7 +217,7 @@ def _persist_contract_rows(
 def _load_docstrings(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[tuple[str, str], dict[str, object]]:
-    tbl = gateway.ibis.table("core.docstrings")
+    tbl = ibis_facade.table(gateway, "core.docstrings")
     df = cast(
         "pd.DataFrame",
         tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
@@ -240,7 +241,7 @@ def _load_docstrings(
 def _load_function_types(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    tbl = gateway.ibis.table("analytics.function_types")
+    tbl = ibis_facade.table(gateway, "analytics.function_types")
     df = cast(
         "pd.DataFrame",
         tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))

@@ -23,7 +23,7 @@ from codeintel.core.validation import (
 )
 from codeintel.graphs.runtime import GraphRuntime
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     from codeintel.graphs.runtime import GraphRuntimeOptions
@@ -118,7 +118,7 @@ def persist_findings(
     if not findings:
         return
     try:
-        table = gateway.ibis.table("analytics.graph_validation")
+        table = ibis_facade.table(gateway, "analytics.graph_validation")
         gateway.ibis.delete(
             "analytics.graph_validation",
             where=and_predicates(table.repo == repo, table.commit == commit),

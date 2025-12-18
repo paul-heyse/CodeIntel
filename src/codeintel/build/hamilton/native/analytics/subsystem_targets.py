@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import logging
 
-from hamilton.function_modifiers import tag
-
 from codeintel.analytics.subsystems.materialize import build_subsystems
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
@@ -23,6 +21,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.queries.safe import count_rows_for_snapshot
@@ -46,7 +45,7 @@ TARGET_SPECS = (
     ),
 )
 
-@tag(domain="analytics", target=SUBSYSTEMS_TARGET_NAME, node_type="compute")
+@tag_compute(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
 def t__subsystems__compute(
     env: BuildEnv,
     graph: TargetGraph,
@@ -109,7 +108,7 @@ def t__subsystems__compute(
     return ExecutionResult.ok(table_counts=row_counts)
 
 
-@tag(domain="analytics", target=SUBSYSTEMS_TARGET_NAME, node_type="materialize")
+@tag_materialize(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
 def t__subsystems(
     env: BuildEnv,
     graph: TargetGraph,

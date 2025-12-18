@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, cast
 import ibis
 import pyarrow as pa
 
+from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
 from codeintel.serving.semantic.templates import QueryTemplate
 from codeintel.storage.helpers.table_key import split_table_key
 
@@ -172,6 +173,10 @@ def _build_predicate(
     value = filter_spec.value
 
     column_type = ctx.column_types.get(filter_spec.column) if ctx.column_types is not None else None
+    allowed_ops = allowed_ops_for_column_type(column_type)
+    if op not in allowed_ops:
+        msg = f"Operator {op} is not supported for column type {column_type or 'UNKNOWN'}"
+        raise QueryBuilderError(msg)
 
     simple = _SIMPLE_PREDICATES.get(op)
     if simple is not None:

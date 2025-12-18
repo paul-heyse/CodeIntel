@@ -15,29 +15,16 @@ import shutil
 import time
 from asyncio.subprocess import PIPE
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.config.models import ToolsConfig
+from codeintel.core.tools import ToolName
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 log = logging.getLogger(__name__)
-
-
-class ToolName(StrEnum):
-    """Supported external tools invoked by the ingestion pipeline."""
-
-    PYRIGHT = "pyright"
-    PYREFLY = "pyrefly"
-    COVERAGE = "coverage"
-    RUFF = "ruff"
-    PYTEST = "pytest"
-    GIT = "git"
-    SCIP_PYTHON = "scip-python"
-    SCIP = "scip"
 
 
 @dataclass(frozen=True)

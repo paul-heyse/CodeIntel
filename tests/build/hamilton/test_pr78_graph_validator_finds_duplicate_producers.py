@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from codeintel.build.hamilton.validate import validate_nodes
-from codeintel.hamilton.tags import (
+from codeintel.core.hamilton.tags import (
     NODE_TYPE_DATASET,
     NODE_TYPE_MATERIALIZE,
     TAG_DOMAIN,

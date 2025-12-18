@@ -12,7 +12,7 @@ from codeintel.analytics.parsing import (
     resolve_span,
 )
 from codeintel.analytics.parsing.registry import get_parser
-from codeintel.config.parser_types import FunctionParserKind
+from codeintel.analytics.parsing.types import FunctionParserKind
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

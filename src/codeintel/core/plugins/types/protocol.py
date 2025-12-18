@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
+from codeintel.core.validation.outcome import ValidationOutcome
+
 if TYPE_CHECKING:
     from codeintel.core.plugins.execution.context import PluginExecutionContext
     from codeintel.core.plugins.types.result import PluginResult
@@ -160,52 +162,6 @@ class PluginResourceHints:
     io_intensive: bool = False
     requires_gpu: bool = False
     priority: int = 0
-
-
-@dataclass(frozen=True)
-class ValidationResult:
-    """Result of input or output validation.
-
-    Attributes
-    ----------
-    valid
-        Whether validation passed.
-    errors
-        List of validation error messages.
-    warnings
-        List of non-fatal warning messages.
-    """
-
-    valid: bool
-    errors: tuple[str, ...] = ()
-    warnings: tuple[str, ...] = ()
-
-    @staticmethod
-    def success() -> ValidationResult:
-        """Create a successful validation result.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result marked as successful.
-        """
-        return ValidationResult(valid=True)
-
-    @staticmethod
-    def failure(errors: tuple[str, ...]) -> ValidationResult:
-        """Create a failed validation result.
-
-        Parameters
-        ----------
-        errors
-            Validation error messages.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result marked as failed with the provided errors.
-        """
-        return ValidationResult(valid=False, errors=errors)
 
 
 @dataclass(frozen=True)
@@ -363,7 +319,7 @@ class PluginProtocol(Protocol):
         """
         ...
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
+    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationOutcome:
         """Validate that required inputs are available.
 
         Parameters
@@ -373,7 +329,7 @@ class PluginProtocol(Protocol):
 
         Returns
         -------
-        ValidationResult
+        ValidationOutcome
             Validation outcome with any errors or warnings.
         """
         ...
@@ -392,5 +348,5 @@ __all__ = [
     "PluginResourceHints",
     "PluginSeverity",
     "PluginStage",
-    "ValidationResult",
+    "ValidationOutcome",
 ]

@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from codeintel.build.assets.fingerprinting import (
     DEFAULT_FINGERPRINT_POLICY,
 )
+from codeintel.storage.warehouse import Warehouse
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -137,6 +138,17 @@ class BuildEnv:
             True if target should bypass skip checks.
         """
         return target_name in self.force_targets
+
+    @property
+    def warehouse(self) -> Warehouse:
+        """Return a storage Warehouse façade for the current gateway.
+
+        Returns
+        -------
+        Warehouse
+            Warehouse wrapper around the build gateway.
+        """
+        return Warehouse(self.gateway)
 
 
 __all__ = [

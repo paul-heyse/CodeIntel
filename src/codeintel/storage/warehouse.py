@@ -306,7 +306,7 @@ class Warehouse:
         table_key: str,
         rows: Sequence[tuple[object, ...]],
         *,
-        columns: Sequence[str],
+        columns: Sequence[str] | None,
         options: MaterializeOptions | None = None,
     ) -> MaterializationResult:
         """Materialize row tuples to DuckDB.
@@ -318,7 +318,8 @@ class Warehouse:
         rows
             Row tuples matching the provided columns.
         columns
-            Column names matching the row tuple positions.
+            Column names matching the row tuple positions. When omitted, column order is derived from the
+            configured schema provider.
         options
             Materialization options, including snapshot identity and write mode.
 
@@ -339,6 +340,7 @@ class Warehouse:
         schema_version, computed_schema_hash = _contract_schema_metadata(
             self.gateway, table_key=table_key
         )
+        resolved_columns = list(columns) if columns is not None else _require_columns(self.gateway, table_key)
 
         def _write() -> int | None:
             if active.mode == "upsert" and active.upsert is not None:
@@ -349,14 +351,14 @@ class Warehouse:
                 result = self.gateway.ibis.write(
                     table_key,
                     rows,
-                    columns=list(columns),
+                    columns=resolved_columns,
                     on_conflict=on_conflict,
                 )
                 return result.rows_affected
 
             rows_written = len(rows)
             if rows_written:
-                self.gateway.ibis.write(table_key, rows, columns=list(columns))
+                self.gateway.ibis.write(table_key, rows, columns=resolved_columns)
             return rows_written
 
         ctx = _MaterializeWriterContext(
@@ -698,6 +700,15 @@ def _contract_schema_metadata(
     if contract is not None and contract.schema is not None:
         computed_schema_hash = schema_hash(contract.schema)
     return schema_version, computed_schema_hash
+
+
+def _require_columns(gateway: StorageGateway, table_key: str) -> list[str]:
+    provider = gateway.policy.schema_provider
+    if provider is None:
+        msg = f"Schema provider is required to infer columns for {table_key!r}"
+        raise RuntimeError(msg)
+    schema = provider.require_table_schema(table_key)
+    return list(schema.column_names())
 
 
 @dataclass(frozen=True, slots=True)

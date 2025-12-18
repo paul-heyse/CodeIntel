@@ -19,7 +19,7 @@ import ast
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import pandas as pd
 
@@ -47,7 +47,9 @@ from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
 )
 from codeintel.build.hamilton.contracts.schemas.validation import validate_df
+from codeintel.core.ibis_typing import and_predicates, isin_values
 from codeintel.core.parsing import SourceSpan
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -429,11 +431,15 @@ def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, lis
     dict[str, list[GoidRow]]
         GOIDs grouped by relative file path.
     """
-    tbl = gateway.ibis.table("core.goids")
-    repo_filter = cast("Any", tbl.repo == snapshot.repo)
-    commit_filter = cast("Any", tbl.commit == snapshot.commit)
-    kind_filter = cast("Any", tbl.kind.isin(cast("Any", ["function", "method"])))
-    expr = tbl.filter(repo_filter & commit_filter & kind_filter).select(
+    tbl = ibis_facade.table(gateway, "core.goids")
+    scoped = tbl.filter(
+        and_predicates(
+            tbl.repo == snapshot.repo,
+            tbl.commit == snapshot.commit,
+            isin_values(tbl.kind, ["function", "method"]),
+        )
+    )
+    expr = scoped.select(
         "goid_h128",
         "urn",
         "repo",

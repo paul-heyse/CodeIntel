@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.introspect import derive_target_outputs
-from codeintel.hamilton.tags import NODE_TYPE_MATERIALIZE, TAG_NODE_TYPE, TAG_TARGET
+from codeintel.core.hamilton.tags import NODE_TYPE_MATERIALIZE, TAG_NODE_TYPE, TAG_TARGET
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

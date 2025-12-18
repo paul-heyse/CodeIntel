@@ -34,7 +34,7 @@ from codeintel.core.ibis_typing import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsFileProfileRow as FileProfileRowModel,
 )
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -86,25 +86,25 @@ def _load_file_profile_tables(
     """
     gw = inputs.gateway
     try:
-        fp_table = gw.ibis.table("analytics.function_profile")
+        fp_table = ibis_facade.table(gw, "analytics.function_profile")
         fp = filter_by(fp_table, fp_table.repo == inputs.repo, fp_table.commit == inputs.commit)
-        ast_table = gw.ibis.table("core.ast_metrics")
+        ast_table = ibis_facade.table(gw, "core.ast_metrics")
         ast_metrics = ast_table
-        hotspots_table = gw.ibis.table("analytics.hotspots")
+        hotspots_table = ibis_facade.table(gw, "analytics.hotspots")
         hotspots = hotspots_table
-        typedness_table = gw.ibis.table("analytics.typedness")
+        typedness_table = ibis_facade.table(gw, "analytics.typedness")
         typedness = filter_by(
             typedness_table,
             typedness_table.repo == inputs.repo,
             typedness_table.commit == inputs.commit,
         )
-        static_diag_table = gw.ibis.table("analytics.static_diagnostics")
+        static_diag_table = ibis_facade.table(gw, "analytics.static_diagnostics")
         static_diag = filter_by(
             static_diag_table,
             static_diag_table.repo == inputs.repo,
             static_diag_table.commit == inputs.commit,
         )
-        module_table_expr = gw.ibis.table(module_table)
+        module_table_expr = ibis_facade.table(gw, module_table)
         modules = filter_by(
             module_table_expr,
             module_table_expr.repo == inputs.repo,

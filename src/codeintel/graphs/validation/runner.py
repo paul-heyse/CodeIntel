@@ -45,7 +45,7 @@ from codeintel.graphs.validation.findings import (
     persist_findings,
     resolve_validation_options,
 )
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     import ibis.expr.types as it
@@ -325,10 +325,10 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
             log.warning("Validation snapshot count failed for %s: %s", table_expr, exc)
             return -1
 
-    modules_tbl = gateway.ibis.table("core.modules")
-    goids_tbl = gateway.ibis.table("core.goids")
-    call_nodes_tbl = gateway.ibis.table("graph.call_graph_nodes")
-    call_edges_tbl = gateway.ibis.table("graph.call_graph_edges")
+    modules_tbl = ibis_facade.table(gateway, "core.modules")
+    goids_tbl = ibis_facade.table(gateway, "core.goids")
+    call_nodes_tbl = ibis_facade.table(gateway, "graph.call_graph_nodes")
+    call_edges_tbl = ibis_facade.table(gateway, "graph.call_graph_edges")
 
     counts = {
         "modules": _count(

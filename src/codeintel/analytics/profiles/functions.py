@@ -6,7 +6,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import ibis
 
@@ -39,21 +39,23 @@ from codeintel.analytics.utilities.type_coercion import (
 )
 from codeintel.core.ibis_typing import (
     and_predicates,
+    cast_dtype,
     col_count,
     col_nunique,
     filter_by,
+    get_column,
     gt,
     ibis_bool,
     isin_values,
+    ne,
     window_over,
 )
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     import ibis.expr.types as it
-    from ibis import BaseBackend
 
     from codeintel.analytics.profiles.types import (
         FunctionGraphFeatures,
@@ -146,11 +148,11 @@ def load_function_base_info(
     commit = inputs.commit
 
     try:
-        risk_table = gw.ibis.table("analytics.goid_risk_factors")
+        risk_table = ibis_facade.table(gw, "analytics.goid_risk_factors")
         rf = filter_by(risk_table, risk_table.repo == repo, risk_table.commit == commit)
-        fm = gw.ibis.table("analytics.function_metrics")
-        ft = gw.ibis.table("analytics.function_types")
-        modules = gw.ibis.table(module_table)
+        fm = ibis_facade.table(gw, "analytics.function_metrics")
+        ft = ibis_facade.table(gw, "analytics.function_types")
+        modules = ibis_facade.table(gw, module_table)
     except DuckDBError as exc:
         log.warning("function_profile: failed to access base tables: %s", exc)
         return {}
@@ -321,7 +323,7 @@ def join_function_risk(inputs: FunctionProfileInputs) -> Mapping[int, FunctionRi
         Mapping keyed by function GOID.
     """
     try:
-        risk_table = inputs.gateway.ibis.table("analytics.goid_risk_factors")
+        risk_table = ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors")
         rf = filter_by(
             risk_table,
             risk_table.repo == inputs.repo,
@@ -363,25 +365,24 @@ def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, Covera
     Mapping[int, CoverageSummary]
         Mapping keyed by function GOID.
     """
-    gw_ibis = cast("Any", inputs.gateway.ibis)
     repo = inputs.repo
     commit = inputs.commit
 
     try:
-        edges, catalog = _load_test_tables(gw_ibis, repo, commit)
+        edges, catalog = _load_test_tables(inputs.gateway, repo, commit)
         t_stats, status_top = _compute_test_stats(
             edges, catalog, slow_threshold_ms=inputs.slow_test_threshold_ms
         )
 
         rf = filter_by(
-            gw_ibis.table("analytics.goid_risk_factors"),
-            gw_ibis.table("analytics.goid_risk_factors").repo == repo,
-            gw_ibis.table("analytics.goid_risk_factors").commit == commit,
+            ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors"),
+            ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors").repo == repo,
+            ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors").commit == commit,
         )
         cf = filter_by(
-            gw_ibis.table("analytics.coverage_functions"),
-            gw_ibis.table("analytics.coverage_functions").repo == repo,
-            gw_ibis.table("analytics.coverage_functions").commit == commit,
+            ibis_facade.table(inputs.gateway, "analytics.coverage_functions"),
+            ibis_facade.table(inputs.gateway, "analytics.coverage_functions").repo == repo,
+            ibis_facade.table(inputs.gateway, "analytics.coverage_functions").commit == commit,
         )
 
         df = (
@@ -457,7 +458,7 @@ def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, Covera
     return result
 
 
-def _load_test_tables(gw_ibis: BaseBackend, repo: str, commit: str) -> tuple[it.Table, it.Table]:
+def _load_test_tables(gateway: StorageGateway, repo: str, commit: str) -> tuple[it.Table, it.Table]:
     """Load coverage edge and catalog tables with repo/commit filtering.
 
     Returns
@@ -465,10 +466,10 @@ def _load_test_tables(gw_ibis: BaseBackend, repo: str, commit: str) -> tuple[it.
     tuple[it.Table, it.Table]
         Filtered coverage edge table and catalog table.
     """
-    edges_table = gw_ibis.table("analytics.test_coverage_edges")
+    edges_table = ibis_facade.table(gateway, "analytics.test_coverage_edges")
     edges = filter_by(edges_table, edges_table.repo == repo, edges_table.commit == commit)
 
-    catalog_table = gw_ibis.table("analytics.test_catalog")
+    catalog_table = ibis_facade.table(gateway, "analytics.test_catalog")
     catalog = filter_by(
         catalog_table,
         catalog_table.repo == repo,
@@ -533,9 +534,8 @@ def join_function_effects(inputs: FunctionProfileInputs) -> Mapping[int, Functio
     Mapping[int, FunctionEffectsView]
         Mapping keyed by function GOID.
     """
-    ibis_api = cast("Any", inputs.gateway.ibis)
     try:
-        effects_table = ibis_api.table("analytics.function_effects")
+        effects_table = ibis_facade.table(inputs.gateway, "analytics.function_effects")
         effects = filter_by(
             effects_table,
             effects_table.repo == inputs.repo,
@@ -597,26 +597,23 @@ def join_function_contracts(inputs: FunctionProfileInputs) -> Mapping[int, Funct
     Mapping[int, FunctionContractView]
         Mapping keyed by function GOID.
     """
-    ibis_api = cast("Any", inputs.gateway.ibis)
     try:
-        contracts_table = ibis_api.table("analytics.function_contracts")
+        contracts_table = ibis_facade.table(inputs.gateway, "analytics.function_contracts")
         contracts = filter_by(
             contracts_table,
             contracts_table.repo == inputs.repo,
             contracts_table.commit == inputs.commit,
         )
-        contracts_expr = cast("Any", contracts)
-        df = contracts_expr.select(
+        preconditions = cast_dtype(get_column(contracts, "preconditions_json"), "string")
+        postconditions = cast_dtype(get_column(contracts, "postconditions_json"), "string")
+        raises_json = cast_dtype(get_column(contracts, "raises_json"), "string")
+        df = contracts.select(
             contracts.function_goid_h128,
             contracts.param_nullability_json,
             contracts.return_nullability,
-            (contracts_expr.preconditions_json.cast("string").length() > 0).name(
-                "has_preconditions"
-            ),
-            (contracts_expr.postconditions_json.cast("string").length() > 0).name(
-                "has_postconditions"
-            ),
-            (contracts_expr.raises_json.cast("string").length() > 0).name("has_raises"),
+            ne(preconditions, "").name("has_preconditions"),
+            ne(postconditions, "").name("has_postconditions"),
+            ne(raises_json, "").name("has_raises"),
             contracts.contract_confidence,
         ).execute()
     except DuckDBError as exc:
@@ -656,9 +653,8 @@ def join_function_roles(inputs: FunctionProfileInputs) -> Mapping[int, FunctionR
     Mapping[int, FunctionRoleView]
         Mapping keyed by function GOID.
     """
-    ibis_api = cast("Any", inputs.gateway.ibis)
     try:
-        roles_table = ibis_api.table("analytics.semantic_roles_functions")
+        roles_table = ibis_facade.table(inputs.gateway, "analytics.semantic_roles_functions")
         roles = filter_by(
             roles_table,
             roles_table.repo == inputs.repo,
@@ -698,12 +694,10 @@ def join_function_docs(inputs: FunctionProfileInputs) -> Mapping[int, FunctionDo
     Mapping[int, FunctionDocView]
         Mapping keyed by function GOID.
     """
-    gw = inputs.gateway
-    gw_ibis = cast("Any", gw.ibis)
     try:
-        rf_table = gw_ibis.table("analytics.goid_risk_factors")
+        rf_table = ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors")
         rf = filter_by(rf_table, rf_table.repo == inputs.repo, rf_table.commit == inputs.commit)
-        docs = gw_ibis.table("core.docstrings")
+        docs = ibis_facade.table(inputs.gateway, "core.docstrings")
         df = (
             (
                 rf.left_join(
@@ -755,9 +749,8 @@ def join_function_history(inputs: FunctionProfileInputs) -> Mapping[int, Functio
     Mapping[int, FunctionHistoryView]
         Mapping keyed by function GOID.
     """
-    ibis_api = cast("Any", inputs.gateway.ibis)
     try:
-        history_table = ibis_api.table("analytics.function_history")
+        history_table = ibis_facade.table(inputs.gateway, "analytics.function_history")
         history = filter_by(
             history_table,
             history_table.repo == inputs.repo,

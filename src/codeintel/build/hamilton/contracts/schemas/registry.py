@@ -22,7 +22,7 @@ from functools import cache
 from typing import TYPE_CHECKING, get_args, get_origin, get_type_hints
 
 from codeintel.build.hamilton.contracts.schemas.builder import build_all_schemas
-from codeintel.build.hamilton.native.registry import load_native_modules
+from codeintel.build.hamilton.native.discovery import load_native_modules
 
 if TYPE_CHECKING:
     from collections.abc import ItemsView, Iterator, ValuesView

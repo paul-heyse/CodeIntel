@@ -79,7 +79,7 @@ class MinimalGateway(Protocol):
         ...
 
 
-class StorageGateway(Protocol):
+class StorageGateway(MinimalGateway, Protocol):
     """Expose DuckDB access along with dataset registry metadata."""
 
     analytics: AnalyticsTables

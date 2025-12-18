@@ -8,6 +8,7 @@ JSON serialization.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from dataclasses import dataclass, field, is_dataclass
 from dataclasses import fields as get_fields
@@ -15,7 +16,7 @@ from enum import Enum
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
-    Any,
+    ClassVar,
     Protocol,
     TypeGuard,
     TypeVar,
@@ -35,7 +36,12 @@ T_co = TypeVar("T_co", covariant=True)
 
 
 class _DataclassInstance(Protocol):
-    __dataclass_fields__: dict[str, object]
+    __dataclass_fields__: ClassVar[dict[str, dataclasses.Field[object]]]
+
+
+class _ResultTypeClass(Protocol):
+    RESULT_TYPE_GENERATED: ClassVar[bool]
+    to_dict: ClassVar[object]
 
 
 def result_type[T](cls: type[T]) -> type[T]:
@@ -81,7 +87,9 @@ def result_type[T](cls: type[T]) -> type[T]:
         msg = f"@result_type requires a dataclass, got {cls.__name__}"
         raise TypeError(msg)
 
-    def to_dict(self: object) -> dict[str, object]:
+    result_cls = cast("type[_ResultTypeClass]", cls)
+
+    def to_dict(self: _DataclassInstance) -> dict[str, object]:
         """Auto-generated serialization that omits None fields.
 
         Returns
@@ -90,8 +98,6 @@ def result_type[T](cls: type[T]) -> type[T]:
             Dictionary with non-None field values.
         """
         return _serialize_dataclass(self)
-
-    result_cls = cast("type[Any]", cls)
 
     if not hasattr(result_cls, "RESULT_TYPE_GENERATED"):
         result_cls.RESULT_TYPE_GENERATED = False
@@ -114,7 +120,7 @@ def _is_dataclass_instance(value: object) -> TypeGuard[_DataclassInstance]:
     return is_dataclass(value) and not isinstance(value, type)
 
 
-def _serialize_dataclass(value: object) -> dict[str, object]:
+def _serialize_dataclass(value: _DataclassInstance) -> dict[str, object]:
     """Serialize a dataclass instance to dictionary.
 
     Parameters
@@ -129,7 +135,7 @@ def _serialize_dataclass(value: object) -> dict[str, object]:
     """
     result: dict[str, object] = {}
 
-    for fld in get_fields(cast("Any", value)):
+    for fld in get_fields(value):
         if fld.name.startswith("_"):
             continue
         field_value = getattr(value, fld.name)

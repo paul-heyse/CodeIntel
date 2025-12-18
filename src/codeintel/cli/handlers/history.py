@@ -33,6 +33,7 @@ from codeintel.storage.gateway import (
     DuckDBInvalidInputException,
     StorageConfig,
     build_snapshot_gateway_resolver,
+    ibis_facade,
     open_gateway,
 )
 
@@ -101,7 +102,7 @@ def _write_synthetic_history_rows(
         commit_timestamp = datetime.now(UTC)
         snapshot_gateway = snapshot_resolver(commit)
         try:
-            profile = snapshot_gateway.ibis.table("analytics.function_profile")
+            profile = ibis_facade.table(snapshot_gateway, "analytics.function_profile")
             df = profile.select("repo", "module", "rel_path", "qualname").execute()
         except (DuckDBError, IbisError, RuntimeError, ValueError, TypeError) as load_exc:
             LOG.warning(

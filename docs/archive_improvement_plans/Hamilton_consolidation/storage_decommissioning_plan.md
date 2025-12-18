@@ -66,7 +66,7 @@ steps so we can land the decommissioning safely.
 ## Ground rules for execution
 
 - Prefer making **shared primitives** live in `codeintel.core` or a new top-level shared package
-  (e.g., `codeintel.hamilton`) rather than keeping them build-owned.
+  (e.g., `codeintel.core.hamilton`) rather than keeping them build-owned.
 - Remove runtime storage→build dependencies by moving primitives “down”, not by adding new shims.
 - Keep steps small enough that failures are easy to attribute (phase-by-phase).
 - After each phase: run quality gates.
@@ -118,9 +118,9 @@ Goal: eliminate storage’s need to import build for tag constants, semantic tag
 
 - [ ] Create `src/codeintel/hamilton/tags.py` (new shared location) containing constants currently in
       `src/codeintel/build/hamilton/tags.py`.
-- [ ] Update imports across repo (storage + build) to use `codeintel.hamilton.tags`.
+- [ ] Update imports across repo (storage + build) to use `codeintel.core.hamilton.tags`.
 - [ ] Convert `src/codeintel/build/hamilton/tags.py` to either:
-  - [ ] (temporary) re-export from `codeintel.hamilton.tags`, or
+  - [ ] (temporary) re-export from `codeintel.core.hamilton.tags`, or
   - [ ] (preferred) delete it after all imports are migrated.
 
 #### 1B) Semantic view decorator + tag keys
@@ -337,4 +337,3 @@ rg -n "storage\\.view_names" src tests
 rg -n "storage\\.queries\\.execution" src tests
 rg -n "storage\\.gateway_cache" src tests
 ```
-
