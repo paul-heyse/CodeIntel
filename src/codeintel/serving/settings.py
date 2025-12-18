@@ -67,6 +67,30 @@ class ServingSettings:
         Enable EventStore for SSE polling/resumability on HTTP transport.
     mcp_retry_interval_ms
         SSE retry interval in milliseconds for reconnecting clients.
+    mcp_enable_structured_logging
+        Enable structured (JSON) middleware logs for MCP.
+    mcp_rate_limit_rps
+        Per-session sustained requests/sec allowed for MCP.
+    mcp_rate_limit_burst
+        Per-session burst capacity for MCP rate limiting.
+    mcp_cache_listings
+        Cache MCP listings (tools/list, resources/list, prompts/list) with TTL.
+    mcp_cache_listings_ttl_seconds
+        TTL for listing response caching.
+    mcp_max_concurrent_exports
+        Maximum concurrent export operations allowed.
+    mcp_export_enable_tasks
+        Enable background task capability for exports (SEP-1686).
+    mcp_export_ttl_seconds
+        TTL for export artifacts created via MCP (None disables expiry).
+    mcp_export_cleanup_interval_seconds
+        Interval (seconds) for periodic cleanup of expired export artifacts.
+    mcp_export_max_full_read_bytes
+        Maximum bytes allowed for reading an export payload via `codeintel://exports/{export_id}`.
+    mcp_export_max_chunk_bytes
+        Maximum bytes allowed per `.../bytes?...` chunk resource read.
+    mcp_export_max_chunk_lines
+        Maximum lines allowed per `.../lines?...` chunk resource read.
     uvicorn_workers
         Number of Uvicorn worker processes. Use >1 for production.
     uvicorn_loop
@@ -130,10 +154,26 @@ class ServingSettings:
 
     # MCP Query Concurrency Control
     mcp_max_concurrent_queries: int = 2
+    mcp_max_concurrent_exports: int = 1
 
     # MCP EventStore for SSE Resumability
     mcp_enable_event_store: bool = True
     mcp_retry_interval_ms: int = 1000
+
+    # MCP Middleware Features
+    mcp_enable_structured_logging: bool = True
+    mcp_rate_limit_rps: float = 20.0
+    mcp_rate_limit_burst: int = 40
+    mcp_cache_listings: bool = True
+    mcp_cache_listings_ttl_seconds: int = 5
+
+    # MCP Export Lifecycle (resources are not streaming)
+    mcp_export_enable_tasks: bool = True
+    mcp_export_ttl_seconds: int | None = 3600
+    mcp_export_cleanup_interval_seconds: int = 60
+    mcp_export_max_full_read_bytes: int = 1_000_000
+    mcp_export_max_chunk_bytes: int = 1_000_000
+    mcp_export_max_chunk_lines: int = 2_000
 
     # Uvicorn Production Configuration
     uvicorn_workers: int = 1
@@ -200,9 +240,41 @@ class ServingSettings:
             mcp_max_concurrent_queries=int(
                 os.environ.get("CODEINTEL_MCP_MAX_CONCURRENT_QUERIES", "2")
             ),
+            mcp_max_concurrent_exports=int(
+                os.environ.get("CODEINTEL_MCP_MAX_CONCURRENT_EXPORTS", "1")
+            ),
             # MCP EventStore for SSE Resumability
             mcp_enable_event_store=os.environ.get("CODEINTEL_MCP_EVENT_STORE", "1") == "1",
             mcp_retry_interval_ms=int(os.environ.get("CODEINTEL_MCP_RETRY_INTERVAL", "1000")),
+            # MCP Middleware Features
+            mcp_enable_structured_logging=os.environ.get(
+                "CODEINTEL_MCP_ENABLE_STRUCTURED_LOGGING", "1"
+            )
+            == "1",
+            mcp_rate_limit_rps=float(os.environ.get("CODEINTEL_MCP_RATE_LIMIT_RPS", "20.0")),
+            mcp_rate_limit_burst=int(os.environ.get("CODEINTEL_MCP_RATE_LIMIT_BURST", "40")),
+            mcp_cache_listings=os.environ.get("CODEINTEL_MCP_CACHE_LISTINGS", "1") == "1",
+            mcp_cache_listings_ttl_seconds=int(
+                os.environ.get("CODEINTEL_MCP_CACHE_LISTINGS_TTL_SECONDS", "5")
+            ),
+            # MCP Export Lifecycle
+            mcp_export_enable_tasks=os.environ.get("CODEINTEL_MCP_EXPORT_ENABLE_TASKS", "1")
+            == "1",
+            mcp_export_ttl_seconds=_parse_optional_int(
+                os.environ.get("CODEINTEL_MCP_EXPORT_TTL_SECONDS", "3600")
+            ),
+            mcp_export_cleanup_interval_seconds=int(
+                os.environ.get("CODEINTEL_MCP_EXPORT_CLEANUP_INTERVAL_SECONDS", "60")
+            ),
+            mcp_export_max_full_read_bytes=int(
+                os.environ.get("CODEINTEL_MCP_EXPORT_MAX_FULL_READ_BYTES", "1000000")
+            ),
+            mcp_export_max_chunk_bytes=int(
+                os.environ.get("CODEINTEL_MCP_EXPORT_MAX_CHUNK_BYTES", "1000000")
+            ),
+            mcp_export_max_chunk_lines=int(
+                os.environ.get("CODEINTEL_MCP_EXPORT_MAX_CHUNK_LINES", "2000")
+            ),
             # Uvicorn Production Configuration
             uvicorn_workers=int(os.environ.get("CODEINTEL_UVICORN_WORKERS", "1")),
             uvicorn_loop=os.environ.get("CODEINTEL_UVICORN_LOOP", "auto"),
@@ -253,6 +325,28 @@ class ServingSettings:
                 f"Security error: Binding to {self.host!r} requires authentication. "
                 f"Set CODEINTEL_AUTH_TOKEN or CODEINTEL_SERVE_API_KEY, "
                 f"or set CODEINTEL_AUTH_REQUIRED_FOR_REMOTE=0 to disable this check."
+            )
+            raise ValueError(msg)
+
+    def validate_mcp_single_worker(self, *, mount_mcp: bool) -> None:
+        """Validate the deployment contract for sessionful MCP.
+
+        Parameters
+        ----------
+        mount_mcp
+            Whether MCP is mounted/enabled for this serving process.
+
+        Raises
+        ------
+        ValueError
+            If MCP is mounted but the deployment is configured for >1 worker.
+        """
+        if not mount_mcp:
+            return
+        if self.uvicorn_workers != 1:
+            msg = (
+                "Invalid configuration: MCP is sessionful and requires uvicorn_workers=1. "
+                f"Got uvicorn_workers={self.uvicorn_workers}."
             )
             raise ValueError(msg)
 

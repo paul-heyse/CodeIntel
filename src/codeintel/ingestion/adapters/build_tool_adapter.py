@@ -1,14 +1,14 @@
 """Tool adapter bridging build protocols to ingestion ports.
 
-This adapter implements IngestToolPort using the protocols from
-codeintel.build.protocols, allowing the ingestion compute layer
-to work with the new build system's tool abstractions.
+This adapter implements IngestToolPort using minimal protocol shapes that match
+the build providers, allowing the ingestion compute layer to remain decoupled
+from the build execution engine.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.ingestion.ports.tools import (
     CoverageFileData,
@@ -20,15 +20,43 @@ from codeintel.ingestion.ports.tools import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
-    from codeintel.build.protocols import (
-        CoverageCollector,
-        ScipIndexer,
-        TypeChecker,
-    )
+    from codeintel.build.types import CoverageData, ScipIndexResult, TypeCheckResult
 
 log = logging.getLogger(__name__)
+
+
+class TypeChecker(Protocol):
+    """Minimal type-checking protocol used by ingestion tooling."""
+
+    async def check(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+        config_path: Path | None = None,
+    ) -> TypeCheckResult: ...
+
+
+class CoverageCollector(Protocol):
+    """Minimal coverage collection protocol used by ingestion tooling."""
+
+    async def collect(self, coverage_file: Path) -> Mapping[str, CoverageData]: ...
+
+
+class ScipIndexer(Protocol):
+    """Minimal SCIP indexing protocol used by ingestion tooling."""
+
+    async def index(
+        self,
+        repo_root: Path,
+        output_path: Path,
+        *,
+        include_patterns: Sequence[str] | None = None,
+        exclude_patterns: Sequence[str] | None = None,
+    ) -> ScipIndexResult: ...
 
 
 class BuildToolAdapter:

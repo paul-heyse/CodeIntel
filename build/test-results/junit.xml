@@ -1,1 +1,46 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="16.292" timestamp="2025-12-17T23:03:40.937656-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.build.hamilton.test_tag_guardrails" name="test_validate_graph_has_no_errors" time="0.249" /></testsuite></testsuites>
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.080" timestamp="2025-12-18T00:10:23.711922-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.build.hamilton.test_pr72_view_schema_inference.TestInferViewSchemaEdgeCases" name="test_view_nullable_inference_preserves_constraint" time="0.017"><failure message="AssertionError: Expected condition to be False.">duckdb_con = &lt;_duckdb.DuckDBPyConnection object at 0x74fc38717ab0&gt;
+
+    @staticmethod
+    def test_view_nullable_inference_preserves_constraint(
+        duckdb_con: duckdb.DuckDBPyConnection,
+    ) -&gt; None:
+        """Verify that inferred view columns preserve nullability from source."""
+        duckdb_con.execute("""
+            CREATE SCHEMA IF NOT EXISTS test_schema
+        """)
+        duckdb_con.execute("""
+            CREATE TABLE IF NOT EXISTS test_schema.nullable_source (
+                required_col INTEGER NOT NULL,
+                optional_col INTEGER
+            )
+        """)
+        duckdb_con.execute("""
+            CREATE OR REPLACE VIEW test_schema.nullable_view AS
+            SELECT * FROM test_schema.nullable_source
+        """)
+    
+        schema = infer_view_schema(con=duckdb_con, view_key="test_schema.nullable_view")
+    
+        # DuckDB actually preserves NOT NULL constraints when describing views
+        # that select directly from source tables
+        col_by_name = {col.name: col for col in schema.columns}
+&gt;       expect_false(col_by_name["required_col"].nullable)
+
+tests/build/hamilton/test_pr72_view_schema_inference.py:220: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = True
+
+    def expect_false(condition: object, *, message: str | None = None) -&gt; None:
+        """Raise AssertionError when a boolean condition is unexpectedly True.
+    
+        Raises
+        ------
+        AssertionError
+            If the condition evaluates to True.
+        """
+        if condition:
+&gt;           raise AssertionError(message or "Expected condition to be False.")
+E           AssertionError: Expected condition to be False.
+
+tests/_helpers/assertions/expectation_assertions.py:53: AssertionError</failure></testcase></testsuite></testsuites>

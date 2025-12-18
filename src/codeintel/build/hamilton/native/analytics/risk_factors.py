@@ -23,7 +23,6 @@ from hamilton.function_modifiers import (
     tag,
     value,
 )
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
@@ -36,6 +35,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.validators import (
     build_enum_column_contract,
     build_table_contract,
@@ -85,7 +85,7 @@ def risk_factors__fan_in(q__graph__call_graph_edges: ir.Table) -> ir.Table:
     return (
         q__graph__call_graph_edges.group_by("callee_goid_h128")
         .aggregate(fan_in_count=ibis._.count())
-        .rename({"callee_goid_h128": "function_goid_h128"})
+        .rename({"function_goid_h128": "callee_goid_h128"})
     )
 
 
@@ -108,7 +108,7 @@ def risk_factors__fan_out(q__graph__call_graph_edges: ir.Table) -> ir.Table:
     return (
         q__graph__call_graph_edges.group_by("caller_goid_h128")
         .aggregate(fan_out_count=ibis._.count())
-        .rename({"caller_goid_h128": "function_goid_h128"})
+        .rename({"function_goid_h128": "caller_goid_h128"})
     )
 
 
@@ -218,7 +218,7 @@ def _risk_factors_finalize(risk: ir.Table) -> ir.Table:
     )
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBIbisTableSaver],
     output_name_=materialize_node(RISK_FACTORS_TABLE_KEY),
     env=source("env"),
@@ -312,7 +312,7 @@ def t__risk_factors__compute(
 def t__risk_factors(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__goid_risk_factors: dict[str, Any],
+    m__analytics__goid_risk_factors: dict[str, object],
 ) -> TargetRunRecord:
     """Finalize risk_factors execution from DAG-visible DuckDB materialization.
 

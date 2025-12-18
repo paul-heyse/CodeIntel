@@ -305,6 +305,14 @@ ERROR_CODE_CATALOG: dict[str, ErrorInfoTemplate] = {
         message="Export request is too large (rows/bytes exceed server limits).",
         hint="Add filters and/or reduce limit; consider exporting narrower slices.",
     ),
+    "CODEINTEL_EXPORT_INVALID_REQUEST": ErrorInfoTemplate(
+        code="CODEINTEL_EXPORT_INVALID_REQUEST",
+        kind=ErrorKind.invalid_request,
+        http_status=400,
+        retryable=False,
+        message="Invalid export request.",
+        hint="Validate view_id, export_format, limit, and filters; call semantic_describe(view_id) for schema.",
+    ),
     "CODEINTEL_EXPORT_UNAVAILABLE": ErrorInfoTemplate(
         code="CODEINTEL_EXPORT_UNAVAILABLE",
         kind=ErrorKind.unavailable,
@@ -320,6 +328,22 @@ ERROR_CODE_CATALOG: dict[str, ErrorInfoTemplate] = {
         retryable=True,
         message="Internal error while retrieving export.",
         hint="Retry. If it persists, inspect server logs using debug_id.",
+    ),
+    "CODEINTEL_META_ARTIFACT_NOT_FOUND": ErrorInfoTemplate(
+        code="CODEINTEL_META_ARTIFACT_NOT_FOUND",
+        kind=ErrorKind.not_found,
+        http_status=404,
+        retryable=False,
+        message="Meta artifact '{artifact}' not found for mounted snapshot.",
+        hint="Verify the snapshot was built with serving artifacts enabled.",
+    ),
+    "CODEINTEL_META_SQL_UNSAFE": ErrorInfoTemplate(
+        code="CODEINTEL_META_SQL_UNSAFE",
+        kind=ErrorKind.corrupt,
+        http_status=500,
+        retryable=False,
+        message="Meta SQL artifact contains unsafe SQL for view '{view_id}'.",
+        hint="Rebuild the snapshot and ensure compiled SQL stays within the select-only perimeter.",
     ),
     # -------- Serving snapshot / DB (4) --------
     "CODEINTEL_SERVING_SNAPSHOT_NOT_MOUNTED": ErrorInfoTemplate(
@@ -524,36 +548,44 @@ def exception_to_error_response(
     ErrorResponse
         Canonical error response.
     """
-    # Domain exceptions carry their own code
     if isinstance(exc, CodeIntelDomainError):
         return exc.to_error_response(context=context)
 
-    # Pydantic validation errors
-    if isinstance(exc, ValidationError):
-        return error_from_code(
-            "CODEINTEL_SEMANTIC_INVALID_QUERY",
-            context=context,
-            details={"validation_errors": exc.errors()[:10]},
-        )
-
-    # Timeout errors
-    if isinstance(exc, TimeoutError):
-        return error_from_code("CODEINTEL_SEMANTIC_QUERY_TIMEOUT", context=context)
-
-    # KeyError for view not found (common pattern)
-    if isinstance(exc, KeyError) and context.view_id is not None:
-        return error_from_code(
-            "CODEINTEL_SEMANTIC_VIEW_NOT_FOUND",
-            context=context,
-            params={"view_id": context.view_id},
-        )
-
-    # Default: internal error
-    return error_from_code(
-        "CODEINTEL_SEMANTIC_INTERNAL_ERROR",
-        context=context,
-        details={"exception_type": type(exc).__name__},
+    is_export = context.tool_name == "semantic_export" or (
+        isinstance(context.resource_uri, str) and context.resource_uri.startswith("codeintel://exports/")
     )
+    is_meta_views_sql = isinstance(context.resource_uri, str) and context.resource_uri.startswith(
+        "codeintel://meta/views_sql"
+    )
+
+    code: str
+    params: dict[str, Any] | None = None
+    details: dict[str, Any] | None = None
+
+    if isinstance(exc, ValidationError):
+        code = "CODEINTEL_EXPORT_INVALID_REQUEST" if is_export else "CODEINTEL_SEMANTIC_INVALID_QUERY"
+        details = {"validation_errors": exc.errors()[:10]}
+    elif isinstance(exc, TimeoutError):
+        if is_export:
+            code = "CODEINTEL_EXPORT_UNAVAILABLE"
+        else:
+            code = "CODEINTEL_SEMANTIC_QUERY_TIMEOUT"
+    elif isinstance(exc, KeyError) and context.view_id is not None:
+        code = "CODEINTEL_SEMANTIC_VIEW_NOT_FOUND"
+        params = {"view_id": context.view_id}
+    elif isinstance(exc, (TypeError, ValueError)):
+        if is_meta_views_sql and context.view_id is not None:
+            code = "CODEINTEL_META_SQL_UNSAFE"
+            params = {"view_id": context.view_id}
+        elif is_export:
+            code = "CODEINTEL_EXPORT_INVALID_REQUEST"
+        else:
+            code = "CODEINTEL_SEMANTIC_INVALID_QUERY"
+    else:
+        code = "CODEINTEL_EXPORT_INTERNAL_ERROR" if is_export else "CODEINTEL_SEMANTIC_INTERNAL_ERROR"
+        details = {"exception_type": type(exc).__name__}
+
+    return error_from_code(code, context=context, params=params, details=details)
 
 
 # =============================================================================
@@ -711,6 +743,26 @@ class AuthForbiddenError(CodeIntelDomainError):
         )
 
 
+class MetaArtifactNotFoundError(CodeIntelDomainError):
+    """Serving meta artifact missing from the mounted snapshot."""
+
+    def __init__(self, artifact: str) -> None:
+        super().__init__(
+            code="CODEINTEL_META_ARTIFACT_NOT_FOUND",
+            params={"artifact": artifact},
+        )
+
+
+class MetaSqlUnsafeError(CodeIntelDomainError):
+    """Serving meta SQL artifact violates the select-only perimeter."""
+
+    def __init__(self, view_id: str) -> None:
+        super().__init__(
+            code="CODEINTEL_META_SQL_UNSAFE",
+            params={"view_id": view_id},
+        )
+
+
 __all__ = [
     "ERROR_CODE_CATALOG",
     "AuthForbiddenError",
@@ -724,6 +776,8 @@ __all__ = [
     "ExportExpiredError",
     "ExportNotFoundError",
     "ExportTooLargeError",
+    "MetaArtifactNotFoundError",
+    "MetaSqlUnsafeError",
     "SemanticColumnNotFoundError",
     "SemanticInvalidFilterError",
     "SemanticLimitExceededError",

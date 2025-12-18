@@ -125,6 +125,20 @@ class _DummyKernel:
         _ = request
         return ("q_dummy", None)
 
+    @staticmethod
+    def export_to_parquet(request: SemanticExportRequest, *, output_path: Path) -> None:
+        _ = request
+        _ = output_path
+        msg = "_DummyKernel does not support parquet exports"
+        raise RuntimeError(msg)
+
+    @staticmethod
+    def export_to_arrow_ipc(request: SemanticExportRequest, *, output_path: Path) -> int:
+        _ = request
+        _ = output_path
+        msg = "_DummyKernel does not support arrow exports"
+        raise RuntimeError(msg)
+
 
 def _check_semantic_http_routes() -> list[str]:
     issues: list[str] = []

@@ -35,7 +35,6 @@ from hamilton.function_modifiers import (
     tag,
     value,
 )
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.analytics.graphs import (
     compute_graph_metrics,
@@ -64,6 +63,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
@@ -1237,7 +1237,7 @@ def _call_graph_views_finalize_depth_stats(tables: CallGraphDepthTables, env: Bu
     )
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBIbisTableSaver],
     output_name_=materialize_node(CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS),
     env=source("env"),
@@ -1294,7 +1294,7 @@ def call_graph_function_call_counts(
     return q__graph__call_graph_edges
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBIbisTableSaver],
     output_name_=materialize_node(CALL_GRAPH_VIEWS_CALL_DEPTH_STATS),
     env=source("env"),
@@ -1353,8 +1353,8 @@ def call_graph_depth_stats(
 def t__call_graph_views(
     env: BuildEnv,
     graph: TargetGraph,
-    m__graph__v_function_call_counts: dict[str, Any],
-    m__graph__v_call_depth_stats: dict[str, Any],
+    m__graph__v_function_call_counts: dict[str, object],
+    m__graph__v_call_depth_stats: dict[str, object],
 ) -> TargetRunRecord:
     """Materialize call graph view expressions to DuckDB.
 

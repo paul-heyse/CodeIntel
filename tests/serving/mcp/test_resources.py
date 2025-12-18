@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
@@ -12,6 +13,7 @@ from fastmcp.client import Client
 
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.mcp.app import build_mcp_app
+from codeintel.serving.mcp.errors import ExportNotFoundError
 from codeintel.serving.mcp.resource_store import (
     ExportArtifactSpec,
     ResourceStore,
@@ -26,7 +28,7 @@ from tests._helpers.assertions.expectation_assertions import expect_equal, expec
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from mcp.types import TextResourceContents
+    from mcp.types import BlobResourceContents, TextResourceContents
 
 # Expected minimum number of resource templates in canonical taxonomy
 _MIN_RESOURCE_TEMPLATES = 8
@@ -264,10 +266,10 @@ def test_resource_store_put_and_get_ndjson(tmp_path: Path) -> None:
 
 
 def test_resource_store_get_unknown_token(tmp_path: Path) -> None:
-    """Verify KeyError for unknown token."""
+    """Verify ExportNotFoundError for unknown token."""
     store = ResourceStore(tmp_path / "exports")
 
-    with pytest.raises(KeyError, match="Artifact not found"):
+    with pytest.raises(ExportNotFoundError):
         store.get("nonexistent_token")
 
 
@@ -357,10 +359,10 @@ def test_resource_store_get_meta(tmp_path: Path) -> None:
 
 
 def test_resource_store_get_meta_not_found(tmp_path: Path) -> None:
-    """Verify get_meta raises KeyError for unknown token."""
+    """Verify get_meta raises ExportNotFoundError for unknown token."""
     store = ResourceStore(tmp_path / "exports")
 
-    with pytest.raises(KeyError, match="Metadata not found"):
+    with pytest.raises(ExportNotFoundError):
         store.get_meta("nonexistent_token")
 
 
@@ -821,6 +823,37 @@ async def test_mcp_resource_meta_resources(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_mcp_resource_meta_environment(tmp_path: Path) -> None:
+    """Verify codeintel://meta/environment returns environment + runtime info."""
+    pointer_path = _setup_test_snapshot(tmp_path)
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        settings = ServingSettings(
+            serve_dir=tmp_path,
+            hot_swap=False,
+            pool_size=1,
+            poll_interval_s=0.01,
+        )
+        kernel = SemanticQueryKernel(db=manager, settings=settings)
+        mcp = build_mcp_app(kernel=kernel, settings=settings)
+
+        async with Client(mcp) as client:
+            result = await client.read_resource("codeintel://meta/environment")
+            content_item = cast("TextResourceContents", result[0])
+            data = json.loads(content_item.text)
+            expect_true("mcp_export_limits" in data, message="Should include export limits")
+            expect_true("runtime_versions" in data, message="Should include runtime_versions")
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
 async def test_mcp_resource_export_meta(tmp_path: Path) -> None:
     """Verify codeintel://exports/{export_id}/meta returns export metadata."""
     pointer_path = _setup_test_snapshot(tmp_path)
@@ -943,6 +976,88 @@ async def test_mcp_resource_export_preview(tmp_path: Path) -> None:
             expect_equal(len(rows), 3)
     finally:
         await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_mcp_resource_export_lines_chunk(tmp_path: Path) -> None:
+    """Verify codeintel://exports/{export_id}/lines supports chunked line reads."""
+    pointer_path = _setup_test_snapshot(tmp_path)
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        settings = ServingSettings(
+            serve_dir=tmp_path,
+            hot_swap=False,
+            pool_size=1,
+            poll_interval_s=0.01,
+            result_engine="pandas",
+            schema_enforcement="strict",
+            mcp_mask_errors=False,
+        )
+        kernel = SemanticQueryKernel(db=manager, settings=settings)
+        mcp = build_mcp_app(kernel=kernel, settings=settings)
+
+        async with Client(mcp) as client:
+            export_result = _extract_payload(
+                await client.call_tool("semantic_export", {"view_id": "demo.view", "limit": 10})
+            )
+            export_id = export_result["export_id"]
+
+            chunk = await client.read_resource(f"codeintel://exports/{export_id}/lines?offset=0&limit=2")
+            content_item = cast("TextResourceContents", chunk[0])
+            lines = [line for line in content_item.text.splitlines() if line.strip()]
+            expect_equal(len(lines), 2)
+            _ = json.loads(lines[0])
+            _ = json.loads(lines[1])
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_mcp_resource_export_bytes_chunk_for_arrow(tmp_path: Path) -> None:
+    """Verify codeintel://exports/{export_id}/bytes supports chunked bytes reads for arrow exports."""
+    pointer_path = _setup_test_snapshot(tmp_path)
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        settings = ServingSettings(
+            serve_dir=tmp_path,
+            hot_swap=False,
+            pool_size=1,
+            poll_interval_s=0.01,
+            result_engine="pandas",
+            schema_enforcement="strict",
+            mcp_mask_errors=False,
+        )
+        kernel = SemanticQueryKernel(db=manager, settings=settings)
+        mcp = build_mcp_app(kernel=kernel, settings=settings)
+
+        async with Client(mcp) as client:
+            export_result = _extract_payload(
+                await client.call_tool(
+                    "semantic_export",
+                    {"view_id": "demo.view", "export_format": "arrow", "limit": 10},
+                )
+            )
+            export_id = export_result["export_id"]
+
+            chunk = await client.read_resource(f"codeintel://exports/{export_id}/bytes?offset=0&limit=128")
+            blob_item = cast("BlobResourceContents", chunk[0])
+            payload = base64.b64decode(blob_item.blob)
+            expect_true(len(payload) > 0, message="Should return some bytes")
+    finally:
+        await manager.stop()
+
 
 
 @pytest.mark.anyio

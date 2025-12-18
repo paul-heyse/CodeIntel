@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.protocols import ToolRunResult as BuildToolRunResult
 from codeintel.build.providers import (
     RealCoverageCollector,
     RealGitHistoryProvider,
@@ -18,6 +17,7 @@ from codeintel.build.providers import (
     RealTypeChecker,
     SubprocessToolRunner,
 )
+from codeintel.build.types import ToolRunResult as BuildToolRunResult
 from codeintel.config.models import ToolsConfig
 from tests._helpers.assertions import expect_equal, expect_false, expect_in, expect_true
 from tests._helpers.fakes.tools import ToolRunOptions, make_tool_run_result

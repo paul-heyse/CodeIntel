@@ -6,14 +6,16 @@ import json
 from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
+from codeintel.build.config import BuildConfig
 from codeintel.build.contracts import EMPTY_CONTRACT
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import paths_to_modules
+from codeintel.build.providers import create_default_providers
 from codeintel.build.targets import OutputTarget
 from codeintel.config.models import ToolsConfig
-from codeintel.config.primitives import SnapshotRef
+from codeintel.config.primitives import BuildPaths
 from codeintel.ingestion import (
     BuildToolAdapter,
     DuckDBStorageAdapter,
@@ -26,11 +28,6 @@ from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from tests._helpers.factories import make_snapshot
-from tests._helpers.fakes.contexts import (
-    EnvOverrides,
-    ExecutionContextBuilder,
-    TargetResourceOverrides,
-)
 from tests._helpers.fakes.ingestion_context import build_repo_tree
 from tests._helpers.fakes.tools import write_dummy_scip_files
 from tests._helpers.gateway import GatewayFactory
@@ -39,7 +36,6 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
     from pathlib import Path
 
-    from codeintel.build.context import TargetExecutionContext
     from codeintel.build.providers import Providers
     from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.ports.discovery import ModuleRecord
@@ -113,15 +109,15 @@ __all__ = [
 
 @dataclass(frozen=True)
 class TargetContextConfig:
-    """Configuration for building a TargetExecutionContext."""
+    """Configuration for building a Hamilton ``BuildEnv`` for tests."""
 
     repo_root: Path | None = None
-    modules: tuple[str, ...] | None = None
     providers: Providers | None = None
     gateway: StorageGateway | None = None
     gateway_factory: GatewayFactory | None = None
     snapshot: SnapshotRef | tuple[str, str] | None = None
-    resources: TargetResourceOverrides | None = None
+    paths: BuildPaths | None = None
+    profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -130,7 +126,7 @@ class IngestionContextBundle:
 
     repo_root: Path
     gateway: StorageGateway
-    ctx: TargetExecutionContext
+    ctx: BuildEnv
     storage: DuckDBStorageAdapter
     discovery: FilesystemDiscoveryAdapter
     change_detection: HashChangeDetectionAdapter
@@ -191,13 +187,13 @@ def build_target_context_for_target(
     tmp_path: Path,
     *,
     config: TargetContextConfig | None = None,
-) -> TargetExecutionContext:
-    """Construct a TargetExecutionContext wired to real adapters.
+) -> BuildEnv:
+    """Construct a Hamilton ``BuildEnv`` wired to real adapters.
 
     Parameters
     ----------
     target
-        Output target for the context.
+        Output target for the context (unused; retained for callsite compatibility).
     tmp_path
         Temporary directory for test isolation.
     config
@@ -205,9 +201,10 @@ def build_target_context_for_target(
 
     Returns
     -------
-    TargetExecutionContext
-        Context with gateway, resources, and target metadata.
+    BuildEnv
+        Frozen execution environment for Hamilton and test helpers.
     """
+    _ = target
     cfg = config or TargetContextConfig()
     effective_repo_root = cfg.repo_root or (tmp_path / "repo")
     effective_repo_root.mkdir(parents=True, exist_ok=True)
@@ -217,24 +214,45 @@ def build_target_context_for_target(
         factory = cfg.gateway_factory or GatewayFactory().with_macros()
         gateway = factory.open()
 
-    overrides = EnvOverrides(
-        snapshot=cfg.snapshot,
+    snapshot = cfg.snapshot
+    if isinstance(snapshot, tuple):
+        snapshot_ref = make_snapshot(
+            repo=snapshot[0],
+            commit=snapshot[1],
+            repo_root=effective_repo_root,
+        )
+    else:
+        snapshot_ref = snapshot or make_snapshot(repo_root=effective_repo_root)
+
+    build_paths = cfg.paths
+    if build_paths is None:
+        build_dir = effective_repo_root / "build"
+        db_path = build_dir / "db" / "codeintel.duckdb"
+        build_paths = BuildPaths(
+            build_dir=build_dir,
+            db_path=db_path,
+            document_output_dir=build_dir / "document_output",
+            scip_dir=build_dir / "scip",
+            coverage_json=build_dir / "coverage" / "coverage.json",
+            pytest_report=build_dir / "test-results" / "pytest-report.json",
+            tool_cache=build_dir / ".tool_cache",
+            log_db_path=build_dir / "logs" / "logs.duckdb",
+        )
+
+    providers = cfg.providers or create_default_providers(ToolsConfig.default())
+
+    return BuildEnv(
         gateway=gateway,
+        snapshot=snapshot_ref,
+        paths=build_paths,
+        providers=providers,
+        config=BuildConfig.empty(),
+        profile=cfg.profile,
     )
-    builder = ExecutionContextBuilder.create(
-        tmp_path,
-        env_overrides=overrides,
-        repo_root=effective_repo_root,
-    )
-    resource_overrides = cfg.resources or TargetResourceOverrides(
-        providers=cfg.providers,
-        modules=cfg.modules or (),
-    )
-    return builder.build_target_context(target=target, resources=resource_overrides)
 
 
 def build_ingestion_adapters(
-    ctx: TargetExecutionContext,
+    ctx: BuildEnv,
 ) -> tuple[
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -249,12 +267,12 @@ def build_ingestion_adapters(
         storage, discovery, change detection, and tool adapters.
     """
     storage = DuckDBStorageAdapter(ctx.gateway)
-    discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
+    discovery = FilesystemDiscoveryAdapter(ctx.snapshot.repo_root)
     change_detection = HashChangeDetectionAdapter(storage)
     tools = BuildToolAdapter(
-        type_checker=ctx.resources.type_checker,
-        coverage_collector=ctx.resources.coverage_collector,
-        scip_indexer=ctx.resources.scip_indexer,
+        type_checker=ctx.providers.type_checker,
+        coverage_collector=ctx.providers.coverage_collector,
+        scip_indexer=ctx.providers.scip_indexer,
     )
     return storage, discovery, change_detection, tools
 
@@ -682,7 +700,7 @@ def build_scip_repo_fixture(tmp_path: Path) -> ScipIngestContext:
     return context
 
 
-def module_paths_from_context(ctx: TargetExecutionContext) -> list[str]:
+def module_paths_from_context(ctx: BuildEnv) -> list[str]:
     """Fetch module paths using the shared helper.
 
     Returns
@@ -690,7 +708,7 @@ def module_paths_from_context(ctx: TargetExecutionContext) -> list[str]:
     list[str]
         Module paths for the target context.
     """
-    repo_root = ctx.repo_root
+    repo_root = ctx.snapshot.repo_root
     paths = [
         path.relative_to(repo_root).as_posix() for path in repo_root.rglob("*.py") if path.is_file()
     ]
@@ -766,7 +784,7 @@ def closing_gateway(gateway: StorageGateway) -> Generator[StorageGateway]:
 
 
 def seed_modules_and_repo_map(
-    ctx: TargetExecutionContext,
+    ctx: BuildEnv,
     paths: Sequence[str],
 ) -> None:
     """
@@ -775,19 +793,20 @@ def seed_modules_and_repo_map(
     Parameters
     ----------
     ctx
-        Target execution context with gateway and repo metadata.
+        Build environment with gateway and snapshot metadata.
     paths
         Iterable of module-relative file paths to seed.
     """
-    records = module_records_for_paths(paths, ctx.repo_root)
+    repo_root = ctx.snapshot.repo_root
+    records = module_records_for_paths(paths, repo_root)
     con = ctx.gateway.con
     con.execute(
         "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
-        [ctx.repo, ctx.commit],
+        [ctx.snapshot.repo, ctx.snapshot.commit],
     )
     con.execute(
         "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
-        [ctx.repo, ctx.commit],
+        [ctx.snapshot.repo, ctx.snapshot.commit],
     )
     con.executemany(
         """
@@ -797,15 +816,15 @@ def seed_modules_and_repo_map(
         [
             (
                 record.module_name,
-                record.file_path.relative_to(ctx.repo_root).as_posix(),
-                ctx.repo,
-                ctx.commit,
+                record.file_path.relative_to(repo_root).as_posix(),
+                ctx.snapshot.repo,
+                ctx.snapshot.commit,
             )
             for record in records
         ],
     )
     modules_json = {
-        record.module_name: record.file_path.relative_to(ctx.repo_root).as_posix()
+        record.module_name: record.file_path.relative_to(repo_root).as_posix()
         for record in records
     }
     con.execute(
@@ -813,7 +832,7 @@ def seed_modules_and_repo_map(
         INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
         VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)
         """,
-        [ctx.repo, ctx.commit, json.dumps(modules_json)],
+        [ctx.snapshot.repo, ctx.snapshot.commit, json.dumps(modules_json)],
     )
 
 
@@ -826,13 +845,42 @@ def seed_inventory_from_paths(
     paths: Sequence[str],
 ) -> None:
     """Seed core.modules and repo_map tables from relative paths."""
-    dummy_context = SimpleNamespace(
-        gateway=gateway,
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
+    records = module_records_for_paths(paths, repo_root)
+    con = gateway.con
+    con.execute(
+        "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
+        [repo, commit],
     )
-    seed_modules_and_repo_map(cast("TargetExecutionContext", dummy_context), paths)
+    con.execute(
+        "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    )
+    con.executemany(
+        """
+        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+        VALUES (?, ?, ?, ?, 'python', '[]', '[]')
+        """,
+        [
+            (
+                record.module_name,
+                record.file_path.relative_to(repo_root).as_posix(),
+                repo,
+                commit,
+            )
+            for record in records
+        ],
+    )
+    modules_json = {
+        record.module_name: record.file_path.relative_to(repo_root).as_posix()
+        for record in records
+    }
+    con.execute(
+        """
+        INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
+        VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)
+        """,
+        [repo, commit, json.dumps(modules_json)],
+    )
 
 
 @dataclass(frozen=True)
@@ -852,7 +900,7 @@ class SeedIngestionConfig:
 
 
 def seed_ingestion_tables(
-    ctx: TargetExecutionContext,
+    ctx: BuildEnv,
     config: SeedIngestionConfig | None = None,
 ) -> None:
     """Seed common ingestion tables in a single call."""

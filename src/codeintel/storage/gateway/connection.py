@@ -87,6 +87,24 @@ def _duckdb_connect_config_from_env() -> DuckDBConnectConfig:
     if temp_directory:
         config["temp_directory"] = temp_directory
 
+    autoinstall_known_extensions = os.environ.get(
+        "CODEINTEL_DUCKDB_AUTOINSTALL_KNOWN_EXTENSIONS", ""
+    ).strip()
+    if autoinstall_known_extensions:
+        config["autoinstall_known_extensions"] = _parse_bool_or_string(autoinstall_known_extensions)
+
+    autoload_known_extensions = os.environ.get("CODEINTEL_DUCKDB_AUTOLOAD_KNOWN_EXTENSIONS", "").strip()
+    if autoload_known_extensions:
+        config["autoload_known_extensions"] = _parse_bool_or_string(autoload_known_extensions)
+
+    enable_external_file_cache = os.environ.get("CODEINTEL_DUCKDB_ENABLE_EXTERNAL_FILE_CACHE", "").strip()
+    if enable_external_file_cache:
+        config["enable_external_file_cache"] = _parse_bool_or_string(enable_external_file_cache)
+
+    parquet_metadata_cache = os.environ.get("CODEINTEL_DUCKDB_PARQUET_METADATA_CACHE", "").strip()
+    if parquet_metadata_cache:
+        config["parquet_metadata_cache"] = _parse_int_or_string(parquet_metadata_cache)
+
     enable_profiling = os.environ.get("CODEINTEL_DUCKDB_ENABLE_PROFILING", "").strip()
     if enable_profiling:
         config["enable_profiling"] = _parse_bool_or_string(enable_profiling)
@@ -105,6 +123,13 @@ def _parse_bool_or_string(value: str) -> bool | str:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return value.strip()
+
+
+def _parse_int_or_string(value: str) -> int | str:
+    stripped = value.strip()
+    if stripped.isdigit():
+        return int(stripped)
+    return stripped
 
 
 def _load_duckdb_extensions_from_env(con: DuckDBConnection, *, allow_install: bool) -> None:

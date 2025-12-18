@@ -12,10 +12,13 @@ Today it is intentionally thin and delegates to `codeintel.storage.gateway.conne
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
+
+import duckdb
 
 from codeintel.storage.gateway.connection import connect
 
@@ -28,6 +31,13 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import DuckDBConnection
 
 _INIT_SQL_ENV = "CODEINTEL_DUCKDB_INIT_SQL"
+_SECRETS_ENV = "CODEINTEL_DUCKDB_SECRETS"
+_FSSPEC_FILESYSTEMS_ENV = "CODEINTEL_DUCKDB_FSSPEC_FILESYSTEMS"
+
+_READ_ONLY_DUCKDB_CONFIG_DEFAULTS: DuckDBConnectConfig = {
+    "autoinstall_known_extensions": False,
+    "autoload_known_extensions": False,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +64,8 @@ class DuckDBSession:
             Open DuckDB connection.
         """
         con = connect(self.config, duckdb_config=self.duckdb_config)
+        _bootstrap_duckdb_secrets_from_env(con)
+        _register_fsspec_filesystems_from_env()
         _run_init_sql_from_env(con)
         return con
 
@@ -72,7 +84,15 @@ class DuckDBSession:
             ensure_views=False,
             validate_schema=False,
         )
-        con = connect(cfg, duckdb_config=self.duckdb_config)
+        con = connect(
+            cfg,
+            duckdb_config=_apply_duckdb_config_defaults(
+                explicit=self.duckdb_config,
+                defaults=_READ_ONLY_DUCKDB_CONFIG_DEFAULTS,
+            ),
+        )
+        _bootstrap_duckdb_secrets_from_env(con)
+        _register_fsspec_filesystems_from_env()
         _run_init_sql_from_env(con)
         return con
 
@@ -150,6 +170,17 @@ class DuckDBSession:
 __all__ = ["DuckDBSession"]
 
 
+def _apply_duckdb_config_defaults(
+    *,
+    explicit: DuckDBConnectConfig | None,
+    defaults: DuckDBConnectConfig,
+) -> DuckDBConnectConfig:
+    merged: DuckDBConnectConfig = dict(defaults)
+    if explicit:
+        merged.update(explicit)
+    return merged
+
+
 def _run_init_sql_from_env(con: DuckDBConnection) -> None:
     """Execute optional initialization SQL configured by environment.
 
@@ -184,3 +215,175 @@ def _run_init_sql_from_env(con: DuckDBConnection) -> None:
 
     for stmt in statements:
         con.execute(stmt)
+
+
+def _bootstrap_duckdb_secrets_from_env(con: DuckDBConnection) -> None:
+    """Create DuckDB secrets configured by environment.
+
+    The environment variable `CODEINTEL_DUCKDB_SECRETS` contains a JSON array of
+    secret specs. Each spec is a mapping with the following keys:
+
+    - `name` (str): Secret name (identifier).
+    - `type` (str): DuckDB secret type (e.g., "s3").
+    - `persistent` (bool, optional): When true, uses CREATE PERSISTENT SECRET.
+    - `config` (object): Key/value pairs passed to DuckDB (e.g., KEY_ID, SECRET, REGION).
+
+    Notes
+    -----
+    Secret values must never be logged. This helper intentionally does not emit
+    the generated SQL string in exception messages.
+
+    Raises
+    ------
+    TypeError
+        If the JSON payload is not an array of objects.
+    ValueError
+        If the JSON payload cannot be decoded.
+    """
+    raw = os.environ.get(_SECRETS_ENV, "").strip()
+    if not raw:
+        return
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        msg = f"Invalid {_SECRETS_ENV} JSON: {exc}"
+        raise ValueError(msg) from exc
+
+    if not isinstance(payload, list):
+        msg = f"{_SECRETS_ENV} must be a JSON array"
+        raise TypeError(msg)
+
+    for item in payload:
+        if not isinstance(item, dict):
+            msg = f"{_SECRETS_ENV} entries must be JSON objects"
+            raise TypeError(msg)
+        _create_duckdb_secret(con, item)
+
+
+def _create_duckdb_secret(con: DuckDBConnection, spec: dict[str, object]) -> None:
+    name = _require_secret_str(spec, "name")
+    secret_type = _require_secret_str(spec, "type")
+    persistent = _require_secret_bool(spec, "persistent", default=False)
+    config = _require_secret_config(spec)
+
+    _validate_secret_identifier(name, label="name")
+    _validate_secret_identifier(secret_type, label="type")
+
+    config_parts = _build_secret_config_parts(secret_type=secret_type, config=config)
+    create_kind = "CREATE PERSISTENT SECRET" if persistent else "CREATE SECRET"
+    sql = f"{create_kind} {name} ({', '.join(config_parts)})"
+    try:
+        con.execute(sql)
+    except Exception as exc:
+        msg = f"Failed to create DuckDB secret {name!r}"
+        raise RuntimeError(msg) from exc
+
+
+def _duckdb_secret_literal(value: object) -> str:
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        escaped = value.replace("'", "''")
+        return f"'{escaped}'"
+    msg = f"Unsupported DuckDB secret literal type: {type(value).__name__}"
+    raise TypeError(msg)
+
+
+def _require_secret_str(spec: dict[str, object], key: str) -> str:
+    value = spec.get(key)
+    if not isinstance(value, str) or not value:
+        msg = f"DuckDB secret spec requires non-empty {key!r}"
+        raise TypeError(msg)
+    return value
+
+
+def _require_secret_bool(spec: dict[str, object], key: str, *, default: bool) -> bool:
+    value = spec.get(key, default)
+    if not isinstance(value, bool):
+        msg = f"DuckDB secret spec {key!r} must be a boolean when provided"
+        raise TypeError(msg)
+    return value
+
+
+def _require_secret_config(spec: dict[str, object]) -> dict[str, object]:
+    value = spec.get("config")
+    if not isinstance(value, dict) or not value:
+        msg = "DuckDB secret spec requires non-empty 'config' mapping"
+        raise TypeError(msg)
+    return value
+
+
+def _validate_secret_identifier(value: str, *, label: str) -> None:
+    if not value.replace("_", "").isalnum():
+        msg = f"DuckDB secret {label!r} must be alphanumeric/underscore"
+        raise ValueError(msg)
+
+
+def _build_secret_config_parts(*, secret_type: str, config: dict[str, object]) -> list[str]:
+    parts: list[str] = [f"TYPE {secret_type}"]
+    for key, value in config.items():
+        if not isinstance(key, str) or not key:
+            msg = "DuckDB secret config keys must be non-empty strings"
+            raise TypeError(msg)
+        _validate_secret_identifier(key, label="config key")
+        parts.append(f"{key} {_duckdb_secret_literal(value)}")
+    return parts
+
+
+def _register_fsspec_filesystems_from_env() -> None:
+    """Register fsspec filesystems for DuckDB based on environment.
+
+    The environment variable `CODEINTEL_DUCKDB_FSSPEC_FILESYSTEMS` may contain:
+    - a JSON array of protocol strings (preferred), or
+    - a comma-delimited list of protocol strings.
+
+    Examples
+    --------
+    - `CODEINTEL_DUCKDB_FSSPEC_FILESYSTEMS=["gcs","sftp"]`
+    - `CODEINTEL_DUCKDB_FSSPEC_FILESYSTEMS=gcs,sftp`
+
+    Raises
+    ------
+    RuntimeError
+        If `fsspec` is not installed but filesystem registration is requested.
+    TypeError
+        If the JSON payload is not an array of strings.
+    ValueError
+        If the JSON payload cannot be decoded, or if a protocol is invalid.
+    """
+    raw = os.environ.get(_FSSPEC_FILESYSTEMS_ENV, "").strip()
+    if not raw:
+        return
+
+    protocols: list[str]
+    if raw.lstrip().startswith("["):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            msg = f"Invalid {_FSSPEC_FILESYSTEMS_ENV} JSON: {exc}"
+            raise ValueError(msg) from exc
+        if not isinstance(payload, list) or not all(isinstance(item, str) for item in payload):
+            msg = f"{_FSSPEC_FILESYSTEMS_ENV} must be a JSON array of strings"
+            raise TypeError(msg)
+        protocols = [item.strip() for item in payload if item.strip()]
+    else:
+        protocols = [item.strip() for item in raw.split(",") if item.strip()]
+
+    if not protocols:
+        return
+
+    try:
+        fsspec = importlib.import_module("fsspec")
+    except ImportError as exc:  # pragma: no cover
+        msg = f"{_FSSPEC_FILESYSTEMS_ENV} requires the optional dependency 'fsspec'"
+        raise RuntimeError(msg) from exc
+
+    for protocol in protocols:
+        if not protocol.replace("_", "").isalnum():
+            msg = f"Invalid fsspec protocol in {_FSSPEC_FILESYSTEMS_ENV}: {protocol!r}"
+            raise ValueError(msg)
+        filesystem = fsspec.filesystem(protocol)
+        duckdb.register_filesystem(filesystem)

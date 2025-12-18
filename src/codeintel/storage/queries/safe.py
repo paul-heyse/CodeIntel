@@ -35,6 +35,7 @@ from ibis.common.exceptions import (
 )
 from sqlglot import exp, parse
 from sqlglot.errors import ParseError
+from sqlglot.optimizer.scope import traverse_scope
 
 from codeintel.core.errors.storage import (
     ColumnNotFoundError,
@@ -113,6 +114,104 @@ _DISALLOWED_SQL_NODES: tuple[type[exp.Expression], ...] = (
     exp.Insert,
     exp.Update,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class SqlIngressPolicy:
+    """Additional perimeter policy for SELECT-only SQL ingress."""
+
+    allowed_schemas: frozenset[str] | None = None
+    allowed_tables: frozenset[str] | None = None
+    deny_functions: frozenset[str] = frozenset()
+    allow_unqualified_tables: bool = True
+    allow_cross_database_references: bool = False
+
+
+def assert_select_perimeter(sql: str, *, policy: SqlIngressPolicy) -> exp.Expression:
+    """Validate a SQL string against a policy perimeter.
+
+    Parameters
+    ----------
+    sql
+        DuckDB SQL string to validate.
+    policy
+        Additional ingress policy constraints applied after SELECT-only validation.
+
+    Returns
+    -------
+    sqlglot.expressions.Expression
+        Parsed SQLGlot AST root.
+    """
+    root = assert_single_select_statement(sql)
+    _validate_ingress_tables(root, policy=policy)
+    _validate_ingress_functions(root, policy=policy)
+    return root
+
+
+def _validate_ingress_tables(root: exp.Expression, *, policy: SqlIngressPolicy) -> None:
+    reason = "policy_violation"
+    tables = _extract_table_refs(root)
+    allowed_schemas = {s.lower() for s in policy.allowed_schemas} if policy.allowed_schemas else None
+    allowed_tables = {t.lower() for t in policy.allowed_tables} if policy.allowed_tables else None
+
+    for table in tables:
+        schema = table.db
+        catalog = getattr(table, "catalog", None)
+        if not policy.allow_cross_database_references and isinstance(catalog, str) and catalog:
+            detail = "Cross-database references are not allowed"
+            raise UnsafeSqlError(reason, detail=detail)
+
+        if schema:
+            if allowed_schemas is not None and schema.lower() not in allowed_schemas:
+                detail = f"Schema {schema!r} is not allowed"
+                raise UnsafeSqlError(
+                    reason,
+                    detail=detail,
+                )
+            key = f"{schema}.{table.name}".lower()
+        else:
+            if not policy.allow_unqualified_tables:
+                detail = f"Unqualified table {table.name!r} is not allowed"
+                raise UnsafeSqlError(
+                    reason,
+                    detail=detail,
+                )
+            key = table.name.lower()
+
+        if allowed_tables is not None and key not in allowed_tables:
+            detail = f"Table {key!r} is not allowed"
+            raise UnsafeSqlError(reason, detail=detail)
+
+
+def _extract_table_refs(root: exp.Expression) -> tuple[exp.Table, ...]:
+    tables: list[exp.Table] = []
+    for scope in traverse_scope(root):
+        tables.extend(
+            source for source in scope.sources.values() if isinstance(source, exp.Table)
+        )
+    return tuple(tables)
+
+
+def _validate_ingress_functions(root: exp.Expression, *, policy: SqlIngressPolicy) -> None:
+    reason = "policy_violation"
+    deny = {name.lower() for name in policy.deny_functions}
+    if not deny:
+        return
+    for func_name in _extract_function_names(root):
+        if func_name.lower() in deny:
+            detail = f"Function {func_name!r} is not allowed"
+            raise UnsafeSqlError(reason, detail=detail)
+
+
+def _extract_function_names(root: exp.Expression) -> tuple[str, ...]:
+    names: set[str] = set()
+    for node in root.find_all(exp.Func):
+        if isinstance(node, exp.Anonymous):
+            if node.name:
+                names.add(node.name)
+            continue
+        names.add(node.sql_name())
+    return tuple(sorted(names))
 
 
 def assert_single_select_statement(sql: str) -> exp.Expression:

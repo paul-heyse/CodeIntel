@@ -283,6 +283,10 @@ class ExportURIs(BaseModel):
         URI to fetch a small preview (JSON).
     sql_uri
         URI to fetch compiled SQL (if stored).
+    lines_uri_template
+        RFC6570-like URI template for chunked line reads (for json/ndjson).
+    bytes_uri_template
+        RFC6570-like URI template for chunked byte reads (for parquet/arrow).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -293,6 +297,14 @@ class ExportURIs(BaseModel):
         default=None, description="URI to fetch a small preview (JSON)."
     )
     sql_uri: str | None = Field(default=None, description="URI to fetch compiled SQL (if stored).")
+    lines_uri_template: str | None = Field(
+        default=None,
+        description="URI template for chunked line reads: codeintel://exports/{export_id}/lines?offset={offset}&limit={limit}.",
+    )
+    bytes_uri_template: str | None = Field(
+        default=None,
+        description="URI template for chunked byte reads: codeintel://exports/{export_id}/bytes?offset={offset}&limit={limit}.",
+    )
 
 
 class ExportQuerySpec(BaseModel):
@@ -569,6 +581,8 @@ class SemanticQueryToolResponse(BaseModel):
         Shortcut to export payload URI.
     export_meta_uri
         Shortcut to export meta URI.
+    summary
+        Optional LLM-generated summary (sampling) when enabled and supported.
     note
         Short, user/LLM-friendly note.
     """
@@ -587,6 +601,10 @@ class SemanticQueryToolResponse(BaseModel):
     )
     export_uri: str | None = Field(default=None, description="Shortcut to export payload URI.")
     export_meta_uri: str | None = Field(default=None, description="Shortcut to export meta URI.")
+    summary: str | None = Field(
+        default=None,
+        description="Optional LLM-generated summary for large results (requires sampling support).",
+    )
     note: str | None = Field(
         default=None,
         description="Short, user/LLM-friendly note. Example: 'Result truncated to 200 rows; use export_uri for full dataset.'",
@@ -630,6 +648,8 @@ class ServingMetaResponse(BaseModel):
         Resource URI taxonomy templates exposed by the server.
     inventories
         Counts of available datasets/tables/exports/etc for quick triage.
+    warnings
+        Non-fatal warnings for operators/agents (e.g., tooling mismatches).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -663,6 +683,10 @@ class ServingMetaResponse(BaseModel):
     inventories: dict[str, int] = Field(
         default_factory=dict,
         description="Counts of available datasets/tables/exports/etc for quick triage.",
+    )
+    warnings: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description="Non-fatal warnings for operators/agents (e.g., tooling mismatch vs snapshot).",
     )
 
 
@@ -734,6 +758,24 @@ DEFAULT_RESOURCE_TEMPLATES: tuple[ResourceTemplate, ...] = (
         tags=("meta", "discovery"),
     ),
     ResourceTemplate(
+        uri="codeintel://meta/environment",
+        description="Snapshot environment metadata (tool versions) plus runtime mismatch warnings.",
+        mime_type="application/json",
+        tags=("meta",),
+    ),
+    ResourceTemplate(
+        uri="codeintel://meta/views_sql",
+        description="Compiled SQL for semantic views in the mounted snapshot (select-only perimeter).",
+        mime_type="application/json",
+        tags=("meta",),
+    ),
+    ResourceTemplate(
+        uri="codeintel://meta/views_sql_diff",
+        description="Diff summary for compiled semantic view SQL vs prior snapshot (if available).",
+        mime_type="application/json",
+        tags=("meta",),
+    ),
+    ResourceTemplate(
         uri="codeintel://semantic/views",
         description="JSON list of semantic views (catalog).",
         mime_type="application/json",
@@ -768,6 +810,18 @@ DEFAULT_RESOURCE_TEMPLATES: tuple[ResourceTemplate, ...] = (
         description="Compiled SQL used to generate the export (if recorded).",
         mime_type="text/plain",
         tags=("exports", "sql"),
+    ),
+    ResourceTemplate(
+        uri="codeintel://exports/{export_id}/lines?offset={offset}&limit={limit}",
+        description="Chunked line retrieval for ndjson/json exports (offset/limit lines).",
+        mime_type="text/plain",
+        tags=("exports", "chunk"),
+    ),
+    ResourceTemplate(
+        uri="codeintel://exports/{export_id}/bytes?offset={offset}&limit={limit}",
+        description="Chunked byte retrieval for parquet/arrow exports (offset/limit bytes).",
+        mime_type="application/octet-stream",
+        tags=("exports", "chunk"),
     ),
 )
 """Default resource templates exposed by the MCP server for discovery."""

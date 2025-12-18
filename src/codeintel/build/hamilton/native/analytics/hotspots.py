@@ -23,7 +23,6 @@ from hamilton.function_modifiers import (
     tag,
     value,
 )
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
@@ -36,6 +35,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.ibis_types import and_predicates
@@ -210,7 +210,7 @@ def _hotspots_select(hotspots: ir.Table) -> ir.Table:
     )
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBIbisTableSaver],
     output_name_=materialize_node(HOTSPOTS_TABLE_KEY),
     env=source("env"),
@@ -296,7 +296,7 @@ def t__hotspots__compute(
 def t__hotspots(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__hotspots: dict[str, Any],
+    m__analytics__hotspots: dict[str, object],
 ) -> TargetRunRecord:
     """Finalize hotspots execution from DAG-visible DuckDB materialization.
 

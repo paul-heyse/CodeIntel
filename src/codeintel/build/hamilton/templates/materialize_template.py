@@ -12,6 +12,7 @@ re-exports from `codeintel.build.hamilton.templates`.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import ibis.expr.types as ir
@@ -29,7 +30,7 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    pass
 
 # Keep types available for Hamilton's runtime type resolution
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)

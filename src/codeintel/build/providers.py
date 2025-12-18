@@ -1018,7 +1018,7 @@ class Providers:
     """Container for all DI providers.
 
     This class holds all the provider implementations and is passed
-    to the BuildExecutor for wiring into TargetExecutionContext.
+    into Hamilton BuildEnv for target execution.
 
     Attributes
     ----------

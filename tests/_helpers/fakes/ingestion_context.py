@@ -1,8 +1,6 @@
 """Utility helpers for ingestion plugin tests.
 
 This module provides simple utility functions for ingestion tests.
-For execution context building, use ``ExecutionContextBuilder`` from
-``tests._helpers.fakes.contexts``.
 """
 
 from __future__ import annotations

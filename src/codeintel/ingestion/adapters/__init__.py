@@ -54,29 +54,9 @@ When to Use Adapters vs Direct Gateway Access
 - You're in a Hamilton plugin and want simple row writes via ``ctx.write_table()``
 - Performance is critical and you need direct ibis/SQL access
 
-Example Usage in Hamilton Plugins
----------------------------------
-For simple row writes, prefer ``ctx.write_table()``::
-
-    def execute(self, ctx: TargetExecutionContext) -> TargetResult:
-        rows = compute_ingestion_data(...)
-        ctx.write_table("ingestion.modules", rows)
-        return TargetResult.success()
-
-For complex storage operations, use the adapter::
-
-    from codeintel.ingestion.adapters import DuckDBStorageAdapter
-
-
-    def execute(self, ctx: TargetExecutionContext) -> TargetResult:
-        adapter = DuckDBStorageAdapter(ctx.gateway)
-        result = adapter.run_batch("ingestion.modules", rows, scope="modules")
-        return TargetResult.success()
-
 See Also
 --------
 - ``codeintel.ingestion.ports`` : Port protocol definitions
-- ``codeintel.build.context.TargetExecutionContext`` : Hamilton build context API
 - ``codeintel.storage.gateway.StorageGateway`` : Direct database access
 """
 

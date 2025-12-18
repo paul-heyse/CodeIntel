@@ -22,7 +22,6 @@ imports. MinimalStorageGateway is the composition root that creates both.
 from __future__ import annotations
 
 import logging
-import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
@@ -30,10 +29,10 @@ from typing import TYPE_CHECKING, ClassVar
 import ibis
 import ibis.expr.types as it
 import pandas as pd
-from sqlglot import exp, parse_one
+from sqlglot import exp
 
-from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.staging import registered_temp_relation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -468,14 +467,14 @@ class IbisGateway:
         """
         resolved_columns = list(expr.columns) if columns is None else list(columns)
 
-        select_sql = ibis.to_sql(expr, dialect=DUCKDB_DIALECT)
+        select_ast = self.to_sqlglot(expr)
 
         if on_conflict is not None:
             backend = self._policy
             backend.upsert_select(
                 write_ctx.table_key,
                 columns=resolved_columns,
-                select_sql=select_sql,
+                select_sql=select_ast,
                 conflict_columns=on_conflict.conflict_columns,
                 update_columns=on_conflict.update_columns,
             )
@@ -486,7 +485,11 @@ class IbisGateway:
             )
 
         backend = self._policy
-        backend.insert_select(write_ctx.table_key, columns=resolved_columns, select_sql=select_sql)
+        backend.insert_select(
+            write_ctx.table_key,
+            columns=resolved_columns,
+            select_sql=select_ast,
+        )
 
         return WriteResult(table_key=write_ctx.table_key, rows_affected=-1, method="insert_select")
 
@@ -552,19 +555,16 @@ class IbisGateway:
         columns: Sequence[str],
         on_conflict: OnConflict | None,
     ) -> WriteResult:
-        temp_name = f"ci_df_{uuid.uuid4().hex}"
-        self._gateway.con.register(temp_name, df)
-        try:
+        with registered_temp_relation(self._gateway.con, df, prefix="ci_df_") as temp_name:
             select_expr = exp.Select(
                 expressions=[exp.Column(this=exp.to_identifier(col)) for col in columns],
             ).from_(exp.Table(this=exp.to_identifier(temp_name)))
-            select_sql = select_expr.sql(dialect=DUCKDB_DIALECT)
             backend = self._policy
             if on_conflict is None:
                 backend.insert_select(
                     write_ctx.table_key,
                     columns=columns,
-                    select_sql=select_sql,
+                    select_sql=select_expr,
                 )
                 return WriteResult(
                     table_key=write_ctx.table_key,
@@ -575,7 +575,7 @@ class IbisGateway:
             backend.upsert_select(
                 write_ctx.table_key,
                 columns=columns,
-                select_sql=select_sql,
+                select_sql=select_expr,
                 conflict_columns=on_conflict.conflict_columns,
                 update_columns=on_conflict.update_columns,
             )
@@ -584,8 +584,6 @@ class IbisGateway:
                 rows_affected=-1,
                 method="upsert_select",
             )
-        finally:
-            self._gateway.con.unregister(temp_name)
 
     def _write_tuples(
         self,
@@ -670,12 +668,41 @@ class IbisGateway:
         else:
             t = self.table(table_key)
             filter_expr = t.filter(where).limit(0)
-            filter_sql = ibis.to_sql(filter_expr, dialect=DUCKDB_DIALECT)
-            select_ast = parse_one(filter_sql, dialect=DUCKDB_DIALECT)
-            where_ast = select_ast.args.get("where")
-            if not isinstance(where_ast, exp.Where):
+            select_ast = self.to_sqlglot(filter_expr)
+            where_ast = _extract_top_level_where(select_ast)
+            if where_ast is None:
                 message = "Unable to derive WHERE clause for delete()"
                 raise ValueError(message)
             backend.delete(table_key, where=where_ast)
 
         return -1
+
+
+def _extract_top_level_where(select_ast: exp.Expression) -> exp.Where | None:
+    """Return the top-level WHERE clause for a compiled query AST.
+
+    Parameters
+    ----------
+    select_ast
+        SQLGlot AST root for a compiled SELECT query (may be wrapped in WITH).
+
+    Returns
+    -------
+    sqlglot.expressions.Where | None
+        Top-level WHERE clause when present, otherwise None.
+    """
+    query_ast = select_ast
+    if isinstance(query_ast, exp.With):
+        query_ast = query_ast.this
+    if isinstance(query_ast, exp.Subquery):
+        query_ast = query_ast.this
+
+    if isinstance(query_ast, exp.Select):
+        where_ast = query_ast.args.get("where")
+        return where_ast if isinstance(where_ast, exp.Where) else None
+
+    select_node = query_ast.find(exp.Select)
+    if not isinstance(select_node, exp.Select):
+        return None
+    where_ast = select_node.args.get("where")
+    return where_ast if isinstance(where_ast, exp.Where) else None
