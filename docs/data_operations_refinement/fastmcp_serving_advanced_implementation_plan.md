@@ -54,6 +54,37 @@ more ergonomic for agents (prompts + resources + optional sampling), and more re
 - Additive changes (new optional fields, new prompts/resources) are allowed.
 - Maintain contract checks in `tools.quality_report` (notably `src/codeintel/serving/contracts/check_operation_contracts.py`).
 
+## Current Data Backbone Capabilities We Will Leverage
+
+Recent work across `src/codeintel/storage`, `src/codeintel/serving`, and `src/codeintel/build` already provides
+several key primitives. This plan assumes we **reuse** them (and avoid rebuilding them inside MCP):
+
+- **Safe, typed semantic query builder**: user values are parameterized (`ibis.param(...)`) and large IN-lists are staged
+  (Arrow-backed memtables) with explicit cleanup (`src/codeintel/serving/semantic/query_builder.py`).
+- **Dual-mode query templates**: `QueryTemplate/BoundQuery` for Ibis-first execution and `DbApiQuery` for existing hot paths
+  (`src/codeintel/serving/semantic/templates.py`).
+- **Export pipeline already constant-memory + pool-isolated**: serving exports use Arrow record batches and `connect_export()`
+  (`src/codeintel/serving/semantic/kernel.py`, `src/codeintel/serving/db/manager.py`).
+- **Select-only SQL perimeter**: canonical validation of trusted SQL statements (`src/codeintel/storage/queries/safe.py`).
+- **SQLGlot AST access is already available**: compile Ibis → SQLGlot (`src/codeintel/storage/ibis_adapter.py`).
+- **Schema round-trip bridge exists**: `TableSchema ↔ Ibis ↔ SQLGlot` for DDL (`src/codeintel/storage/schema_roundtrip.py`).
+- **Build-time view SQL + semantic diffs already exist**: view SQL map + diff artifacts are produced
+  (`src/codeintel/build/hamilton/native/export/serving_artifacts.py`).
+- **Derived lineage edges already sync at build-time**: lineage extraction and syncing runs during serving artifact generation
+  (`src/codeintel/build/hamilton/native/export/serving_artifacts.py`).
+
+## Snapshot Identity & Serving Artifacts We Will Expose
+
+This plan leans on snapshot-scoped artifacts and identifiers for correctness, caching safety, and agent ergonomics:
+
+- **Pointer identity is canonical**: `repo`, `commit`, `run_id`, `published_at`, `semantic_layer_version`
+  (`src/codeintel/serving/db/pointer.py`).
+- **Serving loads snapshot-scoped environment metadata**: `environment.json` (tool versions + settings) is already loaded when present
+  (`src/codeintel/serving/db/manager.py`).
+- **Build artifacts include view SQL maps and diffs**: `views_sql.json` and `views_sql_diff.json` exist as deterministic build products
+  (`src/codeintel/build/hamilton/native/export/serving_artifacts.py`).
+- These artifacts should become **read-only MCP meta resources** to reduce repeated computation and make agents more capable.
+
 ---
 
 ## Definition of Done (target-state checklist)
@@ -64,6 +95,9 @@ more ergonomic for agents (prompts + resources + optional sampling), and more re
 - [ ] Middleware provides consistent logging + timing + rate limiting + error conversion (no per-tool custom scaffolding required).
 - [ ] Long-running exports support background tasks and progress; cancellation cleans up partial artifacts best-effort.
 - [ ] EventStore usage is consistent with the chosen model (either used with `close_sse_stream()` where needed or documented as optional).
+- [ ] MCP export supports `json`, `ndjson`, `parquet`, and `arrow`, with safe retrieval patterns for large payloads.
+- [ ] `serving_meta` (and/or a meta resource) surfaces snapshot tool versions and warns on runtime/tooling mismatches vs the snapshot.
+- [ ] Query fingerprints are stable, snapshot-aware, and included in logs/metadata for correlation.
 
 ### Developer experience & maintainability
 
@@ -76,6 +110,7 @@ more ergonomic for agents (prompts + resources + optional sampling), and more re
 - [ ] Prompts are tagged, meta-rich, and return multi-message templates (`PromptResult` / `Message`).
 - [ ] Export flows return small handles and provide chunked resources so clients can safely retrieve large payloads.
 - [ ] Optional sampling provides summaries above configurable thresholds (and is safe when unsupported).
+- [ ] Snapshot-scoped meta resources exist for `environment`, `views_sql`, and `views_sql_diff` (and optionally derived lineage).
 
 ### Quality gates
 
@@ -101,7 +136,7 @@ This is written as a PR checklist. Each PR section contains:
 ### PR3 — Background tasks for exports (+ progress + cancellation cleanup)
 ### PR4 — Sampling support for large outputs (opt-in; safe fallback)
 ### PR5 — Prompts upgrade: tags/meta/multi-message + elicitation-powered “wizards”
-### PR6 — Export resources: chunked reads + TTL + cleanup policy
+### PR6 — Export + meta resources: chunked reads + TTL + artifact discovery
 ### PR7 — Integration + regression tests (in-memory FastMCP client) + operational docs
 
 ---
@@ -133,15 +168,28 @@ We explicitly choose `uvicorn_workers=1`, so we should:
    - “MCP is sessionful; do not run with `--workers > 1`”
    - “If you need multi-worker later: enable stateless HTTP and disable elicitation/sampling; move tasks backend to Redis”
 
+3. Add a guardrail for background tasks:
+   - Do **not** enable server-wide `FastMCP(tasks=True)` by default (sync tools/resources/prompts exist).
+   - Enable tasks only per-tool (`task=True` / `TaskConfig`) and document the rationale.
+   - If `uvicorn_workers > 1` is ever enabled in the future, require an external tasks backend (e.g., Redis) as a precondition.
+
+4. Add a “runtime vs snapshot tooling mismatch” warning path:
+   - serving already loads snapshot-scoped `environment.json` when present (`src/codeintel/serving/db/manager.py`).
+   - compare runtime versions (`duckdb`, `ibis`, `sqlglot`, `pyarrow`, `codeintel`) to the snapshot’s recorded versions
+   - surface mismatches as warnings in `serving_meta` and/or a `codeintel://meta/environment` resource
+
 ## Acceptance criteria
 
 - Misconfiguration (`uvicorn_workers > 1`) fails before serving starts, with a clear error.
 - Documentation includes a crisp “supported deployment modes” matrix.
+- Task support and task backend assumptions are explicitly documented for the single-worker model.
 
 ## Tests to add
 
 - `tests/serving/test_settings_mcp_worker_guardrails.py`
   - validates that `ServingSettings.validate_*` raises when `uvicorn_workers > 1` and MCP is enabled/mounted.
+- `tests/serving/test_serving_meta_tooling_mismatch_warnings.py`
+  - validates that runtime vs snapshot tool version mismatches produce a warning payload (but do not fail requests).
 
 ---
 
@@ -180,14 +228,19 @@ Recommended default ordering:
 1. `StructuredLoggingMiddleware` (outermost; sees everything)
 2. `DetailedTimingMiddleware`
 3. `RateLimitingMiddleware`
-4. (optional in PR1) `ResponseCachingMiddleware` — **list-only** caching (safe); avoid tool/resource caching until snapshot-aware keys exist
+4. (optional in PR1) `ResponseCachingMiddleware` — **list-only** caching, TTL-based; avoid tool/resource caching until snapshot-aware keys exist
 
 Notes:
 
 - Keep middleware transport-agnostic; do not depend on HTTP headers in core middleware so stdio remains supported.
-- Rate limiting can be global initially; if needed, later extract a stable client ID from context/session meta.
+- Prefer per-session/per-client rate limiting:
+  - configure `RateLimitingMiddleware(get_client_id=...)` using stable MCP context identifiers when available
+  - fall back to a conservative global limiter when identifiers are unavailable (e.g., during initialization)
 - If adding caching: configure it to cache **only** `tools/list`, `resources/list`, `prompts/list` in PR1.
-  (FastMCP’s `ResponseCachingMiddleware` cache keys do not include snapshot identity.)
+  (FastMCP’s `ResponseCachingMiddleware` cache keys do not include snapshot identity, and the current implementation is TTL-based;
+  do not rely on notification invalidation.)
+  - If you want caching of `tools/call` / `resources/read` later, implement a CodeIntel caching middleware keyed by
+    `(snapshot_ref, method, args)` and keep TTLs short.
 
 ### 2) Implement middleware assembly as a small pure function
 
@@ -283,6 +336,17 @@ Examples:
 - `ErrorResponse.error.details` must remain “safe” (no stack traces, no file paths).
 - Use `ServingSettings.mcp_mask_errors` to decide whether internal errors should expose any details beyond the stable code/hint.
 
+### 4) Explicitly map the “safe query perimeter” failures into stable codes
+
+- `QueryBuilderError` from the semantic query builder should map to an invalid-query code (rather than generic “internal”).
+- `UnsafeSqlError` from `assert_single_select_statement(...)` should map to an invalid-query / forbidden-operation code as appropriate.
+- Returning compiled SQL (e.g., export SQL resources) should validate the SQL perimeter before exposing it.
+
+### 5) Optional but recommended: HTTP/MCP error parity
+
+- Align HTTP `ProblemDetail`/`ProblemType` and MCP `ErrorResponse` codes for shared failure modes (unauthorized, view not found,
+  invalid query, internal error) so agents see consistent semantics across transports.
+
 ## Acceptance criteria
 
 - For known failure modes, clients receive an MCP error with:
@@ -326,6 +390,7 @@ With `uvicorn_workers=1`, the in-memory task backend is acceptable for the initi
 Initial recommendation:
 
 - `semantic_export`: `task=True` (optional) so clients that support tasks can avoid long requests.
+  - Keep task support enabled at the tool level; do not enable server-wide defaults (`FastMCP(tasks=True)`).
 
 Keep `semantic_query` synchronous initially (unless you’ve observed it running long enough to justify tasks).
 
@@ -355,12 +420,30 @@ Today `QueryLimiter` is shared. Consider splitting:
 
 Exports already use `connect_export()` for pool isolation; add limiter isolation to match.
 
+### 5) Add export format parity (MCP ↔ serving kernel ↔ HTTP)
+
+Serving already supports `json`, `ndjson`, `parquet`, and `arrow` export formats at the kernel/model level.
+Update MCP export so it can generate and return artifacts for all of these formats:
+
+- `ndjson/json`: generate via existing export row iteration.
+- `parquet/arrow`: generate via existing kernel helpers (COPY-to-parquet / Arrow IPC writer).
+
+### 6) Capture full export provenance (including buildspec hash)
+
+Export handle + meta responses should include:
+
+- snapshot pointer identity
+- semantic layer hash/version
+- **buildspec hash** (not “unknown”)
+- runtime tool versions (optional) and mismatch warnings if desired
+
 ## Acceptance criteria
 
 - Clients can call `semantic_export(..., task=True)` and receive a task handle.
 - Progress updates are emitted during export when enabled.
 - Cancelling an export removes partial artifacts best-effort.
 - Interactive queries are not starved by a single long export (pool + limiter isolation).
+- MCP export can produce artifacts for `parquet` and `arrow` formats and return correct MIME types/filenames.
 
 ## Tests to add
 
@@ -399,6 +482,21 @@ Inputs to sampling should be:
 - a small preview (already exists: `QueryPreview` in `semantic_query`)
 - schema/context (view_id, columns, types, filters)
 - server guidance (“Summarize in 5 bullets; call semantic_export if needed”)
+- a stable query fingerprint and snapshot reference for correlation
+
+### 1b) Stable query fingerprints (snapshot-aware)
+
+Add a small helper to compute a stable fingerprint:
+
+- canonicalize compiled SQL via SQLGlot (`parse_one(...).sql(dialect="duckdb")`)
+- hash the canonical SQL (e.g., sha256 → short prefix)
+- include snapshot identity in metadata (fingerprint should be interpreted “within a snapshot”)
+
+This fingerprint should be included in:
+
+- structured logs / metrics
+- MCP tool response metadata
+- sampling prompts so the client can correlate summaries to a specific query
 
 ### 2) When to sample
 
@@ -424,6 +522,8 @@ If `ctx.sample(...)` raises due to client not supporting sampling:
 - `tests/serving/test_mcp_sampling_opt_in.py`
   - use in-memory client with a fake sampling handler
   - verify summary is included above the threshold and absent below it.
+- `tests/serving/test_query_fingerprint_stability.py`
+  - verifies fingerprints are stable within a snapshot and change across snapshots (where applicable).
 
 ---
 
@@ -473,7 +573,7 @@ Add prompts that (when client supports elicitation) gather a few fields and retu
 
 - `wizard_export_data`:
   - elicit `view_id`
-  - elicit `format` choice (`ndjson|json`)
+  - elicit `format` choice (`ndjson|json|parquet|arrow`)
   - elicit `limit` / confirm
   - returns messages that instruct to call `semantic_export(..., task=True)`
 
@@ -483,6 +583,22 @@ Add prompts that (when client supports elicitation) gather a few fields and retu
   - returns messages to call `semantic_query(...)`
 
 If elicitation unsupported: return a prompt that explains how to call the non-wizard tools manually.
+
+### 2b) Make wizards schema-aware (using the existing query builder rules)
+
+When possible, wizard prompts should:
+
+- read view schema/column types via `semantic_describe` (or the equivalent resource)
+- present only valid operators by type (e.g., disallow `lt/lte/gt/gte` for strings; disallow `in` for JSON), matching
+  the server’s enforcement rules
+- ensure the elicited filter shapes remain shallow and MCP-compatible
+
+### 2c) Add “what changed?” prompts that leverage build artifacts
+
+Once PR6 exposes meta resources, add prompts that guide agents to:
+
+- read `codeintel://meta/views_sql_diff` to understand what changed between snapshots
+- read derived lineage summaries (if exposed) to understand dependency impacts
 
 ### 3) Optional: PromptToolMiddleware for tool-only clients
 
@@ -501,7 +617,7 @@ Gate behind a setting (default off) because it changes the visible tool list.
 
 ---
 
-# PR6 — Export resources: chunked reads + TTL + cleanup policy
+# PR6 — Export + meta resources: chunked reads + TTL + artifact discovery
 
 ## Why
 
@@ -515,6 +631,7 @@ We need:
 
 - chunked export reads (resource templates for slices)
 - TTL + cleanup policy so the export store does not grow unbounded
+- snapshot-scoped **meta resources** that expose build artifacts (environment, view SQL, diffs) for agent workflows
 
 ## Files
 
@@ -536,6 +653,26 @@ Or path-based:
 
 - `codeintel://exports/{export_id}/chunks/{chunk_index}`
 
+For binary formats (`parquet`, `arrow`), add a chunked **byte-range** resource:
+
+- `codeintel://exports/{export_id}/bytes?offset={offset}&limit={limit}`
+  - returns a bytes slice for safe incremental retrieval
+
+### 1b) Export manifest / artifact discovery
+
+Add a small read-only resource (or tool response field) that lets clients discover:
+
+- which artifact(s) exist for an `export_id` (format, filename, mime)
+- size hints (`byte_length`, optional `line_count`)
+- lifecycle metadata (`created_at`, `expires_at`)
+- the canonical follow-on URIs to retrieve content (e.g., `.../lines?...` or `.../bytes?...`)
+
+Example:
+
+- `codeintel://exports/{export_id}/meta`
+
+This keeps clients from guessing paths and allows format-specific retrieval strategies without breaking changes.
+
 ### 2) TTL support
 
 Add settings:
@@ -555,16 +692,42 @@ Ensure the export handle response emphasizes:
 - prefer `preview` and `meta` resources first
 - fetch payload in chunks if needed
 
+### 4) Add meta resources backed by snapshot artifacts (environment + view SQL + diffs)
+
+Expose read-only resources such as:
+
+- `codeintel://meta/environment` (tool versions/config captured at build time)
+- `codeintel://meta/views_sql` (compiled SQL map for all views in the snapshot)
+- `codeintel://meta/views_sql_diff` (semantic diff summary vs the previous snapshot, if available)
+- optionally: `codeintel://meta/derived_lineage` (summaries of derived lineage edges)
+
+These should be:
+
+- snapshot-aware (include snapshot ref in response payloads)
+- safe to serve (no file paths or secrets)
+- consistent with `DEFAULT_RESOURCE_TEMPLATES` so agents can discover them
+
+### 5) Safe SQL perimeter for SQL-returning resources
+
+If exposing compiled SQL strings via resources:
+
+- validate SQL is select-like and single-statement (e.g., `assert_single_select_statement`)
+- return safe error codes on violations (via PR2 error middleware)
+
 ## Acceptance criteria
 
 - Export payloads can be retrieved safely in small chunks.
 - Exports are automatically cleaned up when TTL is configured.
 - No tool/resource call loads multi-GB payloads into memory.
+- Snapshot-scoped meta resources exist and are discoverable via the resource templates catalog.
 
 ## Tests to add
 
 - `tests/serving/test_resource_store_ttl_cleanup.py`
 - `tests/serving/test_mcp_export_chunked_resource.py`
+- `tests/serving/test_mcp_export_manifest_resource.py`
+- `tests/serving/test_mcp_meta_resources_environment_and_view_sql.py`
+  - validates the new meta resources exist and include snapshot identity.
 
 ---
 
@@ -597,6 +760,16 @@ Use this for:
 - prompts/elicitation
 - resource reads
 
+### 1b) Add “data backbone alignment” regression tests
+
+Add small integration tests that validate the serving surface stays aligned with the DuckDB/Ibis/SQLGlot backbone:
+
+- export format parity matrix: `json` / `ndjson` / `parquet` / `arrow`
+- export retrieval strategy parity: `.../lines?...` for line formats, `.../bytes?...` for binary formats
+- meta resources are discoverable via `resources/list` and `DEFAULT_RESOURCE_TEMPLATES`
+- meta SQL payloads (when present) remain within the “single select statement” perimeter
+- snapshot identity and query fingerprints appear in tool/resource metadata for correlation
+
 ### 2) Validate manifests with `fastmcp inspect`
 
 Add a documented command to generate a manifest snapshot (useful for debugging client-visible changes):
@@ -611,12 +784,21 @@ Document:
 - worker requirements
 - how to run locally (stdio and HTTP)
 - how to debug with `fastmcp dev` / Inspector (stdio)
+- how to use meta resources (`codeintel://meta/*`) and safe export retrieval patterns
+
+### 4) Snapshot artifact parity regression check
+
+Add a regression test (or a small helper used by multiple tests) that validates:
+
+- when a snapshot includes `environment.json`, `views_sql.json`, and `views_sql_diff.json`, the server exposes them consistently
+- `views_sql_diff` is optional (absent when no prior snapshot exists), but when present it is well-formed and snapshot-scoped
 
 ## Acceptance criteria
 
 - CI-quality gates pass locally (quality report + pytest).
 - MCP manifest diff is predictable and intentionally changed.
 - Clear “how to run” and “supported deployment modes” docs exist.
+- Export + meta resource templates are discoverable and stable (no accidental removals in the manifest).
 
 ---
 
@@ -663,4 +845,3 @@ If requirements change and we need `uvicorn_workers > 1`:
 4. Make caching snapshot-aware and shared (Redis) or disable it.
 
 This plan intentionally does **not** implement the multi-worker path.
-

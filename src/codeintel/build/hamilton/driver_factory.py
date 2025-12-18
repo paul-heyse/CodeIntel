@@ -85,7 +85,7 @@ def build_driver(
     config: dict[str, Any] | None = None,
     adapters: Sequence[LifecycleAdapter] | None = None,
     adapter_factory: Callable[[TargetGraph], Sequence[LifecycleAdapter]] | None = None,
-    enable_cache: bool = True,
+    enable_cache: bool = False,
     cache_dir: str | Path | None = None,
 ) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.

@@ -15,8 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import ibis.expr.types as ir
-from hamilton.function_modifiers import source, tag
-from hamilton.function_modifiers.adapters import SaveToDecorator
+from hamilton.function_modifiers import source
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
@@ -25,6 +24,8 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -43,7 +44,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 ComputeResult = Any
 
 
-@tag(node_type="materialize")
+@tag_materialize()
 def executor_materialize(
     env: BuildEnv,
     graph: TargetGraph,
@@ -72,7 +73,7 @@ def executor_materialize(
     return executor.execute(compute)
 
 
-@tag(node_type="materialize")
+@tag_materialize()
 def executor_record(
     env: BuildEnv,
     graph: TargetGraph,
@@ -89,7 +90,7 @@ def executor_record(
     return executor_materialize(env, graph, target_name, compute_result)
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_="materialization",
     env=source("env"),
@@ -98,7 +99,7 @@ def executor_record(
     table_key=source("table_key"),
     columns=source("columns"),
 )
-@tag(node_type="compute")
+@tag_compute()
 def rows_to_save(
     rows: Sequence[tuple[Any, ...]] | None,
 ) -> Sequence[tuple[Any, ...]] | None:
@@ -112,7 +113,7 @@ def rows_to_save(
     return rows
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [DuckDBIbisTableSaver],
     output_name_="materialization",
     env=source("env"),
@@ -120,7 +121,7 @@ def rows_to_save(
     target_name=source("target_name"),
     table_key=source("table_key"),
 )
-@tag(node_type="compute")
+@tag_compute()
 def ibis_expr_to_save(expr: ir.Table | None) -> ir.Table | None:
     """Return the Ibis expression to be materialized.
 
@@ -132,13 +133,13 @@ def ibis_expr_to_save(expr: ir.Table | None) -> ir.Table | None:
     return expr
 
 
-@tag(node_type="materialize")
+@tag_materialize()
 def duckdb_record(
     env: BuildEnv,
     graph: TargetGraph,
     target_name: str,
     table_key: str,
-    materialization: dict[str, Any],
+    materialization: dict[str, object],
 ) -> TargetRunRecord:
     """Convert a saver metadata dict into a TargetRunRecord.
 

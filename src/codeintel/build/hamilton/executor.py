@@ -26,7 +26,8 @@ import hamilton.base as h_base
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
-from codeintel.build.hamilton.hooks import HookOptions, NodeTelemetryHook, build_hooks
+from codeintel.build.hamilton.execution_options import BuildExecutionOptions
+from codeintel.build.hamilton.hooks import NodeTelemetryHook, build_hooks
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.run_writer import BuildRunWriter
 
@@ -208,20 +209,22 @@ class HamiltonBuildExecutor:
         profile: str | None = None,
         parallel_backend: str = "sequential",
         max_workers: int | None = None,
-        enable_cache: bool = True,
+        enable_cache: bool = False,
         cache_dir: str | None = None,
     ) -> None:
         """Initialize the Hamilton executor."""
-        self._profile = profile
-        self._parallel_backend = parallel_backend
-        self._max_workers = max_workers
-        self._enable_cache = enable_cache
-        self._cache_dir = cache_dir
+        self._options = BuildExecutionOptions(
+            profile=profile,
+            parallel_backend=parallel_backend,
+            max_workers=max_workers,
+            enable_hamilton_cache=enable_cache,
+            cache_dir=cache_dir,
+        )
 
     @property
     def profile(self) -> str | None:
         """Return the configured profile name."""
-        return self._profile
+        return self._options.profile
 
     def run(
         self,
@@ -369,21 +372,16 @@ class HamiltonBuildExecutor:
         HamiltonRuntime
             Configured runtime with driver and target graph.
         """
-        config: dict[str, Any] = {"profile": self._profile or "default"}
-        cache_dir = self._cache_dir or str(env.paths.build_dir / ".hamilton_cache")
+        config: dict[str, Any] = {"profile": self._options.resolved_profile(env=env)}
         telemetry_hook: NodeTelemetryHook | None = None
 
         parallel_adapter = create_parallel_adapter(
-            self._parallel_backend,
-            max_workers=self._max_workers,
+            self._options.parallel_backend,
+            max_workers=self._options.max_workers,
             thread_name_prefix="codeintel-build",
         )
 
-        hook_options = HookOptions(
-            strict_contracts=env.strict_contracts,
-            enable_validation=env.strict_contracts,
-            enable_telemetry=True,
-        )
+        hook_options = self._options.hook_options(env=env)
 
         def _adapter_factory(graph: TargetGraph) -> list[LifecycleAdapter]:
             nonlocal telemetry_hook
@@ -403,8 +401,8 @@ class HamiltonBuildExecutor:
         runtime = build_driver(
             config=config,
             adapter_factory=_adapter_factory,
-            enable_cache=self._enable_cache,
-            cache_dir=cache_dir,
+            enable_cache=self._options.enable_hamilton_cache,
+            cache_dir=str(self._options.resolved_cache_dir(env=env)),
         )
         return runtime, telemetry_hook
 

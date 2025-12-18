@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-from codeintel.storage.ibis_types import and_predicates, count_gt, ilike, or_predicates
+from codeintel.storage.ibis_types import and_predicates, ibis_bool, ilike, or_predicates
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -45,13 +45,14 @@ class SubsystemRepository(BaseRepository):
 
         if role:
             modules = self._ibis_table("analytics.subsystem_modules")
-            exists_expr = modules.filter(
-                and_predicates(
-                    modules.subsystem_id == table.subsystem_id,
-                    modules.role == role,
-                )
-            ).limit(1)
-            expr = expr.filter(count_gt(exists_expr.count(), 0))
+            role_subsystems = (
+                modules.filter(ibis_bool(modules.role == role))
+                .select(modules.subsystem_id)
+                .distinct()
+            )
+            expr = expr.filter(
+                ibis_bool(table.subsystem_id.isin(cast("Any", role_subsystems.subsystem_id)))
+            )
 
         if query:
             pattern = f"%{query}%"

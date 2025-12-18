@@ -3,6 +3,9 @@
 This script scans source/test code for banned patterns called out in the
 ibis+pandera+sqlglot migration plan. It is intended to be wired into the
 quality gate and fail fast when deprecated surfaces reappear.
+
+It also enforces Hamilton build invariants (graph validation) so build-breaking
+tag/contract drift is caught without requiring a full test run.
 """
 
 from __future__ import annotations
@@ -12,6 +15,8 @@ import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+
+from codeintel.build.hamilton.validate import validate_graph, validation_result_to_json
 
 BASE_DIRS: tuple[str, ...] = ("src", "tests", "tools", "scripts")
 _SELF_REL_PATH = "tools/guardrails.py"
@@ -111,6 +116,12 @@ def main() -> int:
     if violations:
         for line in violations:
             sys.stderr.write(f"{line}\n")
+        return 1
+
+    graph_result = validate_graph()
+    if graph_result.has_errors:
+        sys.stderr.write("Hamilton graph validation failed.\n")
+        sys.stderr.write(validation_result_to_json(graph_result, indent=2))
         return 1
     return 0
 

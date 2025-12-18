@@ -15,6 +15,7 @@ import ibis.expr.types as it
 
 from codeintel.hamilton.semantic_tags import semantic_view
 from codeintel.storage.ibis_types import ne, or_predicates
+from codeintel.storage.queries.safe import assert_single_select_statement
 from codeintel.storage.views.protocol import IbisViewGateway
 from codeintel.storage.views.view_tags import ibis_view
 
@@ -52,6 +53,25 @@ def _create_view(con: _IbisCreateViewConnection, qualified_name: str, expr: it.T
         con.create_view(view_name, expr, database=database, overwrite=True)
     else:
         con.create_view(qualified_name, expr, overwrite=True)
+
+
+def _sql_table(ibis_gw: IbisViewGateway, sql_expr: str) -> it.Table:
+    """Return an Ibis table expression built from raw SELECT SQL.
+
+    Parameters
+    ----------
+    ibis_gw
+        Ibis gateway for view construction.
+    sql_expr
+        DuckDB SQL string. Must be a single select-like statement.
+
+    Returns
+    -------
+    it.Table
+        Ibis table expression for the SQL query.
+    """
+    assert_single_select_statement(sql_expr)
+    return ibis_gw.con.sql(sql_expr)
 
 
 __all__ = [
@@ -713,7 +733,7 @@ def build_docs_file_summary(ibis_gw: IbisViewGateway) -> it.Table:
          AND r.repo = m.repo
          AND r.commit = m.commit
     """
-    return ibis_gw.con.sql(sql_expr)
+    return _sql_table(ibis_gw, sql_expr)
 
 
 @semantic_view(
@@ -859,7 +879,7 @@ def build_docs_subsystem_summary(ibis_gw: IbisViewGateway) -> it.Table:
          AND agree.commit = s.commit
          AND agree.subsystem_id = s.subsystem_id
     """
-    return ibis_gw.con.sql(sql_expr)
+    return _sql_table(ibis_gw, sql_expr)
 
 
 @semantic_view(
@@ -930,7 +950,7 @@ def build_docs_subsystem_profile(ibis_gw: IbisViewGateway) -> it.Table:
         WHERE s.repo IS NOT NULL
           AND s.commit IS NOT NULL
     """
-    return ibis_gw.con.sql(sql_expr)
+    return _sql_table(ibis_gw, sql_expr)
 
 
 @semantic_view(
@@ -1021,7 +1041,7 @@ def build_docs_subsystem_coverage(ibis_gw: IbisViewGateway) -> it.Table:
         WHERE s.repo IS NOT NULL
           AND s.commit IS NOT NULL
     """
-    return ibis_gw.con.sql(sql_expr)
+    return _sql_table(ibis_gw, sql_expr)
 
 
 @semantic_view(
@@ -1807,7 +1827,7 @@ def build_docs_data_models(ibis_gw: IbisViewGateway) -> it.Table:
             dm.created_at
         FROM analytics.data_models dm
     """
-    return ibis_gw.con.sql(sql_expr)
+    return _sql_table(ibis_gw, sql_expr)
 
 
 @ibis_view("docs.v_data_models_normalized")
@@ -1885,7 +1905,7 @@ def build_docs_data_models_normalized(ibis_gw: IbisViewGateway) -> it.Table:
             dm.created_at
         FROM analytics.data_models dm
     """
-    return ibis_gw.con.sql(sql_expr)
+    return _sql_table(ibis_gw, sql_expr)
 
 
 @ibis_view("docs.v_data_model_fields")

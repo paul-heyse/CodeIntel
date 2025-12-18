@@ -14,10 +14,8 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from hamilton.function_modifiers import source, tag, value
-from hamilton.function_modifiers.adapters import SaveToDecorator
 
 from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.env import BuildEnv
@@ -32,6 +30,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.engine.infrastructure import ToolRunner
@@ -149,7 +148,7 @@ def t__scip__run(
         return ScipRunResult(success=False, error=str(exc))
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node("artifact.scip_index"),
     env=source("env"),
@@ -176,7 +175,7 @@ def scip__index_artifact(t__scip__run: ScipRunResult) -> Path | None:
     return t__scip__run.index_path
 
 
-@SaveToDecorator(
+@SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node("artifact.scip_json"),
     env=source("env"),
@@ -205,14 +204,14 @@ def scip__json_artifact(t__scip__run: ScipRunResult) -> Path | None:
 
 @tag(domain="ingestion", target=SCIP_TARGET_NAME, node_type="helper")
 def scip__materializations(
-    m__artifact__scip_index: dict[str, Any],
-    m__artifact__scip_json: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
+    m__artifact__scip_index: dict[str, object],
+    m__artifact__scip_json: dict[str, object],
+) -> dict[str, dict[str, object]]:
     """Collect scip artifact materialization payloads into a single mapping.
 
     Returns
     -------
-    dict[str, dict[str, Any]]
+    dict[str, dict[str, object]]
         Materialization metadata keyed by artifact name.
     """
     return {
@@ -227,7 +226,7 @@ def t__scip(
     graph: TargetGraph,
     t__scip__run: ScipRunResult,
     t__modules: TargetRunRecord,
-    scip__materializations: dict[str, dict[str, Any]],
+    scip__materializations: dict[str, dict[str, object]],
 ) -> TargetRunRecord:
     """Finalize scip target from artifact materialization metadata.
 
