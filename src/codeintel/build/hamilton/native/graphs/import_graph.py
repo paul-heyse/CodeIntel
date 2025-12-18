@@ -12,10 +12,11 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
+from codeintel.build.ibis_typing import filter_by
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import filter_mapping, get_source_root, persist_rows
 from codeintel.build.hamilton.native.options.graphs import ImportGraphOptions
@@ -108,9 +109,9 @@ def _load_modules(
     """
     try:
         modules = gateway.ibis.table("core.modules")
-        expr = modules.filter(
-            cast("Any", modules.repo == repo) & cast("Any", modules.commit == commit)
-        ).select(modules.path, modules.module)
+        expr = filter_by(modules, modules.repo == repo, modules.commit == commit).select(
+            modules.path, modules.module
+        )
         df = expr.execute()
         return {
             normalize_path(str(path)): str(module)

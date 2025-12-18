@@ -15,10 +15,11 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import tag
 
+from codeintel.build.ibis_typing import filter_by, isin_values
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root, persist_rows
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
@@ -174,16 +175,20 @@ def _load_functions(
     """
     try:
         goids_tbl = gateway.ibis.table("core.goids")
-        expr = goids_tbl.filter(
-            cast("Any", goids_tbl.repo == repo)
-            & cast("Any", goids_tbl.commit == commit)
-            & cast("Any", goids_tbl.kind.isin(cast("Any", ["function", "method"])))
-        ).select(
+        expr = (
+            filter_by(
+                goids_tbl,
+                goids_tbl.repo == repo,
+                goids_tbl.commit == commit,
+                isin_values(goids_tbl.kind, ["function", "method"]),
+            )
+            .select(
             goids_tbl.goid_h128,
             goids_tbl.qualname,
             goids_tbl.rel_path,
             goids_tbl.start_line,
             goids_tbl.end_line,
+        )
         )
         rows = expr.execute()
 

@@ -97,6 +97,11 @@ class _DummyKernel:
         )
 
     @staticmethod
+    def compile_query_sql(request: SemanticQueryRequest) -> str:
+        _ = request
+        return "SELECT 1"
+
+    @staticmethod
     def search(request: SearchQueryRequest) -> SearchQueryResponse:
         return SearchQueryResponse(
             query=request.query,

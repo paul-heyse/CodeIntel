@@ -25,13 +25,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from codeintel.config.primitives import SnapshotRef
 from codeintel.core.repository import PagedResult
 from codeintel.storage.contracts.validation import validate_df
-from codeintel.storage.snapshot_scoping import maybe_scope_by_repo_commit
+from codeintel.storage.warehouse import Warehouse
 
 if TYPE_CHECKING:
     from ibis.expr import types as it
@@ -84,8 +86,8 @@ class BaseRepository:
         it.Table
             Ibis table expression.
         """
-        expr = self.gateway.ibis.table(table_key)
-        return maybe_scope_by_repo_commit(expr, repo=self.repo, commit=self.commit)
+        snapshot = SnapshotRef.from_args(self.repo, self.commit, repo_root=Path.cwd())
+        return Warehouse(gateway=self.gateway).read(table_key, snapshot=snapshot)
 
     def _ibis_to_df(
         self,

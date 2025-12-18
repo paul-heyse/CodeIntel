@@ -14,7 +14,7 @@ from __future__ import annotations
 import ibis.expr.types as ir
 from hamilton.function_modifiers import source
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata, RowCounts
+from codeintel.build.hamilton.boundary_types import RowCounts
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
@@ -101,7 +101,7 @@ def duckdb_record(
     graph: TargetGraph,
     target_name: str,
     table_key: str,
-    materialization: MaterializationMetadata,
+    materialization: dict[str, object],
 ) -> TargetRunRecord:
     """Convert a saver metadata dict into a TargetRunRecord.
 

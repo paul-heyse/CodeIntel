@@ -543,6 +543,58 @@ class SemanticQueryKernel:
             snapshot=self._snapshot_dict(pointer),
         )
 
+    def compile_query_sql(self, request: SemanticQueryRequest) -> str:
+        """Compile a semantic query to SQL without executing it.
+
+        Parameters
+        ----------
+        request
+            Query request with filters, selection, and pagination.
+
+        Returns
+        -------
+        str
+            Compiled SQL string (validated select-only).
+
+        Raises
+        ------
+        ValueError
+            If the compiled SQL violates the select-only perimeter.
+        """
+        with self.db.connect() as (warehouse, pointer):
+            context = self._snapshot_context(pointer)
+            view = context.registry.by_id(request.view_id)
+            column_types = _column_types_for_view(view=view, inventory=context.inventory)
+            allowed_columns = self._resolve_allowed_columns(view=view, inventory=context.inventory)
+            columns = request.select if request.select else allowed_columns
+
+            effective_limit = request.limit if request.limit else view.defaults.limit
+            effective_order = request.order_by if request.order_by else view.defaults.order_by
+
+            query_limit = effective_limit + 1
+            plan = SemanticQueryPlan(
+                table_key=view.table_key,
+                columns=columns,
+                allowed_columns=frozenset(allowed_columns),
+                filters=request.filters,
+                order_by=effective_order,
+                limit=query_limit,
+                offset=request.offset,
+            )
+
+            ibis_con = warehouse.gateway.ibis.con
+            built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
+            try:
+                compiled = built.compile_sql(ibis_con)
+            finally:
+                _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=built.temp_tables)
+
+            try:
+                assert_single_select_statement(compiled)
+            except UnsafeSqlError as exc:
+                raise ValueError(str(exc)) from exc
+            return compiled
+
     def meta(self) -> dict[str, object]:
         """Return serving metadata for /meta endpoint and tools.
 

@@ -10,7 +10,6 @@ and schema documentation via @schema.output.
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
 
 import ibis
 import ibis.expr.types as ir
@@ -38,7 +37,17 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
-from codeintel.storage.ibis_types import and_predicates
+from codeintel.build.ibis_typing import (
+    add,
+    cast_dtype,
+    col_nunique,
+    col_sum,
+    fillna,
+    filter_by,
+    mul,
+    table_has_column,
+    truediv,
+)
 
 LOG = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
@@ -74,19 +83,13 @@ def hotspots__modules_complexity(env: BuildEnv, q__core__modules: ir.Table) -> i
         - rel_path
         - complexity
     """
-    modules_filtered = q__core__modules.filter(
-        cast(
-            "Any",
-            and_predicates(
-                q__core__modules.repo == env.snapshot.repo,
-                q__core__modules.commit == env.snapshot.commit,
-            ),
-        )
+    modules_filtered = filter_by(
+        q__core__modules,
+        q__core__modules.repo == env.snapshot.repo,
+        q__core__modules.commit == env.snapshot.commit,
     )
     return modules_filtered.group_by("rel_path").aggregate(
-        complexity=cast("Any", cast("Any", modules_filtered.loc).sum())
-        .fillna(ibis.literal(0))
-        .cast("float64"),
+        complexity=cast_dtype(fillna(col_sum(modules_filtered.loc), ibis.literal(0)), "float64"),
     )
 
 
@@ -105,14 +108,10 @@ def _hotspots_filter_file_state(file_state: ir.Table, env: BuildEnv) -> ir.Table
     ir.Table
         Snapshot-filtered file_state expression.
     """
-    return file_state.filter(
-        cast(
-            "Any",
-            and_predicates(
-                file_state.repo == env.snapshot.repo,
-                file_state.commit == env.snapshot.commit,
-            ),
-        )
+    return filter_by(
+        file_state,
+        file_state.repo == env.snapshot.repo,
+        file_state.commit == env.snapshot.commit,
     )
 
 
@@ -131,11 +130,11 @@ def _hotspots_aggregate_churn(file_state: ir.Table) -> ir.Table:
     """
     return file_state.group_by("rel_path").aggregate(
         commit_count=ibis._.count(),
-        lines_added=cast("Any", file_state.lines_added).sum().fillna(ibis.literal(0)),
-        lines_deleted=cast("Any", file_state.lines_deleted).sum().fillna(ibis.literal(0)),
+        lines_added=fillna(col_sum(file_state.lines_added), ibis.literal(0)),
+        lines_deleted=fillna(col_sum(file_state.lines_deleted), ibis.literal(0)),
         author_count=(
-            cast("Any", file_state.author).nunique()
-            if "author" in cast("Any", file_state).columns
+            col_nunique(file_state.author)
+            if table_has_column(file_state, "author")
             else ibis.literal(1)
         ),
     )
@@ -175,14 +174,22 @@ def _hotspots_score(hotspots: ir.Table) -> ir.Table:
     ir.Table
         Expression with a computed ``score`` column.
     """
-    lines_sum = cast("Any", hotspots.lines_added) + cast("Any", hotspots.lines_deleted)
+    lines_sum = add(hotspots.lines_added, hotspots.lines_deleted)
+    commit_count = cast_dtype(hotspots.commit_count, "float64")
+    author_count = cast_dtype(hotspots.author_count, "float64")
+    lines_sum_f = cast_dtype(lines_sum, "float64")
+    complexity = cast_dtype(hotspots.complexity, "float64")
     return hotspots.mutate(
-        score=(
-            (cast("Any", hotspots.commit_count).cast("float64") * 0.4)
-            + (cast("Any", hotspots.author_count).cast("float64") * 0.2)
-            + (cast("Any", lines_sum).cast("float64") / ibis.literal(1000.0) * 0.2)
-            + (cast("Any", hotspots.complexity) / ibis.literal(100.0) * 0.2)
-        ).fillna(ibis.literal(0.0))
+        score=fillna(
+            add(
+                add(mul(commit_count, 0.4), mul(author_count, 0.2)),
+                add(
+                    mul(truediv(lines_sum_f, ibis.literal(1000.0)), 0.2),
+                    mul(truediv(complexity, ibis.literal(100.0)), 0.2),
+                ),
+            ),
+            ibis.literal(0.0),
+        )
     )
 
 
@@ -205,7 +212,7 @@ def _hotspots_select(hotspots: ir.Table) -> ir.Table:
         author_count=hotspots.author_count,
         lines_added=hotspots.lines_added,
         lines_deleted=hotspots.lines_deleted,
-        complexity=cast("Any", hotspots.complexity).fillna(ibis.literal(0.0)),
+        complexity=fillna(hotspots.complexity, ibis.literal(0.0)),
         score=hotspots.score,
     )
 

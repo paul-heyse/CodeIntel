@@ -22,7 +22,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, SupportsInt, cast
+from typing import TYPE_CHECKING, SupportsInt, cast
 
 import ibis
 import ibis.expr.types as ir
@@ -77,7 +77,14 @@ from codeintel.graphs.runtime import (
     build_graph_runtime,
 )
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import and_predicates, filter_by, ibis_bool
+from codeintel.build.ibis_typing import (
+    and_predicates,
+    col_nunique,
+    fillna,
+    filter_by,
+    is_null,
+    not_null,
+)
 
 if TYPE_CHECKING:
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
@@ -300,9 +307,7 @@ def _get_tracked_files(gateway: StorageGateway, repo: str, commit: str) -> list[
     try:
         modules = gateway.ibis.table("core.modules")
         expr = (
-            modules.filter(
-                cast("Any", modules.repo == repo) & cast("Any", modules.commit == commit)
-            )
+            filter_by(modules, modules.repo == repo, modules.commit == commit)
             .select(modules.path)
             .distinct()
             .order_by(modules.path)
@@ -512,9 +517,9 @@ def _load_symbol_occurrences(
     """
     try:
         scip_tbl = gateway.ibis.table("core.scip_occurrences")
-        expr = scip_tbl.filter(
-            cast("Any", scip_tbl.repo == repo) & cast("Any", scip_tbl.commit == commit)
-        ).select(scip_tbl.symbol, scip_tbl.rel_path, scip_tbl.line, scip_tbl.roles)
+        expr = filter_by(scip_tbl, scip_tbl.repo == repo, scip_tbl.commit == commit).select(
+            scip_tbl.symbol, scip_tbl.rel_path, scip_tbl.line, scip_tbl.roles
+        )
         rows = expr.execute()
 
         return [
@@ -545,9 +550,9 @@ def _load_module_map(
     """
     try:
         modules_tbl = gateway.ibis.table("core.modules")
-        expr = modules_tbl.filter(
-            cast("Any", modules_tbl.repo == repo) & cast("Any", modules_tbl.commit == commit)
-        ).select(modules_tbl.path, modules_tbl.module)
+        expr = filter_by(modules_tbl, modules_tbl.repo == repo, modules_tbl.commit == commit).select(
+            modules_tbl.path, modules_tbl.module
+        )
         rows = expr.execute()
         return {
             normalize_path(str(path)): str(module)
@@ -572,10 +577,11 @@ def _load_path_to_goid_map(
     """
     try:
         goids_tbl = gateway.ibis.table(GOIDS_GOIDS_TABLE_KEY)
-        expr = goids_tbl.filter(
-            cast("Any", goids_tbl.repo == repo)
-            & cast("Any", goids_tbl.commit == commit)
-            & cast("Any", goids_tbl.kind == "module")
+        expr = filter_by(
+            goids_tbl,
+            goids_tbl.repo == repo,
+            goids_tbl.commit == commit,
+            goids_tbl.kind == "module",
         ).select(goids_tbl.rel_path, goids_tbl.goid_h128)
         rows = expr.execute()
         return {
@@ -673,7 +679,7 @@ def _count_rows(
     """
     try:
         tbl = gateway.ibis.table(table)
-        filtered = tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
+        filtered = filter_by(tbl, tbl.repo == repo, tbl.commit == commit)
         result_df = filtered.aggregate(row_count=tbl.repo.count()).execute()
         return int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
     except (RuntimeError, ValueError, OSError, KeyError):
@@ -709,7 +715,7 @@ def _validate_call_graph_integrity(
         caller_join = scoped_edges.left_join(
             nodes, predicates=[(scoped_edges.caller_goid_h128, nodes.goid_h128)]
         )
-        orphan_callers_expr = caller_join.filter(ibis_bool(nodes.goid_h128.isnull())).count()
+        orphan_callers_expr = caller_join.filter(is_null(nodes.goid_h128)).count()
         orphan_callers = int(cast("SupportsInt", orphan_callers_expr.execute()))
         if orphan_callers > 0:
             errors.append(f"Found {orphan_callers} call graph edges with orphan caller GOIDs")
@@ -718,7 +724,7 @@ def _validate_call_graph_integrity(
             nodes, predicates=[(scoped_edges.callee_goid_h128, nodes.goid_h128)]
         )
         orphan_callees_expr = callee_join.filter(
-            ibis_bool(scoped_edges.callee_goid_h128.notnull()) & ibis_bool(nodes.goid_h128.isnull())
+            and_predicates(not_null(scoped_edges.callee_goid_h128), is_null(nodes.goid_h128))
         ).count()
         orphan_callees = int(cast("SupportsInt", orphan_callees_expr.execute()))
         if orphan_callees > 0:
@@ -760,7 +766,7 @@ def _validate_import_graph_integrity(
                 (scoped_edges.commit, modules.commit),
             ],
         )
-        orphan_src_expr = joined.filter(ibis_bool(modules.module.isnull())).count()
+        orphan_src_expr = joined.filter(is_null(modules.module)).count()
         orphan_src = int(cast("SupportsInt", orphan_src_expr.execute()))
         if orphan_src > 0:
             errors.append(f"Found {orphan_src} import edges with missing source modules")
@@ -797,7 +803,7 @@ def _validate_cfg_integrity(
                 (edges.function_goid_h128, blocks.function_goid_h128),
             ],
         )
-        orphan_edges_expr = joined.filter(ibis_bool(blocks.block_id.isnull())).count()
+        orphan_edges_expr = joined.filter(is_null(blocks.block_id)).count()
         orphan_edges = int(cast("SupportsInt", orphan_edges_expr.execute()))
         if orphan_edges > 0:
             errors.append(f"Found {orphan_edges} CFG edges with missing source blocks")
@@ -1127,11 +1133,11 @@ def _call_graph_views_build_call_count_stats(edges: ir.Table) -> CallGraphCallCo
         function_goid_h128=edges.caller_goid_h128,
     ).aggregate(
         num_callees=ibis._.count(),
-        num_unique_callees=cast("Any", edges.callee_goid_h128).nunique(),
+        num_unique_callees=col_nunique(edges.callee_goid_h128),
     )
 
     caller_stats: ir.Table = (
-        edges.filter(cast("Any", edges.callee_goid_h128.notnull()))
+        filter_by(edges, not_null(edges.callee_goid_h128))
         .group_by(
             function_goid_h128=edges.callee_goid_h128,
         )
@@ -1168,10 +1174,10 @@ def _call_graph_views_finalize_call_counts(
     return result.select(
         repo=ibis.literal(env.snapshot.repo),
         commit=ibis.literal(env.snapshot.commit),
-        function_goid_h128=cast("Any", result.function_goid_h128),
-        num_callees=cast("Any", result.num_callees).fillna(ibis.literal(0)),
-        num_unique_callees=cast("Any", result.num_unique_callees).fillna(ibis.literal(0)),
-        num_callers=cast("Any", result.num_callers).fillna(ibis.literal(0)),
+        function_goid_h128=result.function_goid_h128,
+        num_callees=fillna(result.num_callees, ibis.literal(0)),
+        num_unique_callees=fillna(result.num_unique_callees, ibis.literal(0)),
+        num_callers=fillna(result.num_callers, ibis.literal(0)),
     )
 
 
@@ -1192,7 +1198,7 @@ def _call_graph_views_prepare_depth_tables(edges: ir.Table) -> CallGraphDepthTab
         caller_function_goid_h128=edges.caller_goid_h128,
     ).distinct()
     callee_funcs: ir.Table = (
-        edges.filter(cast("Any", edges.callee_goid_h128.notnull()))
+        filter_by(edges, not_null(edges.callee_goid_h128))
         .select(
             function_goid_h128=edges.callee_goid_h128,
         )
@@ -1227,7 +1233,7 @@ def _call_graph_views_finalize_depth_stats(tables: CallGraphDepthTables, env: Bu
             tables.all_funcs.function_goid_h128 == tables.caller_funcs.caller_function_goid_h128,
         ],
     )
-    is_leaf = cast("Any", joined.caller_function_goid_h128).isnull()
+    is_leaf = is_null(joined.caller_function_goid_h128)
     return joined.select(
         repo=ibis.literal(env.snapshot.repo),
         commit=ibis.literal(env.snapshot.commit),

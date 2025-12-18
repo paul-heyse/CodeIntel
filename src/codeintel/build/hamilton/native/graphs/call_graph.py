@@ -13,12 +13,13 @@ import contextlib
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import ibis
 import libcst as cst
 from hamilton.function_modifiers import tag
 
+from codeintel.build.ibis_typing import and_predicates, filter_by, isin_values
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
@@ -42,7 +43,6 @@ from codeintel.graphs.compute.callgraph import (
 )
 from codeintel.graphs.compute.callgraph.persistence import dedupe_edge_rows
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.ibis_types import and_predicates
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -224,11 +224,13 @@ def _build_global_callee_lookup(
     """
     try:
         goids_tbl = gateway.ibis.table("core.goids")
-        repo_filter = cast("Any", goids_tbl.repo == repo)
-        commit_filter = cast("Any", goids_tbl.commit == commit)
-        kind_filter = cast("Any", goids_tbl.kind.isin(cast("Any", ["function", "method"])))
         expr = (
-            goids_tbl.filter(repo_filter & commit_filter & kind_filter)
+            filter_by(
+                goids_tbl,
+                goids_tbl.repo == repo,
+                goids_tbl.commit == commit,
+                isin_values(goids_tbl.kind, ["function", "method"]),
+            )
             .select(goids_tbl.qualname, goids_tbl.goid_h128)
             .order_by(goids_tbl.qualname)
         )
@@ -264,11 +266,13 @@ def _build_def_goids_by_path(
     """
     try:
         goids_tbl = gateway.ibis.table("core.goids")
-        repo_filter = cast("Any", goids_tbl.repo == repo)
-        commit_filter = cast("Any", goids_tbl.commit == commit)
-        kind_filter = cast("Any", goids_tbl.kind == "module")
         expr = (
-            goids_tbl.filter(repo_filter & commit_filter & kind_filter)
+            filter_by(
+                goids_tbl,
+                goids_tbl.repo == repo,
+                goids_tbl.commit == commit,
+                goids_tbl.kind == "module",
+            )
             .select(goids_tbl.rel_path, goids_tbl.goid_h128)
             .order_by(goids_tbl.rel_path)
         )
@@ -358,9 +362,6 @@ def _build_nodes_from_goids(
     """
     try:
         goids_tbl = gateway.ibis.table("core.goids")
-        repo_filter = cast("Any", goids_tbl.repo == repo)
-        commit_filter = cast("Any", goids_tbl.commit == commit)
-        kind_filter = cast("Any", goids_tbl.kind.isin(cast("Any", ["function", "method"])))
 
         language_expr = (
             goids_tbl.language if "language" in goids_tbl.columns else ibis.literal("python")
@@ -369,7 +370,12 @@ def _build_nodes_from_goids(
         kind_expr = goids_tbl.kind if "kind" in goids_tbl.columns else ibis.literal("function")
 
         expr = (
-            goids_tbl.filter(repo_filter & commit_filter & kind_filter)
+            filter_by(
+                goids_tbl,
+                goids_tbl.repo == repo,
+                goids_tbl.commit == commit,
+                isin_values(goids_tbl.kind, ["function", "method"]),
+            )
             .select(
                 goids_tbl.goid_h128,
                 ibis.coalesce(language_expr, ibis.literal("python")).name("language"),
