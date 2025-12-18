@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
+from codeintel.build.exports.common import MAX_EXPORT_LIMIT, build_export_relation
 from codeintel.build.exports.engine import export_all_datasets
 from codeintel.build.exports.engine import export_jsonl_for_table as _engine_export_jsonl_for_table
 
@@ -176,7 +177,7 @@ def export_repo_map_json(
     table_name = "core.repo_map"
     if format_output == "json":
         output_path = document_output_dir / "repo_map.json"
-        rel = gateway.con.table(table_name)
+        rel = build_export_relation(gateway, table_name, MAX_EXPORT_LIMIT, 0)
         with output_path.open("w", encoding="utf-8") as handle:
             handle.write("[")
             first = True

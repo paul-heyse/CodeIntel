@@ -1,7 +1,7 @@
 """Declared table and composite schema definitions for all DuckDB tables.
 
 This module contains:
-- TABLE_SCHEMAS: 79 table/view schema definitions
+- TABLE_SCHEMAS: 80 table/view schema definitions
  - COMPOSITE_SCHEMAS: 4 profile composition schemas
 
 All schema definitions have been migrated from the legacy dataset_contract.py.
@@ -2100,6 +2100,33 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         primary_key=("run_id", "target"),
         indexes=(Index("idx_build_run_targets_repo_commit", ("repo", "commit")),),
         description="Per-target execution records for build observability",
+    ),
+    "build.run_environments": TableSchema(
+        schema="build",
+        name="run_environments",
+        columns=[
+            Column("run_id", "VARCHAR", nullable=False, description="Parent run identifier"),
+            Column("python_version", "VARCHAR", nullable=False, description="Python version string"),
+            Column("os_name", "VARCHAR", nullable=False, description="Operating system name"),
+            Column("os_version", "VARCHAR", nullable=False, description="Operating system release"),
+            Column(
+                "tool_versions",
+                "JSON",
+                nullable=False,
+                description="JSON mapping of tool names to versions",
+            ),
+            Column("config_hash", "VARCHAR", description="Hash of build configuration"),
+            Column(
+                "git_dirty",
+                "BOOLEAN",
+                nullable=False,
+                description="Whether git working tree had uncommitted changes",
+            ),
+            Column("captured_at", "TIMESTAMPTZ", nullable=False, description="When captured"),
+        ],
+        primary_key=("run_id",),
+        indexes=(Index("idx_build_run_environments_captured_at", ("captured_at",)),),
+        description="Captured tool versions and runtime environment per build run",
     ),
     "build.assets": TableSchema(
         schema="build",

@@ -37,6 +37,8 @@ class ExportArtifactSpec:
     compiled_sql: str | None = None
     snapshot: dict[str, str] = field(default_factory=dict)
     format: str = "ndjson"
+    query_hash: str | None = None
+    schema_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,10 @@ class StoredMetadata:
         MIME type of the export payload.
     size_bytes
         Size of the export payload in bytes.
+    query_hash
+        Stable fingerprint of query inputs, when available.
+    schema_hash
+        Stable fingerprint of the resolved schema, when available.
     """
 
     export_id: str
@@ -106,6 +112,8 @@ class StoredMetadata:
     format: str = "ndjson"
     mime_type: str = _MIME_NDJSON
     size_bytes: int = 0
+    query_hash: str | None = None
+    schema_hash: str | None = None
 
 
 class ResourceStore:
@@ -304,6 +312,8 @@ class ResourceStore:
             format=spec.format,
             mime_type=mime_type,
             size_bytes=path.stat().st_size,
+            query_hash=spec.query_hash,
+            schema_hash=spec.schema_hash,
         )
         self._write_metadata_sidecar(metadata)
 
@@ -383,6 +393,8 @@ class ResourceStore:
             format=spec.format,
             mime_type=mime_type,
             size_bytes=path.stat().st_size,
+            query_hash=spec.query_hash,
+            schema_hash=spec.schema_hash,
         )
         self._write_metadata_sidecar(metadata)
 
@@ -408,6 +420,8 @@ class ResourceStore:
             "format": metadata.format,
             "mime_type": metadata.mime_type,
             "size_bytes": metadata.size_bytes,
+            "query_hash": metadata.query_hash,
+            "schema_hash": metadata.schema_hash,
         }
         meta_path.write_text(
             json.dumps(meta_dict, indent=2, sort_keys=True, default=str),
@@ -455,6 +469,8 @@ class ResourceStore:
             format=meta_dict.get("format", "ndjson"),
             mime_type=meta_dict.get("mime_type", _MIME_NDJSON),
             size_bytes=meta_dict.get("size_bytes", 0),
+            query_hash=meta_dict.get("query_hash"),
+            schema_hash=meta_dict.get("schema_hash"),
         )
 
     def get_preview(

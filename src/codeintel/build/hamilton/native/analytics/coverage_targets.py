@@ -38,6 +38,7 @@ from codeintel.analytics.compute.coverage.compute import (
 from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
@@ -50,9 +51,9 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
-from codeintel.build.storage_queries import count_rows_for_snapshot
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
+from codeintel.storage.queries.safe import count_rows_for_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -86,49 +87,6 @@ TARGET_SPECS = (
         options=TargetSpecOptions(table_keys=(BEHAVIORAL_COVERAGE_TABLE_KEY,)),
     ),
 )
-
-
-# -----------------------------------------------------------------------------
-# Result dataclasses
-# -----------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class CoverageTestEdgesResult:
-    """Result from coverage test edges computation.
-
-    Parameters
-    ----------
-    success
-        Whether the computation succeeded.
-    table_counts
-        Mapping of table_key to row count.
-    error
-        Error message if computation failed.
-    """
-
-    success: bool
-    table_counts: dict[str, int]
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class BehavioralCoverageResult:
-    """Result from behavioral coverage computation.
-
-    Parameters
-    ----------
-    success
-        Whether the computation succeeded.
-    table_counts
-        Mapping of table_key to row count.
-    error
-        Error message if computation failed.
-    """
-
-    success: bool
-    table_counts: dict[str, int]
-    error: str | None = None
 
 
 # -----------------------------------------------------------------------------
@@ -334,7 +292,7 @@ def t__coverage_functions(
 def t__coverage_test_edges__compute(
     env: BuildEnv,
     t__goids: TargetRunRecord,
-) -> CoverageTestEdgesResult:
+) -> ExecutionResult:
     """Compute test-to-function coverage edges.
 
     Parameters
@@ -346,15 +304,11 @@ def t__coverage_test_edges__compute(
 
     Returns
     -------
-    CoverageTestEdgesResult
+    ExecutionResult
         Result indicating success or failure with table counts.
     """
     if t__goids.status != "succeeded":
-        return CoverageTestEdgesResult(
-            success=False,
-            table_counts={},
-            error=f"Upstream goids target failed: {t__goids.error}",
-        )
+        return ExecutionResult.failed(f"Upstream goids target failed: {t__goids.error}")
 
     try:
         try:
@@ -373,25 +327,18 @@ def t__coverage_test_edges__compute(
             catalog_provider=catalog,
         )
 
-        return CoverageTestEdgesResult(
-            success=True,
-            table_counts={TEST_COVERAGE_EDGES_TABLE_KEY: 0},
-        )
+        return ExecutionResult.ok(table_counts={TEST_COVERAGE_EDGES_TABLE_KEY: 0})
 
     except Exception as exc:
         log.exception("Coverage test edges computation failed")
-        return CoverageTestEdgesResult(
-            success=False,
-            table_counts={},
-            error=str(exc),
-        )
+        return ExecutionResult.failed(str(exc))
 
 
 @tag(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME, node_type="materialize")
 def t__coverage_test_edges(
     env: BuildEnv,
     graph: TargetGraph,
-    t__coverage_test_edges__compute: CoverageTestEdgesResult,
+    t__coverage_test_edges__compute: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize coverage test edges target using executor template.
 
@@ -426,7 +373,7 @@ def t__coverage_test_edges(
 def t__behavioral_coverage__compute(
     env: BuildEnv,
     t__test_profile: TargetRunRecord,
-) -> BehavioralCoverageResult:
+) -> ExecutionResult:
     """Assign heuristic behavior tags to tests.
 
     Parameters
@@ -438,15 +385,11 @@ def t__behavioral_coverage__compute(
 
     Returns
     -------
-    BehavioralCoverageResult
+    ExecutionResult
         Result indicating success or failure with table counts.
     """
     if t__test_profile.status != "succeeded":
-        return BehavioralCoverageResult(
-            success=False,
-            table_counts={},
-            error=f"Upstream test_profile target failed: {t__test_profile.error}",
-        )
+        return ExecutionResult.failed(f"Upstream test_profile target failed: {t__test_profile.error}")
 
     try:
         build_behavioral_coverage(
@@ -456,30 +399,24 @@ def t__behavioral_coverage__compute(
         )
 
         row_count = count_rows_for_snapshot(
-            env.gateway,
-            table_key=BEHAVIORAL_COVERAGE_TABLE_KEY,
-            snapshot=env.snapshot,
+            env.gateway.con,
+            BEHAVIORAL_COVERAGE_TABLE_KEY,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
         )
 
-        return BehavioralCoverageResult(
-            success=True,
-            table_counts={BEHAVIORAL_COVERAGE_TABLE_KEY: row_count},
-        )
+        return ExecutionResult.ok(table_counts={BEHAVIORAL_COVERAGE_TABLE_KEY: row_count})
 
     except Exception as exc:
         log.exception("Behavioral coverage computation failed")
-        return BehavioralCoverageResult(
-            success=False,
-            table_counts={},
-            error=str(exc),
-        )
+        return ExecutionResult.failed(str(exc))
 
 
 @tag(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME, node_type="materialize")
 def t__behavioral_coverage(
     env: BuildEnv,
     graph: TargetGraph,
-    t__behavioral_coverage__compute: BehavioralCoverageResult,
+    t__behavioral_coverage__compute: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize behavioral coverage target using executor template.
 
@@ -506,8 +443,6 @@ def t__behavioral_coverage(
 
 
 __all__ = [
-    "BehavioralCoverageResult",
-    "CoverageTestEdgesResult",
     "t__behavioral_coverage",
     "t__behavioral_coverage__compute",
     "t__coverage_functions",

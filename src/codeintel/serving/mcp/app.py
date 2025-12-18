@@ -211,6 +211,8 @@ class SemanticKernel(Protocol):
 
     def export_sql(self, request: SemanticExportRequest) -> str: ...
 
+    def export_fingerprint(self, request: SemanticExportRequest) -> tuple[str, str | None]: ...
+
 
 def _build_semantic_request(
     view_id: str,
@@ -546,6 +548,8 @@ def _register_query_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLim
         view_id_for_metrics = view_id
         row_count = 0
         truncated = False
+        query_hash: str | None = None
+        schema_hash: str | None = None
         try:
             await ctx.info(f"Querying view: {view_id}")
             await ctx.report_progress(10, 100)
@@ -555,6 +559,8 @@ def _register_query_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLim
             await ctx.report_progress(100, 100)
             row_count = len(result.rows)
             truncated = result.truncated
+            query_hash = result.query_hash
+            schema_hash = result.schema_hash
 
             # Build preview if result is truncated or has multiple rows
             preview = None
@@ -592,6 +598,8 @@ def _register_query_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLim
                     truncated=truncated,
                     duration_ms=duration_ms,
                     correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
+                    query_hash=query_hash,
+                    schema_hash=schema_hash,
                 )
             )
 
@@ -807,6 +815,7 @@ def _register_search_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLi
         start = time.perf_counter()
         query_for_metrics = query
         row_count = 0
+        query_hash: str | None = None
         try:
             await ctx.info(f"Searching: {query}")
             await ctx.report_progress(10, 100)
@@ -820,6 +829,7 @@ def _register_search_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLi
             result = await limiter.run(kernel.search, request)
             await ctx.report_progress(100, 100)
             row_count = len(result.results)
+            query_hash = result.query_hash
             return result  # noqa: TRY300 - Return inside try ensures finally metrics run
         except ValueError as e:
             raise ToolError(_invalid_params_msg(e)) from e
@@ -837,6 +847,7 @@ def _register_search_tool(mcp: FastMCP, kernel: SemanticKernel, limiter: QueryLi
                     truncated=False,
                     duration_ms=duration_ms,
                     correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
+                    query_hash=query_hash,
                 )
             )
 
@@ -895,6 +906,8 @@ def _register_export_tool(
         start = time.perf_counter()
         view_id_for_metrics = view_id
         row_count = 0
+        query_hash: str | None = None
+        schema_hash: str | None = None
         try:
             await ctx.info(f"Exporting view: {view_id} (format={export_format})")
             await ctx.report_progress(10, 100)
@@ -912,12 +925,15 @@ def _register_export_tool(
             snapshot_dict = _export_snapshot_dict(ptr)
             column_types = _safe_column_types(kernel, view_id)
             compiled_sql = kernel.export_sql(request)
+            query_hash, schema_hash = kernel.export_fingerprint(request)
             spec = ExportArtifactSpec(
                 view_id=view_id,
                 column_types=column_types,
                 compiled_sql=compiled_sql,
                 snapshot=snapshot_dict,
                 format=format_type,
+                query_hash=query_hash,
+                schema_hash=schema_hash,
             )
 
             # Export rows via limiter
@@ -986,6 +1002,8 @@ def _register_export_tool(
                     truncated=False,
                     duration_ms=duration_ms,
                     correlation_id=getattr(ctx, "session_id", None) or "mcp-unknown",
+                    query_hash=query_hash,
+                    schema_hash=schema_hash,
                 )
             )
 

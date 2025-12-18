@@ -11,16 +11,13 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
-
-import pandas as pd
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.exports.exprs import build_export_expr, compile_export_sql
 from codeintel.build.schemas import iter_contracts
 from codeintel.build.schemas.json_schema_registry import compute_json_schema_digest
 from codeintel.core.errors import ProblemDetailBuilder
 from codeintel.core.errors.schema import SchemaError
-from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.validation import validate_contract_or_raise
 
@@ -292,42 +289,6 @@ def compute_schema_digest(dataset: DatasetContract | None) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Row count and relation building
-# ---------------------------------------------------------------------------
-
-
-def get_row_count(gateway: StorageGateway, table_name: str) -> int | None:
-    """Get the row count for a table.
-
-    Parameters
-    ----------
-    gateway
-        StorageGateway providing Ibis access.
-    table_name
-        Fully qualified table name.
-
-    Returns
-    -------
-    int | None
-        Row count, or None if unavailable.
-    """
-    try:
-        table = gateway.ibis.table(table_name)
-        row = table.count().execute()
-    except DuckDBError:
-        log.debug("Row count unavailable for %s", table_name, exc_info=True)
-        return None
-    if row is None:
-        return None
-    if isinstance(row, pd.DataFrame):
-        if row.empty:
-            return None
-        return int(row.iloc[0, 0])
-    if isinstance(row, (list, tuple)):
-        return int(row[0]) if row else None
-    return int(cast("int", row))
-
-
 def build_export_relation(
     gateway: StorageGateway,
     table_key: str,
@@ -453,7 +414,6 @@ __all__ = [
     "compute_schema_digest",
     "default_validation_schemas",
     "export_problem",
-    "get_row_count",
     "log_export_error",
     "resolve_dataset_table",
     "resolve_validation_profile",

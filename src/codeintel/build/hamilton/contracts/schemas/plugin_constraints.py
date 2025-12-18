@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+from codeintel.build.engine_version import get_build_engine_version
 from codeintel.build.hamilton.contracts.schemas.constraints import (
     Constraint,
     ConstraintKind,
@@ -62,6 +63,7 @@ def _get_all_plugins_metadata() -> dict[str, CorePluginMetadata]:
     """
     result: dict[str, CorePluginMetadata] = {}
     graph = load_target_system().graph
+    build_version = get_build_engine_version()
 
     for target in graph.all_targets:
         consumed: set[str] = set()
@@ -75,7 +77,7 @@ def _get_all_plugins_metadata() -> dict[str, CorePluginMetadata]:
         domain = _DOMAIN_BY_MODULE.get(target.module, PluginDomain.CLI)
         result[target.name] = CorePluginMetadata(
             name=f"{target.module}.{target.name}",
-            version="0.0.0",
+            version=build_version,
             description=target.description or "",
             domain=domain,
             kind="build_target",

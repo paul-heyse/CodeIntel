@@ -27,6 +27,7 @@ from codeintel.build.session import BuildSession
 if TYPE_CHECKING:
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.helpers.table_key import split_table_key
 
 __all__ = [
     "BuildContext",
@@ -217,7 +218,7 @@ class PathResolver:
         >>> resolver.table_export_path("core.modules", fmt="jsonl")
         PosixPath('/export/core/modules.jsonl')
         """
-        schema, table = table_key.split(".", 1)
+        schema, table = split_table_key(table_key)
         return self.export_dir / schema / f"{table}.{fmt}"
 
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
@@ -20,7 +21,6 @@ if TYPE_CHECKING:
 def test_materialize_rows_replace_rolls_back_on_write_failure(
     fresh_gateway: StorageGateway,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Ensure snapshot-scoped replace is atomic (delete + write)."""
     warehouse = Warehouse(fresh_gateway)
@@ -48,16 +48,14 @@ def test_materialize_rows_replace_rolls_back_on_write_failure(
     if original is None:
         pytest.fail("Expected baseline core.repo_map row to exist")
 
-    def _fail_write(*_args: object, **_kwargs: object) -> None:
-        msg = "boom"
-        raise RuntimeError(msg)
-
-    monkeypatch.setattr(fresh_gateway.ibis, "write", _fail_write)
-
-    with pytest.raises(RuntimeError, match="boom"):
+    bad_rows = [
+        (snapshot.repo, snapshot.commit, "[\"new\"]", None, created_at),
+        (snapshot.repo, snapshot.commit, "[\"dupe\"]", None, created_at),
+    ]
+    with pytest.raises(DuckDBError):
         warehouse.materialize_rows(
             table_key,
-            [(snapshot.repo, snapshot.commit, "[\"new\"]", None, created_at)],
+            bad_rows,
             columns=columns,
             options=options,
         )

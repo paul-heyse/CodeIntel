@@ -31,6 +31,7 @@ from codeintel.config.datasets.primitives import (
     Index,
     TableSchema,
 )
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -281,7 +282,7 @@ class OutputContract:
             if "." not in key:
                 message = f"Table key must include schema and name: {key}"
                 raise ValueError(message)
-            schema, name = key.split(".", 1)
+            schema, name = split_table_key(key)
             tables.append(
                 TableSchema(
                     schema=schema,

@@ -17,9 +17,9 @@ import json
 import logging
 import platform
 from dataclasses import dataclass, replace
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
-import duckdb
 import ibis
 import pyarrow as pa
 import sqlglot
@@ -45,9 +45,16 @@ def _sha256_text(payload: str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _package_version(name: str) -> str:
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def _tool_versions() -> dict[str, str]:
     return {
-        "duckdb": str(getattr(duckdb, "__version__", "unknown")),
+        "duckdb": _package_version("duckdb"),
         "ibis": str(getattr(ibis, "__version__", "unknown")),
         "pyarrow": str(getattr(pa, "__version__", "unknown")),
         "sqlglot": str(getattr(sqlglot, "__version__", "unknown")),

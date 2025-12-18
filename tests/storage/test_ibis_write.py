@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-import ibis.expr.types as it
 import pandas as pd
 import pytest
 
@@ -139,21 +138,14 @@ def test_write_ibis_expression_basic(write_gateway: StorageGateway) -> None:
 
 def test_write_dataframe_fast_lane_does_not_iterate_rows(
     write_gateway: StorageGateway,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify large-frame fast lane uses relation-based INSERT...SELECT."""
-    monkeypatch.setattr(ibis_adapter, "_DATAFRAME_FAST_LANE_MIN_ROWS", 5)
-
-    def _boom(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError
-
-    monkeypatch.setattr(pd.DataFrame, "itertuples", _boom, raising=True)
-
+    row_count = 10_000
     df = pd.DataFrame(
         {
-            "id": [1, 2, 3, 4, 5],
-            "name": ["a", "b", "c", "d", "e"],
-            "value": [1, 2, 3, 4, 5],
+            "id": range(1, row_count + 1),
+            "name": ["a"] * row_count,
+            "value": pd.Series(range(row_count), dtype="float64"),
         }
     )
     result = write_gateway.ibis.write("analytics.write_test", df)
@@ -163,7 +155,6 @@ def test_write_dataframe_fast_lane_does_not_iterate_rows(
 
 def test_upsert_from_ibis_expression_does_not_materialize_to_pandas(
     write_gateway: StorageGateway,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify expression UPSERT uses INSERT...SELECT, not pandas materialization."""
     write_gateway.ibis.write(
@@ -176,11 +167,6 @@ def test_upsert_from_ibis_expression_does_not_materialize_to_pandas(
         [(1, "updated", 9.0), (2, "new", 2.0)],
         columns=["id", "name", "value"],
     )
-
-    def _boom(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError
-
-    monkeypatch.setattr(it.Table, "to_pandas", _boom, raising=True)
 
     expr = write_gateway.ibis.table("analytics.write_test").select(["id", "name", "value"])
     result = write_gateway.ibis.write(

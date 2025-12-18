@@ -27,6 +27,7 @@ from codeintel.build.hamilton.materializers.artifact_saver import (
     resolve_artifact_path,
 )
 from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.ibis_helpers import filter_for_snapshot
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materialization,
 )
@@ -39,7 +40,6 @@ from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
-from codeintel.storage.ibis_types import and_predicates
 
 log = logging.getLogger(__name__)
 
@@ -213,18 +213,8 @@ def t__export_jsonl__compute(
         if should_skip_native_target(env, target, input_hash):
             return None
 
-    modules = q__core__modules.filter(
-        and_predicates(
-            q__core__modules.repo == env.snapshot.repo,
-            q__core__modules.commit == env.snapshot.commit,
-        )
-    )
-    function_metrics = q__analytics__function_metrics.filter(
-        and_predicates(
-            q__analytics__function_metrics.repo == env.snapshot.repo,
-            q__analytics__function_metrics.commit == env.snapshot.commit,
-        )
-    )
+    modules = filter_for_snapshot(q__core__modules, env.snapshot)
+    function_metrics = filter_for_snapshot(q__analytics__function_metrics, env.snapshot)
     if (
         resolve_artifact_path(
             env,
@@ -322,12 +312,7 @@ def t__export_parquet__compute(
     ir.Table
         Ibis expression producing rows for the Parquet export artifact.
     """
-    return q__analytics__function_metrics.filter(
-        and_predicates(
-            q__analytics__function_metrics.repo == env.snapshot.repo,
-            q__analytics__function_metrics.commit == env.snapshot.commit,
-        )
-    )
+    return filter_for_snapshot(q__analytics__function_metrics, env.snapshot)
 
 
 @SaveToObjectMetadataDecorator(

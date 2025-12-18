@@ -34,7 +34,6 @@ from codeintel.build.exports.common import (
     build_export_relation,
     compute_schema_digest,
     default_validation_schemas,
-    get_row_count,
     log_export_error,
     resolve_validation_profile,
     select_dataset_tables,
@@ -54,6 +53,7 @@ from codeintel.build.exports.manifest import (
 )
 from codeintel.build.exports.validation import validate_export_files
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.queries.safe import safe_count
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -285,7 +285,7 @@ def _export_dataset(
 
     current_row_count: int | None = None
     if target.dataset is None or not target.dataset.is_view:
-        current_row_count = get_row_count(gateway, target.table_name)
+        current_row_count = safe_count(gateway, target.table_name)
 
     criteria = SkipCriteria(
         row_count=current_row_count,
@@ -307,7 +307,7 @@ def _export_dataset(
         final_row_count = (
             current_row_count
             if current_row_count is not None
-            else get_row_count(gateway, target.table_name)
+            else safe_count(gateway, target.table_name)
         )
     except (DuckDBError, OSError, ValueError, TypeError) as exc:
         log.warning(
