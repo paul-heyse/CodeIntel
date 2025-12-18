@@ -120,6 +120,11 @@ class _DummyKernel:
         _ = request
         return "SELECT 1"
 
+    @staticmethod
+    def export_fingerprint(request: SemanticExportRequest) -> tuple[str, str | None]:
+        _ = request
+        return ("q_dummy", None)
+
 
 def _check_semantic_http_routes() -> list[str]:
     issues: list[str] = []

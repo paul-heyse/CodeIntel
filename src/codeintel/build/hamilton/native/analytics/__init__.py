@@ -63,8 +63,6 @@ from codeintel.build.hamilton.native.analytics.config_graph_targets import (
     t__config_data_flow__compute,
 )
 from codeintel.build.hamilton.native.analytics.coverage_targets import (
-    BehavioralCoverageResult,
-    CoverageTestEdgesResult,
     t__behavioral_coverage,
     t__behavioral_coverage__compute,
     t__coverage_functions,
@@ -152,9 +150,7 @@ __all__ = [
     "SEMANTIC_ROLES_MODULES_COLS",
     "TEST_PROFILE_COLS",
     "AstFeaturesResult",
-    "BehavioralCoverageResult",
     "ConfigDataFlowComputeResult",
-    "CoverageTestEdgesResult",
     "FunctionAnalyticsResult",
     "FunctionContractsResult",
     "FunctionEffectsResult",

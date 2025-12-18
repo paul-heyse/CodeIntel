@@ -46,6 +46,7 @@ from codeintel.hamilton.tags import (
     NODE_TYPE_LOADER_QUERY,
     NODE_TYPE_MATERIALIZE,
 )
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -275,7 +276,7 @@ def _create_dataset_node_function(
     dataset_fn.__name__ = d_name
     dataset_fn.__doc__ = f"Extract {table_key} dataset from {target_name} target."
 
-    domain = table_key.split(".", 1)[0] if "." in table_key else "main"
+    domain = split_table_key(table_key)[0] if "." in table_key else "main"
     return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_DATASET)(dataset_fn)
 
 
@@ -316,7 +317,7 @@ def _create_query_node_function(
     query_fn.__name__ = q_name
     query_fn.__doc__ = f"Load {table_key} as Ibis expression."
 
-    domain = table_key.split(".", 1)[0] if "." in table_key else "main"
+    domain = split_table_key(table_key)[0] if "." in table_key else "main"
     return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_LOADER_QUERY)(query_fn)
 
 
@@ -357,7 +358,7 @@ def _create_dataframe_node_function(
     dataframe_fn.__name__ = df_name
     dataframe_fn.__doc__ = f"Load {table_key} as pandas DataFrame."
 
-    domain = table_key.split(".", 1)[0] if "." in table_key else "main"
+    domain = split_table_key(table_key)[0] if "." in table_key else "main"
     return tag(domain=domain, table_key=table_key, node_type=NODE_TYPE_LOADER_DATAFRAME)(
         dataframe_fn
     )

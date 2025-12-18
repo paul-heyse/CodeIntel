@@ -14,13 +14,15 @@ recorded in the build manifest.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 import sys
+from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import ibis
 import pyarrow as pa
 import sqlglot
@@ -47,9 +49,14 @@ from codeintel.build.serving.semantic_compile_hamilton import (
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.build.targets import TargetGraph
+from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.metadata.bootstrap import sync_derived_lineage_edges
 from codeintel.storage.views import ibis_views as _ibis_views
+from codeintel.storage.views.dependencies import extract_referenced_table_keys
 from codeintel.storage.views.diff import diff_view_sql_maps
 from codeintel.storage.views.discovery import discover_view_builders
+
+LOG = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
@@ -109,6 +116,13 @@ TARGET_SPECS = (
 )
 
 
+def _package_version(name: str) -> str:
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def _semantic_registry_json() -> str:
     schema_provider = get_schema_provider()
     view_tags = collect_semantic_view_tags_from_hamilton(modules=(_ibis_views,))
@@ -133,12 +147,16 @@ def _buildspec_json() -> str:
 
 
 def _environment_json(env: BuildEnv) -> str:
+    codeintel_version = _package_version("codeintel")
+    duckdb_version = _package_version("duckdb")
     gateway_cfg = getattr(env.gateway, "config", None)
     read_only = bool(getattr(gateway_cfg, "read_only", False))
     extensions = os.environ.get("CODEINTEL_DUCKDB_EXTENSIONS", "").strip()
     payload = {
+        "generated_at": datetime.now(tz=UTC).isoformat(),
         "repo": env.repo,
         "commit": env.commit,
+        "codeintel": {"version": codeintel_version},
         "python": {
             "version": platform.python_version(),
             "implementation": platform.python_implementation(),
@@ -149,7 +167,7 @@ def _environment_json(env: BuildEnv) -> str:
             "machine": platform.machine(),
         },
         "tools": {
-            "duckdb": str(getattr(duckdb, "__version__", "unknown")),
+            "duckdb": duckdb_version,
             "ibis": str(getattr(ibis, "__version__", "unknown")),
             "pyarrow": str(getattr(pa, "__version__", "unknown")),
             "sqlglot": str(getattr(sqlglot, "__version__", "unknown")),
@@ -182,6 +200,15 @@ def _views_sql_json(env: BuildEnv) -> str:
         expr = spec.builder(ibis_gateway)
         sql_by_view[spec.table_key.lower()] = ibis_gateway.con.compile(expr)
 
+    lineage: dict[str, frozenset[str]] = {}
+    for view_key, sql in sql_by_view.items():
+        lineage[view_key] = frozenset(extract_referenced_table_keys(sql) - {view_key})
+
+    try:
+        sync_derived_lineage_edges(env.gateway.con, repo=env.repo, commit=env.commit, lineage=lineage)
+    except DuckDBError:
+        LOG.exception("Failed to sync derived lineage edges repo=%s commit=%s", env.repo, env.commit)
+
     return json.dumps(sql_by_view, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
@@ -192,13 +219,21 @@ def _views_sql_diff_json(env: BuildEnv, *, current_views_sql: str) -> str:
         raise TypeError(msg)
 
     before: dict[str, str] = {}
-    versions = env.gateway.assets.get_asset_versions(
-        repo=env.repo,
-        commit=env.commit,
-        asset_kind="artifact",
-        asset_key=SERVING_ARTIFACT_VIEWS_SQL,
-        limit=1,
-    )
+    try:
+        versions = env.gateway.assets.get_asset_versions(
+            repo=env.repo,
+            commit=env.commit,
+            asset_kind="artifact",
+            asset_key=SERVING_ARTIFACT_VIEWS_SQL,
+            limit=1,
+        )
+    except DuckDBError:
+        LOG.exception(
+            "Failed to load prior views_sql versions repo=%s commit=%s",
+            env.repo,
+            env.commit,
+        )
+        versions = []
     if versions:
         location = versions[0].location
         if isinstance(location, str):

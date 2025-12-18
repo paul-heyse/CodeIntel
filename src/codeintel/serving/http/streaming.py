@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from starlette.responses import StreamingResponse
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterable, Iterator, Mapping
 
 
 def ndjson_stream(rows: Iterable[dict[str, object]]) -> Iterator[bytes]:
@@ -36,6 +36,7 @@ def ndjson_response(
     rows: Iterable[dict[str, object]],
     *,
     filename: str | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> StreamingResponse:
     """Create an NDJSON streaming response.
 
@@ -45,19 +46,23 @@ def ndjson_response(
         Iterable of row dictionaries to stream.
     filename
         Optional filename for Content-Disposition header.
+    headers
+        Optional extra response headers.
 
     Returns
     -------
     StreamingResponse
         Streaming response with NDJSON content type.
     """
-    headers: dict[str, str] = {}
+    response_headers: dict[str, str] = {}
     if filename:
-        headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response_headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    if headers is not None:
+        response_headers.update({str(k): str(v) for k, v in headers.items()})
     return StreamingResponse(
         ndjson_stream(rows),
         media_type="application/x-ndjson",
-        headers=headers,
+        headers=response_headers,
     )
 
 

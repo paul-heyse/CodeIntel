@@ -18,6 +18,7 @@ from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.resources import DEFAULT_EXECUTION, DEFAULT_RESOURCES
 from codeintel.build.targets import OutputTarget
 from codeintel.config.datasets.declared_schemas import TABLE_SCHEMAS
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -47,7 +48,7 @@ def _validate_table_key(table_key: str) -> None:
         msg = f"table_key must be fully-qualified 'schema.table', got {table_key!r}"
         raise ValueError(msg)
 
-    schema, table = table_key.split(".", 1)
+    schema, table = split_table_key(table_key)
     if not schema or not table:
         msg = f"table_key must be fully-qualified 'schema.table', got {table_key!r}"
         raise ValueError(msg)

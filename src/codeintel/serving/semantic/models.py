@@ -151,6 +151,10 @@ class SemanticQueryResponse(BaseModel):
         Whether results were truncated by limit.
     snapshot
         Snapshot metadata (repo, commit, run_id).
+    query_hash
+        Stable fingerprint of validated query inputs.
+    schema_hash
+        Stable fingerprint of the resolved schema (when available).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -160,6 +164,8 @@ class SemanticQueryResponse(BaseModel):
     rows: list[dict[str, object]]
     truncated: bool
     snapshot: dict[str, str]
+    query_hash: str | None = None
+    schema_hash: str | None = None
 
 
 class SemanticExplainResponse(BaseModel):

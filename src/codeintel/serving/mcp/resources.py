@@ -184,12 +184,14 @@ def _build_export_meta_response(export_id: str, store: ResourceStore) -> dict[st
         filters=(),
         limit=meta.row_count,
         offset=0,
+        query_hash=meta.query_hash,
     )
 
     # Build schema summary
     schema_summary = ExportSchemaSummary(
         columns=meta.columns,
         types=meta.column_types,
+        schema_hash=meta.schema_hash,
     )
 
     # Determine format type

@@ -227,6 +227,8 @@ async def query_view(
                 truncated=response.truncated if response else False,
                 duration_ms=duration_ms,
                 correlation_id=correlation_id,
+                query_hash=response.query_hash if response else None,
+                schema_hash=response.schema_hash if response else None,
             ),
         )
     # Unreachable if exception was raised; type narrowing for checker

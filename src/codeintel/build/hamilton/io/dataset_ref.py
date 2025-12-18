@@ -17,6 +17,8 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import TYPE_CHECKING, NamedTuple
 
+from codeintel.storage.helpers.table_key import split_table_key
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -88,8 +90,10 @@ class DatasetRef(NamedTuple):
         >>> DatasetRef(table_key="simple_table").schema_name
         'main'
         """
-        parts = self.table_key.split(".", 1)
-        return parts[0] if len(parts) > 1 else "main"
+        if "." not in self.table_key:
+            return "main"
+        schema, _ = split_table_key(self.table_key)
+        return schema
 
     @property
     def table_name(self) -> str:
@@ -107,8 +111,10 @@ class DatasetRef(NamedTuple):
         >>> DatasetRef(table_key="simple_table").table_name
         'simple_table'
         """
-        parts = self.table_key.split(".", 1)
-        return parts[1] if len(parts) > 1 else parts[0]
+        if "." not in self.table_key:
+            return self.table_key
+        _, table = split_table_key(self.table_key)
+        return table
 
     def with_row_count(self, count: int) -> DatasetRef:
         """Return a new ref with updated row count.

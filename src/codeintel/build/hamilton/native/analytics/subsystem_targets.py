@@ -22,8 +22,8 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.storage_queries import count_rows_for_snapshot
 from codeintel.build.targets import TargetGraph
+from codeintel.storage.queries.safe import count_rows_for_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -88,14 +88,16 @@ def t__subsystems(
         build_subsystems(env.gateway, env.snapshot)
         row_counts = {
             SUBSYSTEMS_TABLE_KEY: count_rows_for_snapshot(
-                env.gateway,
-                table_key=SUBSYSTEMS_TABLE_KEY,
-                snapshot=env.snapshot,
+                env.gateway.con,
+                SUBSYSTEMS_TABLE_KEY,
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
             ),
             SUBSYSTEM_MODULES_TABLE_KEY: count_rows_for_snapshot(
-                env.gateway,
-                table_key=SUBSYSTEM_MODULES_TABLE_KEY,
-                snapshot=env.snapshot,
+                env.gateway.con,
+                SUBSYSTEM_MODULES_TABLE_KEY,
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
             ),
         }
         log.info("subsystems: materialized row_counts=%s", row_counts)

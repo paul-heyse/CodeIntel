@@ -62,9 +62,9 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 from codeintel.build.hamilton.run_records import TargetRunRecord, should_skip_native_target
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.storage_queries import count_rows_for_snapshot
 from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.storage.queries.safe import count_rows_for_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -378,9 +378,10 @@ def t__subsystem_graph_metrics__compute(
         )
 
         row_count = count_rows_for_snapshot(
-            env.gateway,
-            table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
-            snapshot=env.snapshot,
+            env.gateway.con,
+            SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
         )
 
         return ExecutionResult.ok(table_counts={SUBSYSTEM_GRAPH_METRICS_TABLE_KEY: row_count})
@@ -467,9 +468,10 @@ def t__symbol_graph_metrics__compute(
                 runtime=graph_runtime,
             )
             table_counts[SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY] = count_rows_for_snapshot(
-                env.gateway,
-                table_key=SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY,
-                snapshot=env.snapshot,
+                env.gateway.con,
+                SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY,
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
             )
         except (RuntimeError, ValueError, OSError) as exc:
             errors.append(f"modules: {exc}")
@@ -484,9 +486,10 @@ def t__symbol_graph_metrics__compute(
                 runtime=graph_runtime,
             )
             table_counts[SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY] = count_rows_for_snapshot(
-                env.gateway,
-                table_key=SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
-                snapshot=env.snapshot,
+                env.gateway.con,
+                SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
             )
         except (RuntimeError, ValueError, OSError) as exc:
             errors.append(f"functions: {exc}")
@@ -572,9 +575,10 @@ def t__subsystem_agreement__compute(
         )
 
         row_count = count_rows_for_snapshot(
-            env.gateway,
-            table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY,
-            snapshot=env.snapshot,
+            env.gateway.con,
+            SUBSYSTEM_AGREEMENT_TABLE_KEY,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
         )
 
         return ExecutionResult.ok(table_counts={SUBSYSTEM_AGREEMENT_TABLE_KEY: row_count})

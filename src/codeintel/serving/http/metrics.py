@@ -34,6 +34,10 @@ class QueryMetrics:
         Request correlation identifier.
     engine
         Result extraction engine used (polars/pandas).
+    query_hash
+        Stable fingerprint of query inputs when available.
+    schema_hash
+        Stable fingerprint of resolved schema when available.
     """
 
     endpoint: str
@@ -44,6 +48,8 @@ class QueryMetrics:
     duration_ms: float
     correlation_id: str
     engine: str | None = None
+    query_hash: str | None = None
+    schema_hash: str | None = None
 
 
 def log_query_metrics(metrics: QueryMetrics) -> None:
@@ -69,6 +75,8 @@ def log_query_metrics(metrics: QueryMetrics) -> None:
             "duration_ms": round(metrics.duration_ms, 3),
             "correlation_id": metrics.correlation_id,
             "engine": metrics.engine,
+            "query_hash": metrics.query_hash,
+            "schema_hash": metrics.schema_hash,
         },
     )
 

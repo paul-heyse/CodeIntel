@@ -14,7 +14,13 @@ from typing import TYPE_CHECKING
 import pandas as pd
 import pyarrow as pa
 
+from codeintel.core.schemas.hashing import schema_hash
 from codeintel.serving.search.models import SearchQueryResponse, SearchResult
+from codeintel.serving.semantic.fingerprints import (
+    SemanticQueryFingerprintInput,
+    fingerprint_search,
+    fingerprint_semantic_query,
+)
 from codeintel.serving.semantic.models import (
     SemanticExplainResponse,
     SemanticQueryResponse,
@@ -261,6 +267,52 @@ class SemanticQueryKernel:
         sanitized = df_pd.astype("object").where(pd.notna(df_pd), None)
         return sanitized.to_dict(orient="records")
 
+    @staticmethod
+    def _snapshot_dict(pointer: ServingSnapshotPointer) -> dict[str, str]:
+        """Return a stable snapshot dict for responses and fingerprints.
+
+        Returns
+        -------
+        dict[str, str]
+            Snapshot identity dictionary.
+        """
+        return {"repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id}
+
+    @staticmethod
+    def _schema_hash_for_table_key(
+        *,
+        inventory: SchemaInventory,
+        table_key: str,
+    ) -> str | None:
+        schema = inventory.get(table_key)
+        if schema is None:
+            return None
+        return schema_hash(schema)
+
+    def _fingerprint_semantic_plan(
+        self,
+        *,
+        pointer: ServingSnapshotPointer,
+        view_id: str,
+        plan: SemanticQueryPlan,
+        inventory: SchemaInventory,
+    ) -> tuple[str, str | None]:
+        filter_dicts = [f.model_dump(mode="json") for f in plan.filters]
+        schema_hash_value = self._schema_hash_for_table_key(inventory=inventory, table_key=plan.table_key)
+        inputs = SemanticQueryFingerprintInput(
+            snapshot=self._snapshot_dict(pointer),
+            view_id=view_id,
+            table_key=plan.table_key,
+            select=plan.columns,
+            order_by=plan.order_by,
+            filters=filter_dicts,
+            limit=plan.limit,
+            offset=plan.offset,
+            schema_hash=schema_hash_value,
+        )
+        query_hash = fingerprint_semantic_query(inputs)
+        return query_hash, schema_hash_value
+
     def _execute_semantic_plan(
         self,
         *,
@@ -304,7 +356,7 @@ class SemanticQueryKernel:
 
         return {
             "version": registry.version,
-            "snapshot": {"repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id},
+            "snapshot": self._snapshot_dict(pointer),
             "views": [
                 {
                     "id": v.id,
@@ -358,7 +410,7 @@ class SemanticQueryKernel:
             "defaults": view.defaults.model_dump(mode="json"),
             "deprecated": view.deprecated,
             "replaced_by": view.replaced_by,
-            "snapshot": {"repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id},
+            "snapshot": self._snapshot_dict(pointer),
         }
 
     def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse:
@@ -405,12 +457,30 @@ class SemanticQueryKernel:
         if truncated:
             rows = rows[:effective_limit]
 
+        fingerprint_plan = SemanticQueryPlan(
+            table_key=view.table_key,
+            columns=columns,
+            allowed_columns=frozenset(allowed_columns),
+            filters=request.filters,
+            order_by=effective_order,
+            limit=effective_limit,
+            offset=request.offset,
+        )
+        query_hash, schema_hash_value = self._fingerprint_semantic_plan(
+            pointer=pointer,
+            view_id=view.id,
+            plan=fingerprint_plan,
+            inventory=context.inventory,
+        )
+
         return SemanticQueryResponse(
             view_id=request.view_id,
             columns=columns,
             rows=rows,
             truncated=truncated,
-            snapshot={"repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id},
+            snapshot=self._snapshot_dict(pointer),
+            query_hash=query_hash,
+            schema_hash=schema_hash_value,
         )
 
     def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:
@@ -470,7 +540,7 @@ class SemanticQueryKernel:
             view_id=request.view_id,
             sql=compiled,
             plan=plan_text,
-            snapshot={"repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id},
+            snapshot=self._snapshot_dict(pointer),
         )
 
     def meta(self) -> dict[str, object]:
@@ -547,12 +617,15 @@ class SemanticQueryKernel:
                     query=request.query,
                     results=[],
                     truncated=False,
-                    snapshot={
-                        "repo": pointer.repo,
-                        "commit": pointer.commit,
-                        "run_id": pointer.run_id,
-                    },
+                    snapshot=self._snapshot_dict(pointer),
                     engine=engine,
+                    query_hash=fingerprint_search(
+                        snapshot=self._snapshot_dict(pointer),
+                        query=request.query,
+                        kinds=request.kinds,
+                        limit=request.limit,
+                        offset=request.offset,
+                    ),
                 )
 
             fts_available = fts_index_available(warehouse.gateway.con, table_key=_SEARCH_TABLE_KEY)
@@ -587,12 +660,75 @@ class SemanticQueryKernel:
             rows = rows[: request.limit]
 
         results = [SearchResult.model_validate(row) for row in rows]
+        query_hash = fingerprint_search(
+            snapshot=self._snapshot_dict(pointer),
+            query=request.query,
+            kinds=request.kinds,
+            limit=request.limit,
+            offset=request.offset,
+        )
         return SearchQueryResponse(
             query=request.query,
             results=results,
             truncated=truncated,
-            snapshot={"repo": pointer.repo, "commit": pointer.commit, "run_id": pointer.run_id},
+            snapshot=self._snapshot_dict(pointer),
             engine=engine,
+            query_hash=query_hash,
+        )
+
+    def export_fingerprint(self, request: SemanticExportRequest) -> tuple[str, str | None]:
+        """Return a stable fingerprint for an export request.
+
+        Parameters
+        ----------
+        request
+            Export request with filters, selection, and pagination.
+
+        Returns
+        -------
+        tuple[str, str | None]
+            (query_hash, schema_hash) for the export request.
+
+        Raises
+        ------
+        UnknownColumnsError
+            If the request selects columns not allowed by the view.
+        UnknownViewIdError
+            If the semantic view identifier cannot be resolved.
+        """
+        pointer = self.db.current_pointer()
+        context = self._snapshot_context(pointer)
+        try:
+            view = context.registry.by_id(request.view_id)
+        except KeyError as exc:
+            raise UnknownViewIdError(request.view_id) from exc
+
+        allowed_columns = self._resolve_allowed_columns(view=view, inventory=context.inventory)
+        if request.select:
+            unknown = [col for col in request.select if col not in allowed_columns]
+            if unknown:
+                raise UnknownColumnsError(
+                    unknown=tuple(unknown),
+                    allowed=tuple(allowed_columns),
+                )
+            columns = list(request.select)
+        else:
+            columns = allowed_columns
+
+        fingerprint_plan = SemanticQueryPlan(
+            table_key=view.table_key,
+            columns=columns,
+            allowed_columns=frozenset(allowed_columns),
+            filters=request.filters,
+            order_by=request.order_by,
+            limit=request.limit,
+            offset=request.offset,
+        )
+        return self._fingerprint_semantic_plan(
+            pointer=pointer,
+            view_id=view.id,
+            plan=fingerprint_plan,
+            inventory=context.inventory,
         )
 
     def export_rows(self, request: SemanticExportRequest) -> Generator[dict[str, object]]:

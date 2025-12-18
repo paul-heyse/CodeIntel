@@ -90,6 +90,7 @@ async def search(
                 duration_ms=duration_ms,
                 correlation_id=correlation_id,
                 engine=response.engine if response else None,
+                query_hash=response.query_hash if response else None,
             ),
         )
     # Unreachable if exception was raised; type narrowing for checker

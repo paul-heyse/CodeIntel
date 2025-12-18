@@ -47,6 +47,7 @@ class SearchQueryResponse(BaseModel):
     truncated: bool
     snapshot: dict[str, str]
     engine: str
+    query_hash: str | None = None
 
 
 __all__ = [

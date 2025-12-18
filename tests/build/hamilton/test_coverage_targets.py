@@ -11,9 +11,8 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.analytics.coverage_targets import (
-    BehavioralCoverageResult,
-    CoverageTestEdgesResult,
     t__behavioral_coverage,
     t__coverage_test_edges,
 )
@@ -92,57 +91,23 @@ def _make_graph() -> TargetGraph:
 
 
 # ---------------------------------------------------------------------------
-# CoverageTestEdgesResult Tests
+# ExecutionResult Tests
 # ---------------------------------------------------------------------------
 
 
-def test_coverage_test_edges_result_success() -> None:
-    """Verify CoverageTestEdgesResult dataclass for success case."""
-    result = CoverageTestEdgesResult(
-        success=True,
-        table_counts={"analytics.test_coverage_edges": 100},
-    )
+def test_execution_result_success() -> None:
+    """Verify ExecutionResult for success case."""
+    result = ExecutionResult.ok(table_counts={"analytics.test_coverage_edges": 100})
     expect_true(result.success, message="Result should be successful")
     expect_equal(result.table_counts["analytics.test_coverage_edges"], 100)
     expect_equal(result.error, None)
 
 
-def test_coverage_test_edges_result_failure() -> None:
-    """Verify CoverageTestEdgesResult dataclass for failure case."""
-    result = CoverageTestEdgesResult(
-        success=False,
-        table_counts={},
-        error="Upstream failed",
-    )
+def test_execution_result_failure() -> None:
+    """Verify ExecutionResult for failure case."""
+    result = ExecutionResult.failed("Upstream failed")
     expect_true(not result.success, message="Result should indicate failure")
     expect_equal(result.error, "Upstream failed")
-
-
-# ---------------------------------------------------------------------------
-# BehavioralCoverageResult Tests
-# ---------------------------------------------------------------------------
-
-
-def test_behavioral_coverage_result_success() -> None:
-    """Verify BehavioralCoverageResult dataclass for success case."""
-    result = BehavioralCoverageResult(
-        success=True,
-        table_counts={"analytics.behavioral_coverage": 50},
-    )
-    expect_true(result.success, message="Result should be successful")
-    expect_equal(result.table_counts["analytics.behavioral_coverage"], 50)
-    expect_equal(result.error, None)
-
-
-def test_behavioral_coverage_result_failure() -> None:
-    """Verify BehavioralCoverageResult dataclass for failure case."""
-    result = BehavioralCoverageResult(
-        success=False,
-        table_counts={},
-        error="Test profile failed",
-    )
-    expect_true(not result.success, message="Result should indicate failure")
-    expect_equal(result.error, "Test profile failed")
 
 
 # ---------------------------------------------------------------------------
@@ -167,10 +132,7 @@ def test_coverage_test_edges_materialize_success(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = CoverageTestEdgesResult(
-        success=True,
-        table_counts={"analytics.test_coverage_edges": 25},
-    )
+    compute_result = ExecutionResult.ok(table_counts={"analytics.test_coverage_edges": 25})
 
     record = t__coverage_test_edges(env, graph, compute_result)
 
@@ -199,11 +161,7 @@ def test_coverage_test_edges_materialize_failure(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = CoverageTestEdgesResult(
-        success=False,
-        table_counts={},
-        error="Upstream goids failed",
-    )
+    compute_result = ExecutionResult.failed("Upstream goids failed")
 
     record = t__coverage_test_edges(env, graph, compute_result)
 
@@ -231,10 +189,7 @@ def test_behavioral_coverage_materialize_success(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = BehavioralCoverageResult(
-        success=True,
-        table_counts={"analytics.behavioral_coverage": 15},
-    )
+    compute_result = ExecutionResult.ok(table_counts={"analytics.behavioral_coverage": 15})
 
     record = t__behavioral_coverage(env, graph, compute_result)
 
@@ -263,11 +218,7 @@ def test_behavioral_coverage_materialize_failure(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = BehavioralCoverageResult(
-        success=False,
-        table_counts={},
-        error="Test profile failed",
-    )
+    compute_result = ExecutionResult.failed("Test profile failed")
 
     record = t__behavioral_coverage(env, graph, compute_result)
 
