@@ -10,6 +10,7 @@ on parse failures.
 
 from __future__ import annotations
 
+import ast
 import json
 from typing import TYPE_CHECKING
 
@@ -56,12 +57,19 @@ def decode_json(value: object) -> object:
         return []
     if isinstance(value, (dict, list)):
         return value
-    if isinstance(value, str):
+    if not isinstance(value, str):
+        return []
+
+    parsed: object | None = None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
         try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            return []
-    return []
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            parsed = None
+
+    return parsed if isinstance(parsed, (dict, list)) else []
 
 
 def decode_json_dict(value: object) -> dict[str, object]:

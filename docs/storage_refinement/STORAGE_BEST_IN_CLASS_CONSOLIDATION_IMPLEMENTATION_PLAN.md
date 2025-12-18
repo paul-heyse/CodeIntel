@@ -6,6 +6,30 @@
 **Secondary scope** (required call-site migrations): `src/codeintel/core/**`, `src/codeintel/serving/**`,
 `src/codeintel/cli/**`, `src/codeintel/config/**`, and `tests/**`.
 
+## Implementation Status (As Of 2025-12-18)
+
+This plan is **mostly implemented**. Storage-level architecture constraints and key functional migrations are in
+place, and storage-scoped lint/type checks are clean. The remaining work is primarily:
+
+- **Phase 5 follow-through**: split `views/ibis_views.py` into domain modules and update discovery call sites.
+- **Acceptance tests** explicitly called out by the plan (read-only extension invariants, pool parity, DDL render
+  stability) are not yet fully implemented as dedicated tests.
+- **Full closeout gates** (repo-wide quality report + full pytest) and final “no legacy/compat scaffolding”
+  sweeps are not documented as complete here.
+
+### Completed Workstreams (High-Level)
+
+- Phase 1: single DuckDB bootstrap owner via `DuckDBSession`; removed `gateway/connection.py`.
+- Phase 2: extension requirement API (`require_extension`) and migrated feature use.
+- Phase 3: canonical SQLGlot DDL AST builders (schema/index).
+- Phase 4: canonical scalar coercion + centralized JSON normalization for DuckDB JSON writes.
+- Phase 5: view orchestration extracted into a dedicated materialization module; backend delegates.
+- Phase 6: Pandera validation moved into `storage/validation/*`; legacy validation module deleted.
+- Phase 7: catalog digest decoupled from repo-tracked export schema files.
+- Phase 8: storage/core error surface unification; removed overlapping storage-local Query/Schema errors and
+  migrated key call sites (including CLI harnesses).
+- Phase 9: metadata split (`metadata/ddl.py` vs `metadata/sync.py`) and repository consolidation for data models.
+
 ## 0) Goals (Best-in-Class Target Shape)
 
 By the end of this plan:
@@ -148,6 +172,8 @@ uv run pytest -q
 
 **Goal**: one canonical “bootstrap a DuckDB connection” path, shared by all modes (build/serving/tests).
 
+**Status**: Implemented
+
 **Primary changes**
 
 1) Make `src/codeintel/storage/backend/duckdb_session.py` the single owner for:
@@ -185,6 +211,8 @@ Add/extend tests under `tests/storage/` to assert:
 
 **Goal**: feature modules declare extension requirements; they do not implement extension handling or messaging.
 
+**Status**: Implemented
+
 **Primary changes**
 
 1) Extend `src/codeintel/storage/gateway/extensions.py` with a small “require extension” API, e.g.:
@@ -204,6 +232,8 @@ Add/extend tests under `tests/storage/` to assert:
 ### Phase 3 — DDL/Schema builder consolidation
 
 **Goal**: one canonical location for SQLGlot DDL AST builders used across storage.
+
+**Status**: Implemented
 
 **Primary changes**
 
@@ -227,6 +257,8 @@ Add/extend tests under `tests/storage/` to assert:
 ### Phase 4 — Canonical scalar/value coercion + JSON normalization primitives
 
 **Goal**: remove repeated edge-case logic and consolidate type-normalization.
+
+**Status**: Implemented
 
 **Primary changes**
 
@@ -252,6 +284,8 @@ Add/extend tests under `tests/storage/` to assert:
 
 **Goal**: `DuckDBPolicyBackend` stops owning orchestration; views become a cohesive subsystem.
 
+**Status**: Partially implemented
+
 **Primary changes**
 
 1) Introduce a view orchestration module (name illustrative):
@@ -266,6 +300,11 @@ Add/extend tests under `tests/storage/` to assert:
 3) Split `src/codeintel/storage/views/ibis_views.py` into smaller modules by domain (docs/analytics/core/etc).
 4) Remove “legacy create_*” functions after migrating call sites.
 
+**Notes**
+
+- Orchestration extraction + delegation is complete.
+- The plan’s “split by domain” and resulting discovery/module updates are the primary remaining Phase 5 items.
+
 **Acceptance gates**
 
 - Add/extend tests to assert:
@@ -279,6 +318,8 @@ Add/extend tests under `tests/storage/` to assert:
 ### Phase 6 — Validation package ownership and naming consolidation
 
 **Goal**: one coherent `storage/validation/*` package with clear boundaries.
+
+**Status**: Implemented
 
 **Primary changes**
 
@@ -300,6 +341,8 @@ Add/extend tests under `tests/storage/` to assert:
 ### Phase 7 — JSON Schema consolidation (execute the decision from Phase 0)
 
 **Goal**: eliminate competing JSON schema paths and remove coupling to repo-tracked export schema files.
+
+**Status**: Implemented (core decoupling) / Remaining (determinism tests)
 
 **Primary changes (Option A: two schema products)**
 
@@ -325,6 +368,8 @@ Add/extend tests under `tests/storage/` to assert:
 
 **Goal**: a single canonical error taxonomy for storage/query failures.
 
+**Status**: Implemented (core migrations) / Remaining (repo-wide confirmation)
+
 **Primary changes**
 
 1) Choose the canonical module (recommended: `codeintel.core.errors.storage`).
@@ -347,6 +392,8 @@ Add/extend tests under `tests/storage/` to assert:
 
 **Goal**: reduce one-off modules and align repository patterns.
 
+**Status**: Implemented
+
 **Primary changes**
 
 1) Split metadata into:
@@ -367,6 +414,8 @@ Add/extend tests under `tests/storage/` to assert:
 ## 4) Closeout Gates (No Dead/Compat Code Left)
 
 These are required at the end of the final phase:
+
+**Status**: Not yet documented as complete
 
 1) **Quality gates**
 
@@ -400,4 +449,3 @@ Delete any empty packages (e.g., a `storage/sql/` directory that contains no sou
   importing higher-level owners (serving/build).
 - **Risk: behavior drift in read-only mode**. Centralizing bootstrapping must preserve invariants.
   Mitigation: add targeted tests early (Phase 1) for read-only connection semantics and extension behavior.
-

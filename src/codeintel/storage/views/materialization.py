@@ -122,9 +122,9 @@ def _materialize_views(
         try:
             database, name = split_table_key(view_name)
             ibis_gateway.con.create_view(name, expr, database=database, overwrite=overwrite)
-            log.debug("Created view: %s", view_name)
+            log.debug("Materialized view: %s", view_name)
         except (DuckDBError, IbisError, KeyError, TypeError, ValueError):
-            log.exception("Failed to create view: %s", view_name)
+            log.exception("Failed to materialize view: %s", view_name)
             if strict:
                 raise
 

@@ -28,7 +28,7 @@ Example
 >>> from codeintel.build.config import load_build_config
 >>> config = load_build_config(Path("/path/to/project"))
 >>> hotspot_params = config.parameters_for("hotspots")
->>> max_commits = hotspot_params.get("max_commits", int, default=2000)
+>>> max_commits = hotspot_params.get_typed("max_commits", int, default=2000)
 """
 
 from __future__ import annotations

@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from codeintel.build.config import load_build_config
 from codeintel.build.session import BuildSession
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.state_types import BuildState, TargetState
@@ -98,7 +99,11 @@ class StateValidator:
 
         # Create session and computer for delegation
         self._session = BuildSession(snapshot=snapshot, gateway=gateway)
-        self._computer = StateComputer(graph=graph, session=self._session)
+        self._computer = StateComputer(
+            graph=graph,
+            session=self._session,
+            config=load_build_config(snapshot.repo_root),
+        )
 
     def validate(self) -> BuildState:
         """Validate state of all targets in the graph.

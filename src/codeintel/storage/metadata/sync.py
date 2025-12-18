@@ -14,6 +14,12 @@ from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph
 from codeintel.storage.contracts.provider import is_view, iter_contracts
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.metadata.bootstrap import (
+    replace_dataset_dataflow_edges,
+    replace_dataset_dataflow_nodes,
+    replace_dataset_schema_registry,
+    replace_derived_lineage_edges,
+)
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 
 if TYPE_CHECKING:
@@ -56,14 +62,7 @@ def _register_dataset_schema_hashes(con: DuckDBPyConnection) -> None:
         table_schema.table_key: schema_hash(table_schema)
         for table_schema in provider.iter_table_schemas()
     }
-    con.execute("DELETE FROM metadata.dataset_schema_registry")
-    con.executemany(
-        """
-        INSERT INTO metadata.dataset_schema_registry (table_key, schema_hash)
-        VALUES (?, ?)
-        """,
-        list(entries.items()),
-    )
+    replace_dataset_schema_registry(con, entries=entries)
 
 
 def validate_dataset_schema_registry(con: DuckDBPyConnection) -> None:
@@ -151,39 +150,17 @@ def sync_dataset_dataflow_graph(con: DuckDBPyConnection) -> None:
     get_schema_provider()
     nodes, edges = build_contract_dataflow_graph()
 
-    con.execute("DELETE FROM metadata.dataset_dataflow_nodes")
-    con.execute("DELETE FROM metadata.dataset_dataflow_edges")
-
-    if nodes:
-        con.executemany(
-            """
-            INSERT INTO metadata.dataset_dataflow_nodes (
-                id,
-                kind,
-                family,
-                owner_package,
-                description
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            [
-                (node.id, node.kind, node.family, node.owner_package, node.description)
-                for node in nodes
-            ],
-        )
-
-    if edges:
-        con.executemany(
-            """
-            INSERT INTO metadata.dataset_dataflow_edges (
-                src,
-                dst,
-                edge_type
-            )
-            VALUES (?, ?, ?)
-            """,
-            [(edge.src, edge.dst, edge.edge_type) for edge in edges],
-        )
+    replace_dataset_dataflow_nodes(
+        con,
+        rows=[
+            (node.id, node.kind, node.family, node.owner_package, node.description)
+            for node in nodes
+        ],
+    )
+    replace_dataset_dataflow_edges(
+        con,
+        rows=[(edge.src, edge.dst, edge.edge_type) for edge in edges],
+    )
 
 
 def bootstrap_metadata_datasets(
@@ -239,14 +216,6 @@ def sync_derived_lineage_edges(
     edge_type: str = "derived_depends_on",
 ) -> None:
     """Persist derived lineage edges for a snapshot."""
-    con.execute(
-        """
-        DELETE FROM metadata.derived_lineage_edges
-        WHERE repo = ? AND commit = ? AND edge_type = ?
-        """,
-        [repo, commit, edge_type],
-    )
-
     rows: list[tuple[str, str, str, str, str]] = []
     for downstream, upstreams in lineage.items():
         for upstream in upstreams:
@@ -254,19 +223,10 @@ def sync_derived_lineage_edges(
                 continue
             rows.append((repo, commit, downstream, upstream, edge_type))
 
-    if not rows:
-        return
-
-    con.executemany(
-        """
-        INSERT INTO metadata.derived_lineage_edges (
-            repo,
-            commit,
-            downstream,
-            upstream,
-            edge_type
-        )
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        rows,
+    replace_derived_lineage_edges(
+        con,
+        repo=repo,
+        commit=commit,
+        edge_type=edge_type,
+        rows=rows,
     )

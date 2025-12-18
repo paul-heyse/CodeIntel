@@ -131,22 +131,22 @@ def test_output_contract_accessors_and_validation() -> None:
 def test_target_parameters_access_and_merge() -> None:
     """TargetParameters enforces types and supports merging."""
     params = TargetParameters({"count": 5, "name": "test"})
-    expect_equal(params.get("count", int), 5)
-    expect_equal(params.get("name", str), "test")
-    expect_equal(params.get("missing", str, default="fallback"), "fallback")
+    expect_equal(params.get_typed("count", int), 5)
+    expect_equal(params.get_typed("name", str), "test")
+    expect_equal(params.get_typed("missing", str, default="fallback"), "fallback")
     expect_is_none(params.get_optional("missing", int))
     expect_true(params.has("count"))
 
     other = TargetParameters({"count": 10, "flag": True})
     merged = params.merge(other)
-    expect_equal(merged.get("count", int), 10)
-    expect_true(merged.get("flag", bool))
-    expect_equal(params.get("count", int), 5)
+    expect_equal(merged.get_typed("count", int), 10)
+    expect_true(merged.get_typed("flag", bool))
+    expect_equal(params.get_typed("count", int), 5)
 
     with pytest.raises(ParameterError):
-        params.get("missing", int)
+        params.get_typed("missing", int)
     with pytest.raises(ParameterError):
-        params.get("name", int)
+        params.get_typed("name", int)
     with pytest.raises(ParameterError):
         params.get_optional("count", str)
 
@@ -154,7 +154,7 @@ def test_target_parameters_access_and_merge() -> None:
 def test_target_parameters_empty_singleton() -> None:
     """EMPTY_PARAMETERS creates an empty parameter set."""
     empty = TargetParameters.empty()
-    expect_equal(empty.keys(), frozenset())
+    expect_equal(empty.key_set(), frozenset())
     expect_false(empty.has("anything"))
 
 

@@ -7,12 +7,65 @@ Graph runtime options are used by analytics targets that need access to graph en
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.runtime import GraphRuntimeOptions
+
+
+def _parse_with_default[T](
+    raw: object | None,
+    *,
+    default: T,
+    parser: Callable[[object], T],
+) -> T:
+    if raw is None:
+        return default
+    return parser(raw)
+
+
+def _parse_optional[T](raw: object | None, *, parser: Callable[[object], T]) -> T | None:
+    if raw is None:
+        return None
+    return parser(raw)
+
+
+def _parse_bool(value: object, *, key: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    message = f"Expected {key} to be bool, got {type(value)}"
+    raise TypeError(message)
+
+
+def _parse_str(value: object, *, key: str) -> str:
+    if isinstance(value, str):
+        return value
+    message = f"Expected {key} to be str, got {type(value)}"
+    raise TypeError(message)
+
+
+def _parse_eager(value: object) -> bool:
+    return _parse_bool(value, key="eager")
+
+
+def _parse_validate(value: object) -> bool:
+    return _parse_bool(value, key="validate")
+
+
+def _parse_cache_key(value: object) -> str:
+    return _parse_str(value, key="cache_key")
+
+
+def _parse_graph_cache_dir(value: object) -> Path:
+    if isinstance(value, str):
+        return Path(value)
+    if isinstance(value, Path):
+        return value
+    message = f"Expected graph_cache_dir to be str|Path, got {type(value)}"
+    raise TypeError(message)
 
 
 def _parse_graph_kind(value: object) -> GraphKind:
@@ -93,56 +146,29 @@ def load_graph_runtime_options(
         Runtime options with snapshot/feature/backend defaults normalized.
     """
     params = env.config.parameters_for(target_name).as_dict()
-    graphs = GraphKind.ALL
-    eager = False
-    validate = False
-    cache_key: str | None = None
-    graph_cache_dir: Path | None = None
-    backend: GraphBackendConfig | None = None
-    features = GraphFeatureFlags()
-
-    raw_graphs = params.get("graphs")
-    if raw_graphs is not None:
-        graphs = _parse_graph_kind(raw_graphs)
-
-    raw_eager = params.get("eager")
-    if raw_eager is not None:
-        if not isinstance(raw_eager, bool):
-            message = f"Expected eager to be bool, got {type(raw_eager)}"
-            raise TypeError(message)
-        eager = raw_eager
-
-    raw_validate = params.get("validate")
-    if raw_validate is not None:
-        if not isinstance(raw_validate, bool):
-            message = f"Expected validate to be bool, got {type(raw_validate)}"
-            raise TypeError(message)
-        validate = raw_validate
-
-    raw_cache_key = params.get("cache_key")
-    if raw_cache_key is not None:
-        if not isinstance(raw_cache_key, str):
-            message = f"Expected cache_key to be str, got {type(raw_cache_key)}"
-            raise TypeError(message)
-        cache_key = raw_cache_key
-
-    raw_graph_cache_dir = params.get("graph_cache_dir")
-    if raw_graph_cache_dir is not None:
-        if isinstance(raw_graph_cache_dir, str):
-            graph_cache_dir = Path(raw_graph_cache_dir)
-        elif isinstance(raw_graph_cache_dir, Path):
-            graph_cache_dir = raw_graph_cache_dir
-        else:
-            message = f"Expected graph_cache_dir to be str|Path, got {type(raw_graph_cache_dir)}"
-            raise TypeError(message)
-
-    raw_backend = params.get("backend")
-    if raw_backend is not None:
-        backend = _parse_graph_backend(raw_backend)
-
-    raw_features = params.get("features")
-    if raw_features is not None:
-        features = _parse_graph_features(raw_features)
+    graphs = _parse_with_default(
+        params.get("graphs"),
+        default=GraphKind.ALL,
+        parser=_parse_graph_kind,
+    )
+    eager = _parse_with_default(
+        params.get("eager"),
+        default=False,
+        parser=_parse_eager,
+    )
+    validate = _parse_with_default(
+        params.get("validate"),
+        default=False,
+        parser=_parse_validate,
+    )
+    cache_key = _parse_optional(params.get("cache_key"), parser=_parse_cache_key)
+    graph_cache_dir = _parse_optional(params.get("graph_cache_dir"), parser=_parse_graph_cache_dir)
+    backend = _parse_optional(params.get("backend"), parser=_parse_graph_backend)
+    features = _parse_with_default(
+        params.get("features"),
+        default=GraphFeatureFlags(),
+        parser=_parse_graph_features,
+    )
 
     return GraphRuntimeOptions(
         snapshot=env.snapshot,

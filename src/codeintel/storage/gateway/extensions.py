@@ -98,8 +98,5 @@ def require_extension(con: DuckDBExecutor, extension: str, *, allow_install: boo
             con.execute(f"INSTALL {extension}")
         con.execute(f"LOAD {extension}")
     except DuckDBError as exc:
-        message = (
-            f"DuckDB extension {extension!r} is required "
-            f"(set {_EXTENSIONS_ENV}={extension})"
-        )
+        message = f"DuckDB extension {extension!r} is required (set {_EXTENSIONS_ENV}={extension})"
         raise RuntimeError(message) from exc

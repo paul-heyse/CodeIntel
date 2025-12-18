@@ -118,7 +118,9 @@ def build_search_query(request: SearchQueryRequest, *, fts_available: bool) -> D
     """
     query_limit = request.limit + 1
     if fts_available and request.kinds:
-        return _SEARCH_QUERY_FTS_KINDS.bind([request.query, request.kinds, query_limit, request.offset])
+        return _SEARCH_QUERY_FTS_KINDS.bind(
+            [request.query, request.kinds, query_limit, request.offset]
+        )
     if fts_available:
         return _SEARCH_QUERY_FTS.bind([request.query, query_limit, request.offset])
     if request.kinds:
@@ -132,7 +134,15 @@ def build_search_query(request: SearchQueryRequest, *, fts_available: bool) -> D
                 request.offset,
             ]
         )
-    return _SEARCH_QUERY_LIKE.bind([request.query, request.query, request.query, query_limit, request.offset])
+    return _SEARCH_QUERY_LIKE.bind(
+        [request.query, request.query, request.query, query_limit, request.offset]
+    )
 
 
-__all__ = ["SEARCH_TABLE_KEY", "SEARCH_TABLE_NAME", "SEARCH_TABLE_SCHEMA", "build_search_query", "is_fts_available"]
+__all__ = [
+    "SEARCH_TABLE_KEY",
+    "SEARCH_TABLE_NAME",
+    "SEARCH_TABLE_SCHEMA",
+    "build_search_query",
+    "is_fts_available",
+]

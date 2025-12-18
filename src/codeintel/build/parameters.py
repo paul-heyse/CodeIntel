@@ -14,15 +14,15 @@ Example
 ...         "scoring_weights": {"frequency": 0.4, "recency": 0.3},
 ...     }
 ... )
->>> max_commits = params.get("max_commits", int, default=1000)
->>> weights = params.get("scoring_weights", dict)
+>>> max_commits = params.get_typed("max_commits", int, default=1000)
+>>> weights = params.get_typed("scoring_weights", dict)
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import TypeVar, overload
+from typing import TypeVar
 
 __all__ = [
     "ParameterError",
@@ -85,9 +85,9 @@ class TargetParameters(Mapping[str, object]):
     Examples
     --------
     >>> params = TargetParameters({"max_commits": 2000, "enabled": True})
-    >>> params.get("max_commits", int)
+    >>> params.get_typed("max_commits", int)
     2000
-    >>> params.get("missing", str, default="fallback")
+    >>> params.get_typed("missing", str, default="fallback")
     'fallback'
     """
 
@@ -109,20 +109,26 @@ class TargetParameters(Mapping[str, object]):
         return self._values[key]
 
     def __iter__(self) -> Iterator[str]:
-        """Iterate over parameter keys."""
+        """Iterate over parameter keys.
+
+        Returns
+        -------
+        Iterator[str]
+            Iterator over parameter keys.
+        """
         return iter(self._values)
 
     def __len__(self) -> int:
-        """Return the number of parameters."""
+        """Return the number of parameters.
+
+        Returns
+        -------
+        int
+            Number of parameters.
+        """
         return len(self._values)
 
-    @overload
-    def get(self, key: str, type_: type[T]) -> T: ...
-
-    @overload
-    def get(self, key: str, type_: type[T], default: T) -> T: ...
-
-    def get(self, key: str, type_: type[T], default: T | None = None) -> T:
+    def get_typed(self, key: str, type_: type[T], default: T | None = None) -> T:
         """Get a parameter with type validation.
 
         Parameters
@@ -148,9 +154,9 @@ class TargetParameters(Mapping[str, object]):
         Examples
         --------
         >>> params = TargetParameters({"count": 10})
-        >>> params.get("count", int)
+        >>> params.get_typed("count", int)
         10
-        >>> params.get("missing", str, default="default")
+        >>> params.get_typed("missing", str, default="default")
         'default'
         """
         value = self._values.get(key)
@@ -168,7 +174,7 @@ class TargetParameters(Mapping[str, object]):
     def get_optional(self, key: str, type_: type[T]) -> T | None:
         """Get a parameter that may not exist.
 
-        Unlike get(), this returns None for missing parameters
+        Unlike get_typed(), this returns None for missing parameters
         without requiring a default value.
 
         Parameters
@@ -210,15 +216,15 @@ class TargetParameters(Mapping[str, object]):
         """
         return key in self._values
 
-    def keys(self) -> frozenset[str]:
-        """Return all parameter names.
+    def key_set(self) -> frozenset[str]:
+        """Return all parameter names as a stable, hashable set.
 
         Returns
         -------
         frozenset[str]
             Set of all parameter names.
         """
-        return frozenset(self._values.keys())
+        return frozenset(self._values)
 
     def as_dict(self) -> dict[str, object]:
         """Return a copy of parameters as a dict.

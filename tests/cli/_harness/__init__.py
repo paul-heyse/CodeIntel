@@ -28,12 +28,9 @@ from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.core import CliResult
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.rendering.types import OutputFormat
-from codeintel.storage.exceptions import (
-    QueryError as StorageQueryError,
-)
-from codeintel.storage.exceptions import (
-    SchemaError as StorageSchemaError,
-)
+from codeintel.core.errors.schema import SchemaError as StorageSchemaError
+from codeintel.core.errors.storage import QueryError as StorageQueryError
+from codeintel.core.errors.storage import StorageQueryError as StructuredStorageQueryError
 from codeintel.storage.exceptions import (
     StorageConnectionError,
     StorageError,
@@ -552,6 +549,7 @@ class OperationTestHarness:
                         StorageConnectionError,
                         StorageError,
                         StorageQueryError,
+                        StructuredStorageQueryError,
                         StorageSchemaError,
                         ValueError,
                         RuntimeError,

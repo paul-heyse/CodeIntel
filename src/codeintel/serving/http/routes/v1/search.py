@@ -37,7 +37,10 @@ async def search(
     SearchQueryResponse
         Search results.
     """
-    def _success(response: SearchQueryResponse, duration_ms: float, correlation_id: str) -> QueryMetrics:
+
+    def _success(
+        response: SearchQueryResponse, duration_ms: float, correlation_id: str
+    ) -> QueryMetrics:
         return QueryMetrics(
             endpoint="/search",
             correlation_id=correlation_id,
@@ -61,7 +64,9 @@ async def search(
             truncated=False,
         )
 
-    return await run_in_threadpool_with_metrics(background, request, ops.search, _success, _error, payload)
+    return await run_in_threadpool_with_metrics(
+        background, request, ops.search, _success, _error, payload
+    )
 
 
 __all__ = ["router"]

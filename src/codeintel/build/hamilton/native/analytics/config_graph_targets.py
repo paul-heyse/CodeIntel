@@ -473,12 +473,13 @@ def t__config_data_flow(
         Record with status, datasets, and execution metadata.
     """
     if t__config_data_flow__compute.error:
+        options_hash = options_hash_for_target(env, CONFIG_DATA_FLOW_TARGET_NAME)
         return TargetRunRecord(
             target=CONFIG_DATA_FLOW_TARGET_NAME,
             plugin_name=f"native:{CONFIG_DATA_FLOW_TARGET_NAME}",
             status="failed",
             input_hash="",
-            options_hash=None,
+            options_hash=options_hash,
             duration_ms=0.0,
             row_counts={},
             error=t__config_data_flow__compute.error,

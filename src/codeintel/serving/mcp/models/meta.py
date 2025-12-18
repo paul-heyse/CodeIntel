@@ -18,7 +18,9 @@ class SemanticLayerInfo(BaseModel):
     version: str = Field(..., description="Semantic layer version string.")
     hash: str = Field(..., description="Stable hash of semantic registry content.")
     view_count: int = Field(..., ge=0, description="Number of semantic views available.")
-    schema_manifest_hash: str | None = Field(default=None, description="Hash of schema manifest (if applicable).")
+    schema_manifest_hash: str | None = Field(
+        default=None, description="Hash of schema manifest (if applicable)."
+    )
 
 
 class BuildSpecInfo(BaseModel):
@@ -37,9 +39,15 @@ class QueryLimits(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     default_limit: int = Field(default=200, ge=1, description="Default row limit for query tools.")
-    max_limit: int = Field(default=5_000, ge=1, description="Maximum allowed limit for query tools.")
-    export_max_rows: int = Field(default=100_000, ge=1, description="Maximum rows allowed for exports.")
-    export_ttl_seconds: int | None = Field(default=None, ge=1, description="Optional TTL for exports.")
+    max_limit: int = Field(
+        default=5_000, ge=1, description="Maximum allowed limit for query tools."
+    )
+    export_max_rows: int = Field(
+        default=100_000, ge=1, description="Maximum rows allowed for exports."
+    )
+    export_ttl_seconds: int | None = Field(
+        default=None, ge=1, description="Optional TTL for exports."
+    )
 
 
 class ServingMetaResponse(BaseModel):
@@ -56,11 +64,19 @@ class ServingMetaResponse(BaseModel):
     semantic_layer: SemanticLayerInfo = Field(..., description="Semantic layer identity + counts.")
     buildspec: BuildSpecInfo = Field(..., description="Compiled BuildSpec identity.")
 
-    read_only: bool = Field(default=True, description="Whether serving DB connections are read-only.")
-    features: dict[str, bool] = Field(default_factory=dict, description="Feature flags/capabilities.")
+    read_only: bool = Field(
+        default=True, description="Whether serving DB connections are read-only."
+    )
+    features: dict[str, bool] = Field(
+        default_factory=dict, description="Feature flags/capabilities."
+    )
     limits: QueryLimits = Field(..., description="Server limits for queries and exports.")
-    resource_templates: tuple[ResourceTemplate, ...] = Field(default_factory=tuple, description="Resource templates.")
-    inventories: dict[str, int] = Field(default_factory=dict, description="Inventory counts for quick triage.")
+    resource_templates: tuple[ResourceTemplate, ...] = Field(
+        default_factory=tuple, description="Resource templates."
+    )
+    inventories: dict[str, int] = Field(
+        default_factory=dict, description="Inventory counts for quick triage."
+    )
     warnings: tuple[str, ...] = Field(default_factory=tuple, description="Non-fatal warnings.")
 
 
@@ -69,15 +85,23 @@ class ResourceTemplatesResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    uri: str = Field(default="codeintel://meta/resources", description="Canonical URI for this response.")
+    uri: str = Field(
+        default="codeintel://meta/resources", description="Canonical URI for this response."
+    )
     generated_at: datetime = Field(..., description="When this listing was generated.")
     snapshot: SnapshotRef = Field(..., description="Currently mounted serving snapshot.")
 
-    semantic_layer: SemanticLayerInfo | None = Field(default=None, description="Semantic layer identity.")
+    semantic_layer: SemanticLayerInfo | None = Field(
+        default=None, description="Semantic layer identity."
+    )
     buildspec: BuildSpecInfo | None = Field(default=None, description="BuildSpec identity.")
 
-    templates: tuple[ResourceTemplate, ...] = Field(default_factory=tuple, description="Supported resource templates.")
-    notes: tuple[str, ...] = Field(default_factory=tuple, description="Short usage notes for agents.")
+    templates: tuple[ResourceTemplate, ...] = Field(
+        default_factory=tuple, description="Supported resource templates."
+    )
+    notes: tuple[str, ...] = Field(
+        default_factory=tuple, description="Short usage notes for agents."
+    )
 
 
 DEFAULT_RESOURCE_TEMPLATES: tuple[ResourceTemplate, ...] = (

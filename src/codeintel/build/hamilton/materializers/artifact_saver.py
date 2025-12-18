@@ -24,7 +24,7 @@ from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.metadata import FileArtifactMaterializationMetadata
 from codeintel.build.hamilton.native.outputs import expected_artifacts
-from codeintel.build.hamilton.run_records import should_skip_native_target
+from codeintel.build.hamilton.run_records import options_hash_for_target, should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.tracking.asset_tracking import AssetRecord
@@ -156,11 +156,12 @@ class FileArtifactSaver(DataSaver):
                     error=f"Target not found in graph: {self.target_name}",
                 )
             else:
+                options_hash = options_hash_for_target(self.env, self.target_name)
                 input_hash = compute_input_hash(
                     target=target,
                     snapshot=self.env.snapshot,
                     gateway=self.env.gateway,
-                    options_hash=None,
+                    options_hash=options_hash,
                     manifests=self.env.manifest_index,
                 )
 

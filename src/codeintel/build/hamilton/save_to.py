@@ -19,6 +19,8 @@ from hamilton.function_modifiers.adapters import (
 from hamilton.function_modifiers.base import InvalidDecoratorException, SingleNodeNodeTransformer
 from hamilton.node import DependencyType
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Sequence
 
@@ -113,7 +115,7 @@ class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
             __data_node_name: str = node_to_save_str,
             /,
             **input_kwargs: object,
-        ) -> dict[str, object]:
+        ) -> MaterializationMetadata:
             input_args_with_fixed_dependencies = {
                 __dependencies.get(key, key): value for key, value in input_kwargs.items()
             }
@@ -146,7 +148,7 @@ class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
         return h_node.Node(
             name=artifact_name_str,
             callabl=save_data,
-            typ=cast("type[object]", dict[str, object]),
+            typ=cast("type[object]", MaterializationMetadata),
             input_types=input_types,
             namespace=artifact_namespace,
             tags={

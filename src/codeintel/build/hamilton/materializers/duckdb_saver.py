@@ -19,7 +19,10 @@ from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.contracts.pandera_hook import get_pandera_schema
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materialize_options import materialize_options
+from codeintel.build.hamilton.materialize_options import (
+    append_materialize_options,
+    materialize_options,
+)
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
 from codeintel.build.hamilton.run_records import options_hash_for_target, should_skip_native_target
 from codeintel.build.hashing import compute_input_hash
@@ -306,12 +309,7 @@ def _materialize_table(
     result = warehouse.materialize_dataframe(
         table_key,
         validated,
-        options=MaterializeOptions(
-            snapshot=snapshot,
-            mode="append",
-            owner_target=options.owner_target,
-            input_hash=options.input_hash,
-        ),
+        options=append_materialize_options(options),
     )
     return result.rows_written or 0
 

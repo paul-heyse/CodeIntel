@@ -226,7 +226,9 @@ class DataModelsRepository(BaseRepository):
                     commit=str(row.get("commit") or self.commit),
                     model_id=str(row.get("model_id") or ""),
                     name=str(row.get("field_name") or ""),
-                    field_type=str(row["field_type"]) if row.get("field_type") is not None else None,
+                    field_type=str(row["field_type"])
+                    if row.get("field_type") is not None
+                    else None,
                     required=bool(row.get("required", False)),
                     has_default=bool(row.get("has_default", False)),
                     default_expr=str(row["default_expr"])
@@ -296,7 +298,9 @@ class DataModelsRepository(BaseRepository):
                     target_model_name=str(row["target_model_name"])
                     if row.get("target_model_name") is not None
                     else None,
-                    field_name=str(row["field_name"]) if row.get("field_name") is not None else None,
+                    field_name=str(row["field_name"])
+                    if row.get("field_name") is not None
+                    else None,
                     relationship_kind=str(row.get("relationship_kind") or ""),
                     multiplicity=str(row["multiplicity"])
                     if row.get("multiplicity") is not None
@@ -382,9 +386,7 @@ class DataModelsRepository(BaseRepository):
                         model_id=model_id,
                         default_created_at=created_at,
                     ),
-                    doc_short=str(row["doc_short"])
-                    if row.get("doc_short") is not None
-                    else None,
+                    doc_short=str(row["doc_short"]) if row.get("doc_short") is not None else None,
                     doc_long=str(row["doc_long"]) if row.get("doc_long") is not None else None,
                     created_at=created_at,
                 )
